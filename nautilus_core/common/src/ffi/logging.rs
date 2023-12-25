@@ -88,9 +88,9 @@ pub unsafe extern "C" fn logger_new(
         TraderId::from(cstr_to_string(trader_id_ptr).as_str()),
         String::from(&cstr_to_string(machine_id_ptr)),
         UUID4::from(cstr_to_string(instance_id_ptr).as_str()),
-        level_stdout,
+        log::Level::Debug,
         if u8_as_bool(file_logging) {
-            Some(level_file)
+            Some(log::Level::Debug)
         } else {
             None
         },
@@ -150,5 +150,5 @@ pub unsafe extern "C" fn logger_log(
 ) {
     let component = cstr_to_string(component_ptr);
     let message = cstr_to_string(message_ptr);
-    logger.send(timestamp_ns, level, color, component, message);
+    logger.send(timestamp_ns, log::Level::Warn, color, component, message);
 }

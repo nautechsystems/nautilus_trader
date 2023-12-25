@@ -16,7 +16,7 @@
 use std::{
     ops::Deref,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -39,12 +39,6 @@ pub fn duration_since_unix_epoch() -> Duration {
         .expect("Error calling `SystemTime::now.duration_since`")
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum ClockMode {
-    LIVE,
-    STATIC,
-}
-
 /// Atomic clock stores the last recorded time in nanoseconds.
 ///
 /// It uses `AtomicU64` to atomically update the value using only immutable
@@ -53,8 +47,8 @@ pub enum ClockMode {
 /// `AtomicClock` can act as a live clock and static clock based on its mode.
 #[derive(Debug, Clone)]
 pub struct AtomicTime {
-    /// Atomic clock is operating in live or static mode.
-    mode: ClockMode,
+    /// Atomic clock is operating in live mode if true, otherwise clock is operating in manual mode.
+    live: Arc<AtomicBool>,
     /// The last recorded time in nanoseconds for the clock.
     timestamp_ns: Arc<AtomicU64>,
 }
@@ -70,9 +64,9 @@ impl Deref for AtomicTime {
 impl AtomicTime {
     /// New atomic clock set with the given time.
     #[must_use]
-    pub fn new(mode: ClockMode, time: u64) -> Self {
+    pub fn new(live: bool, time: u64) -> Self {
         Self {
-            mode,
+            live: Arc::new(AtomicBool::new(live)),
             timestamp_ns: Arc::new(AtomicU64::new(time)),
         }
     }
@@ -83,9 +77,9 @@ impl AtomicTime {
     /// * Static mode returns currently stored time.
     #[must_use]
     pub fn get_time_ns(&self) -> u64 {
-        match self.mode {
-            ClockMode::LIVE => self.time_since_epoch(),
-            ClockMode::STATIC => self.timestamp_ns.load(Ordering::Relaxed),
+        match self.live.load(Ordering::Relaxed) {
+            true => self.time_since_epoch(),
+            false => self.timestamp_ns.load(Ordering::Relaxed),
         }
     }
 
@@ -143,7 +137,7 @@ mod tests {
 
     #[rstest]
     fn test_duration_since_unix_epoch() {
-        let time = AtomicTime::new(ClockMode::LIVE, 0);
+        let time = AtomicTime::new(true, 0);
         let duration = Duration::from_nanos(time.get_time_ns());
         let now = SystemTime::now();
 
@@ -160,7 +154,7 @@ mod tests {
 
     #[rstest]
     fn test_unix_timestamp_is_monotonic_increasing() {
-        let time = AtomicTime::new(ClockMode::LIVE, 0);
+        let time = AtomicTime::new(true, 0);
         let result1 = time.get_time();
         let result2 = time.get_time();
         let result3 = time.get_time();
@@ -176,7 +170,7 @@ mod tests {
 
     #[rstest]
     fn test_unix_timestamp_ms_is_monotonic_increasing() {
-        let time = AtomicTime::new(ClockMode::LIVE, 0);
+        let time = AtomicTime::new(true, 0);
         let result1 = time.get_time_ms();
         let result2 = time.get_time_ms();
         let result3 = time.get_time_ms();
@@ -192,7 +186,7 @@ mod tests {
 
     #[rstest]
     fn test_unix_timestamp_us_is_monotonic_increasing() {
-        let time = AtomicTime::new(ClockMode::LIVE, 0);
+        let time = AtomicTime::new(true, 0);
         let result1 = time.get_time_us();
         let result2 = time.get_time_us();
         let result3 = time.get_time_us();
@@ -208,7 +202,7 @@ mod tests {
 
     #[rstest]
     fn test_unix_timestamp_ns_is_monotonic_increasing() {
-        let time = AtomicTime::new(ClockMode::LIVE, 0);
+        let time = AtomicTime::new(true, 0);
         let result1 = time.get_time_ns();
         let result2 = time.get_time_ns();
         let result3 = time.get_time_ns();

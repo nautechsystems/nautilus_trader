@@ -17,7 +17,7 @@ use std::{collections::HashMap, ops::Deref};
 
 use nautilus_core::{
     correctness::check_valid_string,
-    time::{AtomicTime, ClockMode, UnixNanos},
+    time::{AtomicTime, UnixNanos},
 };
 
 use crate::{
@@ -81,7 +81,7 @@ impl TestClock {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            time: AtomicTime::new(ClockMode::STATIC, 0),
+            time: AtomicTime::new(false, 0),
             timers: HashMap::new(),
             default_callback: None,
             callbacks: HashMap::new(),
@@ -268,7 +268,7 @@ impl LiveClock {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            internal: AtomicTime::new(ClockMode::LIVE, 0),
+            internal: AtomicTime::new(true, 0),
             timers: HashMap::new(),
             default_callback: None,
             callbacks: HashMap::new(),

@@ -25,6 +25,7 @@ ustr = { workspace = true }
 tracing = { workspace = true }
 tracing-appender = "0.2.3"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+log = { version = "0.4.20", features = ["kv_unstable", "serde"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

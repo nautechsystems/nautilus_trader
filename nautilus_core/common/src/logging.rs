@@ -25,7 +25,12 @@ use std::{
 };
 
 use chrono::{prelude::*, Utc};
-use nautilus_core::{datetime::unix_nanos_to_iso8601, time::UnixNanos, uuid::UUID4};
+use log::{set_boxed_logger, set_logger};
+use nautilus_core::{
+    datetime::unix_nanos_to_iso8601,
+    time::{AtomicTime, UnixNanos},
+    uuid::UUID4,
+};
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -111,7 +116,10 @@ pub fn set_global_log_collector(
 /// A separate thead is spawned at initialization which receives [`LogEvent`] structs over the
 /// channel.
 pub struct Logger {
+    /// Send log events to a different thread
     tx: Sender<LogEvent>,
+    /// Reference to the clock used in the engine
+    clock: AtomicTime,
     /// The trader ID for the logger.
     pub trader_id: TraderId,
     /// The machine ID for the logger.
@@ -119,9 +127,9 @@ pub struct Logger {
     /// The instance ID for the logger.
     pub instance_id: UUID4,
     /// The minimum log level to write to stdout.
-    pub level_stdout: LogLevel,
+    pub level_stdout: log::Level,
     /// The minimum log level to write to a log file.
-    pub level_file: Option<LogLevel>,
+    pub level_file: Option<log::Level>,
     /// If logger is using ANSI color codes.
     pub is_colored: bool,
     /// If logging is bypassed.
@@ -134,7 +142,7 @@ pub struct LogEvent {
     /// The UNIX nanoseconds timestamp when the log event occurred.
     timestamp: UnixNanos,
     /// The log level for the event.
-    level: LogLevel,
+    level: log::Level,
     /// The color for the log message content.
     color: LogColor,
     /// The Nautilus system component the log event originated from.
@@ -153,6 +161,45 @@ impl fmt::Display for LogEvent {
     }
 }
 
+impl log::Log for Logger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        // TODO add component and level check
+        !self.is_bypassed
+    }
+
+    fn log(&self, record: &log::Record) {
+        eprintln!("Reached log call");
+        if self.enabled(record.metadata()) {
+            eprintln!("Entered log call");
+            let component = record
+                .key_values()
+                .get("component".into())
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| record.metadata().target().to_string());
+            let color = record
+                .key_values()
+                .get("component".into())
+                .map(|v| v.to_borrowed_str().map(|s| LogColor::from_str(s).unwrap()))
+                .flatten()
+                .unwrap_or(LogColor::Normal);
+            let event = LogEvent {
+                timestamp: self.clock.get_time_ns(),
+                level: record.level(),
+                color,
+                component,
+                message: format!("{}", record.args()).to_string(),
+            };
+            if let Err(SendError(e)) = self.tx.send(event) {
+                eprintln!("Error sending log event: {e}");
+            }
+        }
+    }
+
+    fn flush(&self) {
+        todo!();
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 impl Logger {
     #[must_use]
@@ -160,8 +207,8 @@ impl Logger {
         trader_id: TraderId,
         machine_id: String,
         instance_id: UUID4,
-        level_stdout: LogLevel,
-        level_file: Option<LogLevel>,
+        level_stdout: log::Level,
+        level_file: Option<log::Level>,
         directory: Option<String>,
         file_name: Option<String>,
         file_format: Option<String>,
@@ -170,11 +217,11 @@ impl Logger {
         is_bypassed: bool,
     ) -> Self {
         let (tx, rx) = channel::<LogEvent>();
-        let mut level_filters = HashMap::<String, LogLevel>::new();
+        let mut level_filters = HashMap::<String, log::Level>::new();
 
         if let Some(component_levels_map) = component_levels {
             for (key, value) in component_levels_map {
-                match serde_json::from_value::<LogLevel>(value) {
+                match serde_json::from_value::<log::Level>(value) {
                     Ok(level) => {
                         level_filters.insert(key, level);
                     }
@@ -213,19 +260,83 @@ impl Logger {
             level_file,
             is_colored,
             is_bypassed,
+            clock: AtomicTime::new(true, 0),
         }
+    }
+
+    pub fn initialize(
+        trader_id: TraderId,
+        machine_id: String,
+        instance_id: UUID4,
+        level_stdout: log::Level,
+        level_file: Option<log::Level>,
+        directory: Option<String>,
+        file_name: Option<String>,
+        file_format: Option<String>,
+        component_levels: Option<HashMap<String, Value>>,
+        is_colored: bool,
+        is_bypassed: bool,
+    ) {
+        let (tx, rx) = channel::<LogEvent>();
+        let mut level_filters = HashMap::<String, log::Level>::new();
+
+        if let Some(component_levels_map) = component_levels {
+            for (key, value) in component_levels_map {
+                match serde_json::from_value::<log::Level>(value) {
+                    Ok(level) => {
+                        level_filters.insert(key, level);
+                    }
+                    Err(e) => {
+                        // Handle the error, e.g. log a warning or ignore the entry
+                        eprintln!("Error parsing log level: {e:?}");
+                    }
+                }
+            }
+        }
+
+        let trader_id_clone = trader_id.value.to_string();
+        let instance_id_clone = instance_id.to_string();
+
+        thread::spawn(move || {
+            Self::handle_messages(
+                &trader_id_clone,
+                &instance_id_clone,
+                level_stdout,
+                level_file,
+                directory,
+                file_name,
+                file_format,
+                level_filters,
+                is_colored,
+                rx,
+            );
+        });
+
+        let logger = Self {
+            tx,
+            trader_id,
+            machine_id,
+            instance_id,
+            level_stdout,
+            level_file,
+            is_colored,
+            is_bypassed,
+            clock: AtomicTime::new(true, 0),
+        };
+
+        set_boxed_logger(Box::new(logger));
     }
 
     #[allow(clippy::useless_format)] // Format is not actually useless as we escape braces
     fn handle_messages(
         trader_id: &str,
         instance_id: &str,
-        level_stdout: LogLevel,
-        level_file: Option<LogLevel>,
+        level_stdout: log::Level,
+        level_file: Option<log::Level>,
         directory: Option<String>,
         file_name: Option<String>,
         file_format: Option<String>,
-        level_filters: HashMap<String, LogLevel>,
+        level_filters: HashMap<String, log::Level>,
         is_colored: bool,
         rx: Receiver<LogEvent>,
     ) {
@@ -287,7 +398,7 @@ impl Logger {
                 }
             }
 
-            if event.level >= LogLevel::Error {
+            if event.level >= log::Level::Error {
                 let line = Self::format_log_line_console(&event, trader_id, &template_console);
                 Self::write_stderr(&mut err_buf, &line);
                 Self::flush_stderr(&mut err_buf);
@@ -466,7 +577,7 @@ impl Logger {
     pub fn send(
         &mut self,
         timestamp: u64,
-        level: LogLevel,
+        level: log::Level,
         color: LogColor,
         component: String,
         message: String,
@@ -484,29 +595,19 @@ impl Logger {
     }
 
     pub fn debug(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
-        self.send(timestamp, LogLevel::Debug, color, component, message);
+        self.send(timestamp, log::Level::Debug, color, component, message);
     }
 
     pub fn info(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
-        self.send(timestamp, LogLevel::Info, color, component, message);
+        self.send(timestamp, log::Level::Info, color, component, message);
     }
 
     pub fn warn(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
-        self.send(timestamp, LogLevel::Warning, color, component, message);
+        self.send(timestamp, log::Level::Warn, color, component, message);
     }
 
     pub fn error(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
-        self.send(timestamp, LogLevel::Error, color, component, message);
-    }
-
-    pub fn critical(
-        &mut self,
-        timestamp: u64,
-        color: LogColor,
-        component: String,
-        message: String,
-    ) {
-        self.send(timestamp, LogLevel::Critical, color, component, message);
+        self.send(timestamp, log::Level::Error, color, component, message);
     }
 }
 
@@ -527,7 +628,7 @@ pub mod stubs {
             TraderId::from("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
-            LogLevel::Info,
+            log::Level::Info,
             None,
             None,
             None,
@@ -546,6 +647,7 @@ pub mod stubs {
 mod tests {
     use std::time::Duration;
 
+    use log::info;
     use nautilus_core::uuid::UUID4;
     use nautilus_model::identifiers::trader_id::TraderId;
     use rstest::*;
@@ -558,7 +660,7 @@ mod tests {
     fn log_message_serialization() {
         let log_message = LogEvent {
             timestamp: 1_000_000_000,
-            level: LogLevel::Info,
+            level: log::Level::Info,
             color: LogColor::Normal,
             component: "Portfolio".to_string(),
             message: "This is a log message".to_string(),
@@ -575,8 +677,7 @@ mod tests {
 
     #[rstest]
     fn test_new_logger(logger: Logger) {
-        assert_eq!(logger.trader_id, TraderId::from("TRADER-001"));
-        assert_eq!(logger.level_stdout, LogLevel::Info);
+        assert_eq!(logger.level_stdout, log::Level::Info);
         assert_eq!(logger.level_file, None);
         assert!(!logger.is_bypassed);
     }
@@ -612,16 +713,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_logger_critical(mut logger: Logger) {
-        logger.critical(
-            1_650_000_000_000_000,
-            LogColor::Normal,
-            String::from("RiskEngine"),
-            String::from("This is a test critical message."),
-        );
-    }
-
-    #[rstest]
     fn test_logging_to_file() {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
 
@@ -629,8 +720,8 @@ mod tests {
             TraderId::from("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
-            LogLevel::Info,
-            Some(LogLevel::Debug),
+            log::Level::Info,
+            Some(log::Level::Debug),
             Some(temp_dir.path().to_str().unwrap().to_string()),
             None,
             None,
@@ -687,8 +778,8 @@ mod tests {
             TraderId::from("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
-            LogLevel::Info,
-            Some(LogLevel::Debug),
+            log::Level::Info,
+            Some(log::Level::Debug),
             Some(temp_dir.path().to_str().unwrap().to_string()),
             None,
             None,
@@ -742,8 +833,8 @@ mod tests {
             TraderId::from("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
-            LogLevel::Info,
-            Some(LogLevel::Debug),
+            log::Level::Info,
+            Some(log::Level::Debug),
             Some(temp_dir.path().to_str().unwrap().to_string()),
             None,
             Some("json".to_string()),
@@ -783,5 +874,24 @@ mod tests {
         log_contents,
         "{\"timestamp\":1650000000000000,\"level\":\"INFO\",\"color\":\"Normal\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
     );
+    }
+
+    #[rstest]
+    fn test_logging_framework() {
+        Logger::initialize(
+            TraderId::from("TRADER-001"),
+            String::from("user-01"),
+            UUID4::new(),
+            log::Level::Debug,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            false,
+        );
+
+        info!("hi");
     }
 }
