@@ -13,8 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
-
+from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import TradeReport
@@ -88,7 +87,7 @@ cdef class ExecutionClient(Component):
         The clock for the client.
     logger : Logger
         The logger for the client.
-    config : dict[str, object], optional
+    config : NautilusConfig, optional
         The configuration for the instance.
 
     Raises
@@ -106,24 +105,23 @@ cdef class ExecutionClient(Component):
     def __init__(
         self,
         ClientId client_id not None,
-        Venue venue: Optional[Venue],
+        Venue venue: Venue | None,
         OmsType oms_type,
         AccountType account_type,
-        Currency base_currency: Optional[Currency],
+        Currency base_currency: Currency | None,
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        dict config = None,
+        config: NautilusConfig | None = None,
     ):
         Condition.not_equal(oms_type, OmsType.UNSPECIFIED, "oms_type", "UNSPECIFIED")
-        if config is None:
-            config = {}
+
         super().__init__(
             clock=clock,
             logger=logger,
             component_id=client_id,
-            component_name=config.get("name", f"ExecClient-{client_id}"),
+            component_name=f"ExecClient-{client_id}",
             msgbus=msgbus,
             config=config,
         )

@@ -114,7 +114,7 @@ cdef class Actor(Component):
             clock=LiveClock(),  # Use placeholder live clock until registered
             logger=Logger(clock=LiveClock(), dummy=True),  # Use dummy logger until registered
             component_id=component_id,
-            config=config.dict(),
+            config=config,
         )
 
         self._warning_events: set[type] = set()

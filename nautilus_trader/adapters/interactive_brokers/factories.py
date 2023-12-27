@@ -292,5 +292,6 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             logger=logger,
             instrument_provider=provider,
             ibg_client_id=config.ibg_client_id,
+            config=config,
         )
         return exec_client

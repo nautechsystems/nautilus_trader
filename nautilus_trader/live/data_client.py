@@ -36,6 +36,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.client import DataClient
@@ -68,7 +69,7 @@ class LiveDataClient(DataClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
-    config : dict[str, object], optional
+    config : NautilusConfig, optional
         The configuration for the instance.
 
     Warnings
@@ -86,7 +87,7 @@ class LiveDataClient(DataClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        config: dict[str, Any] | None = None,
+        config: NautilusConfig | None = None,
     ) -> None:
         super().__init__(
             client_id=client_id,
@@ -284,7 +285,7 @@ class LiveMarketDataClient(MarketDataClient):
         The logger for the client.
     instrument_provider : InstrumentProvider
         The instrument provider for the client.
-    config : dict[str, object], optional
+    config : NautilusConfig, optional
         The configuration for the instance.
 
     Warnings
@@ -303,7 +304,7 @@ class LiveMarketDataClient(MarketDataClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: InstrumentProvider,
-        config: dict[str, Any] | None = None,
+        config: NautilusConfig | None = None,
     ) -> None:
         PyCondition.type(instrument_provider, InstrumentProvider, "instrument_provider")
 

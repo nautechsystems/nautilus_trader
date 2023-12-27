@@ -132,7 +132,7 @@ cdef class ExecutionEngine(Component):
             logger=logger,
             component_id=ComponentId("ExecEngine"),
             msgbus=msgbus,
-            config=config.dict(),
+            config=config,
         )
 
         self._cache: Cache = cache

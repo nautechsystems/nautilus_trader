@@ -126,7 +126,7 @@ cdef class DataEngine(Component):
             logger=logger,
             component_id=ComponentId("DataEngine"),
             msgbus=msgbus,
-            config=config.dict(),
+            config=config,
         )
 
         self._cache = cache
