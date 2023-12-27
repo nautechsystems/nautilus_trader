@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 import pandas as pd
 
@@ -112,7 +111,7 @@ cdef class RiskEngine(Component):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        config: Optional[RiskEngineConfig] = None,
+        config: RiskEngineConfig | None = None,
     ):
         if config is None:
             config = RiskEngineConfig()
@@ -122,7 +121,7 @@ cdef class RiskEngine(Component):
             logger=logger,
             component_id=ComponentId("RiskEngine"),
             msgbus=msgbus,
-            config=config.dict(),
+            config=config,
         )
 
         self._portfolio = portfolio
@@ -608,7 +607,7 @@ cdef class RiskEngine(Component):
 
         # Determine max notional
         cdef Money max_notional = None
-        max_notional_setting: Optional[Decimal] = self._max_notional_per_order.get(instrument.id)
+        max_notional_setting: Decimal | None = self._max_notional_per_order.get(instrument.id)
         if max_notional_setting:
             # TODO(cs): Improve efficiency of this
             max_notional = Money(float(max_notional_setting), instrument.quote_currency)

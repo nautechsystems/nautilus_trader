@@ -79,16 +79,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 # fmt: on
 
-# Check ibapi package versioning (skipping for now)
-# ibapi_package = "nautilus_ibapi"
-# ibapi_version_specified = get_package_version_from_toml(PYPROJECT_PATH, ibapi_package, True)
-# ibapi_version_installed = get_package_version_installed(ibapi_package)
-#
-# if ibapi_version_specified != ibapi_version_installed:
-#     raise RuntimeError(
-#         f"Expected `{ibapi_package}` version {ibapi_version_specified}, but found {ibapi_version_installed}",
-#     )
-
 
 class InteractiveBrokersClient(Component, EWrapper):
     """
@@ -112,7 +102,8 @@ class InteractiveBrokersClient(Component, EWrapper):
             component_id=ClientId(f"{IB_VENUE.value}-{client_id:03d}"),
             component_name=f"{type(self).__name__}-{client_id:03d}",
             msgbus=msgbus,
-            config={"name": f"{type(self).__name__}-{client_id:03d}", "client_id": client_id},
+            # TODO: Config needs to be fully formed earlier than this
+            # config={"name": f"{type(self).__name__}-{client_id:03d}", "client_id": client_id},
         )
         # Config
         self._loop = loop

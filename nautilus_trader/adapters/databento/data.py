@@ -110,7 +110,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             clock=clock,
             logger=logger,
             instrument_provider=instrument_provider,
-            config=config.dict(),
+            config=config,
         )
 
         # Configuration

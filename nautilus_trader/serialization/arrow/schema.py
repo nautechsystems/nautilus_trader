@@ -106,7 +106,7 @@ NAUTILUS_ARROW_SCHEMA = {
             "component_id": pa.dictionary(pa.int16(), pa.string()),
             "component_type": pa.dictionary(pa.int8(), pa.string()),
             "state": pa.string(),
-            "config": pa.string(),
+            "config": pa.binary(),
             "event_id": pa.string(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),

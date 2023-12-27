@@ -17,7 +17,7 @@
 This module provides a data client for backtesting.
 """
 
-from typing import Optional
+from nautilus_trader.config.common import NautilusConfig
 
 from cpython.datetime cimport datetime
 
@@ -54,7 +54,7 @@ cdef class BacktestDataClient(DataClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
-    config : dict[str, object], optional
+    config : NautilusConfig, optional
         The configuration for the instance.
     """
 
@@ -65,7 +65,7 @@ cdef class BacktestDataClient(DataClient):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        dict config = None,
+        config: NautilusConfig | None = None,
     ):
         super().__init__(
             client_id=client_id,

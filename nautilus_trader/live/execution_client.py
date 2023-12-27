@@ -24,7 +24,6 @@ from asyncio import Task
 from collections.abc import Callable
 from collections.abc import Coroutine
 from datetime import timedelta
-from typing import Any
 
 import pandas as pd
 
@@ -34,6 +33,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.client import ExecutionClient
@@ -84,7 +84,7 @@ class LiveExecutionClient(ExecutionClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
-    config : dict[str, object], optional
+    config : NautilusConfig, optional
         The configuration for the instance.
 
     Raises
@@ -111,7 +111,7 @@ class LiveExecutionClient(ExecutionClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        config: dict[str, Any] | None = None,
+        config: NautilusConfig | None = None,
     ) -> None:
         PyCondition.type(instrument_provider, InstrumentProvider, "instrument_provider")
 

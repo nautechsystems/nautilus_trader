@@ -3,13 +3,13 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added `NautilusConfig.json_primitives` to convert object to Python dictionary with JSON primitive values
 
 ### Breaking Changes
-None
+- Changed `ComponentStateChanged` Arrow schema for `config` from `string` to `binary`
 
 ### Fixes
-None
+- Fixed handling of configuration objects to work with `StreamingFeatherWriter`
 
 ---
 

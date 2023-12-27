@@ -13,8 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
-
+from nautilus_trader.config.common import NautilusConfig
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
@@ -51,7 +50,7 @@ cdef class DataClient(Component):
         The logger for the client.
     venue : Venue, optional
         The client venue. If multi-venue then can be ``None``.
-    config : dict[str, object], optional
+    config : NautilusConfig, optional
         The configuration for the instance.
 
     Warnings
@@ -66,16 +65,14 @@ cdef class DataClient(Component):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        Venue venue: Optional[Venue] = None,
-        dict config = None,
+        Venue venue: Venue | None = None,
+        config: NautilusConfig | None = None,
     ):
-        if config is None:
-            config = {}
         super().__init__(
             clock=clock,
             logger=logger,
             component_id=client_id,
-            component_name=config.get("name", f"DataClient-{client_id}"),
+            component_name=f"DataClient-{client_id}",
             msgbus=msgbus,
             config=config,
         )
@@ -221,7 +218,7 @@ cdef class MarketDataClient(DataClient):
         The logger for the client.
     venue : Venue, optional
         The client venue. If multi-venue then can be ``None``.
-    config : dict[str, object], optional
+    config : NautilusConfig, optional
         The configuration for the instance.
 
     Warnings
@@ -236,8 +233,8 @@ cdef class MarketDataClient(DataClient):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        Venue venue: Optional[Venue] = None,
-        dict config = None,
+        Venue venue: Venue | None = None,
+        config: NautilusConfig | None = None,
     ):
         super().__init__(
             client_id=client_id,
