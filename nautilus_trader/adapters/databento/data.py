@@ -145,7 +145,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._buffer_mbo_subscriptions_task = self.create_task(self._buffer_mbo_subscriptions())
 
         self._log.info("Initializing instruments...")
-        assert self._instrument_provider is not None  #  TODO: type checking
 
         coros: list[Coroutine] = []
         for dataset, instrument_ids in self._instrument_ids.items():
@@ -233,8 +232,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._log.info(f"Started {dataset} live feed.", LogColor.BLUE)
 
     def _send_all_instruments_to_data_engine(self) -> None:
-        assert self._instrument_provider is not None  # type checking
-
         for instrument in self._instrument_provider.get_all().values():
             self._handle_data(instrument)
 
