@@ -26,15 +26,15 @@ def test_start(ib_client):
     ib_client._start()
 
     # Assert
-    assert ib_client.is_ready.is_set()
+    assert ib_client._is_ready.is_set()
 
 
 @pytest.mark.asyncio
 async def test_stop(ib_client):
     # Arrange
     ib_client._watch_dog_task = MagicMock()
-    ib_client.tws_incoming_msg_reader_task = MagicMock()
-    ib_client.internal_msg_queue_task = MagicMock()
+    ib_client._tws_incoming_msg_reader_task = MagicMock()
+    ib_client._internal_msg_queue_task = MagicMock()
     ib_client._eclient.disconnect = MagicMock()
 
     # Act
@@ -42,10 +42,10 @@ async def test_stop(ib_client):
 
     # Assert
     assert ib_client._watch_dog_task.cancel.called
-    assert ib_client.tws_incoming_msg_reader_task.cancel.called
-    assert ib_client.internal_msg_queue_task.cancel.called
+    assert ib_client._tws_incoming_msg_reader_task.cancel.called
+    assert ib_client._internal_msg_queue_task.cancel.called
     assert ib_client._eclient.disconnect.called
-    assert not ib_client.is_ready.is_set()
+    assert not ib_client._is_ready.is_set()
 
 
 @pytest.mark.asyncio
@@ -69,7 +69,7 @@ def test_resume(ib_client):
     ib_client._resume()
 
     # Assert
-    assert ib_client.is_ready.is_set()
+    assert ib_client._is_ready.is_set()
     assert ib_client._connection_attempt_counter == 0
 
 
@@ -80,7 +80,7 @@ async def test_create_task(ib_client):
         return "completed"
 
     # Act
-    task = ib_client.create_task(sample_coro(), log_msg="sample task")
+    task = ib_client._create_task(sample_coro(), log_msg="sample task")
 
     # Assert
     assert not task.done()
@@ -98,8 +98,8 @@ def test_subscribe_event(ib_client):
     ib_client.subscribe_event("test_event", sample_handler)
 
     # Assert
-    assert "test_event" in ib_client.event_subscriptions
-    assert ib_client.event_subscriptions["test_event"] == sample_handler
+    assert "test_event" in ib_client._event_subscriptions
+    assert ib_client._event_subscriptions["test_event"] == sample_handler
 
 
 def test_unsubscribe_event(ib_client):
@@ -110,15 +110,15 @@ def test_unsubscribe_event(ib_client):
     ib_client.unsubscribe_event("test_event")
 
     # Assert
-    assert "test_event" not in ib_client.event_subscriptions.keys()
+    assert "test_event" not in ib_client._event_subscriptions.keys()
 
 
 def test_next_req_id(ib_client):
     # Arrange
-    first_id = ib_client.next_req_id()
+    first_id = ib_client._next_req_id()
 
     # Act
-    second_id = ib_client.next_req_id()
+    second_id = ib_client._next_req_id()
 
     # Assert
     assert first_id + 1 == second_id
@@ -127,17 +127,17 @@ def test_next_req_id(ib_client):
 @pytest.mark.asyncio
 async def test_is_running_async_ready(ib_client):
     # Arrange
-    ib_client.is_ready = MagicMock()
-    ib_client.is_ready.return_value = True
-    ib_client.is_set = MagicMock()
-    ib_client.is_set.return_value = True
+    ib_client._is_ready = MagicMock()
+    ib_client._is_ready.return_value = True
+    ib_client._is_set = MagicMock()
+    ib_client._is_set.return_value = True
 
     # Act
     await ib_client.is_running_async()
 
     # Assert
     # Assert wait was not called since is_ready is already set
-    ib_client.is_ready.wait.assert_not_called()
+    ib_client._is_ready.wait.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -153,7 +153,7 @@ async def test_run_tws_incoming_msg_reader(ib_client):
     with patch("ibapi.comm.read_msg") as mock_read_msg:
         mock_read_msg.side_effect = [(None, msg, b"") for msg in test_messages]
 
-        task = asyncio.create_task(ib_client.run_tws_incoming_msg_reader())
+        task = asyncio.create_task(ib_client._run_tws_incoming_msg_reader())
         await asyncio.sleep(0.1)
 
         # Assert

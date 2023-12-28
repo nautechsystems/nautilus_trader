@@ -195,15 +195,14 @@ class InteractiveBrokersClient(
             )
 
         # Cancel tasks
-        if self._watch_dog_task:
-            self._log.debug("Stopping the watch dog...")
-            self._watch_dog_task.cancel()
-        if self._tws_incoming_msg_reader_task:
-            self._log.debug("Stopping the TWS incoming message reader...")
-            self._tws_incoming_msg_reader_task.cancel()
-        if self._internal_msg_queue_task:
-            self._log.debug("Stopping the internal message queue...")
-            self._internal_msg_queue_task.cancel()
+        tasks = [
+            self._watch_dog_task,
+            self._tws_incoming_msg_reader_task,
+            self._internal_msg_queue_task,
+        ]
+        for task in tasks:
+            if task:
+                task.cancel()
 
         self._eclient.disconnect()
         self._is_ready.clear()

@@ -12,10 +12,10 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 def test_accounts(ib_client):
     # Arrange
     ids = {"DU1234567", "DU7654321"}
-    ib_client.account_manager.account_ids = ids
+    ib_client._account_ids = ids
 
     # Act
-    result = ib_client.account_manager.accounts()
+    result = ib_client.accounts()
 
     # Assert
     assert isinstance(result, set)
@@ -27,17 +27,17 @@ def test_subscribe_account_summary(ib_client):
     ib_client._eclient.reqAccountSummary = MagicMock()
 
     # Act
-    ib_client.account_manager.subscribe_account_summary()
+    ib_client.subscribe_account_summary()
 
     # Assert
-    assert ib_client.subscriptions.get(name="accountSummary") is not None
+    assert ib_client._subscriptions.get(name="accountSummary") is not None
     ib_client._eclient.reqAccountSummary.assert_called_once()
 
 
 def test_unsubscribe_account_summary(ib_client):
     # Arrange
     ib_client._eclient.cancelAccountSummary = MagicMock()
-    ib_client.subscriptions.add(
+    ib_client._subscriptions.add(
         req_id=1,
         name="accountSummary",
         handle=MagicMock(),
@@ -45,15 +45,15 @@ def test_unsubscribe_account_summary(ib_client):
     )
 
     # Act
-    ib_client.account_manager.unsubscribe_account_summary("DU1234567")
+    ib_client.unsubscribe_account_summary("DU1234567")
 
     # Assert
-    assert ib_client.subscriptions.get(req_id=1) is None
+    assert ib_client._subscriptions.get(req_id=1) is None
     ib_client._eclient.cancelAccountSummary.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_get_positions(ib_client):
+async def test_get_positions_simulates_two_positions(ib_client):
     # Arrange
     ib_client._eclient.reqPositions = MagicMock()
     position_1 = IBPosition(
@@ -63,7 +63,7 @@ async def test_get_positions(ib_client):
         10.0,
     )
     position_2 = IBPosition(
-        "DU1234567",
+        "DU7654321",
         IBTestDataStubs.contract(secType="STK", symbol="SPY", exchange="ARCA"),
         Decimal(10),
         20.0,
@@ -72,9 +72,15 @@ async def test_get_positions(ib_client):
     ib_client.await_request = AsyncMock()
     ib_client.await_request.return_value = positions_open
 
+    # Mock _await_request method
+    ib_client._await_request = AsyncMock()
+    ib_client._await_request.return_value = positions_open
+
     # Act
-    result = await ib_client.account_manager.get_positions("DU1234567")
+    result_1 = await ib_client.get_positions("DU1234567")
+    result_2 = await ib_client.get_positions("DU7654321")
 
     # Assert
-    assert Counter(result) == Counter(positions_open)
-    ib_client._eclient.reqPositions.assert_called_once()
+    assert Counter(result_1) == Counter([position_1])
+    assert Counter(result_2) == Counter([position_2])
+    ib_client._eclient.reqPositions.assert_called()

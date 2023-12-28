@@ -73,9 +73,9 @@ def exec_client_config():
 
 
 @pytest.fixture()
-def ib_client(data_client_config, loop, msgbus, cache, clock, logger):
+def ib_client(data_client_config, event_loop, msgbus, cache, clock, logger):
     client = InteractiveBrokersClient(
-        loop=loop,
+        loop=event_loop,
         msgbus=msgbus,
         cache=cache,
         clock=clock,
@@ -84,9 +84,7 @@ def ib_client(data_client_config, loop, msgbus, cache, clock, logger):
         port=data_client_config.ibg_port,
         client_id=data_client_config.ibg_client_id,
     )
-    client.start()
     yield client
-    client._stop()
 
 
 @pytest.fixture()
