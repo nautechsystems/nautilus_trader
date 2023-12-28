@@ -332,7 +332,7 @@ cdef class SyntheticInstrument(Data):
         return SyntheticInstrument(
             symbol=Symbol(values["symbol"]),
             price_precision=values["price_precision"],
-            components=[InstrumentId.from_str_c(c) for c in msgspec.json.decode(values["components"])],
+            components=[InstrumentId.from_str_c(c) for c in values["components"]],
             formula=values["formula"],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -345,7 +345,7 @@ cdef class SyntheticInstrument(Data):
             "type": "SyntheticInstrument",
             "symbol": obj.id.symbol.value,
             "price_precision": obj.price_precision,
-            "components": msgspec.json.encode([c.value for c in obj.components]),
+            "components": [c.value for c in obj.components],
             "formula": obj.formula,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,

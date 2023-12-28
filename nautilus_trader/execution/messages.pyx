@@ -15,8 +15,6 @@
 
 from typing import Any
 
-import msgspec
-
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -152,7 +150,7 @@ cdef class SubmitOrder(TradingCommand):
         Condition.not_none(values, "values")
         cdef str c = values["client_id"]
         cdef str p = values["position_id"]
-        cdef Order order = OrderUnpacker.unpack_c(msgspec.json.decode(values["order"])),
+        cdef Order order = OrderUnpacker.unpack_c(values["order"]),
         return SubmitOrder(
             client_id=ClientId(c) if c is not None else None,
             trader_id=TraderId(values["trader_id"]),
@@ -171,7 +169,7 @@ cdef class SubmitOrder(TradingCommand):
             "client_id": obj.client_id.to_str() if obj.client_id is not None else None,
             "trader_id": obj.trader_id.to_str(),
             "strategy_id": obj.strategy_id.to_str(),
-            "order": msgspec.json.encode(OrderInitialized.to_dict_c(obj.order.init_event_c())),
+            "order": OrderInitialized.to_dict_c(obj.order.init_event_c()),
             "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
@@ -288,7 +286,7 @@ cdef class SubmitOrderList(TradingCommand):
         cdef str p = values["position_id"]
         cdef OrderList order_list = OrderList(
             order_list_id=OrderListId(values["order_list_id"]),
-            orders=[OrderUnpacker.unpack_c(o_dict) for o_dict in msgspec.json.decode(values["orders"])],
+            orders=[OrderUnpacker.unpack_c(o_dict) for o_dict in values["orders"]],
         )
         return SubmitOrderList(
             client_id=ClientId(c) if c is not None else None,
@@ -310,7 +308,7 @@ cdef class SubmitOrderList(TradingCommand):
             "trader_id": obj.trader_id.to_str(),
             "strategy_id": obj.strategy_id.to_str(),
             "order_list_id": str(obj.order_list.id),
-            "orders": msgspec.json.encode([OrderInitialized.to_dict_c(o.init_event_c()) for o in obj.order_list.orders]),
+            "orders": [OrderInitialized.to_dict_c(o.init_event_c()) for o in obj.order_list.orders],
             "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,

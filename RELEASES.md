@@ -7,6 +7,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Changed `ComponentStateChanged` Arrow schema for `config` from `string` to `binary`
+- Changed `OrderInitialized` Arrow schema for `options` from `string` to `binary`
 
 ### Fixes
 - Fixed handling of configuration objects to work with `StreamingFeatherWriter`
