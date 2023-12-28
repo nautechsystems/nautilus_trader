@@ -12,6 +12,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed handling of configuration objects to work with `StreamingFeatherWriter`
+- Fixed `BinanceSpotInstrumentProvider` fee loading key error for partial instruments load, thanks for reporting @doublier1
 
 ---
 
