@@ -73,7 +73,7 @@ class BinanceHttpClient:
         self._secret: str = secret
         self._headers: dict[str, Any] = {
             "Content-Type": "application/json",
-            "User-Agent": "nautilus-trader/" + nautilus_trader.__version__,
+            "User-Agent": nautilus_trader.USER_AGENT,
             "X-MBX-APIKEY": key,
         }
         self._client = HttpClient(
