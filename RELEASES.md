@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `NautilusConfig.json_primitives` to convert object to Python dictionary with JSON primitive values
+- Improved Interactive Brokers adapter raising docker `RuntimeError` only when needed (not when using TWS), thanks @rsmb7z
 
 ### Breaking Changes
 - Changed `ComponentStateChanged` Arrow schema for `config` from `string` to `binary`
