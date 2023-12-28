@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from typing import Any
-from typing import Optional
 
 import msgspec
 
@@ -63,7 +62,7 @@ cdef class TradingCommand(Command):
 
     def __init__(
         self,
-        ClientId client_id: Optional[ClientId],
+        ClientId client_id: ClientId | None,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
@@ -111,7 +110,7 @@ cdef class SubmitOrder(TradingCommand):
         Order order not None,
         UUID4 command_id not None,
         uint64_t ts_init,
-        PositionId position_id: Optional[PositionId] = None,
+        PositionId position_id: PositionId | None = None,
         ClientId client_id = None,
     ):
         super().__init__(
@@ -245,7 +244,7 @@ cdef class SubmitOrderList(TradingCommand):
         OrderList order_list not None,
         UUID4 command_id not None,
         uint64_t ts_init,
-        PositionId position_id: Optional[PositionId] = None,
+        PositionId position_id: PositionId | None = None,
         ClientId client_id = None,
     ):
         super().__init__(
@@ -387,10 +386,10 @@ cdef class ModifyOrder(TradingCommand):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        Quantity quantity: Optional[Quantity],
-        Price price: Optional[Price],
-        Price trigger_price: Optional[Price],
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        Quantity quantity: Quantity | None,
+        Price price: Price | None,
+        Price trigger_price: Price | None,
         UUID4 command_id not None,
         uint64_t ts_init,
         ClientId client_id = None,
@@ -541,7 +540,7 @@ cdef class CancelOrder(TradingCommand):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
+        VenueOrderId venue_order_id: VenueOrderId | None,
         UUID4 command_id not None,
         uint64_t ts_init,
         ClientId client_id = None,
@@ -921,7 +920,7 @@ cdef class QueryOrder(TradingCommand):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
+        VenueOrderId venue_order_id: VenueOrderId | None,
         UUID4 command_id not None,
         uint64_t ts_init,
         ClientId client_id = None,

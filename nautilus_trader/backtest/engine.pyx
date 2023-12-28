@@ -15,7 +15,6 @@
 
 import pickle
 from decimal import Decimal
-from typing import Optional
 from typing import Union
 
 import pandas as pd
@@ -107,7 +106,7 @@ cdef class BacktestEngine:
         If `config` is not of type `BacktestEngineConfig`.
     """
 
-    def __init__(self, config: Optional[BacktestEngineConfig] = None) -> None:
+    def __init__(self, config: BacktestEngineConfig | None = None) -> None:
         if config is None:
             config = BacktestEngineConfig()
         Condition.type(config, BacktestEngineConfig, "config")
@@ -119,8 +118,8 @@ cdef class BacktestEngine:
         self._accumulator = <TimeEventAccumulatorAPI>time_event_accumulator_new()
 
         # Run IDs
-        self._run_config_id: Optional[str] = None
-        self._run_id: Optional[UUID4] = None
+        self._run_config_id: str | None = None
+        self._run_id: UUID4 | None = None
 
         # Venues and data
         self._venues: dict[Venue, SimulatedExchange] = {}
@@ -130,10 +129,10 @@ cdef class BacktestEngine:
         self._iteration: uint64_t = 0
 
         # Timing
-        self._run_started: Optional[datetime] = None
-        self._run_finished: Optional[datetime] = None
-        self._backtest_start: Optional[datetime] = None
-        self._backtest_end: Optional[datetime] = None
+        self._run_started: datetime | None = None
+        self._run_finished: datetime | None = None
+        self._backtest_start: datetime | None = None
+        self._backtest_end: datetime | None = None
 
         # Build core system kernel
         self._kernel = NautilusKernel(name=type(self).__name__, config=config)
@@ -237,7 +236,7 @@ cdef class BacktestEngine:
         return self._iteration
 
     @property
-    def run_started(self) -> Optional[datetime]:
+    def run_started(self) -> datetime | None:
         """
         Return when the last backtest run started (if run).
 
@@ -249,7 +248,7 @@ cdef class BacktestEngine:
         return self._run_started
 
     @property
-    def run_finished(self) -> Optional[datetime]:
+    def run_finished(self) -> datetime | None:
         """
         Return when the last backtest run finished (if run).
 
@@ -261,7 +260,7 @@ cdef class BacktestEngine:
         return self._run_finished
 
     @property
-    def backtest_start(self) -> Optional[datetime]:
+    def backtest_start(self) -> datetime | None:
         """
         Return the last backtest run time range start (if run).
 
@@ -273,7 +272,7 @@ cdef class BacktestEngine:
         return self._backtest_start
 
     @property
-    def backtest_end(self) -> Optional[datetime]:
+    def backtest_end(self) -> datetime | None:
         """
         Return the last backtest run time range end (if run).
 
@@ -349,12 +348,12 @@ cdef class BacktestEngine:
         oms_type: OmsType,
         account_type: AccountType,
         starting_balances: list[Money],
-        base_currency: Optional[Currency] = None,
-        default_leverage: Optional[Decimal] = None,
-        leverages: Optional[dict[InstrumentId, Decimal]] = None,
-        modules: Optional[list[SimulationModule]] = None,
-        fill_model: Optional[FillModel] = None,
-        latency_model: Optional[LatencyModel] = None,
+        base_currency: Currency | None = None,
+        default_leverage: Decimal | None = None,
+        leverages: dict[InstrumentId, Decimal] | None = None,
+        modules: list[SimulationModule] | None = None,
+        fill_model: FillModel | None = None,
+        latency_model: LatencyModel | None = None,
         book_type: BookType = BookType.L1_MBP,
         routing: bool = False,
         frozen_account: bool = False,
@@ -867,9 +866,9 @@ cdef class BacktestEngine:
 
     def run(
         self,
-        start: Optional[Union[datetime, str, int]] = None,
-        end: Optional[Union[datetime, str, int]] = None,
-        run_config_id: Optional[str] = None,
+        start: datetime | str | int | None = None,
+        end: datetime | str | int | None = None,
+        run_config_id: str | None = None,
         streaming: bool = False,
     ) -> None:
         """
@@ -889,10 +888,10 @@ cdef class BacktestEngine:
 
         Parameters
         ----------
-        start : Union[datetime, str, int], optional
+        start : datetime or str or int, optional
             The start datetime (UTC) for the backtest run.
             If ``None`` engine runs from the start of the data.
-        end : Union[datetime, str, int], optional
+        end : datetime or str or int, optional
             The end datetime (UTC) for the backtest run.
             If ``None`` engine runs to the end of the data.
         run_config_id : str, optional

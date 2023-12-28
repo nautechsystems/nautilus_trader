@@ -19,7 +19,6 @@ import time
 import uuid
 from collections import deque
 from decimal import Decimal
-from typing import Optional
 
 from nautilus_trader.config import CacheConfig
 
@@ -95,10 +94,10 @@ cdef class Cache(CacheFacade):
     def __init__(
         self,
         Logger logger not None,
-        CacheDatabaseFacade database: Optional[CacheDatabaseFacade] = None,
+        CacheDatabaseFacade database: CacheDatabaseFacade | None = None,
         bint snapshot_orders: bool = False,
         bint snapshot_positions: bool = False,
-        config: Optional[CacheConfig] = None,
+        config: CacheConfig | None = None,
     ):
         if config is None:
             config = CacheConfig()

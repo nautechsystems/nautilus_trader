@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 import msgspec
 
@@ -136,7 +135,7 @@ cdef class TrailingStopMarketOrder(Order):
         ClientOrderId client_order_id not None,
         OrderSide order_side,
         Quantity quantity not None,
-        Price trigger_price: Optional[Price],
+        Price trigger_price: Price | None,
         TriggerType trigger_type,
         trailing_offset: Decimal,
         TrailingOffsetType trailing_offset_type,
