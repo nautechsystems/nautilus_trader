@@ -22,6 +22,9 @@ from typing import ClassVar, Literal
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersGatewayConfig
 
 
+docker = None
+
+
 class ContainerStatus(IntEnum):
     NO_CONTAINER = 1
     CONTAINER_CREATED = 2
@@ -80,7 +83,9 @@ class InteractiveBrokersGateway:
         try:
             import docker
         except ImportError as e:
-            raise RuntimeError("Docker required for Gateway, install via `pip install docker`") from e
+            raise RuntimeError(
+                "Docker required for Gateway, install via `pip install docker`",
+            ) from e
 
         self._docker = docker.from_env()
         self._container = None
