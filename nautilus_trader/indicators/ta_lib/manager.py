@@ -60,7 +60,7 @@ class TAFunctionWrapper:
     ----------
     - name (str): The name of the technical indicator as defined in TA-Lib.
       For more information, visit https://ta-lib.github.io/ta-lib-python/
-    - params (frozenset[tuple[str, Union[int, float]]]): A set of tuples representing
+    - params (frozenset[tuple[str, int | float]]): A set of tuples representing
       the parameters for the technical indicator. Each tuple contains the parameter name
       and its value (either int or float). If unspecified, default parameters set by
       TA-Lib are used.

@@ -15,7 +15,6 @@
 
 import pickle
 from decimal import Decimal
-from typing import Union
 
 import pandas as pd
 
@@ -980,9 +979,9 @@ cdef class BacktestEngine:
 
     def _run(
         self,
-        start: Optional[Union[datetime, str, int]] = None,
-        end: Optional[Union[datetime, str, int]] = None,
-        run_config_id: Optional[str] = None,
+        start: datetime | str | int | None = None,
+        end: datetime | str | int | None = None,
+        run_config_id: str | None = None,
     ):
         cdef uint64_t start_ns
         cdef uint64_t end_ns
@@ -1295,7 +1294,7 @@ cdef class BacktestEngine:
             self._log.info(f"{color}=================================================================")
             self._log.info(f"{repr(account)}")
             self._log.info(f"{color}-----------------------------------------------------------------")
-            unrealized_pnls: Optional[dict[Currency, Money]] = None
+            unrealized_pnls: dict[Currency, Money] | None = None
             if venue.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:

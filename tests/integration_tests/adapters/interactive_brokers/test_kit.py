@@ -398,7 +398,7 @@ class IBTestExecStubs:
     # def trade_pre_submit(
     #     contract=None,
     #     order: IBOrder = None,
-    #     client_order_id: Optional[ClientOrderId] = None,
+    #     client_order_id: ClientOrderId | None = None,
     # ) -> Trade:
     #     contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
     #     order = order or IBTestExecStubs.create_order(client_order_id=client_order_id)
@@ -457,7 +457,7 @@ class IBTestExecStubs:
     # def trade_submitted(
     #     contract=None,
     #     order: IBOrder = None,
-    #     client_order_id: Optional[ClientOrderId] = None,
+    #     client_order_id: ClientOrderId | None = None,
     # ) -> Trade:
     #     contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
     #     order = order or IBTestExecStubs.create_order(client_order_id=client_order_id)

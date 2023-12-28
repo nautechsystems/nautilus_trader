@@ -715,7 +715,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        PositionId venue_position_id: Optional[PositionId],
+        PositionId venue_position_id: PositionId | None,
         TradeId trade_id,
         OrderSide order_side,
         OrderType order_type,

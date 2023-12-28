@@ -100,9 +100,9 @@ cdef class OrderManager:
         Cache cache not None,
         str component_name not None,
         bint active_local,
-        submit_order_handler: Optional[Callable[[SubmitOrder], None]] = None,
-        cancel_order_handler: Optional[Callable[[Order], None]] = None,
-        modify_order_handler: Optional[Callable[[Order, Quantity], None]] = None,
+        submit_order_handler: Callable[[SubmitOrder], None] = None,
+        cancel_order_handler: Callable[[Order], None] = None,
+        modify_order_handler: Callable[[Order, Quantity], None] = None,
         bint debug = False,
     ):
         Condition.valid_string(component_name, "component_name")

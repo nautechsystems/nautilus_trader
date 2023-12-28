@@ -16,7 +16,6 @@
 """Defines fundamental value objects for the trading domain."""
 
 import decimal
-from typing import Union
 
 import cython
 
@@ -148,62 +147,62 @@ cdef class Quantity:
     def __ge__(self, other) -> bool:
         return Quantity._compare(self, other, Py_GE)
 
-    def __add__(a, b) -> Union[decimal.Decimal, float]:
+    def __add__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) + float(b)
         return Quantity._extract_decimal(a) + Quantity._extract_decimal(b)
 
-    def __radd__(b, a) -> Union[decimal.Decimal, float]:
+    def __radd__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) + float(b)
         return Quantity._extract_decimal(a) + Quantity._extract_decimal(b)
 
-    def __sub__(a, b) -> Union[decimal.Decimal, float]:
+    def __sub__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) - float(b)
         return Quantity._extract_decimal(a) - Quantity._extract_decimal(b)
 
-    def __rsub__(b, a) -> Union[decimal.Decimal, float]:
+    def __rsub__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) - float(b)
         return Quantity._extract_decimal(a) - Quantity._extract_decimal(b)
 
-    def __mul__(a, b) -> Union[decimal.Decimal, float]:
+    def __mul__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) * float(b)
         return Quantity._extract_decimal(a) * Quantity._extract_decimal(b)
 
-    def __rmul__(b, a) -> Union[decimal.Decimal, float]:
+    def __rmul__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) * float(b)
         return Quantity._extract_decimal(a) * Quantity._extract_decimal(b)
 
-    def __truediv__(a, b) -> Union[decimal.Decimal, float]:
+    def __truediv__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) / float(b)
         return Quantity._extract_decimal(a) / Quantity._extract_decimal(b)
 
-    def __rtruediv__(b, a) -> Union[decimal.Decimal, float]:
+    def __rtruediv__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) / float(b)
         return Quantity._extract_decimal(a) / Quantity._extract_decimal(b)
 
-    def __floordiv__(a, b) -> Union[decimal.Decimal, float]:
+    def __floordiv__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) // float(b)
         return Quantity._extract_decimal(a) // Quantity._extract_decimal(b)
 
-    def __rfloordiv__(b, a) -> Union[decimal.Decimal, float]:
+    def __rfloordiv__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) // float(b)
         return Quantity._extract_decimal(a) // Quantity._extract_decimal(b)
 
-    def __mod__(a, b) -> Union[decimal.Decimal, float]:
+    def __mod__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
         return Quantity._extract_decimal(a) % Quantity._extract_decimal(b)
 
-    def __rmod__(b, a) -> Union[decimal.Decimal, float]:
+    def __rmod__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
         return Quantity._extract_decimal(a) * Quantity._extract_decimal(b)
@@ -590,62 +589,62 @@ cdef class Price:
     def __ge__(self, other) -> bool:
         return Price._compare(self, other, Py_GE)
 
-    def __add__(a, b) -> Union[decimal.Decimal, float]:
+    def __add__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) + float(b)
         return Price._extract_decimal(a) + Price._extract_decimal(b)
 
-    def __radd__(b, a) -> Union[decimal.Decimal, float]:
+    def __radd__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) + float(b)
         return Price._extract_decimal(a) + Price._extract_decimal(b)
 
-    def __sub__(a, b) -> Union[decimal.Decimal, float]:
+    def __sub__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) - float(b)
         return Price._extract_decimal(a) - Price._extract_decimal(b)
 
-    def __rsub__(b, a) -> Union[decimal.Decimal, float]:
+    def __rsub__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) - float(b)
         return Price._extract_decimal(a) - Price._extract_decimal(b)
 
-    def __mul__(a, b) -> Union[decimal.Decimal, float]:
+    def __mul__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) * float(b)
         return Price._extract_decimal(a) * Price._extract_decimal(b)
 
-    def __rmul__(b, a) -> Union[decimal.Decimal, float]:
+    def __rmul__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) * float(b)
         return Price._extract_decimal(a) * Price._extract_decimal(b)
 
-    def __truediv__(a, b) -> Union[decimal.Decimal, float]:
+    def __truediv__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) / float(b)
         return Price._extract_decimal(a) / Price._extract_decimal(b)
 
-    def __rtruediv__(b, a) -> Union[decimal.Decimal, float]:
+    def __rtruediv__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) / float(b)
         return Price._extract_decimal(a) / Price._extract_decimal(b)
 
-    def __floordiv__(a, b) -> Union[decimal.Decimal, float]:
+    def __floordiv__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) // float(b)
         return Price._extract_decimal(a) // Price._extract_decimal(b)
 
-    def __rfloordiv__(b, a) -> Union[decimal.Decimal, float]:
+    def __rfloordiv__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) // float(b)
         return Price._extract_decimal(a) // Price._extract_decimal(b)
 
-    def __mod__(a, b) -> Union[decimal.Decimal, float]:
+    def __mod__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
         return Price._extract_decimal(a) % Price._extract_decimal(b)
 
-    def __rmod__(b, a) -> Union[decimal.Decimal, float]:
+    def __rmod__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
         return Price._extract_decimal(a) * Price._extract_decimal(b)
@@ -970,62 +969,62 @@ cdef class Money:
         Condition.true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
         return self._mem.raw >= other._mem.raw
 
-    def __add__(a, b) -> Union[decimal.Decimal, float]:
+    def __add__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) + float(b)
         return Money._extract_decimal(a) + Money._extract_decimal(b)
 
-    def __radd__(b, a) -> Union[decimal.Decimal, float]:
+    def __radd__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) + float(b)
         return Money._extract_decimal(a) + Money._extract_decimal(b)
 
-    def __sub__(a, b) -> Union[decimal.Decimal, float]:
+    def __sub__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) - float(b)
         return Money._extract_decimal(a) - Money._extract_decimal(b)
 
-    def __rsub__(b, a) -> Union[decimal.Decimal, float]:
+    def __rsub__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) - float(b)
         return Money._extract_decimal(a) - Money._extract_decimal(b)
 
-    def __mul__(a, b) -> Union[decimal.Decimal, float]:
+    def __mul__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) * float(b)
         return Money._extract_decimal(a) * Money._extract_decimal(b)
 
-    def __rmul__(b, a) -> Union[decimal.Decimal, float]:
+    def __rmul__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) * float(b)
         return Money._extract_decimal(a) * Money._extract_decimal(b)
 
-    def __truediv__(a, b) -> Union[decimal.Decimal, float]:
+    def __truediv__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) / float(b)
         return Money._extract_decimal(a) / Money._extract_decimal(b)
 
-    def __rtruediv__(b, a) -> Union[decimal.Decimal, float]:
+    def __rtruediv__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) / float(b)
         return Money._extract_decimal(a) / Money._extract_decimal(b)
 
-    def __floordiv__(a, b) -> Union[decimal.Decimal, float]:
+    def __floordiv__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) // float(b)
         return Money._extract_decimal(a) // Money._extract_decimal(b)
 
-    def __rfloordiv__(b, a) -> Union[decimal.Decimal, float]:
+    def __rfloordiv__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) // float(b)
         return Money._extract_decimal(a) // Money._extract_decimal(b)
 
-    def __mod__(a, b) -> Union[decimal.Decimal, float]:
+    def __mod__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
         return Money._extract_decimal(a) % Money._extract_decimal(b)
 
-    def __rmod__(b, a) -> Union[decimal.Decimal, float]:
+    def __rmod__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
         return Money._extract_decimal(a) * Money._extract_decimal(b)
