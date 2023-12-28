@@ -13,14 +13,28 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
+
+try:
+    import talib
+    from talib import abstract
+except ImportError as e:
+    error_message = (
+        "Failed to import TA-Lib. This module requires TA-Lib to be installed. "
+        "Please visit https://github.com/TA-Lib/ta-lib-python for installation instructions. "
+        "If TA-Lib is already installed, ensure it is correctly added to your Python environment."
+    )
+    raise ImportError(error_message) from e
+
 import os
 from collections import deque
+from typing import Any
 
 import numpy as np
 import pandas as pd
-import talib
-from talib import abstract
 
+from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
@@ -43,27 +57,21 @@ class TAFunctionWrapper:
     of various technical indicators. It stores the name of the indicator, its parameters,
     and the output names generated based on these parameters.
 
-    Attributes:
+    Attributes
     ----------
     - name (str): The name of the technical indicator as defined in TA-Lib.
       For more information, visit https://ta-lib.github.io/ta-lib-python/
-    - params (frozenset[tuple[str, Union[int, float]]]): A set of tuples representing
+    - params (frozenset[tuple[str, int | float]]): A set of tuples representing
       the parameters for the technical indicator. Each tuple contains the parameter name
       and its value (either int or float). If unspecified, default parameters set by
       TA-Lib are used.
     - output_names (list[str]): A list of formatted output names for the technical indicator,
       generated based on the `name` and `params`.
 
-    Methods:
-    -------
-    - __init__(self, name: str, params: dict[str, Union[int, float]] = {}): Initializes the
-      TAFunctionWrapper instance with a given name and optional parameters for the TA-Lib
-      function.
-
-    Note:
-    ----
-    - The class utilizes TA-Lib, a popular technical analysis library, to handle the underlying
-      functionality related to technical indicators.
+    Notes
+    -----
+    The class utilizes TA-Lib, a popular technical analysis library, to handle the underlying
+    functionality related to technical indicators.
 
     Example:
     -------
@@ -76,17 +84,17 @@ class TAFunctionWrapper:
 
     """
 
-    def __init__(self, name: str, params: dict[str, int | float] = {}):
+    def __init__(self, name: str, params: dict[str, int | float] | None = None) -> None:
         self.name = name
         self.fn = abstract.Function(name)
-        self.fn.set_parameters(params)
+        self.fn.set_parameters(params or {})
         self.output_names = self._get_outputs_names(self.name, self.fn)
 
     def __repr__(self):
         return f"TAFunctionWrapper({','.join(map(str, self.output_names))})"
 
     @staticmethod
-    def _get_outputs_names(name: str, fn: abstract.Function):
+    def _get_outputs_names(name: str, fn: abstract.Function) -> list[str]:
         """
         Generate a list of output names for a given TA-Lib function and its parameters.
 
@@ -94,19 +102,19 @@ class TAFunctionWrapper:
         parameter values to the function's name. Each output name is also modified based on
         a predefined output_suffix_map. The generated names are converted to uppercase.
 
-        Args
-        ----
+        Parameters
+        ----------
         name : str
             The name of the TA-Lib function. This is used to identify the specific technical analysis
             function being used or referred to.
-
         fn : abstract.Function
             The TA-Lib function object. This object includes the function's parameters and output names,
             defining the behavior and output format of the function.
 
         Returns
         -------
-        - list[str]: A list of formatted output names for the given function.
+        list[str]
+            A list of formatted output names for the given function.
 
         """
         # Generate the suffix from the function's parameters
@@ -122,7 +130,7 @@ class TAFunctionWrapper:
         return output_names
 
     @classmethod
-    def from_str(cls, value: str):
+    def from_str(cls, value: str) -> Any:
         """
         Construct an instance of the class based on a string representation of a TA-Lib
         function.
@@ -132,8 +140,8 @@ class TAFunctionWrapper:
         string matches one of the output names of the configured function, an instance of the class
         is returned. Otherwise, a ValueError is raised.
 
-        Args:
-        ----
+        Parameters
+        ----------
         value : str
             The string representation of the TA-Lib function, which includes the function name and
             any parameters. This string is used to identify and configure the specific TA-Lib function
@@ -141,14 +149,15 @@ class TAFunctionWrapper:
 
         Returns
         -------
-        - An instance of the class configured with the identified TA-Lib function and parameters.
+        An instance of the class configured with the identified TA-Lib function and parameters.
 
         Raises
         ------
-        - ValueError: If the string does not correspond to any output names of the configured function.
+        ValueError
+            If the string does not correspond to any output names of the configured function.
 
-        Note:
-        ----
+        Notes
+        -----
         - The method relies on `talib.get_functions()` to retrieve available TA-Lib functions.
         - It uses a regular expression `taf_params_re` to find parameter values within the string.
 
@@ -173,7 +182,7 @@ class TAFunctionWrapper:
             raise ValueError(f"{value=} not in {output_names=}")
 
     @classmethod
-    def from_list_of_str(cls, indicators: list[str]) -> tuple["TAFunctionWrapper", ...]:
+    def from_list_of_str(cls, indicators: list[str]) -> tuple[TAFunctionWrapper, ...]:
         """
         Create a tuple of TAFunctionWrapper instances from a list of indicator names.
 
@@ -181,17 +190,17 @@ class TAFunctionWrapper:
         `talib_indicator_manager_input_names` and creates TAFunctionWrapper instances for
         the remaining indicators.
 
-        Args:
-        ----
+        Parameters
+        ----------
         indicators : list[str]
             A list of string names representing technical indicators. These names correspond to
             specific technical indicators that are to be utilized or analyzed.
 
-        Returns:
+        Returns
         -------
-        - tuple[TAFunctionWrapper, ...]: A tuple of TAFunctionWrapper instances created
-          from the given list of indicator names, excluding any names present in
-          `talib_indicator_manager_input_names`.
+        tuple[TAFunctionWrapper, ...]
+            A tuple of TAFunctionWrapper instances created from the given list of indicator
+            names, excluding any names present in `talib_indicator_manager_input_names`.
 
         """
         return tuple(
@@ -208,12 +217,25 @@ class TALibIndicatorManager(Indicator):
     Parameters
     ----------
     bar_type : BarType
-        Bar Type for the instance data.
+        The bar type for the instance data.
+    period : int, default -1
+        The period for the indicator.
+    buffer_size : int, optional
+        The buffer size for the indicator.
+    skip_uniform_price_bar : bool, default True
+        If uniform price bars should be skipped.
+    skip_zero_close_bar : bool, default True
+        If zero sized bars should be skipped.
+    clock : Clock, optional
+        The clock for the manager.
+    logger : Logger, optional
+        The logger for the manager.
 
     Raises
     ------
     ValueError
         If `indicators` is empty.
+    ValueError
         If `period` is not positive (> 0).
 
     """
@@ -223,17 +245,23 @@ class TALibIndicatorManager(Indicator):
         bar_type: BarType,
         period: int = 1,
         buffer_size: int | None = None,
-    ):
+        skip_uniform_price_bar: bool = True,
+        skip_zero_close_bar: bool = True,
+        clock: Clock | None = None,
+        logger: Logger | None = None,
+    ) -> None:
         super().__init__([])
 
         PyCondition().type(bar_type, BarType, "bar_type")
         PyCondition().positive_int(period, "period")
-        if buffer_size:
-            PyCondition().positive_int(period, "buffer_size")
+        if buffer_size is not None:
+            PyCondition().positive_int(buffer_size, "buffer_size")
 
         # Initialize variables
         self._bar_type = bar_type
         self._period = period
+        self._skip_uniform_price_bar = skip_uniform_price_bar
+        self._skip_zero_close_bar = skip_zero_close_bar
         self._output_array: np.recarray | None = None
         self._last_ts_event: int = 0
         self._data_error_counter: int = 0
@@ -248,11 +276,16 @@ class TALibIndicatorManager(Indicator):
         self.output_names: tuple | None = None
 
         # Initialize the logger
-        clock = LiveClock()
-        logger = Logger(clock)
+        if clock is None:
+            clock = LiveClock()
+        if logger is None:
+            logger = Logger(clock)
         self._log = LoggerAdapter(component_name=repr(self), logger=logger)
 
-    def change_logger(self, logger: Logger):
+        # Initialize with empty indicators (acts as OHLCV placeholder in case no indicators are set)
+        self.set_indicators(())
+
+    def change_logger(self, logger: Logger) -> None:
         PyCondition().type(logger, Logger, "logger")
         self._log = LoggerAdapter(component_name=repr(self), logger=logger)
 
@@ -265,16 +298,12 @@ class TALibIndicatorManager(Indicator):
         the indicators, output names, stable period, input deque, and output data types
         for the current instance based on the provided indicators.
 
-        Args:
-        ----
+        Parameters
+        ----------
         indicators : tuple[TAFunctionWrapper, ...]
             A tuple of TAFunctionWrapper instances. Each TAFunctionWrapper in the tuple is expected
             to have an 'output_names' attribute and a 'fn' object with a 'lookback' attribute. These
             are used to configure and calculate the technical indicators.
-
-        Returns
-        -------
-        None
 
         The method performs the following steps:
         - Validates the type of each element in the 'indicators' tuple.
@@ -289,6 +318,10 @@ class TALibIndicatorManager(Indicator):
         info levels, respectively.
 
         """
+        if self.initialized:
+            self._log.info("Indicator already initialized. Skipping set_indicators.")
+            return
+
         self._log.debug(f"Setting indicators {indicators}")
         PyCondition().list_type(list(indicators), TAFunctionWrapper, "ta_functions")
 
@@ -300,13 +333,13 @@ class TALibIndicatorManager(Indicator):
             output_names.extend(indicator.output_names)
             lookback = max(lookback, indicator.fn.lookback)
 
-        self.output_names = tuple(output_names)
         self._stable_period = lookback + self._period
-        self._input_deque = deque(maxlen=self._stable_period)
+        self._input_deque = deque(maxlen=lookback + 1)
+        self.output_names = tuple(output_names)
 
         # Initialize the output dtypes
         self._output_dtypes = [
-            (col, np.dtype("uint64") if col == "ts_event" else np.dtype("float64"))
+            (col, np.dtype("uint64") if col in ["ts_event", "ts_init"] else np.dtype("float64"))
             for col in self.output_names
         ]
 
@@ -335,39 +368,34 @@ class TALibIndicatorManager(Indicator):
     def period(self) -> int:
         return self._period
 
-    def _calculate_ta(self, append: bool = True) -> None:
+    def _update_ta_outputs(self, append: bool = True) -> None:
         """
-        Calculate technical analysis indicators and update the output deque.
+        Update the output deque with calculated technical analysis indicators.
 
-        This private method computes the output values for technical analysis indicators
-        set in the instance. It first initializes a combined output array with the base
-        values (like 'open', 'high', 'low', 'close', 'volume', and 'ts_event') from the
-        most recent entry in the input deque. It then iterates through each indicator,
-        computes its output, and updates the combined output array accordingly.
-        Depending on the 'append' flag, the method either appends or updates the latest
-        entry in the output deque with the combined output.
+        This private method computes and updates the output values for technical
+        analysis indicators based on the latest data in the input deque. It initializes
+        a combined output array with base values (e.g., 'open', 'high', 'low', 'close',
+        'volume', 'ts_event') from the most recent input deque entry. Each indicator's
+        output is calculated and used to update the combined output array. The updated
+        data is either appended to or replaces the latest entry in the output deque,
+        depending on the value of the 'append' argument.
 
-        Args:
-        ----
-        append : bool, optional
-            A flag to determine whether to append the new output to the output deque (True) or
-            to replace the most recent output (False). Defaults to True.
-
-        Returns
-        -------
-        None
+        Parameters
+        ----------
+        append : bool, default True
+            Determines whether to append the new output to the output deque (True)
+            or replace the most recent output (False).
 
         The method performs the following steps:
-        - Initializes a combined output array with the default data types.
-        - Extracts the base values from the most recent entry in the input deque.
+        - Initializes a combined output array with base values from the latest input
+          deque entry.
         - Iterates through each indicator, calculates its output, and updates the
           combined output array.
-        - Depending on the 'append' flag, either appends the combined output to the
-          output deque or replaces its most recent entry.
-        - Resets the internal output array to ensure that it is rebuilt during the
-          next access.
+        - Appends the combined output to the output deque or replaces its most recent
+          entry based on the 'append' flag.
+        - Resets the internal output array for reconstruction during the next access.
 
-        This method logs actions at the debug level for tracking the calculation and
+        This method logs actions at the debug level to track the calculation and
         updating process.
 
         """
@@ -375,37 +403,37 @@ class TALibIndicatorManager(Indicator):
 
         combined_output = np.zeros(1, dtype=self._output_dtypes)
         combined_output["ts_event"] = self._input_deque[-1]["ts_event"].item()
+        combined_output["ts_init"] = self._input_deque[-1]["ts_init"].item()
         combined_output["open"] = self._input_deque[-1]["open"].item()
         combined_output["high"] = self._input_deque[-1]["high"].item()
         combined_output["low"] = self._input_deque[-1]["low"].item()
         combined_output["close"] = self._input_deque[-1]["close"].item()
         combined_output["volume"] = self._input_deque[-1]["volume"].item()
 
-        input_array = None
+        input_array = np.concatenate(self._input_deque)
         for indicator in self._indicators:
-            if input_array is None:
-                input_array = np.concatenate(self._input_deque)
-            period = indicator.fn.lookback + 1
-            inputs_dict = {name: input_array[name][-period:] for name in input_array.dtype.names}
+            self._log.debug(f"Calculating {indicator.name} outputs.")
+            inputs_dict = {name: input_array[name] for name in input_array.dtype.names}
             indicator.fn.set_input_arrays(inputs_dict)
             results = indicator.fn.run()
 
             if len(indicator.output_names) == 1:
+                self._log.debug("Single output.")
                 combined_output[indicator.output_names[0]] = results[-1]
             else:
+                self._log.debug("Multiple outputs.")
                 for i, output_name in enumerate(indicator.output_names):
                     combined_output[output_name] = results[i][-1]
 
-        if self.initialized:
-            if append:
-                self._log.debug("Appending output.")
-                self._output_deque.append(combined_output)
-            else:
-                self._log.debug("Prepending output.")
-                self._output_deque[-1] = combined_output
+        if append:
+            self._log.debug("Appending output.")
+            self._output_deque.append(combined_output)
+        else:
+            self._log.debug("Prepending output.")
+            self._output_deque[-1] = combined_output
 
-            # Reset output array to force rebuild on next access
-            self._output_array = None
+        # Reset output array to force rebuild on next access
+        self._output_array = None
 
     def _increment_count(self) -> None:
         self.count += 1
@@ -415,7 +443,6 @@ class TALibIndicatorManager(Indicator):
             if self.count >= self._stable_period:
                 self._set_initialized(True)
                 self._log.info(f"Initialized with {self.count} bars")
-                self._calculate_ta()  # Immediately make the first calculation
 
     def value(self, name: str, index=0):
         """
@@ -441,12 +468,13 @@ class TALibIndicatorManager(Indicator):
 
         Returns:
         -------
-        - The value of the specified indicator at the given index.
+        The value of the specified indicator at the given index.
 
         Raises:
         ------
-        - ValueError: If `name` is not in `self.output_names`, or if `index` or the internally calculated
-          `translated_index` is negative, indicating an invalid index.
+        ValueError
+            If `name` is not in `self.output_names`, or if `index` or the internally
+            calculated `translated_index` is negative, indicating an invalid index.
 
         Example:
         -------
@@ -469,7 +497,7 @@ class TALibIndicatorManager(Indicator):
         return self.output_array[name][translated_index]
 
     @property
-    def output_array(self) -> np.recarray:
+    def output_array(self) -> np.recarray | None:
         """
         Retrieve or generate the output array for the indicator.
 
@@ -478,18 +506,18 @@ class TALibIndicatorManager(Indicator):
         it calls `self.generate_output_array(truncate=True)` to generate the array. If the output array
         already exists, it uses the cached version and logs this action.
 
-        Returns:
+        Returns
         -------
         - np.recarray: A NumPy record array containing the output data for the indicator.
 
-        Note:
-        ----
+        Notes
+        -----
         - The method uses lazy loading to generate the output array only when needed, enhancing
           performance by avoiding unnecessary recalculations.
         - The method ensures the use of a single instance of the output array, stored in
           `self._output_array`, to maintain consistency and reduce memory usage.
 
-        Example:
+        Example
         -------
         - To access the output array of an indicator instance:
           ```
@@ -503,7 +531,7 @@ class TALibIndicatorManager(Indicator):
             self._log.debug("Using cached output array.")
         return self._output_array
 
-    def generate_output_array(self, truncate: bool) -> np.recarray:
+    def generate_output_array(self, truncate: bool) -> np.recarray | None:
         """
         Generate the output array for the indicator, either truncated or complete.
 
@@ -512,17 +540,18 @@ class TALibIndicatorManager(Indicator):
         the data for the last `self.period` outputs, or a complete array with all accumulated data.
         The method also sets the output array to be non-writeable to preserve data integrity.
 
-        Args:
-        ----
+        Parameters
+        ----------
         truncate : bool
             A flag indicating whether to truncate the output array to the size of `self.period`.
             If True, only the last `self.period` outputs are included in the array. If False,
             the entire contents of `self._output_deque` are used.
 
-        Returns:
+        Returns
         -------
-        - np.recarray: A NumPy record array containing the generated output data. The array is
-          set as non-writeable to prevent accidental modifications.
+        np.recarray or ``None``
+            A NumPy record array containing the generated output data.
+            The array is set as non-writeable to prevent accidental modifications.
 
         Note:
         ----
@@ -542,6 +571,10 @@ class TALibIndicatorManager(Indicator):
           ```
 
         """
+        if not self.initialized:
+            self._log.info("Indicator not initialized. Returning None.")
+            return None
+
         if truncate:
             self._log.debug("Generating truncated output array.")
             output_array = np.concatenate(list(self._output_deque)[-self.period :])
@@ -564,17 +597,18 @@ class TALibIndicatorManager(Indicator):
         (obtained from `self.output_array`) into a DataFrame format. The resulting DataFrame
         is useful for further data analysis or visualization.
 
-        Returns:
+        Returns
         -------
-        - pd.DataFrame: A DataFrame representation of the indicator's output array.
+        pd.DataFrame
+            A DataFrame representation of the indicator's output array.
 
-        Note:
-        ----
+        Notes
+        -----
         - This method is a convenient way to interface with pandas, a popular data analysis
           library, allowing for more complex data manipulations and easier integration with
           other data processing workflows.
 
-        Example:
+        Example
         -------
         - To get the output data of an indicator as a DataFrame:
           ```
@@ -597,27 +631,27 @@ class TALibIndicatorManager(Indicator):
         objects in UTC, and then to a different timezone as per the 'TIME_ZONE' environment variable,
         if specified.
 
-        Args:
-        ----
+        Parameters
+        ----------
         array : np.recarray
             The NumPy record array to be converted. It should have a 'ts_event' field representing
             timestamps in nanoseconds, along with other fields that will be columns in the DataFrame.
 
-        Returns:
+        Returns
         -------
         pd.DataFrame
             A DataFrame representation of the input array with a datetime index. The index is created
             from the 'ts_event' field in the array, and other fields in the array become columns in
             the DataFrame.
 
-        Note:
-        ----
+        Notes
+        -----
         - The timezone conversion relies on the 'TIME_ZONE' environment variable. If it's not set,
           UTC is used as the default timezone.
         - This method is particularly useful for preparing time-series data for analysis or
           visualization in a more accessible and familiar format.
 
-        Example:
+        Example
         -------
         - To convert a NumPy record array to a DataFrame with a datetime index:
           ```
@@ -657,7 +691,8 @@ class TALibIndicatorManager(Indicator):
         - If the bar timestamp is newer, it is appended and processed.
         - An error is logged and a counter is incremented if an out-of-sync bar is received.
 
-        Note:
+        Notes
+        -----
         - The method performs several checks to ensure data integrity, such as verifying the bar
           type and handling zero-value bars appropriately.
 
@@ -672,7 +707,11 @@ class TALibIndicatorManager(Indicator):
 
         self._log.debug(f"Handling bar: {bar!r}")
 
-        if bar.is_single_price() and bar.open.as_double() == 0:
+        if self._skip_uniform_price_bar and bar.is_single_price():
+            self._log.warning(f"Skipping uniform_price bar: {bar!r}")
+            return
+        if self._skip_zero_close_bar and bar.close.raw == 0:
+            self._log.warning(f"Skipping zero close bar: {bar!r}")
             return
 
         bar_data = np.array(
@@ -692,11 +731,14 @@ class TALibIndicatorManager(Indicator):
 
         if bar.ts_event == self._last_ts_event:
             self._input_deque[-1] = bar_data
-            self._calculate_ta(append=False)
+            self._update_ta_outputs(append=False)
         elif bar.ts_event > self._last_ts_event:
             self._input_deque.append(bar_data)
             self._increment_count()
-            self._calculate_ta()
+            self._update_ta_outputs()
         else:
             self._data_error_counter += 1
             self._log.error(f"Received out of sync bar: {bar!r}")
+            return
+
+        self._last_ts_event = bar.ts_event

@@ -17,6 +17,7 @@ from os import PathLike
 from pathlib import Path
 
 import databento
+import databento_dbn
 import msgspec
 
 from nautilus_trader.adapters.databento.common import check_file_path
@@ -34,20 +35,30 @@ class DatabentoDataLoader:
     Provides a data loader for Databento Binary Encoding (DBN) format data.
 
     Supported schemas:
-     - MBO
-     - MBP_1
-     - MBP_10 (decodes top-level only)
-     - TBBO
-     - TRADES
-     - OHLCV_1S
-     - OHLCV_1M
-     - OHLCV_1H
-     - OHLCV_1D
-     - DEFINITION
+     - MBO -> `OrderBookDelta`
+     - MBP_1 -> `QuoteTick` | `TradeTick`
+     - MBP_10 -> `OrderBookDeltas` (as snapshots)
+     - TBBO -> `QuoteTick` | `TradeTick`
+     - TRADES -> `TradeTick`
+     - OHLCV_1S -> `Bar`
+     - OHLCV_1M -> `Bar`
+     - OHLCV_1H -> `Bar`
+     - OHLCV_1D -> `Bar`
+     - DEFINITION -> `Instrument`
+     - IMBALANCE -> `DatabentoImbalance`
+     - STATISTICS -> `DatabentoStatistics`
 
     For the loader to work correctly, you must first either:
      - Load Databento instrument definitions from a DBN file using `load_instruments(...)`
      - Manually add Nautilus instrument objects through `add_instruments(...)`
+
+    Warnings
+    --------
+    The following Databento instrument classes are not supported:
+     - ``FUTURE_SPREAD``
+     - ``OPTION_SPEAD``
+     - ``MIXED_SPREAD``
+     - ``FX_SPOT``
 
     References
     ----------
@@ -61,6 +72,7 @@ class DatabentoDataLoader:
 
         self.load_publishers(path=Path(__file__).resolve().parent / "publishers.json")
 
+    @property
     def publishers(self) -> dict[int, DatabentoPublisher]:
         """
         Return the internal Databento publishers currently held by the loader.
@@ -74,8 +86,9 @@ class DatabentoDataLoader:
         Returns a copy of the internal dictionary.
 
         """
-        return self._publishers.copy()
+        return self._publishers
 
+    @property
     def instruments(self) -> dict[InstrumentId, Instrument]:
         """
         Return the internal Nautilus instruments currently held by the loader.
@@ -89,7 +102,7 @@ class DatabentoDataLoader:
         Returns a copy of the internal dictionary.
 
         """
-        return self._instruments.copy()
+        return self._instruments
 
     def get_venue_for_dataset(self, dataset: str) -> Venue:
         """
@@ -227,10 +240,25 @@ class DatabentoDataLoader:
         output: list[Data] = []
 
         for record in store:
+            if isinstance(
+                record,
+                databento.ErrorMsg
+                | databento.SystemMsg
+                | databento.SymbolMappingMsg
+                | databento_dbn.SymbolMappingMsgV1,
+            ):
+                continue
+
+            if isinstance(record, databento.OHLCVMsg):
+                ts_init = record.ts_event
+            else:
+                ts_init = record.ts_recv
+
             data = parse_record_with_metadata(
                 record=record,
                 publishers=self._publishers,
                 instrument_map=instrument_map,
+                ts_init=ts_init,
             )
             if isinstance(data, tuple):
                 output.extend(data)

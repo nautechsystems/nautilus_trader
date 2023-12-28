@@ -77,6 +77,10 @@ class TestIdStubs:
         return InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
 
     @staticmethod
+    def msft_xnas_id() -> InstrumentId:
+        return InstrumentId(Symbol("MSFT"), Venue("XNAS"))
+
+    @staticmethod
     def betting_instrument_id():
         from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 

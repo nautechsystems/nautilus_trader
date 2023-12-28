@@ -14,9 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from asyncio.futures import Future
 from collections import defaultdict
 from collections.abc import Coroutine
+from functools import partial
 from typing import Any
 
 import databento
@@ -24,6 +24,7 @@ import pandas as pd
 import pytz
 
 from nautilus_trader.adapters.databento.common import databento_schema_from_nautilus_bar_type
+from nautilus_trader.adapters.databento.common import nautilus_instrument_id_from_databento
 from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
 from nautilus_trader.adapters.databento.constants import DATABENTO_CLIENT_ID
@@ -31,13 +32,15 @@ from nautilus_trader.adapters.databento.constants import ONE_DAY
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.parsing import parse_record
 from nautilus_trader.adapters.databento.parsing import parse_record_with_metadata
+from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
+from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.adapters.databento.types import Dataset
-from nautilus_trader.adapters.databento.types import PublisherId
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.nautilus_pyo3 import is_within_last_24_hours
 from nautilus_trader.core.nautilus_pyo3 import last_weekday_nanos
 from nautilus_trader.core.uuid import UUID4
@@ -62,7 +65,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
     http_client : databento.Historical
-        The binance HTTP client.
+        The Databento historical HTTP client.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -71,7 +74,9 @@ class DatabentoDataClient(LiveMarketDataClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
-    config : DatabentoDataClientConfig
+    loader : DatabentoDataLoader, optional
+        The loader for the client.
+    config : DatabentoDataClientConfig, optional
         The configuration for the client.
 
     Warnings
@@ -88,8 +93,14 @@ class DatabentoDataClient(LiveMarketDataClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        config: DatabentoDataClientConfig,
+        instrument_provider: DatabentoInstrumentProvider,
+        loader: DatabentoDataLoader | None = None,
+        config: DatabentoDataClientConfig | None = None,
     ) -> None:
+        if config is None:
+            config = DatabentoDataClientConfig()
+        PyCondition.type(config, DatabentoDataClientConfig, "config")
+
         super().__init__(
             loop=loop,
             client_id=DATABENTO_CLIENT_ID,
@@ -98,13 +109,14 @@ class DatabentoDataClient(LiveMarketDataClient):
             cache=cache,
             clock=clock,
             logger=logger,
+            instrument_provider=instrument_provider,
+            config=config,
         )
 
         # Configuration
         self._live_api_key: str = config.api_key or http_client.key
         self._live_gateway: str | None = config.live_gateway
         self._instrument_ids: dict[Dataset, set[InstrumentId]] = defaultdict(set)
-        self._instrument_maps: dict[PublisherId, databento.InstrumentMap] = {}
         self._timeout_initial_load: float | None = config.timeout_initial_load
         self._mbo_subscriptions_delay: float | None = config.mbo_subscriptions_delay
 
@@ -113,7 +125,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._live_clients: dict[Dataset, databento.Live] = {}
         self._live_clients_mbo: dict[Dataset, databento.Live] = {}
         self._has_subscribed: dict[Dataset, bool] = {}
-        self._loader = DatabentoDataLoader()
+        self._loader = loader or DatabentoDataLoader()
 
         # Cache instrument index
         for instrument_id in config.instrument_ids or []:
@@ -134,28 +146,31 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         self._log.info("Initializing instruments...")
 
-        futures: list[Future] = []
+        coros: list[Coroutine] = []
         for dataset, instrument_ids in self._instrument_ids.items():
-            future = self._loop.run_in_executor(
-                None,
-                self._load_instrument_ids,
-                dataset,
-                sorted(instrument_ids),
-            )
-            futures.append(future)
+            loading_ids: list[InstrumentId] = sorted(instrument_ids)
+            coros.append(self._instrument_provider.load_ids_async(instrument_ids=loading_ids))
+            await self._subscribe_instrument_ids(dataset, instrument_ids=loading_ids)
 
         try:
             if self._timeout_initial_load:
-                await asyncio.wait_for(asyncio.gather(*futures), timeout=self._timeout_initial_load)
+                await asyncio.wait_for(asyncio.gather(*coros), timeout=self._timeout_initial_load)
             else:
-                await asyncio.gather(*futures)
+                await asyncio.gather(*coros)
         except asyncio.TimeoutError:
             self._log.warning("Timeout waiting for instruments...")
+
+        self._send_all_instruments_to_data_engine()
 
     async def _disconnect(self) -> None:
         coros: list[Coroutine] = []
         for dataset, client in self._live_clients.items():
             self._log.info(f"Stopping {dataset} live feed...", LogColor.BLUE)
+            coro = client.wait_for_close(timeout=2.0)
+            coros.append(coro)
+
+        for dataset, client in self._live_clients_mbo.items():
+            self._log.info(f"Stopping {dataset} MBO/L3 live feed...", LogColor.BLUE)
             coro = client.wait_for_close(timeout=2.0)
             coros.append(coro)
 
@@ -187,7 +202,10 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         if live_client is None:
             live_client = databento.Live(key=self._live_api_key, gateway=self._live_gateway)
-            live_client.add_callback(self._handle_record)
+
+            # Wrap the callback with partial to include the dataset
+            callback_with_dataset = partial(self._handle_record, live_client.symbology_map)
+            live_client.add_callback(callback_with_dataset)
             self._live_clients[dataset] = live_client
 
         return live_client
@@ -198,7 +216,10 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         if live_client is None:
             live_client = databento.Live(key=self._live_api_key, gateway=self._live_gateway)
-            live_client.add_callback(self._handle_record)
+
+            # Wrap the callback with partial to include the dataset
+            callback_with_dataset = partial(self._handle_record, live_client.symbology_map)
+            live_client.add_callback(callback_with_dataset)
             self._live_clients_mbo[dataset] = live_client
 
         return live_client
@@ -209,6 +230,10 @@ class DatabentoDataClient(LiveMarketDataClient):
             live_client.start()
             self._has_subscribed[dataset] = True
             self._log.info(f"Started {dataset} live feed.", LogColor.BLUE)
+
+    def _send_all_instruments_to_data_engine(self) -> None:
+        for instrument in self._instrument_provider.get_all().values():
+            self._handle_data(instrument)
 
     async def _ensure_subscribed_for_instrument(self, instrument_id: InstrumentId) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
@@ -231,32 +256,6 @@ class DatabentoDataClient(LiveMarketDataClient):
         end = pd.Timestamp(response["end_date"], tz=pytz.utc)
 
         return start, end
-
-    def _load_instrument_ids(self, dataset: Dataset, instrument_ids: list[InstrumentId]) -> None:
-        instrument_ids_to_decode = set(instrument_ids)
-
-        # Use fresh live data client for a one off initial instruments load
-        live_client = databento.Live(key=self._live_api_key, gateway=self._live_gateway)
-
-        try:
-            live_client.subscribe(
-                dataset=dataset,
-                schema=databento.Schema.DEFINITION,
-                symbols=[i.symbol.value for i in instrument_ids],
-                stype_in=databento.SType.RAW_SYMBOL,
-                start=0,
-            )
-            for record in live_client:
-                if isinstance(record, databento.InstrumentDefMsg):
-                    instrument = parse_record_with_metadata(record, self._loader.publishers())
-                    self._handle_data(instrument)
-
-                    instrument_ids_to_decode.discard(instrument.id)
-                    if not instrument_ids_to_decode:
-                        break
-        finally:
-            # Close the connection (we will still process all received data)
-            live_client.stop()
 
     # -- OVERRIDES ----------------------------------------------------------------------------
 
@@ -298,6 +297,19 @@ class DatabentoDataClient(LiveMarketDataClient):
             dataset=dataset,
             schema=databento.Schema.DEFINITION,
             symbols=[instrument_id.symbol.value],
+        )
+        self._check_live_client_started(dataset, live_client)
+
+    async def _subscribe_instrument_ids(
+        self,
+        dataset: Dataset,
+        instrument_ids: list[InstrumentId],
+    ) -> None:
+        live_client = self._get_live_client(dataset)
+        live_client.subscribe(
+            dataset=dataset,
+            schema=databento.Schema.DEFINITION,
+            symbols=[i.symbol.value for i in instrument_ids],
         )
         self._check_live_client_started(dataset, live_client)
 
@@ -536,6 +548,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             instrument = parse_record(
                 record=record,
                 instrument_id=instrument_id,
+                ts_init=self._clock.timestamp_ns(),
             )
 
             self._handle_instrument(
@@ -564,7 +577,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             tz=pytz.utc,
         )
 
-        default_start = min(default_start, available_end - ONE_DAY)
+        default_start = min(default_start, available_end - ONE_DAY * 2)
 
         data = await self._http_client.timeseries.get_range_async(
             dataset=dataset,
@@ -580,7 +593,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             try:
                 instrument = parse_record_with_metadata(
                     record=record,
-                    publishers=self._loader.publishers(),
+                    publishers=self._loader.publishers,
+                    ts_init=self._clock.timestamp_ns(),
                 )
             except ValueError as e:
                 self._log.error(repr(e))
@@ -632,6 +646,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             tick = parse_record(
                 record=record,
                 instrument_id=instrument_id,
+                ts_init=self._clock.timestamp_ns(),
             )
 
             if not isinstance(tick, QuoteTick):
@@ -684,6 +699,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             tick = parse_record(
                 record=record,
                 instrument_id=instrument_id,
+                ts_init=self._clock.timestamp_ns(),
             )
 
             ticks.append(tick)
@@ -738,6 +754,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             bar = parse_record(
                 record=record,
                 instrument_id=bar_type.instrument_id,
+                ts_init=self._clock.timestamp_ns(),
             )
 
             bars.append(bar)
@@ -749,26 +766,33 @@ class DatabentoDataClient(LiveMarketDataClient):
             correlation_id=correlation_id,
         )
 
-    def _handle_record(self, record: databento.DBNRecord) -> None:
+    def _handle_record(
+        self,
+        instrument_map: dict[int, str | int],
+        record: databento.DBNRecord,
+    ) -> None:
+        # self._log.debug(f"Received {record}", LogColor.MAGENTA)
+        if isinstance(record, databento.ErrorMsg):
+            self._log.error(f"ErrorMsg: {record.err}")
+            return
+        elif isinstance(record, databento.SystemMsg):
+            self._log.info(f"SystemMsg: {record.msg}")
+            return
+        elif isinstance(record, databento.SymbolMappingMsg):
+            self._log.debug(f"SymbolMappingMsg: {record}")
+            return
+
         try:
-            self._log.debug(f"Received {record}", LogColor.MAGENTA)
-            if isinstance(record, databento.ErrorMsg):
-                self._log.error(f"ErrorMsg: {record.err}")
-                return
-            elif isinstance(record, databento.SystemMsg):
-                self._log.info(f"SystemMsg: {record.msg}")
-                return
+            raw_symbol = instrument_map.get(record.instrument_id)
+            if raw_symbol is None:
+                raise ValueError(f"Cannot resolve instrument_id {record.instrument_id}")
 
-            instrument_map = self._instrument_maps.get(record.publisher_id)
-            if not instrument_map:
-                instrument_map = databento.InstrumentMap()
-                self._instrument_maps[record.publisher_id] = instrument_map
-
-            if isinstance(record, databento.SymbolMappingMsg):
-                instrument_map.insert_symbol_mapping_msg(record)
-                return
-
-            data = parse_record_with_metadata(record, self._loader.publishers(), instrument_map)
+            publisher: DatabentoPublisher = self._loader.publishers[record.publisher_id]
+            instrument_id: InstrumentId = nautilus_instrument_id_from_databento(
+                raw_symbol=str(raw_symbol),
+                publisher=publisher,
+            )
+            data = parse_record(record, instrument_id, ts_init=self._clock.timestamp_ns())
         except ValueError as e:
             self._log.error(f"{e!r}")
             return

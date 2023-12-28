@@ -1,11 +1,29 @@
-# NautilusTrader 1.182.0 Beta
+# NautilusTrader 1.183.0 Beta
 
 Released on TBD (UTC).
+
+### Enhancements
+- Added `NautilusConfig.json_primitives` to convert object to Python dictionary with JSON primitive values
+
+### Breaking Changes
+- Changed `ComponentStateChanged` Arrow schema for `config` from `string` to `binary`
+- Changed `OrderInitialized` Arrow schema for `options` from `string` to `binary`
+
+### Fixes
+- Fixed handling of configuration objects to work with `StreamingFeatherWriter`
+
+---
+
+# NautilusTrader 1.182.0 Beta
+
+Released on 23rd December 2023 (UTC).
 
 ### Enhancements
 - Added `CacheDatabaseFacade` and `CacheDatabaseAdapter` to abstract backing technology from Python codebase
 - Added `RedisCacheDatabase` implemented in Rust with separate MPSC channel thread for insert, update and delete operations
 - Added TA-Lib integration, thanks @rsmb7z
+- Added `OrderBookDelta` and `OrderBookDeltas` to serializable and publishable types
+- Moved `PortfolioFacade` to `Actor`
 - Improved `Actor` and `Strategy` usability to be more lenient to mistaken calls to `clock` and `logger` from the constructor (warnings also added to docs)
 - Removed `redis` and `hiredis` dependencies from Python codebase
 
@@ -29,6 +47,10 @@ Released on TBD (UTC).
 - Fixed `Instrument`, `OrderFilled` and `AccountState` `info` field serialization to retain JSON serializable dicts (rather than double encoding and losing information)
 - Fixed Binance Futures `good_till_date` value when `time_in_force` not GTD, such as when strategy is managing the GTD (was incorrectly passing through UNIX milliseconds)
 - Fixed `Executor` handling of queued task IDs (was not discarding from queued tasks on completion)
+- Fixed `DataEngine` handling of order book snapshots with very small intervals (now handles as short as 20 milliseconds)
+- Fixed `BacktestEngine.clear_actors()`, `BacktestEngine.clear_strategies()` and `BacktestEngine.clear_exec_algorithms()`, thanks for reporting @davidsblom
+- Fixed `BacktestEngine` OrderEmulator reset, thanks @davidsblom
+- Fixed `Throttler.reset` and reset of `RiskEngine` throttlers, thanks @davidsblom
 
 ---
 

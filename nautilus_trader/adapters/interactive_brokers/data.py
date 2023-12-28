@@ -99,10 +99,11 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             clock=clock,
             logger=logger,
             instrument_provider=instrument_provider,
-            config={
-                "name": f"{type(self).__name__}-{ibg_client_id:03d}",
-                "client_id": ibg_client_id,
-            },
+            config=config,  # TODO: Config needs to be fully formed earlier than this
+            # config={
+            #     "name": f"{type(self).__name__}-{ibg_client_id:03d}",
+            #     "client_id": ibg_client_id,
+            # },
         )
         self._client = client
         self._handle_revised_bars = config.handle_revised_bars

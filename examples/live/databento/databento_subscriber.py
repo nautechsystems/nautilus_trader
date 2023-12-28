@@ -25,7 +25,7 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.config.common import StrategyConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.data import BarType
+from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -42,15 +42,16 @@ from nautilus_trader.trading.strategy import Strategy
 # subscribed for as part of the data client configuration
 instrument_ids = [
     # InstrumentId.from_str("AAPL.XCHI"),
-    InstrumentId.from_str("ESF4.GLBX"),
-    InstrumentId.from_str("ESG4.GLBX"),
+    # InstrumentId.from_str("ESF4.GLBX"),
+    # InstrumentId.from_str("ESG4.GLBX"),
     InstrumentId.from_str("ESH4.GLBX"),
+    # InstrumentId.from_str("ESM4.GLBX"),
 ]
 
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(log_level="DEBUG"),
+    logging=LoggingConfig(log_level="INFO"),
     exec_engine=LiveExecEngineConfig(
         reconciliation=False,  # Not applicable
         inflight_check_interval_ms=0,  # Not applicable
@@ -143,14 +144,14 @@ class DataSubscriber(Strategy):
                 book_type=BookType.L2_MBP,
                 depth=10,
                 client_id=DATABENTO_CLIENT_ID,
+                interval_ms=100,
             )
-            self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
-            self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
-            self.request_quote_ticks(instrument_id)
-            self.request_trade_ticks(instrument_id)
-            self.request_bars(BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"))
+            # self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
+            # self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
+            # self.request_quote_ticks(instrument_id)
+            # self.request_trade_ticks(instrument_id)
+            # self.request_bars(BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"))
 
-        # self.request_instruments(venue=Venue("GLBX"), client_id=DATABENTO_CLIENT_ID)
         # self.request_instruments(venue=Venue("GLBX"), client_id=DATABENTO_CLIENT_ID)
         # self.request_instruments(venue=Venue("XCHI"), client_id=DATABENTO_CLIENT_ID)
         # self.request_instruments(venue=Venue("XNAS"), client_id=DATABENTO_CLIENT_ID)
@@ -172,7 +173,13 @@ class DataSubscriber(Strategy):
             The order book deltas received.
 
         """
-        self.log.info(repr(deltas), LogColor.CYAN)
+        # self.log.info(repr(deltas), LogColor.CYAN)
+
+    def on_order_book(self, order_book: OrderBook) -> None:
+        """
+        Actions to be performed when an order book update is received.
+        """
+        self.log.info("\n" + order_book.pprint(10), LogColor.CYAN)
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """

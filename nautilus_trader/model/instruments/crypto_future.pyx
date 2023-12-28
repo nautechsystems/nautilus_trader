@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 import pandas as pd
 import pytz
@@ -138,12 +137,12 @@ cdef class CryptoFuture(Instrument):
         uint64_t ts_init,
         multiplier=Quantity.from_int_c(1),
         lot_size=Quantity.from_int_c(1),
-        Quantity max_quantity: Optional[Quantity] = None,
-        Quantity min_quantity: Optional[Quantity] = None,
-        Money max_notional: Optional[Money] = None,
-        Money min_notional: Optional[Money] = None,
-        Price max_price: Optional[Price] = None,
-        Price min_price: Optional[Price] = None,
+        Quantity max_quantity: Quantity | None = None,
+        Quantity min_quantity: Quantity | None = None,
+        Money max_notional: Money | None = None,
+        Money min_notional: Money | None = None,
+        Price max_price: Price | None = None,
+        Price min_price: Price | None = None,
         dict info = None,
     ):
         super().__init__(

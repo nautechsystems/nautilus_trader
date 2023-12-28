@@ -183,7 +183,7 @@ def test_synthetic_instrument_to_dict():
         "type": "SyntheticInstrument",
         "symbol": "BTC-ETH",
         "price_precision": 8,
-        "components": b'["BTCUSDT.BINANCE","ETHUSDT.BINANCE"]',
+        "components": ["BTCUSDT.BINANCE", "ETHUSDT.BINANCE"],
         "formula": "(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
         "ts_event": 0,
         "ts_init": 0,

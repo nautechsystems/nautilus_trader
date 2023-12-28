@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 from libc.stdint cimport uint64_t
 
@@ -132,12 +131,12 @@ cdef class CryptoPerpetual(Instrument):
         taker_fee not None: Decimal,
         uint64_t ts_event,
         uint64_t ts_init,
-        Quantity max_quantity: Optional[Quantity] = None,
-        Quantity min_quantity: Optional[Quantity] = None,
-        Money max_notional: Optional[Money] = None,
-        Money min_notional: Optional[Money] = None,
-        Price max_price: Optional[Price] = None,
-        Price min_price: Optional[Price] = None,
+        Quantity max_quantity: Quantity | None = None,
+        Quantity min_quantity: Quantity | None = None,
+        Money max_notional: Money | None = None,
+        Money min_notional: Money | None = None,
+        Price max_price: Price | None = None,
+        Price min_price: Price | None = None,
         dict info = None,
     ):
         super().__init__(

@@ -30,6 +30,7 @@ from ibapi.order_state import OrderState as IBOrderState
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.client.common import IBPosition
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_order_action
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_order_fields
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_order_status
@@ -120,6 +121,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         The instrument provider.
     ibg_client_id : int
         Client ID used to connect TWS/Gateway.
+    config : InteractiveBrokersExecClientConfig, optional
+        The configuration for the instance.
 
     """
 
@@ -134,6 +137,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         logger: Logger,
         instrument_provider: InteractiveBrokersInstrumentProvider,
         ibg_client_id: int,
+        config: InteractiveBrokersExecClientConfig,
     ):
         super().__init__(
             loop=loop,
@@ -148,10 +152,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             cache=cache,
             clock=clock,
             logger=logger,
-            config={
-                "name": f"{type(self).__name__}-{ibg_client_id:03d}",
-                "client_id": ibg_client_id,
-            },
+            config=config,
         )
         self._client: InteractiveBrokersClient = client
         self._set_account_id(account_id)

@@ -381,7 +381,7 @@ class NautilusKernel:
             self.exec_engine.load_cache()
 
         self._emulator = OrderEmulator(
-            trader_id=self._trader_id,
+            portfolio=self._portfolio,
             msgbus=self._msgbus,
             cache=self._cache,
             clock=self._clock,
@@ -402,10 +402,8 @@ class NautilusKernel:
             exec_engine=self._exec_engine,
             clock=self._clock,
             logger=self._logger,
+            has_controller=self._config.controller is not None,
             loop=self._loop,
-            config={
-                "has_controller": self._config.controller is not None,
-            },
         )
 
         if self._load_state:
@@ -419,8 +417,9 @@ class NautilusKernel:
                 trader=self._trader,
             )
             self._controller.register_base(
-                cache=self._cache,
+                portfolio=self._portfolio,
                 msgbus=self._msgbus,
+                cache=self._cache,
                 clock=self._clock,
                 logger=self._logger,
             )

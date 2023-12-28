@@ -70,8 +70,6 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 cdef class Strategy(Actor):
     cdef OrderManager _manager
 
-    cdef readonly PortfolioFacade portfolio
-    """The read-only portfolio for the strategy.\n\n:returns: `PortfolioFacade`"""
     cdef readonly OrderFactory order_factory
     """The order factory for the strategy.\n\n:returns: `OrderFactory`"""
     cdef readonly str order_id_tag

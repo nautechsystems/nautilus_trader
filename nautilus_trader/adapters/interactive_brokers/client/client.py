@@ -95,7 +95,8 @@ class InteractiveBrokersClient(
             component_id=ClientId(f"{IB_VENUE.value}-{client_id:03d}"),
             component_name=f"{type(self).__name__}-{client_id:03d}",
             msgbus=msgbus,
-            config={"name": f"{type(self).__name__}-{client_id:03d}", "client_id": client_id},
+            # TODO: Config needs to be fully formed earlier than this
+            # config={"name": f"{type(self).__name__}-{client_id:03d}", "client_id": client_id},
         )
         # Config
         self._loop = loop

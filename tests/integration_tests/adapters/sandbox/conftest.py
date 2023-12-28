@@ -32,6 +32,7 @@ def venue() -> Venue:
 def exec_client(
     instrument,
     event_loop,
+    portfolio,
     msgbus,
     cache,
     clock,
@@ -41,6 +42,7 @@ def exec_client(
     SandboxExecutionClient.INSTRUMENTS = [instrument]
     return SandboxExecutionClient(
         loop=event_loop,
+        portfolio=portfolio,
         msgbus=msgbus,
         cache=cache,
         clock=clock,

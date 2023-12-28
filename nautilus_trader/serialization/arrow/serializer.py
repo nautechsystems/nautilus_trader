@@ -19,6 +19,8 @@ from typing import Any
 
 import pyarrow as pa
 
+from nautilus_trader.common.messages import ComponentStateChanged
+from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
@@ -31,6 +33,7 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import PositionEvent
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.wranglers_v2 import BarDataWrangler
@@ -38,6 +41,7 @@ from nautilus_trader.persistence.wranglers_v2 import OrderBookDeltaDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWrangler
 from nautilus_trader.serialization.arrow.implementations import account_state
+from nautilus_trader.serialization.arrow.implementations import component_events
 from nautilus_trader.serialization.arrow.implementations import instruments
 from nautilus_trader.serialization.arrow.implementations import order_events
 from nautilus_trader.serialization.arrow.implementations import position_events
@@ -279,6 +283,7 @@ for instrument_cls in Instrument.__subclasses__():
         deserializer=instruments.deserialize,
     )
 
+
 register_arrow(
     AccountState,
     schema=account_state.SCHEMA,
@@ -286,12 +291,38 @@ register_arrow(
     deserializer=account_state.deserialize,
 )
 
+
+register_arrow(
+    OrderInitialized,
+    schema=NAUTILUS_ARROW_SCHEMA[OrderInitialized],
+    serializer=order_events.serialize,
+    deserializer=order_events.deserialize(OrderInitialized),
+)
+
+
 register_arrow(
     OrderFilled,
     schema=NAUTILUS_ARROW_SCHEMA[OrderFilled],
     serializer=order_events.serialize,
     deserializer=order_events.deserialize(OrderFilled),
 )
+
+
+register_arrow(
+    ComponentStateChanged,
+    schema=NAUTILUS_ARROW_SCHEMA[ComponentStateChanged],
+    serializer=component_events.serialize,
+    deserializer=component_events.deserialize(ComponentStateChanged),
+)
+
+
+register_arrow(
+    TradingStateChanged,
+    schema=NAUTILUS_ARROW_SCHEMA[TradingStateChanged],
+    serializer=component_events.serialize,
+    deserializer=component_events.deserialize(TradingStateChanged),
+)
+
 
 for position_cls in PositionEvent.__subclasses__():
     register_arrow(

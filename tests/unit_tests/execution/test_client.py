@@ -101,7 +101,6 @@ class TestExecutionClient:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"routing": True},
         )
 
         # Act, Assert

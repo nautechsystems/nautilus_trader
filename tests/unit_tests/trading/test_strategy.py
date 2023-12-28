@@ -132,6 +132,7 @@ class TestStrategy:
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(50),
             leverages={},
+            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             instruments=[USDJPY_SIM],

@@ -23,6 +23,7 @@ import pytest
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.common.actor import Actor
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.config.common import ImportableControllerConfig
@@ -32,6 +33,7 @@ from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.examples.strategies.signal_strategy import SignalStrategy
 from nautilus_trader.examples.strategies.signal_strategy import SignalStrategyConfig
+from nautilus_trader.execution.algorithm import ExecAlgorithm
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import BarSpecification
@@ -135,6 +137,48 @@ class TestBacktestEngine:
         assert self.engine.backtest_start is None
         assert self.engine.backtest_end is None
         assert self.engine.iteration == 0  # No exceptions raised
+
+    def test_clear_actors_with_no_actors(self):
+        # Arrange, Act, Assert
+        self.engine.clear_actors()
+
+    def test_clear_actors(self):
+        # Arrange
+        self.engine.add_actor(Actor())
+
+        # Act
+        self.engine.clear_actors()
+
+        # Assert
+        assert self.engine.trader.actors() == []
+
+    def test_clear_strategies_with_no_strategies(self):
+        # Arrange, Act, Assert
+        self.engine.clear_strategies()
+
+    def test_clear_strategies(self):
+        # Arrange
+        self.engine.add_strategy(Strategy())
+
+        # Act
+        self.engine.clear_strategies()
+
+        # Assert
+        assert self.engine.trader.strategies() == []
+
+    def test_clear_exec_algorithms_no_exec_algorithms(self):
+        # Arrange, Act, Assert
+        self.engine.clear_exec_algorithms()
+
+    def test_clear_exec_algorithms(self):
+        # Arrange
+        self.engine.add_exec_algorithm(ExecAlgorithm())
+
+        # Act
+        self.engine.clear_exec_algorithms()
+
+        # Assert
+        assert self.engine.trader.exec_algorithms() == []
 
     def test_run_with_no_strategies(self):
         # Arrange, Act
@@ -661,7 +705,7 @@ class TestBacktestWithAddedBars:
         )
 
     def test_dump_pickled_data(self):
-        # Arrange, # Act, # Assert
+        # Arrange, Act, Assert
         pickled = self.engine.dump_pickled_data()
         assert 5_060_606 <= len(pickled) <= 5_060_654
 

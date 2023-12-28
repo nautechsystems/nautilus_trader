@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
 
@@ -117,7 +116,7 @@ cdef class EMACross(Strategy):
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
 
-        self.instrument: Optional[Instrument] = None  # Initialized in on_start
+        self.instrument: Instrument | None = None  # Initialized in on_start
 
     cpdef void on_start(self):
         """

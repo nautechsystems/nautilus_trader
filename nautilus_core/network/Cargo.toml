@@ -18,9 +18,9 @@ pyo3 = { workspace = true, optional = true }
 pyo3-asyncio = { workspace = true, optional = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
-dashmap = "5.5.1"
-futures-util = "0.3.28"
-hyper = { version = "0.14.27", features = ["client", "http1", "server"] }
+dashmap = "5.5.3"
+futures-util = "0.3.29"
+hyper = { version = "0.14.28", features = ["client", "http1", "server"] }
 hyper-tls = "0.5.0"
 nonzero_ext = "0.3.0"
 tokio-tungstenite = { path = "./tokio-tungstenite", features = ["rustls-tls-native-roots"] }

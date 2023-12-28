@@ -487,6 +487,7 @@ class TestCacheDatabaseAdapter:
         # Arrange
         actor = MockActor()
         actor.register_base(
+            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1018,6 +1019,7 @@ class TestCacheDatabaseAdapter:
         # Arrange, Act
         actor = MockActor()
         actor.register_base(
+            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

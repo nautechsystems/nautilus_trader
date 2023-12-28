@@ -987,7 +987,7 @@ class TestDataEngine:
         self.data_engine.execute(subscribe)
 
         # Act
-        events = self.clock.advance_time(1_000_000_000)
+        events = self.clock.advance_time(2_000_000_000)
         events[0].handle()
 
         # Assert
@@ -1031,7 +1031,7 @@ class TestDataEngine:
         # Act
         self.data_engine.process(snapshot)
 
-        events = self.clock.advance_time(1_000_000_000)
+        events = self.clock.advance_time(2_000_000_000)
         events[0].handle()
 
         # Assert
@@ -1134,7 +1134,7 @@ class TestDataEngine:
         )
 
         self.data_engine.process(snapshot)
-        events = self.clock.advance_time(1_000_000_000)
+        events = self.clock.advance_time(2_000_000_000)
         events[0].handle()
 
         # Act

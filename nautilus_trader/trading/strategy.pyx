@@ -25,8 +25,6 @@ attempts to operate without a managing `Trader` instance.
 
 """
 
-from typing import Optional
-
 import cython
 
 from nautilus_trader.cache.cache import Cache
@@ -104,6 +102,7 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class Strategy(Actor):
@@ -138,7 +137,7 @@ cdef class Strategy(Actor):
     - Do not call components such as `clock` and `logger` in the `__init__` prior to registration.
     """
 
-    def __init__(self, config: Optional[StrategyConfig] = None):
+    def __init__(self, config: StrategyConfig | None = None):
         if config is None:
             config = StrategyConfig()
         Condition.type(config, StrategyConfig, "config")
@@ -173,7 +172,7 @@ cdef class Strategy(Actor):
 
     def _parse_external_order_claims(
         self,
-        config_claims: Optional[list[str]],
+        config_claims: list[str] | None,
     ) -> list[InstrumentId]:
         if config_claims is None:
             return []
@@ -277,13 +276,12 @@ cdef class Strategy(Actor):
         Condition.not_none(logger, "logger")
 
         self.register_base(
+            portfolio=portfolio,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
         )
-
-        self.portfolio = portfolio  # Assigned as PortfolioFacade
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,

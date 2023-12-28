@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import Bar

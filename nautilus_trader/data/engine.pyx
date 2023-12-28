@@ -30,7 +30,6 @@ just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
 from typing import Callable
-from typing import Optional
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import DataEngineConfig
@@ -53,6 +52,9 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.common cimport ComponentState
+from nautilus_trader.core.rust.core cimport NANOSECONDS_IN_MILLISECOND
+from nautilus_trader.core.rust.core cimport NANOSECONDS_IN_SECOND
+from nautilus_trader.core.rust.core cimport millis_to_nanos
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
@@ -113,7 +115,7 @@ cdef class DataEngine(Component):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        config: Optional[DataEngineConfig] = None,
+        config: DataEngineConfig | None = None,
     ):
         if config is None:
             config = DataEngineConfig()
@@ -123,15 +125,15 @@ cdef class DataEngine(Component):
             logger=logger,
             component_id=ComponentId("DataEngine"),
             msgbus=msgbus,
-            config=config.dict(),
+            config=config,
         )
 
         self._cache = cache
 
         self._clients: dict[ClientId, DataClient] = {}
         self._routing_map: dict[Venue, DataClient] = {}
-        self._default_client: Optional[DataClient] = None
-        self._catalog: Optional[ParquetDataCatalog] = None
+        self._default_client: DataClient | None = None
+        self._catalog: ParquetDataCatalog | None = None
         self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[Bar], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
         self._synthetic_quote_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
@@ -171,13 +173,13 @@ cdef class DataEngine(Component):
         return sorted(list(self._clients.keys()))
 
     @property
-    def default_client(self) -> Optional[ClientId]:
+    def default_client(self) -> ClientId | None:
         """
         Return the default data client registered with the engine.
 
         Returns
         -------
-        Optional[ClientId]
+        ClientId or ``None``
 
         """
         return self._default_client.id if self._default_client is not None else None
@@ -799,18 +801,27 @@ cdef class DataEngine(Component):
             self._log.error("Cannot subscribe for synthetic instrument `OrderBook` data.")
             return
 
-        cdef int interval_ms = metadata["interval_ms"]
+        cdef:
+            uint64_t interval_ms = metadata["interval_ms"]
+            uint64_t interval_ns
+            uint64_t timestamp_ns
         key = (instrument_id, interval_ms)
         if key not in self._order_book_intervals:
             self._order_book_intervals[key] = []
-            now = self._clock.utc_now()
-            start_time = now - timedelta(milliseconds=int((now.second * 1000) % interval_ms), microseconds=now.microsecond)
-            timer_name = f"OrderBook_{instrument_id}_{interval_ms}"
-            self._clock.set_timer(
+
+            timer_name = f"OrderBook-{instrument_id}-{interval_ms}"
+            interval_ns = millis_to_nanos(interval_ms)
+            timestamp_ns = self._clock.timestamp_ns()
+            start_time_ns = timestamp_ns - (timestamp_ns % interval_ns)
+
+            if start_time_ns - NANOSECONDS_IN_MILLISECOND <= self._clock.timestamp_ns():
+                start_time_ns += NANOSECONDS_IN_SECOND  # Add one second
+
+            self._clock.set_timer_ns(
                 name=timer_name,
-                interval=timedelta(milliseconds=interval_ms),
-                start_time=start_time,
-                stop_time=None,
+                interval_ns=interval_ns,
+                start_time_ns=start_time_ns,
+                stop_time_ns=0,  # No stop
                 callback=self._snapshot_order_book,
             )
             self._log.debug(f"Set timer {timer_name}.")
@@ -1591,7 +1602,7 @@ cdef class DataEngine(Component):
         order_book.apply(data)
 
     cpdef void _snapshot_order_book(self, TimeEvent snap_event):
-        cdef tuple pieces = snap_event.name.partition('_')[2].partition('_')
+        cdef tuple pieces = snap_event.name.partition('-')[2].partition('-')
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(pieces[0])
         cdef int interval_ms = int(pieces[2])
 

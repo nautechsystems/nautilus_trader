@@ -45,17 +45,17 @@ pub enum ClockMode {
     STATIC,
 }
 
-/// Atomic clock stores the last recorded time in nanoseconds
+/// Atomic clock stores the last recorded time in nanoseconds.
 ///
-/// It uses AtomicU64 to atomically update the value using only immutable
+/// It uses `AtomicU64` to atomically update the value using only immutable
 /// references.
 ///
-/// AtomicClock can act as a live clock and static clock based on its mode.
+/// `AtomicClock` can act as a live clock and static clock based on its mode.
 #[derive(Debug, Clone)]
 pub struct AtomicTime {
-    /// Atomic clock is operating in live or static mode
+    /// Atomic clock is operating in live or static mode.
     mode: ClockMode,
-    /// The last recorded time in nanoseconds for the clock
+    /// The last recorded time in nanoseconds for the clock.
     timestamp_ns: Arc<AtomicU64>,
 }
 
@@ -68,9 +68,10 @@ impl Deref for AtomicTime {
 }
 
 impl AtomicTime {
-    /// New atomic clock set with the given time
+    /// New atomic clock set with the given time.
+    #[must_use]
     pub fn new(mode: ClockMode, time: u64) -> Self {
-        AtomicTime {
+        Self {
             mode,
             timestamp_ns: Arc::new(AtomicU64::new(time)),
         }
@@ -80,6 +81,7 @@ impl AtomicTime {
     ///
     /// * Live mode returns current wall clock time since UNIX epoch (unique and monotonic)
     /// * Static mode returns currently stored time.
+    #[must_use]
     pub fn get_time_ns(&self) -> u64 {
         match self.mode {
             ClockMode::LIVE => self.time_since_epoch(),
@@ -87,34 +89,39 @@ impl AtomicTime {
         }
     }
 
-    /// Get time as microseconds
+    /// Get time as microseconds.
+    #[must_use]
     pub fn get_time_us(&self) -> u64 {
         self.get_time_ns() / NANOSECONDS_IN_MICROSECOND
     }
 
-    /// Get time as milliseconds
+    /// Get time as milliseconds.
+    #[must_use]
     pub fn get_time_ms(&self) -> u64 {
         self.get_time_ns() / NANOSECONDS_IN_MILLISECOND
     }
 
-    /// Get time as seconds
+    /// Get time as seconds.
+    #[must_use]
     pub fn get_time(&self) -> f64 {
         self.get_time_ns() as f64 / (NANOSECONDS_IN_SECOND as f64)
     }
 
-    /// Sets new time for the clock
+    /// Sets new time for the clock.
     pub fn set_time(&self, time: u64) {
-        self.store(time, Ordering::Relaxed)
+        self.store(time, Ordering::Relaxed);
     }
 
-    /// Increments current time with a delta and returns the updated time
+    /// Increments current time with a delta and returns the updated time.
+    #[must_use]
     pub fn increment_time(&self, delta: u64) -> u64 {
         self.fetch_add(delta, Ordering::Relaxed) + delta
     }
 
-    /// Stores and returns current time
+    /// Stores and returns current time.
+    #[must_use]
     pub fn time_since_epoch(&self) -> u64 {
-        // increment by 1 nanosecond to keep increasing time
+        // Increment by 1 nanosecond to keep increasing time
         let now = duration_since_unix_epoch().as_nanos() as u64 + 1;
         let last = self.load(Ordering::SeqCst) + 1;
         let new = now.max(last);

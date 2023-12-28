@@ -133,7 +133,7 @@ mod tests {
             // Note: as_ptr returns a borrowed pointer. It is valid as long
             // as the object is in scope. In this case `callback_ptr` is valid
             // as long as `py_append` is in scope.
-            let callback_ptr = py_append.as_ptr() as *mut pyo3::ffi::PyObject;
+            let callback_ptr = py_append.as_ptr().cast::<pyo3::ffi::PyObject>();
 
             let handler1 = TimeEventHandler {
                 event: time_event1.clone(),
@@ -150,9 +150,9 @@ mod tests {
                 callback_ptr,
             };
 
-            accumulator.event_handlers.push(handler1.clone());
-            accumulator.event_handlers.push(handler2.clone());
-            accumulator.event_handlers.push(handler3.clone());
+            accumulator.event_handlers.push(handler1);
+            accumulator.event_handlers.push(handler2);
+            accumulator.event_handlers.push(handler3);
 
             let drained_handlers = accumulator.drain();
 

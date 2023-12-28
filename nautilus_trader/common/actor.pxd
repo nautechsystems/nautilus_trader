@@ -48,6 +48,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class Actor(Component):
@@ -60,6 +61,8 @@ cdef class Actor(Component):
     cdef dict _indicators_for_trades
     cdef dict _indicators_for_bars
 
+    cdef readonly PortfolioFacade portfolio
+    """The read-only portfolio for the actor.\n\n:returns: `PortfolioFacade`"""
     cdef readonly config
     """The actors configuration.\n\n:returns: `NautilusConfig`"""
     cdef readonly Clock clock
@@ -102,6 +105,7 @@ cdef class Actor(Component):
 
     cpdef void register_base(
         self,
+        PortfolioFacade portfolio,
         MessageBus msgbus,
         CacheFacade cache,
         Clock clock,

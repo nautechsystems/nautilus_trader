@@ -22,6 +22,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.live.factories import LiveExecClientFactory
+from nautilus_trader.portfolio import PortfolioFacade
 
 
 class SandboxLiveExecClientFactory(LiveExecClientFactory):
@@ -34,6 +35,7 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
         loop: asyncio.AbstractEventLoop,
         name: str,
         config: SandboxExecutionClientConfig,
+        portfolio: PortfolioFacade,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -50,6 +52,8 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
             The client name.
         config : dict[str, object]
             The configuration for the client.
+        portfolio : PortfolioFacade
+            The read-only portfolio for the client.
         msgbus : MessageBus
             The message bus for the client.
         cache : Cache
@@ -67,6 +71,7 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
         exec_client = SandboxExecutionClient(
             loop=loop,
             clock=clock,
+            portfolio=portfolio,
             msgbus=msgbus,
             cache=cache,
             logger=logger,

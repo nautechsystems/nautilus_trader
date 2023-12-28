@@ -176,6 +176,7 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             app_key=config.app_key,
             logger=logger,
         )
+
         provider = get_cached_betfair_instrument_provider(
             client=client,
             logger=logger,

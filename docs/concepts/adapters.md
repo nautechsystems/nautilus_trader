@@ -132,7 +132,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 # nautilus_trader/adapters/binance/spot/data.py
 def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
-    instrument: Optional[Instrument] = self._instrument_provider.find(instrument_id)
+    instrument: Instrument | None = self._instrument_provider.find(instrument_id)
     if instrument is None:
         self._log.error(f"Cannot find instrument for {instrument_id}.")
         return

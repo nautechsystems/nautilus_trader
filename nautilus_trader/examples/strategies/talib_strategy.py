@@ -119,6 +119,7 @@ class TALibStrategy(Strategy):
 
         # Register the indicators for updating
         self.register_indicator_for_bars(self.bar_type, self.indicator_manager)
+        self.indicator_manager.change_logger(self.log.get_logger())
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)

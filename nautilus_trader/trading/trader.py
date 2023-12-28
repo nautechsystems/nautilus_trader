@@ -74,10 +74,10 @@ class Trader(Component):
         The clock for the trader.
     logger : Logger
         The logger for the trader.
+    has_controller : bool, default False
+        If the trader has a controller.
     loop : asyncio.AbstractEventLoop, optional
         The event loop for the trader.
-    config : dict[str, Any]
-        The configuration for the trader.
 
     Raises
     ------
@@ -103,17 +103,14 @@ class Trader(Component):
         exec_engine: ExecutionEngine,
         clock: Clock,
         logger: Logger,
+        has_controller: bool = False,
         loop: asyncio.AbstractEventLoop | None = None,
-        config: dict | None = None,
     ) -> None:
-        if config is None:
-            config = {}
         super().__init__(
             clock=clock,
             logger=logger,
             component_id=trader_id,
             msgbus=msgbus,
-            config=config,
         )
 
         self._loop = loop
@@ -126,7 +123,7 @@ class Trader(Component):
         self._actors: dict[ComponentId, Actor] = {}
         self._strategies: dict[StrategyId, Strategy] = {}
         self._exec_algorithms: dict[ExecAlgorithmId, ExecAlgorithm] = {}
-        self._has_controller: bool = config.get("has_controller", False)
+        self._has_controller: bool = has_controller
 
     def actors(self) -> list[Actor]:
         """
@@ -319,6 +316,7 @@ class Trader(Component):
 
         # Wire component into trader
         actor.register_base(
+            portfolio=self._portfolio,
             msgbus=self._msgbus,
             cache=self._cache,
             clock=clock,  # Clock per component

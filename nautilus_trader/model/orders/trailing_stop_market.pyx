@@ -14,9 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
-
-import msgspec
 
 from libc.stdint cimport uint64_t
 
@@ -136,7 +133,7 @@ cdef class TrailingStopMarketOrder(Order):
         ClientOrderId client_order_id not None,
         OrderSide order_side,
         Quantity quantity not None,
-        Price trigger_price: Optional[Price],
+        Price trigger_price: Price | None,
         TriggerType trigger_type,
         trailing_offset: Decimal,
         TrailingOffsetType trailing_offset_type,
@@ -314,7 +311,7 @@ cdef class TrailingStopMarketOrder(Order):
             "linked_order_ids": ",".join([o.to_str() for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
             "parent_order_id": self.parent_order_id.to_str() if self.parent_order_id is not None else None,
             "exec_algorithm_id": self.exec_algorithm_id.to_str() if self.exec_algorithm_id is not None else None,
-            "exec_algorithm_params": msgspec.json.encode(self.exec_algorithm_params) if self.exec_algorithm_params is not None else None,  # noqa
+            "exec_algorithm_params": self.exec_algorithm_params,
             "exec_spawn_id": self.exec_spawn_id.to_str() if self.exec_spawn_id is not None else None,
             "tags": self.tags,
             "ts_init": self.ts_init,

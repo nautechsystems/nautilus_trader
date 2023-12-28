@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.accounting.factory import AccountFactory
+from nautilus_trader.config.common import NautilusConfig
 
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.cache.cache cimport Cache
@@ -76,7 +77,6 @@ cdef class BacktestExecClient(ExecutionClient):
             cache=cache,
             clock=clock,
             logger=logger,
-            config={"routing": True} if routing else None,
         )
 
         self._set_account_id(AccountId(f"{exchange.id.value}-001"))

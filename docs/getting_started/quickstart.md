@@ -65,7 +65,6 @@ registering indicators to receive certain data types, however in this example we
 `QuoteTick` to the indicator in the `on_quote_tick` method.
 
 ```python
-from typing import Optional
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.macd import MovingAverageConvergenceDivergence
 from nautilus_trader.model.data import QuoteTick
@@ -100,7 +99,7 @@ class MACDStrategy(Strategy):
         self.trade_size = Quantity.from_int(config.trade_size)
 
         # Convenience
-        self.position: Optional[Position] = None
+        self.position: Position | None = None
 
     def on_start(self):
         self.subscribe_quote_ticks(instrument_id=self.instrument_id)
