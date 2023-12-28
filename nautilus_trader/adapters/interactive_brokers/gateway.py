@@ -22,9 +22,6 @@ from typing import ClassVar, Literal
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersGatewayConfig
 
 
-docker = None
-
-
 class ContainerStatus(IntEnum):
     NO_CONTAINER = 1
     CONTAINER_CREATED = 2
@@ -82,6 +79,8 @@ class InteractiveBrokersGateway:
 
         try:
             import docker
+
+            self._docker_module = docker
         except ImportError as e:
             raise RuntimeError(
                 "Docker required for Gateway, install via `pip install docker`",
@@ -194,7 +193,7 @@ class InteractiveBrokersGateway:
     def safe_start(self, wait: int = 90):
         try:
             self.start(wait=wait)
-        except docker.errors.APIError as e:
+        except self._docker_module.errors.APIError as e:
             raise RuntimeError("Container already exists") from e
 
     def stop(self):
