@@ -526,7 +526,6 @@ cdef class OrderInitialized(OrderEvent):
         cdef str parent_order_id_str = values["parent_order_id"]
         cdef str exec_algorithm_id_str = values["exec_algorithm_id"]
         cdef str exec_spawn_id_str = values["exec_spawn_id"]
-        cdef dict exec_algorithm_params = values["exec_algorithm_params"]
         return OrderInitialized(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -547,7 +546,7 @@ cdef class OrderInitialized(OrderEvent):
             linked_order_ids=[ClientOrderId(o_str) for o_str in linked_order_ids_str.split(",")] if linked_order_ids_str is not None else None,
             parent_order_id=ClientOrderId(parent_order_id_str) if parent_order_id_str is not None else None,
             exec_algorithm_id=ExecAlgorithmId(exec_algorithm_id_str) if exec_algorithm_id_str is not None else None,
-            exec_algorithm_params=exec_algorithm_params,
+            exec_algorithm_params=values["exec_algorithm_params"],
             exec_spawn_id=ClientOrderId(exec_spawn_id_str) if exec_spawn_id_str is not None else None,
             tags=values["tags"],
             event_id=UUID4(values["event_id"]),
