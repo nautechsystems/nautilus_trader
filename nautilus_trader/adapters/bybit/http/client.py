@@ -68,7 +68,7 @@ class BybitHttpClient:
         self._base_url: str = base_url
         self._headers: dict[str, Any] = {
             "Content-Type": "application/json",
-            "User-Agent": "nautilus-trader/" + nautilus_trader.__version__,
+            "User-Agent": nautilus_trader.USER_AGENT,
             "X-BAPI-API-KEY": self._api_key,
         }
         self._client = HttpClient(
