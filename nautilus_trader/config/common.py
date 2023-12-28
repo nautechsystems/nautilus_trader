@@ -115,6 +115,18 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
     The base class for all Nautilus configuration objects.
     """
 
+    @property
+    def id(self) -> str:
+        """
+        Return the hashed identifier for the configuration.
+
+        Returns
+        -------
+        str
+
+        """
+        return tokenize_config(self)
+
     @classmethod
     def fully_qualified_name(cls) -> str:
         """
@@ -149,18 +161,6 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
 
         """
         return msgspec.json.decode(raw, type=cls, dec_hook=msgspec_decoding_hook)
-
-    @property
-    def id(self) -> str:
-        """
-        Return the hashed identifier for the configuration.
-
-        Returns
-        -------
-        str
-
-        """
-        return tokenize_config(self)
 
     def dict(self) -> dict[str, Any]:
         """
