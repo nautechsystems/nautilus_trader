@@ -354,8 +354,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self,
         InstrumentId instrument_id,
         UUID4 correlation_id,
-        datetime start: Optional[datetime] = None,
-        datetime end: Optional[datetime] = None,
+        datetime start: datetime | None = None,
+        datetime end: datetime | None = None,
     ):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(correlation_id, "correlation_id")
@@ -379,8 +379,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self,
         Venue venue,
         UUID4 correlation_id,
-        datetime start: Optional[datetime] = None,
-        datetime end: Optional[datetime] = None,
+        datetime start: datetime | None = None,
+        datetime end: datetime | None = None,
     ):
         Condition.not_none(correlation_id, "correlation_id")
 
@@ -400,8 +400,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         InstrumentId instrument_id,
         int limit,
         UUID4 correlation_id,
-        datetime start: Optional[datetime] = None,
-        datetime end: Optional[datetime] = None,
+        datetime start: datetime | None = None,
+        datetime end: datetime | None = None,
     ):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(correlation_id, "correlation_id")
@@ -413,8 +413,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         InstrumentId instrument_id,
         int limit,
         UUID4 correlation_id,
-        datetime start: Optional[datetime] = None,
-        datetime end: Optional[datetime] = None,
+        datetime start: datetime | None = None,
+        datetime end: datetime | None = None,
     ):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_negative_int(limit, "limit")
@@ -427,8 +427,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         BarType bar_type,
         int limit,
         UUID4 correlation_id,
-        datetime start: Optional[datetime] = None,
-        datetime end: Optional[datetime] = None,
+        datetime start: datetime | None = None,
+        datetime end: datetime | None = None,
     ):
         Condition.not_none(bar_type, "bar_type")
         Condition.not_negative_int(limit, "limit")
