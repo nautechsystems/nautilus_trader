@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import warnings
-from typing import Optional
 
 import msgspec
 
@@ -134,7 +133,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         TraderId trader_id not None,
         Logger logger not None,
         Serializer serializer not None,
-        config: Optional[CacheConfig] = None,
+        config: CacheConfig | None = None,
     ):
         if config is None:
             config = CacheConfig()

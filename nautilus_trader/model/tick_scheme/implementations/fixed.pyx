@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
-
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
 from nautilus_trader.model.tick_scheme.base cimport register_tick_scheme
@@ -51,7 +49,7 @@ cdef class FixedTickScheme(TickScheme):
         int price_precision,
         Price min_tick not None,
         Price max_tick not None,
-        increment: Optional[float] = None,
+        increment: float | None = None,
     ):
         super().__init__(name=name, min_tick=min_tick, max_tick=max_tick)
         self.price_precision = price_precision

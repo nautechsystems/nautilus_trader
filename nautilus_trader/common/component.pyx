@@ -17,7 +17,6 @@ import copy
 from collections import deque
 from typing import Any
 from typing import Callable
-from typing import Optional
 
 import cython
 import msgspec
@@ -621,7 +620,7 @@ cdef class Component:
         self,
         ComponentTrigger trigger,
         bint is_transitory,
-        action: Optional[Callable[[None], None]] = None,
+        action: Callable[[None], None] | None = None,
     ):
         try:
             self._fsm.trigger(trigger)
@@ -1399,7 +1398,7 @@ cdef class Throttler:
         Clock clock not None,
         Logger logger not None,
         output_send not None: Callable[[Any], None],
-        output_drop: Optional[Callable[[Any], None]] = None,
+        output_drop: Callable[[Any], None] | None = None,
     ):
         Condition.valid_string(name, "name")
         Condition.positive_int(limit, "limit")

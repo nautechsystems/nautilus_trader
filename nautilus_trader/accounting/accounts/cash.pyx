@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
-
 from libc.math cimport fmin
 
 from nautilus_trader.core.correctness cimport Condition
@@ -273,7 +271,7 @@ cdef class CashAccount(Account):
         self,
         Instrument instrument,
         OrderFilled fill,
-        Position position: Optional[Position] = None,
+        Position position: Position | None = None,
     ):
         """
         Return the calculated PnL.

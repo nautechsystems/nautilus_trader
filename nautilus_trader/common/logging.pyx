@@ -18,7 +18,6 @@ import socket
 import sys
 import traceback
 from platform import python_version
-from typing import Optional
 
 import msgspec
 import numpy as np

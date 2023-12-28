@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
-
 from nautilus_trader.config.common import OrderEmulatorConfig
 
 from libc.stdint cimport uint8_t
@@ -106,7 +104,7 @@ cdef class OrderEmulator(Actor):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        config: Optional[OrderEmulatorConfig] = None,
+        config: OrderEmulatorConfig | None = None,
     ):
         if config is None:
             config = OrderEmulatorConfig()
@@ -186,7 +184,7 @@ cdef class OrderEmulator(Actor):
         """
         return self._manager.get_submit_order_commands()
 
-    def get_matching_core(self, InstrumentId instrument_id) -> Optional[MatchingCore]:
+    def get_matching_core(self, InstrumentId instrument_id) -> MatchingCore | None:
         """
         Return the emulators matching core for the given instrument ID.
 

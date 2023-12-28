@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 from nautilus_trader.accounting.error import AccountMarginExceeded
 
@@ -622,7 +621,7 @@ cdef class MarginAccount(Account):
         self,
         Instrument instrument,
         OrderFilled fill,
-        Position position: Optional[Position] = None,
+        Position position: Position | None = None,
     ):
         """
         Return the calculated PnL.

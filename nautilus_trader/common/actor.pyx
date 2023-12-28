@@ -26,7 +26,6 @@ attempts to operate without a managing `Trader` instance.
 
 import asyncio
 from concurrent.futures import Executor
-from typing import Optional
 
 import cython
 
@@ -100,7 +99,7 @@ cdef class Actor(Component):
     - Do not call components such as `clock` and `logger` in the `__init__` prior to registration.
     """
 
-    def __init__(self, config: Optional[ActorConfig] = None):
+    def __init__(self, config: ActorConfig | None = None):
         if config is None:
             config = ActorConfig()
         Condition.type(config, ActorConfig, "config")

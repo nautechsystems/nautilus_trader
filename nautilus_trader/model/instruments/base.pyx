@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 from libc.math cimport pow
 from libc.stdint cimport uint64_t
@@ -147,14 +146,14 @@ cdef class Instrument(Data):
         taker_fee not None: Decimal,
         uint64_t ts_event,
         uint64_t ts_init,
-        Price price_increment: Optional[Price] = None,
-        Quantity lot_size: Optional[Quantity] = None,
-        Quantity max_quantity: Optional[Quantity] = None,
-        Quantity min_quantity: Optional[Quantity] = None,
-        Money max_notional: Optional[Money] = None,
-        Money min_notional: Optional[Money] = None,
-        Price max_price: Optional[Price] = None,
-        Price min_price: Optional[Price] = None,
+        Price price_increment: Price | None = None,
+        Quantity lot_size: Quantity | None = None,
+        Quantity max_quantity: Quantity | None = None,
+        Quantity min_quantity: Quantity | None = None,
+        Money max_notional: Money | None = None,
+        Money min_notional: Money | None = None,
+        Price max_price: Price | None = None,
+        Price min_price: Price | None = None,
         str tick_scheme_name = None,
         dict info = None,
     ):
