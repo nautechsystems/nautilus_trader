@@ -20,6 +20,8 @@ import pytest
 from nautilus_trader.config import ImportableConfig
 from nautilus_trader.config.common import CUSTOM_DECODINGS
 from nautilus_trader.config.common import CUSTOM_ENCODINGS
+from nautilus_trader.config.common import DatabaseConfig
+from nautilus_trader.config.common import InstrumentProviderConfig
 from nautilus_trader.config.common import msgspec_decoding_hook
 from nautilus_trader.config.common import msgspec_encoding_hook
 from nautilus_trader.config.common import register_config_decoding
@@ -30,6 +32,77 @@ from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+
+
+def test_equality_hash_repr() -> None:
+    # Arrange
+    config1 = DatabaseConfig()
+    config2 = DatabaseConfig(username="user")
+
+    # Act, Assert
+    assert config1 == config1
+    assert config1 != config2
+    assert isinstance(hash(config1), int)
+    assert (
+        repr(config1)
+        == "DatabaseConfig(type='redis', host=None, port=None, username=None, password=None, ssl=False)"
+    )
+
+
+def test_config_id() -> None:
+    # Arrange
+    config = DatabaseConfig()
+
+    # Act, Assert
+    assert config.id == "18a63bfe7acf0b0126940542dc4e261c58e326db70194e5c65949e26a2f5bf1b"
+
+
+def test_fully_qualified_name() -> None:
+    # Arrange
+    config = DatabaseConfig()
+
+    # Act, Assert
+    assert config.fully_qualified_name() == "nautilus_trader.config.common:DatabaseConfig"
+
+
+def test_dict() -> None:
+    # Arrange
+    config = DatabaseConfig()
+
+    # Act, Assert
+    assert config.dict() == {
+        "type": "redis",
+        "host": None,
+        "port": None,
+        "username": None,
+        "password": None,
+        "ssl": False,
+    }
+
+
+def test_json() -> None:
+    # Arrange
+    config = DatabaseConfig()
+
+    # Act, Assert
+    assert (
+        config.json()
+        == b'{"type":"redis","host":null,"port":null,"username":null,"password":null,"ssl":false}'
+    )
+
+
+def test_json_primitives() -> None:
+    # Arrange
+    config = InstrumentProviderConfig(load_ids=frozenset([InstrumentId.from_str("ESH4.GLBX")]))
+
+    # Act, Assert
+    assert config.json_primitives() == {
+        "load_all": False,
+        "load_ids": ["ESH4.GLBX"],
+        "filters": None,
+        "filter_callable": None,
+        "log_warnings": True,
+    }
 
 
 def test_importable_config_simple() -> None:
