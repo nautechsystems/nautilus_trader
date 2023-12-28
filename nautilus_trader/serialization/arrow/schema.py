@@ -146,7 +146,7 @@ NAUTILUS_ARROW_SCHEMA = {
             "expire_time_ns": pa.uint64(),
             "display_qty": pa.string(),
             "quote_quantity": pa.bool_(),
-            "options": pa.string(),
+            "options": pa.binary(),
             # --------------------- #
             "emulation_trigger": pa.string(),
             "trigger_instrument_id": pa.string(),
@@ -156,7 +156,7 @@ NAUTILUS_ARROW_SCHEMA = {
             "parent_order_id": pa.string(),
             "exec_algorithm_id": pa.string(),
             "exec_algorithm_params": pa.binary(),
-            "exec_spawn_id": pa.binary(),
+            "exec_spawn_id": pa.string(),
             "tags": pa.string(),
             "event_id": pa.string(),
             "ts_init": pa.uint64(),

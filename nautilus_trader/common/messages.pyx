@@ -17,8 +17,6 @@ import decimal
 import json
 import re
 
-import msgspec
-
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.component cimport component_state_from_str

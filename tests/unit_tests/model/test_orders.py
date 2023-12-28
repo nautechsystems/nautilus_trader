@@ -502,7 +502,7 @@ class TestOrders:
             "linked_order_ids": None,
             "parent_order_id": None,
             "exec_algorithm_id": "VWAP",
-            "exec_algorithm_params": b'{"period":60}',
+            "exec_algorithm_params": {"period": 60},
             "exec_spawn_id": "O-19700101-0000-000-001-1",
             "tags": None,
             "ts_init": 0,

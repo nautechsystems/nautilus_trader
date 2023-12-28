@@ -33,6 +33,7 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import PositionEvent
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.wranglers_v2 import BarDataWrangler
@@ -282,12 +283,22 @@ for instrument_cls in Instrument.__subclasses__():
         deserializer=instruments.deserialize,
     )
 
+
 register_arrow(
     AccountState,
     schema=account_state.SCHEMA,
     serializer=account_state.serialize,
     deserializer=account_state.deserialize,
 )
+
+
+register_arrow(
+    OrderInitialized,
+    schema=NAUTILUS_ARROW_SCHEMA[OrderInitialized],
+    serializer=order_events.serialize,
+    deserializer=order_events.deserialize(OrderInitialized),
+)
+
 
 register_arrow(
     OrderFilled,
