@@ -163,7 +163,7 @@ pub fn equity_aapl() -> Equity {
     Equity::new(
         InstrumentId::from("AAPL.NASDAQ"),
         Symbol::from("AAPL"),
-        String::from("US0378331005"),
+        Some(String::from("US0378331005")),
         Currency::from("USD"),
         2,
         Price::from("0.01"),

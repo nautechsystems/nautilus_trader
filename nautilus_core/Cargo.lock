@@ -1265,6 +1265,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "dbn"
+version = "0.14.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d100eedbab53177dcc235c8521837443915ba5492244923a049e652b91660734"
+dependencies = [
+ "csv",
+ "dbn-macros",
+ "itoa",
+ "json-writer",
+ "num_enum",
+ "streaming-iterator",
+ "thiserror",
+ "time",
+ "zstd",
+]
+
+[[package]]
+name = "dbn-macros"
+version = "0.14.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c974de15f28d5f0c7abc01570e03adf940228e998c88a96ce0b0c90c37ac68f6"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.43",
+]
+
+[[package]]
 name = "der"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1978,6 +2007,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "json-writer"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a46aa3d39e9495d71c03e7b68981cd900f17e7ddf2ff97a14583bfbd866f8d23"
+dependencies = [
+ "itoa",
+ "ryu",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2191,6 +2230,26 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "tempfile",
+]
+
+[[package]]
+name = "nautilus-adapter"
+version = "0.14.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "criterion",
+ "dbn",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-model",
+ "pyo3",
+ "rand",
+ "rstest",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -2507,6 +2566,27 @@ checksum = "4161fcb6d602d4d2081af7c3a45852d875a03dd337a6bfdd6e06407b61342a43"
 dependencies = [
  "hermit-abi 0.3.3",
  "libc",
+]
+
+[[package]]
+name = "num_enum"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "683751d591e6d81200c39fb0d1032608b77724f34114db54f571ff1317b337c0"
+dependencies = [
+ "num_enum_derive",
+]
+
+[[package]]
+name = "num_enum_derive"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c11e44798ad209ccdd91fc192f0526a369a01234f7373e1b141c96d7cee4f0e"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.43",
 ]
 
 [[package]]
@@ -3980,6 +4060,12 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "stringprep"
