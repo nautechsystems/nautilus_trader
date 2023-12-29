@@ -235,20 +235,7 @@ def parse_mbo_msg(
     ts_init: int,
 ) -> OrderBookDelta | TradeTick:
     side: OrderSide = parse_order_side(record.side)
-    if side == OrderSide.NO_ORDER_SIDE:
-        return TradeTick.from_raw(
-            instrument_id=instrument_id,
-            price_raw=record.price,
-            price_prec=USD.precision,  # TODO(per instrument precision)
-            size_raw=int(record.size * FIXED_SCALAR),  # No fractional sizes
-            size_prec=0,  # No fractional units
-            aggressor_side=AggressorSide.NO_AGGRESSOR,
-            trade_id=TradeId(str(record.sequence)),
-            ts_event=record.ts_recv,  # More accurate and reliable timestamp
-            ts_init=ts_init,
-        )
-
-    if record.action == "T":
+    if side == OrderSide.NO_ORDER_SIDE or record.action == "T":
         return TradeTick.from_raw(
             instrument_id=instrument_id,
             price_raw=record.price,
@@ -413,7 +400,7 @@ def parse_ohlcv_msg(
         high=Price.from_raw(record.high / 100, 2),  # TODO(adjust for display factor)
         low=Price.from_raw(record.low / 100, 2),  # TODO(adjust for display factor)
         close=Price.from_raw(record.close / 100, 2),  # TODO(adjust for display factor)
-        volume=Quantity.from_raw(record.volume, 2),  # TODO(adjust for display factor)
+        volume=Quantity.from_raw(record.volume, 0),  # TODO(adjust for display factor)
         ts_event=ts_event,
         ts_init=ts_init,
     )

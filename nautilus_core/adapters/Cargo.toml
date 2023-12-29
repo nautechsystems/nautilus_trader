@@ -16,6 +16,7 @@ nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"]}
 anyhow = { workspace = true }
 chrono = { workspace = true }
+itoa = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
 rust_decimal = { workspace = true }

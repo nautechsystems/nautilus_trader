@@ -2240,6 +2240,7 @@ dependencies = [
  "chrono",
  "criterion",
  "dbn",
+ "itoa",
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",
