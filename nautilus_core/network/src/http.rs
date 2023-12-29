@@ -20,9 +20,11 @@ use std::{
 };
 
 use futures_util::{stream, StreamExt};
-use hyper::{Body, Client, Method, Request, Response};
-use hyper_tls::HttpsConnector;
 use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
+use reqwest::{
+    header::{HeaderMap, HeaderName},
+    Method, Response, Url,
+};
 
 use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
 
@@ -36,7 +38,7 @@ use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
 /// for the give `header_keys`.
 #[derive(Clone)]
 pub struct InnerHttpClient {
-    client: Client<HttpsConnector<hyper::client::HttpConnector>>,
+    client: reqwest::Client,
     header_keys: Vec<String>,
 }
 
@@ -48,25 +50,28 @@ impl InnerHttpClient {
         headers: HashMap<String, String>,
         body: Option<Vec<u8>>,
     ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>> {
-        let mut req_builder = Request::builder().method(method).uri(url);
+        let reqwest_url = Url::parse(url.as_str())?;
 
-        for (header_name, header_value) in &headers {
-            req_builder = req_builder.header(header_name, header_value);
+        let mut header_map = HeaderMap::new();
+        for (header_key, header_value) in &headers {
+            let key = HeaderName::from_bytes(header_key.as_bytes())?;
+            let _ = header_map.insert(key, header_value.parse().unwrap());
         }
 
-        let req = if let Some(body) = body {
-            req_builder.body(Body::from(body))?
-        } else {
-            req_builder.body(Body::empty())?
+        let request_builder = self.client.request(method, reqwest_url).headers(header_map);
+
+        let request = match body {
+            Some(b) => request_builder.body(b).build()?,
+            None => request_builder.build()?,
         };
 
-        let res = self.client.request(req).await?;
+        let res = self.client.execute(request).await?;
         self.to_response(res).await
     }
 
     pub async fn to_response(
         &self,
-        res: Response<Body>,
+        res: Response,
     ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>> {
         let headers: HashMap<String, String> = self
             .header_keys
@@ -76,7 +81,7 @@ impl InnerHttpClient {
             .map(|(k, v)| (k.clone(), v.to_owned()))
             .collect();
         let status = res.status().as_u16();
-        let bytes = hyper::body::to_bytes(res.into_body()).await?;
+        let bytes = res.bytes().await?;
 
         Ok(HttpResponse {
             status,
@@ -137,8 +142,7 @@ pub struct HttpResponse {
 
 impl Default for InnerHttpClient {
     fn default() -> Self {
-        let https = HttpsConnector::new();
-        let client = Client::builder().build::<_, hyper::Body>(https);
+        let client = reqwest::Client::new();
         Self {
             client,
             header_keys: Default::default(),
@@ -188,8 +192,7 @@ impl HttpClient {
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
     ) -> Self {
-        let https = HttpsConnector::new();
-        let client = Client::builder().build::<_, hyper::Body>(https);
+        let client = reqwest::Client::new();
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
         let client = InnerHttpClient {
