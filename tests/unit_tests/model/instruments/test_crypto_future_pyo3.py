@@ -57,4 +57,6 @@ def test_to_dict():
         "min_notional": "10.00000000 USDT",
         "min_price": "0.01",
         "min_quantity": "0.00001",
+        "ts_event": 0,
+        "ts_init": 0,
     }

@@ -56,4 +56,6 @@ def test_to_dict():
         "margin_init": 0.0,
         "maker_fee": 0.0,
         "taker_fee": 0.0,
+        "ts_event": 0,
+        "ts_init": 0,
     }

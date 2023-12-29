@@ -54,4 +54,6 @@ def test_to_dict():
         "max_quantity": None,
         "min_price": None,
         "min_quantity": None,
+        "ts_event": 0,
+        "ts_init": 0,
     }

@@ -62,6 +62,8 @@ pub fn crypto_future_btcusdt() -> CryptoFuture {
         Some(Money::new(10.00, Currency::from("USDT")).unwrap()),
         Some(Price::from("1000000.00")),
         Some(Price::from("0.01")),
+        0,
+        0,
     )
     .unwrap()
 }
@@ -94,6 +96,8 @@ pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
         Some(Money::new(10.00, Currency::from("USDT")).unwrap()),
         Some(Price::from("15000.00")),
         Some(Price::from("1.0")),
+        0,
+        0,
     )
     .unwrap()
 }
@@ -122,6 +126,8 @@ pub fn xbtusd_bitmex() -> CryptoPerpetual {
         Some(Money::from("1 USD")),
         Some(Price::from("10000000")),
         Some(Price::from("0.01")),
+        0,
+        0,
     )
     .unwrap();
 }
@@ -150,6 +156,8 @@ pub fn currency_pair_btcusdt() -> CurrencyPair {
         Some(Quantity::from("0.000001")),
         Some(Price::from("1000000")),
         Some(Price::from("0.01")),
+        0,
+        0,
     )
     .unwrap()
 }
@@ -177,6 +185,8 @@ pub fn equity_aapl() -> Equity {
         None,
         None,
         None,
+        0,
+        0,
     )
     .unwrap()
 }
@@ -205,6 +215,8 @@ pub fn futures_contract_es() -> FuturesContract {
         None,
         None,
         None,
+        0,
+        0,
     )
     .unwrap()
 }
@@ -238,6 +250,8 @@ pub fn options_contract_appl() -> OptionsContract {
         None,
         None,
         None,
+        0,
+        0,
     )
     .unwrap()
 }

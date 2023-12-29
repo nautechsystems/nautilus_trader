@@ -59,6 +59,8 @@ class TestInstrumentProviderPyo3:
             min_notional=Money(10.0, TestTypesProviderPyo3.currency_usdt()),
             max_price=Price.from_str("15000.0"),
             min_price=Price.from_str("1.0"),
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -95,6 +97,8 @@ class TestInstrumentProviderPyo3:
             min_notional=Money(10.0, TestTypesProviderPyo3.currency_usdt()),
             max_price=Price.from_str("1000000.0"),
             min_price=Price.from_str("0.01"),
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -117,6 +121,8 @@ class TestInstrumentProviderPyo3:
             min_quantity=Quantity.from_str("0.00001"),
             max_price=Price.from_str("1000000"),
             min_price=Price.from_str("0.01"),
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -149,6 +155,8 @@ class TestInstrumentProviderPyo3:
             min_quantity=None,
             max_price=None,
             min_price=None,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -170,6 +178,8 @@ class TestInstrumentProviderPyo3:
             min_quantity=None,
             max_price=None,
             min_price=None,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -201,4 +211,6 @@ class TestInstrumentProviderPyo3:
             min_quantity=None,
             max_price=None,
             min_price=None,
+            ts_event=0,
+            ts_init=0,
         )
