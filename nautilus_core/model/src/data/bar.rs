@@ -49,6 +49,17 @@ pub struct BarSpecification {
     pub price_type: PriceType,
 }
 
+impl BarSpecification {
+    #[must_use]
+    pub fn new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> Self {
+        Self {
+            step,
+            aggregation,
+            price_type,
+        }
+    }
+}
+
 impl Display for BarSpecification {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}-{}-{}", self.step, self.aggregation, self.price_type)
@@ -70,6 +81,21 @@ pub struct BarType {
     pub spec: BarSpecification,
     /// The bar types aggregation source.
     pub aggregation_source: AggregationSource,
+}
+
+impl BarType {
+    #[must_use]
+    pub fn new(
+        instrument_id: InstrumentId,
+        spec: BarSpecification,
+        aggregation_source: AggregationSource,
+    ) -> Self {
+        Self {
+            instrument_id,
+            spec,
+            aggregation_source,
+        }
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
