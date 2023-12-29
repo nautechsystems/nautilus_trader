@@ -2233,7 +2233,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nautilus-adapter"
+name = "nautilus-adapters"
 version = "0.14.0"
 dependencies = [
  "anyhow",
