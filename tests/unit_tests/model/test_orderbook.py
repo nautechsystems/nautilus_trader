@@ -15,6 +15,7 @@
 
 import copy
 import pickle
+import time
 
 import msgspec
 import pandas as pd
@@ -681,12 +682,17 @@ class TestOrderBook:
             book_type=BookType.L3_MBO,
         )
 
+        start_time = time.perf_counter()
+
         for delta in data:
             if not isinstance(delta, OrderBookDelta):
                 continue
             book.apply_delta(delta)
 
+        end_time = time.perf_counter()
+
         # Assert
+        print(f"Delta apply elapsed: {end_time - start_time}")
         assert book.ts_last == 1701129555644234540
         assert book.sequence == 429411899
         assert book.count == 6197580
