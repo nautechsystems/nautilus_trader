@@ -20,6 +20,7 @@ import msgspec
 import pandas as pd
 import pytest
 
+from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
@@ -33,6 +34,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from tests import TEST_DATA_DIR
 
 
 class TestOrderBook:
@@ -699,3 +701,64 @@ class TestOrderBook:
         # Assert
         assert book.ts_last == new.ts_last
         assert book.sequence == new.sequence
+
+    @pytest.mark.skip(reason="Used for development")
+    def test_orderbook_spy_xnas_itch_mbo_l3(self) -> None:
+        loader = DatabentoDataLoader()
+        path = TEST_DATA_DIR / "databento" / "temp" / "spy-xnas-itch-20231127.mbo.dbn.zst"
+        instrument = TestInstrumentProvider.equity(symbol="SPY", venue="XNAS")
+
+        # Act
+        data = loader.from_dbn(path, instrument_id=instrument.id)
+
+        book = TestDataStubs.make_book(
+            instrument=instrument,
+            book_type=BookType.L3_MBO,
+        )
+
+        for delta in data:
+            if not isinstance(delta, OrderBookDelta):
+                continue
+            book.apply_delta(delta)
+
+        # Assert
+        assert book.ts_last == 1701129555644234540
+        assert book.sequence == 429411899
+        assert book.count == 6197580
+        assert len(book.bids()) == 52
+        assert len(book.asks()) == 38
+        assert book.best_bid_price() == Price.from_str("454.84")
+        assert book.best_ask_price() == Price.from_str("454.90")
+
+    def test_orderbook_esh4_glbx_20231224_mbo_l3(self) -> None:
+        loader = DatabentoDataLoader()
+        instrument = TestInstrumentProvider.es_future(expiry_year=2024, expiry_month=3)
+
+        path_20231224 = TEST_DATA_DIR / "databento" / "esh4-glbx-mdp3-20231224.mbo.dbn.zst"
+        path_20231225 = TEST_DATA_DIR / "databento" / "esh4-glbx-mdp3-20231225.mbo.dbn.zst"
+        # path_20231226 = TEST_DATA_DIR / "temp" / "databento" / "esh4-glbx-mdp3-20231226.mbo.dbn.zst"
+
+        # Act
+        data = loader.from_dbn(path_20231224, instrument_id=instrument.id)
+        data.extend(loader.from_dbn(path_20231225, instrument_id=instrument.id))
+        # data.extend(loader.from_dbn(path_20231226, instrument_id=instrument.id))
+
+        book = TestDataStubs.make_book(
+            instrument=instrument,
+            book_type=BookType.L3_MBO,
+        )
+
+        for delta in data:
+            if not isinstance(delta, OrderBookDelta):
+                continue
+            book.apply_delta(delta)
+
+        # Assert
+        assert len(data) == 77517
+        assert book.ts_last == 1703548799446821072
+        assert book.sequence == 59585
+        assert book.count == 74509
+        assert len(book.bids()) == 922
+        assert len(book.asks()) == 565
+        assert book.best_bid_price() == Price.from_str("4810.00")
+        assert book.best_ask_price() == Price.from_str("4810.25")
