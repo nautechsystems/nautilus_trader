@@ -52,4 +52,6 @@ def test_to_dict():
         "min_quantity": "0.00001",
         "min_price": "0.01",
         "max_price": "1000000",
+        "ts_event": 0,
+        "ts_init": 0,
     }

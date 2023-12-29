@@ -18,7 +18,10 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::python::{serialization::from_dict_pyo3, to_pyvalue_err};
+use nautilus_core::{
+    python::{serialization::from_dict_pyo3, to_pyvalue_err},
+    time::UnixNanos,
+};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 
@@ -43,6 +46,8 @@ impl Equity {
         margin_maint: Decimal,
         maker_fee: Decimal,
         taker_fee: Decimal,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
         isin: Option<String>,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
@@ -67,6 +72,8 @@ impl Equity {
             min_quantity,
             max_price,
             min_price,
+            ts_event,
+            ts_init,
         )
         .map_err(to_pyvalue_err)
     }
@@ -104,6 +111,8 @@ impl Equity {
         dict.set_item("margin_maint", self.margin_maint.to_f64())?;
         dict.set_item("maker_fee", self.maker_fee.to_f64())?;
         dict.set_item("taker_fee", self.taker_fee.to_f64())?;
+        dict.set_item("ts_event", self.ts_event)?;
+        dict.set_item("ts_init", self.ts_init)?;
         match &self.isin {
             Some(value) => dict.set_item("isin", value.to_string())?,
             None => dict.set_item("isin", py.None())?,

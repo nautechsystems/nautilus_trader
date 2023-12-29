@@ -691,6 +691,8 @@ class CryptoFuture:
         margin_maint: float,
         maker_fee: float,
         taker_fee: float,
+        ts_event: int,
+        ts_init: int,
         lot_size: Quantity | None = None,
         max_quantity: Quantity | None = None,
         min_quantity: Quantity | None = None,
@@ -716,6 +718,8 @@ class CryptoPerpetual:
         margin_maint: float,
         maker_fee: float,
         taker_fee: float,
+        ts_event: int,
+        ts_init: int,
         lot_size: Quantity | None = None,
         max_quantity: Quantity | None = None,
         min_quantity: Quantity | None = None,
@@ -739,6 +743,8 @@ class CurrencyPair:
         margin_maint: float,
         maker_fee: float,
         taker_fee: float,
+        ts_event: int,
+        ts_init: int,
         lot_size: Quantity | None = None,
         max_quantity: Quantity | None = None,
         min_quantity: Quantity | None = None,
@@ -759,6 +765,8 @@ class Equity:
         margin_maint: float,
         maker_fee: float,
         taker_fee: float,
+        ts_event: int,
+        ts_init: int,
         lot_size: Quantity | None = None,
         max_quantity: Quantity | None = None,
         min_quantity: Quantity | None = None,
@@ -782,6 +790,8 @@ class FuturesContract:
         maker_fee: float,
         taker_fee: float,
         multiplier: Quantity,
+        ts_event: int,
+        ts_init: int,
         lot_size: Quantity | None = None,
         max_quantity: Quantity | None = None,
         min_quantity: Quantity | None = None,
@@ -806,6 +816,8 @@ class OptionsContract:
         margin_maint: float,
         maker_fee: float,
         taker_fee: float,
+        ts_event: int,
+        ts_init: int,
         lot_size: Quantity | None = None,
         max_quantity: Quantity | None = None,
         min_quantity: Quantity | None = None,
@@ -1354,7 +1366,7 @@ class SimpleMovingAverage:
     def __init__(
         self,
         period: int,
-        price_type: PriceType = None,
+        price_type: PriceType | None = None,
     )-> None: ...
     @property
     def name(self) -> str: ...
@@ -1379,7 +1391,7 @@ class ExponentialMovingAverage:
     def __init__(
         self,
         period: int,
-        price_type: PriceType = None,
+        price_type: PriceType | None = None,
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -1405,7 +1417,7 @@ class DoubleExponentialMovingAverage:
     def __init__(
         self,
         period: int,
-        price_type = None
+        price_type: PriceType | None = None
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -1429,7 +1441,7 @@ class HullMovingAverage:
     def __init__(
         self,
         period: int,
-        price_type: PriceType = None
+        price_type: PriceType | None = None
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -1450,12 +1462,11 @@ class HullMovingAverage:
     def handle_bar(self, bar: Bar) -> None: ...
     def reset(self) -> None: ...
 
-
 class WilderMovingAverage:
     def __init__(
         self,
         period: int,
-        price_type: PriceType = None,
+        price_type: PriceType | None = None,
     ) -> None: ...
     @property
     def name(self) -> str: ...

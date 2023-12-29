@@ -18,6 +18,7 @@
 use std::hash::{Hash, Hasher};
 
 use anyhow::Result;
+use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -53,6 +54,8 @@ pub struct Equity {
     pub min_quantity: Option<Quantity>,
     pub max_price: Option<Price>,
     pub min_price: Option<Price>,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }
 
 impl Equity {
@@ -74,6 +77,8 @@ impl Equity {
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
         min_price: Option<Price>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
     ) -> Result<Self> {
         Ok(Self {
             id,
@@ -92,6 +97,8 @@ impl Equity {
             min_quantity,
             max_price,
             min_price,
+            ts_event,
+            ts_init,
         })
     }
 }
@@ -197,6 +204,14 @@ impl Instrument for Equity {
 
     fn taker_fee(&self) -> Decimal {
         self.taker_fee
+    }
+
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }
 

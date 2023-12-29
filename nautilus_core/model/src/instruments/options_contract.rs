@@ -57,6 +57,8 @@ pub struct OptionsContract {
     pub min_quantity: Option<Quantity>,
     pub max_price: Option<Price>,
     pub min_price: Option<Price>,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }
 
 impl OptionsContract {
@@ -82,6 +84,8 @@ impl OptionsContract {
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
         min_price: Option<Price>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
     ) -> Result<Self> {
         Ok(Self {
             id,
@@ -104,6 +108,8 @@ impl OptionsContract {
             margin_maint,
             maker_fee,
             taker_fee,
+            ts_event,
+            ts_init,
         })
     }
 }
@@ -209,6 +215,14 @@ impl Instrument for OptionsContract {
 
     fn taker_fee(&self) -> Decimal {
         self.taker_fee
+    }
+
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }
 

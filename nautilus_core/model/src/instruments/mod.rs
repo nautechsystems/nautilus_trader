@@ -20,12 +20,12 @@ pub mod equity;
 pub mod futures_contract;
 pub mod options_contract;
 pub mod synthetic;
-pub mod synthetic_api;
 
 #[cfg(feature = "stubs")]
 pub mod stubs;
 
 use anyhow::Result;
+use nautilus_core::time::UnixNanos;
 use rust_decimal::Decimal;
 
 use crate::{
@@ -63,6 +63,8 @@ pub trait Instrument {
     fn margin_maint(&self) -> Decimal;
     fn maker_fee(&self) -> Decimal;
     fn taker_fee(&self) -> Decimal;
+    fn ts_event(&self) -> UnixNanos;
+    fn ts_init(&self) -> UnixNanos;
 
     /// Creates a new price from the given `value` with the correct price precision for the instrument.
     fn make_price(&self, value: f64) -> Result<Price> {

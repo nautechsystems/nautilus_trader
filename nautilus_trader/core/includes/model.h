@@ -956,21 +956,6 @@ typedef struct Data_t {
 } Data_t;
 
 /**
- * Provides a C compatible Foreign Function Interface (FFI) for an underlying
- * [`SyntheticInstrument`].
- *
- * This struct wraps `SyntheticInstrument` in a way that makes it compatible with C function
- * calls, enabling interaction with `SyntheticInstrument` in a C environment.
- *
- * It implements the `Deref` trait, allowing instances of `SyntheticInstrument_API` to be
- * dereferenced to `SyntheticInstrument`, providing access to `SyntheticInstruments`'s methods without
- * having to manually access the underlying instance.
- */
-typedef struct SyntheticInstrument_API {
-    struct SyntheticInstrument *_0;
-} SyntheticInstrument_API;
-
-/**
  * Represents a single quote tick in a financial market.
  */
 typedef struct Ticker {
@@ -1181,6 +1166,21 @@ typedef struct PositionId_t {
 } PositionId_t;
 
 /**
+ * Provides a C compatible Foreign Function Interface (FFI) for an underlying
+ * [`SyntheticInstrument`].
+ *
+ * This struct wraps `SyntheticInstrument` in a way that makes it compatible with C function
+ * calls, enabling interaction with `SyntheticInstrument` in a C environment.
+ *
+ * It implements the `Deref` trait, allowing instances of `SyntheticInstrument_API` to be
+ * dereferenced to `SyntheticInstrument`, providing access to `SyntheticInstruments`'s methods without
+ * having to manually access the underlying instance.
+ */
+typedef struct SyntheticInstrument_API {
+    struct SyntheticInstrument *_0;
+} SyntheticInstrument_API;
+
+/**
  * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBook`].
  *
  * This struct wraps `OrderBook` in a way that makes it compatible with C function
@@ -1231,56 +1231,6 @@ typedef struct Money_t {
 struct Data_t data_clone(const struct Data_t *data);
 
 void interned_string_stats(void);
-
-/**
- * # Safety
- *
- * - Assumes `components_ptr` is a valid C string pointer of a JSON format list of strings.
- * - Assumes `formula_ptr` is a valid C string pointer.
- */
-struct SyntheticInstrument_API synthetic_instrument_new(struct Symbol_t symbol,
-                                                        uint8_t price_precision,
-                                                        const char *components_ptr,
-                                                        const char *formula_ptr,
-                                                        uint64_t ts_event,
-                                                        uint64_t ts_init);
-
-void synthetic_instrument_drop(struct SyntheticInstrument_API synth);
-
-struct InstrumentId_t synthetic_instrument_id(const struct SyntheticInstrument_API *synth);
-
-uint8_t synthetic_instrument_price_precision(const struct SyntheticInstrument_API *synth);
-
-struct Price_t synthetic_instrument_price_increment(const struct SyntheticInstrument_API *synth);
-
-const char *synthetic_instrument_formula_to_cstr(const struct SyntheticInstrument_API *synth);
-
-const char *synthetic_instrument_components_to_cstr(const struct SyntheticInstrument_API *synth);
-
-uintptr_t synthetic_instrument_components_count(const struct SyntheticInstrument_API *synth);
-
-uint64_t synthetic_instrument_ts_event(const struct SyntheticInstrument_API *synth);
-
-uint64_t synthetic_instrument_ts_init(const struct SyntheticInstrument_API *synth);
-
-/**
- * # Safety
- *
- * - Assumes `formula_ptr` is a valid C string pointer.
- */
-uint8_t synthetic_instrument_is_valid_formula(const struct SyntheticInstrument_API *synth,
-                                              const char *formula_ptr);
-
-/**
- * # Safety
- *
- * - Assumes `formula_ptr` is a valid C string pointer.
- */
-void synthetic_instrument_change_formula(struct SyntheticInstrument_API *synth,
-                                         const char *formula_ptr);
-
-struct Price_t synthetic_instrument_calculate(struct SyntheticInstrument_API *synth,
-                                              const CVec *inputs_ptr);
 
 struct BarSpecification_t bar_specification_new(uintptr_t step,
                                                 uint8_t aggregation,
@@ -1953,6 +1903,56 @@ uint8_t venue_is_synthetic(const struct Venue_t *venue);
 struct VenueOrderId_t venue_order_id_new(const char *ptr);
 
 uint64_t venue_order_id_hash(const struct VenueOrderId_t *id);
+
+/**
+ * # Safety
+ *
+ * - Assumes `components_ptr` is a valid C string pointer of a JSON format list of strings.
+ * - Assumes `formula_ptr` is a valid C string pointer.
+ */
+struct SyntheticInstrument_API synthetic_instrument_new(struct Symbol_t symbol,
+                                                        uint8_t price_precision,
+                                                        const char *components_ptr,
+                                                        const char *formula_ptr,
+                                                        uint64_t ts_event,
+                                                        uint64_t ts_init);
+
+void synthetic_instrument_drop(struct SyntheticInstrument_API synth);
+
+struct InstrumentId_t synthetic_instrument_id(const struct SyntheticInstrument_API *synth);
+
+uint8_t synthetic_instrument_price_precision(const struct SyntheticInstrument_API *synth);
+
+struct Price_t synthetic_instrument_price_increment(const struct SyntheticInstrument_API *synth);
+
+const char *synthetic_instrument_formula_to_cstr(const struct SyntheticInstrument_API *synth);
+
+const char *synthetic_instrument_components_to_cstr(const struct SyntheticInstrument_API *synth);
+
+uintptr_t synthetic_instrument_components_count(const struct SyntheticInstrument_API *synth);
+
+uint64_t synthetic_instrument_ts_event(const struct SyntheticInstrument_API *synth);
+
+uint64_t synthetic_instrument_ts_init(const struct SyntheticInstrument_API *synth);
+
+/**
+ * # Safety
+ *
+ * - Assumes `formula_ptr` is a valid C string pointer.
+ */
+uint8_t synthetic_instrument_is_valid_formula(const struct SyntheticInstrument_API *synth,
+                                              const char *formula_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `formula_ptr` is a valid C string pointer.
+ */
+void synthetic_instrument_change_formula(struct SyntheticInstrument_API *synth,
+                                         const char *formula_ptr);
+
+struct Price_t synthetic_instrument_calculate(struct SyntheticInstrument_API *synth,
+                                              const CVec *inputs_ptr);
 
 struct OrderBook_API orderbook_new(struct InstrumentId_t instrument_id, enum BookType book_type);
 

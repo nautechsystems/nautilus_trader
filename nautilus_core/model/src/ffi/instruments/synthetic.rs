@@ -27,9 +27,9 @@ use nautilus_core::{
     time::UnixNanos,
 };
 
-use super::synthetic::SyntheticInstrument;
 use crate::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
+    instruments::synthetic::SyntheticInstrument,
     types::price::{Price, ERROR_PRICE},
 };
 

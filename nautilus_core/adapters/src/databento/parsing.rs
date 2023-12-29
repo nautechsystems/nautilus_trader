@@ -112,7 +112,7 @@ pub fn parse_raw_symbol_to_string(raw_symbol: [c_char; SYMBOL_CSTR_LEN]) -> Resu
 pub fn parse_equity(
     record: InstrumentDefMsg,
     instrument_id: InstrumentId,
-    _ts_init: UnixNanos,
+    ts_init: UnixNanos,
 ) -> Result<Equity> {
     // Use USD for all US equities venues for now
     let currency = Currency::USD();
@@ -131,9 +131,11 @@ pub fn parse_equity(
         dec!(0), // TBD
         dec!(0), // TBD
         Some(Quantity::new(record.min_lot_size_round_lot.into(), 0)?),
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
+        None,           // TBD
+        None,           // TBD
+        None,           // TBD
+        None,           // TBD
+        record.ts_recv, // More accurate and reliable timestamp
+        ts_init,
     )
 }
