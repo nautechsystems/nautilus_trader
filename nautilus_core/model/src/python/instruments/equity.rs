@@ -35,7 +35,6 @@ impl Equity {
     fn py_new(
         id: InstrumentId,
         raw_symbol: Symbol,
-        isin: String,
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
@@ -44,6 +43,7 @@ impl Equity {
         margin_maint: Decimal,
         maker_fee: Decimal,
         taker_fee: Decimal,
+        isin: Option<String>,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
@@ -96,7 +96,6 @@ impl Equity {
         dict.set_item("type", stringify!(Equity))?;
         dict.set_item("id", self.id.to_string())?;
         dict.set_item("raw_symbol", self.raw_symbol.to_string())?;
-        dict.set_item("isin", self.isin.to_string())?;
         dict.set_item("currency", self.currency.code.to_string())?;
         dict.set_item("price_precision", self.price_precision)?;
         dict.set_item("price_increment", self.price_increment.to_string())?;
@@ -105,6 +104,10 @@ impl Equity {
         dict.set_item("margin_maint", self.margin_maint.to_f64())?;
         dict.set_item("maker_fee", self.maker_fee.to_f64())?;
         dict.set_item("taker_fee", self.taker_fee.to_f64())?;
+        match &self.isin {
+            Some(value) => dict.set_item("isin", value.to_string())?,
+            None => dict.set_item("isin", py.None())?,
+        }
         match self.lot_size {
             Some(value) => dict.set_item("lot_size", value.to_string())?,
             None => dict.set_item("lot_size", py.None())?,

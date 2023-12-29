@@ -39,7 +39,7 @@ pub struct Equity {
     pub id: InstrumentId,
     pub raw_symbol: Symbol,
     /// The instruments ISIN (International Securities Identification Number).
-    pub isin: String,
+    pub isin: Option<String>,
     pub currency: Currency,
     pub price_precision: u8,
     pub price_increment: Price,
@@ -60,7 +60,7 @@ impl Equity {
     pub fn new(
         id: InstrumentId,
         raw_symbol: Symbol,
-        isin: String,
+        isin: Option<String>,
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
