@@ -89,7 +89,7 @@ def parse_book_action(value: str) -> BookAction:
         case "R":
             return BookAction.CLEAR
         case _:
-            raise ValueError(f"Invalid `BookAction`, was {value}")
+            raise ValueError(f"Invalid `BookAction`, was '{value}'")
 
 
 def parse_option_kind(value: str) -> OptionKind:
@@ -99,7 +99,7 @@ def parse_option_kind(value: str) -> OptionKind:
         case "P":
             return OptionKind.PUT
         case _:
-            raise ValueError(f"Invalid `OptionKind`, was {value}")
+            raise ValueError(f"Invalid `OptionKind`, was '{value}'")
 
 
 def parse_cfi_iso10926(value: str) -> tuple[AssetClass | None, AssetType | None]:
