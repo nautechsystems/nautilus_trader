@@ -48,6 +48,8 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import BookType
@@ -133,9 +135,10 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._instrument_ids[dataset].add(instrument_id)
 
         # MBO/L3 subscription buffering
+        self._buffer_mbo_subscriptions_task: asyncio.Task | None = None
         self._is_buffering_mbo_subscriptions: bool = bool(config.mbo_subscriptions_delay)
         self._buffered_mbo_subscriptions: dict[Dataset, list[InstrumentId]] = defaultdict(list)
-        self._buffer_mbo_subscriptions_task: asyncio.Task | None = None
+        self._buffered_deltas: dict[InstrumentId, list[OrderBookDelta]] = defaultdict(list)
 
     async def _connect(self) -> None:
         if not self._instrument_ids:
@@ -796,6 +799,17 @@ class DatabentoDataClient(LiveMarketDataClient):
         except ValueError as e:
             self._log.error(f"{e!r}")
             return
+
+        if isinstance(data, OrderBookDelta):
+            if databento.RecordFlags.F_LAST not in databento.RecordFlags(data.flags):
+                buffer = self._buffered_deltas[data.instrument_id]
+                buffer.append(data)
+                return  # We can rely on the F_LAST flag for an MBO feed
+            else:
+                buffer = self._buffered_deltas[data.instrument_id]
+                buffer.append(data)
+                data = OrderBookDeltas(instrument_id, deltas=buffer.copy())
+                buffer.clear()
 
         if isinstance(data, tuple):
             self._handle_data(data[0])

@@ -233,21 +233,7 @@ def parse_mbo_msg(
     record: databento.MBOMsg,
     instrument_id: InstrumentId,
     ts_init: int,
-) -> OrderBookDelta:
-    if record.action == "T":
-        return TradeTick.from_raw(
-            instrument_id=instrument_id,
-            price_raw=record.price,
-            price_prec=USD.precision,  # TODO(per instrument precision)
-            size_raw=int(record.size * FIXED_SCALAR),  # No fractional sizes
-            size_prec=0,  # No fractional units
-            aggressor_side=parse_aggressor_side(record.side),
-            trade_id=TradeId(str(record.sequence)),
-            ts_event=record.ts_recv,  # More accurate and reliable timestamp
-            ts_init=ts_init,
-        )
-
-    action: BookAction = parse_book_action(record.action)
+) -> OrderBookDelta | TradeTick:
     side: OrderSide = parse_order_side(record.side)
     if side == OrderSide.NO_ORDER_SIDE:
         return TradeTick.from_raw(
@@ -262,9 +248,22 @@ def parse_mbo_msg(
             ts_init=ts_init,
         )
 
+    if record.action == "T":
+        return TradeTick.from_raw(
+            instrument_id=instrument_id,
+            price_raw=record.price,
+            price_prec=USD.precision,  # TODO(per instrument precision)
+            size_raw=int(record.size * FIXED_SCALAR),  # No fractional sizes
+            size_prec=0,  # No fractional units
+            aggressor_side=parse_aggressor_side(record.side),
+            trade_id=TradeId(str(record.sequence)),
+            ts_event=record.ts_recv,  # More accurate and reliable timestamp
+            ts_init=ts_init,
+        )
+
     return OrderBookDelta.from_raw(
         instrument_id=instrument_id,
-        action=action,
+        action=parse_book_action(record.action),
         side=side,
         price_raw=record.price,
         price_prec=USD.precision,  # TODO(per instrument precision)
