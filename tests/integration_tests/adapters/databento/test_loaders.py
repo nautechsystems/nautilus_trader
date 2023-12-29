@@ -39,13 +39,14 @@ from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TEST_DATA_DIR
 
 
 DATABENTO_TEST_DATA_DIR = TEST_DATA_DIR / "databento"
 
 
-@pytest.mark.skip(reason="Used for initial development")
+@pytest.mark.skip(reason="Used for development")
 def test_loader_definition_glbx_all_symbols() -> None:
     # Arrange
     loader = DatabentoDataLoader()
@@ -56,6 +57,21 @@ def test_loader_definition_glbx_all_symbols() -> None:
 
     # Assert
     assert len(data) == 10_000_000
+
+
+@pytest.mark.skip(reason="Used for development")
+def test_loader_spy_xnas_itch_mbo() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "spy-xnas-itch-20231127.mbo.dbn.zst"
+
+    instrument = TestInstrumentProvider.equity(symbol="SPY", venue="XNAS")
+
+    # Act
+    data = loader.from_dbn(path, instrument_id=instrument.id)
+
+    # Assert
+    assert len(data) == 6_272_549
 
 
 def test_get_publishers() -> None:
@@ -263,7 +279,7 @@ def test_loader_with_xnasitch_mbo() -> None:
     delta = data[0]
     assert delta.instrument_id == InstrumentId.from_str("ESH1.GLBX")
     assert delta.action == BookAction.DELETE
-    assert delta.order.side == OrderSide.BUY
+    assert delta.order.side == OrderSide.SELL
     assert delta.order.price == Price.from_str("3722.75")
     assert delta.order.size == Quantity.from_int(1)
     assert delta.order.order_id == 647784973705
@@ -338,7 +354,7 @@ def test_loader_with_tbbo() -> None:
     assert trade.instrument_id == InstrumentId.from_str("ESH1.GLBX")
     assert trade.price == Price.from_str("3720.25")
     assert trade.size == Quantity.from_int(5)
-    assert trade.aggressor_side == AggressorSide.BUYER
+    assert trade.aggressor_side == AggressorSide.SELLER
     assert trade.trade_id == TradeId("1170380")
     assert trade.ts_event == 1609160400099150057
     assert trade.ts_init == 1609160400099150057
@@ -360,7 +376,7 @@ def test_loader_with_trades() -> None:
     assert trade.instrument_id == InstrumentId.from_str("ESH1.GLBX")
     assert trade.price == Price.from_str("3720.25")
     assert trade.size == Quantity.from_int(5)
-    assert trade.aggressor_side == AggressorSide.BUYER
+    assert trade.aggressor_side == AggressorSide.SELLER
     assert trade.trade_id == TradeId("1170380")
     assert trade.ts_event == 1609160400099150057
     assert trade.ts_init == 1609160400099150057

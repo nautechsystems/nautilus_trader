@@ -59,9 +59,9 @@ from nautilus_trader.model.objects import Quantity
 def parse_order_side(value: str) -> OrderSide:
     match value:
         case "A":
-            return OrderSide.BUY
-        case "B":
             return OrderSide.SELL
+        case "B":
+            return OrderSide.BUY
         case _:
             return OrderSide.NO_ORDER_SIDE
 
@@ -69,9 +69,9 @@ def parse_order_side(value: str) -> OrderSide:
 def parse_aggressor_side(value: str) -> AggressorSide:
     match value:
         case "A":
-            return AggressorSide.BUYER
-        case "B":
             return AggressorSide.SELLER
+        case "B":
+            return AggressorSide.BUYER
         case _:
             return AggressorSide.NO_AGGRESSOR
 
@@ -82,14 +82,12 @@ def parse_book_action(value: str) -> BookAction:
             return BookAction.ADD
         case "C":
             return BookAction.DELETE
+        case "F":
+            return BookAction.UPDATE
         case "M":
             return BookAction.UPDATE
         case "R":
             return BookAction.CLEAR
-        case "T":
-            return BookAction.UPDATE
-        case "F":
-            return BookAction.UPDATE
         case _:
             raise ValueError(f"Invalid `BookAction`, was {value}")
 
@@ -236,6 +234,19 @@ def parse_mbo_msg(
     instrument_id: InstrumentId,
     ts_init: int,
 ) -> OrderBookDelta:
+    if record.action == "T":
+        return TradeTick.from_raw(
+            instrument_id=instrument_id,
+            price_raw=record.price,
+            price_prec=USD.precision,  # TODO(per instrument precision)
+            size_raw=int(record.size * FIXED_SCALAR),  # No fractional sizes
+            size_prec=0,  # No fractional units
+            aggressor_side=parse_aggressor_side(record.side),
+            trade_id=TradeId(str(record.sequence)),
+            ts_event=record.ts_recv,  # More accurate and reliable timestamp
+            ts_init=ts_init,
+        )
+
     action: BookAction = parse_book_action(record.action)
     side: OrderSide = parse_order_side(record.side)
     if side == OrderSide.NO_ORDER_SIDE:
