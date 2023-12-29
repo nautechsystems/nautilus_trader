@@ -159,6 +159,7 @@ pub fn is_trade_msg(order_side: OrderSide, action: c_char) -> bool {
 pub fn parse_mbo_msg(
     record: dbn::MboMsg,
     instrument_id: InstrumentId,
+    price_precision: u8,
     ts_init: UnixNanos,
 ) -> Result<Option<OrderBookDelta>> {
     let side = parse_order_side(record.side);
@@ -168,7 +169,7 @@ pub fn parse_mbo_msg(
 
     let order = BookOrder::new(
         side,
-        Price::from_raw(record.price, Currency::USD().precision)?,
+        Price::from_raw(record.price, price_precision)?,
         Quantity::from_raw(record.size.into(), 0)?,
         record.order_id,
     );
@@ -189,6 +190,7 @@ pub fn parse_mbo_msg(
 pub fn parse_mbo_msg_trades(
     record: dbn::MboMsg,
     instrument_id: InstrumentId,
+    price_precision: u8,
     ts_init: UnixNanos,
 ) -> Result<Option<TradeTick>> {
     if !is_trade_msg(parse_order_side(record.side), record.action) {
@@ -197,7 +199,7 @@ pub fn parse_mbo_msg_trades(
 
     let trade = TradeTick::new(
         instrument_id,
-        Price::from_raw(record.price, Currency::USD().precision)?,
+        Price::from_raw(record.price, price_precision)?,
         Quantity::from_raw(record.size.into(), 0)?,
         parse_aggressor_side(record.side),
         TradeId::new(itoa::Buffer::new().format(record.sequence))?,
@@ -211,11 +213,12 @@ pub fn parse_mbo_msg_trades(
 pub fn parse_trade_msg(
     record: dbn::TradeMsg,
     instrument_id: InstrumentId,
+    price_precision: u8,
     ts_init: UnixNanos,
 ) -> Result<TradeTick> {
     let trade = TradeTick::new(
         instrument_id,
-        Price::from_raw(record.price, Currency::USD().precision)?,
+        Price::from_raw(record.price, price_precision)?,
         Quantity::from_raw(record.size.into(), 0)?,
         parse_aggressor_side(record.side),
         TradeId::new(itoa::Buffer::new().format(record.sequence))?,
@@ -229,14 +232,14 @@ pub fn parse_trade_msg(
 pub fn parse_mbp1_msg(
     record: dbn::Mbp1Msg,
     instrument_id: InstrumentId,
+    price_precision: u8,
     ts_init: UnixNanos,
 ) -> Result<Option<QuoteTick>> {
-    let usd = Currency::USD(); // TODO: Always use USD precision for now
     let top_level = &record.levels[0];
     let quote = QuoteTick::new(
         instrument_id,
-        Price::from_raw(top_level.bid_px, usd.precision)?,
-        Price::from_raw(top_level.ask_px, usd.precision)?,
+        Price::from_raw(top_level.bid_px, price_precision)?,
+        Price::from_raw(top_level.ask_px, price_precision)?,
         Quantity::from_raw(top_level.bid_sz.into(), 0)?,
         Quantity::from_raw(top_level.ask_sz.into(), 0)?,
         record.ts_recv,
@@ -249,6 +252,7 @@ pub fn parse_mbp1_msg(
 pub fn parse_mbp1_msg_trades(
     record: dbn::Mbp1Msg,
     instrument_id: InstrumentId,
+    price_precision: u8,
     ts_init: UnixNanos,
 ) -> Result<Option<TradeTick>> {
     if record.action as u8 as char != 'T' {
@@ -257,7 +261,7 @@ pub fn parse_mbp1_msg_trades(
 
     let trade = TradeTick::new(
         instrument_id,
-        Price::from_raw(record.price, Currency::USD().precision)?,
+        Price::from_raw(record.price, price_precision)?,
         Quantity::from_raw(record.size.into(), 0)?,
         parse_aggressor_side(record.side),
         TradeId::new(itoa::Buffer::new().format(record.sequence))?,
@@ -271,10 +275,9 @@ pub fn parse_mbp1_msg_trades(
 pub fn parse_mbp10_msg(
     record: dbn::Mbp1Msg,
     instrument_id: InstrumentId,
+    price_precision: u8,
     ts_init: UnixNanos,
 ) -> Result<Vec<OrderBookDelta>> {
-    let usd = Currency::USD(); // TODO: Always use USD precision for now
-
     let mut deltas = Vec::with_capacity(21);
     let clear = OrderBookDelta::clear(
         instrument_id,
@@ -287,7 +290,7 @@ pub fn parse_mbp10_msg(
     for level in record.levels {
         let bid_order = BookOrder::new(
             OrderSide::Buy,
-            Price::from_raw(level.bid_px, usd.precision)?,
+            Price::from_raw(level.bid_px, price_precision)?,
             Quantity::from_raw(level.bid_sz.into(), 0)?,
             0,
         );
@@ -305,7 +308,7 @@ pub fn parse_mbp10_msg(
 
         let ask_order = BookOrder::new(
             OrderSide::Sell,
-            Price::from_raw(level.ask_px, usd.precision)?,
+            Price::from_raw(level.ask_px, price_precision)?,
             Quantity::from_raw(level.ask_sz.into(), 0)?,
             0,
         );
@@ -386,22 +389,21 @@ pub fn parse_ts_event_adjustment(record: dbn::OhlcvMsg) -> Result<UnixNanos> {
 pub fn parse_ohlcv_msg(
     record: dbn::OhlcvMsg,
     bar_type: BarType,
+    price_precision: u8,
     ts_event_adjustment: UnixNanos,
     ts_init: UnixNanos,
 ) -> Result<Bar> {
-    let usd = Currency::USD(); // TODO: Always use USD precision for now
-
     // Adjust `ts_event` from open to close of bar
     let ts_event = record.hd.ts_event + ts_event_adjustment;
     let ts_init = cmp::max(ts_init, ts_event);
 
     let bar = Bar::new(
         bar_type,
-        Price::from_raw(record.open / 100, usd.precision)?, // TODO(adjust for display factor)
-        Price::from_raw(record.high / 100, usd.precision)?, // TODO(adjust for display factor)
-        Price::from_raw(record.low / 100, usd.precision)?,  // TODO(adjust for display factor)
-        Price::from_raw(record.close / 100, usd.precision)?, // TODO(adjust for display factor)
-        Quantity::from_raw(record.volume, 0)?,              // TODO(adjust for display factor)
+        Price::from_raw(record.open / 100, price_precision)?, // TODO(adjust for display factor)
+        Price::from_raw(record.high / 100, price_precision)?, // TODO(adjust for display factor)
+        Price::from_raw(record.low / 100, price_precision)?,  // TODO(adjust for display factor)
+        Price::from_raw(record.close / 100, price_precision)?, // TODO(adjust for display factor)
+        Quantity::from_raw(record.volume, 0)?,                // TODO(adjust for display factor)
         ts_event,
         ts_init,
     );
