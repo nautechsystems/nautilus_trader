@@ -769,7 +769,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         assert instrument
 
         if unmatched_order.sm > 0 and unmatched_order.sm > order.filled_qty:
-            self._log.debug("")
             trade_id = order_to_trade_id(unmatched_order)
             if trade_id not in self.published_executions[client_order_id]:
                 fill_qty = unmatched_order.sm - order.filled_qty
