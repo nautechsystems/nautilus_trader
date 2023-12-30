@@ -433,6 +433,19 @@ const char *log_color_to_cstr(enum LogColor value);
 enum LogColor log_color_from_cstr(const char *ptr);
 
 /**
+ * Create a new log event.
+ *
+ * # Safety
+ *
+ * - Assumes `component_ptr` is a valid C string pointer.
+ * - Assumes `message_ptr` is a valid C string pointer.
+ */
+void logger_log(enum LogLevel level,
+                enum LogColor color,
+                const char *component_ptr,
+                const char *message_ptr);
+
+/**
  * # Safety
  *
  * - Assumes `trader_id_ptr` is a valid C string pointer.

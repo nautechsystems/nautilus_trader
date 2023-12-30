@@ -174,6 +174,7 @@ pub enum LogLevel {
     /// The **CRT** critical log level.
     #[strum(serialize = "CRT", serialize = "CRITICAL")]
     #[serde(rename = "CRITICAL")]
+    #[deprecated]
     Critical = 50,
 }
 

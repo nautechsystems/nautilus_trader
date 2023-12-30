@@ -29,6 +29,7 @@ pub fn common(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<enums::LogLevel>()?;
     m.add_class::<enums::LogFormat>()?;
     m.add_function(wrap_pyfunction!(logging::init_tracing, m)?)?;
+    m.add_function(wrap_pyfunction!(logging::init_logging, m)?)?;
 
     Ok(())
 }

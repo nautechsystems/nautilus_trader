@@ -293,6 +293,17 @@ cdef extern from "../includes/common.h":
     # - Assumes `ptr` is a valid C string pointer.
     LogColor log_color_from_cstr(const char *ptr);
 
+    # Create a new log event.
+    #
+    # # Safety
+    #
+    # - Assumes `component_ptr` is a valid C string pointer.
+    # - Assumes `message_ptr` is a valid C string pointer.
+    void logger_log(LogLevel level,
+                    LogColor color,
+                    const char *component_ptr,
+                    const char *message_ptr);
+
     # # Safety
     #
     # - Assumes `trader_id_ptr` is a valid C string pointer.

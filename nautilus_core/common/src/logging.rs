@@ -47,13 +47,35 @@ use crate::enums::LogColor;
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
 #[pyfunction]
-#[must_use]
 pub fn init_tracing() {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)
         .init();
 }
 
+/// Initialize logging
+///
+/// Logging should be used for Python and sync Rust logic which is most of
+/// the components in the engine module. Logging can be configured
+/// to filter components and write upto a specific level only
+/// by passing a configuration using the NAUTILUS_LOG environment variable.
+///
+/// # Safety
+/// Should only be called once during an applications run, ideally at the
+/// beginning of the run.
+#[pyfunction]
+#[must_use]
+pub fn init_logging(
+    clock: AtomicTime,
+    trader_id: TraderId,
+    instance_id: UUID4,
+    file_writer_config: FileWriterConfig,
+    config: LoggerConfig,
+) {
+    Logger::init_with_config(clock, trader_id, instance_id, file_writer_config, config);
+}
+
+#[pyclass]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoggerConfig {
     /// Maximum log level to write to stdout
@@ -121,11 +143,39 @@ impl LoggerConfig {
     }
 }
 
+#[pymethods]
+impl LoggerConfig {
+    #[staticmethod]
+    pub fn from_env() -> Self {
+        match env::var("NAUTILUS_LOG") {
+            Ok(spec) => LoggerConfig::parse(&spec),
+            Err(_) => LoggerConfig::default(),
+        }
+    }
+}
+
+#[pyclass]
 #[derive(Debug, Clone, Default)]
 pub struct FileWriterConfig {
     directory: Option<String>,
     file_name: Option<String>,
     file_format: Option<String>,
+}
+
+#[pymethods]
+impl FileWriterConfig {
+    #[new]
+    pub fn new(
+        directory: Option<String>,
+        file_name: Option<String>,
+        file_format: Option<String>,
+    ) -> Self {
+        Self {
+            directory,
+            file_name,
+            file_format,
+        }
+    }
 }
 
 /// Provides a high-performance logger utilizing a MPSC channel under the hood.
@@ -217,11 +267,7 @@ impl Logger {
         instance_id: UUID4,
         file_writer_config: FileWriterConfig,
     ) {
-        let config = match env::var("NAUTILUS_LOG") {
-            Ok(spec) => LoggerConfig::parse(&spec),
-            Err(_) => LoggerConfig::default(),
-        };
-
+        let config = LoggerConfig::from_env();
         Logger::init_with_config(clock, trader_id, instance_id, file_writer_config, config);
     }
 
