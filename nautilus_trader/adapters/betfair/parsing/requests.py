@@ -12,9 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import hashlib
+from functools import lru_cache
+from typing import Literal
 
-from datetime import datetime
-
+import msgspec.json
 import pandas as pd
 from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
 from betfair_parser.spec.accounts.type_definitions import AccountFundsResponse
@@ -33,6 +35,7 @@ from betfair_parser.spec.common import BetId
 from betfair_parser.spec.common import CustomerOrderRef
 from betfair_parser.spec.common import OrderStatus as BetfairOrderStatus
 from betfair_parser.spec.common import OrderType
+from betfair_parser.spec.streaming import Order as BetfairOrder
 
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_TYPE
 from nautilus_trader.adapters.betfair.common import B2N_TIME_IN_FORCE
@@ -42,10 +45,10 @@ from nautilus_trader.adapters.betfair.common import MIN_BET_PRICE
 from nautilus_trader.adapters.betfair.common import N2B_PERSISTENCE
 from nautilus_trader.adapters.betfair.common import N2B_TIME_IN_FORCE
 from nautilus_trader.adapters.betfair.common import OrderSideParser
+from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.core.datetime import dt_to_unix_nanos
-from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
@@ -62,7 +65,6 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
@@ -232,11 +234,11 @@ def order_submit_to_place_order_params(
     """
     return PlaceOrders.with_params(
         market_id=instrument.market_id,
-        customer_ref=command.id.value.replace(
-            "-",
-            "",
-        ),  # Used to de-dupe orders on betfair server side
-        customer_strategy_ref=command.strategy_id.value[:15],
+        customer_ref=create_customer_ref(command),
+        customer_strategy_ref=create_customer_strategy_ref(
+            trader_id=command.trader_id.value,
+            strategy_id=command.strategy_id.value,
+        ),
         instructions=[nautilus_order_to_place_instructions(command, instrument)],
     )
 
@@ -251,7 +253,7 @@ def order_update_to_replace_order_params(
     """
     return ReplaceOrders.with_params(
         market_id=instrument.market_id,
-        customer_ref=command.id.value.replace("-", ""),
+        customer_ref=create_customer_ref(command),
         instructions=[
             ReplaceInstruction(
                 bet_id=BetId(venue_order_id.value),
@@ -271,7 +273,7 @@ def order_cancel_to_cancel_order_params(
     return CancelOrders.with_params(
         market_id=instrument.market_id,
         instructions=[CancelInstruction(bet_id=BetId(command.venue_order_id.value))],
-        customer_ref=command.id.value.replace("-", ""),
+        customer_ref=create_customer_ref(command),
     )
 
 
@@ -316,38 +318,36 @@ def betfair_account_to_account_state(
     )
 
 
-async def generate_trades_list(
-    self,
+def bet_to_trade_report(
+    order: CurrentOrderSummary,
+    account_id: AccountId,
+    instrument_id: InstrumentId,
     venue_order_id: VenueOrderId,
-    symbol: Symbol,
-    since: datetime | None = None,
-) -> list[TradeReport]:
-    filled = self.client().betting.list_cleared_orders(
-        bet_ids=[venue_order_id],
+    client_order_id: ClientOrderId,
+    ts_init,
+    report_id,
+) -> TradeReport | None:
+    if order.size_matched == 0.0:
+        # No executions, skip
+        return None
+    ts_event = pd.Timestamp(order.matched_date).value
+    trade_id = current_order_summary_to_trade_id(order)
+    return TradeReport(
+        client_order_id=client_order_id,
+        instrument_id=instrument_id,
+        account_id=account_id,
+        venue_order_id=venue_order_id,
+        venue_position_id=None,  # Can be None
+        order_side=OrderSideParser.to_nautilus(order.side),
+        trade_id=trade_id,
+        last_qty=Quantity(order.size_matched, BETFAIR_QUANTITY_PRECISION),
+        last_px=Price(order.price_size.price, BETFAIR_PRICE_PRECISION),
+        commission=None,  # Can be None
+        liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+        report_id=report_id,
+        ts_event=ts_event,
+        ts_init=ts_init,
     )
-    if not filled["clearedOrders"]:
-        self._log.warn(f"Found no existing order for {venue_order_id}")
-        return []
-    fill = filled["clearedOrders"][0]
-    ts_event = pd.Timestamp(fill["lastMatchedDate"]).value
-    return [
-        TradeReport(
-            client_order_id=self.venue_order_id_to_client_order_id[venue_order_id],
-            instrument_id=None,  # TODO: Needs this
-            account_id=None,  # TODO: Needs this
-            venue_order_id=VenueOrderId(fill["betId"]),
-            venue_position_id=None,  # Can be None
-            order_side=OrderSide.NO_ORDER_SIDE,  # TODO: Stub value
-            trade_id=TradeId(fill["lastMatchedDate"]),
-            last_qty=Quantity.from_str(str(fill["sizeSettled"])),  # TODO: Incorrect precision?
-            last_px=Price.from_str(str(fill["priceMatched"])),  # TODO: Incorrect precision?
-            commission=None,  # Can be None
-            liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
-            report_id=UUID4(),
-            ts_event=ts_event,
-            ts_init=ts_event,
-        ),
-    ]
 
 
 def bet_to_order_status_report(
@@ -396,3 +396,118 @@ def determine_order_status(order: CurrentOrderSummary) -> OrderStatus:
             return OrderStatus.PARTIALLY_FILLED
     else:
         raise ValueError(f"Unknown order status {order.status=}")
+
+
+def create_customer_ref(command: SubmitOrder | ModifyOrder | CancelOrder) -> str:
+    """
+    Create a customer reference for the betfair API from order command.
+
+    From betfair docs (https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/placeOrders):
+        Optional parameter allowing the client to pass a unique string (up to 32 chars) that is used to de-dupe
+        mistaken re-submissions.   customerRef can contain: upper/lower chars, digits, chars : - . _ + * : ; ~ only.
+
+        Please note: There is a time window associated with the de-duplication of duplicate submissions which is 60 seconds.
+
+        NB: This field does not persist into the placeOrders response/Order Stream API and should not be confused with
+        customerOrderRef, which is separate field that can be sent in the PlaceInstruction.
+
+    Parameters
+    ----------
+    command: SubmitOrder | ModifyOrder | CancelOrder
+        The order command
+
+    Returns
+    -------
+    str
+
+    """
+    return command.id.value.replace("-", "")[:32]
+
+
+@lru_cache
+def create_customer_strategy_ref(trader_id: str, strategy_id: str) -> str:
+    """
+    Produce a hash to use as a strategy ID in the place order API.
+
+    https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/placeOrders
+
+
+    Parameters
+    ----------
+    trader_id: str
+        The trader ID
+    strategy_id: str
+        The strategy ID
+
+    Returns
+    -------
+    str
+
+    """
+    data = {
+        "trader_id": trader_id,
+        "strategy_id": strategy_id,
+    }
+    return hashlib.shake_256(msgspec.json.encode(data)).hexdigest(15)
+
+
+def hashed_trade_id(
+    bet_id: BetId,
+    price: float,
+    size: float,
+    side: Literal["B", "L"],
+    persistence_type: Literal["L", "P", "MOC"],
+    order_type: Literal["L", "MOC", "LOC"],
+    placed_date: int,
+    matched_date: int | None = None,
+    cancelled_date: int | None = None,
+    average_price_matched: float | None = None,
+    size_matched: float | None = None,
+) -> TradeId:
+    data: bytes = msgspec.json.encode(
+        (
+            bet_id,
+            price,
+            size,
+            side,
+            persistence_type,
+            order_type,
+            placed_date,
+            matched_date,
+            cancelled_date,
+            average_price_matched,
+            size_matched,
+        ),
+    )
+    return TradeId(hashlib.sha256(data).hexdigest()[:40])
+
+
+def order_to_trade_id(uo: BetfairOrder) -> TradeId:
+    return hashed_trade_id(
+        bet_id=uo.id,
+        price=uo.p,
+        size=uo.s,
+        side=uo.side,
+        persistence_type=uo.pt,
+        order_type=uo.ot,
+        placed_date=uo.pd,
+        matched_date=uo.md,
+        cancelled_date=uo.avp,
+        average_price_matched=uo.sm,
+    )
+
+
+def current_order_summary_to_trade_id(order: CurrentOrderSummary) -> TradeId:
+    return hashed_trade_id(
+        bet_id=order.bet_id,
+        price=order.price_size.price,
+        size=order.price_size.size,
+        side=order.side.value[0],
+        persistence_type=order.persistence_type.value,
+        order_type=order.order_type.value,
+        placed_date=order.placed_date,
+        matched_date=order.matched_date,
+        cancelled_date=None,
+        average_price_matched=order.average_price_matched,
+        size_matched=order.size_matched,
+    )
