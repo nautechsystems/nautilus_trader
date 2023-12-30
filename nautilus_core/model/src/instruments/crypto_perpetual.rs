@@ -24,7 +24,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    enums::{AssetClass, AssetType},
+    enums::{AssetClass, InstrumentClass},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     instruments::Instrument,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
@@ -144,8 +144,8 @@ impl Instrument for CryptoPerpetual {
         AssetClass::Cryptocurrency
     }
 
-    fn asset_type(&self) -> AssetType {
-        AssetType::Swap
+    fn instrument_class(&self) -> InstrumentClass {
+        InstrumentClass::Swap
     }
 
     fn quote_currency(&self) -> &Currency {

@@ -29,7 +29,7 @@ use nautilus_core::time::UnixNanos;
 use rust_decimal::Decimal;
 
 use crate::{
-    enums::{AssetClass, AssetType},
+    enums::{AssetClass, InstrumentClass},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
@@ -44,7 +44,7 @@ pub trait Instrument {
     }
     fn raw_symbol(&self) -> &Symbol;
     fn asset_class(&self) -> AssetClass;
-    fn asset_type(&self) -> AssetType;
+    fn instrument_class(&self) -> InstrumentClass;
     fn base_currency(&self) -> Option<&Currency>;
     fn quote_currency(&self) -> &Currency;
     fn settlement_currency(&self) -> &Currency;

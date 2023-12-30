@@ -217,26 +217,26 @@ pub enum AssetClass {
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
 )]
-pub enum AssetType {
-    /// A spot market asset type. The current market price of an asset that is bought or sold for immediate delivery and payment.
+pub enum InstrumentClass {
+    /// A spot market instrument class. The current market price of an instrument that is bought or sold for immediate delivery and payment.
     #[pyo3(name = "SPOT")]
     Spot = 1,
-    /// A swap asset type. A derivative contract through which two parties exchange the cash flows or liabilities from two different financial instruments.
+    /// A swap instrument class. A derivative contract through which two parties exchange the cash flows or liabilities from two different financial instruments.
     #[pyo3(name = "SWAP")]
     Swap = 2,
-    /// A futures contract asset type. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
+    /// A futures contract instrument class. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
     #[pyo3(name = "FUTURE")]
     Future = 3,
-    /// A forward derivative asset type. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
+    /// A forward derivative instrument class. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
     #[pyo3(name = "FORWARD")]
     Forward = 4,
-    /// A contract-for-difference (CFD) asset type. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
+    /// A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
     #[pyo3(name = "CFD")]
     Cfd = 5,
-    /// An options contract asset type. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
+    /// An options contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
     #[pyo3(name = "OPTION")]
     Option = 6,
-    /// A warrant asset type. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+    /// A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
     #[pyo3(name = "WARRANT")]
     Warrant = 7,
 }
@@ -1144,7 +1144,7 @@ enum_strum_serde!(AccountType);
 enum_strum_serde!(AggregationSource);
 enum_strum_serde!(AggressorSide);
 enum_strum_serde!(AssetClass);
-enum_strum_serde!(AssetType);
+enum_strum_serde!(InstrumentClass);
 enum_strum_serde!(BarAggregation);
 enum_strum_serde!(BookAction);
 enum_strum_serde!(BookType);

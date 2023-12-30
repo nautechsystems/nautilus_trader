@@ -22,7 +22,7 @@ from ibapi.contract import ContractDetails
 # fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
+from nautilus_trader.model.enums import InstrumentClass
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -62,7 +62,7 @@ async def test_load_equity_contract_instrument(mocker, instrument_provider):
     # Assert
     assert InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")) == equity.id
     assert equity.asset_class == AssetClass.EQUITY
-    assert equity.asset_type == AssetType.SPOT
+    assert equity.instrument_class == InstrumentClass.SPOT
     assert equity.multiplier == 1
     assert Price.from_str("0.01") == equity.price_increment
     assert 2, equity.price_precision

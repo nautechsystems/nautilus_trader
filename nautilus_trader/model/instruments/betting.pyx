@@ -24,7 +24,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AssetClass
-from nautilus_trader.core.rust.model cimport AssetType
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -102,7 +102,7 @@ cdef class BettingInstrument(Instrument):
             instrument_id=InstrumentId(symbol=symbol, venue=Venue(venue_name)),
             raw_symbol=symbol,
             asset_class=AssetClass.SPORTS_BETTING,
-            asset_type=AssetType.SPOT,
+            instrument_class=InstrumentClass.SPOT,
             quote_currency=Currency.from_str_c(currency),
             is_inverse=False,
             size_precision=4,

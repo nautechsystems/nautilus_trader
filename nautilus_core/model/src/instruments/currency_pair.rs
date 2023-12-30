@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use super::Instrument;
 use crate::{
-    enums::{AssetClass, AssetType},
+    enums::{AssetClass, InstrumentClass},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
@@ -132,8 +132,8 @@ impl Instrument for CurrencyPair {
         AssetClass::FX
     }
 
-    fn asset_type(&self) -> AssetType {
-        AssetType::Spot
+    fn instrument_class(&self) -> InstrumentClass {
+        InstrumentClass::Spot
     }
 
     fn quote_currency(&self) -> &Currency {
