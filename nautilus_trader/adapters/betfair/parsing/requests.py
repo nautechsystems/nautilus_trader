@@ -460,7 +460,6 @@ def hashed_trade_id(
     order_type: Literal["L", "MOC", "LOC"],
     placed_date: int,
     matched_date: int | None = None,
-    cancelled_date: int | None = None,
     average_price_matched: float | None = None,
     size_matched: float | None = None,
 ) -> TradeId:
@@ -474,7 +473,6 @@ def hashed_trade_id(
             order_type,
             placed_date,
             matched_date,
-            cancelled_date,
             average_price_matched,
             size_matched,
         ),
@@ -492,8 +490,8 @@ def order_to_trade_id(uo: BetfairOrder) -> TradeId:
         order_type=uo.ot,
         placed_date=uo.pd,
         matched_date=uo.md,
-        cancelled_date=uo.avp,
-        average_price_matched=uo.sm,
+        average_price_matched=uo.avp,
+        size_matched=uo.sm,
     )
 
 
@@ -507,7 +505,6 @@ def current_order_summary_to_trade_id(order: CurrentOrderSummary) -> TradeId:
         order_type=order.order_type.value,
         placed_date=order.placed_date,
         matched_date=order.matched_date,
-        cancelled_date=None,
         average_price_matched=order.average_price_matched,
         size_matched=order.size_matched,
     )
