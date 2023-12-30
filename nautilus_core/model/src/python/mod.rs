@@ -120,6 +120,7 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
 mod tests {
     use pyo3::{
         prelude::*,
+        prepare_freethreaded_python,
         types::{PyBool, PyInt, PyList, PyString},
     };
     use rstest::rstest;
@@ -129,6 +130,7 @@ mod tests {
 
     #[rstest]
     fn test_value_to_pydict() {
+        prepare_freethreaded_python();
         Python::with_gil(|py| {
             let json_str = r#"
         {
@@ -179,6 +181,7 @@ mod tests {
 
     #[rstest]
     fn test_value_to_pyobject_string() {
+        prepare_freethreaded_python();
         Python::with_gil(|py| {
             let val = Value::String("Hello, world!".to_string());
             let py_obj = value_to_pyobject(py, &val).unwrap();
@@ -189,6 +192,7 @@ mod tests {
 
     #[rstest]
     fn test_value_to_pyobject_bool() {
+        prepare_freethreaded_python();
         Python::with_gil(|py| {
             let val = Value::Bool(true);
             let py_obj = value_to_pyobject(py, &val).unwrap();
@@ -199,6 +203,7 @@ mod tests {
 
     #[rstest]
     fn test_value_to_pyobject_array() {
+        prepare_freethreaded_python();
         Python::with_gil(|py| {
             let val = Value::Array(vec![
                 Value::String("item1".to_string()),

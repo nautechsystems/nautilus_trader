@@ -53,12 +53,9 @@ from nautilus_trader.config.common import ControllerFactory
 from nautilus_trader.config.common import ExecAlgorithmFactory
 from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.config.common import NautilusKernelConfig
-from nautilus_trader.config.common import TracingConfig
 from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import nanos_to_millis
-from nautilus_trader.core.nautilus_pyo3 import LogGuard
-from nautilus_trader.core.nautilus_pyo3 import set_global_log_collector
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.algorithm import ExecAlgorithm
@@ -151,15 +148,6 @@ class NautilusKernel:
             raise NotImplementedError(  # pragma: no cover (design-time error)
                 f"environment {self._environment} not recognized",  # pragma: no cover (design-time error)
             )
-
-        # Set the global tracing collector
-        # This should only be set once for the whole duration of the application
-        tracing: TracingConfig = config.tracing or TracingConfig()
-        self._log_guard: LogGuard = set_global_log_collector(
-            tracing.stdout_level,
-            tracing.stderr_level,
-            tracing.file_level,
-        )
 
         logging: LoggingConfig = config.logging or LoggingConfig()
 

@@ -659,6 +659,7 @@ mod tests {
         )
     }
 
+    #[ignore] // TODO: Ignore pre nextest setup
     #[rstest]
     fn test_logging_to_file() {
         let config = LoggerConfig {
@@ -769,6 +770,7 @@ mod tests {
         );
     }
 
+    #[ignore] // TODO: Ignore pre nextest setup
     #[rstest]
     fn test_logging_to_file_in_json_format() {
         let config = LoggerConfig::parse("stdout=Info;fileout=Debug;RiskEngine=Info");
