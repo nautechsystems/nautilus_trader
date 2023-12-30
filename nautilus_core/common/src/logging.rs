@@ -25,7 +25,7 @@ use std::{
 };
 
 use chrono::{prelude::*, Utc};
-use log::{set_boxed_logger, set_logger, set_max_level, Level, LevelFilter, Log};
+use log::{set_boxed_logger, set_max_level, Level, LevelFilter, Log};
 use nautilus_core::{
     datetime::unix_nanos_to_iso8601,
     time::{AtomicTime, UnixNanos},
@@ -171,7 +171,7 @@ impl fmt::Display for LogLine {
     }
 }
 
-impl log::Log for Logger {
+impl Log for Logger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
         !self.config.is_bypassed && self.config.stdout_level <= metadata.level()
     }
@@ -444,7 +444,7 @@ impl Logger {
         file_path
     }
 
-    fn format_colored_log(event: &LogLine, trader_id: &str, template: &str) -> String {
+    fn format_colored_log(event: &LogLine, trader_id: &str, _template: &str) -> String {
         format!(
             "\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {message}\x1b[0m\n",
             ts = unix_nanos_to_iso8601(event.timestamp),
@@ -459,7 +459,7 @@ impl Logger {
     fn format_line(
         event: &LogLine,
         trader_id: &str,
-        template: &str,
+        _template: &str,
         is_json_format: bool,
     ) -> String {
         if is_json_format {
@@ -562,9 +562,9 @@ impl Logger {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, str::FromStr, time::Duration};
+    use std::{collections::HashMap, time::Duration};
 
-    use log::{debug, error, info, LevelFilter};
+    use log::{info, LevelFilter};
     use nautilus_core::{time::AtomicTime, uuid::UUID4};
     use nautilus_model::identifiers::trader_id::TraderId;
     use rstest::*;

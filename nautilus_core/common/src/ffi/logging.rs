@@ -13,22 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    ffi::c_char,
-    ops::{Deref, DerefMut},
-};
 
-use nautilus_core::{
-    ffi::{
-        parsing::{optional_bytes_to_json, u8_as_bool},
-        string::{cstr_to_string, optional_cstr_to_string, str_to_cstr},
-    },
-    uuid::UUID4,
-};
-use nautilus_model::identifiers::trader_id::TraderId;
+
+
+
 
 use crate::{
-    enums::{LogColor, LogLevel},
     logging::Logger,
 };
 
