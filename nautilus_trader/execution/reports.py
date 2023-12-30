@@ -275,9 +275,9 @@ class OrderStatusReport(ExecutionReport):
         )
 
 
-class TradeReport(ExecutionReport):
+class FillReport(ExecutionReport):
     """
-    Represents a report of a single trade.
+    Represents a report of a single order fill.
 
     Parameters
     ----------
@@ -357,7 +357,7 @@ class TradeReport(ExecutionReport):
         self.ts_event = ts_event
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, TradeReport):
+        if not isinstance(other, FillReport):
             return False
         return (
             self.account_id == other.account_id
@@ -494,7 +494,7 @@ class ExecutionMassStatus(Document):
         self.venue = venue
 
         self._order_reports: dict[VenueOrderId, OrderStatusReport] = {}
-        self._trade_reports: dict[VenueOrderId, list[TradeReport]] = {}
+        self._fill_reports: dict[VenueOrderId, list[FillReport]] = {}
         self._position_reports: dict[InstrumentId, list[PositionStatusReport]] = {}
 
     def __repr__(self) -> str:
@@ -504,7 +504,7 @@ class ExecutionMassStatus(Document):
             f"account_id={self.account_id}, "
             f"venue={self.venue}, "
             f"order_reports={self._order_reports}, "
-            f"trade_reports={self._trade_reports}, "
+            f"fill_reports={self._fill_reports}, "
             f"position_reports={self._position_reports}, "
             f"report_id={self.id}, "
             f"ts_init={self.ts_init})"
@@ -521,16 +521,16 @@ class ExecutionMassStatus(Document):
         """
         return self._order_reports.copy()
 
-    def trade_reports(self) -> dict[VenueOrderId, list[TradeReport]]:
+    def fill_reports(self) -> dict[VenueOrderId, list[FillReport]]:
         """
-        Return the trade reports.
+        Return the fill reports.
 
         Returns
         -------
-        dict[VenueOrderId, list[TradeReport]
+        dict[VenueOrderId, list[FillReport]
 
         """
-        return self._trade_reports.copy()
+        return self._fill_reports.copy()
 
     def position_reports(self) -> dict[InstrumentId, list[PositionStatusReport]]:
         """
@@ -555,7 +555,7 @@ class ExecutionMassStatus(Document):
         Raises
         ------
         TypeError
-            If `reports` contains a type other than `TradeReport`.
+            If `reports` contains a type other than `FillReport`.
 
         """
         PyCondition.not_none(reports, "reports")
@@ -563,28 +563,28 @@ class ExecutionMassStatus(Document):
         for report in reports:
             self._order_reports[report.venue_order_id] = report
 
-    def add_trade_reports(self, reports: list[TradeReport]) -> None:
+    def add_fill_reports(self, reports: list[FillReport]) -> None:
         """
-        Add the trade reports to the mass status.
+        Add the fill reports to the mass status.
 
         Parameters
         ----------
-        reports : list[TradeReport]
+        reports : list[FillReport]
             The list of reports to add.
 
         Raises
         ------
         TypeError
-            If `reports` contains a type other than `TradeReport`.
+            If `reports` contains a type other than `FillReport`.
 
         """
         PyCondition.not_none(reports, "reports")
 
         # Sort reports by venue order ID
         for report in reports:
-            if report.venue_order_id not in self._trade_reports:
-                self._trade_reports[report.venue_order_id] = []
-            self._trade_reports[report.venue_order_id].append(report)
+            if report.venue_order_id not in self._fill_reports:
+                self._fill_reports[report.venue_order_id] = []
+            self._fill_reports[report.venue_order_id].append(report)
 
     def add_position_reports(self, reports: list[PositionStatusReport]) -> None:
         """
