@@ -167,6 +167,7 @@ impl FromU8 for AggressorSide {
 #[allow(non_camel_case_types)]
 pub enum AssetClass {
     /// Foreign exchange (FOREX) assets.
+    #[pyo3(name = "FX")]
     FX = 1,
     /// Equity / stock assets.
     #[pyo3(name = "EQUITY")]
@@ -174,24 +175,18 @@ pub enum AssetClass {
     /// Commodity assets.
     #[pyo3(name = "COMMODITY")]
     Commodity = 3,
-    /// Metal commodity assets.
-    #[pyo3(name = "METAL")]
-    Metal = 4,
-    /// Energy commodity assets.
-    #[pyo3(name = "ENERGY")]
-    Energy = 5,
-    /// Fixed income bond assets.
-    #[pyo3(name = "BOND")]
-    Bond = 6,
-    /// Index based assets.
+    /// Debt based assets.
+    #[pyo3(name = "DEBT")]
+    Debt = 4,
+    /// Index based assets (baskets).
     #[pyo3(name = "INDEX")]
-    Index = 7,
+    Index = 5,
     /// Cryptocurrency or crypto token assets.
-    #[pyo3(name = "CRYPTO_CURRENCY")]
-    Cryptocurrency = 8,
-    /// Sports betting instruments.
-    #[pyo3(name = "SPORTS_BETTING")]
-    SportsBetting = 9,
+    #[pyo3(name = "CRYPTOCURRENCY")]
+    Cryptocurrency = 6,
+    /// Alternative assets.
+    #[pyo3(name = "ALTERNATIVE")]
+    Alternative = 7,
 }
 
 /// The asset type for a financial market product.
@@ -233,12 +228,18 @@ pub enum InstrumentClass {
     /// A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
     #[pyo3(name = "CFD")]
     Cfd = 5,
+    /// A bond instrument class. A type of debt investment where an investor loans money to an entity (typically corporate or governmental) which borrows the funds for a defined period of time at a variable or fixed interest rate.
+    #[pyo3(name = "BOND")]
+    Bond = 6,
     /// An options contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
     #[pyo3(name = "OPTION")]
-    Option = 6,
+    Option = 7,
     /// A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
     #[pyo3(name = "WARRANT")]
-    Warrant = 7,
+    Warrant = 8,
+    /// A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+    #[pyo3(name = "SPORTS_BETTING")]
+    SportsBetting = 9,
 }
 
 /// The aggregation method through which a bar is generated and closed.

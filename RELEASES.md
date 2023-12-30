@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `NautilusConfig.json_primitives` to convert object to Python dictionary with JSON primitive values
+- Added `InstrumentClass.BOND`
 - Improved Interactive Brokers adapter raising docker `RuntimeError` only when needed (not when using TWS), thanks @rsmb7z
 
 ### Breaking Changes
@@ -11,6 +12,10 @@ Released on TBD (UTC).
 - Changed `OrderInitialized` Arrow schema for `options` from `string` to `binary`
 - Renamed `AssetType` enum to `InstrumentClass` (more conventional terminology)
 - Renamed `asset_type` to `instrument_class` across the codebase (more conventional terminology)
+- Renamed `AssetClass.BOND` to `AssetClass.DEBT` (more conventional terminology)
+- Removed `AssetClass.METAL` (not strictly an asset class, more a futures category)
+- Removed `AssetClass.ENERGY` (not strictly an asset class, more a futures category)
+- Moved `AssetClass.SPORTS_BETTING` to `InstrumentClass.SPORTS_BETTING`
 
 ### Fixes
 - Fixed handling of configuration objects to work with `StreamingFeatherWriter`

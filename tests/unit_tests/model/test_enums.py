@@ -196,12 +196,10 @@ class TestAssetClass:
             [AssetClass.FX, "FX"],
             [AssetClass.EQUITY, "EQUITY"],
             [AssetClass.COMMODITY, "COMMODITY"],
-            [AssetClass.METAL, "METAL"],
-            [AssetClass.ENERGY, "ENERGY"],
-            [AssetClass.BOND, "BOND"],
+            [AssetClass.DEBT, "DEBT"],
             [AssetClass.INDEX, "INDEX"],
             [AssetClass.CRYPTOCURRENCY, "CRYPTOCURRENCY"],
-            [AssetClass.SPORTS_BETTING, "SPORTS_BETTING"],
+            [AssetClass.ALTERNATIVE, "ALTERNATIVE"],
         ],
     )
     def test_asset_class_to_str(self, enum, expected):
@@ -217,12 +215,10 @@ class TestAssetClass:
             ["FX", AssetClass.FX],
             ["EQUITY", AssetClass.EQUITY],
             ["COMMODITY", AssetClass.COMMODITY],
-            ["METAL", AssetClass.METAL],
-            ["ENERGY", AssetClass.ENERGY],
-            ["BOND", AssetClass.BOND],
+            ["DEBT", AssetClass.DEBT],
             ["INDEX", AssetClass.INDEX],
             ["CRYPTOCURRENCY", AssetClass.CRYPTOCURRENCY],
-            ["SPORTS_BETTING", AssetClass.SPORTS_BETTING],
+            ["ALTERNATIVE", AssetClass.ALTERNATIVE],
         ],
     )
     def test_asset_class_from_str(self, string, expected):
@@ -242,8 +238,10 @@ class TestInstrumentClass:
             [InstrumentClass.FUTURE, "FUTURE"],
             [InstrumentClass.FORWARD, "FORWARD"],
             [InstrumentClass.CFD, "CFD"],
+            [InstrumentClass.BOND, "BOND"],
             [InstrumentClass.OPTION, "OPTION"],
             [InstrumentClass.WARRANT, "WARRANT"],
+            [InstrumentClass.SPORTS_BETTING, "SPORTS_BETTING"],
         ],
     )
     def test_instrument_class_to_str(self, enum, expected):
@@ -261,8 +259,10 @@ class TestInstrumentClass:
             ["FUTURE", InstrumentClass.FUTURE],
             ["FORWARD", InstrumentClass.FORWARD],
             ["CFD", InstrumentClass.CFD],
+            ["BOND", InstrumentClass.BOND],
             ["OPTION", InstrumentClass.OPTION],
             ["WARRANT", InstrumentClass.WARRANT],
+            ["SPORTS_BETTING", InstrumentClass.SPORTS_BETTING],
         ],
     )
     def test_instrument_class_from_str(self, string, expected):

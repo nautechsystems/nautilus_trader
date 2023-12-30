@@ -101,8 +101,8 @@ cdef class BettingInstrument(Instrument):
         super().__init__(
             instrument_id=InstrumentId(symbol=symbol, venue=Venue(venue_name)),
             raw_symbol=symbol,
-            asset_class=AssetClass.SPORTS_BETTING,
-            instrument_class=InstrumentClass.SPOT,
+            asset_class=AssetClass.ALTERNATIVE,
+            instrument_class=InstrumentClass.SPORTS_BETTING,
             quote_currency=Currency.from_str_c(currency),
             is_inverse=False,
             size_precision=4,

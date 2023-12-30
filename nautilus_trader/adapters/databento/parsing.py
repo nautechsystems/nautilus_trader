@@ -115,7 +115,7 @@ def parse_cfi_iso10926(value: str) -> tuple[AssetClass | None, InstrumentClass |
 
     match cfi_category:
         case "D":
-            asset_class = AssetClass.BOND
+            asset_class = AssetClass.DEBT
         case "E":
             asset_class = AssetClass.EQUITY
         case "S":

@@ -114,7 +114,7 @@ def sec_type_to_asset_class(sec_type: str) -> AssetClass:
         "STK": "EQUITY",
         "IND": "INDEX",
         "CASH": "FX",
-        "BOND": "BOND",
+        "BOND": "DEBT",
     }
     return asset_class_from_str(mapping.get(sec_type, sec_type))
 

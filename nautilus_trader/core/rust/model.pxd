@@ -54,18 +54,14 @@ cdef extern from "../includes/model.h":
         EQUITY # = 2,
         # Commodity assets.
         COMMODITY # = 3,
-        # Metal commodity assets.
-        METAL # = 4,
-        # Energy commodity assets.
-        ENERGY # = 5,
-        # Fixed income bond assets.
-        BOND # = 6,
-        # Index based assets.
-        INDEX # = 7,
+        # Debt based assets.
+        DEBT # = 4,
+        # Index based assets (baskets).
+        INDEX # = 5,
         # Cryptocurrency or crypto token assets.
-        CRYPTOCURRENCY # = 8,
-        # Sports betting instruments.
-        SPORTS_BETTING # = 9,
+        CRYPTOCURRENCY # = 6,
+        # Alternative assets.
+        ALTERNATIVE # = 7,
 
     # The type of order book action for an order book event.
     cpdef enum BookAction:
@@ -130,10 +126,14 @@ cdef extern from "../includes/model.h":
         FORWARD # = 4,
         # A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
         CFD # = 5,
+        # A bond instrument class. A type of debt investment where an investor loans money to an entity (typically corporate or governmental) which borrows the funds for a defined period of time at a variable or fixed interest rate.
+        BOND # = 6,
         # An options contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
-        OPTION # = 6,
+        OPTION # = 7,
         # A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
-        WARRANT # = 7,
+        WARRANT # = 8,
+        # A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+        SPORTS_BETTING # = 9,
 
     # The type of event for an instrument close.
     cpdef enum InstrumentCloseType:

@@ -90,7 +90,7 @@ pub fn parse_cfi_iso10926(value: &str) -> Result<(Option<AssetClass>, Option<Ins
     // let cfi_attribute4 = value[5];
 
     let mut asset_class = match cfi_category {
-        'D' => Some(AssetClass::Bond),
+        'D' => Some(AssetClass::Debt),
         'E' => Some(AssetClass::Equity),
         'S' => None,
         _ => None,
