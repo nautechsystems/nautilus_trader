@@ -64,7 +64,7 @@ pub fn init_tracing() {
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
 #[pyfunction]
-#[must_use]
+
 pub fn init_logging(
     clock: AtomicTime,
     trader_id: TraderId,
@@ -119,8 +119,7 @@ impl LoggerConfig {
                 is_bypassed = true;
             } else {
                 let mut kv = kv.split('=');
-                if let (Some(k), Some(Ok(lvl))) =
-                    (kv.next(), kv.next().map(|v| LevelFilter::from_str(v)))
+                if let (Some(k), Some(Ok(lvl))) = (kv.next(), kv.next().map(LevelFilter::from_str))
                 {
                     if k == "stdout" {
                         stdout_level = lvl;
@@ -238,8 +237,7 @@ impl Log for Logger {
             let color = record
                 .key_values()
                 .get("color".into())
-                .map(|v| v.to_borrowed_str().map(|s| LogColor::from_str(s).unwrap()))
-                .flatten()
+                .and_then(|v| v.to_borrowed_str().map(|s| LogColor::from_str(s).unwrap()))
                 .unwrap_or(LogColor::Normal);
             let line = LogLine {
                 timestamp,
@@ -255,7 +253,7 @@ impl Log for Logger {
     }
 
     fn flush(&self) {
-        let _ = self.tx.send(LogEvent::FlushCommand).unwrap();
+        self.tx.send(LogEvent::FlushCommand).unwrap();
     }
 }
 
@@ -300,7 +298,7 @@ impl Logger {
         });
 
         let _ = set_boxed_logger(Box::new(logger));
-        let _ = set_max_level(log::LevelFilter::Debug);
+        set_max_level(log::LevelFilter::Debug);
     }
 
     #[allow(clippy::useless_format)] // Format is not actually useless as we escape braces
@@ -374,7 +372,7 @@ impl Logger {
                 LogEvent::FlushCommand => {
                     Self::flush_stderr(&mut err_buf);
                     Self::flush_stdout(&mut out_buf);
-                    file_buf.as_mut().map(|buf| Self::flush_file(buf));
+                    file_buf.as_mut().map(Self::flush_file);
                 }
                 LogEvent::Data(line) => {
                     let component_level = component_level.get(&line.component);
@@ -663,12 +661,16 @@ mod tests {
 
     #[rstest]
     fn test_logging_to_file() {
-        let mut config = LoggerConfig::default();
-        config.fileout_level = LevelFilter::Debug;
+        let config = LoggerConfig {
+            fileout_level: LevelFilter::Debug,
+            ..Default::default()
+        };
 
         let temp_dir = tempdir().expect("Failed to create temporary directory");
-        let mut file_writer_config = FileWriterConfig::default();
-        file_writer_config.directory = Some(temp_dir.path().to_str().unwrap().to_string());
+        let file_writer_config = FileWriterConfig {
+            directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+            ..Default::default()
+        };
 
         Logger::init_with_config(
             AtomicTime::new(false, 1_650_000_000_000_000),
@@ -722,8 +724,10 @@ mod tests {
         let config = LoggerConfig::parse("stdout=Info;fileout=Debug;RiskEngine=Error");
 
         let temp_dir = tempdir().expect("Failed to create temporary directory");
-        let mut file_writer_config = FileWriterConfig::default();
-        file_writer_config.directory = Some(temp_dir.path().to_str().unwrap().to_string());
+        let file_writer_config = FileWriterConfig {
+            directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+            ..Default::default()
+        };
 
         Logger::init_with_config(
             AtomicTime::new(false, 1_650_000_000_000_000),
@@ -770,9 +774,11 @@ mod tests {
         let config = LoggerConfig::parse("stdout=Info;fileout=Debug;RiskEngine=Info");
 
         let temp_dir = tempdir().expect("Failed to create temporary directory");
-        let mut file_writer_config = FileWriterConfig::default();
-        file_writer_config.directory = Some(temp_dir.path().to_str().unwrap().to_string());
-        file_writer_config.file_format = Some("json".to_string());
+        let file_writer_config = FileWriterConfig {
+            directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+            file_format: Some("json".to_string()),
+            ..Default::default()
+        };
 
         Logger::init_with_config(
             AtomicTime::new(false, 1_650_000_000_000_000),

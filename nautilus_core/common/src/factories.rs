@@ -222,8 +222,8 @@ pub mod tests {
         assert_eq!(market_order.side, OrderSide::Buy);
         assert_eq!(market_order.quantity, 100.into());
         assert_eq!(market_order.time_in_force, TimeInForce::Gtc);
-        assert_eq!(market_order.is_reduce_only, false);
-        assert_eq!(market_order.is_quote_quantity, false);
+        assert!(!market_order.is_reduce_only);
+        assert!(!market_order.is_quote_quantity);
         assert_eq!(market_order.exec_algorithm_id, None);
         assert_eq!(market_order.exec_algorithm_params, None);
         assert_eq!(market_order.exec_spawn_id, None);

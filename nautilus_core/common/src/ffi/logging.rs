@@ -18,7 +18,7 @@ use std::ffi::c_char;
 use log::{
     debug, error, info,
     kv::{ToValue, Value},
-    log, warn,
+    warn,
 };
 use nautilus_core::ffi::string::cstr_to_string;
 
