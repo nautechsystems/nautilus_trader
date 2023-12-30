@@ -260,10 +260,7 @@ class TestBacktestConfigParsing:
     def test_backtest_run_config_id(self) -> None:
         token = self.backtest_config.id
         print("token:", token)
-        value: bytes = msgspec.json.encode(
-            self.backtest_config.dict(),
-            enc_hook=msgspec_encoding_hook,
-        )
+        value: bytes = self.backtest_config.json()
         print("token_value:", value.decode())
         assert token == "1d758e23defb5a69e2449ed03216ef7727c50e12c23730cc0309087ee7e71994"  # UNIX
 

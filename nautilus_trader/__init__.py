@@ -26,6 +26,13 @@ from importlib_metadata import version
 PACKAGE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PYPROJECT_PATH = os.path.join(PACKAGE_ROOT, "pyproject.toml")
 
+try:
+    __version__ = toml.load(PYPROJECT_PATH)["tool"]["poetry"]["version"]
+except FileNotFoundError:  # pragma: no cover
+    __version__ = "latest"
+
+USER_AGENT = f"NautilusTrader/{__version__}"
+
 
 def clean_version_string(version: str) -> str:
     """
@@ -61,9 +68,3 @@ def get_package_version_installed(package_name: str) -> str:
     Return the package version installed for the given `package_name`.
     """
     return version(package_name)
-
-
-try:
-    __version__ = toml.load(PYPROJECT_PATH)["tool"]["poetry"]["version"]
-except FileNotFoundError:  # pragma: no cover
-    __version__ = "latest"

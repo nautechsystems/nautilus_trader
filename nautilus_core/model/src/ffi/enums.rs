@@ -18,8 +18,8 @@ use std::{ffi::c_char, str::FromStr};
 use nautilus_core::ffi::string::{cstr_to_str, str_to_cstr};
 
 use crate::enums::{
-    AccountType, AggregationSource, AggressorSide, AssetClass, AssetType, BarAggregation,
-    BookAction, BookType, ContingencyType, CurrencyType, HaltReason, InstrumentCloseType,
+    AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
+    BookType, ContingencyType, CurrencyType, HaltReason, InstrumentClass, InstrumentCloseType,
     LiquiditySide, MarketStatus, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
     PositionSide, PriceType, TimeInForce, TradingState, TrailingOffsetType, TriggerType,
 };
@@ -89,7 +89,7 @@ pub unsafe extern "C" fn asset_class_from_cstr(ptr: *const c_char) -> AssetClass
 }
 
 #[no_mangle]
-pub extern "C" fn asset_type_to_cstr(value: AssetType) -> *const c_char {
+pub extern "C" fn instrument_class_to_cstr(value: InstrumentClass) -> *const c_char {
     str_to_cstr(value.as_ref())
 }
 
@@ -98,10 +98,10 @@ pub extern "C" fn asset_type_to_cstr(value: AssetType) -> *const c_char {
 /// # Safety
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn asset_type_from_cstr(ptr: *const c_char) -> AssetType {
+pub unsafe extern "C" fn instrument_class_from_cstr(ptr: *const c_char) -> InstrumentClass {
     let value = cstr_to_str(ptr);
-    AssetType::from_str(value)
-        .unwrap_or_else(|_| panic!("invalid `AssetType` enum string value, was '{value}'"))
+    InstrumentClass::from_str(value)
+        .unwrap_or_else(|_| panic!("invalid `InstrumentClass` enum string value, was '{value}'"))
 }
 
 #[no_mangle]

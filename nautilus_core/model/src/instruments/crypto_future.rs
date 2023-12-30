@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use super::Instrument;
 use crate::{
-    enums::{AssetClass, AssetType},
+    enums::{AssetClass, InstrumentClass},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
@@ -59,6 +59,8 @@ pub struct CryptoFuture {
     pub min_notional: Option<Money>,
     pub max_price: Option<Price>,
     pub min_price: Option<Price>,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }
 
 impl CryptoFuture {
@@ -86,6 +88,8 @@ impl CryptoFuture {
         min_notional: Option<Money>,
         max_price: Option<Price>,
         min_price: Option<Price>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
     ) -> Result<Self> {
         Ok(Self {
             id,
@@ -110,6 +114,8 @@ impl CryptoFuture {
             min_notional,
             max_price,
             min_price,
+            ts_event,
+            ts_init,
         })
     }
 }
@@ -141,8 +147,8 @@ impl Instrument for CryptoFuture {
         AssetClass::Cryptocurrency
     }
 
-    fn asset_type(&self) -> AssetType {
-        AssetType::Future
+    fn instrument_class(&self) -> InstrumentClass {
+        InstrumentClass::Future
     }
 
     fn quote_currency(&self) -> &Currency {
@@ -216,6 +222,14 @@ impl Instrument for CryptoFuture {
 
     fn taker_fee(&self) -> Decimal {
         self.taker_fee
+    }
+
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }
 

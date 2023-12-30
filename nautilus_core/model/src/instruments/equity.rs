@@ -18,13 +18,14 @@
 use std::hash::{Hash, Hasher};
 
 use anyhow::Result;
+use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use super::Instrument;
 use crate::{
-    enums::{AssetClass, AssetType},
+    enums::{AssetClass, InstrumentClass},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
@@ -39,7 +40,7 @@ pub struct Equity {
     pub id: InstrumentId,
     pub raw_symbol: Symbol,
     /// The instruments ISIN (International Securities Identification Number).
-    pub isin: String,
+    pub isin: Option<String>,
     pub currency: Currency,
     pub price_precision: u8,
     pub price_increment: Price,
@@ -53,6 +54,8 @@ pub struct Equity {
     pub min_quantity: Option<Quantity>,
     pub max_price: Option<Price>,
     pub min_price: Option<Price>,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }
 
 impl Equity {
@@ -60,7 +63,7 @@ impl Equity {
     pub fn new(
         id: InstrumentId,
         raw_symbol: Symbol,
-        isin: String,
+        isin: Option<String>,
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
@@ -74,6 +77,8 @@ impl Equity {
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
         min_price: Option<Price>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
     ) -> Result<Self> {
         Ok(Self {
             id,
@@ -92,6 +97,8 @@ impl Equity {
             min_quantity,
             max_price,
             min_price,
+            ts_event,
+            ts_init,
         })
     }
 }
@@ -123,8 +130,8 @@ impl Instrument for Equity {
         AssetClass::Equity
     }
 
-    fn asset_type(&self) -> AssetType {
-        AssetType::Spot
+    fn instrument_class(&self) -> InstrumentClass {
+        InstrumentClass::Spot
     }
 
     fn quote_currency(&self) -> &Currency {
@@ -197,6 +204,14 @@ impl Instrument for Equity {
 
     fn taker_fee(&self) -> Decimal {
         self.taker_fee
+    }
+
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }
 

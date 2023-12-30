@@ -115,6 +115,18 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
     The base class for all Nautilus configuration objects.
     """
 
+    @property
+    def id(self) -> str:
+        """
+        Return the hashed identifier for the configuration.
+
+        Returns
+        -------
+        str
+
+        """
+        return tokenize_config(self)
+
     @classmethod
     def fully_qualified_name(cls) -> str:
         """
@@ -131,17 +143,24 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
         """
         return cls.__module__ + ":" + cls.__qualname__
 
-    @property
-    def id(self) -> str:
+    @classmethod
+    def parse(cls, raw: bytes) -> Any:
         """
-        Return the hashed identifier for the configuration.
+        Return a decoded object of the given `cls`.
+
+        Parameters
+        ----------
+        cls : type
+            The type to decode to.
+        raw : bytes
+            The raw bytes to decode.
 
         Returns
         -------
-        str
+        Any
 
         """
-        return tokenize_config(self)
+        return msgspec.json.decode(raw, type=cls, dec_hook=msgspec_decoding_hook)
 
     def dict(self) -> dict[str, Any]:
         """
@@ -165,24 +184,17 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
         """
         return msgspec.json.encode(self, enc_hook=msgspec_encoding_hook)
 
-    @classmethod
-    def parse(cls, raw: bytes) -> Any:
+    def json_primitives(self) -> dict[str, Any]:  # type: ignore [valid-type]
         """
-        Return a decoded object of the given `cls`.
-
-        Parameters
-        ----------
-        cls : type
-            The type to decode to.
-        raw : bytes
-            The raw bytes to decode.
+        Return a dictionary representation of the configuration with JSON primitive
+        types as values.
 
         Returns
         -------
-        Any
+        dict[str, Any]
 
         """
-        return msgspec.json.decode(raw, type=cls, dec_hook=msgspec_decoding_hook)
+        return msgspec.json.decode(self.json())
 
     def validate(self) -> bool:
         """

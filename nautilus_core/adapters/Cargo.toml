@@ -1,0 +1,41 @@
+[package]
+name = "nautilus-adapters"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description.workspace = true
+documentation.workspace = true
+
+[lib]
+name = "nautilus_adapters"
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[dependencies]
+nautilus-common = { path = "../common" }
+nautilus-core = { path = "../core" }
+nautilus-model = { path = "../model", features = ["stubs"]}
+anyhow = { workspace = true }
+chrono = { workspace = true }
+itoa = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+rand = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+dbn = { version = "0.14.2", optional = true }
+
+[features]
+extension-module = [
+  "pyo3/extension-module",
+  "nautilus-common/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
+]
+databento = ["dbn"]
+python = ["pyo3"]
+default = ["databento", "python"]
+
+[dev-dependencies]
+criterion = { workspace = true }
+rstest = { workspace = true }

@@ -80,6 +80,24 @@ impl OrderBookDelta {
         }
     }
 
+    #[must_use]
+    pub fn clear(
+        instrument_id: InstrumentId,
+        sequence: u64,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self {
+            instrument_id,
+            action: BookAction::Clear,
+            order: NULL_ORDER,
+            flags: 32, // TODO: Flags constants
+            sequence,
+            ts_event,
+            ts_init,
+        }
+    }
+
     /// Returns the metadata for the type, for use with serialization formats.
     pub fn get_metadata(
         instrument_id: &InstrumentId,
@@ -266,6 +284,27 @@ mod tests {
         assert_eq!(delta.order.side, side);
         assert_eq!(delta.order.order_id, order_id);
         assert_eq!(delta.flags, flags);
+        assert_eq!(delta.sequence, sequence);
+        assert_eq!(delta.ts_event, ts_event);
+        assert_eq!(delta.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_clear() {
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let sequence = 1;
+        let ts_event = 2;
+        let ts_init = 3;
+
+        let delta = OrderBookDelta::clear(instrument_id, sequence, ts_event, ts_init);
+
+        assert_eq!(delta.instrument_id, instrument_id);
+        assert_eq!(delta.action, BookAction::Clear);
+        assert!(delta.order.price.is_zero());
+        assert!(delta.order.size.is_zero());
+        assert_eq!(delta.order.side, OrderSide::NoOrderSide);
+        assert_eq!(delta.order.order_id, 0);
+        assert_eq!(delta.flags, 32);
         assert_eq!(delta.sequence, sequence);
         assert_eq!(delta.ts_event, ts_event);
         assert_eq!(delta.ts_init, ts_init);

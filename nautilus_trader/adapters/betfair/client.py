@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from betfair_parser.endpoints import ENDPOINTS
 from betfair_parser.spec.accounts.operations import GetAccountDetails
 from betfair_parser.spec.accounts.operations import GetAccountFunds
@@ -58,6 +57,7 @@ from betfair_parser.spec.identity import LoginStatus
 from betfair_parser.spec.navigation import Menu
 from betfair_parser.spec.navigation import Navigation
 
+import nautilus_trader
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
@@ -95,6 +95,7 @@ class BetfairHttpClient:
         body = request.body()
         if isinstance(body, str):
             body = body.encode()
+        self._log.debug(f"[REQ] {method} {url} {body.decode()} ")
         response: HttpResponse = await self._client.request(
             method,
             url,
@@ -127,6 +128,7 @@ class BetfairHttpClient:
         self._headers = {
             "Accept": "application/json",
             "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": nautilus_trader.USER_AGENT,
             "X-Application": self.app_key,
         }
 

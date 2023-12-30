@@ -54,35 +54,14 @@ cdef extern from "../includes/model.h":
         EQUITY # = 2,
         # Commodity assets.
         COMMODITY # = 3,
-        # Metal commodity assets.
-        METAL # = 4,
-        # Energy commodity assets.
-        ENERGY # = 5,
-        # Fixed income bond assets.
-        BOND # = 6,
-        # Index based assets.
-        INDEX # = 7,
+        # Debt based assets.
+        DEBT # = 4,
+        # Index based assets (baskets).
+        INDEX # = 5,
         # Cryptocurrency or crypto token assets.
-        CRYPTOCURRENCY # = 8,
-        # Sports betting instruments.
-        SPORTS_BETTING # = 9,
-
-    # The asset type for a financial market product.
-    cpdef enum AssetType:
-        # A spot market asset type. The current market price of an asset that is bought or sold for immediate delivery and payment.
-        SPOT # = 1,
-        # A swap asset type. A derivative contract through which two parties exchange the cash flows or liabilities from two different financial instruments.
-        SWAP # = 2,
-        # A futures contract asset type. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
-        FUTURE # = 3,
-        # A forward derivative asset type. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
-        FORWARD # = 4,
-        # A contract-for-difference (CFD) asset type. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
-        CFD # = 5,
-        # An options contract asset type. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
-        OPTION # = 6,
-        # A warrant asset type. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
-        WARRANT # = 7,
+        CRYPTOCURRENCY # = 6,
+        # Alternative assets.
+        ALTERNATIVE # = 7,
 
     # The type of order book action for an order book event.
     cpdef enum BookAction:
@@ -134,6 +113,27 @@ cdef extern from "../includes/model.h":
         GENERAL # = 2,
         # Trading halt is imposed by the venue to protect against extreme volatility.
         VOLATILITY # = 3,
+
+    # The asset type for a financial market product.
+    cpdef enum InstrumentClass:
+        # A spot market instrument class. The current market price of an instrument that is bought or sold for immediate delivery and payment.
+        SPOT # = 1,
+        # A swap instrument class. A derivative contract through which two parties exchange the cash flows or liabilities from two different financial instruments.
+        SWAP # = 2,
+        # A futures contract instrument class. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
+        FUTURE # = 3,
+        # A forward derivative instrument class. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
+        FORWARD # = 4,
+        # A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
+        CFD # = 5,
+        # A bond instrument class. A type of debt investment where an investor loans money to an entity (typically corporate or governmental) which borrows the funds for a defined period of time at a variable or fixed interest rate.
+        BOND # = 6,
+        # An options contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
+        OPTION # = 7,
+        # A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+        WARRANT # = 8,
+        # A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+        SPORTS_BETTING # = 9,
 
     # The type of event for an instrument close.
     cpdef enum InstrumentCloseType:
@@ -513,18 +513,6 @@ cdef extern from "../includes/model.h":
         TradeTick_t trade;
         Bar_t bar;
 
-    # Provides a C compatible Foreign Function Interface (FFI) for an underlying
-    # [`SyntheticInstrument`].
-    #
-    # This struct wraps `SyntheticInstrument` in a way that makes it compatible with C function
-    # calls, enabling interaction with `SyntheticInstrument` in a C environment.
-    #
-    # It implements the `Deref` trait, allowing instances of `SyntheticInstrument_API` to be
-    # dereferenced to `SyntheticInstrument`, providing access to `SyntheticInstruments`'s methods without
-    # having to manually access the underlying instance.
-    cdef struct SyntheticInstrument_API:
-        SyntheticInstrument *_0;
-
     # Represents a single quote tick in a financial market.
     cdef struct Ticker:
         # The quotes instrument ID.
@@ -670,6 +658,18 @@ cdef extern from "../includes/model.h":
         # The position ID value.
         char* value;
 
+    # Provides a C compatible Foreign Function Interface (FFI) for an underlying
+    # [`SyntheticInstrument`].
+    #
+    # This struct wraps `SyntheticInstrument` in a way that makes it compatible with C function
+    # calls, enabling interaction with `SyntheticInstrument` in a C environment.
+    #
+    # It implements the `Deref` trait, allowing instances of `SyntheticInstrument_API` to be
+    # dereferenced to `SyntheticInstrument`, providing access to `SyntheticInstruments`'s methods without
+    # having to manually access the underlying instance.
+    cdef struct SyntheticInstrument_API:
+        SyntheticInstrument *_0;
+
     # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBook`].
     #
     # This struct wraps `OrderBook` in a way that makes it compatible with C function
@@ -711,49 +711,6 @@ cdef extern from "../includes/model.h":
     Data_t data_clone(const Data_t *data);
 
     void interned_string_stats();
-
-    # # Safety
-    #
-    # - Assumes `components_ptr` is a valid C string pointer of a JSON format list of strings.
-    # - Assumes `formula_ptr` is a valid C string pointer.
-    SyntheticInstrument_API synthetic_instrument_new(Symbol_t symbol,
-                                                     uint8_t price_precision,
-                                                     const char *components_ptr,
-                                                     const char *formula_ptr,
-                                                     uint64_t ts_event,
-                                                     uint64_t ts_init);
-
-    void synthetic_instrument_drop(SyntheticInstrument_API synth);
-
-    InstrumentId_t synthetic_instrument_id(const SyntheticInstrument_API *synth);
-
-    uint8_t synthetic_instrument_price_precision(const SyntheticInstrument_API *synth);
-
-    Price_t synthetic_instrument_price_increment(const SyntheticInstrument_API *synth);
-
-    const char *synthetic_instrument_formula_to_cstr(const SyntheticInstrument_API *synth);
-
-    const char *synthetic_instrument_components_to_cstr(const SyntheticInstrument_API *synth);
-
-    uintptr_t synthetic_instrument_components_count(const SyntheticInstrument_API *synth);
-
-    uint64_t synthetic_instrument_ts_event(const SyntheticInstrument_API *synth);
-
-    uint64_t synthetic_instrument_ts_init(const SyntheticInstrument_API *synth);
-
-    # # Safety
-    #
-    # - Assumes `formula_ptr` is a valid C string pointer.
-    uint8_t synthetic_instrument_is_valid_formula(const SyntheticInstrument_API *synth,
-                                                  const char *formula_ptr);
-
-    # # Safety
-    #
-    # - Assumes `formula_ptr` is a valid C string pointer.
-    void synthetic_instrument_change_formula(SyntheticInstrument_API *synth,
-                                             const char *formula_ptr);
-
-    Price_t synthetic_instrument_calculate(SyntheticInstrument_API *synth, const CVec *inputs_ptr);
 
     BarSpecification_t bar_specification_new(uintptr_t step,
                                              uint8_t aggregation,
@@ -940,13 +897,13 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     AssetClass asset_class_from_cstr(const char *ptr);
 
-    const char *asset_type_to_cstr(AssetType value);
+    const char *instrument_class_to_cstr(InstrumentClass value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is a valid C string pointer.
-    AssetType asset_type_from_cstr(const char *ptr);
+    InstrumentClass instrument_class_from_cstr(const char *ptr);
 
     const char *bar_aggregation_to_cstr(uint8_t value);
 
@@ -1315,6 +1272,49 @@ cdef extern from "../includes/model.h":
     VenueOrderId_t venue_order_id_new(const char *ptr);
 
     uint64_t venue_order_id_hash(const VenueOrderId_t *id);
+
+    # # Safety
+    #
+    # - Assumes `components_ptr` is a valid C string pointer of a JSON format list of strings.
+    # - Assumes `formula_ptr` is a valid C string pointer.
+    SyntheticInstrument_API synthetic_instrument_new(Symbol_t symbol,
+                                                     uint8_t price_precision,
+                                                     const char *components_ptr,
+                                                     const char *formula_ptr,
+                                                     uint64_t ts_event,
+                                                     uint64_t ts_init);
+
+    void synthetic_instrument_drop(SyntheticInstrument_API synth);
+
+    InstrumentId_t synthetic_instrument_id(const SyntheticInstrument_API *synth);
+
+    uint8_t synthetic_instrument_price_precision(const SyntheticInstrument_API *synth);
+
+    Price_t synthetic_instrument_price_increment(const SyntheticInstrument_API *synth);
+
+    const char *synthetic_instrument_formula_to_cstr(const SyntheticInstrument_API *synth);
+
+    const char *synthetic_instrument_components_to_cstr(const SyntheticInstrument_API *synth);
+
+    uintptr_t synthetic_instrument_components_count(const SyntheticInstrument_API *synth);
+
+    uint64_t synthetic_instrument_ts_event(const SyntheticInstrument_API *synth);
+
+    uint64_t synthetic_instrument_ts_init(const SyntheticInstrument_API *synth);
+
+    # # Safety
+    #
+    # - Assumes `formula_ptr` is a valid C string pointer.
+    uint8_t synthetic_instrument_is_valid_formula(const SyntheticInstrument_API *synth,
+                                                  const char *formula_ptr);
+
+    # # Safety
+    #
+    # - Assumes `formula_ptr` is a valid C string pointer.
+    void synthetic_instrument_change_formula(SyntheticInstrument_API *synth,
+                                             const char *formula_ptr);
+
+    Price_t synthetic_instrument_calculate(SyntheticInstrument_API *synth, const CVec *inputs_ptr);
 
     OrderBook_API orderbook_new(InstrumentId_t instrument_id, BookType book_type);
 

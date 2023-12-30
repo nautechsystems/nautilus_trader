@@ -14,14 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AssetClass
-from nautilus_trader.core.rust.model cimport AssetType
 from nautilus_trader.core.rust.model cimport CurrencyType
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -134,13 +133,13 @@ cdef class CurrencyPair(Instrument):
         taker_fee not None: Decimal,
         uint64_t ts_event,
         uint64_t ts_init,
-        Quantity lot_size: Optional[Quantity] = None,
-        Quantity max_quantity: Optional[Quantity] = None,
-        Quantity min_quantity: Optional[Quantity] = None,
-        Money max_notional: Optional[Money] = None,
-        Money min_notional: Optional[Money] = None,
-        Price max_price: Optional[Price] = None,
-        Price min_price: Optional[Price] = None,
+        Quantity lot_size: Quantity | None = None,
+        Quantity max_quantity: Quantity | None = None,
+        Quantity min_quantity: Quantity | None = None,
+        Money max_notional: Money | None = None,
+        Money min_notional: Money | None = None,
+        Price max_price: Price | None = None,
+        Price min_price: Price | None = None,
         str tick_scheme_name = None,
         dict info = None,
     ):
@@ -156,7 +155,7 @@ cdef class CurrencyPair(Instrument):
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
             asset_class=asset_class,
-            asset_type=AssetType.SPOT,
+            instrument_class=InstrumentClass.SPOT,
             quote_currency=quote_currency,
             is_inverse=False,
             price_precision=price_precision,

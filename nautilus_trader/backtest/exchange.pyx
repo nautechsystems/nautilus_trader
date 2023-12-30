@@ -16,7 +16,6 @@
 from collections import deque
 from decimal import Decimal
 from heapq import heappush
-from typing import Optional
 
 from nautilus_trader.config.error import InvalidConfiguration
 
@@ -137,7 +136,7 @@ cdef class SimulatedExchange:
         OmsType oms_type,
         AccountType account_type,
         list starting_balances not None,
-        Currency base_currency: Optional[Currency],
+        Currency base_currency: Currency | None,
         default_leverage not None: Decimal,
         leverages not None: dict[InstrumentId, Decimal],
         list instruments not None,

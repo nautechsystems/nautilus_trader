@@ -17,7 +17,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport AssetClass
-from nautilus_trader.core.rust.model cimport AssetType
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Currency
@@ -36,8 +36,8 @@ cdef class Instrument(Data):
     """The native/local/raw symbol for the instrument, assigned by the venue.\n\n:returns: `Symbol`"""
     cdef readonly AssetClass asset_class
     """The asset class of the instrument.\n\n:returns: `AssetClass`"""
-    cdef readonly AssetType asset_type
-    """The asset type of the instrument.\n\n:returns: `AssetType`"""
+    cdef readonly InstrumentClass instrument_class
+    """The class of the instrument.\n\n:returns: `InstrumentClass`"""
     cdef readonly Currency quote_currency
     """The quote currency for the instrument.\n\n:returns: `Currency`"""
     cdef readonly bint is_inverse

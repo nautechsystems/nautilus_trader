@@ -30,7 +30,6 @@ just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
 from typing import Callable
-from typing import Optional
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import DataEngineConfig
@@ -116,7 +115,7 @@ cdef class DataEngine(Component):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        config: Optional[DataEngineConfig] = None,
+        config: DataEngineConfig | None = None,
     ):
         if config is None:
             config = DataEngineConfig()
@@ -126,15 +125,15 @@ cdef class DataEngine(Component):
             logger=logger,
             component_id=ComponentId("DataEngine"),
             msgbus=msgbus,
-            config=config.dict(),
+            config=config,
         )
 
         self._cache = cache
 
         self._clients: dict[ClientId, DataClient] = {}
         self._routing_map: dict[Venue, DataClient] = {}
-        self._default_client: Optional[DataClient] = None
-        self._catalog: Optional[ParquetDataCatalog] = None
+        self._default_client: DataClient | None = None
+        self._catalog: ParquetDataCatalog | None = None
         self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[Bar], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
         self._synthetic_quote_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
@@ -174,13 +173,13 @@ cdef class DataEngine(Component):
         return sorted(list(self._clients.keys()))
 
     @property
-    def default_client(self) -> Optional[ClientId]:
+    def default_client(self) -> ClientId | None:
         """
         Return the default data client registered with the engine.
 
         Returns
         -------
-        Optional[ClientId]
+        ClientId or ``None``
 
         """
         return self._default_client.id if self._default_client is not None else None

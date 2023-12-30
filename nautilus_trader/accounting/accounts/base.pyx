@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
-
 from nautilus_trader.accounting.error import AccountBalanceNegative
 
 from nautilus_trader.core.correctness cimport Condition
@@ -477,7 +475,7 @@ cdef class Account:
         self,
         Instrument instrument,
         OrderFilled fill,
-        Position position: Optional[Position] = None,
+        Position position: Position | None = None,
     ):
         raise NotImplementedError("method `calculate_pnls` must be implemented in the subclass")  # pragma: no cover
 

@@ -15,7 +15,6 @@
 
 import random
 from copy import copy
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -252,7 +251,7 @@ cdef class QuoteTickDataWrangler:
         ts_init_delta: int = 0,
         offset_interval_ms: int = 100,
         bint timestamp_is_close: bool = True,
-        random_seed: Optional[int] = None,
+        random_seed: int | None = None,
         bint is_raw: bool = False,
     ):
         """

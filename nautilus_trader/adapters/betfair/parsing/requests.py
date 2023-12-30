@@ -34,15 +34,14 @@ from betfair_parser.spec.common import CustomerOrderRef
 from betfair_parser.spec.common import OrderStatus as BetfairOrderStatus
 from betfair_parser.spec.common import OrderType
 
-from nautilus_trader.adapters.betfair.common import B2N_ORDER_SIDE
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_TYPE
 from nautilus_trader.adapters.betfair.common import B2N_TIME_IN_FORCE
 from nautilus_trader.adapters.betfair.common import BETFAIR_FLOAT_TO_PRICE
 from nautilus_trader.adapters.betfair.common import MAX_BET_PRICE
 from nautilus_trader.adapters.betfair.common import MIN_BET_PRICE
 from nautilus_trader.adapters.betfair.common import N2B_PERSISTENCE
-from nautilus_trader.adapters.betfair.common import N2B_SIDE
 from nautilus_trader.adapters.betfair.common import N2B_TIME_IN_FORCE
+from nautilus_trader.adapters.betfair.common import OrderSideParser
 from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.core.datetime import dt_to_unix_nanos
@@ -99,7 +98,7 @@ def nautilus_limit_to_place_instructions(
         handicap=instrument.selection_handicap
         if instrument.selection_handicap != null_handicap()
         else None,
-        side=N2B_SIDE[command.order.side],
+        side=OrderSideParser.to_betfair(command.order.side),
         limit_order=LimitOrder(
             price=command.order.price.as_double(),
             size=command.order.quantity.as_double(),
@@ -128,7 +127,7 @@ def nautilus_limit_on_close_to_place_instructions(
         handicap=instrument.selection_handicap
         if instrument.selection_handicap != null_handicap()
         else None,
-        side=N2B_SIDE[command.order.side],
+        side=OrderSideParser.to_betfair(command.order.side),
         limit_on_close_order=LimitOnCloseOrder(
             price=command.order.price.as_double(),
             liability=command.order.quantity.as_double(),
@@ -153,7 +152,7 @@ def nautilus_market_to_place_instructions(
         handicap=instrument.selection_handicap
         if instrument.selection_handicap != null_handicap()
         else None,
-        side=N2B_SIDE[command.order.side],
+        side=OrderSideParser.to_betfair(command.order.side),
         limit_order=LimitOrder(
             price=price.as_double(),
             size=command.order.quantity.as_double(),
@@ -182,7 +181,7 @@ def nautilus_market_on_close_to_place_instructions(
         handicap=instrument.selection_handicap
         if instrument.selection_handicap != null_handicap()
         else None,
-        side=N2B_SIDE[command.order.side],
+        side=OrderSideParser.to_betfair(command.order.side),
         market_on_close_order=MarketOnCloseOrder(
             liability=command.order.quantity.as_double(),
         ),
@@ -199,7 +198,10 @@ def nautilus_order_to_place_instructions(
     instrument: BettingInstrument,
 ) -> PlaceInstruction:
     if isinstance(command.order, NautilusLimitOrder):
-        if command.order.time_in_force == NautilusTimeInForce.AT_THE_OPEN:
+        if command.order.time_in_force in (
+            NautilusTimeInForce.AT_THE_OPEN,
+            NautilusTimeInForce.AT_THE_CLOSE,
+        ):
             return nautilus_limit_on_close_to_place_instructions(
                 command=command,
                 instrument=instrument,
@@ -207,7 +209,10 @@ def nautilus_order_to_place_instructions(
         else:
             return nautilus_limit_to_place_instructions(command=command, instrument=instrument)
     elif isinstance(command.order, NautilusMarketOrder):
-        if command.order.time_in_force == NautilusTimeInForce.AT_THE_OPEN:
+        if command.order.time_in_force in (
+            NautilusTimeInForce.AT_THE_OPEN,
+            NautilusTimeInForce.AT_THE_CLOSE,
+        ):
             return nautilus_market_on_close_to_place_instructions(
                 command=command,
                 instrument=instrument,
@@ -359,7 +364,7 @@ def bet_to_order_status_report(
         instrument_id=instrument_id,
         venue_order_id=venue_order_id,
         client_order_id=client_order_id,
-        order_side=B2N_ORDER_SIDE[order.side],
+        order_side=OrderSideParser.to_nautilus(order.side),
         order_type=B2N_ORDER_TYPE[order.order_type],
         contingency_type=ContingencyType.NO_CONTINGENCY,
         time_in_force=B2N_TIME_IN_FORCE[order.persistence_type],

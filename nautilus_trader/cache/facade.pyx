@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
-
 from nautilus_trader.config import CacheConfig
 
 from cpython.datetime cimport datetime
@@ -71,7 +69,7 @@ cdef class CacheDatabaseFacade:
     def __init__(
         self,
         Logger logger not None,
-        config: Optional[CacheConfig] = None,
+        config: CacheConfig | None = None,
     ):
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
 

@@ -51,6 +51,8 @@ impl FuturesContract {
         maker_fee: Decimal,
         taker_fee: Decimal,
         multiplier: Quantity,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
@@ -77,6 +79,8 @@ impl FuturesContract {
             min_quantity,
             max_price,
             min_price,
+            ts_event,
+            ts_init,
         )
         .map_err(to_pyvalue_err)
     }
@@ -118,6 +122,8 @@ impl FuturesContract {
         dict.set_item("maker_fee", self.maker_fee.to_f64())?;
         dict.set_item("taker_fee", self.taker_fee.to_f64())?;
         dict.set_item("multiplier", self.multiplier.to_string())?;
+        dict.set_item("ts_event", self.ts_event)?;
+        dict.set_item("ts_init", self.ts_init)?;
         match self.lot_size {
             Some(value) => dict.set_item("lot_size", value.to_string())?,
             None => dict.set_item("lot_size", py.None())?,

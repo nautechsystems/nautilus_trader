@@ -36,8 +36,8 @@ pub enum InvalidBookOperation {
 
 #[derive(Error, Debug)]
 pub enum BookIntegrityError {
-    #[error("Invalid book operation: order ID {0} not found")]
-    OrderNotFound(u64),
+    #[error("Integrity error: order not found: order_id={0}, ts_event={1}, sequence={2}")]
+    OrderNotFound(u64, u64, u64),
     #[error("Integrity error: invalid `NoOrderSide` in book")]
     NoOrderSide,
     #[error("Integrity error: orders in cross [{0} @ {1}]")]
@@ -131,8 +131,8 @@ impl OrderBook {
         };
 
         match order.side {
-            OrderSide::Buy => self.bids.delete(order),
-            OrderSide::Sell => self.asks.delete(order),
+            OrderSide::Buy => self.bids.delete(order, ts_event, sequence),
+            OrderSide::Sell => self.asks.delete(order, ts_event, sequence),
             _ => panic!("{}", BookIntegrityError::NoOrderSide),
         }
 
@@ -278,13 +278,29 @@ impl OrderBook {
     }
 
     pub fn update_quote_tick(&mut self, tick: &QuoteTick) {
-        self.update_bid(BookOrder::from_quote_tick(tick, OrderSide::Buy));
-        self.update_ask(BookOrder::from_quote_tick(tick, OrderSide::Sell));
+        self.update_bid(
+            BookOrder::from_quote_tick(tick, OrderSide::Buy),
+            tick.ts_event,
+            0,
+        );
+        self.update_ask(
+            BookOrder::from_quote_tick(tick, OrderSide::Sell),
+            tick.ts_event,
+            0,
+        );
     }
 
     pub fn update_trade_tick(&mut self, tick: &TradeTick) {
-        self.update_bid(BookOrder::from_trade_tick(tick, OrderSide::Buy));
-        self.update_ask(BookOrder::from_trade_tick(tick, OrderSide::Sell));
+        self.update_bid(
+            BookOrder::from_trade_tick(tick, OrderSide::Buy),
+            tick.ts_event,
+            0,
+        );
+        self.update_ask(
+            BookOrder::from_trade_tick(tick, OrderSide::Sell),
+            tick.ts_event,
+            0,
+        );
     }
 
     pub fn simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
@@ -441,12 +457,12 @@ impl OrderBook {
         }
     }
 
-    fn update_bid(&mut self, order: BookOrder) {
+    fn update_bid(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
         match self.bids.top() {
             Some(top_bids) => match top_bids.first() {
                 Some(top_bid) => {
                     let order_id = top_bid.order_id;
-                    self.bids.remove(order_id);
+                    self.bids.remove(order_id, ts_event, sequence);
                     self.bids.add(order);
                 }
                 None => {
@@ -459,12 +475,12 @@ impl OrderBook {
         }
     }
 
-    fn update_ask(&mut self, order: BookOrder) {
+    fn update_ask(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
         match self.asks.top() {
             Some(top_asks) => match top_asks.first() {
                 Some(top_ask) => {
                     let order_id = top_ask.order_id;
-                    self.asks.remove(order_id);
+                    self.asks.remove(order_id, ts_event, sequence);
                     self.asks.add(order);
                 }
                 None => {

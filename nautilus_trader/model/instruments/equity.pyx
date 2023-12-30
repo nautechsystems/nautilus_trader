@@ -14,13 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AssetClass
-from nautilus_trader.core.rust.model cimport AssetType
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -89,18 +88,18 @@ cdef class Equity(Instrument):
         Quantity lot_size not None,
         uint64_t ts_event,
         uint64_t ts_init,
-        str isin: Optional[str] = None,
-        margin_init: Optional[Decimal] = None,
-        margin_maint: Optional[Decimal] = None,
-        maker_fee: Optional[Decimal] = None,
-        taker_fee: Optional[Decimal] = None,
+        str isin: str | None = None,
+        margin_init: Decimal | None = None,
+        margin_maint: Decimal | None = None,
+        maker_fee: Decimal | None = None,
+        taker_fee: Decimal | None = None,
         dict info = None,
     ):
         super().__init__(
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
             asset_class=AssetClass.EQUITY,
-            asset_type=AssetType.SPOT,
+            instrument_class=InstrumentClass.SPOT,
             quote_currency=currency,
             is_inverse=False,
             price_precision=price_precision,

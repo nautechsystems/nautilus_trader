@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from typing import Any
-from typing import Optional
 
 from nautilus_trader.config import ExecAlgorithmConfig
 from nautilus_trader.config import ImportableExecAlgorithmConfig
@@ -106,7 +105,7 @@ cdef class ExecAlgorithm(Actor):
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, config: Optional[ExecAlgorithmConfig] = None):
+    def __init__(self, config: ExecAlgorithmConfig | None = None):
         if config is None:
             config = ExecAlgorithmConfig()
         Condition.type(config, ExecAlgorithmConfig, "config")

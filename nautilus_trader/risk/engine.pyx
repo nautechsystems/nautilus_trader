@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 import pandas as pd
 
@@ -37,7 +36,7 @@ from nautilus_trader.common.messages cimport TradingStateChanged
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.rust.model cimport AssetType
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport OrderType
@@ -112,7 +111,7 @@ cdef class RiskEngine(Component):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        config: Optional[RiskEngineConfig] = None,
+        config: RiskEngineConfig | None = None,
     ):
         if config is None:
             config = RiskEngineConfig()
@@ -122,7 +121,7 @@ cdef class RiskEngine(Component):
             logger=logger,
             component_id=ComponentId("RiskEngine"),
             msgbus=msgbus,
-            config=config.dict(),
+            config=config,
         )
 
         self._portfolio = portfolio
@@ -608,7 +607,7 @@ cdef class RiskEngine(Component):
 
         # Determine max notional
         cdef Money max_notional = None
-        max_notional_setting: Optional[Decimal] = self._max_notional_per_order.get(instrument.id)
+        max_notional_setting: Decimal | None = self._max_notional_per_order.get(instrument.id)
         if max_notional_setting:
             # TODO(cs): Improve efficiency of this
             max_notional = Money(float(max_notional_setting), instrument.quote_currency)
@@ -767,7 +766,7 @@ cdef class RiskEngine(Component):
         if price.precision > instrument.price_precision:
             # Check failed
             return f"price {price} invalid (precision {price.precision} > {instrument.price_precision})"
-        if instrument.asset_type != AssetType.OPTION:
+        if instrument.instrument_class != InstrumentClass.OPTION:
             if price.raw_int64_c() <= 0:
                 # Check failed
                 return f"price {price} invalid (not positive)"

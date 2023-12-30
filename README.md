@@ -14,10 +14,10 @@
 
 | Platform           | Rust    | Python |
 | :----------------- | :------ | :----- |
-| `Linux (x86_64)`   | 1.74.1+ | 3.10+  |
-| `macOS (x86_64)`   | 1.74.1+ | 3.10+  |
-| `macOS (arm64)`    | 1.74.1+ | 3.10+  |
-| `Windows (x86_64)` | 1.74.1+ | 3.10+  |
+| `Linux (x86_64)`   | 1.75.0+ | 3.10+  |
+| `macOS (x86_64)`   | 1.75.0+ | 3.10+  |
+| `macOS (arm64)`    | 1.75.0+ | 3.10+  |
+| `Windows (x86_64)` | 1.75.0+ | 3.10+  |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -312,7 +312,7 @@ class EMACross(Strategy):
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
 
-        self.instrument: Optional[Instrument] = None  # Initialized in on_start
+        self.instrument: Instrument | None = None  # Initialized in on_start
 
     def on_start(self) -> None:
         """

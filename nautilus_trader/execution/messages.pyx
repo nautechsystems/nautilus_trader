@@ -14,9 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from typing import Any
-from typing import Optional
-
-import msgspec
 
 from libc.stdint cimport uint64_t
 
@@ -63,7 +60,7 @@ cdef class TradingCommand(Command):
 
     def __init__(
         self,
-        ClientId client_id: Optional[ClientId],
+        ClientId client_id: ClientId | None,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
@@ -111,7 +108,7 @@ cdef class SubmitOrder(TradingCommand):
         Order order not None,
         UUID4 command_id not None,
         uint64_t ts_init,
-        PositionId position_id: Optional[PositionId] = None,
+        PositionId position_id: PositionId | None = None,
         ClientId client_id = None,
     ):
         super().__init__(
@@ -153,7 +150,7 @@ cdef class SubmitOrder(TradingCommand):
         Condition.not_none(values, "values")
         cdef str c = values["client_id"]
         cdef str p = values["position_id"]
-        cdef Order order = OrderUnpacker.unpack_c(msgspec.json.decode(values["order"])),
+        cdef Order order = OrderUnpacker.unpack_c(values["order"]),
         return SubmitOrder(
             client_id=ClientId(c) if c is not None else None,
             trader_id=TraderId(values["trader_id"]),
@@ -172,7 +169,7 @@ cdef class SubmitOrder(TradingCommand):
             "client_id": obj.client_id.to_str() if obj.client_id is not None else None,
             "trader_id": obj.trader_id.to_str(),
             "strategy_id": obj.strategy_id.to_str(),
-            "order": msgspec.json.encode(OrderInitialized.to_dict_c(obj.order.init_event_c())),
+            "order": OrderInitialized.to_dict_c(obj.order.init_event_c()),
             "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
@@ -245,7 +242,7 @@ cdef class SubmitOrderList(TradingCommand):
         OrderList order_list not None,
         UUID4 command_id not None,
         uint64_t ts_init,
-        PositionId position_id: Optional[PositionId] = None,
+        PositionId position_id: PositionId | None = None,
         ClientId client_id = None,
     ):
         super().__init__(
@@ -289,7 +286,7 @@ cdef class SubmitOrderList(TradingCommand):
         cdef str p = values["position_id"]
         cdef OrderList order_list = OrderList(
             order_list_id=OrderListId(values["order_list_id"]),
-            orders=[OrderUnpacker.unpack_c(o_dict) for o_dict in msgspec.json.decode(values["orders"])],
+            orders=[OrderUnpacker.unpack_c(o_dict) for o_dict in values["orders"]],
         )
         return SubmitOrderList(
             client_id=ClientId(c) if c is not None else None,
@@ -311,7 +308,7 @@ cdef class SubmitOrderList(TradingCommand):
             "trader_id": obj.trader_id.to_str(),
             "strategy_id": obj.strategy_id.to_str(),
             "order_list_id": str(obj.order_list.id),
-            "orders": msgspec.json.encode([OrderInitialized.to_dict_c(o.init_event_c()) for o in obj.order_list.orders]),
+            "orders": [OrderInitialized.to_dict_c(o.init_event_c()) for o in obj.order_list.orders],
             "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
@@ -387,10 +384,10 @@ cdef class ModifyOrder(TradingCommand):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        Quantity quantity: Optional[Quantity],
-        Price price: Optional[Price],
-        Price trigger_price: Optional[Price],
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        Quantity quantity: Quantity | None,
+        Price price: Price | None,
+        Price trigger_price: Price | None,
         UUID4 command_id not None,
         uint64_t ts_init,
         ClientId client_id = None,
@@ -541,7 +538,7 @@ cdef class CancelOrder(TradingCommand):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
+        VenueOrderId venue_order_id: VenueOrderId | None,
         UUID4 command_id not None,
         uint64_t ts_init,
         ClientId client_id = None,
@@ -921,7 +918,7 @@ cdef class QueryOrder(TradingCommand):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
+        VenueOrderId venue_order_id: VenueOrderId | None,
         UUID4 command_id not None,
         uint64_t ts_init,
         ClientId client_id = None,

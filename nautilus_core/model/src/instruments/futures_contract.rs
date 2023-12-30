@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use super::Instrument;
 use crate::{
-    enums::{AssetClass, AssetType},
+    enums::{AssetClass, InstrumentClass},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
@@ -56,6 +56,8 @@ pub struct FuturesContract {
     pub min_quantity: Option<Quantity>,
     pub max_price: Option<Price>,
     pub min_price: Option<Price>,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }
 
 impl FuturesContract {
@@ -80,6 +82,8 @@ impl FuturesContract {
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
         min_price: Option<Price>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
     ) -> Result<Self> {
         Ok(Self {
             id,
@@ -101,6 +105,8 @@ impl FuturesContract {
             min_quantity,
             max_price,
             min_price,
+            ts_event,
+            ts_init,
         })
     }
 }
@@ -132,8 +138,8 @@ impl Instrument for FuturesContract {
         self.asset_class
     }
 
-    fn asset_type(&self) -> AssetType {
-        AssetType::Future
+    fn instrument_class(&self) -> InstrumentClass {
+        InstrumentClass::Future
     }
 
     fn quote_currency(&self) -> &Currency {
@@ -206,6 +212,14 @@ impl Instrument for FuturesContract {
 
     fn taker_fee(&self) -> Decimal {
         self.taker_fee
+    }
+
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }
 

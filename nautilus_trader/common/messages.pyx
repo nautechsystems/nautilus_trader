@@ -17,8 +17,6 @@ import decimal
 import json
 import re
 
-import msgspec
-
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.component cimport component_state_from_str
@@ -49,6 +47,8 @@ cdef class ComponentStateChanged(Event):
         The component type.
     state : ComponentState
         The component state.
+    config : dict[str, Any]
+        The component configuration for the event.
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
@@ -150,7 +150,7 @@ cdef class ComponentStateChanged(Event):
             component_id=ComponentId(values["component_id"]),
             component_type=values["component_type"],
             state=component_state_from_str(values["state"]),
-            config=json.loads(values["config"]),
+            config=values["config"],
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -159,31 +159,13 @@ cdef class ComponentStateChanged(Event):
     @staticmethod
     cdef dict to_dict_c(ComponentStateChanged obj):
         Condition.not_none(obj, "obj")
-        cdef:
-            bytes config_bytes
-        try:
-            # TODO(cs): Temporary workaround
-            for k, v in obj.config.items():
-                if isinstance(v, decimal.Decimal):
-                    obj.config[k] = str(v)
-            config_bytes = msgspec.json.encode(obj.config)
-        except TypeError as e:
-            if str(e).startswith("Type is not JSON serializable"):
-                type_str = str(e).split(":")[1].strip()
-                raise TypeError(
-                    f"Cannot serialize config as {e}. "
-                    f"You can register a new serializer for `{type_str}` through "
-                    f"`Default.register_serializer`.",
-                )
-            else:
-                raise e
         return {
             "type": "ComponentStateChanged",
             "trader_id": obj.trader_id.to_str(),
             "component_id": obj.component_id.to_str(),
             "component_type": obj.component_type,
             "state": component_state_to_str(obj.state),
-            "config": config_bytes,
+            "config": obj.config,
             "event_id": obj._event_id.to_str(),
             "ts_event": obj._ts_event,
             "ts_init": obj._ts_init,
@@ -300,7 +282,7 @@ cdef class TradingStateChanged(RiskEvent):
         The trader ID associated with the event.
     state : TradingState
         The trading state for the event.
-    config : dict
+    config : dict[str, Any]
         The configuration of the risk engine.
     event_id : UUID4
         The event ID.
@@ -387,7 +369,7 @@ cdef class TradingStateChanged(RiskEvent):
         return TradingStateChanged(
             trader_id=TraderId(values["trader_id"]),
             state=trading_state_from_str(values["state"]),
-            config=msgspec.json.decode(values["config"]),
+            config=values["config"],
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -396,25 +378,12 @@ cdef class TradingStateChanged(RiskEvent):
     @staticmethod
     cdef dict to_dict_c(TradingStateChanged obj):
         Condition.not_none(obj, "obj")
-        cdef bytes config_bytes = None
-        try:
-            config_bytes = msgspec.json.encode(obj.config)
-        except TypeError as e:
-            match = re.match("Encoding objects of type (\w+) is unsupported", str(e))
-            if match:
-                type_str = match.groups()[0]
-                raise TypeError(
-                    f"Serialization failed: `{e}`. "
-                    f"You can register a new serializer for `{type_str}` through "
-                    f"`nautilus_trader.config.backtest.register_json_encoding`.",
-                )
-            else:
-                raise e
+
         return {
             "type": "TradingStateChanged",
             "trader_id": obj.trader_id.to_str(),
             "state": trading_state_to_str(obj.state),
-            "config": config_bytes,
+            "config": obj.config,
             "event_id": obj._event_id.to_str(),
             "ts_event": obj._ts_event,
             "ts_init": obj._ts_init,

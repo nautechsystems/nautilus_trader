@@ -1590,7 +1590,7 @@ cdef class OrderBookDelta(Data):
         return <BookAction>self._mem.action == BookAction.CLEAR
 
     @property
-    def order(self) -> Optional[BookOrder]:
+    def order(self) -> BookOrder | None:
         """
         Return the deltas book order for the action.
 

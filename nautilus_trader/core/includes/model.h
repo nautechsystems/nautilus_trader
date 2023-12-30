@@ -88,64 +88,22 @@ typedef enum AssetClass {
      */
     COMMODITY = 3,
     /**
-     * Metal commodity assets.
+     * Debt based assets.
      */
-    METAL = 4,
+    DEBT = 4,
     /**
-     * Energy commodity assets.
+     * Index based assets (baskets).
      */
-    ENERGY = 5,
-    /**
-     * Fixed income bond assets.
-     */
-    BOND = 6,
-    /**
-     * Index based assets.
-     */
-    INDEX = 7,
+    INDEX = 5,
     /**
      * Cryptocurrency or crypto token assets.
      */
-    CRYPTOCURRENCY = 8,
+    CRYPTOCURRENCY = 6,
     /**
-     * Sports betting instruments.
+     * Alternative assets.
      */
-    SPORTS_BETTING = 9,
+    ALTERNATIVE = 7,
 } AssetClass;
-
-/**
- * The asset type for a financial market product.
- */
-typedef enum AssetType {
-    /**
-     * A spot market asset type. The current market price of an asset that is bought or sold for immediate delivery and payment.
-     */
-    SPOT = 1,
-    /**
-     * A swap asset type. A derivative contract through which two parties exchange the cash flows or liabilities from two different financial instruments.
-     */
-    SWAP = 2,
-    /**
-     * A futures contract asset type. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
-     */
-    FUTURE = 3,
-    /**
-     * A forward derivative asset type. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
-     */
-    FORWARD = 4,
-    /**
-     * A contract-for-difference (CFD) asset type. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
-     */
-    CFD = 5,
-    /**
-     * An options contract asset type. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
-     */
-    OPTION = 6,
-    /**
-     * A warrant asset type. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
-     */
-    WARRANT = 7,
-} AssetType;
 
 /**
  * The type of order book action for an order book event.
@@ -246,6 +204,48 @@ typedef enum HaltReason {
      */
     VOLATILITY = 3,
 } HaltReason;
+
+/**
+ * The asset type for a financial market product.
+ */
+typedef enum InstrumentClass {
+    /**
+     * A spot market instrument class. The current market price of an instrument that is bought or sold for immediate delivery and payment.
+     */
+    SPOT = 1,
+    /**
+     * A swap instrument class. A derivative contract through which two parties exchange the cash flows or liabilities from two different financial instruments.
+     */
+    SWAP = 2,
+    /**
+     * A futures contract instrument class. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
+     */
+    FUTURE = 3,
+    /**
+     * A forward derivative instrument class. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
+     */
+    FORWARD = 4,
+    /**
+     * A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
+     */
+    CFD = 5,
+    /**
+     * A bond instrument class. A type of debt investment where an investor loans money to an entity (typically corporate or governmental) which borrows the funds for a defined period of time at a variable or fixed interest rate.
+     */
+    BOND = 6,
+    /**
+     * An options contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
+     */
+    OPTION = 7,
+    /**
+     * A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+     */
+    WARRANT = 8,
+    /**
+     * A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+     */
+    SPORTS_BETTING = 9,
+} InstrumentClass;
 
 /**
  * The type of event for an instrument close.
@@ -956,21 +956,6 @@ typedef struct Data_t {
 } Data_t;
 
 /**
- * Provides a C compatible Foreign Function Interface (FFI) for an underlying
- * [`SyntheticInstrument`].
- *
- * This struct wraps `SyntheticInstrument` in a way that makes it compatible with C function
- * calls, enabling interaction with `SyntheticInstrument` in a C environment.
- *
- * It implements the `Deref` trait, allowing instances of `SyntheticInstrument_API` to be
- * dereferenced to `SyntheticInstrument`, providing access to `SyntheticInstruments`'s methods without
- * having to manually access the underlying instance.
- */
-typedef struct SyntheticInstrument_API {
-    struct SyntheticInstrument *_0;
-} SyntheticInstrument_API;
-
-/**
  * Represents a single quote tick in a financial market.
  */
 typedef struct Ticker {
@@ -1181,6 +1166,21 @@ typedef struct PositionId_t {
 } PositionId_t;
 
 /**
+ * Provides a C compatible Foreign Function Interface (FFI) for an underlying
+ * [`SyntheticInstrument`].
+ *
+ * This struct wraps `SyntheticInstrument` in a way that makes it compatible with C function
+ * calls, enabling interaction with `SyntheticInstrument` in a C environment.
+ *
+ * It implements the `Deref` trait, allowing instances of `SyntheticInstrument_API` to be
+ * dereferenced to `SyntheticInstrument`, providing access to `SyntheticInstruments`'s methods without
+ * having to manually access the underlying instance.
+ */
+typedef struct SyntheticInstrument_API {
+    struct SyntheticInstrument *_0;
+} SyntheticInstrument_API;
+
+/**
  * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBook`].
  *
  * This struct wraps `OrderBook` in a way that makes it compatible with C function
@@ -1231,56 +1231,6 @@ typedef struct Money_t {
 struct Data_t data_clone(const struct Data_t *data);
 
 void interned_string_stats(void);
-
-/**
- * # Safety
- *
- * - Assumes `components_ptr` is a valid C string pointer of a JSON format list of strings.
- * - Assumes `formula_ptr` is a valid C string pointer.
- */
-struct SyntheticInstrument_API synthetic_instrument_new(struct Symbol_t symbol,
-                                                        uint8_t price_precision,
-                                                        const char *components_ptr,
-                                                        const char *formula_ptr,
-                                                        uint64_t ts_event,
-                                                        uint64_t ts_init);
-
-void synthetic_instrument_drop(struct SyntheticInstrument_API synth);
-
-struct InstrumentId_t synthetic_instrument_id(const struct SyntheticInstrument_API *synth);
-
-uint8_t synthetic_instrument_price_precision(const struct SyntheticInstrument_API *synth);
-
-struct Price_t synthetic_instrument_price_increment(const struct SyntheticInstrument_API *synth);
-
-const char *synthetic_instrument_formula_to_cstr(const struct SyntheticInstrument_API *synth);
-
-const char *synthetic_instrument_components_to_cstr(const struct SyntheticInstrument_API *synth);
-
-uintptr_t synthetic_instrument_components_count(const struct SyntheticInstrument_API *synth);
-
-uint64_t synthetic_instrument_ts_event(const struct SyntheticInstrument_API *synth);
-
-uint64_t synthetic_instrument_ts_init(const struct SyntheticInstrument_API *synth);
-
-/**
- * # Safety
- *
- * - Assumes `formula_ptr` is a valid C string pointer.
- */
-uint8_t synthetic_instrument_is_valid_formula(const struct SyntheticInstrument_API *synth,
-                                              const char *formula_ptr);
-
-/**
- * # Safety
- *
- * - Assumes `formula_ptr` is a valid C string pointer.
- */
-void synthetic_instrument_change_formula(struct SyntheticInstrument_API *synth,
-                                         const char *formula_ptr);
-
-struct Price_t synthetic_instrument_calculate(struct SyntheticInstrument_API *synth,
-                                              const CVec *inputs_ptr);
 
 struct BarSpecification_t bar_specification_new(uintptr_t step,
                                                 uint8_t aggregation,
@@ -1500,7 +1450,7 @@ const char *asset_class_to_cstr(enum AssetClass value);
  */
 enum AssetClass asset_class_from_cstr(const char *ptr);
 
-const char *asset_type_to_cstr(enum AssetType value);
+const char *instrument_class_to_cstr(enum InstrumentClass value);
 
 /**
  * Returns an enum from a Python string.
@@ -1508,7 +1458,7 @@ const char *asset_type_to_cstr(enum AssetType value);
  * # Safety
  * - Assumes `ptr` is a valid C string pointer.
  */
-enum AssetType asset_type_from_cstr(const char *ptr);
+enum InstrumentClass instrument_class_from_cstr(const char *ptr);
 
 const char *bar_aggregation_to_cstr(uint8_t value);
 
@@ -1953,6 +1903,56 @@ uint8_t venue_is_synthetic(const struct Venue_t *venue);
 struct VenueOrderId_t venue_order_id_new(const char *ptr);
 
 uint64_t venue_order_id_hash(const struct VenueOrderId_t *id);
+
+/**
+ * # Safety
+ *
+ * - Assumes `components_ptr` is a valid C string pointer of a JSON format list of strings.
+ * - Assumes `formula_ptr` is a valid C string pointer.
+ */
+struct SyntheticInstrument_API synthetic_instrument_new(struct Symbol_t symbol,
+                                                        uint8_t price_precision,
+                                                        const char *components_ptr,
+                                                        const char *formula_ptr,
+                                                        uint64_t ts_event,
+                                                        uint64_t ts_init);
+
+void synthetic_instrument_drop(struct SyntheticInstrument_API synth);
+
+struct InstrumentId_t synthetic_instrument_id(const struct SyntheticInstrument_API *synth);
+
+uint8_t synthetic_instrument_price_precision(const struct SyntheticInstrument_API *synth);
+
+struct Price_t synthetic_instrument_price_increment(const struct SyntheticInstrument_API *synth);
+
+const char *synthetic_instrument_formula_to_cstr(const struct SyntheticInstrument_API *synth);
+
+const char *synthetic_instrument_components_to_cstr(const struct SyntheticInstrument_API *synth);
+
+uintptr_t synthetic_instrument_components_count(const struct SyntheticInstrument_API *synth);
+
+uint64_t synthetic_instrument_ts_event(const struct SyntheticInstrument_API *synth);
+
+uint64_t synthetic_instrument_ts_init(const struct SyntheticInstrument_API *synth);
+
+/**
+ * # Safety
+ *
+ * - Assumes `formula_ptr` is a valid C string pointer.
+ */
+uint8_t synthetic_instrument_is_valid_formula(const struct SyntheticInstrument_API *synth,
+                                              const char *formula_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `formula_ptr` is a valid C string pointer.
+ */
+void synthetic_instrument_change_formula(struct SyntheticInstrument_API *synth,
+                                         const char *formula_ptr);
+
+struct Price_t synthetic_instrument_calculate(struct SyntheticInstrument_API *synth,
+                                              const CVec *inputs_ptr);
 
 struct OrderBook_API orderbook_new(struct InstrumentId_t instrument_id, enum BookType book_type);
 

@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import uuid
-from typing import Optional
 
 
 # from nautilus_trader.backtest.auction import default_auction_match
@@ -210,8 +209,8 @@ cdef class OrderMatchingEngine:
         self._target_ask = 0
         self._target_last = 0
         self._has_targets = False
-        self._last_bid_bar: Optional[Bar] = None
-        self._last_ask_bar: Optional[Bar] = None
+        self._last_bid_bar: Bar | None = None
+        self._last_ask_bar: Bar | None = None
 
         self._position_count = 0
         self._order_count = 0
@@ -1462,8 +1461,8 @@ cdef class OrderMatchingEngine:
         Order order,
         list fills,
         LiquiditySide liquidity_side,
-        PositionId venue_position_id: Optional[PositionId] = None,
-        Position position: Optional[Position] = None,
+        PositionId venue_position_id: PositionId | None = None,
+        Position position: Position | None = None,
     ):
         """
         Apply the given list of fills to the given order. Optionally provide
@@ -1623,8 +1622,8 @@ cdef class OrderMatchingEngine:
         Price last_px,
         Quantity last_qty,
         LiquiditySide liquidity_side,
-        PositionId venue_position_id: Optional[PositionId] = None,
-        Position position: Optional[Position] = None,
+        PositionId venue_position_id: PositionId | None = None,
+        Position position: Position | None = None,
     ):
         """
         Apply the given list of fills to the given order. Optionally provide

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 """
 Defines tradable asset/contract instruments with specific properties dependent on the
-asset class and asset type.
+asset class and instrument class.
 """
 
 from nautilus_trader.model.instruments.base import Instrument
