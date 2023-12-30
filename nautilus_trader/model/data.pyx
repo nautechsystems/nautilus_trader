@@ -15,8 +15,7 @@
 
 import msgspec
 
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick as RustQuoteTick
-from nautilus_trader.core.nautilus_pyo3 import TradeTick as RustTradeTick
+from nautilus_trader.core import nautilus_pyo3
 
 from cpython.datetime cimport timedelta
 from cpython.mem cimport PyMem_Free
@@ -995,7 +994,7 @@ cdef class Bar(Data):
 
         Parameters
         ----------
-        pyo3_bars : list[RustBar]
+        pyo3_bars : list[nautilus_pyo3.Bar]
             The Rust pyo3 bars to convert from.
 
         Returns
@@ -1899,7 +1898,7 @@ cdef class OrderBookDelta(Data):
 
         Parameters
         ----------
-        pyo3_deltas : list[RustOrderBookDelta]
+        pyo3_deltas : list[nautilus_pyo3.OrderBookDelta]
             The Rust pyo3 order book deltas to convert from.
 
         Returns
@@ -2745,7 +2744,7 @@ cdef class QuoteTick(Data):
 
         Parameters
         ----------
-        pyo3_ticks : list[RustQuoteTick]
+        pyo3_ticks : list[nautilus_pyo3.QuoteTick]
             The Rust pyo3 quote ticks to convert from.
 
         Returns
@@ -3204,7 +3203,7 @@ cdef class TradeTick(Data):
 
         Parameters
         ----------
-        pyo3_ticks : list[RustTradeTick]
+        pyo3_ticks : list[nautilus_pyo3.TradeTick]
             The Rust pyo3 trade ticks to convert from.
 
         Returns
