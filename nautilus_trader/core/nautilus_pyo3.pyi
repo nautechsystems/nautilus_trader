@@ -701,6 +701,7 @@ class CryptoFuture:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None: ...
+
 class CryptoPerpetual:
     def __init__(
         self,
@@ -728,6 +729,7 @@ class CryptoPerpetual:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None: ...
+
 class CurrencyPair:
     def __init__(
         self,
@@ -751,6 +753,7 @@ class CurrencyPair:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None: ...
+
 class Equity:
     def __init__(
         self,
@@ -760,7 +763,6 @@ class Equity:
         currency: Currency,
         price_precision: int,
         price_increment: Price,
-        multiplier: Quantity,
         margin_init: float,
         margin_maint: float,
         maker_fee: float,
@@ -773,6 +775,7 @@ class Equity:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None: ...
+
 class FuturesContract:
     def __init__(
         self,
@@ -798,6 +801,7 @@ class FuturesContract:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None: ...
+
 class OptionsContract:
     def __init__(
         self,
@@ -824,9 +828,11 @@ class OptionsContract:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None : ...
+
 class SyntheticInstrument: ...
 
 ### Events
+
 class OrderDenied:
     def __init__(
         self,

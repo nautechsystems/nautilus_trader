@@ -44,8 +44,6 @@ cdef class Equity(Instrument):
         The price decimal precision.
     price_increment : Decimal
         The minimum price increment (tick size).
-    multiplier : Decimal
-        The contract value multiplier (determines tick value).
     lot_size : Quantity
         The rounded lot unit size (standard/board).
     isin : str, optional
@@ -68,11 +66,9 @@ cdef class Equity(Instrument):
     Raises
     ------
     ValueError
-        If `multiplier` is not positive (> 0).
-    ValueError
         If `price_precision` is negative (< 0).
     ValueError
-        If `tick_size` is not positive (> 0).
+        If `price_increment` is not positive (> 0).
     ValueError
         If `lot_size` is not positive (> 0).
     """
@@ -84,7 +80,6 @@ cdef class Equity(Instrument):
         Currency currency not None,
         int price_precision,
         Price price_increment not None,
-        Quantity multiplier not None,
         Quantity lot_size not None,
         uint64_t ts_event,
         uint64_t ts_init,
@@ -106,7 +101,7 @@ cdef class Equity(Instrument):
             size_precision=0,  # No fractional units
             price_increment=price_increment,
             size_increment=Quantity.from_int_c(1),
-            multiplier=multiplier,
+            multiplier=Quantity.from_int_c(1),
             lot_size=lot_size,
             max_quantity=None,
             min_quantity=Quantity.from_int_c(1),
@@ -133,7 +128,6 @@ cdef class Equity(Instrument):
             currency=Currency.from_str_c(values["currency"]),
             price_precision=values["price_precision"],
             price_increment=Price.from_str(values["price_increment"]),
-            multiplier=Quantity.from_str(values["multiplier"]),
             lot_size=Quantity.from_str(values["lot_size"]),
             isin=values.get("isin"),  # Can be None,
             margin_init=Decimal(values.get("margin_init", 0)),  # Can be None,
@@ -154,9 +148,6 @@ cdef class Equity(Instrument):
             "currency": obj.quote_currency.code,
             "price_precision": obj.price_precision,
             "price_increment": str(obj.price_increment),
-            "size_precision": obj.size_precision,
-            "size_increment": str(obj.size_increment),
-            "multiplier": str(obj.multiplier),
             "lot_size": str(obj.lot_size),
             "isin": obj.isin,
             "margin_init": str(obj.margin_init),

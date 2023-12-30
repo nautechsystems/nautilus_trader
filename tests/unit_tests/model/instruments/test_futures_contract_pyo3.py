@@ -17,7 +17,7 @@ from nautilus_trader.core.nautilus_pyo3 import FuturesContract
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
-futures_contract_es = TestInstrumentProviderPyo3.futures_contract_es()
+_ES_FUTURE = TestInstrumentProviderPyo3.futures_contract_es()
 
 
 def test_equality():
@@ -27,12 +27,12 @@ def test_equality():
 
 
 def test_hash():
-    assert hash(futures_contract_es) == hash(futures_contract_es)
+    assert hash(_ES_FUTURE) == hash(_ES_FUTURE)
 
 
 def test_to_dict():
-    result = futures_contract_es.to_dict()
-    assert FuturesContract.from_dict(result) == futures_contract_es
+    result = _ES_FUTURE.to_dict()
+    assert FuturesContract.from_dict(result) == _ES_FUTURE
     assert result == {
         "type": "FuturesContract",
         "id": "ESZ21.CME",

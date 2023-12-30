@@ -31,7 +31,7 @@ use crate::{
 };
 
 #[repr(C)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")

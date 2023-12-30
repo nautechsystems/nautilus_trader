@@ -19,6 +19,7 @@ use chrono::{TimeZone, Utc};
 use nautilus_core::time::UnixNanos;
 use rstest::fixture;
 use rust_decimal::Decimal;
+use ustr::Ustr;
 
 use crate::{
     enums::{AssetClass, OptionKind},
@@ -171,11 +172,10 @@ pub fn equity_aapl() -> Equity {
     Equity::new(
         InstrumentId::from("AAPL.NASDAQ"),
         Symbol::from("AAPL"),
-        Some(String::from("US0378331005")),
+        Some(Ustr::from("US0378331005")),
         Currency::from("USD"),
         2,
         Price::from("0.01"),
-        Quantity::from(1),
         Decimal::from_str("0.0").unwrap(),
         Decimal::from_str("0.0").unwrap(),
         Decimal::from_str("0.001").unwrap(),
@@ -199,7 +199,7 @@ pub fn futures_contract_es() -> FuturesContract {
         InstrumentId::new(Symbol::from("ESZ21"), Venue::from("CME")),
         Symbol::from("ESZ21"),
         AssetClass::Index,
-        String::from("ES"),
+        Ustr::from("ES"),
         activation.timestamp_nanos_opt().unwrap() as UnixNanos,
         expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
         Currency::USD(),

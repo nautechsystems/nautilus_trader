@@ -22,6 +22,7 @@ use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use super::Instrument;
 use crate::{
@@ -31,7 +32,7 @@ use crate::{
 };
 
 #[repr(C)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -40,11 +41,10 @@ pub struct Equity {
     pub id: InstrumentId,
     pub raw_symbol: Symbol,
     /// The instruments ISIN (International Securities Identification Number).
-    pub isin: Option<String>,
+    pub isin: Option<Ustr>,
     pub currency: Currency,
     pub price_precision: u8,
     pub price_increment: Price,
-    pub multiplier: Quantity,
     pub margin_init: Decimal,
     pub margin_maint: Decimal,
     pub maker_fee: Decimal,
@@ -63,11 +63,10 @@ impl Equity {
     pub fn new(
         id: InstrumentId,
         raw_symbol: Symbol,
-        isin: Option<String>,
+        isin: Option<Ustr>,
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
-        multiplier: Quantity,
         margin_init: Decimal,
         margin_maint: Decimal,
         maker_fee: Decimal,
@@ -87,7 +86,6 @@ impl Equity {
             currency,
             price_precision,
             price_increment,
-            multiplier,
             margin_init,
             margin_maint,
             maker_fee,
@@ -167,7 +165,7 @@ impl Instrument for Equity {
     }
 
     fn multiplier(&self) -> Quantity {
-        self.multiplier
+        Quantity::from(1)
     }
 
     fn lot_size(&self) -> Option<Quantity> {

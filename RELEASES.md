@@ -15,6 +15,8 @@ Released on TBD (UTC).
 - Renamed `AssetClass.BOND` to `AssetClass.DEBT` (more conventional terminology)
 - Removed `AssetClass.METAL` (not strictly an asset class, more a futures category)
 - Removed `AssetClass.ENERGY` (not strictly an asset class, more a futures category)
+- Removed `multiplier` param from `Equity` constructor (not applicable)
+- Removed `size_precision`, `size_increment`, and `multiplier` fields from `Equity` dictionary representation (not applicable)
 - Moved `AssetClass.SPORTS_BETTING` to `InstrumentClass.SPORTS_BETTING`
 
 ### Fixes
