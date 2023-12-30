@@ -443,7 +443,7 @@ def test_deltas_to_dict() -> None:
         flags=0,
         sequence=0,
         ts_event=0,
-        ts_init=0,
+        ts_init=1,
     )
 
     order2 = BookOrder(
@@ -459,8 +459,8 @@ def test_deltas_to_dict() -> None:
         order=order2,
         flags=0,
         sequence=1,
-        ts_event=0,
-        ts_init=0,
+        ts_event=2,
+        ts_init=3,
     )
 
     deltas = OrderBookDeltas(
@@ -476,7 +476,28 @@ def test_deltas_to_dict() -> None:
     assert result == {
         "type": "OrderBookDeltas",
         "instrument_id": "AUD/USD.SIM",
-        "deltas": b'[{"type":"OrderBookDelta","instrument_id":"AUD/USD.SIM","action":"ADD","order":{"side":"BUY","price":"10.0","size":"5","order_id":1},"flags":0,"sequence":0,"ts_event":0,"ts_init":0},{"type":"OrderBookDelta","instrument_id":"AUD/USD.SIM","action":"ADD","order":{"side":"BUY","price":"10.0","size":"15","order_id":2},"flags":0,"sequence":1,"ts_event":0,"ts_init":0}]',  # noqa
+        "deltas": [
+            {
+                "type": "OrderBookDelta",
+                "instrument_id": "AUD/USD.SIM",
+                "action": "ADD",
+                "order": {"side": "BUY", "price": "10.0", "size": "5", "order_id": 1},
+                "flags": 0,
+                "sequence": 0,
+                "ts_event": 0,
+                "ts_init": 1,
+            },
+            {
+                "type": "OrderBookDelta",
+                "instrument_id": "AUD/USD.SIM",
+                "action": "ADD",
+                "order": {"side": "BUY", "price": "10.0", "size": "15", "order_id": 2},
+                "flags": 0,
+                "sequence": 1,
+                "ts_event": 2,
+                "ts_init": 3,
+            },
+        ],
     }
 
 
