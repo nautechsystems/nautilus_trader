@@ -44,111 +44,98 @@ use crate::{
 #[allow(non_camel_case_types)]
 pub struct Logger_API(Box<Logger>);
 
-impl Deref for Logger_API {
-    type Target = Logger;
+// impl Deref for Logger_API {
+//     type Target = Logger;
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+//     fn deref(&self) -> &Self::Target {
+//         &self.0
+//     }
+// }
 
-impl DerefMut for Logger_API {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
+// impl DerefMut for Logger_API {
+//     fn deref_mut(&mut self) -> &mut Self::Target {
+//         &mut self.0
+//     }
+// }
 
-/// Creates a new logger.
-///
-/// # Safety
-///
-/// - Assumes `trader_id_ptr` is a valid C string pointer.
-/// - Assumes `machine_id_ptr` is a valid C string pointer.
-/// - Assumes `instance_id_ptr` is a valid C string pointer.
-/// - Assumes `directory_ptr` is a valid C string pointer or NULL.
-/// - Assumes `file_name_ptr` is a valid C string pointer or NULL.
-/// - Assumes `file_format_ptr` is a valid C string pointer or NULL.
-/// - Assumes `component_levels_ptr` is a valid C string pointer or NULL.
-#[no_mangle]
-pub unsafe extern "C" fn logger_new(
-    trader_id_ptr: *const c_char,
-    machine_id_ptr: *const c_char,
-    instance_id_ptr: *const c_char,
-    level_stdout: LogLevel,
-    level_file: LogLevel,
-    file_logging: u8,
-    directory_ptr: *const c_char,
-    file_name_ptr: *const c_char,
-    file_format_ptr: *const c_char,
-    component_levels_ptr: *const c_char,
-    is_colored: u8,
-    is_bypassed: u8,
-) -> Logger_API {
-    Logger_API(Box::new(Logger::new(
-        TraderId::from(cstr_to_string(trader_id_ptr).as_str()),
-        String::from(&cstr_to_string(machine_id_ptr)),
-        UUID4::from(cstr_to_string(instance_id_ptr).as_str()),
-        log::Level::Debug,
-        if u8_as_bool(file_logging) {
-            Some(log::Level::Debug)
-        } else {
-            None
-        },
-        optional_cstr_to_string(directory_ptr),
-        optional_cstr_to_string(file_name_ptr),
-        optional_cstr_to_string(file_format_ptr),
-        optional_bytes_to_json(component_levels_ptr),
-        u8_as_bool(is_colored),
-        u8_as_bool(is_bypassed),
-    )))
-}
+// /// Creates a new logger.
+// ///
+// /// # Safety
+// ///
+// /// - Assumes `trader_id_ptr` is a valid C string pointer.
+// /// - Assumes `machine_id_ptr` is a valid C string pointer.
+// /// - Assumes `instance_id_ptr` is a valid C string pointer.
+// /// - Assumes `directory_ptr` is a valid C string pointer or NULL.
+// /// - Assumes `file_name_ptr` is a valid C string pointer or NULL.
+// /// - Assumes `file_format_ptr` is a valid C string pointer or NULL.
+// /// - Assumes `component_levels_ptr` is a valid C string pointer or NULL.
+// #[no_mangle]
+// pub unsafe extern "C" fn logger_new(
+//     trader_id_ptr: *const c_char,
+//     machine_id_ptr: *const c_char,
+//     instance_id_ptr: *const c_char,
+//     level_stdout: LogLevel,
+//     level_file: LogLevel,
+//     file_logging: u8,
+//     directory_ptr: *const c_char,
+//     file_name_ptr: *const c_char,
+//     file_format_ptr: *const c_char,
+//     component_levels_ptr: *const c_char,
+//     is_colored: u8,
+//     is_bypassed: u8,
+// ) -> Logger_API {
+//     Logger_API(Box::new(Logger::new(
+//         TraderId::from(cstr_to_string(trader_id_ptr).as_str()),
+//         String::from(&cstr_to_string(machine_id_ptr)),
+//         UUID4::from(cstr_to_string(instance_id_ptr).as_str()),
+//         log::Level::Debug,
+//         if u8_as_bool(file_logging) {
+//             Some(log::Level::Debug)
+//         } else {
+//             None
+//         },
+//         optional_cstr_to_string(directory_ptr),
+//         optional_cstr_to_string(file_name_ptr),
+//         optional_cstr_to_string(file_format_ptr),
+//         optional_bytes_to_json(component_levels_ptr),
+//         u8_as_bool(is_colored),
+//         u8_as_bool(is_bypassed),
+//     )))
+// }
 
-#[no_mangle]
-pub extern "C" fn logger_drop(logger: Logger_API) {
-    drop(logger); // Memory freed here
-}
+// #[no_mangle]
+// pub extern "C" fn logger_drop(logger: Logger_API) {
+//     drop(logger); // Memory freed here
+// }
 
-#[no_mangle]
-pub extern "C" fn logger_get_trader_id_cstr(logger: &Logger_API) -> *const c_char {
-    str_to_cstr(&logger.trader_id.to_string())
-}
+// #[no_mangle]
+// pub extern "C" fn logger_is_colored(logger: &Logger_API) -> u8 {
+//     u8::from(logger.config.is_colored)
+// }
 
-#[no_mangle]
-pub extern "C" fn logger_get_machine_id_cstr(logger: &Logger_API) -> *const c_char {
-    str_to_cstr(&logger.machine_id)
-}
+// #[no_mangle]
+// pub extern "C" fn logger_is_bypassed(logger: &Logger_API) -> u8 {
+//     u8::from(logger.config.is_bypassed)
+// }
 
-#[no_mangle]
-pub extern "C" fn logger_get_instance_id(logger: &Logger_API) -> UUID4 {
-    logger.instance_id
-}
-
-#[no_mangle]
-pub extern "C" fn logger_is_colored(logger: &Logger_API) -> u8 {
-    u8::from(logger.is_colored)
-}
-
-#[no_mangle]
-pub extern "C" fn logger_is_bypassed(logger: &Logger_API) -> u8 {
-    u8::from(logger.is_bypassed)
-}
-
-/// Create a new log event.
-///
-/// # Safety
-///
-/// - Assumes `component_ptr` is a valid C string pointer.
-/// - Assumes `message_ptr` is a valid C string pointer.
-#[no_mangle]
-pub unsafe extern "C" fn logger_log(
-    logger: &mut Logger_API,
-    timestamp_ns: u64,
-    level: LogLevel,
-    color: LogColor,
-    component_ptr: *const c_char,
-    message_ptr: *const c_char,
-) {
-    let component = cstr_to_string(component_ptr);
-    let message = cstr_to_string(message_ptr);
-    logger.send(timestamp_ns, log::Level::Warn, color, component, message);
-}
+// /// Create a new log event.
+// ///
+// /// # Safety
+// ///
+// /// - Assumes `component_ptr` is a valid C string pointer.
+// /// - Assumes `message_ptr` is a valid C string pointer.
+// #[no_mangle]
+// pub unsafe extern "C" fn logger_log(
+//     logger: &mut Logger_API,
+//     timestamp_ns: u64,
+//     level: LogLevel,
+//     color: LogColor,
+//     component_ptr: *const c_char,
+//     message_ptr: *const c_char,
+// ) {
+//     // TODO use ustr for components
+//     // TODO use log macros to avoid state
+//     let component = cstr_to_string(component_ptr);
+//     let message = cstr_to_string(message_ptr);
+//     logger.send(timestamp_ns, log::Level::Warn, color, component, message);
+// }

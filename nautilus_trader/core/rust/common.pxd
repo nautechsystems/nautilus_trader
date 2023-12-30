@@ -104,13 +104,6 @@ cdef extern from "../includes/common.h":
     cdef struct LiveClock:
         pass
 
-    # Provides a high-performance logger utilizing a MPSC channel under the hood.
-    #
-    # A separate thead is spawned at initialization which receives [`LogEvent`] structs over the
-    # channel.
-    cdef struct Logger_t:
-        pass
-
     # Provides a generic message bus to facilitate various messaging patterns.
     #
     # The bus provides both a producer and consumer API for Pub/Sub, Req/Rep, as
@@ -162,17 +155,6 @@ cdef extern from "../includes/common.h":
     # both mutable and immutable access.
     cdef struct LiveClock_API:
         LiveClock *_0;
-
-    # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`Logger`].
-    #
-    # This struct wraps `Logger` in a way that makes it compatible with C function
-    # calls, enabling interaction with `Logger` in a C environment.
-    #
-    # It implements the `Deref` trait, allowing instances of `Logger_API` to be
-    # dereferenced to `Logger`, providing access to `Logger`'s methods without
-    # having to manually access the underlying `Logger` instance.
-    cdef struct Logger_API:
-        Logger_t *_0;
 
     # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`MessageBus`].
     #
@@ -310,55 +292,6 @@ cdef extern from "../includes/common.h":
     # # Safety
     # - Assumes `ptr` is a valid C string pointer.
     LogColor log_color_from_cstr(const char *ptr);
-
-    # Creates a new logger.
-    #
-    # # Safety
-    #
-    # - Assumes `trader_id_ptr` is a valid C string pointer.
-    # - Assumes `machine_id_ptr` is a valid C string pointer.
-    # - Assumes `instance_id_ptr` is a valid C string pointer.
-    # - Assumes `directory_ptr` is a valid C string pointer or NULL.
-    # - Assumes `file_name_ptr` is a valid C string pointer or NULL.
-    # - Assumes `file_format_ptr` is a valid C string pointer or NULL.
-    # - Assumes `component_levels_ptr` is a valid C string pointer or NULL.
-    Logger_API logger_new(const char *trader_id_ptr,
-                          const char *machine_id_ptr,
-                          const char *instance_id_ptr,
-                          LogLevel level_stdout,
-                          LogLevel level_file,
-                          uint8_t file_logging,
-                          const char *directory_ptr,
-                          const char *file_name_ptr,
-                          const char *file_format_ptr,
-                          const char *component_levels_ptr,
-                          uint8_t is_colored,
-                          uint8_t is_bypassed);
-
-    void logger_drop(Logger_API logger);
-
-    const char *logger_get_trader_id_cstr(const Logger_API *logger);
-
-    const char *logger_get_machine_id_cstr(const Logger_API *logger);
-
-    UUID4_t logger_get_instance_id(const Logger_API *logger);
-
-    uint8_t logger_is_colored(const Logger_API *logger);
-
-    uint8_t logger_is_bypassed(const Logger_API *logger);
-
-    # Create a new log event.
-    #
-    # # Safety
-    #
-    # - Assumes `component_ptr` is a valid C string pointer.
-    # - Assumes `message_ptr` is a valid C string pointer.
-    void logger_log(Logger_API *logger,
-                    uint64_t timestamp_ns,
-                    LogLevel level,
-                    LogColor color,
-                    const char *component_ptr,
-                    const char *message_ptr);
 
     # # Safety
     #

@@ -15,7 +15,7 @@
 
 use std::{
     collections::HashMap,
-    fmt,
+    env, fmt,
     fs::{create_dir_all, File},
     io::{self, BufWriter, Stderr, Stdout, Write},
     path::{Path, PathBuf},
@@ -25,7 +25,7 @@ use std::{
 };
 
 use chrono::{prelude::*, Utc};
-use log::{set_boxed_logger, set_logger};
+use log::{set_boxed_logger, set_logger, set_max_level, Level, LevelFilter, Log};
 use nautilus_core::{
     datetime::unix_nanos_to_iso8601,
     time::{AtomicTime, UnixNanos},
@@ -34,81 +34,98 @@ use nautilus_core::{
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use tracing::Level;
-use tracing_appender::{
-    non_blocking::WorkerGuard,
-    rolling::{RollingFileAppender, Rotation},
-};
-use tracing_subscriber::{fmt::Layer, prelude::*, EnvFilter, Registry};
 
-use crate::enums::{LogColor, LogLevel};
+use crate::enums::LogColor;
 
-/// Guards the log collector and flushes it when dropped
+/// Initialize tracing
 ///
-/// This struct must be dropped when the application has completed operation
-/// it ensures that the any pending log lines are flushed before the application
-/// closes.
-#[pyclass]
-pub struct LogGuard {
-    #[allow(dead_code)]
-    guards: Vec<WorkerGuard>,
-}
-
-/// Sets the global log collector
-///
-/// stdout_level: Set the level for the stdout writer
-/// stderr_level: Set the level for the stderr writer
-/// file_level: Set the level, the directory and the prefix for the file writer
-///
-/// It also configures a top level filter based on module/component name.
-/// The format for the string is component1=info,component2=debug.
-/// For e.g. network=error,kernel=info
+/// Tracing is meant to be used to trace/debug async rust code. It can be
+/// configured to filter modules and write upto a specific level only using
+/// by passing a configuration using the RUST_LOG environment variable.
 ///
 /// # Safety
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
 #[pyfunction]
 #[must_use]
-pub fn set_global_log_collector(
-    stdout_level: Option<String>,
-    stderr_level: Option<String>,
-    file_level: Option<(String, String, String)>,
-) -> LogGuard {
-    let mut guards = Vec::new();
-    let stdout_sub_builder = stdout_level.map(|stdout_level| {
-        let stdout_level = Level::from_str(&stdout_level).unwrap();
-        let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
-        guards.push(guard);
-        Layer::default().with_writer(non_blocking.with_max_level(stdout_level))
-    });
-    let stderr_sub_builder = stderr_level.map(|stderr_level| {
-        let stderr_level = Level::from_str(&stderr_level).unwrap();
-        let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
-        guards.push(guard);
-        Layer::default().with_writer(non_blocking.with_max_level(stderr_level))
-    });
-    let file_sub_builder = file_level.map(|(dir_path, file_prefix, file_level)| {
-        let file_level = Level::from_str(&file_level).unwrap();
-        let rolling_log = RollingFileAppender::new(Rotation::NEVER, dir_path, file_prefix);
-        let (non_blocking, guard) = tracing_appender::non_blocking(rolling_log);
-        guards.push(guard);
-        Layer::default()
-            .with_ansi(false) // turn off unicode colors when writing to file
-            .with_writer(non_blocking.with_max_level(file_level))
-    });
+pub fn init_tracing() {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
+}
 
-    if let Err(e) = Registry::default()
-        .with(stderr_sub_builder)
-        .with(stdout_sub_builder)
-        .with(file_sub_builder)
-        .with(EnvFilter::from_default_env())
-        .try_init()
-    {
-        println!("Failed to set global default dispatcher because of error: {e}");
-    };
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoggerConfig {
+    /// Maximum log level to write to stdout
+    stdout_level: LevelFilter,
+    /// Maximum log level to write to file
+    fileout_level: LevelFilter,
+    // TODO: replace component with Ustr
+    /// Maximum log level to write for a given component
+    component_level: HashMap<String, LevelFilter>,
+    /// If logger is using ANSI color codes.
+    pub is_colored: bool,
+    /// If logging is bypassed.
+    pub is_bypassed: bool,
+}
 
-    LogGuard { guards }
+impl Default for LoggerConfig {
+    fn default() -> Self {
+        Self {
+            stdout_level: LevelFilter::Info,
+            fileout_level: LevelFilter::Off,
+            component_level: HashMap::new(),
+            is_colored: false,
+            is_bypassed: false,
+        }
+    }
+}
+
+impl LoggerConfig {
+    pub fn parse(spec: &str) -> Self {
+        let Self {
+            mut stdout_level,
+            mut fileout_level,
+            mut component_level,
+            mut is_colored,
+            mut is_bypassed,
+        } = Self::default();
+        spec.split(';').for_each(|kv| {
+            if kv == "is_colored" {
+                is_colored = true;
+            } else if kv == "is_bypassed" {
+                is_bypassed = true;
+            } else {
+                let mut kv = kv.split('=');
+                if let (Some(k), Some(Ok(lvl))) =
+                    (kv.next(), kv.next().map(|v| LevelFilter::from_str(v)))
+                {
+                    if k == "stdout" {
+                        stdout_level = lvl;
+                    } else if k == "fileout" {
+                        fileout_level = lvl;
+                    } else {
+                        component_level.insert(k.to_string(), lvl);
+                    }
+                }
+            }
+        });
+
+        Self {
+            stdout_level,
+            fileout_level,
+            component_level,
+            is_colored,
+            is_bypassed,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FileWriterConfig {
+    directory: Option<String>,
+    file_name: Option<String>,
+    file_format: Option<String>,
 }
 
 /// Provides a high-performance logger utilizing a MPSC channel under the hood.
@@ -118,31 +135,24 @@ pub fn set_global_log_collector(
 pub struct Logger {
     /// Send log events to a different thread
     tx: Sender<LogEvent>,
-    /// Reference to the clock used in the engine
+    /// Reference to the atomic clock used by the engine
     clock: AtomicTime,
-    /// The trader ID for the logger.
-    pub trader_id: TraderId,
-    /// The machine ID for the logger.
-    pub machine_id: String,
-    /// The instance ID for the logger.
-    pub instance_id: UUID4,
-    /// The minimum log level to write to stdout.
-    pub level_stdout: log::Level,
-    /// The minimum log level to write to a log file.
-    pub level_file: Option<log::Level>,
-    /// If logger is using ANSI color codes.
-    pub is_colored: bool,
-    /// If logging is bypassed.
-    pub is_bypassed: bool,
+    /// Configure maximum levels for components and IO
+    pub config: LoggerConfig,
+}
+
+pub enum LogEvent {
+    Data(LogLine),
+    FlushCommand,
 }
 
 /// Represents a log event which includes a message.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LogEvent {
+pub struct LogLine {
     /// The UNIX nanoseconds timestamp when the log event occurred.
     timestamp: UnixNanos,
     /// The log level for the event.
-    level: log::Level,
+    level: Level,
     /// The color for the log message content.
     color: LogColor,
     /// The Nautilus system component the log event originated from.
@@ -151,7 +161,7 @@ pub struct LogEvent {
     message: String,
 }
 
-impl fmt::Display for LogEvent {
+impl fmt::Display for LogLine {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -163,14 +173,13 @@ impl fmt::Display for LogEvent {
 
 impl log::Log for Logger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        // TODO add component and level check
-        !self.is_bypassed
+        !self.config.is_bypassed && self.config.stdout_level <= metadata.level()
     }
 
     fn log(&self, record: &log::Record) {
-        eprintln!("Reached log call");
+        // TODO remove unwraps
         if self.enabled(record.metadata()) {
-            eprintln!("Entered log call");
+            let timestamp = self.clock.get_time_ns();
             let component = record
                 .key_values()
                 .get("component".into())
@@ -178,174 +187,101 @@ impl log::Log for Logger {
                 .unwrap_or_else(|| record.metadata().target().to_string());
             let color = record
                 .key_values()
-                .get("component".into())
+                .get("color".into())
                 .map(|v| v.to_borrowed_str().map(|s| LogColor::from_str(s).unwrap()))
                 .flatten()
                 .unwrap_or(LogColor::Normal);
-            let event = LogEvent {
-                timestamp: self.clock.get_time_ns(),
+            let line = LogLine {
+                timestamp,
                 level: record.level(),
                 color,
                 component,
                 message: format!("{}", record.args()).to_string(),
             };
-            if let Err(SendError(e)) = self.tx.send(event) {
-                eprintln!("Error sending log event: {e}");
+            if let Err(SendError(LogEvent::Data(line))) = self.tx.send(LogEvent::Data(line)) {
+                eprintln!("Error sending log event: {line}");
             }
         }
     }
 
     fn flush(&self) {
-        todo!();
+        let _ = self.tx.send(LogEvent::FlushCommand).unwrap();
     }
 }
 
 #[allow(clippy::too_many_arguments)]
 impl Logger {
-    #[must_use]
-    pub fn new(
+    pub fn init_with_env(
+        clock: AtomicTime,
         trader_id: TraderId,
-        machine_id: String,
         instance_id: UUID4,
-        level_stdout: log::Level,
-        level_file: Option<log::Level>,
-        directory: Option<String>,
-        file_name: Option<String>,
-        file_format: Option<String>,
-        component_levels: Option<HashMap<String, Value>>,
-        is_colored: bool,
-        is_bypassed: bool,
-    ) -> Self {
-        let (tx, rx) = channel::<LogEvent>();
-        let mut level_filters = HashMap::<String, log::Level>::new();
+        file_writer_config: FileWriterConfig,
+    ) {
+        let config = match env::var("NAUTILUS_LOG") {
+            Ok(spec) => LoggerConfig::parse(&spec),
+            Err(_) => LoggerConfig::default(),
+        };
 
-        if let Some(component_levels_map) = component_levels {
-            for (key, value) in component_levels_map {
-                match serde_json::from_value::<log::Level>(value) {
-                    Ok(level) => {
-                        level_filters.insert(key, level);
-                    }
-                    Err(e) => {
-                        // Handle the error, e.g. log a warning or ignore the entry
-                        eprintln!("Error parsing log level: {e:?}");
-                    }
-                }
-            }
-        }
-
-        let trader_id_clone = trader_id.value.to_string();
-        let instance_id_clone = instance_id.to_string();
-
-        thread::spawn(move || {
-            Self::handle_messages(
-                &trader_id_clone,
-                &instance_id_clone,
-                level_stdout,
-                level_file,
-                directory,
-                file_name,
-                file_format,
-                level_filters,
-                is_colored,
-                rx,
-            );
-        });
-
-        Self {
-            tx,
-            trader_id,
-            machine_id,
-            instance_id,
-            level_stdout,
-            level_file,
-            is_colored,
-            is_bypassed,
-            clock: AtomicTime::new(true, 0),
-        }
+        Logger::init_with_config(clock, trader_id, instance_id, file_writer_config, config);
     }
 
-    pub fn initialize(
+    pub fn init_with_config(
+        clock: AtomicTime,
         trader_id: TraderId,
-        machine_id: String,
         instance_id: UUID4,
-        level_stdout: log::Level,
-        level_file: Option<log::Level>,
-        directory: Option<String>,
-        file_name: Option<String>,
-        file_format: Option<String>,
-        component_levels: Option<HashMap<String, Value>>,
-        is_colored: bool,
-        is_bypassed: bool,
+        file_writer_config: FileWriterConfig,
+        config: LoggerConfig,
     ) {
         let (tx, rx) = channel::<LogEvent>();
-        let mut level_filters = HashMap::<String, log::Level>::new();
-
-        if let Some(component_levels_map) = component_levels {
-            for (key, value) in component_levels_map {
-                match serde_json::from_value::<log::Level>(value) {
-                    Ok(level) => {
-                        level_filters.insert(key, level);
-                    }
-                    Err(e) => {
-                        // Handle the error, e.g. log a warning or ignore the entry
-                        eprintln!("Error parsing log level: {e:?}");
-                    }
-                }
-            }
-        }
 
         let trader_id_clone = trader_id.value.to_string();
         let instance_id_clone = instance_id.to_string();
-
-        thread::spawn(move || {
-            Self::handle_messages(
-                &trader_id_clone,
-                &instance_id_clone,
-                level_stdout,
-                level_file,
-                directory,
-                file_name,
-                file_format,
-                level_filters,
-                is_colored,
-                rx,
-            );
-        });
 
         let logger = Self {
             tx,
-            trader_id,
-            machine_id,
-            instance_id,
-            level_stdout,
-            level_file,
-            is_colored,
-            is_bypassed,
-            clock: AtomicTime::new(true, 0),
+            clock,
+            config: config.clone(),
         };
 
-        set_boxed_logger(Box::new(logger));
+        thread::spawn(move || {
+            Self::handle_messages(
+                &trader_id_clone,
+                &instance_id_clone,
+                file_writer_config,
+                config,
+                rx,
+            );
+        });
+
+        let _ = set_boxed_logger(Box::new(logger));
+        let _ = set_max_level(log::LevelFilter::Debug);
     }
 
     #[allow(clippy::useless_format)] // Format is not actually useless as we escape braces
     fn handle_messages(
         trader_id: &str,
         instance_id: &str,
-        level_stdout: log::Level,
-        level_file: Option<log::Level>,
-        directory: Option<String>,
-        file_name: Option<String>,
-        file_format: Option<String>,
-        level_filters: HashMap<String, log::Level>,
-        is_colored: bool,
+        file_writer_config: FileWriterConfig,
+        config: LoggerConfig,
         rx: Receiver<LogEvent>,
     ) {
+        let LoggerConfig {
+            stdout_level,
+            fileout_level,
+            component_level,
+            is_colored,
+            is_bypassed: _,
+        } = config;
         // Setup std I/O buffers
         let mut out_buf = BufWriter::new(io::stdout());
         let mut err_buf = BufWriter::new(io::stderr());
 
         // Setup log file
-        let is_json_format = match file_format.as_ref().map(|s| s.to_lowercase()) {
+        let is_json_format = match file_writer_config
+            .file_format
+            .as_ref()
+            .map(|s| s.to_lowercase())
+        {
             Some(ref format) if format == "json" => true,
             None => false,
             Some(ref unrecognized) => {
@@ -357,10 +293,9 @@ impl Logger {
         };
 
         let file_path = PathBuf::new();
-        let file = if level_file.is_some() {
+        let file = if fileout_level > LevelFilter::Off {
             let file_path = Self::create_log_file_path(
-                &directory,
-                &file_name,
+                &file_writer_config,
                 trader_id,
                 instance_id,
                 is_json_format,
@@ -389,59 +324,67 @@ impl Logger {
 
         // Continue to receive and handle log events until channel is hung up
         while let Ok(event) = rx.recv() {
-            let component_level = level_filters.get(&event.component);
-
-            // Check if the component exists in level_filters and if its level is greater than event.level
-            if let Some(&filter_level) = component_level {
-                if event.level < filter_level {
-                    continue;
+            match event {
+                LogEvent::FlushCommand => {
+                    Self::flush_stderr(&mut err_buf);
+                    Self::flush_stdout(&mut out_buf);
+                    file_buf.as_mut().map(|buf| Self::flush_file(buf));
                 }
-            }
+                LogEvent::Data(line) => {
+                    let component_level = component_level.get(&line.component);
 
-            if event.level >= log::Level::Error {
-                let line = Self::format_log_line_console(&event, trader_id, &template_console);
-                Self::write_stderr(&mut err_buf, &line);
-                Self::flush_stderr(&mut err_buf);
-            } else if event.level >= level_stdout {
-                let line = Self::format_log_line_console(&event, trader_id, &template_console);
-                Self::write_stdout(&mut out_buf, &line);
-                Self::flush_stdout(&mut out_buf);
-            }
+                    // Check if the component exists in level_filters and if its level is greater than event.level
+                    if let Some(&filter_level) = component_level {
+                        if line.level > filter_level {
+                            continue;
+                        }
+                    }
 
-            if let Some(level_file) = level_file {
-                if Self::should_rotate_file(&file_path) {
-                    // Ensure previous file buffer flushed
-                    if let Some(file_buf) = file_buf.as_mut() {
-                        Self::flush_file(file_buf);
-                    };
+                    if line.level == LevelFilter::Error {
+                        let line = Self::format_colored_log(&line, trader_id, &template_console);
+                        Self::write_stderr(&mut err_buf, &line);
+                        Self::flush_stderr(&mut err_buf);
+                    } else if line.level <= stdout_level {
+                        let line = Self::format_colored_log(&line, trader_id, &template_console);
+                        Self::write_stdout(&mut out_buf, &line);
+                        Self::flush_stdout(&mut out_buf);
+                    }
 
-                    let file_path = Self::create_log_file_path(
-                        &directory,
-                        &file_name,
-                        trader_id,
-                        instance_id,
-                        is_json_format,
-                    );
+                    if fileout_level != LevelFilter::Off {
+                        if Self::should_rotate_file(&file_path) {
+                            // Ensure previous file buffer flushed
+                            if let Some(file_buf) = file_buf.as_mut() {
+                                Self::flush_file(file_buf);
+                            };
 
-                    let file = File::options()
-                        .create(true)
-                        .append(true)
-                        .open(file_path)
-                        .expect("Error creating log file");
+                            let file_path = Self::create_log_file_path(
+                                &file_writer_config,
+                                trader_id,
+                                instance_id,
+                                is_json_format,
+                            );
 
-                    file_buf = Some(BufWriter::new(file));
-                }
+                            let file = File::options()
+                                .create(true)
+                                .append(true)
+                                .open(file_path)
+                                .expect("Error creating log file");
 
-                if event.level >= level_file {
-                    if let Some(file_buf) = file_buf.as_mut() {
-                        let line = Self::format_log_line_file(
-                            &event,
-                            trader_id,
-                            &template_file,
-                            is_json_format,
-                        );
-                        Self::write_file(file_buf, &line);
-                        Self::flush_file(file_buf);
+                            file_buf = Some(BufWriter::new(file));
+                        }
+
+                        if line.level <= fileout_level {
+                            if let Some(file_buf) = file_buf.as_mut() {
+                                let line = Self::format_line(
+                                    &line,
+                                    trader_id,
+                                    &template_file,
+                                    is_json_format,
+                                );
+                                Self::write_file(file_buf, &line);
+                                Self::flush_file(file_buf);
+                            }
+                        }
                     }
                 }
             }
@@ -477,13 +420,12 @@ impl Logger {
     }
 
     fn create_log_file_path(
-        directory: &Option<String>,
-        file_name: &Option<String>,
+        file_writer_config: &FileWriterConfig,
         trader_id: &str,
         instance_id: &str,
         is_json_format: bool,
     ) -> PathBuf {
-        let basename = if let Some(file_name) = file_name {
+        let basename = if let Some(file_name) = file_writer_config.file_name.as_ref() {
             file_name.clone()
         } else {
             Self::default_log_file_basename(trader_id, instance_id)
@@ -492,7 +434,7 @@ impl Logger {
         let suffix = if is_json_format { "json" } else { "log" };
         let mut file_path = PathBuf::new();
 
-        if let Some(directory) = directory {
+        if let Some(directory) = file_writer_config.directory.as_ref() {
             file_path.push(directory);
             create_dir_all(&file_path).expect("Failed to create directories for log file");
         }
@@ -502,18 +444,20 @@ impl Logger {
         file_path
     }
 
-    fn format_log_line_console(event: &LogEvent, trader_id: &str, template: &str) -> String {
-        template
-            .replace("{ts}", &unix_nanos_to_iso8601(event.timestamp))
-            .replace("{color}", &event.color.to_string())
-            .replace("{level}", &event.level.to_string())
-            .replace("{trader_id}", trader_id)
-            .replace("{component}", &event.component)
-            .replace("{message}", &event.message)
+    fn format_colored_log(event: &LogLine, trader_id: &str, template: &str) -> String {
+        format!(
+            "\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {message}\x1b[0m\n",
+            ts = unix_nanos_to_iso8601(event.timestamp),
+            color = &event.color.to_string(),
+            level = event.level,
+            trader_id = trader_id,
+            component = &event.component,
+            message = &event.message
+        )
     }
 
-    fn format_log_line_file(
-        event: &LogEvent,
+    fn format_line(
+        event: &LogLine,
         trader_id: &str,
         template: &str,
         is_json_format: bool,
@@ -523,12 +467,14 @@ impl Logger {
                 serde_json::to_string(event).expect("Error serializing log event to string");
             format!("{json_string}\n")
         } else {
-            template
-                .replace("{ts}", &unix_nanos_to_iso8601(event.timestamp))
-                .replace("{level}", &event.level.to_string())
-                .replace("{trader_id}", trader_id)
-                .replace("{component}", &event.component)
-                .replace("{message}", &event.message)
+            format!(
+                "{ts} [{level}] {trader_id}.{component}: {message}\n",
+                ts = &unix_nanos_to_iso8601(event.timestamp),
+                level = &event.level.to_string(),
+                trader_id = trader_id,
+                component = &event.component,
+                message = &event.message,
+            )
         }
     }
 
@@ -577,66 +523,37 @@ impl Logger {
     pub fn send(
         &mut self,
         timestamp: u64,
-        level: log::Level,
+        level: Level,
         color: LogColor,
         component: String,
         message: String,
     ) {
-        let event = LogEvent {
+        let line = LogLine {
             timestamp,
             level,
             color,
             component,
             message,
         };
-        if let Err(SendError(e)) = self.tx.send(event) {
-            eprintln!("Error sending log event: {e}");
+        if let Err(SendError(LogEvent::Data(line))) = self.tx.send(LogEvent::Data(line)) {
+            eprintln!("Error sending log event: {line}");
         }
     }
 
     pub fn debug(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
-        self.send(timestamp, log::Level::Debug, color, component, message);
+        self.send(timestamp, Level::Debug, color, component, message);
     }
 
     pub fn info(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
-        self.send(timestamp, log::Level::Info, color, component, message);
+        self.send(timestamp, Level::Info, color, component, message);
     }
 
     pub fn warn(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
-        self.send(timestamp, log::Level::Warn, color, component, message);
+        self.send(timestamp, Level::Warn, color, component, message);
     }
 
     pub fn error(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
-        self.send(timestamp, log::Level::Error, color, component, message);
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use nautilus_core::uuid::UUID4;
-    use nautilus_model::identifiers::trader_id::TraderId;
-    use rstest::fixture;
-
-    use crate::{enums::LogLevel, logging::Logger};
-
-    #[fixture]
-    pub fn logger() -> Logger {
-        Logger::new(
-            TraderId::from("TRADER-001"),
-            String::from("user-01"),
-            UUID4::new(),
-            log::Level::Info,
-            None,
-            None,
-            None,
-            None,
-            None,
-            true,
-            false,
-        )
+        self.send(timestamp, Level::Error, color, component, message);
     }
 }
 
@@ -645,20 +562,25 @@ pub mod stubs {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{collections::HashMap, str::FromStr, time::Duration};
 
-    use log::info;
-    use nautilus_core::uuid::UUID4;
+    use log::{debug, error, info, LevelFilter};
+    use nautilus_core::{time::AtomicTime, uuid::UUID4};
     use nautilus_model::identifiers::trader_id::TraderId;
     use rstest::*;
+    use serde_json::Value;
     use tempfile::tempdir;
 
-    use super::{stubs::*, *};
-    use crate::testing::wait_until;
+    use super::FileWriterConfig;
+    use crate::{
+        enums::LogColor,
+        logging::{LogLine, Logger, LoggerConfig},
+        testing::wait_until,
+    };
 
     #[rstest]
     fn log_message_serialization() {
-        let log_message = LogEvent {
+        let log_message = LogLine {
             timestamp: 1_000_000_000,
             level: log::Level::Info,
             color: LogColor::Normal,
@@ -676,65 +598,43 @@ mod tests {
     }
 
     #[rstest]
-    fn test_new_logger(logger: Logger) {
-        assert_eq!(logger.level_stdout, log::Level::Info);
-        assert_eq!(logger.level_file, None);
-        assert!(!logger.is_bypassed);
-    }
-
-    #[rstest]
-    fn test_logger_debug(mut logger: Logger) {
-        logger.debug(
-            1_650_000_000_000_000,
-            LogColor::Normal,
-            String::from("RiskEngine"),
-            String::from("This is a test debug message."),
-        );
-    }
-
-    #[rstest]
-    fn test_logger_info(mut logger: Logger) {
-        logger.info(
-            1_650_000_000_000_000,
-            LogColor::Normal,
-            String::from("RiskEngine"),
-            String::from("This is a test info message."),
-        );
-    }
-
-    #[rstest]
-    fn test_logger_error(mut logger: Logger) {
-        logger.error(
-            1_650_000_000_000_000,
-            LogColor::Normal,
-            String::from("RiskEngine"),
-            String::from("This is a test error message."),
-        );
+    fn log_config_parsing() {
+        let config = LoggerConfig::parse("stdout=Info;fileout=Debug;RiskEngine=Error");
+        assert_eq!(
+            config,
+            LoggerConfig {
+                stdout_level: LevelFilter::Info,
+                fileout_level: LevelFilter::Debug,
+                component_level: HashMap::from_iter(vec![(
+                    "RiskEngine".to_string(),
+                    LevelFilter::Error
+                )]),
+                is_colored: false,
+                is_bypassed: false,
+            }
+        )
     }
 
     #[rstest]
     fn test_logging_to_file() {
-        let temp_dir = tempdir().expect("Failed to create temporary directory");
+        let mut config = LoggerConfig::default();
+        config.fileout_level = LevelFilter::Debug;
 
-        let mut logger = Logger::new(
+        let temp_dir = tempdir().expect("Failed to create temporary directory");
+        let mut file_writer_config = FileWriterConfig::default();
+        file_writer_config.directory = Some(temp_dir.path().to_str().unwrap().to_string());
+
+        Logger::init_with_config(
+            AtomicTime::new(false, 1_650_000_000_000_000),
             TraderId::from("TRADER-001"),
-            String::from("user-01"),
             UUID4::new(),
-            log::Level::Info,
-            Some(log::Level::Debug),
-            Some(temp_dir.path().to_str().unwrap().to_string()),
-            None,
-            None,
-            None,
-            true,
-            false,
+            file_writer_config,
+            config,
         );
 
-        logger.info(
-            1_650_000_000_000_000,
-            LogColor::Normal,
-            String::from("RiskEngine"),
-            String::from("This is a test."),
+        info!(
+            component = "RiskEngine";
+            "This is a test."
         );
 
         let mut log_contents = String::new();
@@ -757,6 +657,7 @@ mod tests {
                     .find(|entry| entry.path().is_file())
                     .expect("No files found in directory")
                     .path();
+                dbg!(&log_file_path);
                 log_contents =
                     std::fs::read_to_string(log_file_path).expect("Error while reading log file");
                 !log_contents.is_empty()
@@ -766,36 +667,29 @@ mod tests {
 
         assert_eq!(
             log_contents,
-            "1970-01-20T02:20:00.000000000Z [INF] TRADER-001.RiskEngine: This is a test.\n"
+            "1970-01-20T02:20:00.000000000Z [INFO] TRADER-001.RiskEngine: This is a test.\n"
         );
     }
 
     #[rstest]
     fn test_log_component_level_filtering() {
-        let temp_dir = tempdir().expect("Failed to create temporary directory");
+        let config = LoggerConfig::parse("stdout=Info;fileout=Debug;RiskEngine=Error");
 
-        let mut logger = Logger::new(
+        let temp_dir = tempdir().expect("Failed to create temporary directory");
+        let mut file_writer_config = FileWriterConfig::default();
+        file_writer_config.directory = Some(temp_dir.path().to_str().unwrap().to_string());
+
+        Logger::init_with_config(
+            AtomicTime::new(false, 1_650_000_000_000_000),
             TraderId::from("TRADER-001"),
-            String::from("user-01"),
             UUID4::new(),
-            log::Level::Info,
-            Some(log::Level::Debug),
-            Some(temp_dir.path().to_str().unwrap().to_string()),
-            None,
-            None,
-            Some(HashMap::from_iter(std::iter::once((
-                String::from("RiskEngine"),
-                Value::from("ERROR"), // <-- This should be filtered
-            )))),
-            true,
-            false,
+            file_writer_config,
+            config,
         );
 
-        logger.info(
-            1_650_000_000_000_000,
-            LogColor::Normal,
-            String::from("RiskEngine"),
-            String::from("This is a test."),
+        info!(
+            component = "RiskEngine";
+            "This is a test."
         );
 
         wait_until(
@@ -827,27 +721,24 @@ mod tests {
 
     #[rstest]
     fn test_logging_to_file_in_json_format() {
-        let temp_dir = tempdir().expect("Failed to create temporary directory");
+        let config = LoggerConfig::parse("stdout=Info;fileout=Debug;RiskEngine=Info");
 
-        let mut logger = Logger::new(
+        let temp_dir = tempdir().expect("Failed to create temporary directory");
+        let mut file_writer_config = FileWriterConfig::default();
+        file_writer_config.directory = Some(temp_dir.path().to_str().unwrap().to_string());
+        file_writer_config.file_format = Some("json".to_string());
+
+        Logger::init_with_config(
+            AtomicTime::new(false, 1_650_000_000_000_000),
             TraderId::from("TRADER-001"),
-            String::from("user-01"),
             UUID4::new(),
-            log::Level::Info,
-            Some(log::Level::Debug),
-            Some(temp_dir.path().to_str().unwrap().to_string()),
-            None,
-            Some("json".to_string()),
-            None,
-            true,
-            false,
+            file_writer_config,
+            config,
         );
 
-        logger.info(
-            1_650_000_000_000_000,
-            LogColor::Normal,
-            String::from("RiskEngine"),
-            String::from("This is a test."),
+        info!(
+            component = "RiskEngine";
+            "This is a test."
         );
 
         let mut log_contents = String::new();
@@ -874,24 +765,5 @@ mod tests {
         log_contents,
         "{\"timestamp\":1650000000000000,\"level\":\"INFO\",\"color\":\"Normal\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
     );
-    }
-
-    #[rstest]
-    fn test_logging_framework() {
-        Logger::initialize(
-            TraderId::from("TRADER-001"),
-            String::from("user-01"),
-            UUID4::new(),
-            log::Level::Debug,
-            None,
-            None,
-            None,
-            None,
-            None,
-            true,
-            false,
-        );
-
-        info!("hi");
     }
 }
