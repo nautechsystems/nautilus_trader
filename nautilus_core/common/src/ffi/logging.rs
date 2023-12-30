@@ -53,7 +53,5 @@ pub unsafe extern "C" fn logger_log(
         LogLevel::Error => {
             error!(component = component.to_value(), color = Value::from(color as u8); "{}", message)
         }
-        // Don't support this anymore
-        LogLevel::Critical => {}
     }
 }

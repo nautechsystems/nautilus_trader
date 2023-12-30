@@ -162,7 +162,7 @@ typedef enum LogColor {
      */
     YELLOW = 5,
     /**
-     * The red log color, typically used with [`LogLevel::Error`] or [`LogLevel::Critical`] log levels.
+     * The red log color, typically used with [`LogLevel::Error`] level.
      */
     RED = 6,
 } LogColor;
@@ -187,10 +187,6 @@ typedef enum LogLevel {
      * The **ERR** error log level.
      */
     ERROR = 40,
-    /**
-     * The **CRT** critical log level.
-     */
-    CRITICAL = 50,
 } LogLevel;
 
 typedef struct LiveClock LiveClock;

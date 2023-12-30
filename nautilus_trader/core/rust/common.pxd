@@ -85,7 +85,7 @@ cdef extern from "../includes/common.h":
         CYAN # = 4,
         # The yellow log color, typically used with [`LogLevel::Warning`] log levels.
         YELLOW # = 5,
-        # The red log color, typically used with [`LogLevel::Error`] or [`LogLevel::Critical`] log levels.
+        # The red log color, typically used with [`LogLevel::Error`] level.
         RED # = 6,
 
     # The log level for log messages.
@@ -98,8 +98,6 @@ cdef extern from "../includes/common.h":
         WARNING # = 30,
         # The **ERR** error log level.
         ERROR # = 40,
-        # The **CRT** critical log level.
-        CRITICAL # = 50,
 
     cdef struct LiveClock:
         pass

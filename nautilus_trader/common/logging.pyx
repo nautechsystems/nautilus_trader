@@ -533,39 +533,6 @@ cdef class LoggerAdapter:
             annotations,
         )
 
-    cpdef void critical(
-        self,
-        str message,
-        LogColor color = LogColor.RED,
-        dict annotations = None,
-    ):
-        """
-        Log the given critical message with the logger.
-
-        Parameters
-        ----------
-        message : str
-            The log message content.
-        color : LogColor, optional
-            The log message color.
-        annotations : dict[str, object], optional
-            The annotations for the log record.
-
-        """
-        Condition.not_none(message, "message")
-
-        if self.is_bypassed:
-            return
-
-        self._logger.log(
-            self._logger._clock.timestamp_ns(),
-            LogLevel.CRITICAL,
-            color,
-            self.component,
-            message,
-            annotations,
-        )
-
     cpdef void exception(
         self,
         str message,

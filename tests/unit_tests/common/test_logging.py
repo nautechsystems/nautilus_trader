@@ -173,21 +173,6 @@ class TestLoggerTests:
         # Assert
         assert True  # No exceptions raised
 
-    def test_log_critical_messages_to_console(self):
-        # Arrange
-        logger = Logger(
-            clock=TestClock(),
-            level_stdout=LogLevel.CRITICAL,
-            bypass=True,
-        )
-        logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
-
-        # Act
-        logger_adapter.critical("This is a log message.")
-
-        # Assert
-        assert True  # No exceptions raised
-
     def test_log_exception_messages_to_console(self):
         # Arrange
         logger = Logger(
