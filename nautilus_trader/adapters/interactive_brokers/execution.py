@@ -52,9 +52,9 @@ from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
-from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
@@ -400,15 +400,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             report.append(order_status)
         return report
 
-    async def generate_trade_reports(
+    async def generate_fill_reports(
         self,
         instrument_id: InstrumentId | None = None,
         venue_order_id: VenueOrderId | None = None,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-    ) -> list[TradeReport]:
+    ) -> list[FillReport]:
         """
-        Generate a list of `TradeReport`s with optional query filters. The returned list
+        Generate a list of `FillReport`s with optional query filters. The returned list
         may be empty if no trades match the given parameters.
 
         Parameters
@@ -424,10 +424,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         Returns
         -------
-        list[TradeReport]
+        list[FillReport]
 
         """
-        self._log.warning("Cannot generate `list[TradeReport]`: not yet implemented.")
+        self._log.warning("Cannot generate `list[FillReport]`: not yet implemented.")
 
         return []  # TODO: Implement
 
