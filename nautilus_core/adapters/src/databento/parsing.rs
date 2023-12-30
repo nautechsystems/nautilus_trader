@@ -137,7 +137,6 @@ pub fn parse_equity(
         currency,
         currency.precision,
         parse_min_price_increment(record.min_price_increment, currency)?,
-        Quantity::new(1.0, 0)?,
         dec!(0), // TBD
         dec!(0), // TBD
         dec!(0), // TBD

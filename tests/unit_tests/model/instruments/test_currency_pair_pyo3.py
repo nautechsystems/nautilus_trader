@@ -17,7 +17,7 @@ from nautilus_trader.core.nautilus_pyo3 import CurrencyPair
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
-btcusdt_binance = TestInstrumentProviderPyo3.btcusdt_binance()
+_BTCUSDT = TestInstrumentProviderPyo3.btcusdt_binance()
 
 
 def test_equality():
@@ -27,12 +27,12 @@ def test_equality():
 
 
 def test_hash():
-    assert hash(btcusdt_binance) == hash(btcusdt_binance)
+    assert hash(_BTCUSDT) == hash(_BTCUSDT)
 
 
 def test_to_dict():
-    result = btcusdt_binance.to_dict()
-    assert CurrencyPair.from_dict(result) == btcusdt_binance
+    result = _BTCUSDT.to_dict()
+    assert CurrencyPair.from_dict(result) == _BTCUSDT
     assert result == {
         "type": "CurrencyPair",
         "id": "BTCUSDT.BINANCE",

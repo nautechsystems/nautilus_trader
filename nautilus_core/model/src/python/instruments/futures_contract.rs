@@ -63,7 +63,7 @@ impl FuturesContract {
             id,
             raw_symbol,
             asset_class,
-            underlying,
+            underlying.into(),
             activation_ns,
             expiration_ns,
             currency,

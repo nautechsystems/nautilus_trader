@@ -17,7 +17,7 @@ from nautilus_trader.core.nautilus_pyo3 import OptionsContract
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
-aapl_option = TestInstrumentProviderPyo3.appl_option()
+_AAPL_OPTION = TestInstrumentProviderPyo3.appl_option()
 
 
 def test_equality():
@@ -27,12 +27,12 @@ def test_equality():
 
 
 def test_hash():
-    assert hash(aapl_option) == hash(aapl_option)
+    assert hash(_AAPL_OPTION) == hash(_AAPL_OPTION)
 
 
 def test_to_dict():
-    result = aapl_option.to_dict()
-    assert OptionsContract.from_dict(result) == aapl_option
+    result = _AAPL_OPTION.to_dict()
+    assert OptionsContract.from_dict(result) == _AAPL_OPTION
     assert result == {
         "type": "OptionsContract",
         "id": "AAPL211217C00150000.OPRA",
