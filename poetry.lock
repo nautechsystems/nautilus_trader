@@ -184,17 +184,17 @@ lxml = ["lxml"]
 
 [[package]]
 name = "betfair-parser"
-version = "0.9.1"
+version = "0.10.0"
 description = "A betfair parser"
 optional = true
 python-versions = ">=3.9,<4.0"
 files = [
-    {file = "betfair_parser-0.9.1-py3-none-any.whl", hash = "sha256:0ff2f43695a392b1dec546de3471178c580de21e3f98537cfa859e1f927f846c"},
-    {file = "betfair_parser-0.9.1.tar.gz", hash = "sha256:b5c3eeef51298b2949a349c77a57dad3f743f54b7441cd2e487dd247eefcd9bb"},
+    {file = "betfair_parser-0.10.0-py3-none-any.whl", hash = "sha256:bb8693a7d657a341c10d181886e1abaf2088e2ee8e76bceb9a5ded636a8cd4e4"},
+    {file = "betfair_parser-0.10.0.tar.gz", hash = "sha256:7d35abbd826cdb41b54ec5f869a02500033b06b1f3798184d51eb40374a2a8ff"},
 ]
 
 [package.dependencies]
-msgspec = ">=0.18"
+msgspec = ">=0.18.5"
 
 [[package]]
 name = "black"
@@ -2845,4 +2845,4 @@ ib = ["async-timeout", "defusedxml", "nautilus_ibapi"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.13"
-content-hash = "c4243391faceba5ecfa8c9d7b7e91cc77d4f7af53b35ca8d5a17871d59144399"
+content-hash = "67b2207e574177b7173b15adc202ff7abcda96c11b02bd68e17a62a0fc830b04"
