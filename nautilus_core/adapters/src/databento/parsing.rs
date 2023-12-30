@@ -32,7 +32,7 @@ use nautilus_model::{
         trade::TradeTick,
     },
     enums::{
-        AggregationSource, AggressorSide, AssetClass, AssetType, BarAggregation, BookAction,
+        AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction, InstrumentClass,
         OptionKind, OrderSide, PriceType,
     },
     identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
@@ -76,7 +76,7 @@ pub fn parse_option_kind(c: c_char) -> Result<OptionKind> {
     }
 }
 
-pub fn parse_cfi_iso10926(value: &str) -> Result<(Option<AssetClass>, Option<AssetType>)> {
+pub fn parse_cfi_iso10926(value: &str) -> Result<(Option<AssetClass>, Option<InstrumentClass>)> {
     let chars: Vec<char> = value.chars().collect();
     if chars.len() < 3 {
         bail!("Value string is too short");
@@ -96,8 +96,8 @@ pub fn parse_cfi_iso10926(value: &str) -> Result<(Option<AssetClass>, Option<Ass
         _ => None,
     };
 
-    let asset_type = match cfi_group {
-        'I' => Some(AssetType::Future),
+    let instrument_class = match cfi_group {
+        'I' => Some(InstrumentClass::Future),
         _ => None,
     };
 
@@ -105,7 +105,7 @@ pub fn parse_cfi_iso10926(value: &str) -> Result<(Option<AssetClass>, Option<Ass
         asset_class = Some(AssetClass::Index);
     }
 
-    Ok((asset_class, asset_type))
+    Ok((asset_class, instrument_class))
 }
 
 pub fn parse_min_price_increment(value: i64, currency: Currency) -> Result<Price> {

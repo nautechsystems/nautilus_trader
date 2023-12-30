@@ -114,40 +114,6 @@ typedef enum AssetClass {
 } AssetClass;
 
 /**
- * The asset type for a financial market product.
- */
-typedef enum AssetType {
-    /**
-     * A spot market asset type. The current market price of an asset that is bought or sold for immediate delivery and payment.
-     */
-    SPOT = 1,
-    /**
-     * A swap asset type. A derivative contract through which two parties exchange the cash flows or liabilities from two different financial instruments.
-     */
-    SWAP = 2,
-    /**
-     * A futures contract asset type. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
-     */
-    FUTURE = 3,
-    /**
-     * A forward derivative asset type. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
-     */
-    FORWARD = 4,
-    /**
-     * A contract-for-difference (CFD) asset type. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
-     */
-    CFD = 5,
-    /**
-     * An options contract asset type. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
-     */
-    OPTION = 6,
-    /**
-     * A warrant asset type. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
-     */
-    WARRANT = 7,
-} AssetType;
-
-/**
  * The type of order book action for an order book event.
  */
 typedef enum BookAction {
@@ -246,6 +212,40 @@ typedef enum HaltReason {
      */
     VOLATILITY = 3,
 } HaltReason;
+
+/**
+ * The asset type for a financial market product.
+ */
+typedef enum InstrumentClass {
+    /**
+     * A spot market instrument class. The current market price of an instrument that is bought or sold for immediate delivery and payment.
+     */
+    SPOT = 1,
+    /**
+     * A swap instrument class. A derivative contract through which two parties exchange the cash flows or liabilities from two different financial instruments.
+     */
+    SWAP = 2,
+    /**
+     * A futures contract instrument class. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
+     */
+    FUTURE = 3,
+    /**
+     * A forward derivative instrument class. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
+     */
+    FORWARD = 4,
+    /**
+     * A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
+     */
+    CFD = 5,
+    /**
+     * An options contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
+     */
+    OPTION = 6,
+    /**
+     * A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+     */
+    WARRANT = 7,
+} InstrumentClass;
 
 /**
  * The type of event for an instrument close.
@@ -1450,7 +1450,7 @@ const char *asset_class_to_cstr(enum AssetClass value);
  */
 enum AssetClass asset_class_from_cstr(const char *ptr);
 
-const char *asset_type_to_cstr(enum AssetType value);
+const char *instrument_class_to_cstr(enum InstrumentClass value);
 
 /**
  * Returns an enum from a Python string.
@@ -1458,7 +1458,7 @@ const char *asset_type_to_cstr(enum AssetType value);
  * # Safety
  * - Assumes `ptr` is a valid C string pointer.
  */
-enum AssetType asset_type_from_cstr(const char *ptr);
+enum InstrumentClass instrument_class_from_cstr(const char *ptr);
 
 const char *bar_aggregation_to_cstr(uint8_t value);
 

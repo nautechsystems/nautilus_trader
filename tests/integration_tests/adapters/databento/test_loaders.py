@@ -27,8 +27,8 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BookAction
+from nautilus_trader.model.enums import InstrumentClass
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
@@ -127,7 +127,7 @@ def test_loader_definition_glbx_futures() -> None:
     assert instrument.id == InstrumentId.from_str("ESM3.GLBX")
     assert instrument.raw_symbol == Symbol("ESM3")
     assert instrument.asset_class == AssetClass.INDEX
-    assert instrument.asset_type == AssetType.FUTURE
+    assert instrument.instrument_class == InstrumentClass.FUTURE
     assert instrument.quote_currency == USD
     assert not instrument.is_inverse
     assert instrument.underlying == "ES"
@@ -157,7 +157,7 @@ def test_loader_definition_glbx_futures_spread() -> None:
     assert instrument.id == InstrumentId.from_str("ESH5-ESM5.GLBX")
     assert instrument.raw_symbol == Symbol("ESH5-ESM5")
     assert instrument.asset_class == AssetClass.INDEX
-    assert instrument.asset_type == AssetType.FUTURE
+    assert instrument.instrument_class == InstrumentClass.FUTURE
     assert instrument.quote_currency == USD
     assert not instrument.is_inverse
     assert instrument.underlying == "ES"
@@ -187,7 +187,7 @@ def test_loader_definition_glbx_options() -> None:
     assert instrument.id == InstrumentId.from_str("ESM4 C4250.GLBX")
     assert instrument.raw_symbol == Symbol("ESM4 C4250")
     assert instrument.asset_class == AssetClass.EQUITY
-    assert instrument.asset_type == AssetType.OPTION
+    assert instrument.instrument_class == InstrumentClass.OPTION
     assert instrument.quote_currency == USD
     assert not instrument.is_inverse
     assert instrument.underlying == "ESM4"
@@ -219,7 +219,7 @@ def test_loader_definition_opra_pillar() -> None:
     assert instrument.id == InstrumentId.from_str("SPY   240119P00340000.OPRA")  # OSS symbol
     assert instrument.raw_symbol == Symbol("SPY   240119P00340000")
     assert instrument.asset_class == AssetClass.EQUITY
-    assert instrument.asset_type == AssetType.OPTION
+    assert instrument.instrument_class == InstrumentClass.OPTION
     assert instrument.quote_currency == USD
     assert not instrument.is_inverse
     assert instrument.underlying == "SPY"
@@ -251,7 +251,7 @@ def test_loader_with_xnasitch_definition() -> None:
     assert instrument.id == InstrumentId.from_str("MSFT.XNAS")
     assert instrument.raw_symbol == Symbol("MSFT")
     assert instrument.asset_class == AssetClass.EQUITY
-    assert instrument.asset_type == AssetType.SPOT
+    assert instrument.instrument_class == InstrumentClass.SPOT
     assert instrument.quote_currency == USD
     assert not instrument.is_inverse
     assert instrument.price_precision == 2

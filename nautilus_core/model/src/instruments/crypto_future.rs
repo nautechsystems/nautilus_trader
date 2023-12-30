@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use super::Instrument;
 use crate::{
-    enums::{AssetClass, AssetType},
+    enums::{AssetClass, InstrumentClass},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
@@ -147,8 +147,8 @@ impl Instrument for CryptoFuture {
         AssetClass::Cryptocurrency
     }
 
-    fn asset_type(&self) -> AssetType {
-        AssetType::Future
+    fn instrument_class(&self) -> InstrumentClass {
+        InstrumentClass::Future
     }
 
     fn quote_currency(&self) -> &Currency {

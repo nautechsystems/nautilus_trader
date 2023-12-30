@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use super::Instrument;
 use crate::{
-    enums::{AssetClass, AssetType, OptionKind},
+    enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
@@ -141,8 +141,8 @@ impl Instrument for OptionsContract {
         self.asset_class
     }
 
-    fn asset_type(&self) -> AssetType {
-        AssetType::Option
+    fn instrument_class(&self) -> InstrumentClass {
+        InstrumentClass::Option
     }
 
     fn quote_currency(&self) -> &Currency {

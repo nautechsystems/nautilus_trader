@@ -236,7 +236,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<enums::AggregationSource>()?;
     m.add_class::<enums::AggressorSide>()?;
     m.add_class::<enums::AssetClass>()?;
-    m.add_class::<enums::AssetType>()?;
+    m.add_class::<enums::InstrumentClass>()?;
     m.add_class::<enums::BarAggregation>()?;
     m.add_class::<enums::BookAction>()?;
     m.add_class::<enums::BookType>()?;

@@ -9,6 +9,8 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Changed `ComponentStateChanged` Arrow schema for `config` from `string` to `binary`
 - Changed `OrderInitialized` Arrow schema for `options` from `string` to `binary`
+- Renamed `AssetType` enum to `InstrumentClass` (more conventional terminology)
+- Renamed `asset_type` to `instrument_class` across the codebase (more conventional terminology)
 
 ### Fixes
 - Fixed handling of configuration objects to work with `StreamingFeatherWriter`

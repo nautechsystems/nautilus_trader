@@ -19,8 +19,8 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AssetClass
-from nautilus_trader.core.rust.model cimport AssetType
 from nautilus_trader.core.rust.model cimport CurrencyType
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -155,7 +155,7 @@ cdef class CurrencyPair(Instrument):
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
             asset_class=asset_class,
-            asset_type=AssetType.SPOT,
+            instrument_class=InstrumentClass.SPOT,
             quote_currency=quote_currency,
             is_inverse=False,
             price_precision=price_precision,

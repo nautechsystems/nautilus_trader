@@ -67,23 +67,6 @@ cdef extern from "../includes/model.h":
         # Sports betting instruments.
         SPORTS_BETTING # = 9,
 
-    # The asset type for a financial market product.
-    cpdef enum AssetType:
-        # A spot market asset type. The current market price of an asset that is bought or sold for immediate delivery and payment.
-        SPOT # = 1,
-        # A swap asset type. A derivative contract through which two parties exchange the cash flows or liabilities from two different financial instruments.
-        SWAP # = 2,
-        # A futures contract asset type. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
-        FUTURE # = 3,
-        # A forward derivative asset type. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
-        FORWARD # = 4,
-        # A contract-for-difference (CFD) asset type. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
-        CFD # = 5,
-        # An options contract asset type. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
-        OPTION # = 6,
-        # A warrant asset type. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
-        WARRANT # = 7,
-
     # The type of order book action for an order book event.
     cpdef enum BookAction:
         # An order is added to the book.
@@ -134,6 +117,23 @@ cdef extern from "../includes/model.h":
         GENERAL # = 2,
         # Trading halt is imposed by the venue to protect against extreme volatility.
         VOLATILITY # = 3,
+
+    # The asset type for a financial market product.
+    cpdef enum InstrumentClass:
+        # A spot market instrument class. The current market price of an instrument that is bought or sold for immediate delivery and payment.
+        SPOT # = 1,
+        # A swap instrument class. A derivative contract through which two parties exchange the cash flows or liabilities from two different financial instruments.
+        SWAP # = 2,
+        # A futures contract instrument class. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
+        FUTURE # = 3,
+        # A forward derivative instrument class. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
+        FORWARD # = 4,
+        # A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
+        CFD # = 5,
+        # An options contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
+        OPTION # = 6,
+        # A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+        WARRANT # = 7,
 
     # The type of event for an instrument close.
     cpdef enum InstrumentCloseType:
@@ -897,13 +897,13 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     AssetClass asset_class_from_cstr(const char *ptr);
 
-    const char *asset_type_to_cstr(AssetType value);
+    const char *instrument_class_to_cstr(InstrumentClass value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is a valid C string pointer.
-    AssetType asset_type_from_cstr(const char *ptr);
+    InstrumentClass instrument_class_from_cstr(const char *ptr);
 
     const char *bar_aggregation_to_cstr(uint8_t value);
 

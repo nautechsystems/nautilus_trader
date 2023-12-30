@@ -321,7 +321,7 @@ class AssetClass(Enum):
     CRYPTO_CURRENCY = "CRYPTO_CURRENCY"
     SPORTS_BETTING = "SPORTS_BETTING"
 
-class AssetType(Enum):
+class InstrumentClass(Enum):
     SPOT = "SPOT"
     SWAP = "SWAP"
     FUTURE = "FUTURE"

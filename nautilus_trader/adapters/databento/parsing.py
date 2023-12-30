@@ -37,9 +37,9 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
+from nautilus_trader.model.enums import InstrumentClass
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
@@ -102,9 +102,9 @@ def parse_option_kind(value: str) -> OptionKind:
             raise ValueError(f"Invalid `OptionKind`, was '{value}'")
 
 
-def parse_cfi_iso10926(value: str) -> tuple[AssetClass | None, AssetType | None]:
+def parse_cfi_iso10926(value: str) -> tuple[AssetClass | None, InstrumentClass | None]:
     # This is a work in progress and will likely result in a shuffling of
-    # the `AssetClass` and `AssetType` enums
+    # the `AssetClass` and `InstrumentClass` enums
 
     cfi_category = value[0]
     cfi_group = value[1]
@@ -120,24 +120,24 @@ def parse_cfi_iso10926(value: str) -> tuple[AssetClass | None, AssetType | None]
             asset_class = AssetClass.EQUITY
         case "S":
             asset_class = None
-            asset_type = AssetType.SWAP
+            instrument_class = InstrumentClass.SWAP
         case "J":
             asset_class = None
-            asset_type = AssetType.FORWARD
+            instrument_class = InstrumentClass.FORWARD
         case _:
             asset_class = None
 
     match cfi_group:
         case "I":
-            asset_type = AssetType.FUTURE
+            instrument_class = InstrumentClass.FUTURE
         case _:
-            asset_type = None
+            instrument_class = None
 
     match cfi_attribute1:
         case "I":
             asset_class = AssetClass.INDEX
 
-    return (asset_class, asset_type)
+    return (asset_class, instrument_class)
 
 
 def parse_min_price_increment(value: int, currency: Currency) -> Price:
