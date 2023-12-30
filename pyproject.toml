@@ -57,7 +57,7 @@ toml = "^0.10.2"  # Build dependency
 click = "^8.1.7"
 frozendict = "^2.3.10"
 fsspec = "==2023.6.0"  # Pinned for stability
-importlib_metadata = "^6.11.0"
+importlib_metadata = "^7.0.1"
 msgspec = "^0.18.5"
 pandas = "^2.1.4"
 psutil = "^5.9.7"
