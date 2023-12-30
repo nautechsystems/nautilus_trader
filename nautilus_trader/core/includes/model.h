@@ -88,29 +88,21 @@ typedef enum AssetClass {
      */
     COMMODITY = 3,
     /**
-     * Metal commodity assets.
+     * Debt based assets.
      */
-    METAL = 4,
+    DEBT = 4,
     /**
-     * Energy commodity assets.
+     * Index based assets (baskets).
      */
-    ENERGY = 5,
-    /**
-     * Fixed income bond assets.
-     */
-    BOND = 6,
-    /**
-     * Index based assets.
-     */
-    INDEX = 7,
+    INDEX = 5,
     /**
      * Cryptocurrency or crypto token assets.
      */
-    CRYPTOCURRENCY = 8,
+    CRYPTOCURRENCY = 6,
     /**
-     * Sports betting instruments.
+     * Alternative assets.
      */
-    SPORTS_BETTING = 9,
+    ALTERNATIVE = 7,
 } AssetClass;
 
 /**
@@ -238,13 +230,21 @@ typedef enum InstrumentClass {
      */
     CFD = 5,
     /**
+     * A bond instrument class. A type of debt investment where an investor loans money to an entity (typically corporate or governmental) which borrows the funds for a defined period of time at a variable or fixed interest rate.
+     */
+    BOND = 6,
+    /**
      * An options contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
      */
-    OPTION = 6,
+    OPTION = 7,
     /**
      * A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
      */
-    WARRANT = 7,
+    WARRANT = 8,
+    /**
+     * A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+     */
+    SPORTS_BETTING = 9,
 } InstrumentClass;
 
 /**

@@ -314,12 +314,10 @@ class AggressorSide(Enum):
 class AssetClass(Enum):
     EQUITY = "EQUITY"
     COMMODITY = "COMMODITY"
-    METAL = "METAL"
-    ENERGY = "ENERGY"
-    BOND = "BOND"
+    DEBT = "DEBT"
     INDEX = "INDEX"
-    CRYPTO_CURRENCY = "CRYPTO_CURRENCY"
-    SPORTS_BETTING = "SPORTS_BETTING"
+    CRYPTOCURRENCY = "CRYPTOCURRENCY"
+    ALTERNATIVE = "ALTERNATIVE"
 
 class InstrumentClass(Enum):
     SPOT = "SPOT"
@@ -327,8 +325,10 @@ class InstrumentClass(Enum):
     FUTURE = "FUTURE"
     FORWARD = "FORWARD"
     CFD = "CFD"
+    BOND = "BOND"
     OPTION = "OPTION"
     WARRANT = "WARRANT"
+    SPORTS_BETTING = "SPORTS_BETTING"
 
 class BarAggregation(Enum):
     TICK = "TICK"
