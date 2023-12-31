@@ -203,7 +203,7 @@ async def test_place_orders(betfair_client):
             ],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
             market_version=None,
-            customer_strategy_ref="S-001",
+            customer_strategy_ref="4827311aa8c4c749978174ee384a98",
             async_=False,
         ),
         id=request.id,
@@ -248,7 +248,7 @@ async def test_place_orders_handicap(betfair_client):
             ],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
             market_version=None,
-            customer_strategy_ref="S-001",
+            customer_strategy_ref="4827311aa8c4c749978174ee384a98",
             async_=False,
         ),
         id=request.id,
@@ -299,7 +299,7 @@ async def test_place_orders_market_on_close(betfair_client):
             ],
             customer_ref="be7dffa046f2fce5d820c7634d022ca1",
             market_version=None,
-            customer_strategy_ref="S-001",
+            customer_strategy_ref="4827311aa8c4c749978174ee384a98",
             async_=False,
         ),
         id=request.id,
@@ -368,9 +368,9 @@ async def test_cancel_orders(betfair_client):
 
 @pytest.mark.asyncio()
 async def test_list_current_orders(betfair_client):
-    mock_betfair_request(betfair_client, response=BetfairResponses.list_current_orders())
+    mock_betfair_request(betfair_client, response=BetfairResponses.list_current_orders_executable())
     current_orders = await betfair_client.list_current_orders()
-    assert len(current_orders) == 4
+    assert len(current_orders) == 2
 
     _, request = betfair_client._request.call_args[0]
     expected = ListCurrentOrders(

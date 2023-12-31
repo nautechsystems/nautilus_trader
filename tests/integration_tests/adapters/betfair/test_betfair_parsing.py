@@ -384,7 +384,7 @@ class TestBetfairParsing:
             ],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
             market_version=None,
-            customer_strategy_ref="S-001",
+            customer_strategy_ref="4827311aa8c4c749978174ee384a98",
             async_=False,
         )
         assert result == expected
@@ -758,7 +758,7 @@ class TestBetfairParsing:
         customer_order_ref = make_customer_order_ref(client_order_id, strategy_id)
 
         # Assert
-        assert customer_order_ref == f"{strategy_id}-{client_order_id}"
+        assert customer_order_ref == "O-20210410-022422-001"
 
 
 def request_id() -> int:
