@@ -59,6 +59,7 @@ from nautilus_trader.adapters.betfair.parsing.common import instrument_id_betfai
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import determine_order_status
+from nautilus_trader.adapters.betfair.parsing.requests import make_customer_order_ref
 from nautilus_trader.adapters.betfair.parsing.requests import nautilus_limit_on_close_to_place_instructions
 from nautilus_trader.adapters.betfair.parsing.requests import nautilus_limit_to_place_instructions
 from nautilus_trader.adapters.betfair.parsing.requests import nautilus_market_on_close_to_place_instructions
@@ -91,6 +92,7 @@ from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
@@ -742,6 +744,21 @@ class TestBetfairParsing:
             "persistenceType": "LAPSE",
         }
         assert result == expected
+
+    def test_customer_order_ref(self):
+        # Arrange
+        strategy_id = StrategyId("ExampleStrategy-001")
+        order = TestExecStubs.limit_order(
+            instrument_id=self.instrument.id,
+            strategy_id=strategy_id,
+        )
+        client_order_id = order.client_order_id
+
+        # Act
+        customer_order_ref = make_customer_order_ref(client_order_id, strategy_id)
+
+        # Assert
+        assert customer_order_ref == f"{strategy_id}-{client_order_id}"
 
 
 def request_id() -> int:

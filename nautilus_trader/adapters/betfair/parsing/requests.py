@@ -78,7 +78,7 @@ from nautilus_trader.model.orders import LimitOrder as NautilusLimitOrder
 from nautilus_trader.model.orders import MarketOrder as NautilusMarketOrder
 
 
-def make_custom_order_ref(
+def make_customer_order_ref(
     client_order_id: ClientOrderId,
     strategy_id: StrategyId,
 ) -> CustomerOrderRef:
@@ -110,7 +110,7 @@ def nautilus_limit_to_place_instructions(
             ),
             time_in_force=N2B_TIME_IN_FORCE.get(command.order.time_in_force),
         ),
-        customer_order_ref=make_custom_order_ref(
+        customer_order_ref=make_customer_order_ref(
             client_order_id=command.order.client_order_id,
             strategy_id=command.strategy_id,
         ),
@@ -134,7 +134,7 @@ def nautilus_limit_on_close_to_place_instructions(
             price=command.order.price.as_double(),
             liability=command.order.quantity.as_double(),
         ),
-        customer_order_ref=make_custom_order_ref(
+        customer_order_ref=make_customer_order_ref(
             client_order_id=command.order.client_order_id,
             strategy_id=command.strategy_id,
         ),
@@ -164,7 +164,7 @@ def nautilus_market_to_place_instructions(
             ),
             time_in_force=N2B_TIME_IN_FORCE.get(command.order.time_in_force),
         ),
-        customer_order_ref=make_custom_order_ref(
+        customer_order_ref=make_customer_order_ref(
             client_order_id=command.order.client_order_id,
             strategy_id=command.strategy_id,
         ),
@@ -187,7 +187,7 @@ def nautilus_market_on_close_to_place_instructions(
         market_on_close_order=MarketOnCloseOrder(
             liability=command.order.quantity.as_double(),
         ),
-        customer_order_ref=make_custom_order_ref(
+        customer_order_ref=make_customer_order_ref(
             client_order_id=command.order.client_order_id,
             strategy_id=command.strategy_id,
         ),
@@ -427,6 +427,15 @@ def create_customer_ref(command: SubmitOrder | ModifyOrder | CancelOrder) -> str
 @lru_cache
 def create_customer_strategy_ref(trader_id: str, strategy_id: str) -> str:
     """
+    Betfair allow setting a strategy reference, limited to 15 chars. Produce a hash to
+    use as a strategy reference in the place order API.
+
+    From the docs:
+
+    "An optional reference customers can use to specify which strategy has sent the order.
+    The reference will be returned on order change messages through the stream API. The string is
+    limited to 15 characters. If an empty string is provided it will be treated as null."
+
     Produce a hash to use as a strategy ID in the place order API.
 
     https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/placeOrders
