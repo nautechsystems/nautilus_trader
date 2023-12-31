@@ -233,7 +233,7 @@ pub fn options_contract_appl() -> OptionsContract {
         InstrumentId::from("AAPL211217C00150000.OPRA"),
         Symbol::from("AAPL211217C00150000"),
         AssetClass::Equity,
-        String::from("AAPL"),
+        Ustr::from("AAPL"),
         OptionKind::Call,
         activation.timestamp_nanos_opt().unwrap() as UnixNanos,
         expiration.timestamp_nanos_opt().unwrap() as UnixNanos,

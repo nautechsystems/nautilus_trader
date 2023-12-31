@@ -17,6 +17,7 @@ use std::{
     cmp,
     ffi::{c_char, CStr},
     i64,
+    str::FromStr,
 };
 
 use anyhow::{anyhow, bail, Result};
@@ -36,10 +37,16 @@ use nautilus_model::{
         OptionKind, OrderSide, PriceType,
     },
     identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
-    instruments::equity::Equity,
+    instruments::{
+        equity::Equity, futures_contract::FuturesContract, options_contract::OptionsContract,
+        Instrument,
+    },
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
 use rust_decimal_macros::dec;
+use ustr::Ustr;
+
+use super::{common::nautilus_instrument_id_from_databento, types::DatabentoPublisher};
 
 pub fn parse_order_side(c: c_char) -> OrderSide {
     match c as u8 as char {
@@ -115,10 +122,22 @@ pub fn parse_min_price_increment(value: i64, currency: Currency) -> Result<Price
     }
 }
 
-pub fn parse_raw_symbol_to_string(raw_symbol: [c_char; dbn::SYMBOL_CSTR_LEN]) -> Result<String> {
-    let c_str: &CStr = unsafe { CStr::from_ptr(raw_symbol.as_ptr()) };
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+pub unsafe fn parse_raw_ptr_to_string(ptr: *const c_char) -> Result<String> {
+    let c_str: &CStr = unsafe { CStr::from_ptr(ptr) };
     let str_slice: &str = c_str.to_str().map_err(|e| anyhow!(e))?;
     Ok(str_slice.to_owned())
+}
+
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+pub unsafe fn parse_raw_ptr_to_ustr(ptr: *const c_char) -> Result<Ustr> {
+    let c_str: &CStr = unsafe { CStr::from_ptr(ptr) };
+    let str_slice: &str = c_str.to_str().map_err(|e| anyhow!(e))?;
+    Ok(Ustr::from(str_slice))
 }
 
 pub fn parse_equity(
@@ -126,13 +145,11 @@ pub fn parse_equity(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<Equity> {
-    // Use USD for all US equities venues for now
-    let currency = Currency::USD();
+    let currency = Currency::USD(); // TODO: Temporary hard coding of US equities for now
 
     Equity::new(
         instrument_id,
         instrument_id.symbol,
-        // Symbol::from_str(&parse_raw_symbol_to_string(record.raw_symbol)?)?,
         None, // No ISIN available yet
         currency,
         currency.precision,
@@ -142,6 +159,78 @@ pub fn parse_equity(
         dec!(0), // TBD
         dec!(0), // TBD
         Some(Quantity::new(record.min_lot_size_round_lot.into(), 0)?),
+        None,           // TBD
+        None,           // TBD
+        None,           // TBD
+        None,           // TBD
+        record.ts_recv, // More accurate and reliable timestamp
+        ts_init,
+    )
+}
+
+pub fn parse_futures_contract(
+    record: dbn::InstrumentDefMsg,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> Result<FuturesContract> {
+    let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
+    let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
+    let asset = unsafe { parse_raw_ptr_to_ustr(record.asset.as_ptr())? };
+    let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+
+    FuturesContract::new(
+        instrument_id,
+        instrument_id.symbol,
+        asset_class.unwrap_or(AssetClass::Commodity),
+        asset,
+        record.activation,
+        record.expiration,
+        currency,
+        currency.precision,
+        parse_min_price_increment(record.min_price_increment, currency)?,
+        dec!(0), // TBD
+        dec!(0), // TBD
+        dec!(0), // TBD
+        dec!(0), // TBD
+        Quantity::new(record.contract_multiplier.into(), 0)?,
+        None,           // TBD
+        None,           // TBD
+        None,           // TBD
+        None,           // TBD
+        None,           // TBD
+        record.ts_recv, // More accurate and reliable timestamp
+        ts_init,
+    )
+}
+
+pub fn parse_options_contract(
+    record: dbn::InstrumentDefMsg,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> Result<OptionsContract> {
+    let currency_str = unsafe { parse_raw_ptr_to_string(record.currency.as_ptr())? };
+    let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
+    let currency = Currency::from_str(&currency_str)?;
+    let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+    let lot_size = Quantity::new(1.0, 0)?;
+
+    OptionsContract::new(
+        instrument_id,
+        instrument_id.symbol,
+        asset_class.unwrap_or(AssetClass::Commodity),
+        unsafe { parse_raw_ptr_to_ustr(record.asset.as_ptr())? },
+        parse_option_kind(record.instrument_class)?,
+        record.activation,
+        record.expiration,
+        Price::from_raw(record.strike_price, currency.precision)?,
+        currency,
+        currency.precision,
+        parse_min_price_increment(record.min_price_increment, currency)?,
+        dec!(0), // TBD
+        dec!(0), // TBD
+        dec!(0), // TBD
+        dec!(0), // TBD
+        Some(lot_size),
         None,           // TBD
         None,           // TBD
         None,           // TBD
@@ -408,4 +497,50 @@ pub fn parse_ohlcv_msg(
     );
 
     Ok(bar)
+}
+
+// pub fn parse_record_with_metadata<T>(
+//     record: T,
+//     publishers: IndexMap<PublisherId, DatabentoPublisher>,
+//     ts_init: UnixNanos,
+// ) -> Result<Data>
+// where
+//     T: dbn::Record,
+// {
+//     let publisher_id: PublisherId = record.header().publisher_id;
+//     let publisher = publishers
+//         .get(&record.header().publisher_id)
+//         .ok_or_else(|| anyhow!("Publisher ID {publisher_id} not found in map"))?;
+//     match record.rtype() {
+//         dbn::RType::InstrumentDef => parse_instrument_def_msg(record, publisher, ts_init)?,
+//         _ => bail!("OOPS!"),
+//     }
+// }
+
+pub fn parse_instrument_def_msg(
+    record: dbn::InstrumentDefMsg,
+    publisher: &DatabentoPublisher,
+    ts_init: UnixNanos,
+) -> Result<Box<dyn Instrument>> {
+    let raw_symbol = unsafe { parse_raw_ptr_to_ustr(record.raw_symbol.as_ptr())? };
+    let instrument_id = nautilus_instrument_id_from_databento(raw_symbol, publisher);
+
+    match record.instrument_class as u8 as char {
+        'C' | 'P' => Ok(Box::new(parse_options_contract(
+            record,
+            instrument_id,
+            ts_init,
+        )?)),
+        'K' => Ok(Box::new(parse_equity(record, instrument_id, ts_init)?)),
+        'F' => Ok(Box::new(parse_futures_contract(
+            record,
+            instrument_id,
+            ts_init,
+        )?)),
+        'X' => bail!("Unsupported `instrument_class` 'X' (FX_SPOT)"),
+        _ => bail!(
+            "Invalid `instrument_class`, was {}",
+            record.instrument_class
+        ),
+    }
 }

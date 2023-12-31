@@ -13,6 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod common;
-pub mod parsing;
-pub mod types;
+use dbn;
+
+/// Represents a Databento publisher ID.
+pub type PublisherId = u16;
+
+pub struct DatabentoPublisher {
+    pub publisher_id: PublisherId,
+    pub dataset: dbn::Dataset,
+    pub venue: dbn::Venue,
+    pub description: String,
+}

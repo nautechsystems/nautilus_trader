@@ -2240,6 +2240,7 @@ dependencies = [
  "chrono",
  "criterion",
  "dbn",
+ "indexmap 2.1.0",
  "itoa",
  "nautilus-common",
  "nautilus-core",
@@ -2251,6 +2252,7 @@ dependencies = [
  "rust_decimal_macros",
  "thiserror",
  "tokio",
+ "ustr",
 ]
 
 [[package]]
