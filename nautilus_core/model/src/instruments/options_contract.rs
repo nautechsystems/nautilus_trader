@@ -22,6 +22,7 @@ use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use super::Instrument;
 use crate::{
@@ -31,7 +32,7 @@ use crate::{
 };
 
 #[repr(C)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -40,7 +41,7 @@ pub struct OptionsContract {
     pub id: InstrumentId,
     pub raw_symbol: Symbol,
     pub asset_class: AssetClass,
-    pub underlying: String,
+    pub underlying: Ustr,
     pub option_kind: OptionKind,
     pub activation_ns: UnixNanos,
     pub expiration_ns: UnixNanos,
@@ -67,7 +68,7 @@ impl OptionsContract {
         id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
-        underlying: String,
+        underlying: Ustr,
         option_kind: OptionKind,
         activation_ns: UnixNanos,
         expiration_ns: UnixNanos,

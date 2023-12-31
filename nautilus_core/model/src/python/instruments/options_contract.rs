@@ -64,7 +64,7 @@ impl OptionsContract {
             id,
             raw_symbol,
             asset_class,
-            underlying,
+            underlying.into(),
             option_kind,
             activation_ns,
             expiration_ns,

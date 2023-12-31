@@ -13,6 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod common;
-pub mod parsing;
-pub mod types;
+use nautilus_model::identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue};
+use ustr::Ustr;
+
+use super::types::DatabentoPublisher;
+
+pub fn nautilus_instrument_id_from_databento(
+    raw_symbol: Ustr,
+    publisher: &DatabentoPublisher,
+) -> InstrumentId {
+    let symbol = Symbol { value: raw_symbol };
+    let venue = Venue {
+        value: Ustr::from(publisher.venue.as_str()),
+    }; // TODO: Optimize
+
+    InstrumentId::new(symbol, venue)
+}
