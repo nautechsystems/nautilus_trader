@@ -870,6 +870,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     AccountType account_type_from_cstr(const char *ptr);
 
@@ -878,6 +879,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     AggregationSource aggregation_source_from_cstr(const char *ptr);
 
@@ -886,6 +888,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     AggressorSide aggressor_side_from_cstr(const char *ptr);
 
@@ -894,6 +897,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     AssetClass asset_class_from_cstr(const char *ptr);
 
@@ -902,6 +906,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     InstrumentClass instrument_class_from_cstr(const char *ptr);
 
@@ -910,6 +915,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     uint8_t bar_aggregation_from_cstr(const char *ptr);
 
@@ -918,6 +924,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     BookAction book_action_from_cstr(const char *ptr);
 
@@ -926,6 +933,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     BookType book_type_from_cstr(const char *ptr);
 
@@ -934,6 +942,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     ContingencyType contingency_type_from_cstr(const char *ptr);
 
@@ -942,12 +951,14 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     CurrencyType currency_type_from_cstr(const char *ptr);
 
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     InstrumentCloseType instrument_close_type_from_cstr(const char *ptr);
 
@@ -958,6 +969,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     LiquiditySide liquidity_side_from_cstr(const char *ptr);
 
@@ -966,6 +978,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     MarketStatus market_status_from_cstr(const char *ptr);
 
@@ -974,6 +987,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     HaltReason halt_reason_from_cstr(const char *ptr);
 
@@ -982,6 +996,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     OmsType oms_type_from_cstr(const char *ptr);
 
@@ -990,6 +1005,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     OptionKind option_kind_from_cstr(const char *ptr);
 
@@ -998,6 +1014,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     OrderSide order_side_from_cstr(const char *ptr);
 
@@ -1006,6 +1023,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     OrderStatus order_status_from_cstr(const char *ptr);
 
@@ -1014,6 +1032,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     OrderType order_type_from_cstr(const char *ptr);
 
@@ -1022,6 +1041,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     PositionSide position_side_from_cstr(const char *ptr);
 
@@ -1030,6 +1050,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     PriceType price_type_from_cstr(const char *ptr);
 
@@ -1038,6 +1059,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     TimeInForce time_in_force_from_cstr(const char *ptr);
 
@@ -1046,6 +1068,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     TradingState trading_state_from_cstr(const char *ptr);
 
@@ -1054,6 +1077,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     TrailingOffsetType trailing_offset_type_from_cstr(const char *ptr);
 
@@ -1062,6 +1086,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     TriggerType trigger_type_from_cstr(const char *ptr);
 
