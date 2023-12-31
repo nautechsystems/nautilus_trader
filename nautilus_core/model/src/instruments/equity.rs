@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![allow(dead_code)] // Allow for development
-
 use std::hash::{Hash, Hasher};
 
 use anyhow::Result;
