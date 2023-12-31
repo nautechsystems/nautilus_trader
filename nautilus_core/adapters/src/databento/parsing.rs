@@ -31,6 +31,7 @@ use nautilus_model::{
         order::BookOrder,
         quote::QuoteTick,
         trade::TradeTick,
+        Data,
     },
     enums::{
         AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction, InstrumentClass,
@@ -140,7 +141,7 @@ pub unsafe fn parse_raw_ptr_to_ustr(ptr: *const c_char) -> Result<Ustr> {
 }
 
 pub fn parse_equity(
-    record: dbn::InstrumentDefMsg,
+    record: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<Equity> {
@@ -164,7 +165,7 @@ pub fn parse_equity(
 }
 
 pub fn parse_futures_contract(
-    record: dbn::InstrumentDefMsg,
+    record: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<FuturesContract> {
@@ -195,7 +196,7 @@ pub fn parse_futures_contract(
 }
 
 pub fn parse_options_contract(
-    record: dbn::InstrumentDefMsg,
+    record: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<OptionsContract> {
@@ -232,15 +233,24 @@ pub fn is_trade_msg(order_side: OrderSide, action: c_char) -> bool {
 }
 
 pub fn parse_mbo_msg(
-    record: dbn::MboMsg,
+    record: &dbn::MboMsg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
-) -> Result<Option<OrderBookDelta>> {
+) -> Result<(Option<OrderBookDelta>, Option<TradeTick>)> {
     let side = parse_order_side(record.side);
     if is_trade_msg(side, record.action) {
-        return Ok(None);
-    }
+        let trade = TradeTick::new(
+            instrument_id,
+            Price::from_raw(record.price, price_precision)?,
+            Quantity::from_raw(record.size.into(), 0)?,
+            parse_aggressor_side(record.side),
+            TradeId::new(itoa::Buffer::new().format(record.sequence))?,
+            record.ts_recv,
+            ts_init,
+        );
+        return Ok((None, Some(trade)));
+    };
 
     let order = BookOrder::new(
         side,
@@ -259,34 +269,11 @@ pub fn parse_mbo_msg(
         ts_init,
     );
 
-    Ok(Some(delta))
-}
-
-pub fn parse_mbo_msg_trades(
-    record: dbn::MboMsg,
-    instrument_id: InstrumentId,
-    price_precision: u8,
-    ts_init: UnixNanos,
-) -> Result<Option<TradeTick>> {
-    if !is_trade_msg(parse_order_side(record.side), record.action) {
-        return Ok(None);
-    }
-
-    let trade = TradeTick::new(
-        instrument_id,
-        Price::from_raw(record.price, price_precision)?,
-        Quantity::from_raw(record.size.into(), 0)?,
-        parse_aggressor_side(record.side),
-        TradeId::new(itoa::Buffer::new().format(record.sequence))?,
-        record.ts_recv,
-        ts_init,
-    );
-
-    Ok(Some(trade))
+    Ok((Some(delta), None))
 }
 
 pub fn parse_trade_msg(
-    record: dbn::TradeMsg,
+    record: &dbn::TradeMsg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
@@ -305,11 +292,11 @@ pub fn parse_trade_msg(
 }
 
 pub fn parse_mbp1_msg(
-    record: dbn::Mbp1Msg,
+    record: &dbn::Mbp1Msg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
-) -> Result<Option<QuoteTick>> {
+) -> Result<(QuoteTick, Option<TradeTick>)> {
     let top_level = &record.levels[0];
     let quote = QuoteTick::new(
         instrument_id,
@@ -321,34 +308,24 @@ pub fn parse_mbp1_msg(
         ts_init,
     )?;
 
-    Ok(Some(quote))
-}
+    let trade = match record.action as u8 as char {
+        'T' => Some(TradeTick::new(
+            instrument_id,
+            Price::from_raw(record.price, price_precision)?,
+            Quantity::from_raw(record.size.into(), 0)?,
+            parse_aggressor_side(record.side),
+            TradeId::new(itoa::Buffer::new().format(record.sequence))?,
+            record.ts_recv,
+            ts_init,
+        )),
+        _ => None,
+    };
 
-pub fn parse_mbp1_msg_trades(
-    record: dbn::Mbp1Msg,
-    instrument_id: InstrumentId,
-    price_precision: u8,
-    ts_init: UnixNanos,
-) -> Result<Option<TradeTick>> {
-    if record.action as u8 as char != 'T' {
-        return Ok(None);
-    }
-
-    let trade = TradeTick::new(
-        instrument_id,
-        Price::from_raw(record.price, price_precision)?,
-        Quantity::from_raw(record.size.into(), 0)?,
-        parse_aggressor_side(record.side),
-        TradeId::new(itoa::Buffer::new().format(record.sequence))?,
-        record.ts_recv,
-        ts_init,
-    );
-
-    Ok(Some(trade))
+    Ok((quote, trade))
 }
 
 pub fn parse_mbp10_msg(
-    record: dbn::Mbp1Msg,
+    record: &dbn::Mbp10Msg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
@@ -362,7 +339,7 @@ pub fn parse_mbp10_msg(
     );
     deltas.push(clear);
 
-    for level in record.levels {
+    for level in &record.levels {
         let bid_order = BookOrder::new(
             OrderSide::Buy,
             Price::from_raw(level.bid_px, price_precision)?,
@@ -403,7 +380,7 @@ pub fn parse_mbp10_msg(
     Ok(deltas)
 }
 
-pub fn parse_bar_type(record: dbn::OhlcvMsg, instrument_id: InstrumentId) -> Result<BarType> {
+pub fn parse_bar_type(record: &dbn::OhlcvMsg, instrument_id: InstrumentId) -> Result<BarType> {
     match record.hd.rtype {
         32 => {
             // ohlcv-1s
@@ -436,7 +413,7 @@ pub fn parse_bar_type(record: dbn::OhlcvMsg, instrument_id: InstrumentId) -> Res
     }
 }
 
-pub fn parse_ts_event_adjustment(record: dbn::OhlcvMsg) -> Result<UnixNanos> {
+pub fn parse_ts_event_adjustment(record: &dbn::OhlcvMsg) -> Result<UnixNanos> {
     match record.hd.rtype {
         32 => {
             // ohlcv-1s
@@ -462,7 +439,7 @@ pub fn parse_ts_event_adjustment(record: dbn::OhlcvMsg) -> Result<UnixNanos> {
 }
 
 pub fn parse_ohlcv_msg(
-    record: dbn::OhlcvMsg,
+    record: &dbn::OhlcvMsg,
     bar_type: BarType,
     price_precision: u8,
     ts_event_adjustment: UnixNanos,
@@ -490,22 +467,62 @@ pub fn parse_ohlcv_msg(
 //     record: T,
 //     publishers: IndexMap<PublisherId, DatabentoPublisher>,
 //     ts_init: UnixNanos,
-// ) -> Result<Data>
-// where
-//     T: dbn::Record,
-// {
+// ) -> Result<(Data, Option<Data>)> {
 //     let publisher_id: PublisherId = record.header().publisher_id;
 //     let publisher = publishers
 //         .get(&record.header().publisher_id)
 //         .ok_or_else(|| anyhow!("Publisher ID {publisher_id} not found in map"))?;
-//     match record.rtype() {
-//         dbn::RType::InstrumentDef => parse_instrument_def_msg(record, publisher, ts_init)?,
-//         _ => bail!("OOPS!"),
-//     }
+//
+//     let raw_symbol = unsafe { parse_raw_ptr_to_ustr(record.raw_symbol.as_ptr())? };
+//     let instrument_id = nautilus_instrument_id_from_databento(raw_symbol, publisher);
 // }
 
+pub fn parse_record<T>(
+    record: T,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> Result<(Data, Option<Data>)>
+where
+    T: dbn::Record + dbn::HasRType,
+{
+    let record_ref = dbn::RecordRef::from(&record);
+
+    let result = match record.rtype()? {
+        dbn::RType::Mbo => {
+            let msg = record_ref.get::<dbn::MboMsg>().unwrap(); // SAFETY: RType known
+            let result = parse_mbo_msg(msg, instrument_id, 2, ts_init)?;
+            match result {
+                (Some(delta), None) => (Data::Delta(delta), None),
+                (None, Some(trade)) => (Data::Trade(trade), None),
+                _ => bail!("Invalid MboMsg parsing combination"),
+            }
+        }
+        dbn::RType::Mbp0 => {
+            let msg = record_ref.get::<dbn::TradeMsg>().unwrap(); // SAFETY: RType known
+            let trade = parse_trade_msg(msg, instrument_id, 2, ts_init)?;
+            (Data::Trade(trade), None)
+        }
+        dbn::RType::Mbp1 => {
+            let msg = record_ref.get::<dbn::Mbp1Msg>().unwrap(); // SAFETY: RType known
+            let result = parse_mbp1_msg(msg, instrument_id, 2, ts_init)?;
+            match result {
+                (quote, None) => (Data::Quote(quote), None),
+                (quote, Some(trade)) => (Data::Quote(quote), Some(Data::Trade(trade))),
+            }
+        }
+        // dbn::RType::Mbp10 => {
+        //     let msg = record_ref.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
+        //     let trade = parse_mbp10_msg(msg, instrument_id, 2, ts_init)?;
+        //     (Data::OrderBookDeltas(trade), None)
+        // }
+        _ => bail!("RType is currently unsupported by NautilusTrader"),
+    };
+
+    Ok(result)
+}
+
 pub fn parse_instrument_def_msg(
-    record: dbn::InstrumentDefMsg,
+    record: &dbn::InstrumentDefMsg,
     publisher: &DatabentoPublisher,
     ts_init: UnixNanos,
 ) -> Result<Box<dyn Instrument>> {
