@@ -228,7 +228,7 @@ from nautilus_trader.model.data import QuoteTick
 data = BacktestDataConfig(
     catalog_path=str(catalog.path),
     data_cls=QuoteTick,
-    instrument_id=str(instruments[0].id),
+    instrument_id=instruments[0].id,
     end_time="2020-01-10",
 )
 ```
@@ -254,7 +254,7 @@ engine = BacktestEngineConfig(
             strategy_path="__main__:MACDStrategy",
             config_path="__main__:MACDConfig",
             config=dict(
-              instrument_id=instruments[0].id.value,
+              instrument_id=instruments[0].id,
               fast_period=12,
               slow_period=26,
             ),
