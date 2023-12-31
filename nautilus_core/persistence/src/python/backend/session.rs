@@ -48,6 +48,7 @@ impl DataBackendSession {
     /// query "SELECT * FROM <table_name>" is run.
     ///
     /// # Safety
+    ///
     /// The file data must be ordered by the ts_init in ascending order for this
     /// to work correctly.
     #[pyo3(name = "add_file")]
