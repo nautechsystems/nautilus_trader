@@ -27,6 +27,7 @@ pub mod stubs;
 use anyhow::Result;
 use nautilus_core::time::UnixNanos;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 use crate::{
     enums::{AssetClass, InstrumentClass},
@@ -59,10 +60,21 @@ pub trait Instrument {
     fn min_quantity(&self) -> Option<Quantity>;
     fn max_price(&self) -> Option<Price>;
     fn min_price(&self) -> Option<Price>;
-    fn margin_init(&self) -> Decimal;
-    fn margin_maint(&self) -> Decimal;
-    fn maker_fee(&self) -> Decimal;
-    fn taker_fee(&self) -> Decimal;
+    fn margin_init(&self) -> Decimal {
+        dec!(0) // Temporary until separate fee models
+    }
+
+    fn margin_maint(&self) -> Decimal {
+        dec!(0) // Temporary until separate fee models
+    }
+
+    fn maker_fee(&self) -> Decimal {
+        dec!(0) // Temporary until separate fee models
+    }
+
+    fn taker_fee(&self) -> Decimal {
+        dec!(0) // Temporary until separate fee models
+    }
     fn ts_event(&self) -> UnixNanos;
     fn ts_init(&self) -> UnixNanos;
 

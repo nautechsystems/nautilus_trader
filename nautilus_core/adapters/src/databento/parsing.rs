@@ -43,7 +43,6 @@ use nautilus_model::{
     },
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
-use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 use super::{common::nautilus_instrument_id_from_databento, types::DatabentoPublisher};
@@ -154,10 +153,6 @@ pub fn parse_equity(
         currency,
         currency.precision,
         parse_min_price_increment(record.min_price_increment, currency)?,
-        dec!(0), // TBD
-        dec!(0), // TBD
-        dec!(0), // TBD
-        dec!(0), // TBD
         Some(Quantity::new(record.min_lot_size_round_lot.into(), 0)?),
         None,           // TBD
         None,           // TBD
@@ -188,10 +183,6 @@ pub fn parse_futures_contract(
         currency,
         currency.precision,
         parse_min_price_increment(record.min_price_increment, currency)?,
-        dec!(0), // TBD
-        dec!(0), // TBD
-        dec!(0), // TBD
-        dec!(0), // TBD
         Quantity::new(record.contract_multiplier.into(), 0)?,
         None,           // TBD
         None,           // TBD
@@ -226,10 +217,6 @@ pub fn parse_options_contract(
         currency,
         currency.precision,
         parse_min_price_increment(record.min_price_increment, currency)?,
-        dec!(0), // TBD
-        dec!(0), // TBD
-        dec!(0), // TBD
-        dec!(0), // TBD
         Some(lot_size),
         None,           // TBD
         None,           // TBD
