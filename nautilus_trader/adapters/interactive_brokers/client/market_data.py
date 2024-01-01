@@ -112,10 +112,18 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         if not (subscription := self._subscriptions.get(name=name)):
             req_id = self._next_req_id()
+            if subscription_method == self.subscribe_historical_bars:
+                handle_func = functools.partial(
+                    subscription_method,
+                    *args,
+                    **kwargs,
+                )
+            else:
+                handle_func = functools.partial(subscription_method, req_id, *args, **kwargs)
             subscription = self._subscriptions.add(
                 req_id=req_id,
                 name=name,
-                handle=functools.partial(subscription_method, req_id, *args, **kwargs),
+                handle=handle_func,
                 cancel=functools.partial(cancellation_method, req_id),
             )
             if not subscription:
@@ -359,9 +367,9 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         use_rth : bool
             Whether to use regular trading hours (RTH) only for the data.
         end_date_time : str
-            The end time for the historical data request, formatted as a string.
+            The end time for the historical data request, formatted "%Y%m%d-%H:%M:%S".
         duration : str
-            The duration for which historical data is requested.
+            The duration for which historical data is requested, formatted as a string.
         timeout : int, optional
             The maximum time in seconds to wait for the historical data response.
 
@@ -424,7 +432,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             The start time for the historical data request. Can be a pandas Timestamp
             or a string formatted as 'YYYYMMDD HH:MM:SS [TZ]'.
         end_date_time : pd.Timestamp | str, optional
-            The end time for the historical data request. Format is similar to start_date_time.
+            The end time for the historical data request. Same format as start_date_time.
         use_rth : bool, optional
             Whether to use regular trading hours (RTH) only for the data.
         timeout : int, optional

@@ -502,32 +502,48 @@ class Requests(Base):
 
 
 class BaseMixin:
+    """
+    Provide type hints for InteractiveBrokerClient Mixins.
+    """
+
+    # Client
+    is_running: bool
     _loop: asyncio.AbstractEventLoop
-    _eclient: EClient
     _log: Logger
+    _cache: Cache
+    _clock: LiveClock
+    _msgbus: MessageBus
+    _host: str
+    _port: int
+    _client_id: int
     _requests: Requests
     _subscriptions: Subscriptions
     _event_subscriptions: dict[str, Callable]
+    _eclient: EClient
+    _is_ib_ready: asyncio.Event
+    _degrade: Callable
     _end_request: Callable
     _await_request: Callable
     _next_req_id: Callable
     logAnswer: Callable
-    _is_ib_ready: asyncio.Event
-    _next_valid_order_id: int
-    _host: str
-    _port: int
-    _client_id: int
+    _reset: Callable
+    _create_task: Callable
+    _start_client_tasks_and_tws_api: Callable
+
+    # Account
+    accounts: Callable
+
+    # Connection
     _connection_attempt_counter: int
-    _setup_client: Callable
-    _cache: Cache
-    _clock: LiveClock
-    _msgbus: MessageBus
+    _contract_for_probe: IBContract
+
+    # MarketData
     _bar_type_to_last_bar: dict[str, BarData | None]
+    _order_id_to_order_ref: dict[int, AccountOrderRef]
+
+    # Order
+    _next_valid_order_id: int
     _exec_id_details: dict[
         str,
         dict[str, Execution | (CommissionReport | str)],
     ]
-    _order_id_to_order_ref: dict[int, AccountOrderRef]
-    _reset: Callable
-    _create_task: Callable
-    accounts: Callable

@@ -174,7 +174,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     async def _connect(self):
         # Connect client
-        await self._client.is_running_async()
+        await self._client.wait_until_ready()
         await self.instrument_provider.initialize()
 
         # Validate if connected to expected TWS/Gateway using Account

@@ -105,28 +105,22 @@ class InteractiveBrokersClient(
         self._port = port
         self._client_id = client_id
 
+        # TWS API
         self._eclient: EClient = EClient(wrapper=self)
-        self._internal_msg_queue: asyncio.Queue = asyncio.Queue()
 
         # Tasks
         self._watch_dog_task: asyncio.Task | None = None
         self._tws_incoming_msg_reader_task: asyncio.Task | None = None
         self._internal_msg_queue_task: asyncio.Task | None = None
+        self._internal_msg_queue: asyncio.Queue = asyncio.Queue()
 
         # Event flags
-        self._is_ready: asyncio.Event = asyncio.Event()  # Client is fully functional
+        self._is_client_ready: asyncio.Event = asyncio.Event()
         self._is_ib_ready: asyncio.Event = asyncio.Event()  # Connectivity between IB and TWS
 
         # Hot caches
         self.registered_nautilus_clients: set = set()
         self._event_subscriptions: dict[str, Callable] = {}
-        self._bar_type_to_last_bar: dict[str, BarData | None] = {}
-
-        # Temporary cache
-        self._exec_id_details: dict[
-            str,
-            dict[str, Execution | (CommissionReport | str)],
-        ] = {}
 
         # Reset
         self._reset()
@@ -140,35 +134,25 @@ class InteractiveBrokersClient(
         self._eclient.sendMsg = self.sendMsg
         self._eclient.logRequest = self.logRequest
 
+        # AccountMixin
         self._account_ids: set[str] = set()
+
+        # ConnectionMixin
         self._connection_attempt_counter: int = 0
         self._contract_for_probe: IBContract = instrument_id_to_ib_contract(
             InstrumentId.from_str("EUR/CHF.IDEALPRO"),
         )
+
+        # MarketDataMixin
+        self._bar_type_to_last_bar: dict[str, BarData | None] = {}
+
+        # OrderMixing
+        self._exec_id_details: dict[
+            str,
+            dict[str, Execution | (CommissionReport | str)],
+        ] = {}
         self._order_id_to_order_ref: dict[int, AccountOrderRef] = {}
         self._next_valid_order_id: int = -1
-
-    def _setup_client(self) -> None:
-        """
-        Set up the client after a successful connection. Changes the client state to
-        CONNECTED, starts the incoming message reader and queue tasks, and initiates the
-        start API call to the EClient.
-
-        Returns
-        -------
-        None
-
-        """
-        self._eclient.setConnState(EClient.CONNECTED)
-        if self._tws_incoming_msg_reader_task:
-            self._tws_incoming_msg_reader_task.cancel()
-        self._tws_incoming_msg_reader_task = self._create_task(
-            self._run_tws_incoming_msg_reader(),
-        )
-        self._internal_msg_queue_task = self._create_task(
-            self._run_internal_msg_queue(),
-        )
-        self._eclient.startApi()
 
     def _start(self) -> None:
         """
@@ -179,7 +163,7 @@ class InteractiveBrokersClient(
         None
 
         """
-        self._is_ready.set()
+        self._is_client_ready.set()
 
     def _stop(self) -> None:
         """
@@ -202,11 +186,11 @@ class InteractiveBrokersClient(
             self._internal_msg_queue_task,
         ]
         for task in tasks:
-            if task:
+            if task and not task.cancelled():
                 task.cancel()
 
         self._eclient.disconnect()
-        self._is_ready.clear()
+        self._is_client_ready.clear()
         self._account_ids = set()
 
     def _reset(self) -> None:
@@ -233,7 +217,7 @@ class InteractiveBrokersClient(
         None
 
         """
-        self._is_ready.set()
+        self._is_client_ready.set()
         self._connection_attempt_counter = 0
 
     def _degrade(self) -> None:
@@ -245,14 +229,34 @@ class InteractiveBrokersClient(
         None
 
         """
-        self._is_ready.clear()
+        self._is_client_ready.clear()
         self._account_ids = set()
 
-    async def _resume_client_if_degraded(self) -> None:
+    def _start_client_tasks_and_tws_api(self) -> None:
         """
-        Handle actions when Interactive Brokers is ready and the connection is fully
-        functional. If the client state is degraded, it attempts to cancel and restart
-        all subscriptions.
+        Start the incoming message reader and queue tasks, and initiate the start API
+        call to the EClient.
+
+        Returns
+        -------
+        None
+
+        """
+        if self._tws_incoming_msg_reader_task:
+            self._tws_incoming_msg_reader_task.cancel()
+        self._tws_incoming_msg_reader_task = self._create_task(
+            self._run_tws_incoming_msg_reader(),
+        )
+        if self._internal_msg_queue_task:
+            self._internal_msg_queue_task.cancel()
+        self._internal_msg_queue_task = self._create_task(
+            self._run_internal_msg_queue(),
+        )
+        self._eclient.startApi()
+
+    async def _cancel_and_restart_subscriptions(self) -> None:
+        """
+        Attempt to cancel and restart all subscriptions.
 
         Returns
         -------
@@ -261,34 +265,20 @@ class InteractiveBrokersClient(
         Raises
         ------
         Exception
-            If an error occurs during the handling of subscriptions or starting the client.
+            If an error occurs during the cancelling or restarting of subscriptions.
 
         """
-        if self.is_degraded:
-            for subscription in self._subscriptions.get_all():
-                try:
-                    subscription.cancel()
-                    if iscoroutinefunction(subscription.handle):
-                        await subscription.handle()
-                    else:
-                        await self._loop.run_in_executor(None, subscription.handle)
-                except Exception as e:
-                    self._log.exception("Failed subscription", e)
-            self._resume()
+        for subscription in self._subscriptions.get_all():
+            try:
+                subscription.cancel()
+                if iscoroutinefunction(subscription.handle):
+                    await subscription.handle()
+                else:
+                    await self._loop.run_in_executor(None, subscription.handle)
+            except Exception as e:
+                self._log.exception("Failed subscription", e)
 
-    async def _start_client_if_initialized_but_not_running(self) -> None:
-        """
-        Start the client if it has been initialized but is not yet running.
-
-        Returns
-        -------
-        None
-
-        """
-        if self.is_initialized and not self.is_running:
-            self._start()
-
-    async def is_running_async(self, timeout: int = 300) -> None:
+    async def wait_until_ready(self, timeout: int = 300) -> None:
         """
         Check if the client is running and ready within a given timeout.
 
@@ -303,8 +293,8 @@ class InteractiveBrokersClient(
 
         """
         try:
-            if not self._is_ready.is_set():
-                await asyncio.wait_for(self._is_ready.wait(), timeout)
+            if not self._is_client_ready.is_set():
+                await asyncio.wait_for(self._is_client_ready.wait(), timeout)
         except asyncio.TimeoutError as e:
             self._log.error(f"Client is not ready. {e}")
 
@@ -313,7 +303,7 @@ class InteractiveBrokersClient(
         Run a watchdog to monitor and manage the health of the socket connection.
         Continuously checks the connection status, manages client state based on
         connection health, and handles subscription management in case of network
-        failure or IB nightly reset.
+        failure or forced IB connection reset.
 
         Returns
         -------
@@ -328,85 +318,24 @@ class InteractiveBrokersClient(
         try:
             while True:
                 await asyncio.sleep(1)
-                if self._eclient.isConnected():
-                    if self._is_ib_ready.is_set():
-                        await self._resume_client_if_degraded()
-                        await self._start_client_if_initialized_but_not_running()
-                    else:
-                        await self._handle_ib_is_not_ready()
-                else:
-                    await self._monitor_and_reconnect()
+                if not self._eclient.isConnected():
+                    await self._reconnect()
+
+                if not self._is_ib_ready.is_set():
+                    if self.is_running:
+                        self._degrade()
+                        continue
+                    await self._probe_for_connectivity()
+
+                if self.is_degraded:
+                    await self._cancel_and_restart_subscriptions()
+                    self._resume()
+
+                if self.is_initialized and not self.is_running:
+                    self._start()
+
         except asyncio.CancelledError:
-            self._log.debug("`watch_dog` task was canceled.")
-
-    async def _handle_ib_is_not_ready(self) -> None:
-        """
-        Manage actions when Interactive Brokers is not ready or the connection is
-        degraded. Performs a connectivity probe to TWS using a historical data request
-        if the client is degraded. If the client is running, it handles the situation
-        where connectivity between TWS/Gateway and IB server is broken.
-
-        Returns
-        -------
-        None
-
-        Raises
-        ------
-        Exception
-            If an error occurs during the probe or handling degraded state.
-
-        """
-        if self.is_degraded:
-            # Probe connectivity. Sometime restored event will not be received from TWS without this
-            self._eclient.reqHistoricalData(
-                reqId=1,
-                contract=self._contract_for_probe,
-                endDateTime="",
-                durationStr="30 S",
-                barSizeSetting="5 secs",
-                whatToShow="MIDPOINT",
-                useRTH=False,
-                formatDate=2,
-                keepUpToDate=False,
-                chartOptions=[],
-            )
-            await asyncio.sleep(15)
-            self._eclient.cancelHistoricalData(1)
-        elif self.is_running:
-            # Connectivity between TWS/Gateway and IB server is broken
-            self._degrade()
-
-    async def _monitor_and_reconnect(self) -> None:
-        """
-        Manage socket connectivity, including reconnection attempts and error handling.
-        Degrades the client if it's currently running and tries to re-establish the
-        socket connection. Waits for the Interactive Brokers readiness signal, logging
-        success or failure accordingly.
-
-        Raises
-        ------
-        asyncio.TimeoutError
-            If the connection attempt times out.
-        Exception
-            For general failures in re-establishing the connection.
-
-        """
-        if self.is_running:
-            self._degrade()
-        self._is_ib_ready.clear()
-        await asyncio.sleep(5)  # Avoid too fast attempts
-        await self._establish_socket_connection()
-        try:
-            await asyncio.wait_for(self._is_ib_ready.wait(), 15)
-            self._log.info(
-                f"Connected to {self._host}:{self._port} w/ id:{self._client_id}",
-            )
-        except asyncio.TimeoutError:
-            self._log.error(
-                f"Unable to connect to {self._host}:{self._port} w/ id:{self._client_id}",
-            )
-        except Exception as e:
-            self._log.exception("Failed connection", e)
+            self._log.debug("Client `watch_dog` task was canceled.")
 
     def _create_task(
         self,
@@ -607,9 +536,9 @@ class InteractiveBrokersClient(
                         self._log.debug("More incoming packets are needed.")
                         break
         except asyncio.CancelledError:
-            self._log.debug("Client TWS incoming message reader was canceled.")
+            self._log.debug("Client TWS incoming message reader was cancelled.")
         except Exception as e:
-            self._log.exception("Unhandled exception in EReader worker", e)
+            self._log.exception("Unhandled exception in Client TWS incoming message reader", e)
         finally:
             self._log.debug("Client TWS incoming message reader stopped.")
 

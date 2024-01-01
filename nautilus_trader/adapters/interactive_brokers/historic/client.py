@@ -70,7 +70,7 @@ class HistoricInteractiveBrokersClient:
 
     async def _connect(self) -> None:
         # Connect client
-        await self._client.is_running_async()
+        await self._client.wait_until_ready()
         self._client.registered_nautilus_clients.add(1)
 
         # Set Market Data Type

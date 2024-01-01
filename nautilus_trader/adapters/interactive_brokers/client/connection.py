@@ -57,23 +57,25 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             For any other unexpected errors during the connection.
 
         """
-        self._initialize_connection()
+        self._initialize_connection_params()
         try:
             await self._connect_socket()
+            self._eclient.setConnState(EClient.CONNECTING)
             await self._send_version_info()
             self._eclient.decoder = decoder.Decoder(
                 wrapper=self._eclient.wrapper,
                 serverVersion=self._eclient.serverVersion(),
             )
             await self._receive_server_info()
-            self._setup_client()
+            self._eclient.setConnState(EClient.CONNECTED)
+            self._start_client_tasks_and_tws_api()
             self._log.debug("TWS API connection established successfully.")
         except OSError as e:
             self._handle_connection_error(e)
         except Exception as e:
             self._log.exception("Unexpected error during connection", e)
 
-    def _initialize_connection(self) -> None:
+    def _initialize_connection_params(self) -> None:
         """
         Initialize the connection parameters before attempting to connect.
 
@@ -107,7 +109,6 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         """
         self._eclient.conn = Connection(self._host, self._port)
         await self._loop.run_in_executor(None, self._eclient.conn.connect)
-        self._eclient.setConnState(EClient.CONNECTING)
 
     async def _send_version_info(self) -> None:
         """
@@ -219,6 +220,64 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         self._eclient.serverVersion_ = server_version
         self._eclient.decoder.serverVersion = server_version
         self._log.debug(f"Connected to server version {server_version} at {conn_time}")
+
+    async def _reconnect(self) -> None:
+        """
+        Manage socket connectivity, including reconnection attempts and error handling.
+        Degrades the client if it's currently running and tries to re-establish the
+        socket connection. Waits for the Interactive Brokers readiness signal, logging
+        success or failure accordingly.
+
+        Raises
+        ------
+        asyncio.TimeoutError
+            If the connection attempt times out.
+        Exception
+            For general failures in re-establishing the connection.
+
+        """
+        if self.is_running:
+            self._degrade()
+        self._is_ib_ready.clear()
+        await asyncio.sleep(5)  # Avoid too fast attempts
+        await self._establish_socket_connection()
+        try:
+            await asyncio.wait_for(self._is_ib_ready.wait(), 15)
+            self._log.info(
+                f"Connected to {self._host}:{self._port} w/ id:{self._client_id}",
+            )
+        except asyncio.TimeoutError:
+            self._log.error(
+                f"Unable to connect to {self._host}:{self._port} w/ id:{self._client_id}",
+            )
+        except Exception as e:
+            self._log.exception("Failed connection", e)
+
+    async def _probe_for_connectivity(self) -> None:
+        """
+        Perform a connectivity probe to TWS using a historical data request if the
+        client is degraded.
+
+        Returns
+        -------
+        None
+
+        """
+        # Probe connectivity. Sometime restored event will not be received from TWS without this
+        self._eclient.reqHistoricalData(
+            reqId=1,
+            contract=self._contract_for_probe,
+            endDateTime="",
+            durationStr="30 S",
+            barSizeSetting="5 secs",
+            whatToShow="MIDPOINT",
+            useRTH=False,
+            formatDate=2,
+            keepUpToDate=False,
+            chartOptions=[],
+        )
+        await asyncio.sleep(15)
+        self._eclient.cancelHistoricalData(1)
 
     def _handle_connection_error(self, e):
         """

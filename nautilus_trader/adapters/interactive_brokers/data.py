@@ -116,7 +116,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
     async def _connect(self):
         # Connect client
-        await self._client.is_running_async()
+        await self._client.wait_until_ready()
         self._client.registered_nautilus_clients.add(self.id)
 
         # Set Market Data Type
@@ -396,7 +396,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
         ticks: list[QuoteTick | TradeTick] = []
         while (start and end > start) or (len(ticks) < limit > 0):
-            await self._client.is_running_async()
+            await self._client.wait_until_ready()
             ticks_part = await self._client.get_historical_ticks(
                 contract,
                 tick_type,
