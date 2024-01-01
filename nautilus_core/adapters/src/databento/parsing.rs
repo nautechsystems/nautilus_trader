@@ -28,6 +28,7 @@ use nautilus_model::{
     data::{
         bar::{Bar, BarSpecification, BarType},
         delta::OrderBookDelta,
+        depth::{OrderBookDepth10, DEPTH_10_LEN},
         order::BookOrder,
         quote::QuoteTick,
         trade::TradeTick,
@@ -355,15 +356,9 @@ pub fn parse_mbp10_msg(
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
-) -> Result<Vec<OrderBookDelta>> {
-    let mut deltas = Vec::with_capacity(21);
-    let clear = OrderBookDelta::clear(
-        instrument_id,
-        record.sequence.into(),
-        record.ts_recv,
-        ts_init,
-    );
-    deltas.push(clear);
+) -> Result<OrderBookDepth10> {
+    let mut bids = Vec::with_capacity(DEPTH_10_LEN);
+    let mut asks = Vec::with_capacity(DEPTH_10_LEN);
 
     for level in &record.levels {
         let bid_order = BookOrder::new(
@@ -372,17 +367,6 @@ pub fn parse_mbp10_msg(
             Quantity::from_raw(level.bid_sz.into(), 0)?,
             0,
         );
-        let delta = OrderBookDelta::new(
-            instrument_id,
-            BookAction::Add,
-            bid_order,
-            record.flags,
-            record.sequence.into(),
-            record.ts_recv,
-            ts_init,
-        );
-
-        deltas.push(delta);
 
         let ask_order = BookOrder::new(
             OrderSide::Sell,
@@ -390,20 +374,25 @@ pub fn parse_mbp10_msg(
             Quantity::from_raw(level.ask_sz.into(), 0)?,
             0,
         );
-        let delta = OrderBookDelta::new(
-            instrument_id,
-            BookAction::Add,
-            ask_order,
-            record.flags,
-            record.sequence.into(),
-            record.ts_recv,
-            ts_init,
-        );
 
-        deltas.push(delta);
+        bids.push(bid_order);
+        asks.push(ask_order);
     }
 
-    Ok(deltas)
+    let bids: [BookOrder; DEPTH_10_LEN] = bids.try_into().expect("Bids `Vec` length mismatch");
+    let asks: [BookOrder; DEPTH_10_LEN] = asks.try_into().expect("Asks `Vec` length mismatch");
+
+    let depth = OrderBookDepth10::new(
+        instrument_id,
+        bids,
+        asks,
+        record.flags,
+        record.sequence.into(),
+        record.ts_recv,
+        ts_init,
+    );
+
+    Ok(depth)
 }
 
 pub fn parse_bar_type(record: &dbn::OhlcvMsg, instrument_id: InstrumentId) -> Result<BarType> {
@@ -543,11 +532,11 @@ where
             let bar = parse_ohlcv_msg(msg, instrument_id, 2, ts_init)?;
             (Data::Bar(bar), None)
         }
-        // dbn::RType::Mbp10 => {
-        //     let msg = record_ref.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
-        //     let trade = parse_mbp10_msg(msg, instrument_id, 2, ts_init)?;
-        //     (Data::OrderBookDeltas(trade), None)
-        // }
+        dbn::RType::Mbp10 => {
+            let msg = record_ref.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
+            let depth = parse_mbp10_msg(msg, instrument_id, 2, ts_init)?;
+            (Data::Depth10(depth), None)
+        }
         _ => bail!("RType is currently unsupported by NautilusTrader"),
     };
 
