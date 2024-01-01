@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <Python.h>
 
+#define DEPTH_10_LEN 10
+
 #define FIXED_PRECISION 9
 
 #define FIXED_SCALAR 1000000000.0
@@ -352,7 +354,7 @@ typedef enum OptionKind {
  */
 typedef enum OrderSide {
     /**
-     * No order side is specified (only valid in the context of a filter for actions involving orders).
+     * No order side is specified.
      */
     NO_ORDER_SIDE = 0,
     /**
@@ -772,6 +774,48 @@ typedef struct OrderBookDelta_t {
 } OrderBookDelta_t;
 
 /**
+ * Represents a self-contained order book update with a fixed depth of 10 levels per side.
+ *
+ * This struct is specifically designed for scenarios where a snapshot of the top 10 bid and
+ * ask levels in an order book is needed. It differs from `OrderBookDelta` or `OrderBookDeltas`
+ * in its fixed-depth nature and is optimized for cases where a full depth representation is not
+ * required or practical.
+ *
+ * Note: This type is not compatible with `OrderBookDelta` or `OrderBookDeltas` due to
+ * its specialized structure and limited depth use case.
+ */
+typedef struct OrderBookDepth10_t {
+    /**
+     * The instrument ID for the book.
+     */
+    struct InstrumentId_t instrument_id;
+    /**
+     * The bid orders for the depth update.
+     */
+    struct BookOrder_t bids[DEPTH_10_LEN];
+    /**
+     * The ask orders for the depth update.
+     */
+    struct BookOrder_t asks[DEPTH_10_LEN];
+    /**
+     * A combination of packet end with matching engine status.
+     */
+    uint8_t flags;
+    /**
+     * The message sequence number assigned at the venue.
+     */
+    uint64_t sequence;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data event occurred.
+     */
+    uint64_t ts_event;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     */
+    uint64_t ts_init;
+} OrderBookDepth10_t;
+
+/**
  * Represents a single quote tick in a financial market.
  */
 typedef struct QuoteTick_t {
@@ -932,6 +976,7 @@ typedef struct Bar_t {
 
 typedef enum Data_t_Tag {
     DELTA,
+    DEPTH10,
     QUOTE,
     TRADE,
     BAR,
@@ -942,6 +987,9 @@ typedef struct Data_t {
     union {
         struct {
             struct OrderBookDelta_t delta;
+        };
+        struct {
+            struct OrderBookDepth10_t depth10;
         };
         struct {
             struct QuoteTick_t quote;
@@ -1338,6 +1386,25 @@ uint8_t orderbook_delta_eq(const struct OrderBookDelta_t *lhs, const struct Orde
 
 uint64_t orderbook_delta_hash(const struct OrderBookDelta_t *delta);
 
+/**
+ * # Safety
+ *
+ * - Assumes `bids` and `asks` are valid pointers to arrays of `BookOrder` of length 10.
+ * - Assumes Rust now takes ownership of the memory for `bids` and `asks`.
+ */
+struct OrderBookDepth10_t orderbook_depth10_new(struct InstrumentId_t instrument_id,
+                                                const struct BookOrder_t *bids_ptr,
+                                                const struct BookOrder_t *asks_ptr,
+                                                uint8_t flags,
+                                                uint64_t sequence,
+                                                uint64_t ts_event,
+                                                uint64_t ts_init);
+
+uint8_t orderbook_depth10_eq(const struct OrderBookDepth10_t *lhs,
+                             const struct OrderBookDepth10_t *rhs);
+
+uint64_t orderbook_depth10_hash(const struct OrderBookDepth10_t *delta);
+
 struct BookOrder_t book_order_from_raw(enum OrderSide order_side,
                                        int64_t price_raw,
                                        uint8_t price_prec,
@@ -1416,6 +1483,7 @@ const char *account_type_to_cstr(enum AccountType value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum AccountType account_type_from_cstr(const char *ptr);
@@ -1426,6 +1494,7 @@ const char *aggregation_source_to_cstr(enum AggregationSource value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum AggregationSource aggregation_source_from_cstr(const char *ptr);
@@ -1436,6 +1505,7 @@ const char *aggressor_side_to_cstr(enum AggressorSide value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum AggressorSide aggressor_side_from_cstr(const char *ptr);
@@ -1446,6 +1516,7 @@ const char *asset_class_to_cstr(enum AssetClass value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum AssetClass asset_class_from_cstr(const char *ptr);
@@ -1456,6 +1527,7 @@ const char *instrument_class_to_cstr(enum InstrumentClass value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum InstrumentClass instrument_class_from_cstr(const char *ptr);
@@ -1466,6 +1538,7 @@ const char *bar_aggregation_to_cstr(uint8_t value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 uint8_t bar_aggregation_from_cstr(const char *ptr);
@@ -1476,6 +1549,7 @@ const char *book_action_to_cstr(enum BookAction value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum BookAction book_action_from_cstr(const char *ptr);
@@ -1486,6 +1560,7 @@ const char *book_type_to_cstr(enum BookType value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum BookType book_type_from_cstr(const char *ptr);
@@ -1496,6 +1571,7 @@ const char *contingency_type_to_cstr(enum ContingencyType value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum ContingencyType contingency_type_from_cstr(const char *ptr);
@@ -1506,6 +1582,7 @@ const char *currency_type_to_cstr(enum CurrencyType value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum CurrencyType currency_type_from_cstr(const char *ptr);
@@ -1514,6 +1591,7 @@ enum CurrencyType currency_type_from_cstr(const char *ptr);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum InstrumentCloseType instrument_close_type_from_cstr(const char *ptr);
@@ -1526,6 +1604,7 @@ const char *liquidity_side_to_cstr(enum LiquiditySide value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum LiquiditySide liquidity_side_from_cstr(const char *ptr);
@@ -1536,6 +1615,7 @@ const char *market_status_to_cstr(enum MarketStatus value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum MarketStatus market_status_from_cstr(const char *ptr);
@@ -1546,6 +1626,7 @@ const char *halt_reason_to_cstr(enum HaltReason value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum HaltReason halt_reason_from_cstr(const char *ptr);
@@ -1556,6 +1637,7 @@ const char *oms_type_to_cstr(enum OmsType value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum OmsType oms_type_from_cstr(const char *ptr);
@@ -1566,6 +1648,7 @@ const char *option_kind_to_cstr(enum OptionKind value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum OptionKind option_kind_from_cstr(const char *ptr);
@@ -1576,6 +1659,7 @@ const char *order_side_to_cstr(enum OrderSide value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum OrderSide order_side_from_cstr(const char *ptr);
@@ -1586,6 +1670,7 @@ const char *order_status_to_cstr(enum OrderStatus value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum OrderStatus order_status_from_cstr(const char *ptr);
@@ -1596,6 +1681,7 @@ const char *order_type_to_cstr(enum OrderType value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum OrderType order_type_from_cstr(const char *ptr);
@@ -1606,6 +1692,7 @@ const char *position_side_to_cstr(enum PositionSide value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum PositionSide position_side_from_cstr(const char *ptr);
@@ -1616,6 +1703,7 @@ const char *price_type_to_cstr(enum PriceType value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum PriceType price_type_from_cstr(const char *ptr);
@@ -1626,6 +1714,7 @@ const char *time_in_force_to_cstr(enum TimeInForce value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum TimeInForce time_in_force_from_cstr(const char *ptr);
@@ -1636,6 +1725,7 @@ const char *trading_state_to_cstr(enum TradingState value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum TradingState trading_state_from_cstr(const char *ptr);
@@ -1646,6 +1736,7 @@ const char *trailing_offset_type_to_cstr(enum TrailingOffsetType value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum TrailingOffsetType trailing_offset_type_from_cstr(const char *ptr);
@@ -1656,6 +1747,7 @@ const char *trigger_type_to_cstr(enum TriggerType value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum TriggerType trigger_type_from_cstr(const char *ptr);
@@ -1992,6 +2084,8 @@ void orderbook_clear_bids(struct OrderBook_API *book, uint64_t ts_event, uint64_
 void orderbook_clear_asks(struct OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
 
 void orderbook_apply_delta(struct OrderBook_API *book, struct OrderBookDelta_t delta);
+
+void orderbook_apply_depth(struct OrderBook_API *book, struct OrderBookDepth10_t depth);
 
 CVec orderbook_bids(struct OrderBook_API *book);
 

@@ -472,7 +472,7 @@ cdef class RiskEngine(Component):
 
         if not self._check_orders_risk(instrument, command.order_list.orders):
             # Deny all orders in list
-            self._deny_order_list(command.order_list, "OrderList DENIED")
+            self._deny_order_list(command.order_list, "OrderList {command.order_list.id.to_str()} DENIED")
             return # Denied
 
         self._execution_gateway(instrument, command)
@@ -811,7 +811,7 @@ cdef class RiskEngine(Component):
         self._reject_modify_order(order, reason="Exceeded MAX_ORDER_MODIFY_RATE")
 
     cpdef void _deny_order(self, Order order, str reason):
-        self._log.error(f"SubmitOrder DENIED: {reason}.")
+        self._log.error(f"SubmitOrder for {order.client_order_id.to_str()} DENIED: {reason}.")
 
         if order is None:
             # Nothing to deny
@@ -846,16 +846,6 @@ cdef class RiskEngine(Component):
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cpdef void _execution_gateway(self, Instrument instrument, TradingCommand command):
-        if instrument is None:
-            # Get instrument for order
-            instrument = self._cache.instrument(command.instrument_id)
-            if instrument is None:
-                self._deny_command(
-                    command=command,
-                    reason=f"Instrument for {command.instrument_id} not found",
-                )
-                return  # Denied
-
         # Check TradingState
         cdef Order order
         if self.trading_state == TradingState.HALTED:

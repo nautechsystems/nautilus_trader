@@ -162,8 +162,7 @@ def parse_equity(
         currency=currency,
         price_precision=currency.precision,
         price_increment=parse_min_price_increment(record.min_price_increment, currency),
-        multiplier=Quantity(1, precision=0),
-        lot_size=Quantity(record.min_lot_size_round_lot, precision=0),
+        lot_size=Quantity.from_int(record.min_lot_size_round_lot),
         isin=None,  # TODO
         ts_event=record.ts_recv,  # More accurate and reliable timestamp
         ts_init=ts_init,

@@ -44,12 +44,14 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     Provides a abstract base class for a queryable data catalog.
     """
 
+    @classmethod
     @abstractmethod
-    def from_env(cls):
+    def from_env(cls) -> BaseDataCatalog:
         raise NotImplementedError
 
+    @classmethod
     @abstractmethod
-    def from_uri(cls, uri):
+    def from_uri(cls, uri: str) -> BaseDataCatalog:
         raise NotImplementedError
 
     # -- QUERIES -----------------------------------------------------------------------------------

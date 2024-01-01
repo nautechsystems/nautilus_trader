@@ -17,7 +17,7 @@ from nautilus_trader.core.nautilus_pyo3 import CryptoFuture
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
-crypto_future_btcusdt = TestInstrumentProviderPyo3.btcusdt_future_binance()
+_BTCUSDT_FUTURE = TestInstrumentProviderPyo3.btcusdt_future_binance()
 
 
 def test_equality():
@@ -27,14 +27,14 @@ def test_equality():
 
 
 def test_hash():
-    assert hash(crypto_future_btcusdt) == hash(crypto_future_btcusdt)
+    assert hash(_BTCUSDT_FUTURE) == hash(_BTCUSDT_FUTURE)
 
 
 def test_to_dict():
-    result = crypto_future_btcusdt.to_dict()
-    assert CryptoFuture.from_dict(result) == crypto_future_btcusdt
+    result = _BTCUSDT_FUTURE.to_dict()
+    assert CryptoFuture.from_dict(result) == _BTCUSDT_FUTURE
     assert result == {
-        "type": "CryptoPerpetual",
+        "type": "CryptoFuture",
         "id": "BTCUSDT_220325.BINANCE",
         "raw_symbol": "BTCUSDT",
         "underlying": "BTC",
@@ -46,10 +46,6 @@ def test_to_dict():
         "size_precision": 6,
         "price_increment": "0.01",
         "size_increment": "0.000001",
-        "margin_maint": 0.0,
-        "margin_init": 0.0,
-        "maker_fee": 0.0,
-        "taker_fee": 0.0,
         "lot_size": None,
         "max_notional": None,
         "max_price": "1000000.0",

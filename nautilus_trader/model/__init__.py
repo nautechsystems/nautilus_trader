@@ -21,15 +21,12 @@ built around this domain model.
 
 """
 
-from nautilus_trader.core.nautilus_pyo3 import Bar as RustBar
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDelta as RustOrderBookDelta
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick as RustQuoteTick
-from nautilus_trader.core.nautilus_pyo3 import TradeTick as RustTradeTick
+from nautilus_trader.core import nautilus_pyo3
 
 
 NAUTILUS_PYO3_DATA_TYPES: tuple[type, ...] = (
-    RustOrderBookDelta,
-    RustQuoteTick,
-    RustTradeTick,
-    RustBar,
+    nautilus_pyo3.OrderBookDelta,
+    nautilus_pyo3.QuoteTick,
+    nautilus_pyo3.TradeTick,
+    nautilus_pyo3.Bar,
 )

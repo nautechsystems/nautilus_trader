@@ -515,13 +515,14 @@ Here is an example configuration:
 ```python
 from decimal import Decimal
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.trading.strategy import Strategy
 
 
 class MyStrategyConfig(StrategyConfig):
-    instrument_id: str
-    bar_type: str
+    instrument_id: InstrumentId
+    bar_type: BarType
     fast_ema_period: int = 10
     slow_ema_period: int = 20
     trade_size: Decimal
@@ -542,8 +543,8 @@ class MyStrategy(Strategy):
 # trading strategy to initialize.
 
 config = MyStrategyConfig(
-    instrument_id="ETHUSDT-PERP.BINANCE",
-    bar_type="ETHUSDT-PERP.BINANCE-1000-TICK[LAST]-INTERNAL",
+    instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
+    bar_type=BarType.from_str("ETHUSDT-PERP.BINANCE-1000-TICK[LAST]-INTERNAL"),
     trade_size=Decimal(1),
     order_id_tag="001",
 )

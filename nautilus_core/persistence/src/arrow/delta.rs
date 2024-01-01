@@ -228,7 +228,7 @@ mod tests {
 
     #[rstest]
     fn test_get_schema() {
-        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
         let schema = OrderBookDelta::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
@@ -264,7 +264,7 @@ mod tests {
 
     #[rstest]
     fn test_encode_batch() {
-        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
 
         let delta1 = OrderBookDelta {
@@ -343,7 +343,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_batch() {
-        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
 
         let action = UInt8Array::from(vec![1, 2]);

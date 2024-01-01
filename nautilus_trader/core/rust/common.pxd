@@ -264,6 +264,7 @@ cdef extern from "../includes/common.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     ComponentState component_state_from_cstr(const char *ptr);
 
@@ -272,6 +273,7 @@ cdef extern from "../includes/common.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     ComponentTrigger component_trigger_from_cstr(const char *ptr);
 
@@ -280,6 +282,7 @@ cdef extern from "../includes/common.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     LogLevel log_level_from_cstr(const char *ptr);
 
@@ -288,6 +291,7 @@ cdef extern from "../includes/common.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     LogColor log_color_from_cstr(const char *ptr);
 

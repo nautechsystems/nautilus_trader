@@ -1,6 +1,6 @@
 # Installation
 
-NautilusTrader is tested and supported for Python 3.10-3.11 on the following 64-bit platforms:
+NautilusTrader is tested and supported for Python 3.10-3.12 on the following 64-bit platforms:
 
 | Operating System       | Supported Versions    | CPU Architecture  |
 |------------------------|-----------------------|-------------------|
@@ -21,7 +21,8 @@ To install the latest binary wheel (or sdist package) from PyPI using Pythons _p
 
 Install optional dependencies as 'extras' for specific integrations:
 
-- `betfair`: Betfair adapter
+- `betfair`: Betfair adapter (integration)
+- `databento`: Databento adapter (integration)
 - `docker`: Needed for Docker when using the IB gateway
 - `ib`: Interactive Brokers adapter
 

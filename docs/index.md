@@ -23,7 +23,7 @@ Welcome to the official documentation for NautilusTrader!
 providing quantitative traders with the ability to backtest portfolios of automated trading strategies
 on historical data with an event-driven engine, and also deploy those same strategies live, with no code changes.**
 
-The platform boasts an extensive array of features and capabilities, coupled with open-ended flexibility for assembling 
+The platform provides an extensive array of features and capabilities, coupled with open-ended flexibility for assembling
 trading systems using the framework. Given the breadth of information, and required pre-requisite knowledge, both beginners and experts alike may find the learning curve steep. 
 However, this documentation aims to assist you in learning and understanding NautilusTrader, so that you can then leverage it to achieve your algorithmic trading goals.
 

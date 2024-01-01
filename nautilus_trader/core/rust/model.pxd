@@ -5,6 +5,8 @@ from nautilus_trader.core.rust.core cimport CVec, UUID4_t
 
 cdef extern from "../includes/model.h":
 
+    const uintptr_t DEPTH_10_LEN # = 10
+
     const uint8_t FIXED_PRECISION # = 9
 
     const double FIXED_SCALAR # = 1000000000.0
@@ -188,7 +190,7 @@ cdef extern from "../includes/model.h":
 
     # The order side for a specific order, or action related to orders.
     cpdef enum OrderSide:
-        # No order side is specified (only valid in the context of a filter for actions involving orders).
+        # No order side is specified.
         NO_ORDER_SIDE # = 0,
         # The order is a BUY.
         BUY # = 1,
@@ -417,6 +419,31 @@ cdef extern from "../includes/model.h":
         # The UNIX timestamp (nanoseconds) when the data object was initialized.
         uint64_t ts_init;
 
+    # Represents a self-contained order book update with a fixed depth of 10 levels per side.
+    #
+    # This struct is specifically designed for scenarios where a snapshot of the top 10 bid and
+    # ask levels in an order book is needed. It differs from `OrderBookDelta` or `OrderBookDeltas`
+    # in its fixed-depth nature and is optimized for cases where a full depth representation is not
+    # required or practical.
+    #
+    # Note: This type is not compatible with `OrderBookDelta` or `OrderBookDeltas` due to
+    # its specialized structure and limited depth use case.
+    cdef struct OrderBookDepth10_t:
+        # The instrument ID for the book.
+        InstrumentId_t instrument_id;
+        # The bid orders for the depth update.
+        BookOrder_t bids[DEPTH_10_LEN];
+        # The ask orders for the depth update.
+        BookOrder_t asks[DEPTH_10_LEN];
+        # A combination of packet end with matching engine status.
+        uint8_t flags;
+        # The message sequence number assigned at the venue.
+        uint64_t sequence;
+        # The UNIX timestamp (nanoseconds) when the data event occurred.
+        uint64_t ts_event;
+        # The UNIX timestamp (nanoseconds) when the data object was initialized.
+        uint64_t ts_init;
+
     # Represents a single quote tick in a financial market.
     cdef struct QuoteTick_t:
         # The quotes instrument ID.
@@ -502,6 +529,7 @@ cdef extern from "../includes/model.h":
 
     cpdef enum Data_t_Tag:
         DELTA,
+        DEPTH10,
         QUOTE,
         TRADE,
         BAR,
@@ -509,6 +537,7 @@ cdef extern from "../includes/model.h":
     cdef struct Data_t:
         Data_t_Tag tag;
         OrderBookDelta_t delta;
+        OrderBookDepth10_t depth10;
         QuoteTick_t quote;
         TradeTick_t trade;
         Bar_t bar;
@@ -803,6 +832,22 @@ cdef extern from "../includes/model.h":
 
     uint64_t orderbook_delta_hash(const OrderBookDelta_t *delta);
 
+    # # Safety
+    #
+    # - Assumes `bids` and `asks` are valid pointers to arrays of `BookOrder` of length 10.
+    # - Assumes Rust now takes ownership of the memory for `bids` and `asks`.
+    OrderBookDepth10_t orderbook_depth10_new(InstrumentId_t instrument_id,
+                                             const BookOrder_t *bids_ptr,
+                                             const BookOrder_t *asks_ptr,
+                                             uint8_t flags,
+                                             uint64_t sequence,
+                                             uint64_t ts_event,
+                                             uint64_t ts_init);
+
+    uint8_t orderbook_depth10_eq(const OrderBookDepth10_t *lhs, const OrderBookDepth10_t *rhs);
+
+    uint64_t orderbook_depth10_hash(const OrderBookDepth10_t *delta);
+
     BookOrder_t book_order_from_raw(OrderSide order_side,
                                     int64_t price_raw,
                                     uint8_t price_prec,
@@ -870,6 +915,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     AccountType account_type_from_cstr(const char *ptr);
 
@@ -878,6 +924,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     AggregationSource aggregation_source_from_cstr(const char *ptr);
 
@@ -886,6 +933,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     AggressorSide aggressor_side_from_cstr(const char *ptr);
 
@@ -894,6 +942,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     AssetClass asset_class_from_cstr(const char *ptr);
 
@@ -902,6 +951,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     InstrumentClass instrument_class_from_cstr(const char *ptr);
 
@@ -910,6 +960,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     uint8_t bar_aggregation_from_cstr(const char *ptr);
 
@@ -918,6 +969,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     BookAction book_action_from_cstr(const char *ptr);
 
@@ -926,6 +978,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     BookType book_type_from_cstr(const char *ptr);
 
@@ -934,6 +987,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     ContingencyType contingency_type_from_cstr(const char *ptr);
 
@@ -942,12 +996,14 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     CurrencyType currency_type_from_cstr(const char *ptr);
 
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     InstrumentCloseType instrument_close_type_from_cstr(const char *ptr);
 
@@ -958,6 +1014,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     LiquiditySide liquidity_side_from_cstr(const char *ptr);
 
@@ -966,6 +1023,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     MarketStatus market_status_from_cstr(const char *ptr);
 
@@ -974,6 +1032,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     HaltReason halt_reason_from_cstr(const char *ptr);
 
@@ -982,6 +1041,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     OmsType oms_type_from_cstr(const char *ptr);
 
@@ -990,6 +1050,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     OptionKind option_kind_from_cstr(const char *ptr);
 
@@ -998,6 +1059,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     OrderSide order_side_from_cstr(const char *ptr);
 
@@ -1006,6 +1068,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     OrderStatus order_status_from_cstr(const char *ptr);
 
@@ -1014,6 +1077,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     OrderType order_type_from_cstr(const char *ptr);
 
@@ -1022,6 +1086,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     PositionSide position_side_from_cstr(const char *ptr);
 
@@ -1030,6 +1095,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     PriceType price_type_from_cstr(const char *ptr);
 
@@ -1038,6 +1104,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     TimeInForce time_in_force_from_cstr(const char *ptr);
 
@@ -1046,6 +1113,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     TradingState trading_state_from_cstr(const char *ptr);
 
@@ -1054,6 +1122,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     TrailingOffsetType trailing_offset_type_from_cstr(const char *ptr);
 
@@ -1062,6 +1131,7 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     TriggerType trigger_type_from_cstr(const char *ptr);
 
@@ -1354,6 +1424,8 @@ cdef extern from "../includes/model.h":
     void orderbook_clear_asks(OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
 
     void orderbook_apply_delta(OrderBook_API *book, OrderBookDelta_t delta);
+
+    void orderbook_apply_depth(OrderBook_API *book, OrderBookDepth10_t depth);
 
     CVec orderbook_bids(OrderBook_API *book);
 

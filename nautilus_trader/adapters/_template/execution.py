@@ -21,9 +21,9 @@ from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
-from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -60,7 +60,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
     | _cancel_all_orders                         | required    |
     | generate_order_status_report               | required    |
     | generate_order_status_reports              | required    |
-    | generate_trade_reports                     | required    |
+    | generate_fill_reports                      | required    |
     | generate_position_status_reports           | required    |
     +--------------------------------------------+-------------+
 
@@ -109,15 +109,15 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
             "method `generate_order_status_reports` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def generate_trade_reports(
+    async def generate_fill_reports(
         self,
         instrument_id: InstrumentId | None = None,
         venue_order_id: VenueOrderId | None = None,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-    ) -> list[TradeReport]:
+    ) -> list[FillReport]:
         raise NotImplementedError(
-            "method `generate_trade_reports` must be implemented in the subclass",
+            "method `generate_fill_reports` must be implemented in the subclass",
         )  # pragma: no cover
 
     async def generate_position_status_reports(

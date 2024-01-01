@@ -237,7 +237,7 @@ pub enum LogColor {
 /// An ANSI log line format specifier.
 /// This is used for formatting log messages with ANSI escape codes.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(

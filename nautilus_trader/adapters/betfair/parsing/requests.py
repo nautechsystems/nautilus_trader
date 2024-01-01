@@ -49,8 +49,8 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
-from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
@@ -321,7 +321,7 @@ async def generate_trades_list(
     venue_order_id: VenueOrderId,
     symbol: Symbol,
     since: datetime | None = None,
-) -> list[TradeReport]:
+) -> list[FillReport]:
     filled = self.client().betting.list_cleared_orders(
         bet_ids=[venue_order_id],
     )
@@ -331,7 +331,7 @@ async def generate_trades_list(
     fill = filled["clearedOrders"][0]
     ts_event = pd.Timestamp(fill["lastMatchedDate"]).value
     return [
-        TradeReport(
+        FillReport(
             client_order_id=self.venue_order_id_to_client_order_id[venue_order_id],
             instrument_id=None,  # TODO: Needs this
             account_id=None,  # TODO: Needs this

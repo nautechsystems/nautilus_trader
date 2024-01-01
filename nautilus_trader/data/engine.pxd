@@ -32,6 +32,7 @@ from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
+from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport Ticker
 from nautilus_trader.model.data cimport TradeTick
@@ -146,6 +147,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_instrument(self, Instrument instrument)
     cpdef void _handle_order_book_delta(self, OrderBookDelta delta)
     cpdef void _handle_order_book_deltas(self, OrderBookDeltas deltas)
+    cpdef void _handle_order_book_depth(self, OrderBookDepth10 depth)
     cpdef void _handle_ticker(self, Ticker ticker)
     cpdef void _handle_quote_tick(self, QuoteTick tick)
     cpdef void _handle_trade_tick(self, TradeTick tick)

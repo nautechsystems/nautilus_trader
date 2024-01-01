@@ -142,8 +142,6 @@ impl TradeTick {
     }
 }
 
-impl Serializable for TradeTick {}
-
 impl Display for TradeTick {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -158,6 +156,8 @@ impl Display for TradeTick {
         )
     }
 }
+
+impl Serializable for TradeTick {}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Stubs

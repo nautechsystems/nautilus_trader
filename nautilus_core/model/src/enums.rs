@@ -121,7 +121,7 @@ pub enum AggregationSource {
 )]
 pub enum AggressorSide {
     /// There was no specific aggressor for the trade.
-    NoAggressor = 0, // Will be replaced by `Option`
+    NoAggressor = 0,
     /// The BUY order was the aggressor for the trade.
     #[pyo3(name = "BUYER")]
     Buyer = 1,
@@ -726,8 +726,8 @@ pub enum OptionKind {
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
 )]
 pub enum OrderSide {
-    /// No order side is specified (only valid in the context of a filter for actions involving orders).
-    NoOrderSide = 0, // Will be replaced by `Option`
+    /// No order side is specified.
+    NoOrderSide = 0,
     /// The order is a BUY.
     #[pyo3(name = "BUY")]
     Buy = 1,
