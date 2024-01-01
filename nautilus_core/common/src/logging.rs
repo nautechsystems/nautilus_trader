@@ -276,6 +276,7 @@ impl Logger {
         file_writer_config: FileWriterConfig,
         config: LoggerConfig,
     ) {
+        // TODO consider bounded channel for perf and fewer allocations
         let (tx, rx) = channel::<LogEvent>();
 
         let trader_id_clone = trader_id.value.to_string();

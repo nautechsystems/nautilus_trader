@@ -51,9 +51,9 @@ pub fn duration_since_unix_epoch() -> Duration {
 #[derive(Debug, Clone)]
 pub struct AtomicTime {
     /// Atomic clock is operating in live mode if true, otherwise clock is operating in manual mode.
-    live: Arc<AtomicBool>,
+    pub live: Arc<AtomicBool>,
     /// The last recorded time in nanoseconds for the clock.
-    timestamp_ns: Arc<AtomicU64>,
+    pub timestamp_ns: Arc<AtomicU64>,
 }
 
 impl Deref for AtomicTime {
@@ -110,13 +110,11 @@ impl AtomicTime {
     }
 
     /// Increments current time with a delta and returns the updated time.
-    #[must_use]
     pub fn increment_time(&self, delta: u64) -> u64 {
         self.fetch_add(delta, Ordering::Relaxed) + delta
     }
 
     /// Stores and returns current time.
-    #[must_use]
     pub fn time_since_epoch(&self) -> u64 {
         // Increment by 1 nanosecond to keep increasing time
         let now = duration_since_unix_epoch().as_nanos() as u64 + 1;
@@ -124,6 +122,14 @@ impl AtomicTime {
         let new = now.max(last);
         self.store(new, Ordering::SeqCst);
         new
+    }
+
+    pub fn make_live(&self) {
+        self.live.store(true, Ordering::Relaxed)
+    }
+
+    pub fn make_static(&self) {
+        self.live.store(false, Ordering::Relaxed)
     }
 }
 
