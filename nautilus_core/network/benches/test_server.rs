@@ -13,27 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{convert::Infallible, net::SocketAddr};
-
-use hyper::{
-    service::{make_service_fn, service_fn},
-    Body, Request, Response, Server,
-};
-
-async fn handle(_req: Request<Body>) -> Result<Response<Body>, Infallible> {
-    Ok(Response::new(Body::from("Hello World")))
-}
+use axum::{routing::get, Router};
 
 #[tokio::main]
 async fn main() {
     // Construct our SocketAddr to listen on...
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let router = Router::new().route("/", get(|| async { "Hello World" }));
 
-    // And a MakeService to handle each connection...
-    let make_service = make_service_fn(|_conn| async { Ok::<_, Infallible>(service_fn(handle)) });
-
-    // Then bind and serve...
-    let server = Server::bind(&addr).serve(make_service);
+    // Create a listener and serve...
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+        .await
+        .unwrap();
+    let server = axum::serve(listener, router);
 
     // And run forever...
     if let Err(e) = server.await {
