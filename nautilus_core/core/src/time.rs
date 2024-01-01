@@ -22,8 +22,6 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use pyo3::pyclass;
-
 use crate::datetime::{
     NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND,
 };
@@ -47,7 +45,10 @@ pub fn duration_since_unix_epoch() -> Duration {
 /// references.
 ///
 /// `AtomicClock` can act as a live clock and static clock based on its mode.
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.core")
+)]
 #[derive(Debug, Clone)]
 pub struct AtomicTime {
     /// Atomic clock is operating in live mode if true, otherwise clock is operating in manual mode.

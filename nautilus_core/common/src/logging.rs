@@ -32,50 +32,14 @@ use nautilus_core::{
     uuid::UUID4,
 };
 use nautilus_model::identifiers::trader_id::TraderId;
-use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::enums::LogColor;
 
-/// Initialize tracing
-///
-/// Tracing is meant to be used to trace/debug async rust code. It can be
-/// configured to filter modules and write upto a specific level only using
-/// by passing a configuration using the RUST_LOG environment variable.
-///
-/// # Safety
-/// Should only be called once during an applications run, ideally at the
-/// beginning of the run.
-#[pyfunction]
-pub fn init_tracing() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
-}
-
-/// Initialize logging
-///
-/// Logging should be used for Python and sync Rust logic which is most of
-/// the components in the engine module. Logging can be configured
-/// to filter components and write upto a specific level only
-/// by passing a configuration using the NAUTILUS_LOG environment variable.
-///
-/// # Safety
-/// Should only be called once during an applications run, ideally at the
-/// beginning of the run.
-#[pyfunction]
-
-pub fn init_logging(
-    clock: AtomicTime,
-    trader_id: TraderId,
-    instance_id: UUID4,
-    file_writer_config: FileWriterConfig,
-    config: LoggerConfig,
-) {
-    Logger::init_with_config(clock, trader_id, instance_id, file_writer_config, config);
-}
-
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoggerConfig {
     /// Maximum log level to write to stdout
@@ -140,11 +104,7 @@ impl LoggerConfig {
             is_bypassed,
         }
     }
-}
 
-#[pymethods]
-impl LoggerConfig {
-    #[staticmethod]
     pub fn from_env() -> Self {
         match env::var("NAUTILUS_LOG") {
             Ok(spec) => LoggerConfig::parse(&spec),
@@ -153,7 +113,10 @@ impl LoggerConfig {
     }
 }
 
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
 #[derive(Debug, Clone, Default)]
 pub struct FileWriterConfig {
     directory: Option<String>,
@@ -161,9 +124,7 @@ pub struct FileWriterConfig {
     file_format: Option<String>,
 }
 
-#[pymethods]
 impl FileWriterConfig {
-    #[new]
     pub fn new(
         directory: Option<String>,
         file_name: Option<String>,
