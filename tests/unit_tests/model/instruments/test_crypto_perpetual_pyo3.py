@@ -17,7 +17,7 @@ from nautilus_trader.core.nautilus_pyo3 import CryptoPerpetual
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
-crypto_perpetual_ethusdt_perp = TestInstrumentProviderPyo3.ethusdt_perp_binance()
+_ETHUSDT_PERP = TestInstrumentProviderPyo3.ethusdt_perp_binance()
 
 
 def test_equality():
@@ -27,12 +27,12 @@ def test_equality():
 
 
 def test_hash():
-    assert hash(crypto_perpetual_ethusdt_perp) == hash(crypto_perpetual_ethusdt_perp)
+    assert hash(_ETHUSDT_PERP) == hash(_ETHUSDT_PERP)
 
 
 def test_to_dict():
-    result = crypto_perpetual_ethusdt_perp.to_dict()
-    assert CryptoPerpetual.from_dict(result) == crypto_perpetual_ethusdt_perp
+    result = _ETHUSDT_PERP.to_dict()
+    assert CryptoPerpetual.from_dict(result) == _ETHUSDT_PERP
     assert result == {
         "type": "CryptoPerpetual",
         "id": "ETHUSDT-PERP.BINANCE",
@@ -52,10 +52,6 @@ def test_to_dict():
         "min_notional": "10.00000000 USDT",
         "max_price": "15000.0",
         "min_price": "1.0",
-        "margin_maint": 0.0,
-        "margin_init": 0.0,
-        "maker_fee": 0.0,
-        "taker_fee": 0.0,
         "ts_event": 0,
         "ts_init": 0,
     }

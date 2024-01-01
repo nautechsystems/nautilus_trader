@@ -1,5 +1,5 @@
 [package]
-name = "nautilus-adapter"
+name = "nautilus-adapters"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -16,12 +16,15 @@ nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"]}
 anyhow = { workspace = true }
 chrono = { workspace = true }
+indexmap = { workspace = true }
+itoa = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
+ustr = { workspace = true }
 dbn = { version = "0.14.2", optional = true }
 
 [features]

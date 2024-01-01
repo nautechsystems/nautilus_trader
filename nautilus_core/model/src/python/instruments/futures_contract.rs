@@ -23,7 +23,7 @@ use nautilus_core::{
     time::UnixNanos,
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal::prelude::ToPrimitive;
 
 use crate::{
     enums::AssetClass,
@@ -46,10 +46,6 @@ impl FuturesContract {
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
-        margin_init: Decimal,
-        margin_maint: Decimal,
-        maker_fee: Decimal,
-        taker_fee: Decimal,
         multiplier: Quantity,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -63,16 +59,12 @@ impl FuturesContract {
             id,
             raw_symbol,
             asset_class,
-            underlying,
+            underlying.into(),
             activation_ns,
             expiration_ns,
             currency,
             price_precision,
             price_increment,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
             multiplier,
             lot_size,
             max_quantity,
@@ -117,10 +109,6 @@ impl FuturesContract {
         dict.set_item("currency", self.currency.code.to_string())?;
         dict.set_item("price_precision", self.price_precision)?;
         dict.set_item("price_increment", self.price_increment.to_string())?;
-        dict.set_item("margin_init", self.margin_init.to_f64())?;
-        dict.set_item("margin_maint", self.margin_maint.to_f64())?;
-        dict.set_item("maker_fee", self.maker_fee.to_f64())?;
-        dict.set_item("taker_fee", self.taker_fee.to_f64())?;
         dict.set_item("multiplier", self.multiplier.to_string())?;
         dict.set_item("ts_event", self.ts_event)?;
         dict.set_item("ts_init", self.ts_init)?;

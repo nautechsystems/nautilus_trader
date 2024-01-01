@@ -22,7 +22,7 @@ use ustr::Ustr;
 use crate::timer::TimeEvent;
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct PyCallableWrapper {
     pub ptr: *mut ffi::PyObject,
 }

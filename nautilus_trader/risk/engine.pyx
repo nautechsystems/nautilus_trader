@@ -36,7 +36,7 @@ from nautilus_trader.common.messages cimport TradingStateChanged
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.rust.model cimport AssetType
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport OrderType
@@ -472,7 +472,7 @@ cdef class RiskEngine(Component):
 
         if not self._check_orders_risk(instrument, command.order_list.orders):
             # Deny all orders in list
-            self._deny_order_list(command.order_list, "OrderList DENIED")
+            self._deny_order_list(command.order_list, "OrderList {command.order_list.id.to_str()} DENIED")
             return # Denied
 
         self._execution_gateway(instrument, command)
@@ -766,7 +766,7 @@ cdef class RiskEngine(Component):
         if price.precision > instrument.price_precision:
             # Check failed
             return f"price {price} invalid (precision {price.precision} > {instrument.price_precision})"
-        if instrument.asset_type != AssetType.OPTION:
+        if instrument.instrument_class != InstrumentClass.OPTION:
             if price.raw_int64_c() <= 0:
                 # Check failed
                 return f"price {price} invalid (not positive)"
@@ -811,7 +811,7 @@ cdef class RiskEngine(Component):
         self._reject_modify_order(order, reason="Exceeded MAX_ORDER_MODIFY_RATE")
 
     cpdef void _deny_order(self, Order order, str reason):
-        self._log.error(f"SubmitOrder DENIED: {reason}.")
+        self._log.error(f"SubmitOrder for {order.client_order_id.to_str()} DENIED: {reason}.")
 
         if order is None:
             # Nothing to deny
@@ -846,16 +846,6 @@ cdef class RiskEngine(Component):
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cpdef void _execution_gateway(self, Instrument instrument, TradingCommand command):
-        if instrument is None:
-            # Get instrument for order
-            instrument = self._cache.instrument(command.instrument_id)
-            if instrument is None:
-                self._deny_command(
-                    command=command,
-                    reason=f"Instrument for {command.instrument_id} not found",
-                )
-                return  # Denied
-
         # Check TradingState
         cdef Order order
         if self.trading_state == TradingState.HALTED:

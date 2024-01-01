@@ -13,12 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
-
 use chrono::{TimeZone, Utc};
 use nautilus_core::time::UnixNanos;
 use rstest::fixture;
-use rust_decimal::Decimal;
+use ustr::Ustr;
 
 use crate::{
     enums::{AssetClass, OptionKind},
@@ -51,10 +49,6 @@ pub fn crypto_future_btcusdt() -> CryptoFuture {
         6,
         Price::from("0.01"),
         Quantity::from("0.000001"),
-        Decimal::from_str("0.0").unwrap(),
-        Decimal::from_str("0.0").unwrap(),
-        Decimal::from_str("0.001").unwrap(),
-        Decimal::from_str("0.001").unwrap(),
         None,
         Some(Quantity::from("9000.0")),
         Some(Quantity::from("0.000001")),
@@ -85,10 +79,6 @@ pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
         0,
         Price::from("0.01"),
         Quantity::from("0.001"),
-        Decimal::from_str("0.0").unwrap(),
-        Decimal::from_str("0.0").unwrap(),
-        Decimal::from_str("0.001").unwrap(),
-        Decimal::from_str("0.001").unwrap(),
         None,
         Some(Quantity::from("10000.0")),
         Some(Quantity::from("0.001")),
@@ -115,10 +105,6 @@ pub fn xbtusd_bitmex() -> CryptoPerpetual {
         0,
         Price::from("0.5"),
         Quantity::from("1"),
-        Decimal::from_str("0.01").unwrap(),
-        Decimal::from_str("0.0035").unwrap(),
-        Decimal::from_str("-0.00025").unwrap(),
-        Decimal::from_str("0.00075").unwrap(),
         None,
         None,
         None,
@@ -147,10 +133,6 @@ pub fn currency_pair_btcusdt() -> CurrencyPair {
         6,
         Price::from("0.01"),
         Quantity::from("0.000001"),
-        Decimal::from_str("0.0").unwrap(),
-        Decimal::from_str("0.0").unwrap(),
-        Decimal::from_str("0.001").unwrap(),
-        Decimal::from_str("0.001").unwrap(),
         None,
         Some(Quantity::from("9000")),
         Some(Quantity::from("0.000001")),
@@ -169,17 +151,12 @@ pub fn currency_pair_btcusdt() -> CurrencyPair {
 #[fixture]
 pub fn equity_aapl() -> Equity {
     Equity::new(
-        InstrumentId::from("AAPL.NASDAQ"),
+        InstrumentId::from("AAPL.XNAS"),
         Symbol::from("AAPL"),
-        Some(String::from("US0378331005")),
+        Some(Ustr::from("US0378331005")),
         Currency::from("USD"),
         2,
         Price::from("0.01"),
-        Quantity::from(1),
-        Decimal::from_str("0.0").unwrap(),
-        Decimal::from_str("0.0").unwrap(),
-        Decimal::from_str("0.001").unwrap(),
-        Decimal::from_str("0.001").unwrap(),
         Some(Quantity::from(1)),
         None,
         None,
@@ -199,16 +176,12 @@ pub fn futures_contract_es() -> FuturesContract {
         InstrumentId::new(Symbol::from("ESZ21"), Venue::from("CME")),
         Symbol::from("ESZ21"),
         AssetClass::Index,
-        String::from("ES"),
+        Ustr::from("ES"),
         activation.timestamp_nanos_opt().unwrap() as UnixNanos,
         expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
         Currency::USD(),
         2,
         Price::from("0.01"),
-        Decimal::from_str("0.0").unwrap(),
-        Decimal::from_str("0.0").unwrap(),
-        Decimal::from_str("0.001").unwrap(),
-        Decimal::from_str("0.001").unwrap(),
         Quantity::from("1.0"),
         Some(Quantity::from("1.0")),
         None,
@@ -233,7 +206,7 @@ pub fn options_contract_appl() -> OptionsContract {
         InstrumentId::from("AAPL211217C00150000.OPRA"),
         Symbol::from("AAPL211217C00150000"),
         AssetClass::Equity,
-        String::from("AAPL"),
+        Ustr::from("AAPL"),
         OptionKind::Call,
         activation.timestamp_nanos_opt().unwrap() as UnixNanos,
         expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
@@ -241,10 +214,6 @@ pub fn options_contract_appl() -> OptionsContract {
         Currency::USD(),
         2,
         Price::from("0.01"),
-        Decimal::from_str("0.0").unwrap(),
-        Decimal::from_str("0.0").unwrap(),
-        Decimal::from_str("0.001").unwrap(),
-        Decimal::from_str("0.001").unwrap(),
         Some(Quantity::from("1.0")),
         None,
         None,

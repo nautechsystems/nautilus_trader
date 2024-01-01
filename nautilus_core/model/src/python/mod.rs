@@ -229,6 +229,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::data::bar::Bar>()?;
     m.add_class::<crate::data::order::BookOrder>()?;
     m.add_class::<crate::data::delta::OrderBookDelta>()?;
+    m.add_class::<crate::data::deltas::OrderBookDeltas>()?;
     m.add_class::<crate::data::quote::QuoteTick>()?;
     m.add_class::<crate::data::trade::TradeTick>()?;
     // enums
@@ -236,7 +237,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<enums::AggregationSource>()?;
     m.add_class::<enums::AggressorSide>()?;
     m.add_class::<enums::AssetClass>()?;
-    m.add_class::<enums::AssetType>()?;
+    m.add_class::<enums::InstrumentClass>()?;
     m.add_class::<enums::BarAggregation>()?;
     m.add_class::<enums::BookAction>()?;
     m.add_class::<enums::BookType>()?;

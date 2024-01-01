@@ -37,9 +37,9 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
+from nautilus_trader.model.enums import InstrumentClass
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
@@ -102,9 +102,9 @@ def parse_option_kind(value: str) -> OptionKind:
             raise ValueError(f"Invalid `OptionKind`, was '{value}'")
 
 
-def parse_cfi_iso10926(value: str) -> tuple[AssetClass | None, AssetType | None]:
+def parse_cfi_iso10926(value: str) -> tuple[AssetClass | None, InstrumentClass | None]:
     # This is a work in progress and will likely result in a shuffling of
-    # the `AssetClass` and `AssetType` enums
+    # the `AssetClass` and `InstrumentClass` enums
 
     cfi_category = value[0]
     cfi_group = value[1]
@@ -115,29 +115,29 @@ def parse_cfi_iso10926(value: str) -> tuple[AssetClass | None, AssetType | None]
 
     match cfi_category:
         case "D":
-            asset_class = AssetClass.BOND
+            asset_class = AssetClass.DEBT
         case "E":
             asset_class = AssetClass.EQUITY
         case "S":
             asset_class = None
-            asset_type = AssetType.SWAP
+            instrument_class = InstrumentClass.SWAP
         case "J":
             asset_class = None
-            asset_type = AssetType.FORWARD
+            instrument_class = InstrumentClass.FORWARD
         case _:
             asset_class = None
 
     match cfi_group:
         case "I":
-            asset_type = AssetType.FUTURE
+            instrument_class = InstrumentClass.FUTURE
         case _:
-            asset_type = None
+            instrument_class = None
 
     match cfi_attribute1:
         case "I":
             asset_class = AssetClass.INDEX
 
-    return (asset_class, asset_type)
+    return (asset_class, instrument_class)
 
 
 def parse_min_price_increment(value: int, currency: Currency) -> Price:
@@ -162,8 +162,7 @@ def parse_equity(
         currency=currency,
         price_precision=currency.precision,
         price_increment=parse_min_price_increment(record.min_price_increment, currency),
-        multiplier=Quantity(1, precision=0),
-        lot_size=Quantity(record.min_lot_size_round_lot, precision=0),
+        lot_size=Quantity.from_int(record.min_lot_size_round_lot),
         isin=None,  # TODO
         ts_event=record.ts_recv,  # More accurate and reliable timestamp
         ts_init=ts_init,
@@ -235,20 +234,7 @@ def parse_mbo_msg(
     ts_init: int,
 ) -> OrderBookDelta | TradeTick:
     side: OrderSide = parse_order_side(record.side)
-    if side == OrderSide.NO_ORDER_SIDE:
-        return TradeTick.from_raw(
-            instrument_id=instrument_id,
-            price_raw=record.price,
-            price_prec=USD.precision,  # TODO(per instrument precision)
-            size_raw=int(record.size * FIXED_SCALAR),  # No fractional sizes
-            size_prec=0,  # No fractional units
-            aggressor_side=AggressorSide.NO_AGGRESSOR,
-            trade_id=TradeId(str(record.sequence)),
-            ts_event=record.ts_recv,  # More accurate and reliable timestamp
-            ts_init=ts_init,
-        )
-
-    if record.action == "T":
+    if side == OrderSide.NO_ORDER_SIDE or record.action == "T":
         return TradeTick.from_raw(
             instrument_id=instrument_id,
             price_raw=record.price,
@@ -413,7 +399,7 @@ def parse_ohlcv_msg(
         high=Price.from_raw(record.high / 100, 2),  # TODO(adjust for display factor)
         low=Price.from_raw(record.low / 100, 2),  # TODO(adjust for display factor)
         close=Price.from_raw(record.close / 100, 2),  # TODO(adjust for display factor)
-        volume=Quantity.from_raw(record.volume, 2),  # TODO(adjust for display factor)
+        volume=Quantity.from_raw(record.volume, 0),  # TODO(adjust for display factor)
         ts_event=ts_event,
         ts_init=ts_init,
     )

@@ -193,7 +193,7 @@ mod tests {
 
     #[rstest]
     fn test_get_schema() {
-        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
         let schema = QuoteTick::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
@@ -224,7 +224,7 @@ mod tests {
     #[rstest]
     fn test_encode_quote_tick() {
         // Create test data
-        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
         let tick1 = QuoteTick {
             instrument_id,
             bid_price: Price::from("100.10"),
@@ -281,7 +281,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_batch() {
-        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
 
         let bid_price = Int64Array::from(vec![10000, 9900]);

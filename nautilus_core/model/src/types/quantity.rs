@@ -35,7 +35,7 @@ pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 pub const QUANTITY_MIN: f64 = 0.0;
 
 #[repr(C)]
-#[derive(Copy, Clone, Eq, Default)]
+#[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -360,15 +360,17 @@ mod tests {
 
     #[rstest]
     fn test_with_maximum_value() {
-        let qty = Quantity::new(QUANTITY_MAX, 0).unwrap();
+        let qty = Quantity::new(QUANTITY_MAX, 8).unwrap();
         assert_eq!(qty.raw, 18_446_744_073_000_000_000);
-        assert_eq!(qty.to_string(), "18446744073");
+        assert_eq!(qty.as_decimal(), dec!(18_446_744_073));
+        assert_eq!(qty.to_string(), "18446744073.00000000");
     }
 
     #[rstest]
     fn test_with_minimum_positive_value() {
         let qty = Quantity::new(0.000000001, 9).unwrap();
         assert_eq!(qty.raw, 1);
+        assert_eq!(qty.as_decimal(), dec!(0.000000001));
         assert_eq!(qty.to_string(), "0.000000001");
     }
 
@@ -376,6 +378,7 @@ mod tests {
     fn test_with_minimum_value() {
         let qty = Quantity::new(QUANTITY_MIN, 9).unwrap();
         assert_eq!(qty.raw, 0);
+        assert_eq!(qty.as_decimal(), dec!(0));
         assert_eq!(qty.to_string(), "0.000000000");
     }
 
@@ -386,6 +389,7 @@ mod tests {
         assert_eq!(qty.raw, 0);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.0);
+        assert_eq!(qty.as_decimal(), dec!(0));
         assert_eq!(qty.to_string(), "0.00000000");
         assert!(qty.is_zero());
     }

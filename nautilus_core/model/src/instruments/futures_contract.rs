@@ -13,25 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![allow(dead_code)] // Allow for development
-
 use std::hash::{Hash, Hasher};
 
 use anyhow::Result;
 use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use super::Instrument;
 use crate::{
-    enums::{AssetClass, AssetType},
+    enums::{AssetClass, InstrumentClass},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
 
 #[repr(C)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -40,16 +38,12 @@ pub struct FuturesContract {
     pub id: InstrumentId,
     pub raw_symbol: Symbol,
     pub asset_class: AssetClass,
-    pub underlying: String,
+    pub underlying: Ustr,
     pub activation_ns: UnixNanos,
     pub expiration_ns: UnixNanos,
     pub currency: Currency,
     pub price_precision: u8,
     pub price_increment: Price,
-    pub margin_init: Decimal,
-    pub margin_maint: Decimal,
-    pub maker_fee: Decimal,
-    pub taker_fee: Decimal,
     pub multiplier: Quantity,
     pub lot_size: Option<Quantity>,
     pub max_quantity: Option<Quantity>,
@@ -66,16 +60,12 @@ impl FuturesContract {
         id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
-        underlying: String,
+        underlying: Ustr,
         activation_ns: UnixNanos,
         expiration_ns: UnixNanos,
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
-        margin_init: Decimal,
-        margin_maint: Decimal,
-        maker_fee: Decimal,
-        taker_fee: Decimal,
         multiplier: Quantity,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
@@ -95,10 +85,6 @@ impl FuturesContract {
             currency,
             price_precision,
             price_increment,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
             multiplier,
             lot_size,
             max_quantity,
@@ -138,8 +124,8 @@ impl Instrument for FuturesContract {
         self.asset_class
     }
 
-    fn asset_type(&self) -> AssetType {
-        AssetType::Future
+    fn instrument_class(&self) -> InstrumentClass {
+        InstrumentClass::Future
     }
 
     fn quote_currency(&self) -> &Currency {
@@ -196,22 +182,6 @@ impl Instrument for FuturesContract {
 
     fn min_price(&self) -> Option<Price> {
         self.min_price
-    }
-
-    fn margin_init(&self) -> Decimal {
-        self.margin_init
-    }
-
-    fn margin_maint(&self) -> Decimal {
-        self.margin_maint
-    }
-
-    fn maker_fee(&self) -> Decimal {
-        self.maker_fee
-    }
-
-    fn taker_fee(&self) -> Decimal {
-        self.taker_fee
     }
 
     fn ts_event(&self) -> UnixNanos {

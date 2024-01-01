@@ -27,6 +27,7 @@ pub extern "C" fn component_state_to_cstr(value: ComponentState) -> *const c_cha
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn component_state_from_cstr(ptr: *const c_char) -> ComponentState {
@@ -43,6 +44,7 @@ pub extern "C" fn component_trigger_to_cstr(value: ComponentTrigger) -> *const c
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn component_trigger_from_cstr(ptr: *const c_char) -> ComponentTrigger {
@@ -59,6 +61,7 @@ pub extern "C" fn log_level_to_cstr(value: LogLevel) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn log_level_from_cstr(ptr: *const c_char) -> LogLevel {
@@ -75,6 +78,7 @@ pub extern "C" fn log_color_to_cstr(value: LogColor) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn log_color_from_cstr(ptr: *const c_char) -> LogColor {

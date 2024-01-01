@@ -13,10 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import msgspec
-
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick as RustQuoteTick
-from nautilus_trader.core.nautilus_pyo3 import TradeTick as RustTradeTick
+from nautilus_trader.core import nautilus_pyo3
 
 from cpython.datetime cimport timedelta
 from cpython.mem cimport PyMem_Free
@@ -30,12 +27,14 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.model cimport DEPTH_10_LEN
 from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport Bar_t
 from nautilus_trader.core.rust.model cimport BarSpecification_t
 from nautilus_trader.core.rust.model cimport BarType_t
 from nautilus_trader.core.rust.model cimport BookAction
+from nautilus_trader.core.rust.model cimport BookOrder_t
 from nautilus_trader.core.rust.model cimport Data_t
 from nautilus_trader.core.rust.model cimport Data_t_Tag
 from nautilus_trader.core.rust.model cimport HaltReason
@@ -76,6 +75,9 @@ from nautilus_trader.core.rust.model cimport instrument_id_from_cstr
 from nautilus_trader.core.rust.model cimport orderbook_delta_eq
 from nautilus_trader.core.rust.model cimport orderbook_delta_hash
 from nautilus_trader.core.rust.model cimport orderbook_delta_new
+from nautilus_trader.core.rust.model cimport orderbook_depth10_eq
+from nautilus_trader.core.rust.model cimport orderbook_depth10_hash
+from nautilus_trader.core.rust.model cimport orderbook_depth10_new
 from nautilus_trader.core.rust.model cimport quote_tick_eq
 from nautilus_trader.core.rust.model cimport quote_tick_hash
 from nautilus_trader.core.rust.model cimport quote_tick_new
@@ -125,6 +127,8 @@ cpdef list capsule_to_list(capsule):
     for i in range(0, data.len):
         if ptr[i].tag == Data_t_Tag.DELTA:
             objects.append(OrderBookDelta.from_mem_c(ptr[i].delta))
+        elif ptr[i].tag == Data_t_Tag.DEPTH10:
+            objects.append(OrderBookDepth10.from_mem_c(ptr[i].depth10))
         elif ptr[i].tag == Data_t_Tag.QUOTE:
             objects.append(QuoteTick.from_mem_c(ptr[i].quote))
         elif ptr[i].tag == Data_t_Tag.TRADE:
@@ -989,13 +993,13 @@ cdef class Bar(Data):
         return Bar.to_dict_c(obj)
 
     @staticmethod
-    def from_pyo3(list pyo3_bars) -> list[Bar]:
+    def from_pyo3_list(list pyo3_bars) -> list[Bar]:
         """
-        Return bars converted from the given pyo3 provided objects.
+        Return legacy Cython bars converted from the given pyo3 Rust objects.
 
         Parameters
         ----------
-        pyo3_bars : list[RustBar]
+        pyo3_bars : list[nautilus_pyo3.Bar]
             The Rust pyo3 bars to convert from.
 
         Returns
@@ -1421,7 +1425,7 @@ cdef class OrderBookDelta(Data):
         The instrument ID for the book.
     action : BookAction {``ADD``, ``UPDATE``, ``DELETE``, ``CLEAR``}
         The order book delta action.
-    order : BookOrder
+    order : BookOrder, optional with no default so ``None`` must be passed explicitly
         The book order for the delta.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
@@ -1431,14 +1435,13 @@ cdef class OrderBookDelta(Data):
         A combination of packet end with matching engine status.
     sequence : uint64_t, default 0
         The unique sequence number for the update.
-        If default 0 then will increment the `sequence`.
     """
 
     def __init__(
         self,
         InstrumentId instrument_id not None,
         BookAction action,
-        BookOrder order,
+        BookOrder order: BookOrder | None,
         uint64_t ts_event,
         uint64_t ts_init,
         uint8_t flags=0,
@@ -1779,7 +1782,7 @@ cdef class OrderBookDelta(Data):
         return PyCapsule_New(cvec, NULL, <PyCapsule_Destructor>capsule_destructor)
 
     @staticmethod
-    def list_from_capsule(capsule) -> list[QuoteTick]:
+    def list_from_capsule(capsule) -> list[OrderBookDelta]:
         return OrderBookDelta.capsule_to_list_c(capsule)
 
     @staticmethod
@@ -1893,13 +1896,13 @@ cdef class OrderBookDelta(Data):
         return OrderBookDelta.clear_c(instrument_id, ts_event, ts_init, sequence)
 
     @staticmethod
-    def from_pyo3(list pyo3_deltas) -> list[OrderBookDelta]:
+    def from_pyo3_list(list pyo3_deltas) -> list[OrderBookDelta]:
         """
-        Return order book deltas converted from the given pyo3 provided objects.
+        Return legacy Cython order book deltas converted from the given Rust pyo3 objects.
 
         Parameters
         ----------
-        pyo3_deltas : list[RustOrderBookDelta]
+        pyo3_deltas : list[nautilus_pyo3.OrderBookDelta]
             The Rust pyo3 order book deltas to convert from.
 
         Returns
@@ -1945,7 +1948,7 @@ cdef class OrderBookDelta(Data):
 
 cdef class OrderBookDeltas(Data):
     """
-    Represents bulk `OrderBookDelta` updates for an `OrderBook`.
+    Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
 
     Parameters
     ----------
@@ -1996,7 +1999,7 @@ cdef class OrderBookDeltas(Data):
         Condition.not_none(values, "values")
         return OrderBookDeltas(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            deltas=[OrderBookDelta.from_dict_c(d) for d in msgspec.json.decode(values["deltas"])],
+            deltas=[OrderBookDelta.from_dict_c(d) for d in values["deltas"]],
         )
 
     @staticmethod
@@ -2005,7 +2008,7 @@ cdef class OrderBookDeltas(Data):
         return {
             "type": obj.__class__.__name__,
             "instrument_id": obj.instrument_id.to_str(),
-            "deltas": msgspec.json.encode([OrderBookDelta.to_dict_c(d) for d in obj.deltas]),
+            "deltas": [OrderBookDelta.to_dict_c(d) for d in obj.deltas],
         }
 
     @staticmethod
@@ -2036,6 +2039,293 @@ cdef class OrderBookDeltas(Data):
 
         """
         return OrderBookDeltas.to_dict_c(obj)
+
+
+cdef class OrderBookDepth10(Data):
+    """
+    Represents a self-contained order book update with a fixed depth of 10 levels per side.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the book.
+    bids : list[BookOrder]
+        The bid side orders for the update.
+    asks : list[BookOrder]
+        The ask side orders for the update.
+    flags : uint8_t
+        A combination of packet end with matching engine status.
+    sequence : uint64_t
+        The unique sequence number for the update.
+    ts_event : uint64_t
+        The UNIX timestamp (nanoseconds) when the tick event occurred.
+    ts_init : uint64_t
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
+
+    Raises
+    ------
+    ValueError
+        If `bids` is empty.
+    ValueError
+        If `asks` is empty.
+    ValueError
+        If `bids` length is not equal to 10.
+    ValueError
+        If `asks` length is not equal to 10.
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        list bids not None,
+        list asks not None,
+        uint8_t flags,
+        uint64_t sequence,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    ):
+        Condition.not_empty(bids, "bids")
+        Condition.not_empty(asks, "asks")
+        Condition.true(len(bids) == DEPTH_10_LEN, f"bids length != 10, was {len(bids)}")
+        Condition.true(len(asks) == DEPTH_10_LEN, f"asks length != 10, was {len(asks)}")
+
+        # Retain the original lists on the Python side
+        self._bids = bids
+        self._asks = asks
+
+        # Create temporary arrays to copy data to Rust
+        cdef BookOrder_t *bids_array = <BookOrder_t *>PyMem_Malloc(DEPTH_10_LEN * sizeof(BookOrder_t))
+        cdef BookOrder_t *asks_array = <BookOrder_t *>PyMem_Malloc(DEPTH_10_LEN * sizeof(BookOrder_t))
+        if bids_array == NULL or asks_array == NULL:
+            raise MemoryError("Failed to allocate memory for `bids` or `asks`")
+
+        cdef uint64_t i
+        cdef BookOrder order
+        try:
+            for i in range(DEPTH_10_LEN):
+                order = bids[i]
+                bids_array[i] = <BookOrder_t>order._mem
+                order = asks[i]
+                asks_array[i] = <BookOrder_t>order._mem
+
+            self._mem = orderbook_depth10_new(
+                instrument_id._mem,
+                bids_array,
+                asks_array,
+                flags,
+                sequence,
+                ts_event,
+                ts_init,
+            )
+        finally:
+            PyMem_Free(bids_array)
+            PyMem_Free(asks_array)
+
+    def __eq__(self, OrderBookDepth10 other) -> bool:
+        return orderbook_depth10_eq(&self._mem, &other._mem)
+
+    def __hash__(self) -> int:
+        return orderbook_depth10_hash(&self._mem)
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"bids={self.bids}, "
+            f"asks={self.asks}, "
+            f"flags={self.flags}, "
+            f"sequence={self.sequence}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        Return the depth updates book instrument ID.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return InstrumentId.from_mem_c(self._mem.instrument_id)
+
+    @property
+    def bids(self) -> list[BookOrder]:
+        """
+        Return the bid orders for the update.
+
+        Returns
+        -------
+        list[BookOrder]
+
+        """
+        return self._bids
+
+    @property
+    def asks(self) -> list[BookOrder]:
+        """
+        Return the ask orders for the update.
+
+        Returns
+        -------
+        list[BookOrder]
+
+        """
+        return self._asks
+
+    @property
+    def flags(self) -> uint8_t:
+        """
+        Return the flags for the depth update.
+
+        Returns
+        -------
+        uint8_t
+
+        """
+        return self._mem.flags
+
+    @property
+    def sequence(self) -> uint64_t:
+        """
+        Return the sequence number for the depth update.
+
+        Returns
+        -------
+        uint64_t
+
+        """
+        return self._mem.sequence
+
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_init
+
+    @staticmethod
+    cdef OrderBookDepth10 from_mem_c(OrderBookDepth10_t mem):
+        cdef OrderBookDepth10 depth = OrderBookDepth10.__new__(OrderBookDepth10)
+        depth._mem = mem
+        return depth
+
+    @staticmethod
+    cdef OrderBookDepth10 from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        return OrderBookDepth10(
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            bids=[BookOrder.from_dict_c(o) for o in values["bids"]],
+            asks=[BookOrder.from_dict_c(o) for o in values["asks"]],
+            flags=values["flags"],
+            sequence=values["sequence"],
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(OrderBookDepth10 obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": obj.__class__.__name__,
+            "instrument_id": obj.instrument_id.value,
+            "bids": [BookOrder.to_dict_c(o) for o in obj.bids],
+            "asks": [BookOrder.to_dict_c(o) for o in obj.asks],
+            "flags": obj.flags,
+            "sequence": obj.sequence,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
+        }
+
+    # SAFETY: Do NOT deallocate the capsule here
+    # It is supposed to be deallocated by the creator
+    @staticmethod
+    cdef inline list capsule_to_list_c(object capsule):
+        cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
+        cdef OrderBookDepth10_t* ptr = <OrderBookDepth10_t*>data.ptr
+        cdef list depths = []
+
+        cdef uint64_t i
+        for i in range(0, data.len):
+            depths.append(OrderBookDepth10.from_mem_c(ptr[i]))
+
+        return depths
+
+    @staticmethod
+    cdef inline list_to_capsule_c(list items):
+        # Create a C struct buffer
+        cdef uint64_t len_ = len(items)
+        cdef OrderBookDepth10_t * data = <OrderBookDepth10_t *> PyMem_Malloc(len_ * sizeof(OrderBookDepth10_t))
+        cdef uint64_t i
+        for i in range(len_):
+            data[i] = (<OrderBookDepth10>items[i])._mem
+        if not data:
+            raise MemoryError()
+
+        # Create CVec
+        cdef CVec * cvec = <CVec *> PyMem_Malloc(1 * sizeof(CVec))
+        cvec.ptr = data
+        cvec.len = len_
+        cvec.cap = len_
+
+        # Create PyCapsule
+        return PyCapsule_New(cvec, NULL, <PyCapsule_Destructor>capsule_destructor)
+
+    @staticmethod
+    def list_from_capsule(capsule) -> list[OrderBookDepth10]:
+        return OrderBookDepth10.capsule_to_list_c(capsule)
+
+    @staticmethod
+    def capsule_from_list(list items):
+        return OrderBookDepth10.list_to_capsule_c(items)
+
+    @staticmethod
+    def from_dict(dict values) -> OrderBookDepth10:
+        """
+        Return order book depth from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderBookDepth10
+
+        """
+        return OrderBookDepth10.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(OrderBookDepth10 obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return OrderBookDepth10.to_dict_c(obj)
 
 
 cdef class VenueStatus(Data):
@@ -2739,13 +3029,13 @@ cdef class QuoteTick(Data):
         return QuoteTick.to_dict_c(obj)
 
     @staticmethod
-    def from_pyo3(list pyo3_ticks) -> list[QuoteTick]:
+    def from_pyo3_list(list pyo3_ticks) -> list[QuoteTick]:
         """
-        Return quote ticks converted from the given pyo3 provided objects.
+        Return legacy Cython quote ticks converted from the given pyo3 Rust objects.
 
         Parameters
         ----------
-        pyo3_ticks : list[RustQuoteTick]
+        pyo3_ticks : list[nautilus_pyo3.QuoteTick]
             The Rust pyo3 quote ticks to convert from.
 
         Returns
@@ -3061,7 +3351,6 @@ cdef class TradeTick(Data):
 
     @staticmethod
     cdef inline list_to_capsule_c(list items):
-
         # Create a C struct buffer
         cdef uint64_t len_ = len(items)
         cdef TradeTick_t * data = <TradeTick_t *> PyMem_Malloc(len_ * sizeof(TradeTick_t))
@@ -3198,13 +3487,13 @@ cdef class TradeTick(Data):
         return TradeTick.to_dict_c(obj)
 
     @staticmethod
-    def from_pyo3(list pyo3_ticks) -> list[TradeTick]:
+    def from_pyo3_list(list pyo3_ticks) -> list[TradeTick]:
         """
-        Return trade ticks converted from the given pyo3 provided objects.
+        Return legacy Cython trade ticks converted from the given pyo3 Rust objects.
 
         Parameters
         ----------
-        pyo3_ticks : list[RustTradeTick]
+        pyo3_ticks : list[nautilus_pyo3.TradeTick]
             The Rust pyo3 trade ticks to convert from.
 
         Returns

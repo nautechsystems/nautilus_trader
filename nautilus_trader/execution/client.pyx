@@ -15,8 +15,8 @@
 
 from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.execution.reports import ExecutionMassStatus
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
-from nautilus_trader.execution.reports import TradeReport
 
 from libc.stdint cimport uint64_t
 
@@ -816,7 +816,7 @@ cdef class ExecutionClient(Component):
             msg=report,
         )
 
-    cpdef void _send_trade_report(self, report: TradeReport):
+    cpdef void _send_fill_report(self, report: FillReport):
         self._msgbus.send(
             endpoint="ExecEngine.reconcile_report",
             msg=report,

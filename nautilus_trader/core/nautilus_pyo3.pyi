@@ -314,21 +314,21 @@ class AggressorSide(Enum):
 class AssetClass(Enum):
     EQUITY = "EQUITY"
     COMMODITY = "COMMODITY"
-    METAL = "METAL"
-    ENERGY = "ENERGY"
-    BOND = "BOND"
+    DEBT = "DEBT"
     INDEX = "INDEX"
-    CRYPTO_CURRENCY = "CRYPTO_CURRENCY"
-    SPORTS_BETTING = "SPORTS_BETTING"
+    CRYPTOCURRENCY = "CRYPTOCURRENCY"
+    ALTERNATIVE = "ALTERNATIVE"
 
-class AssetType(Enum):
+class InstrumentClass(Enum):
     SPOT = "SPOT"
     SWAP = "SWAP"
     FUTURE = "FUTURE"
     FORWARD = "FORWARD"
     CFD = "CFD"
+    BOND = "BOND"
     OPTION = "OPTION"
     WARRANT = "WARRANT"
+    SPORTS_BETTING = "SPORTS_BETTING"
 
 class BarAggregation(Enum):
     TICK = "TICK"
@@ -687,10 +687,6 @@ class CryptoFuture:
         size_precision: int,
         price_increment: Price,
         size_increment: Quantity,
-        margin_init: float,
-        margin_maint: float,
-        maker_fee: float,
-        taker_fee: float,
         ts_event: int,
         ts_init: int,
         lot_size: Quantity | None = None,
@@ -701,6 +697,7 @@ class CryptoFuture:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None: ...
+
 class CryptoPerpetual:
     def __init__(
         self,
@@ -714,10 +711,6 @@ class CryptoPerpetual:
         size_precision: int,
         price_increment: Price,
         size_increment: Quantity,
-        margin_init: float,
-        margin_maint: float,
-        maker_fee: float,
-        taker_fee: float,
         ts_event: int,
         ts_init: int,
         lot_size: Quantity | None = None,
@@ -728,6 +721,7 @@ class CryptoPerpetual:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None: ...
+
 class CurrencyPair:
     def __init__(
         self,
@@ -739,10 +733,6 @@ class CurrencyPair:
         size_precision: int,
         price_increment: Price,
         size_increment: Quantity,
-        margin_init: float,
-        margin_maint: float,
-        maker_fee: float,
-        taker_fee: float,
         ts_event: int,
         ts_init: int,
         lot_size: Quantity | None = None,
@@ -751,6 +741,7 @@ class CurrencyPair:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None: ...
+
 class Equity:
     def __init__(
         self,
@@ -760,11 +751,6 @@ class Equity:
         currency: Currency,
         price_precision: int,
         price_increment: Price,
-        multiplier: Quantity,
-        margin_init: float,
-        margin_maint: float,
-        maker_fee: float,
-        taker_fee: float,
         ts_event: int,
         ts_init: int,
         lot_size: Quantity | None = None,
@@ -773,6 +759,7 @@ class Equity:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None: ...
+
 class FuturesContract:
     def __init__(
         self,
@@ -785,10 +772,6 @@ class FuturesContract:
         currency: Currency,
         price_precision: int,
         price_increment: Price,
-        margin_init: float,
-        margin_maint: float,
-        maker_fee: float,
-        taker_fee: float,
         multiplier: Quantity,
         ts_event: int,
         ts_init: int,
@@ -798,6 +781,7 @@ class FuturesContract:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None: ...
+
 class OptionsContract:
     def __init__(
         self,
@@ -812,10 +796,6 @@ class OptionsContract:
         currency: Currency,
         price_precision: int,
         price_increment: Price,
-        margin_init: float,
-        margin_maint: float,
-        maker_fee: float,
-        taker_fee: float,
         ts_event: int,
         ts_init: int,
         lot_size: Quantity | None = None,
@@ -824,9 +804,11 @@ class OptionsContract:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None : ...
+
 class SyntheticInstrument: ...
 
 ### Events
+
 class OrderDenied:
     def __init__(
         self,

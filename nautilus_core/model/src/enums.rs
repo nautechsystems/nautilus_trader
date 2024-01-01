@@ -121,7 +121,7 @@ pub enum AggregationSource {
 )]
 pub enum AggressorSide {
     /// There was no specific aggressor for the trade.
-    NoAggressor = 0, // Will be replaced by `Option`
+    NoAggressor = 0,
     /// The BUY order was the aggressor for the trade.
     #[pyo3(name = "BUYER")]
     Buyer = 1,
@@ -167,6 +167,7 @@ impl FromU8 for AggressorSide {
 #[allow(non_camel_case_types)]
 pub enum AssetClass {
     /// Foreign exchange (FOREX) assets.
+    #[pyo3(name = "FX")]
     FX = 1,
     /// Equity / stock assets.
     #[pyo3(name = "EQUITY")]
@@ -174,24 +175,18 @@ pub enum AssetClass {
     /// Commodity assets.
     #[pyo3(name = "COMMODITY")]
     Commodity = 3,
-    /// Metal commodity assets.
-    #[pyo3(name = "METAL")]
-    Metal = 4,
-    /// Energy commodity assets.
-    #[pyo3(name = "ENERGY")]
-    Energy = 5,
-    /// Fixed income bond assets.
-    #[pyo3(name = "BOND")]
-    Bond = 6,
-    /// Index based assets.
+    /// Debt based assets.
+    #[pyo3(name = "DEBT")]
+    Debt = 4,
+    /// Index based assets (baskets).
     #[pyo3(name = "INDEX")]
-    Index = 7,
+    Index = 5,
     /// Cryptocurrency or crypto token assets.
-    #[pyo3(name = "CRYPTO_CURRENCY")]
-    Cryptocurrency = 8,
-    /// Sports betting instruments.
-    #[pyo3(name = "SPORTS_BETTING")]
-    SportsBetting = 9,
+    #[pyo3(name = "CRYPTOCURRENCY")]
+    Cryptocurrency = 6,
+    /// Alternative assets.
+    #[pyo3(name = "ALTERNATIVE")]
+    Alternative = 7,
 }
 
 /// The asset type for a financial market product.
@@ -217,28 +212,34 @@ pub enum AssetClass {
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
 )]
-pub enum AssetType {
-    /// A spot market asset type. The current market price of an asset that is bought or sold for immediate delivery and payment.
+pub enum InstrumentClass {
+    /// A spot market instrument class. The current market price of an instrument that is bought or sold for immediate delivery and payment.
     #[pyo3(name = "SPOT")]
     Spot = 1,
-    /// A swap asset type. A derivative contract through which two parties exchange the cash flows or liabilities from two different financial instruments.
+    /// A swap instrument class. A derivative contract through which two parties exchange the cash flows or liabilities from two different financial instruments.
     #[pyo3(name = "SWAP")]
     Swap = 2,
-    /// A futures contract asset type. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
+    /// A futures contract instrument class. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
     #[pyo3(name = "FUTURE")]
     Future = 3,
-    /// A forward derivative asset type. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
+    /// A forward derivative instrument class. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
     #[pyo3(name = "FORWARD")]
     Forward = 4,
-    /// A contract-for-difference (CFD) asset type. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
+    /// A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
     #[pyo3(name = "CFD")]
     Cfd = 5,
-    /// An options contract asset type. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
+    /// A bond instrument class. A type of debt investment where an investor loans money to an entity (typically corporate or governmental) which borrows the funds for a defined period of time at a variable or fixed interest rate.
+    #[pyo3(name = "BOND")]
+    Bond = 6,
+    /// An options contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
     #[pyo3(name = "OPTION")]
-    Option = 6,
-    /// A warrant asset type. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+    Option = 7,
+    /// A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
     #[pyo3(name = "WARRANT")]
-    Warrant = 7,
+    Warrant = 8,
+    /// A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+    #[pyo3(name = "SPORTS_BETTING")]
+    SportsBetting = 9,
 }
 
 /// The aggregation method through which a bar is generated and closed.
@@ -725,8 +726,8 @@ pub enum OptionKind {
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
 )]
 pub enum OrderSide {
-    /// No order side is specified (only valid in the context of a filter for actions involving orders).
-    NoOrderSide = 0, // Will be replaced by `Option`
+    /// No order side is specified.
+    NoOrderSide = 0,
     /// The order is a BUY.
     #[pyo3(name = "BUY")]
     Buy = 1,
@@ -1144,7 +1145,7 @@ enum_strum_serde!(AccountType);
 enum_strum_serde!(AggregationSource);
 enum_strum_serde!(AggressorSide);
 enum_strum_serde!(AssetClass);
-enum_strum_serde!(AssetType);
+enum_strum_serde!(InstrumentClass);
 enum_strum_serde!(BarAggregation);
 enum_strum_serde!(BookAction);
 enum_strum_serde!(BookType);

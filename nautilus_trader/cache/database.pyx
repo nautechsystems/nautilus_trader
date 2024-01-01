@@ -18,9 +18,7 @@ import warnings
 import msgspec
 
 from nautilus_trader.config import CacheConfig
-from nautilus_trader.core.nautilus_pyo3 import UUID4 as RustUUID4
-from nautilus_trader.core.nautilus_pyo3 import RedisCacheDatabase as RustRedisCacheDatabase
-from nautilus_trader.core.nautilus_pyo3 import TraderId as RustTraderId
+from nautilus_trader.core import nautilus_pyo3
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -186,9 +184,9 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         self._serializer = serializer
 
-        self._backing = RustRedisCacheDatabase(
-            trader_id=RustTraderId(trader_id.value),
-            instance_id=RustUUID4(logger.instance_id.value),
+        self._backing = nautilus_pyo3.RedisCacheDatabase(
+            trader_id=nautilus_pyo3.TraderId(trader_id.value),
+            instance_id=nautilus_pyo3.UUID4(logger.instance_id.value),
             config_json=msgspec.json.encode(config),
         )
 

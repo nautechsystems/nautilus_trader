@@ -36,7 +36,7 @@ def test_quote_tick_data_wrangler() -> None:
     wrangler = QuoteTickDataWrangler.from_instrument(AUDUSD_SIM)
     ticks = wrangler.from_pandas(df)
 
-    cython_ticks = QuoteTick.from_pyo3(ticks)
+    cython_ticks = QuoteTick.from_pyo3_list(ticks)
 
     # Assert
     assert len(ticks) == 100_000
@@ -55,7 +55,7 @@ def test_trade_tick_data_wrangler() -> None:
     wrangler = TradeTickDataWrangler.from_instrument(ETHUSDT_BINANCE)
     ticks = wrangler.from_pandas(df)
 
-    cython_ticks = TradeTick.from_pyo3(ticks)
+    cython_ticks = TradeTick.from_pyo3_list(ticks)
 
     # Assert
     assert len(ticks) == 69806

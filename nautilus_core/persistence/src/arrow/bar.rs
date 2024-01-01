@@ -194,7 +194,7 @@ mod tests {
 
     #[rstest]
     fn test_get_schema() {
-        let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
+        let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
         let schema = Bar::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
@@ -226,7 +226,7 @@ mod tests {
 
     #[rstest]
     fn test_encode_batch() {
-        let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
+        let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
 
         let bar1 = Bar::new(
@@ -288,7 +288,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_batch() {
-        let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
+        let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
 
         let open = Int64Array::from(vec![100_100_000_000, 10_000_000_000]);
