@@ -126,7 +126,7 @@ pub mod stubs {
 
         for i in 0..10 {
             let order = BookOrder::new(
-                OrderSide::Sell,
+                OrderSide::Buy,
                 Price::new(price, 2).unwrap(),
                 Quantity::new(quantity, 0).unwrap(),
                 order_id,
@@ -146,7 +146,7 @@ pub mod stubs {
 
         for i in 0..10 {
             let order = BookOrder::new(
-                OrderSide::Buy,
+                OrderSide::Sell,
                 Price::new(price, 2).unwrap(),
                 Quantity::new(quantity, 0).unwrap(),
                 order_id,
