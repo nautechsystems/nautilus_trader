@@ -354,7 +354,7 @@ typedef enum OptionKind {
  */
 typedef enum OrderSide {
     /**
-     * No order side is specified (only valid in the context of a filter for actions involving orders).
+     * No order side is specified.
      */
     NO_ORDER_SIDE = 0,
     /**
@@ -784,7 +784,7 @@ typedef struct OrderBookDelta_t {
  * Note: This type is not compatible with `OrderBookDelta` or `OrderBookDeltas` due to
  * its specialized structure and limited depth use case.
  */
-typedef struct OrderBookDepth10 {
+typedef struct OrderBookDepth10_t {
     /**
      * The instrument ID for the book.
      */
@@ -813,7 +813,7 @@ typedef struct OrderBookDepth10 {
      * The UNIX timestamp (nanoseconds) when the data object was initialized.
      */
     uint64_t ts_init;
-} OrderBookDepth10;
+} OrderBookDepth10_t;
 
 /**
  * Represents a single quote tick in a financial market.
@@ -989,7 +989,7 @@ typedef struct Data_t {
             struct OrderBookDelta_t delta;
         };
         struct {
-            struct OrderBookDepth10 depth10;
+            struct OrderBookDepth10_t depth10;
         };
         struct {
             struct QuoteTick_t quote;
@@ -1392,18 +1392,18 @@ uint64_t orderbook_delta_hash(const struct OrderBookDelta_t *delta);
  * - Assumes `bids` and `asks` are valid pointers to arrays of `BookOrder` of length 10.
  * - Assumes Rust now takes ownership of the memory for `bids` and `asks`.
  */
-struct OrderBookDepth10 orderbook_depth10_new(struct InstrumentId_t instrument_id,
-                                              const struct BookOrder_t *bids_ptr,
-                                              const struct BookOrder_t *asks_ptr,
-                                              uint8_t flags,
-                                              uint64_t sequence,
-                                              uint64_t ts_event,
-                                              uint64_t ts_init);
+struct OrderBookDepth10_t orderbook_depth10_new(struct InstrumentId_t instrument_id,
+                                                const struct BookOrder_t *bids_ptr,
+                                                const struct BookOrder_t *asks_ptr,
+                                                uint8_t flags,
+                                                uint64_t sequence,
+                                                uint64_t ts_event,
+                                                uint64_t ts_init);
 
-uint8_t orderbook_depth10_eq(const struct OrderBookDepth10 *lhs,
-                             const struct OrderBookDepth10 *rhs);
+uint8_t orderbook_depth10_eq(const struct OrderBookDepth10_t *lhs,
+                             const struct OrderBookDepth10_t *rhs);
 
-uint64_t orderbook_depth10_hash(const struct OrderBookDepth10 *delta);
+uint64_t orderbook_depth10_hash(const struct OrderBookDepth10_t *delta);
 
 struct BookOrder_t book_order_from_raw(enum OrderSide order_side,
                                        int64_t price_raw,
@@ -2085,7 +2085,7 @@ void orderbook_clear_asks(struct OrderBook_API *book, uint64_t ts_event, uint64_
 
 void orderbook_apply_delta(struct OrderBook_API *book, struct OrderBookDelta_t delta);
 
-void orderbook_apply_depth(struct OrderBook_API *book, struct OrderBookDepth10 depth);
+void orderbook_apply_depth(struct OrderBook_API *book, struct OrderBookDepth10_t depth);
 
 CVec orderbook_bids(struct OrderBook_API *book);
 

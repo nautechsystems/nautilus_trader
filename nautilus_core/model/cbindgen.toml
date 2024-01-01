@@ -35,6 +35,7 @@ exclude = [
 "OrderId" = "uint64_t"
 "OrderBookDelta" = "OrderBookDelta_t"
 "OrderBookDeltas" = "OrderBookDeltas_t"
+"OrderBookDepth10" = "OrderBookDepth10_t"
 "OrderInitialized" = "OrderInitialized_t"
 "OrderDenied" = "OrderDenied_t"
 "OrderEmulated" = "OrderEmulated_t"

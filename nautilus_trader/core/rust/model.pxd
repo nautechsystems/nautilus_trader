@@ -190,7 +190,7 @@ cdef extern from "../includes/model.h":
 
     # The order side for a specific order, or action related to orders.
     cpdef enum OrderSide:
-        # No order side is specified (only valid in the context of a filter for actions involving orders).
+        # No order side is specified.
         NO_ORDER_SIDE # = 0,
         # The order is a BUY.
         BUY # = 1,
@@ -428,7 +428,7 @@ cdef extern from "../includes/model.h":
     #
     # Note: This type is not compatible with `OrderBookDelta` or `OrderBookDeltas` due to
     # its specialized structure and limited depth use case.
-    cdef struct OrderBookDepth10:
+    cdef struct OrderBookDepth10_t:
         # The instrument ID for the book.
         InstrumentId_t instrument_id;
         # The bid orders for the depth update.
@@ -537,7 +537,7 @@ cdef extern from "../includes/model.h":
     cdef struct Data_t:
         Data_t_Tag tag;
         OrderBookDelta_t delta;
-        OrderBookDepth10 depth10;
+        OrderBookDepth10_t depth10;
         QuoteTick_t quote;
         TradeTick_t trade;
         Bar_t bar;
@@ -836,17 +836,17 @@ cdef extern from "../includes/model.h":
     #
     # - Assumes `bids` and `asks` are valid pointers to arrays of `BookOrder` of length 10.
     # - Assumes Rust now takes ownership of the memory for `bids` and `asks`.
-    OrderBookDepth10 orderbook_depth10_new(InstrumentId_t instrument_id,
-                                           const BookOrder_t *bids_ptr,
-                                           const BookOrder_t *asks_ptr,
-                                           uint8_t flags,
-                                           uint64_t sequence,
-                                           uint64_t ts_event,
-                                           uint64_t ts_init);
+    OrderBookDepth10_t orderbook_depth10_new(InstrumentId_t instrument_id,
+                                             const BookOrder_t *bids_ptr,
+                                             const BookOrder_t *asks_ptr,
+                                             uint8_t flags,
+                                             uint64_t sequence,
+                                             uint64_t ts_event,
+                                             uint64_t ts_init);
 
-    uint8_t orderbook_depth10_eq(const OrderBookDepth10 *lhs, const OrderBookDepth10 *rhs);
+    uint8_t orderbook_depth10_eq(const OrderBookDepth10_t *lhs, const OrderBookDepth10_t *rhs);
 
-    uint64_t orderbook_depth10_hash(const OrderBookDepth10 *delta);
+    uint64_t orderbook_depth10_hash(const OrderBookDepth10_t *delta);
 
     BookOrder_t book_order_from_raw(OrderSide order_side,
                                     int64_t price_raw,
@@ -1425,7 +1425,7 @@ cdef extern from "../includes/model.h":
 
     void orderbook_apply_delta(OrderBook_API *book, OrderBookDelta_t delta);
 
-    void orderbook_apply_depth(OrderBook_API *book, OrderBookDepth10 depth);
+    void orderbook_apply_depth(OrderBook_API *book, OrderBookDepth10_t depth);
 
     CVec orderbook_bids(OrderBook_API *book);
 

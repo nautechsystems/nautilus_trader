@@ -33,6 +33,7 @@ from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
@@ -322,6 +323,65 @@ class TestDataStubs:
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
             action=BookAction.UPDATE,
             order=order or TestDataStubs.order(),
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+
+    @staticmethod
+    def order_book_depth10(
+        instrument_id: InstrumentId | None = None,
+        flags: int = 0,
+        sequence: int = 0,
+        ts_event: int = 0,
+        ts_init: int = 0,
+    ) -> OrderBookDepth10:
+        bids: list[BookOrder] = []
+        asks: list[BookOrder] = []
+
+        # Create bids
+        price = 99.00
+        quantity = 100.0
+        order_id = 1
+
+        for _ in range(10):
+            order = BookOrder(
+                OrderSide.BUY,
+                Price(price, 2),
+                Quantity(quantity, 0),
+                order_id,
+            )
+
+            bids.append(order)
+
+            price -= 1.0
+            quantity += 100.0
+            order_id += 1
+
+        # Create asks
+        price = 100.00
+        quantity = 100.0
+        order_id = 11
+
+        for _ in range(10):
+            order = BookOrder(
+                OrderSide.SELL,
+                Price(price, 2),
+                Quantity(quantity, 0),
+                order_id,
+            )
+
+            asks.append(order)
+
+            price += 1.0
+            quantity += 100.0
+            order_id += 1
+
+        return OrderBookDepth10(
+            instrument_id=instrument_id or TestIdStubs.aapl_xnas_id(),
+            bids=bids,
+            asks=asks,
+            flags=flags,
+            sequence=sequence,
             ts_event=ts_event,
             ts_init=ts_init,
         )
