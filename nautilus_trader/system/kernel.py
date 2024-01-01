@@ -51,6 +51,7 @@ from nautilus_trader.config import StrategyFactory
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.config.common import ControllerFactory
 from nautilus_trader.config.common import ExecAlgorithmFactory
+from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.core.correctness import PyCondition
@@ -156,13 +157,21 @@ class NautilusKernel:
         init_tracing()
 
         # Initialize logging for debugging python and sync rust logic
-        logging_config = config.logging
+        logging: LoggingConfig = config.logging or LoggingConfig()
+
         file_writer_config = FileWriterConfig(
-            logging_config.log_directory, logging_config.log_file_name, logging_config.log_file_name
+            logging.log_directory,
+            logging.log_file_name,
+            logging.log_file_name,
         )
+
         logger_config = LoggerConfig.from_spec("stdout=info;fileout=debug")
         init_logging(
-            self._clock.time, self._trader_id, self._instance_id, file_writer_config, logger_config
+            self._clock.get_atomc_time(),
+            self._trader_id,
+            self._instance_id,
+            file_writer_config,
+            logger_config,
         )
 
         # Setup the logger with a `LiveClock` initially,

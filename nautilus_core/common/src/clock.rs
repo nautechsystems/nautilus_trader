@@ -30,6 +30,9 @@ use crate::{
 /// # Notes
 /// An active timer is one which has not expired (`timer.is_expired == False`).
 pub trait Clock {
+    /// Return a reference to the clocks internal `AtomicTime`.
+    fn get_atomic_time_clone(&self) -> AtomicTime;
+
     /// Return the names of active timers in the clock.
     fn timer_names(&self) -> Vec<&str>;
 
@@ -71,7 +74,6 @@ pub trait Clock {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
 pub struct TestClock {
-    #[pyo3(get)]
     time: AtomicTime,
     timers: HashMap<String, TestTimer>,
     default_callback: Option<EventHandler>,
@@ -159,6 +161,10 @@ impl Deref for TestClock {
 }
 
 impl Clock for TestClock {
+    fn get_atomic_time_clone(&self) -> AtomicTime {
+        self.time.clone()
+    }
+
     fn timer_names(&self) -> Vec<&str> {
         self.timers
             .iter()
@@ -259,7 +265,6 @@ impl Clock for TestClock {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
 pub struct LiveClock {
-    #[pyo3(get)]
     time: AtomicTime,
     timers: HashMap<String, TestTimer>,
     default_callback: Option<EventHandler>,
@@ -293,6 +298,10 @@ impl Deref for LiveClock {
 }
 
 impl Clock for LiveClock {
+    fn get_atomic_time_clone(&self) -> AtomicTime {
+        self.time.clone()
+    }
+
     fn timer_names(&self) -> Vec<&str> {
         self.timers
             .iter()

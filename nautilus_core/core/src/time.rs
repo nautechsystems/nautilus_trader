@@ -39,21 +39,30 @@ pub fn duration_since_unix_epoch() -> Duration {
         .expect("Error calling `SystemTime::now.duration_since`")
 }
 
-/// Atomic clock stores the last recorded time in nanoseconds.
+/// Represents an atomic timekeeping structure.
 ///
+/// `AtomicTime` can act as a real-time clock or static clock based on its mode.
 /// It uses `AtomicU64` to atomically update the value using only immutable
 /// references.
 ///
-/// `AtomicClock` can act as a live clock and static clock based on its mode.
+/// This struct provides thread-safe access to a stored nanosecond time value,
+/// useful for when concurrent access to time information is required.
+///
+/// Fields:
+/// - `realtime`: Indicates whether the clock is operating in real-time mode.
+///    When `true`, the clock reflects real-world time progression. When `false`,
+///    the clock is in a manual or static mode, allowing for controlled time setting.
+/// - `timestamp_ns`: The last recorded time for the clock in Unix nanoseconds.
+///    This value is atomically updated and represents the precise time measurement.
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.core")
 )]
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct AtomicTime {
-    /// Atomic clock is operating in live mode if true, otherwise clock is operating in manual mode.
-    pub live: Arc<AtomicBool>,
-    /// The last recorded time in nanoseconds for the clock.
+    /// Atomic clock is operating in real-time mode if true, otherwise clock is operating in manual static mode.
+    pub realtime: Arc<AtomicBool>,
+    /// The last recorded time for the clock in UNIX nanoseconds.
     pub timestamp_ns: Arc<AtomicU64>,
 }
 
@@ -66,22 +75,22 @@ impl Deref for AtomicTime {
 }
 
 impl AtomicTime {
-    /// New atomic clock set with the given time.
+    /// New atomic clock set with the given UNIX time (nanoseconds).
     #[must_use]
-    pub fn new(live: bool, time: u64) -> Self {
+    pub fn new(realtime: bool, time: u64) -> Self {
         Self {
-            live: Arc::new(AtomicBool::new(live)),
+            realtime: Arc::new(AtomicBool::new(realtime)),
             timestamp_ns: Arc::new(AtomicU64::new(time)),
         }
     }
 
     /// Get time in nanoseconds.
     ///
-    /// * Live mode returns current wall clock time since UNIX epoch (unique and monotonic)
-    /// * Static mode returns currently stored time.
+    /// - Real-time mode returns current wall clock time since UNIX epoch (unique and monotonic).
+    /// - Static mode returns currently stored time.
     #[must_use]
     pub fn get_time_ns(&self) -> u64 {
-        match self.live.load(Ordering::Relaxed) {
+        match self.realtime.load(Ordering::Relaxed) {
             true => self.time_since_epoch(),
             false => self.timestamp_ns.load(Ordering::Relaxed),
         }
@@ -125,12 +134,12 @@ impl AtomicTime {
         new
     }
 
-    pub fn make_live(&self) {
-        self.live.store(true, Ordering::Relaxed)
+    pub fn make_realtime(&self) {
+        self.realtime.store(true, Ordering::Relaxed)
     }
 
     pub fn make_static(&self) {
-        self.live.store(false, Ordering::Relaxed)
+        self.realtime.store(false, Ordering::Relaxed)
     }
 }
 

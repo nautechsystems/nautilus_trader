@@ -20,7 +20,7 @@ use std::{
     io::{self, BufWriter, Stderr, Stdout, Write},
     path::{Path, PathBuf},
     str::FromStr,
-    sync::mpsc::{channel, Receiver, SendError, Sender},
+    sync::mpsc::{sync_channel, Receiver, SendError, SyncSender},
     thread,
 };
 
@@ -61,7 +61,7 @@ impl Default for LoggerConfig {
             stdout_level: LevelFilter::Info,
             fileout_level: LevelFilter::Off,
             component_level: HashMap::new(),
-            is_colored: false,
+            is_colored: true,
             is_bypassed: false,
         }
     }
@@ -143,11 +143,11 @@ impl FileWriterConfig {
 /// A separate thead is spawned at initialization which receives [`LogEvent`] structs over the
 /// channel.
 pub struct Logger {
-    /// Send log events to a different thread
-    tx: Sender<LogEvent>,
-    /// Reference to the atomic clock used by the engine
+    /// Send log events to a different thread.
+    tx: SyncSender<LogEvent>,
+    /// Reference to the atomic clock used by the engine.
     clock: AtomicTime,
-    /// Configure maximum levels for components and IO
+    /// Configure maximum levels for components and IO.
     pub config: LoggerConfig,
 }
 
@@ -240,8 +240,7 @@ impl Logger {
         file_writer_config: FileWriterConfig,
         config: LoggerConfig,
     ) {
-        // TODO consider bounded channel for perf and fewer allocations
-        let (tx, rx) = channel::<LogEvent>();
+        let (tx, rx) = sync_channel::<LogEvent>(0);
 
         let trader_id_clone = trader_id.value.to_string();
         let instance_id_clone = instance_id.to_string();
@@ -582,7 +581,7 @@ mod tests {
                     "RiskEngine".to_string(),
                     LevelFilter::Error
                 )]),
-                is_colored: false,
+                is_colored: true,
                 is_bypassed: false,
             }
         )
