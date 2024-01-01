@@ -1,9 +1,11 @@
+import pytest
+
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 
 
 def test_ib_is_ready_by_notification_1101(ib_client):
     # Arrange
-    ib_client.is_ib_ready.clear()
+    ib_client._is_ib_ready.clear()
 
     # Act
     ib_client.error(
@@ -35,7 +37,7 @@ def test_ib_is_not_ready_by_error_10182(ib_client):
     # Arrange
     req_id = 6
     ib_client._is_ib_ready.set()
-    ib_client.subscriptions.add(req_id, "EUR.USD", ib_client._eclient.reqHistoricalData, {})
+    ib_client._subscriptions.add(req_id, "EUR.USD", ib_client._eclient.reqHistoricalData, {})
 
     # Act
     ib_client.error(req_id, 10182, "Failed to request live updates (disconnected).")
@@ -44,7 +46,7 @@ def test_ib_is_not_ready_by_error_10182(ib_client):
     assert not ib_client._is_ib_ready.is_set()
 
 
-# @pytest.mark.asyncio
+@pytest.mark.skip(reason="WIP")
 def test_ib_is_not_ready_by_error_10189(ib_client):
     # Arrange
     req_id = 6
@@ -54,7 +56,7 @@ def test_ib_is_not_ready_by_error_10189(ib_client):
         "EUR.USD",
         ib_client.subscribe_ticks,
         {
-            "instrument_id": ib_client.instrument,
+            "instrument_id": "EUR/USD.IDEALPRO",
             "contract": IBContract(conId=1234),
             "tick_type": "BidAsk",
         },

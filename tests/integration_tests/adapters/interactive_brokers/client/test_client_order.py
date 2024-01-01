@@ -1,23 +1,23 @@
-from unittest import mock
+from unittest.mock import MagicMock
 
 from ibapi.order import Order as IBOrder
 
 
-@mock.patch(
-    "nautilus_trader.adapters.interactive_brokers.client.InteractiveBrokersClient._eclient.placeOrder",
-)
 def test_place_order(ib_client):
     # Arrange
-    order = IBOrder()
+    ib_order = IBOrder()
+    ib_order.orderId = 1
+    ib_order.contract = MagicMock()
+    ib_client._eclient.placeOrder = MagicMock()
 
     # Act
-    ib_client.order_manager.place_order(order)
+    ib_client.place_order(ib_order)
 
     # Assert
-    assert ib_client._eclient.mock_placeOrder.assert_called_with(
-        order.orderId,
-        order.contract,
-        order,
+    ib_client._eclient.placeOrder.assert_called_with(
+        ib_order.orderId,
+        ib_order.contract,
+        ib_order,
     )
 
 

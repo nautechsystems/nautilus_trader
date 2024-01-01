@@ -85,6 +85,7 @@ def ib_client(data_client_config, event_loop, msgbus, cache, clock, logger):
         client_id=data_client_config.ibg_client_id,
     )
     yield client
+    client._stop()
 
 
 @pytest.fixture()

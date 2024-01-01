@@ -15,7 +15,9 @@
 
 
 import asyncio
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
+from unittest.mock import Mock
 from unittest.mock import patch
 
 import pytest
@@ -26,34 +28,44 @@ def test_start(ib_client):
     ib_client._start()
 
     # Assert
-    assert ib_client._is_ready.is_set()
+    assert ib_client._is_client_ready.is_set()
 
 
-@pytest.mark.asyncio
-async def test_stop(ib_client):
+def test_start_client_tasks_and_tws_api(ib_client):
     # Arrange
-    ib_client._watch_dog_task = MagicMock()
-    ib_client._tws_incoming_msg_reader_task = MagicMock()
-    ib_client._internal_msg_queue_task = MagicMock()
-    ib_client._eclient.disconnect = MagicMock()
+    ib_client._tws_incoming_msg_reader_task = None
+    ib_client._internal_msg_queue_task = None
+    ib_client._eclient.startApi = Mock()
+
+    # Act
+    ib_client._start_client_tasks_and_tws_api()
+
+    # Assert
+    assert ib_client._tws_incoming_msg_reader_task
+    assert ib_client._internal_msg_queue_task
+    assert ib_client._eclient.startApi.called
+
+
+def test_stop(ib_client):
+    # Arrange
+    ib_client._start_client_tasks_and_tws_api()
+    ib_client._eclient.disconnect = Mock()
 
     # Act
     ib_client._stop()
 
     # Assert
-    assert ib_client._watch_dog_task.cancel.called
-    assert ib_client._tws_incoming_msg_reader_task.cancel.called
-    assert ib_client._internal_msg_queue_task.cancel.called
+    assert ib_client._watch_dog_task.cancel()
+    assert ib_client._tws_incoming_msg_reader_task.cancel()
+    assert ib_client._internal_msg_queue_task.cancel()
     assert ib_client._eclient.disconnect.called
-    assert not ib_client._is_ready.is_set()
+    assert not ib_client._is_client_ready.is_set()
 
 
-@pytest.mark.asyncio
-async def test_reset(ib_client):
+def test_reset(ib_client):
     # Arrange
-    ib_client._stop = MagicMock()
-    ib_client._eclient.reset = MagicMock()
-    ib_client._create_task = MagicMock()
+    ib_client._stop = Mock()
+    ib_client._eclient.reset = Mock()
 
     # Act
     ib_client._reset()
@@ -61,15 +73,19 @@ async def test_reset(ib_client):
     # Assert
     assert ib_client._stop.called
     assert ib_client._eclient.reset.called
-    assert ib_client._create_task.called
+    assert ib_client._watch_dog_task
 
 
 def test_resume(ib_client):
-    # Arrange, Act
+    # Arrange
+    ib_client._is_client_ready.clear()
+    ib_client._connection_attempt_counter = 1
+
+    # Act
     ib_client._resume()
 
     # Assert
-    assert ib_client._is_ready.is_set()
+    assert ib_client._is_client_ready.is_set()
     assert ib_client._connection_attempt_counter == 0
 
 
@@ -106,7 +122,7 @@ def test_unsubscribe_event(ib_client):
     # Arrange
     ib_client.subscribe_event("test_event", lambda handler: handler)
 
-    # Arrange, Act
+    # Act
     ib_client.unsubscribe_event("test_event")
 
     # Assert
@@ -125,41 +141,83 @@ def test_next_req_id(ib_client):
 
 
 @pytest.mark.asyncio
-async def test_is_running_async_ready(ib_client):
+async def test_wait_until_ready(ib_client):
     # Arrange
-    ib_client._is_ready = MagicMock()
-    ib_client._is_ready.return_value = True
-    ib_client._is_set = MagicMock()
-    ib_client._is_set.return_value = True
+    ib_client._is_client_ready = Mock()
+    ib_client._is_client_ready.is_set.return_value = True
 
     # Act
-    await ib_client.is_running_async()
+    await ib_client.wait_until_ready()
 
     # Assert
-    # Assert wait was not called since is_ready is already set
-    ib_client._is_ready.wait.assert_not_called()
+    # Assert wait was not called since is_client_ready is already set
+    ib_client._is_client_ready.wait.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_watch_dog_reconnect(ib_client):
+    # Arrange
+    ib_client._eclient = MagicMock()
+    ib_client._eclient.isConnected.return_value = False
+    ib_client._reconnect = AsyncMock(side_effect=asyncio.CancelledError)
+
+    # Act
+    await ib_client._run_watch_dog()
+
+    # Assert
+    ib_client._reconnect.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_run_watch_dog_probe(ib_client):
+    # Arrange
+    ib_client._eclient = MagicMock()
+    ib_client._eclient.isConnected.return_value = True
+    ib_client._is_ib_ready.clear()
+    ib_client._probe_for_connectivity = AsyncMock(side_effect=asyncio.CancelledError)
+
+    # Act
+    await ib_client._run_watch_dog()
+
+    # Assert
+    ib_client._probe_for_connectivity.assert_called()
 
 
 @pytest.mark.asyncio
 async def test_run_tws_incoming_msg_reader(ib_client):
     # Arrange
-    ib_client._eclient.conn = MagicMock()
-    ib_client._eclient.conn.isConnected.return_value = True
+    ib_client._eclient.conn = Mock()
 
     test_messages = [b"test message 1", b"test message 2"]
     ib_client._eclient.conn.recvMsg = MagicMock(side_effect=test_messages)
 
-    # Act
-    with patch("ibapi.comm.read_msg") as mock_read_msg:
-        mock_read_msg.side_effect = [(None, msg, b"") for msg in test_messages]
-
-        task = asyncio.create_task(ib_client._run_tws_incoming_msg_reader())
+    with patch("ibapi.comm.read_msg", side_effect=[(None, msg, b"") for msg in test_messages]):
+        # Act
+        ib_client._tws_incoming_msg_reader_task = ib_client._create_task(
+            ib_client._run_tws_incoming_msg_reader(),
+        )
         await asyncio.sleep(0.1)
 
-        # Assert
-        assert ib_client._internal_msg_queue.qsize() == len(test_messages)
-        for msg in test_messages:
-            assert await ib_client._internal_msg_queue.get() == msg
+    # Assert
+    assert ib_client._internal_msg_queue.qsize() == len(test_messages)
+    for msg in test_messages:
+        assert await ib_client._internal_msg_queue.get() == msg
 
-        # Clean up
-        task.cancel()
+
+@pytest.mark.asyncio
+async def test_run_internal_msg_queue(ib_client):
+    # Arrange
+    test_messages = [b"test message 1", b"test message 2"]
+    for msg in test_messages:
+        ib_client._internal_msg_queue.put_nowait(msg)
+    ib_client._process_message = Mock()
+
+    # Act
+    ib_client._internal_msg_queue_task = ib_client._create_task(
+        ib_client._run_internal_msg_queue(),
+    )
+    await asyncio.sleep(0.1)
+
+    # Assert
+    assert ib_client._process_message.call_count == len(test_messages)
+    assert ib_client._internal_msg_queue.qsize() == 0
