@@ -17,7 +17,7 @@ use std::{
     collections::HashMap,
     fmt,
     hash::{Hash, Hasher},
-    sync::mpsc::{channel, Receiver, SendError, Sender},
+    sync::mpsc::{sync_channel, Receiver, SendError, SyncSender},
     thread,
 };
 
@@ -131,7 +131,7 @@ impl fmt::Display for BusMessage {
 /// For example, `c??p` would match both of the above examples and `coop`.
 #[derive(Clone)]
 pub struct MessageBus {
-    tx: Option<Sender<BusMessage>>,
+    tx: Option<SyncSender<BusMessage>>,
     /// mapping from topic to the corresponding handler
     /// a topic can be a string with wildcards
     /// * '?' - any character
@@ -176,7 +176,7 @@ impl MessageBus {
         let config = config.unwrap_or_default();
         let has_backing = config.get("database").map_or(false, |v| v != &Value::Null);
         let tx = if has_backing {
-            let (tx, rx) = channel::<BusMessage>();
+            let (tx, rx) = sync_channel::<BusMessage>(0);
             thread::spawn(move || {
                 Self::handle_messages(rx, trader_id, instance_id, config);
             });

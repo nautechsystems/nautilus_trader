@@ -6,6 +6,8 @@ Released on TBD (UTC).
 - Added `NautilusConfig.json_primitives` to convert object to Python dictionary with JSON primitive values
 - Added `InstrumentClass.BOND`
 - Improved Interactive Brokers adapter raising docker `RuntimeError` only when needed (not when using TWS), thanks @rsmb7z
+- Upgraded core HTTP client to `hyper` 1.1.0, thanks @ayush-sb
+- Optimized core MPSC channels with sync senders
 
 ### Breaking Changes
 - Changed `ComponentStateChanged` Arrow schema for `config` from `string` to `binary`
