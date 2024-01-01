@@ -34,6 +34,7 @@ exclude = [
 "Money" = "Money_t"
 "OrderId" = "uint64_t"
 "OrderBookDelta" = "OrderBookDelta_t"
+"OrderBookDeltas" = "OrderBookDeltas_t"
 "OrderInitialized" = "OrderInitialized_t"
 "OrderDenied" = "OrderDenied_t"
 "OrderEmulated" = "OrderEmulated_t"

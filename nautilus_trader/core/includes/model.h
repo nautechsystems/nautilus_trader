@@ -772,6 +772,36 @@ typedef struct OrderBookDelta_t {
 } OrderBookDelta_t;
 
 /**
+ * Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
+ */
+typedef struct OrderBookDeltas_t {
+    /**
+     * The instrument ID for the book.
+     */
+    struct InstrumentId_t instrument_id;
+    /**
+     * The order book deltas.
+     */
+    CVec deltas;
+    /**
+     * A combination of packet end with matching engine status.
+     */
+    uint8_t flags;
+    /**
+     * The message sequence number assigned at the venue.
+     */
+    uint64_t sequence;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data event occurred.
+     */
+    uint64_t ts_event;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     */
+    uint64_t ts_init;
+} OrderBookDeltas_t;
+
+/**
  * Represents a single quote tick in a financial market.
  */
 typedef struct QuoteTick_t {
@@ -932,6 +962,7 @@ typedef struct Bar_t {
 
 typedef enum Data_t_Tag {
     DELTA,
+    DELTAS,
     QUOTE,
     TRADE,
     BAR,
@@ -942,6 +973,9 @@ typedef struct Data_t {
     union {
         struct {
             struct OrderBookDelta_t delta;
+        };
+        struct {
+            struct OrderBookDeltas_t deltas;
         };
         struct {
             struct QuoteTick_t quote;
@@ -1337,6 +1371,15 @@ struct OrderBookDelta_t orderbook_delta_new(struct InstrumentId_t instrument_id,
 uint8_t orderbook_delta_eq(const struct OrderBookDelta_t *lhs, const struct OrderBookDelta_t *rhs);
 
 uint64_t orderbook_delta_hash(const struct OrderBookDelta_t *delta);
+
+struct OrderBookDeltas_t orderbook_deltas_new(struct InstrumentId_t instrument_id,
+                                              CVec deltas,
+                                              uint8_t flags,
+                                              uint64_t sequence,
+                                              uint64_t ts_event,
+                                              uint64_t ts_init);
+
+void vec_deltas_drop(CVec v);
 
 struct BookOrder_t book_order_from_raw(enum OrderSide order_side,
                                        int64_t price_raw,

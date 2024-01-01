@@ -15,6 +15,7 @@
 
 pub mod bar;
 pub mod delta;
+pub mod deltas;
 pub mod order;
 pub mod quote;
 pub mod ticker;

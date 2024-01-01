@@ -417,6 +417,21 @@ cdef extern from "../includes/model.h":
         # The UNIX timestamp (nanoseconds) when the data object was initialized.
         uint64_t ts_init;
 
+    # Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
+    cdef struct OrderBookDeltas_t:
+        # The instrument ID for the book.
+        InstrumentId_t instrument_id;
+        # The order book deltas.
+        CVec deltas;
+        # A combination of packet end with matching engine status.
+        uint8_t flags;
+        # The message sequence number assigned at the venue.
+        uint64_t sequence;
+        # The UNIX timestamp (nanoseconds) when the data event occurred.
+        uint64_t ts_event;
+        # The UNIX timestamp (nanoseconds) when the data object was initialized.
+        uint64_t ts_init;
+
     # Represents a single quote tick in a financial market.
     cdef struct QuoteTick_t:
         # The quotes instrument ID.
@@ -502,6 +517,7 @@ cdef extern from "../includes/model.h":
 
     cpdef enum Data_t_Tag:
         DELTA,
+        DELTAS,
         QUOTE,
         TRADE,
         BAR,
@@ -509,6 +525,7 @@ cdef extern from "../includes/model.h":
     cdef struct Data_t:
         Data_t_Tag tag;
         OrderBookDelta_t delta;
+        OrderBookDeltas_t deltas;
         QuoteTick_t quote;
         TradeTick_t trade;
         Bar_t bar;
@@ -802,6 +819,15 @@ cdef extern from "../includes/model.h":
     uint8_t orderbook_delta_eq(const OrderBookDelta_t *lhs, const OrderBookDelta_t *rhs);
 
     uint64_t orderbook_delta_hash(const OrderBookDelta_t *delta);
+
+    OrderBookDeltas_t orderbook_deltas_new(InstrumentId_t instrument_id,
+                                           CVec deltas,
+                                           uint8_t flags,
+                                           uint64_t sequence,
+                                           uint64_t ts_event,
+                                           uint64_t ts_init);
+
+    void vec_deltas_drop(CVec v);
 
     BookOrder_t book_order_from_raw(OrderSide order_side,
                                     int64_t price_raw,
