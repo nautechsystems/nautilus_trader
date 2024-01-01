@@ -986,9 +986,9 @@ cdef class Bar(Data):
         return Bar.to_dict_c(obj)
 
     @staticmethod
-    def from_pyo3(list pyo3_bars) -> list[Bar]:
+    def from_pyo3_list(list pyo3_bars) -> list[Bar]:
         """
-        Return bars converted from the given pyo3 provided objects.
+        Return legacy Cython bars converted from the given pyo3 Rust objects.
 
         Parameters
         ----------
@@ -1889,9 +1889,9 @@ cdef class OrderBookDelta(Data):
         return OrderBookDelta.clear_c(instrument_id, ts_event, ts_init, sequence)
 
     @staticmethod
-    def from_pyo3(list pyo3_deltas) -> list[OrderBookDelta]:
+    def from_pyo3_list(list pyo3_deltas) -> list[OrderBookDelta]:
         """
-        Return order book deltas converted from the given pyo3 provided objects.
+        Return legacy Cython order book deltas converted from the given Rust pyo3 objects.
 
         Parameters
         ----------
@@ -2735,9 +2735,9 @@ cdef class QuoteTick(Data):
         return QuoteTick.to_dict_c(obj)
 
     @staticmethod
-    def from_pyo3(list pyo3_ticks) -> list[QuoteTick]:
+    def from_pyo3_list(list pyo3_ticks) -> list[QuoteTick]:
         """
-        Return quote ticks converted from the given pyo3 provided objects.
+        Return legacy Cython quote ticks converted from the given pyo3 Rust objects.
 
         Parameters
         ----------
@@ -3057,7 +3057,6 @@ cdef class TradeTick(Data):
 
     @staticmethod
     cdef inline list_to_capsule_c(list items):
-
         # Create a C struct buffer
         cdef uint64_t len_ = len(items)
         cdef TradeTick_t * data = <TradeTick_t *> PyMem_Malloc(len_ * sizeof(TradeTick_t))
@@ -3194,9 +3193,9 @@ cdef class TradeTick(Data):
         return TradeTick.to_dict_c(obj)
 
     @staticmethod
-    def from_pyo3(list pyo3_ticks) -> list[TradeTick]:
+    def from_pyo3_list(list pyo3_ticks) -> list[TradeTick]:
         """
-        Return trade ticks converted from the given pyo3 provided objects.
+        Return legacy Cython trade ticks converted from the given pyo3 Rust objects.
 
         Parameters
         ----------
