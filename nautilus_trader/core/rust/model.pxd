@@ -1406,6 +1406,8 @@ cdef extern from "../includes/model.h":
 
     void orderbook_apply_delta(OrderBook_API *book, OrderBookDelta_t delta);
 
+    void orderbook_apply_deltas(OrderBook_API *book, OrderBookDeltas_t deltas);
+
     CVec orderbook_bids(OrderBook_API *book);
 
     CVec orderbook_asks(OrderBook_API *book);
