@@ -17,13 +17,9 @@ import logging
 import os
 from enum import IntEnum
 from time import sleep
-from typing import TYPE_CHECKING, ClassVar, Literal
+from typing import ClassVar, Literal
 
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersGatewayConfig
-
-
-if TYPE_CHECKING:
-    from docker.models.containers import Container
 
 
 class ContainerStatus(IntEnum):
@@ -104,7 +100,7 @@ class InteractiveBrokersGateway:
 
     @property
     def container_status(self) -> ContainerStatus:
-        container: Container = self.container
+        container = self.container
         if container is None:
             return ContainerStatus.NO_CONTAINER
         elif container.status == "running":
@@ -118,14 +114,14 @@ class InteractiveBrokersGateway:
             return ContainerStatus.UNKNOWN
 
     @property
-    def container(self) -> Container:
+    def container(self):
         if self._container is None:
             all_containers = {c.name: c for c in self._docker.containers.list(all=True)}
             self._container = all_containers.get(f"{self.CONTAINER_NAME}-{self.port}")
         return self._container
 
     @staticmethod
-    def is_logged_in(container: Container) -> bool:
+    def is_logged_in(container) -> bool:
         try:
             logs = container.logs()
         except NoContainer:
