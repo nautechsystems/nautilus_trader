@@ -2061,6 +2061,8 @@ void orderbook_clear_asks(struct OrderBook_API *book, uint64_t ts_event, uint64_
 
 void orderbook_apply_delta(struct OrderBook_API *book, struct OrderBookDelta_t delta);
 
+void orderbook_apply_deltas(struct OrderBook_API *book, struct OrderBookDeltas_t deltas);
+
 CVec orderbook_bids(struct OrderBook_API *book);
 
 CVec orderbook_asks(struct OrderBook_API *book);
