@@ -378,7 +378,7 @@ class TestBetfairParsing:
                     ),
                     limit_on_close_order=None,
                     market_on_close_order=None,
-                    customer_order_ref="O-20210410-022422-001",
+                    customer_order_ref="O-20210410-022422-001-001-1",
                 ),
             ],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
@@ -523,7 +523,7 @@ class TestBetfairParsing:
             ),
             limit_on_close_order=None,
             market_on_close_order=None,
-            customer_order_ref="O-20210410-022422-001",
+            customer_order_ref="O-20210410-022422-001-001-1",
         )
         assert result == expected
         assert msgspec.json.decode(msgspec.json.encode(result), type=PlaceInstruction) == expected
@@ -546,7 +546,7 @@ class TestBetfairParsing:
             limit_order=None,
             limit_on_close_order=LimitOnCloseOrder(liability=10.0, price=3.05),
             market_on_close_order=None,
-            customer_order_ref="O-20210410-022422-001",
+            customer_order_ref="O-20210410-022422-001-001-1",
         )
         assert result == expected
         assert msgspec.json.decode(msgspec.json.encode(result), type=PlaceInstruction) == expected
@@ -571,7 +571,7 @@ class TestBetfairParsing:
             ),
             limit_on_close_order=None,
             market_on_close_order=None,
-            customer_order_ref="O-20210410-022422-001",
+            customer_order_ref="O-20210410-022422-001-001-1",
         )
         assert result == expected
         assert msgspec.json.decode(msgspec.json.encode(result), type=PlaceInstruction) == expected
@@ -596,7 +596,7 @@ class TestBetfairParsing:
             ),
             limit_on_close_order=None,
             market_on_close_order=None,
-            customer_order_ref="O-20210410-022422-001",
+            customer_order_ref="O-20210410-022422-001-001-1",
         )
         assert result == expected
         assert msgspec.json.decode(msgspec.json.encode(result), type=PlaceInstruction) == expected
