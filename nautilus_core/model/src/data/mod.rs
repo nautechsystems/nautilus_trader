@@ -15,6 +15,7 @@
 
 pub mod bar;
 pub mod delta;
+pub mod deltas;
 pub mod order;
 pub mod quote;
 pub mod ticker;
@@ -22,12 +23,15 @@ pub mod trade;
 
 use nautilus_core::time::UnixNanos;
 
-use self::{bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick};
+use self::{
+    bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas, quote::QuoteTick, trade::TradeTick,
+};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub enum Data {
     Delta(OrderBookDelta),
+    Deltas(OrderBookDeltas),
     Quote(QuoteTick),
     Trade(TradeTick),
     Bar(Bar),
@@ -41,6 +45,7 @@ impl HasTsInit for Data {
     fn get_ts_init(&self) -> UnixNanos {
         match self {
             Data::Delta(d) => d.ts_init,
+            Data::Deltas(d) => d.ts_init,
             Data::Quote(q) => q.ts_init,
             Data::Trade(t) => t.ts_init,
             Data::Bar(b) => b.ts_init,
@@ -49,6 +54,12 @@ impl HasTsInit for Data {
 }
 
 impl HasTsInit for OrderBookDelta {
+    fn get_ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl HasTsInit for OrderBookDeltas {
     fn get_ts_init(&self) -> UnixNanos {
         self.ts_init
     }
@@ -80,6 +91,12 @@ pub fn is_monotonically_increasing_by_init<T: HasTsInit>(data: &[T]) -> bool {
 impl From<OrderBookDelta> for Data {
     fn from(value: OrderBookDelta) -> Self {
         Self::Delta(value)
+    }
+}
+
+impl From<OrderBookDeltas> for Data {
+    fn from(value: OrderBookDeltas) -> Self {
+        Self::Deltas(value)
     }
 }
 

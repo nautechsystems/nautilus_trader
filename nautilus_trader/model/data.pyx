@@ -1942,7 +1942,7 @@ cdef class OrderBookDelta(Data):
 
 cdef class OrderBookDeltas(Data):
     """
-    Represents bulk `OrderBookDelta` updates for an `OrderBook`.
+    Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
 
     Parameters
     ----------
