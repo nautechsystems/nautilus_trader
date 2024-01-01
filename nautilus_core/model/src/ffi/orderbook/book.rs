@@ -22,10 +22,7 @@ use nautilus_core::ffi::{cvec::CVec, string::str_to_cstr};
 
 use super::level::Level_API;
 use crate::{
-    data::{
-        delta::OrderBookDelta, deltas::OrderBookDeltas, order::BookOrder, quote::QuoteTick,
-        trade::TradeTick,
-    },
+    data::{delta::OrderBookDelta, order::BookOrder, quote::QuoteTick, trade::TradeTick},
     enums::{BookType, OrderSide},
     identifiers::instrument_id::InstrumentId,
     orderbook::book::OrderBook,
@@ -146,17 +143,6 @@ pub extern "C" fn orderbook_clear_asks(book: &mut OrderBook_API, ts_event: u64, 
 #[no_mangle]
 pub extern "C" fn orderbook_apply_delta(book: &mut OrderBook_API, delta: OrderBookDelta) {
     book.apply_delta(delta)
-}
-
-#[no_mangle]
-pub extern "C" fn orderbook_apply_deltas(book: &mut OrderBook_API, deltas: OrderBookDeltas) {
-    let CVec { ptr, len, cap } = deltas.deltas;
-    let data: Vec<OrderBookDelta> =
-        unsafe { Vec::from_raw_parts(ptr as *mut OrderBookDelta, len, cap) };
-
-    for delta in data {
-        book.apply_delta(delta)
-    }
 }
 
 #[no_mangle]

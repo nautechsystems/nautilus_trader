@@ -15,7 +15,7 @@
 
 use std::fmt::{Display, Formatter};
 
-use nautilus_core::{ffi::cvec::CVec, time::UnixNanos};
+use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
 
 use super::delta::OrderBookDelta;
@@ -23,7 +23,7 @@ use crate::identifiers::instrument_id::InstrumentId;
 
 /// Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -32,7 +32,7 @@ pub struct OrderBookDeltas {
     /// The instrument ID for the book.
     pub instrument_id: InstrumentId,
     /// The order book deltas.
-    pub deltas: CVec,
+    pub deltas: Vec<OrderBookDelta>,
     /// A combination of packet end with matching engine status.
     pub flags: u8,
     /// The message sequence number assigned at the venue.
@@ -56,7 +56,7 @@ impl OrderBookDeltas {
     ) -> Self {
         Self {
             instrument_id,
-            deltas: deltas.into(),
+            deltas,
             flags,
             sequence,
             ts_event,
@@ -75,7 +75,7 @@ impl Display for OrderBookDeltas {
             f,
             "{},len={},flags={},sequence={},ts_event={},ts_init={}",
             self.instrument_id,
-            self.deltas.len,
+            self.deltas.len(),
             self.flags,
             self.sequence,
             self.ts_event,
@@ -317,7 +317,7 @@ mod tests {
         );
 
         assert_eq!(deltas.instrument_id, instrument_id);
-        assert_eq!(deltas.deltas.len, 7);
+        assert_eq!(deltas.deltas.len(), 7);
         assert_eq!(deltas.flags, flags);
         assert_eq!(deltas.sequence, sequence);
         assert_eq!(deltas.ts_event, ts_event);
