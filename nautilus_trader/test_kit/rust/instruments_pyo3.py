@@ -146,7 +146,7 @@ class TestInstrumentProviderPyo3:
     @staticmethod
     def appl_equity() -> Equity:
         return Equity(
-            id=InstrumentId.from_str("AAPL.NASDAQ"),
+            id=InstrumentId.from_str("AAPL.XNAS"),
             raw_symbol=Symbol("AAPL"),
             isin="US0378331005",
             currency=TestTypesProviderPyo3.currency_usd(),

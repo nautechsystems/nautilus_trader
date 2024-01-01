@@ -151,7 +151,7 @@ pub fn currency_pair_btcusdt() -> CurrencyPair {
 #[fixture]
 pub fn equity_aapl() -> Equity {
     Equity::new(
-        InstrumentId::from("AAPL.NASDAQ"),
+        InstrumentId::from("AAPL.XNAS"),
         Symbol::from("AAPL"),
         Some(Ustr::from("US0378331005")),
         Currency::from("USD"),
