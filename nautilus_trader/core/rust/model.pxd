@@ -5,6 +5,8 @@ from nautilus_trader.core.rust.core cimport CVec, UUID4_t
 
 cdef extern from "../includes/model.h":
 
+    const uintptr_t DEPTH_10_LEN # = 10
+
     const uint8_t FIXED_PRECISION # = 9
 
     const double FIXED_SCALAR # = 1000000000.0
@@ -417,6 +419,31 @@ cdef extern from "../includes/model.h":
         # The UNIX timestamp (nanoseconds) when the data object was initialized.
         uint64_t ts_init;
 
+    # Represents a self-contained order book update with a fixed depth of 10 levels per side.
+    #
+    # This struct is specifically designed for scenarios where a snapshot of the top 10 bid and
+    # ask levels in an order book is needed. It differs from `OrderBookDelta` or `OrderBookDeltas`
+    # in its fixed-depth nature and is optimized for cases where a full depth representation is not
+    # required or practical.
+    #
+    # Note: This type is not compatible with `OrderBookDelta` or `OrderBookDeltas` due to
+    # its specialized structure and limited depth use case.
+    cdef struct OrderBookDepth10:
+        # The instrument ID for the book.
+        InstrumentId_t instrument_id;
+        # The bid orders for the depth update.
+        BookOrder_t bids[DEPTH_10_LEN];
+        # The ask orders for the depth update.
+        BookOrder_t asks[DEPTH_10_LEN];
+        # A combination of packet end with matching engine status.
+        uint8_t flags;
+        # The message sequence number assigned at the venue.
+        uint64_t sequence;
+        # The UNIX timestamp (nanoseconds) when the data event occurred.
+        uint64_t ts_event;
+        # The UNIX timestamp (nanoseconds) when the data object was initialized.
+        uint64_t ts_init;
+
     # Represents a single quote tick in a financial market.
     cdef struct QuoteTick_t:
         # The quotes instrument ID.
@@ -502,6 +529,7 @@ cdef extern from "../includes/model.h":
 
     cpdef enum Data_t_Tag:
         DELTA,
+        DEPTH10,
         QUOTE,
         TRADE,
         BAR,
@@ -509,6 +537,7 @@ cdef extern from "../includes/model.h":
     cdef struct Data_t:
         Data_t_Tag tag;
         OrderBookDelta_t delta;
+        OrderBookDepth10 depth10;
         QuoteTick_t quote;
         TradeTick_t trade;
         Bar_t bar;
@@ -802,6 +831,22 @@ cdef extern from "../includes/model.h":
     uint8_t orderbook_delta_eq(const OrderBookDelta_t *lhs, const OrderBookDelta_t *rhs);
 
     uint64_t orderbook_delta_hash(const OrderBookDelta_t *delta);
+
+    # # Safety
+    #
+    # - Assumes `bids` and `asks` are valid pointers to arrays of `BookOrder` of length 10.
+    # - Assumes Rust now takes ownership of the memory for `bids` and `asks`.
+    OrderBookDepth10 orderbook_depth10_new(InstrumentId_t instrument_id,
+                                           const BookOrder_t *bids_ptr,
+                                           const BookOrder_t *asks_ptr,
+                                           uint8_t flags,
+                                           uint64_t sequence,
+                                           uint64_t ts_event,
+                                           uint64_t ts_init);
+
+    uint8_t orderbook_depth10_eq(const OrderBookDepth10 *lhs, const OrderBookDepth10 *rhs);
+
+    uint64_t orderbook_depth10_hash(const OrderBookDepth10 *delta);
 
     BookOrder_t book_order_from_raw(OrderSide order_side,
                                     int64_t price_raw,

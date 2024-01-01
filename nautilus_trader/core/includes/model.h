@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <Python.h>
 
+#define DEPTH_10_LEN 10
+
 #define FIXED_PRECISION 9
 
 #define FIXED_SCALAR 1000000000.0
@@ -772,6 +774,48 @@ typedef struct OrderBookDelta_t {
 } OrderBookDelta_t;
 
 /**
+ * Represents a self-contained order book update with a fixed depth of 10 levels per side.
+ *
+ * This struct is specifically designed for scenarios where a snapshot of the top 10 bid and
+ * ask levels in an order book is needed. It differs from `OrderBookDelta` or `OrderBookDeltas`
+ * in its fixed-depth nature and is optimized for cases where a full depth representation is not
+ * required or practical.
+ *
+ * Note: This type is not compatible with `OrderBookDelta` or `OrderBookDeltas` due to
+ * its specialized structure and limited depth use case.
+ */
+typedef struct OrderBookDepth10 {
+    /**
+     * The instrument ID for the book.
+     */
+    struct InstrumentId_t instrument_id;
+    /**
+     * The bid orders for the depth update.
+     */
+    struct BookOrder_t bids[DEPTH_10_LEN];
+    /**
+     * The ask orders for the depth update.
+     */
+    struct BookOrder_t asks[DEPTH_10_LEN];
+    /**
+     * A combination of packet end with matching engine status.
+     */
+    uint8_t flags;
+    /**
+     * The message sequence number assigned at the venue.
+     */
+    uint64_t sequence;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data event occurred.
+     */
+    uint64_t ts_event;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     */
+    uint64_t ts_init;
+} OrderBookDepth10;
+
+/**
  * Represents a single quote tick in a financial market.
  */
 typedef struct QuoteTick_t {
@@ -932,6 +976,7 @@ typedef struct Bar_t {
 
 typedef enum Data_t_Tag {
     DELTA,
+    DEPTH10,
     QUOTE,
     TRADE,
     BAR,
@@ -942,6 +987,9 @@ typedef struct Data_t {
     union {
         struct {
             struct OrderBookDelta_t delta;
+        };
+        struct {
+            struct OrderBookDepth10 depth10;
         };
         struct {
             struct QuoteTick_t quote;
@@ -1337,6 +1385,25 @@ struct OrderBookDelta_t orderbook_delta_new(struct InstrumentId_t instrument_id,
 uint8_t orderbook_delta_eq(const struct OrderBookDelta_t *lhs, const struct OrderBookDelta_t *rhs);
 
 uint64_t orderbook_delta_hash(const struct OrderBookDelta_t *delta);
+
+/**
+ * # Safety
+ *
+ * - Assumes `bids` and `asks` are valid pointers to arrays of `BookOrder` of length 10.
+ * - Assumes Rust now takes ownership of the memory for `bids` and `asks`.
+ */
+struct OrderBookDepth10 orderbook_depth10_new(struct InstrumentId_t instrument_id,
+                                              const struct BookOrder_t *bids_ptr,
+                                              const struct BookOrder_t *asks_ptr,
+                                              uint8_t flags,
+                                              uint64_t sequence,
+                                              uint64_t ts_event,
+                                              uint64_t ts_init);
+
+uint8_t orderbook_depth10_eq(const struct OrderBookDepth10 *lhs,
+                             const struct OrderBookDepth10 *rhs);
+
+uint64_t orderbook_depth10_hash(const struct OrderBookDepth10 *delta);
 
 struct BookOrder_t book_order_from_raw(enum OrderSide order_side,
                                        int64_t price_raw,
