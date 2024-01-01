@@ -68,7 +68,7 @@ impl Default for LoggerConfig {
 }
 
 impl LoggerConfig {
-    pub fn parse(spec: &str) -> Self {
+    pub fn from_spec(spec: &str) -> Self {
         let Self {
             mut stdout_level,
             mut fileout_level,
@@ -107,7 +107,7 @@ impl LoggerConfig {
 
     pub fn from_env() -> Self {
         match env::var("NAUTILUS_LOG") {
-            Ok(spec) => LoggerConfig::parse(&spec),
+            Ok(spec) => LoggerConfig::from_spec(&spec),
             Err(_) => LoggerConfig::default(),
         }
     }
@@ -525,42 +525,6 @@ impl Logger {
             Err(e) => eprintln!("Error writing to file: {e:?}"),
         }
     }
-
-    pub fn send(
-        &mut self,
-        timestamp: u64,
-        level: Level,
-        color: LogColor,
-        component: String,
-        message: String,
-    ) {
-        let line = LogLine {
-            timestamp,
-            level,
-            color,
-            component,
-            message,
-        };
-        if let Err(SendError(LogEvent::Data(line))) = self.tx.send(LogEvent::Data(line)) {
-            eprintln!("Error sending log event: {line}");
-        }
-    }
-
-    pub fn debug(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
-        self.send(timestamp, Level::Debug, color, component, message);
-    }
-
-    pub fn info(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
-        self.send(timestamp, Level::Info, color, component, message);
-    }
-
-    pub fn warn(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
-        self.send(timestamp, Level::Warn, color, component, message);
-    }
-
-    pub fn error(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
-        self.send(timestamp, Level::Error, color, component, message);
-    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -605,7 +569,7 @@ mod tests {
 
     #[rstest]
     fn log_config_parsing() {
-        let config = LoggerConfig::parse("stdout=Info;fileout=Debug;RiskEngine=Error");
+        let config = LoggerConfig::from_spec("stdout=Info;fileout=Debug;RiskEngine=Error");
         assert_eq!(
             config,
             LoggerConfig {
@@ -684,7 +648,7 @@ mod tests {
 
     #[rstest]
     fn test_log_component_level_filtering() {
-        let config = LoggerConfig::parse("stdout=Info;fileout=Debug;RiskEngine=Error");
+        let config = LoggerConfig::from_spec("stdout=Info;fileout=Debug;RiskEngine=Error");
 
         let temp_dir = tempdir().expect("Failed to create temporary directory");
         let file_writer_config = FileWriterConfig {
@@ -735,7 +699,7 @@ mod tests {
     #[ignore] // TODO: Ignore pre nextest setup
     #[rstest]
     fn test_logging_to_file_in_json_format() {
-        let config = LoggerConfig::parse("stdout=Info;fileout=Debug;RiskEngine=Info");
+        let config = LoggerConfig::from_spec("stdout=Info;fileout=Debug;RiskEngine=Info");
 
         let temp_dir = tempdir().expect("Failed to create temporary directory");
         let file_writer_config = FileWriterConfig {

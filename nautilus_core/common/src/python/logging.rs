@@ -46,7 +46,7 @@ impl LoggerConfig {
     #[staticmethod]
     #[pyo3(name = "from_spec")]
     pub fn py_from_spec(spec: String) -> Self {
-        Self::parse(&spec)
+        Self::from_spec(&spec)
     }
 
     #[staticmethod]
