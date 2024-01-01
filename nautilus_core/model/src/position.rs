@@ -144,7 +144,7 @@ impl Position {
             self.realized_pnl = None;
         }
 
-        self.events.push(fill.clone()); // Potentially do this last
+        self.events.push(fill); // Potentially do this last
         self.trade_ids.push(fill.trade_id);
 
         // Calculate cumulative commissions

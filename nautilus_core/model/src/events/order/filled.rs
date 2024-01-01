@@ -32,7 +32,7 @@ use crate::{
 };
 
 #[repr(C)]
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 #[cfg_attr(

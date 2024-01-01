@@ -21,7 +21,7 @@ use crate::backend::session::{DataBackendSession, DataQueryResult};
 
 #[repr(C)]
 #[pyclass]
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum NautilusDataType {
     // Custom = 0,  # First slot reserved for custom data
     OrderBookDelta = 1,
