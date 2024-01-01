@@ -178,7 +178,7 @@ pub struct HttpClient {
 
 #[pymethods]
 impl HttpClient {
-    /// Create a new HttpClient
+    /// Create a new HttpClient.
     ///
     /// * `header_keys` - The key value pairs for the given `header_keys` are retained from the responses.
     /// * `keyed_quota` - A list of string quota pairs that gives quota for specific key values.
@@ -351,8 +351,6 @@ mod tests {
             "key2".to_string(),
             serde_json::Value::String("value2".to_string()),
         );
-
-        println!("{:?}", body);
 
         let body_string = serde_json::to_string(&body).unwrap();
         let body_bytes = body_string.into_bytes();
