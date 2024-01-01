@@ -51,11 +51,14 @@ from nautilus_trader.config import StrategyFactory
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.config.common import ControllerFactory
 from nautilus_trader.config.common import ExecAlgorithmFactory
-from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import nanos_to_millis
+from nautilus_trader.core.nautilus_pyo3.common import init_logging
+from nautilus_trader.core.nautilus_pyo3.common import init_tracing
+from nautilus_trader.core.nautilus_pyo3.common import LoggerConfig
+from nautilus_trader.core.nautilus_pyo3.common import FileWriterConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.algorithm import ExecAlgorithm
@@ -149,7 +152,14 @@ class NautilusKernel:
                 f"environment {self._environment} not recognized",  # pragma: no cover (design-time error)
             )
 
-        logging: LoggingConfig = config.logging or LoggingConfig()
+        # Initialize tracing for debugging async rust logic
+        init_tracing()
+
+        # Initialize logging for debugging python and sync rust logic
+        logging_config = config.logging
+        file_writer_config = FileWriterConfig(logging_config.log_directory, logging_config.log_file_name, logging_config.log_file_name)
+        logger_config = LoggerConfig.from_spec("stdout=info;fileout=debug")
+        init_logging(self._clock.time, self._trader_id, self._instance_id, file_writer_config, logger_config)
 
         # Setup the logger with a `LiveClock` initially,
         # which is later swapped out for a `TestClock` in the `BacktestEngine`.

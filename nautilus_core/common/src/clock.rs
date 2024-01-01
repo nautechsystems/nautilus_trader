@@ -71,6 +71,7 @@ pub trait Clock {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
 pub struct TestClock {
+    #[pyo3(get)]
     time: AtomicTime,
     timers: HashMap<String, TestTimer>,
     default_callback: Option<EventHandler>,
@@ -258,7 +259,8 @@ impl Clock for TestClock {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
 pub struct LiveClock {
-    internal: AtomicTime,
+    #[pyo3(get)]
+    time: AtomicTime,
     timers: HashMap<String, TestTimer>,
     default_callback: Option<EventHandler>,
     callbacks: HashMap<String, EventHandler>,
@@ -268,7 +270,7 @@ impl LiveClock {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            internal: AtomicTime::new(true, 0),
+            time: AtomicTime::new(true, 0),
             timers: HashMap::new(),
             default_callback: None,
             callbacks: HashMap::new(),
@@ -286,7 +288,7 @@ impl Deref for LiveClock {
     type Target = AtomicTime;
 
     fn deref(&self) -> &Self::Target {
-        &self.internal
+        &self.time
     }
 }
 

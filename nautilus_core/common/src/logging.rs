@@ -183,7 +183,10 @@ impl fmt::Display for LogLine {
 
 impl Log for Logger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        !self.config.is_bypassed && self.config.stdout_level <= metadata.level()
+        !self.config.is_bypassed
+            && (metadata.level() == Level::Error
+                || self.config.stdout_level <= metadata.level()
+                || self.config.fileout_level <= metadata.level())
     }
 
     fn log(&self, record: &log::Record) {
