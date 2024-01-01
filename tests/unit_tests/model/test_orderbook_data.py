@@ -15,6 +15,8 @@
 
 import pickle
 
+import pytest
+
 from nautilus_trader.model.data import NULL_ORDER
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
@@ -27,6 +29,118 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD = TestIdStubs.audusd_id()
+
+
+@pytest.mark.parametrize(
+    ("side"),
+    [
+        OrderSide.BUY,
+        OrderSide.SELL,
+    ],
+)
+def test_init(side: OrderSide) -> None:
+    order = BookOrder(
+        price=Price.from_str("100"),
+        size=Quantity.from_str("10"),
+        side=side,
+        order_id=1,
+    )
+    assert order.side == side
+    assert order.price == 100
+    assert order.size == 10
+    assert order.order_id == 1
+
+
+def test_signed_size():
+    order = BookOrder(
+        price=Price.from_str("10.0"),
+        size=Quantity.from_str("1"),
+        side=OrderSide.BUY,
+        order_id=1,
+    )
+    assert order.size == 1
+    assert order.signed_size() == 1.0
+
+    order = BookOrder(
+        price=Price.from_str("10.0"),
+        size=Quantity.from_str("5"),
+        side=OrderSide.SELL,
+        order_id=2,
+    )
+    assert order.size == 5
+    assert order.signed_size() == -5.0
+
+    order = BookOrder(
+        price=Price.from_str("10.0"),
+        size=Quantity.zero(),
+        side=OrderSide.SELL,
+        order_id=3,
+    )
+    assert order.size == 0.0
+    assert order.signed_size() == 0.0
+
+
+def test_exposure():
+    order = BookOrder(
+        price=Price.from_str("100.0"),
+        size=Quantity.from_str("10"),
+        side=OrderSide.BUY,
+        order_id=1,
+    )
+    assert order.exposure() == 1000.0
+
+
+def test_hash_str_and_repr():
+    # Arrange
+    order = BookOrder(
+        price=Price.from_str("100.0"),
+        size=Quantity.from_str("5"),
+        side=OrderSide.BUY,
+        order_id=1,
+    )
+
+    # Act, Assert
+    assert isinstance(hash(order), int)
+    assert str(order) == r"BookOrder { side: Buy, price: 100.0, size: 5, order_id: 1 }"
+    assert repr(order) == r"BookOrder { side: Buy, price: 100.0, size: 5, order_id: 1 }"
+
+
+def test_to_dict_returns_expected_dict():
+    # Arrange
+    order = BookOrder(
+        price=Price.from_str("100.00"),
+        size=Quantity.from_str("5"),
+        side=OrderSide.BUY,
+        order_id=1,
+    )
+
+    # Act
+    result = BookOrder.to_dict(order)
+
+    # Assert
+    assert result == {
+        "type": "BookOrder",
+        "side": "BUY",
+        "price": "100.00",
+        "size": "5",
+        "order_id": 1,
+    }
+
+
+def test_from_dict_returns_expected_order():
+    # Arrange
+    order = BookOrder(
+        price=Price.from_str("100.0"),
+        size=Quantity.from_str("5"),
+        side=OrderSide.BUY,
+        order_id=1,
+    )
+
+    # Act
+    result = BookOrder.from_dict(BookOrder.to_dict(order))
+
+    # Assert
+    assert result == order
 
 
 def test_book_order_from_raw() -> None:
@@ -329,7 +443,7 @@ def test_deltas_to_dict() -> None:
         flags=0,
         sequence=0,
         ts_event=0,
-        ts_init=0,
+        ts_init=1,
     )
 
     order2 = BookOrder(
@@ -345,8 +459,8 @@ def test_deltas_to_dict() -> None:
         order=order2,
         flags=0,
         sequence=1,
-        ts_event=0,
-        ts_init=0,
+        ts_event=2,
+        ts_init=3,
     )
 
     deltas = OrderBookDeltas(
@@ -362,7 +476,28 @@ def test_deltas_to_dict() -> None:
     assert result == {
         "type": "OrderBookDeltas",
         "instrument_id": "AUD/USD.SIM",
-        "deltas": b'[{"type":"OrderBookDelta","instrument_id":"AUD/USD.SIM","action":"ADD","order":{"side":"BUY","price":"10.0","size":"5","order_id":1},"flags":0,"sequence":0,"ts_event":0,"ts_init":0},{"type":"OrderBookDelta","instrument_id":"AUD/USD.SIM","action":"ADD","order":{"side":"BUY","price":"10.0","size":"15","order_id":2},"flags":0,"sequence":1,"ts_event":0,"ts_init":0}]',  # noqa
+        "deltas": [
+            {
+                "type": "OrderBookDelta",
+                "instrument_id": "AUD/USD.SIM",
+                "action": "ADD",
+                "order": {"side": "BUY", "price": "10.0", "size": "5", "order_id": 1},
+                "flags": 0,
+                "sequence": 0,
+                "ts_event": 0,
+                "ts_init": 1,
+            },
+            {
+                "type": "OrderBookDelta",
+                "instrument_id": "AUD/USD.SIM",
+                "action": "ADD",
+                "order": {"side": "BUY", "price": "10.0", "size": "15", "order_id": 2},
+                "flags": 0,
+                "sequence": 1,
+                "ts_event": 2,
+                "ts_init": 3,
+            },
+        ],
     }
 
 

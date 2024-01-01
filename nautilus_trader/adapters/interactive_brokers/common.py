@@ -22,7 +22,7 @@ from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.model.identifiers import Venue
 
 
-IB_VENUE: Final[Venue] = Venue("InteractiveBrokers")
+IB_VENUE: Final[Venue] = Venue("INTERACTIVE_BROKERS")
 
 
 class ContractId(int):

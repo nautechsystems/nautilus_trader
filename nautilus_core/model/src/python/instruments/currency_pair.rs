@@ -18,9 +18,11 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::python::{serialization::from_dict_pyo3, to_pyvalue_err};
+use nautilus_core::{
+    python::{serialization::from_dict_pyo3, to_pyvalue_err},
+    time::UnixNanos,
+};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
-use rust_decimal::{prelude::ToPrimitive, Decimal};
 
 use crate::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
@@ -41,10 +43,8 @@ impl CurrencyPair {
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
-        margin_init: Decimal,
-        margin_maint: Decimal,
-        maker_fee: Decimal,
-        taker_fee: Decimal,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
@@ -60,15 +60,13 @@ impl CurrencyPair {
             size_precision,
             price_increment,
             size_increment,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
             lot_size,
             max_quantity,
             min_quantity,
             max_price,
             min_price,
+            ts_event,
+            ts_init,
         )
         .map_err(to_pyvalue_err)
     }
@@ -104,10 +102,8 @@ impl CurrencyPair {
         dict.set_item("size_precision", self.size_precision)?;
         dict.set_item("price_increment", self.price_increment.to_string())?;
         dict.set_item("size_increment", self.size_increment.to_string())?;
-        dict.set_item("margin_init", self.margin_init.to_f64())?;
-        dict.set_item("margin_maint", self.margin_maint.to_f64())?;
-        dict.set_item("maker_fee", self.margin_init.to_f64())?;
-        dict.set_item("taker_fee", self.margin_init.to_f64())?;
+        dict.set_item("ts_event", self.ts_event)?;
+        dict.set_item("ts_init", self.ts_init)?;
         match self.lot_size {
             Some(value) => dict.set_item("lot_size", value.to_string())?,
             None => dict.set_item("lot_size", py.None())?,

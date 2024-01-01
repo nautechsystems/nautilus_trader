@@ -48,10 +48,6 @@ class TestInstrumentProviderPyo3:
             size_precision=0,
             price_increment=Price.from_str("0.01"),
             size_increment=Quantity.from_str("0.001"),
-            margin_init=0.0,
-            margin_maint=0.0,
-            maker_fee=0.001,
-            taker_fee=0.001,
             lot_size=None,
             max_quantity=Quantity.from_str("10000"),
             min_quantity=Quantity.from_str("0.001"),
@@ -59,6 +55,8 @@ class TestInstrumentProviderPyo3:
             min_notional=Money(10.0, TestTypesProviderPyo3.currency_usdt()),
             max_price=Price.from_str("15000.0"),
             min_price=Price.from_str("1.0"),
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -84,10 +82,6 @@ class TestInstrumentProviderPyo3:
             size_precision=6,
             price_increment=Price.from_str("0.01"),
             size_increment=Quantity.from_str("0.000001"),
-            margin_init=0.0,
-            margin_maint=0.0,
-            maker_fee=0.001,
-            taker_fee=0.001,
             lot_size=None,
             max_quantity=Quantity.from_str("9000"),
             min_quantity=Quantity.from_str("0.00001"),
@@ -95,6 +89,8 @@ class TestInstrumentProviderPyo3:
             min_notional=Money(10.0, TestTypesProviderPyo3.currency_usdt()),
             max_price=Price.from_str("1000000.0"),
             min_price=Price.from_str("0.01"),
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -108,15 +104,13 @@ class TestInstrumentProviderPyo3:
             size_precision=6,
             price_increment=Price.from_str("0.01"),
             size_increment=Quantity.from_str("0.000001"),
-            margin_init=0.0,
-            margin_maint=0.0,
-            maker_fee=0.001,
-            taker_fee=0.001,
             lot_size=None,
             max_quantity=Quantity.from_str("9000"),
             min_quantity=Quantity.from_str("0.00001"),
             max_price=Price.from_str("1000000"),
             min_price=Price.from_str("0.01"),
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -140,15 +134,13 @@ class TestInstrumentProviderPyo3:
             currency=TestTypesProviderPyo3.currency_usdt(),
             price_precision=2,
             price_increment=Price.from_str("0.01"),
-            margin_init=0.0,
-            margin_maint=0.0,
-            maker_fee=0.001,
-            taker_fee=0.001,
             lot_size=Quantity.from_str("1.0"),
             max_quantity=None,
             min_quantity=None,
             max_price=None,
             min_price=None,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -160,16 +152,13 @@ class TestInstrumentProviderPyo3:
             currency=TestTypesProviderPyo3.currency_usd(),
             price_precision=2,
             price_increment=Price.from_str("0.01"),
-            multiplier=Quantity.from_str("1"),
-            margin_init=0.0,
-            margin_maint=0.0,
-            maker_fee=0.001,
-            taker_fee=0.001,
-            lot_size=Quantity.from_str("1.0"),
+            lot_size=Quantity.from_int(100),
             max_quantity=None,
             min_quantity=None,
             max_price=None,
             min_price=None,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -191,14 +180,12 @@ class TestInstrumentProviderPyo3:
             currency=TestTypesProviderPyo3.currency_usd(),
             price_precision=2,
             price_increment=Price.from_str("0.01"),
-            margin_init=0.0,
-            margin_maint=0.0,
-            maker_fee=0.001,
-            taker_fee=0.001,
             multiplier=Quantity.from_str("1.0"),
             lot_size=Quantity.from_str("1.0"),
             max_quantity=None,
             min_quantity=None,
             max_price=None,
             min_price=None,
+            ts_event=0,
+            ts_init=0,
         )

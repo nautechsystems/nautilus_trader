@@ -4,13 +4,26 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `NautilusConfig.json_primitives` to convert object to Python dictionary with JSON primitive values
+- Added `InstrumentClass.BOND`
+- Improved Interactive Brokers adapter raising docker `RuntimeError` only when needed (not when using TWS), thanks @rsmb7z
 
 ### Breaking Changes
 - Changed `ComponentStateChanged` Arrow schema for `config` from `string` to `binary`
 - Changed `OrderInitialized` Arrow schema for `options` from `string` to `binary`
+- Changed `OrderBookDeltas` dictionary representation of `deltas` field from JSON `bytes` to a list of `dict` (standardize with all other data types)
+- Renamed `TradeReport` to `FillReport` (more conventional terminology, and more clearly separates market data from user execution reports)
+- Renamed `AssetType` enum to `InstrumentClass` (more conventional terminology)
+- Renamed `asset_type` to `instrument_class` across the codebase (more conventional terminology)
+- Renamed `AssetClass.BOND` to `AssetClass.DEBT` (more conventional terminology)
+- Removed `AssetClass.METAL` (not strictly an asset class, more a futures category)
+- Removed `AssetClass.ENERGY` (not strictly an asset class, more a futures category)
+- Removed `multiplier` param from `Equity` constructor (not applicable)
+- Removed `size_precision`, `size_increment`, and `multiplier` fields from `Equity` dictionary representation (not applicable)
+- Moved `AssetClass.SPORTS_BETTING` to `InstrumentClass.SPORTS_BETTING`
 
 ### Fixes
 - Fixed handling of configuration objects to work with `StreamingFeatherWriter`
+- Fixed `BinanceSpotInstrumentProvider` fee loading key error for partial instruments load, thanks for reporting @doublier1
 
 ---
 

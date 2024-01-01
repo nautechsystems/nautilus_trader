@@ -216,7 +216,7 @@ data_client_config = InteractiveBrokersDataClientConfig(
 
 ### Execution Client
 
-The `InteractiveBrokersExecutionClient` facilitates executing trades, accessing account information, and processing order and trade-related details. It encompasses a range of methods for order management, including reporting order statuses, placing new orders, and modifying or canceling existing ones. Additionally, it generates position reports, although trade reports are not yet implemented.
+The `InteractiveBrokersExecutionClient` facilitates executing trades, accessing account information, and processing order and trade-related details. It encompasses a range of methods for order management, including reporting order statuses, placing new orders, and modifying or canceling existing ones. Additionally, it generates position reports, although fill reports are not yet implemented.
 
 ```python
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig

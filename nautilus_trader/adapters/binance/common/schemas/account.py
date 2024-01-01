@@ -24,8 +24,8 @@ from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
-from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -85,14 +85,14 @@ class BinanceUserTrade(msgspec.Struct, frozen=True):
     baseQty: str | None = None  # COIN-M FUTURES only
     pair: str | None = None  # COIN-M FUTURES only
 
-    def parse_to_trade_report(
+    def parse_to_fill_report(
         self,
         account_id: AccountId,
         instrument_id: InstrumentId,
         report_id: UUID4,
         ts_init: int,
         use_position_ids: bool = True,
-    ) -> TradeReport:
+    ) -> FillReport:
         venue_position_id: PositionId | None = None
         if self.positionSide is not None and use_position_ids:
             venue_position_id = PositionId(f"{instrument_id}-{self.positionSide}")
@@ -100,7 +100,7 @@ class BinanceUserTrade(msgspec.Struct, frozen=True):
         order_side = OrderSide.BUY if self.isBuyer or self.buyer else OrderSide.SELL
         liquidity_side = LiquiditySide.MAKER if self.isMaker or self.maker else LiquiditySide.TAKER
 
-        return TradeReport(
+        return FillReport(
             account_id=account_id,
             instrument_id=instrument_id,
             venue_order_id=VenueOrderId(str(self.orderId)),

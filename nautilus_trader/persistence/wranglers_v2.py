@@ -19,20 +19,8 @@ from typing import Any, ClassVar
 import pandas as pd
 import pyarrow as pa
 
-from nautilus_trader.core.nautilus_pyo3 import Bar as RustBar
-from nautilus_trader.core.nautilus_pyo3 import BarDataWrangler as RustBarDataWrangler
-
-# fmt: off
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDelta as RustOrderBookDelta
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDeltaDataWrangler as RustOrderBookDeltaDataWrangler
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick as RustQuoteTick
-from nautilus_trader.core.nautilus_pyo3 import QuoteTickDataWrangler as RustQuoteTickDataWrangler
-from nautilus_trader.core.nautilus_pyo3 import TradeTick as RustTradeTick
-from nautilus_trader.core.nautilus_pyo3 import TradeTickDataWrangler as RustTradeTickDataWrangler
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.instruments import Instrument
-
-
-# fmt: on
 
 
 ###################################################################################################
@@ -88,7 +76,7 @@ class OrderBookDeltaDataWrangler(WranglerBase):
         price_precision: int,
         size_precision: int,
     ) -> None:
-        self._inner = RustOrderBookDeltaDataWrangler(
+        self._inner = nautilus_pyo3.OrderBookDeltaDataWrangler(
             instrument_id=instrument_id,
             price_precision=price_precision,
             size_precision=size_precision,
@@ -97,7 +85,7 @@ class OrderBookDeltaDataWrangler(WranglerBase):
     def from_arrow(
         self,
         table: pa.Table,
-    ) -> list[RustOrderBookDelta]:
+    ) -> list[nautilus_pyo3.OrderBookDelta]:
         sink = pa.BufferOutputStream()
         writer: pa.RecordBatchStreamWriter = pa.ipc.new_stream(sink, table.schema)
         writer.write_table(table)
@@ -110,7 +98,7 @@ class OrderBookDeltaDataWrangler(WranglerBase):
         self,
         df: pd.DataFrame,
         ts_init_delta: int = 0,
-    ) -> list[RustOrderBookDelta]:
+    ) -> list[nautilus_pyo3.OrderBookDelta]:
         """
         Process the given pandas.DataFrame into Nautilus `OrderBookDelta` objects.
 
@@ -188,7 +176,7 @@ class QuoteTickDataWrangler(WranglerBase):
     """
 
     def __init__(self, instrument_id: str, price_precision: int, size_precision: int) -> None:
-        self._inner = RustQuoteTickDataWrangler(
+        self._inner = nautilus_pyo3.QuoteTickDataWrangler(
             instrument_id=instrument_id,
             price_precision=price_precision,
             size_precision=size_precision,
@@ -197,7 +185,7 @@ class QuoteTickDataWrangler(WranglerBase):
     def from_arrow(
         self,
         table: pa.Table,
-    ) -> list[RustQuoteTick]:
+    ) -> list[nautilus_pyo3.QuoteTick]:
         sink = pa.BufferOutputStream()
         writer: pa.RecordBatchStreamWriter = pa.ipc.new_stream(sink, table.schema)
         writer.write_table(table)
@@ -211,7 +199,7 @@ class QuoteTickDataWrangler(WranglerBase):
         df: pd.DataFrame,
         default_size: float = 1_000_000.0,
         ts_init_delta: int = 0,
-    ) -> list[RustQuoteTick]:
+    ) -> list[nautilus_pyo3.QuoteTick]:
         """
         Process the given `data` into Nautilus `QuoteTick` objects.
 
@@ -232,7 +220,7 @@ class QuoteTickDataWrangler(WranglerBase):
 
         Returns
         -------
-        list[RustQuoteTick]
+        list[nautilus_pyo3.QuoteTick]
             A list of PyO3 [pyclass] `QuoteTick` objects.
 
         """
@@ -310,7 +298,7 @@ class TradeTickDataWrangler(WranglerBase):
         price_precision: int,
         size_precision: int,
     ) -> None:
-        self._inner = RustTradeTickDataWrangler(
+        self._inner = nautilus_pyo3.TradeTickDataWrangler(
             instrument_id=instrument_id,
             price_precision=price_precision,
             size_precision=size_precision,
@@ -319,7 +307,7 @@ class TradeTickDataWrangler(WranglerBase):
     def from_arrow(
         self,
         table: pa.Table,
-    ) -> list[RustTradeTick]:
+    ) -> list[nautilus_pyo3.TradeTick]:
         sink = pa.BufferOutputStream()
         writer: pa.RecordBatchStreamWriter = pa.ipc.new_stream(sink, table.schema)
         writer.write_table(table)
@@ -331,14 +319,14 @@ class TradeTickDataWrangler(WranglerBase):
     def from_json(
         self,
         data: list[dict[str, Any]],
-    ) -> list[RustTradeTick]:
-        return [RustTradeTick.from_dict(d) for d in data]
+    ) -> list[nautilus_pyo3.TradeTick]:
+        return [nautilus_pyo3.TradeTick.from_dict(d) for d in data]
 
     def from_pandas(
         self,
         df: pd.DataFrame,
         ts_init_delta: int = 0,
-    ) -> list[RustTradeTick]:
+    ) -> list[nautilus_pyo3.TradeTick]:
         """
         Process the given `data` into Nautilus `TradeTick` objects.
 
@@ -353,7 +341,7 @@ class TradeTickDataWrangler(WranglerBase):
 
         Returns
         -------
-        list[RustTradeTick]
+        list[nautilus_pyo3.TradeTick]
             A list of PyO3 [pyclass] `TradeTick` objects.
 
         """
@@ -434,7 +422,7 @@ class BarDataWrangler(WranglerBase):
         size_precision: int,
     ) -> None:
         self.bar_type = bar_type
-        self._inner = RustBarDataWrangler(
+        self._inner = nautilus_pyo3.BarDataWrangler(
             bar_type=bar_type,
             price_precision=price_precision,
             size_precision=size_precision,
@@ -443,7 +431,7 @@ class BarDataWrangler(WranglerBase):
     def from_arrow(
         self,
         table: pa.Table,
-    ) -> list[RustBar]:
+    ) -> list[nautilus_pyo3.Bar]:
         sink = pa.BufferOutputStream()
         writer: pa.RecordBatchStreamWriter = pa.ipc.new_stream(sink, table.schema)
         writer.write_table(table)
@@ -457,7 +445,7 @@ class BarDataWrangler(WranglerBase):
         df: pd.DataFrame,
         default_volume: float = 1_000_000.0,
         ts_init_delta: int = 0,
-    ) -> list[RustBar]:
+    ) -> list[nautilus_pyo3.Bar]:
         """
         Process the given `data` into Nautilus `Bar` objects.
 
@@ -474,7 +462,7 @@ class BarDataWrangler(WranglerBase):
 
         Returns
         -------
-        list[RustBar]
+        list[nautilus_pyo3.Bar]
             A list of PyO3 [pyclass] `Bar` objects.
 
         """

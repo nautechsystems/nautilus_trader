@@ -12,11 +12,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from nautilus_trader.core.nautilus_pyo3 import Equity
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
-aapl_equity = TestInstrumentProviderPyo3.appl_equity()
+_AAPL_EQUITY = TestInstrumentProviderPyo3.appl_equity()
 
 
 def test_equality():
@@ -26,12 +27,12 @@ def test_equality():
 
 
 def test_hash():
-    assert hash(aapl_equity) == hash(aapl_equity)
+    assert hash(_AAPL_EQUITY) == hash(_AAPL_EQUITY)
 
 
 def test_to_dict():
-    dict = aapl_equity.to_dict()
-    assert Equity.from_dict(dict) == aapl_equity
+    dict = _AAPL_EQUITY.to_dict()
+    assert Equity.from_dict(dict) == _AAPL_EQUITY
     assert dict == {
         "type": "Equity",
         "id": "AAPL.NASDAQ",
@@ -40,14 +41,11 @@ def test_to_dict():
         "currency": "USD",
         "price_precision": 2,
         "price_increment": "0.01",
-        "multiplier": "1",
-        "margin_init": 0.0,
-        "margin_maint": 0.0,
-        "maker_fee": 0.001,
-        "taker_fee": 0.001,
-        "lot_size": "1.0",
+        "lot_size": "100",
         "max_quantity": None,
         "min_quantity": None,
         "max_price": None,
         "min_price": None,
+        "ts_event": 0,
+        "ts_init": 0,
     }

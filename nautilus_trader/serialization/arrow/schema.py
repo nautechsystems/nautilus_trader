@@ -19,10 +19,7 @@ import pyarrow as pa
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import TradingStateChanged
-from nautilus_trader.core.nautilus_pyo3 import Bar as RustBar
-from nautilus_trader.core.nautilus_pyo3 import OrderBookDelta as RustOrderBookDelta
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick as RustQuoteTick
-from nautilus_trader.core.nautilus_pyo3 import TradeTick as RustTradeTick
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
@@ -51,17 +48,26 @@ NAUTILUS_ARROW_SCHEMA = {
     OrderBookDelta: pa.schema(
         [
             pa.field(k, pa.type_for_alias(v), False)
-            for k, v in RustOrderBookDelta.get_fields().items()
+            for k, v in nautilus_pyo3.OrderBookDelta.get_fields().items()
         ],
     ),
     QuoteTick: pa.schema(
-        [pa.field(k, pa.type_for_alias(v), False) for k, v in RustQuoteTick.get_fields().items()],
+        [
+            pa.field(k, pa.type_for_alias(v), False)
+            for k, v in nautilus_pyo3.QuoteTick.get_fields().items()
+        ],
     ),
     TradeTick: pa.schema(
-        [pa.field(k, pa.type_for_alias(v), False) for k, v in RustTradeTick.get_fields().items()],
+        [
+            pa.field(k, pa.type_for_alias(v), False)
+            for k, v in nautilus_pyo3.TradeTick.get_fields().items()
+        ],
     ),
     Bar: pa.schema(
-        [pa.field(k, pa.type_for_alias(v), False) for k, v in RustBar.get_fields().items()],
+        [
+            pa.field(k, pa.type_for_alias(v), False)
+            for k, v in nautilus_pyo3.Bar.get_fields().items()
+        ],
     ),
     Ticker: pa.schema(
         [

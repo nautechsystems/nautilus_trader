@@ -17,16 +17,13 @@ import logging
 import os
 from enum import IntEnum
 from time import sleep
-from typing import ClassVar, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersGatewayConfig
 
 
-try:
-    import docker
-    from docker.models.containers import ContainerCollection
-except ImportError as e:
-    raise RuntimeError("Docker required for Gateway, install via `pip install docker`") from e
+if TYPE_CHECKING:
+    from docker.models.containers import Container
 
 
 class ContainerStatus(IntEnum):
@@ -81,10 +78,20 @@ class InteractiveBrokersGateway:
         self.trading_mode = trading_mode
         self.read_only_api = read_only_api
         self.host = host
-        self.port = port or self.PORTS[trading_mode] if trading_mode else None
+        self.port = port or self.PORTS[trading_mode]
+        self.log = logger or logging.getLogger("nautilus_trader")
+
+        try:
+            import docker
+
+            self._docker_module = docker
+        except ImportError as e:
+            raise RuntimeError(
+                "Docker required for Gateway, install via `pip install docker`",
+            ) from e
+
         self._docker = docker.from_env()
         self._container = None
-        self.log = logger or logging.getLogger("nautilus_trader")
         if start:
             self.start(timeout)
 
@@ -97,7 +104,7 @@ class InteractiveBrokersGateway:
 
     @property
     def container_status(self) -> ContainerStatus:
-        container: ContainerCollection = self.container
+        container: Container = self.container
         if container is None:
             return ContainerStatus.NO_CONTAINER
         elif container.status == "running":
@@ -111,14 +118,14 @@ class InteractiveBrokersGateway:
             return ContainerStatus.UNKNOWN
 
     @property
-    def container(self) -> ContainerCollection:
+    def container(self) -> Container:
         if self._container is None:
             all_containers = {c.name: c for c in self._docker.containers.list(all=True)}
             self._container = all_containers.get(f"{self.CONTAINER_NAME}-{self.port}")
         return self._container
 
     @staticmethod
-    def is_logged_in(container: ContainerCollection) -> bool:
+    def is_logged_in(container: Container) -> bool:
         try:
             logs = container.logs()
         except NoContainer:
@@ -190,7 +197,7 @@ class InteractiveBrokersGateway:
     def safe_start(self, wait: int = 90) -> None:
         try:
             self.start(wait=wait)
-        except docker.errors.APIError as e:
+        except self._docker_module.errors.APIError as e:
             raise RuntimeError("Container already exists") from e
 
     def stop(self) -> None:

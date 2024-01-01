@@ -1656,8 +1656,7 @@ cdef class OrderAccepted(OrderEvent):
     """
     Represents an event where an order has been accepted by the trading venue.
 
-    This event often corresponds to a `NEW` OrdStatus <39> field in FIX
-    trade reports.
+    This event often corresponds to a `NEW` OrdStatus <39> field in FIX execution reports.
 
     Parameters
     ----------

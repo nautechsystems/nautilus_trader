@@ -13,10 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import msgspec
-
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick as RustQuoteTick
-from nautilus_trader.core.nautilus_pyo3 import TradeTick as RustTradeTick
+from nautilus_trader.core import nautilus_pyo3
 
 from cpython.datetime cimport timedelta
 from cpython.mem cimport PyMem_Free
@@ -995,7 +992,7 @@ cdef class Bar(Data):
 
         Parameters
         ----------
-        pyo3_bars : list[RustBar]
+        pyo3_bars : list[nautilus_pyo3.Bar]
             The Rust pyo3 bars to convert from.
 
         Returns
@@ -1899,7 +1896,7 @@ cdef class OrderBookDelta(Data):
 
         Parameters
         ----------
-        pyo3_deltas : list[RustOrderBookDelta]
+        pyo3_deltas : list[nautilus_pyo3.OrderBookDelta]
             The Rust pyo3 order book deltas to convert from.
 
         Returns
@@ -1996,7 +1993,7 @@ cdef class OrderBookDeltas(Data):
         Condition.not_none(values, "values")
         return OrderBookDeltas(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            deltas=[OrderBookDelta.from_dict_c(d) for d in msgspec.json.decode(values["deltas"])],
+            deltas=[OrderBookDelta.from_dict_c(d) for d in values["deltas"]],
         )
 
     @staticmethod
@@ -2005,7 +2002,7 @@ cdef class OrderBookDeltas(Data):
         return {
             "type": obj.__class__.__name__,
             "instrument_id": obj.instrument_id.to_str(),
-            "deltas": msgspec.json.encode([OrderBookDelta.to_dict_c(d) for d in obj.deltas]),
+            "deltas": [OrderBookDelta.to_dict_c(d) for d in obj.deltas],
         }
 
     @staticmethod
@@ -2745,7 +2742,7 @@ cdef class QuoteTick(Data):
 
         Parameters
         ----------
-        pyo3_ticks : list[RustQuoteTick]
+        pyo3_ticks : list[nautilus_pyo3.QuoteTick]
             The Rust pyo3 quote ticks to convert from.
 
         Returns
@@ -3204,7 +3201,7 @@ cdef class TradeTick(Data):
 
         Parameters
         ----------
-        pyo3_ticks : list[RustTradeTick]
+        pyo3_ticks : list[nautilus_pyo3.TradeTick]
             The Rust pyo3 trade ticks to convert from.
 
         Returns

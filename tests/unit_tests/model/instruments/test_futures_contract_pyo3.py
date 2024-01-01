@@ -17,7 +17,7 @@ from nautilus_trader.core.nautilus_pyo3 import FuturesContract
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
-futures_contract_es = TestInstrumentProviderPyo3.futures_contract_es()
+_ES_FUTURE = TestInstrumentProviderPyo3.futures_contract_es()
 
 
 def test_equality():
@@ -27,12 +27,12 @@ def test_equality():
 
 
 def test_hash():
-    assert hash(futures_contract_es) == hash(futures_contract_es)
+    assert hash(_ES_FUTURE) == hash(_ES_FUTURE)
 
 
 def test_to_dict():
-    result = futures_contract_es.to_dict()
-    assert FuturesContract.from_dict(result) == futures_contract_es
+    result = _ES_FUTURE.to_dict()
+    assert FuturesContract.from_dict(result) == _ES_FUTURE
     assert result == {
         "type": "FuturesContract",
         "id": "ESZ21.CME",
@@ -44,14 +44,12 @@ def test_to_dict():
         "currency": "USD",
         "price_precision": 2,
         "price_increment": "0.01",
-        "maker_fee": 0.001,
-        "taker_fee": 0.001,
-        "margin_maint": 0.0,
-        "margin_init": 0.0,
         "multiplier": "1.0",
         "lot_size": "1.0",
         "max_price": None,
         "max_quantity": None,
         "min_price": None,
         "min_quantity": None,
+        "ts_event": 0,
+        "ts_init": 0,
     }
