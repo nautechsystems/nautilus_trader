@@ -46,7 +46,7 @@ pub const NULL_ORDER: BookOrder = BookOrder {
 
 /// Represents an order in a book.
 #[repr(C)]
-#[derive(Copy, Clone, Eq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Eq, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -128,7 +128,11 @@ impl BookOrder {
     }
 }
 
-impl Serializable for BookOrder {}
+impl Default for BookOrder {
+    fn default() -> Self {
+        NULL_ORDER
+    }
+}
 
 impl PartialEq for BookOrder {
     fn eq(&self, other: &Self) -> bool {
@@ -151,6 +155,8 @@ impl Display for BookOrder {
         )
     }
 }
+
+impl Serializable for BookOrder {}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Stubs

@@ -182,8 +182,6 @@ impl OrderBookDelta {
     }
 }
 
-impl Serializable for OrderBookDelta {}
-
 impl Display for OrderBookDelta {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -199,6 +197,8 @@ impl Display for OrderBookDelta {
         )
     }
 }
+
+impl Serializable for OrderBookDelta {}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Stubs
