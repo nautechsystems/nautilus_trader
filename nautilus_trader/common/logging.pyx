@@ -39,14 +39,7 @@ from nautilus_trader.core.rust.common cimport log_color_from_cstr
 from nautilus_trader.core.rust.common cimport log_color_to_cstr
 from nautilus_trader.core.rust.common cimport log_level_from_cstr
 from nautilus_trader.core.rust.common cimport log_level_to_cstr
-from nautilus_trader.core.rust.common cimport logger_drop
-from nautilus_trader.core.rust.common cimport logger_get_instance_id
-from nautilus_trader.core.rust.common cimport logger_get_machine_id_cstr
-from nautilus_trader.core.rust.common cimport logger_get_trader_id_cstr
-from nautilus_trader.core.rust.common cimport logger_is_bypassed
-from nautilus_trader.core.rust.common cimport logger_is_colored
 from nautilus_trader.core.rust.common cimport logger_log
-from nautilus_trader.core.rust.common cimport logger_new
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pybytes_to_cstr
 from nautilus_trader.core.string cimport pystr_to_cstr
@@ -144,32 +137,11 @@ cdef class Logger:
         if machine_id is None:
             machine_id = socket.gethostname()
 
-        self._clock = clock
-
-        cdef str trader_id_str = trader_id.to_str()
-        cdef str instance_id_str = instance_id.to_str()
-
-        if dummy:
-            return  # Do not initialize core Rust logger
-
-        self._mem = logger_new(
-            pystr_to_cstr(trader_id_str),
-            pystr_to_cstr(machine_id),
-            pystr_to_cstr(instance_id_str),
-            level_stdout,
-            level_file,
-            file_logging,
-            pystr_to_cstr(directory) if directory else NULL,
-            pystr_to_cstr(file_name) if file_name else NULL,
-            pystr_to_cstr(file_format) if file_format else NULL,
-            pybytes_to_cstr(msgspec.json.encode(component_levels)) if component_levels is not None else NULL,
-            colors,
-            bypass,
-        )
-
-    def __del__(self) -> None:
-        if self._mem._0 != NULL:
-            logger_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
+        self._trader_id = trader_id
+        self._instance_id = instance_id
+        self._machine_id = machine_id
+        self._is_bypassed = bypass
+        self._is_colored = colors
 
     @property
     def trader_id(self) -> TraderId:
@@ -181,9 +153,7 @@ cdef class Logger:
         TraderId
 
         """
-        if self._mem._0 == NULL:
-            return None  # Not initialized
-        return TraderId(cstr_to_pystr(logger_get_trader_id_cstr(&self._mem)))
+        return self._trader_id
 
     @property
     def machine_id(self) -> str:
@@ -195,9 +165,7 @@ cdef class Logger:
         str
 
         """
-        if self._mem._0 == NULL:
-            return None  # Not initialized
-        return cstr_to_pystr(logger_get_machine_id_cstr(&self._mem))
+        return self._machine_id
 
     @property
     def instance_id(self) -> UUID4:
@@ -209,9 +177,7 @@ cdef class Logger:
         UUID4
 
         """
-        if self._mem._0 == NULL:
-            return None  # Not initialized
-        return UUID4.from_mem_c(logger_get_instance_id(&self._mem))
+        return self._instance_id
 
     @property
     def is_colored(self) -> bool:
@@ -223,9 +189,7 @@ cdef class Logger:
         bool
 
         """
-        if self._mem._0 == NULL:
-            return False  # Not initialized
-        return logger_is_colored(&self._mem)
+        return self._is_colored
 
     @property
     def is_bypassed(self) -> bool:
@@ -237,9 +201,7 @@ cdef class Logger:
         bool
 
         """
-        if self._mem._0 == NULL:
-            return False  # Not initialized
-        return logger_is_bypassed(&self._mem)
+        return self._is_bypassed
 
     cpdef void change_clock(self, Clock clock):
         """
@@ -252,11 +214,10 @@ cdef class Logger:
         """
         Condition.not_none(clock, "clock")
 
-        self._clock = clock
+        # TODO: Now a no-op (not required?)
 
     cdef void log(
         self,
-        uint64_t timestamp,
         LogLevel level,
         LogColor color,
         str component,
@@ -264,7 +225,6 @@ cdef class Logger:
         dict annotations = None,
     ):
         self._log(
-            timestamp,
             level,
             color,
             component,
@@ -274,20 +234,15 @@ cdef class Logger:
 
     cdef void _log(
         self,
-        uint64_t timestamp,
         LogLevel level,
         LogColor color,
         str component,
         str message,
         dict annotations,
     ):
-        if self._mem._0 == NULL:
-            print("ERROR: Logger has not been initialized.")
-            return  # Not initialized
+        # TODO: Timestamp not longer required
 
         logger_log(
-            &self._mem,
-            timestamp,
             level,
             color,
             pystr_to_cstr(component),
@@ -427,7 +382,6 @@ cdef class LoggerAdapter:
             return
 
         self._logger.log(
-            self._logger._clock.timestamp_ns(),
             LogLevel.DEBUG,
             color,
             self.component,
@@ -459,7 +413,6 @@ cdef class LoggerAdapter:
             return
 
         self._logger.log(
-            self._logger._clock.timestamp_ns(),
             LogLevel.INFO,
             color,
             self.component,
@@ -492,7 +445,6 @@ cdef class LoggerAdapter:
             return
 
         self._logger.log(
-            self._logger._clock.timestamp_ns(),
             LogLevel.WARNING,
             color,
             self.component,
@@ -525,7 +477,6 @@ cdef class LoggerAdapter:
             return
 
         self._logger.log(
-            self._logger._clock.timestamp_ns(),
             LogLevel.ERROR,
             color,
             self.component,
