@@ -101,7 +101,7 @@ pub mod stubs {
 
     #[fixture]
     pub fn stub_deltas() -> OrderBookDeltas {
-        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
         let flags = 32; // Snapshot flag
         let sequence = 0;
         let ts_event = 1;
@@ -215,7 +215,7 @@ mod tests {
 
     #[rstest]
     fn test_new() {
-        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
         let flags = 32; // Snapshot flag
         let sequence = 0;
         let ts_event = 1;
@@ -330,7 +330,7 @@ mod tests {
         let deltas = stub_deltas;
         assert_eq!(
             format!("{}", deltas),
-            "AAPL.NASDAQ,len=7,flags=32,sequence=0,ts_event=1,ts_init=2".to_string()
+            "AAPL.XNAS,len=7,flags=32,sequence=0,ts_event=1,ts_init=2".to_string()
         );
     }
 }
