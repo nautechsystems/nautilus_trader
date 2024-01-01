@@ -64,7 +64,6 @@ from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
@@ -78,15 +77,16 @@ from nautilus_trader.model.orders import LimitOrder as NautilusLimitOrder
 from nautilus_trader.model.orders import MarketOrder as NautilusMarketOrder
 
 
-def make_customer_order_ref(
-    client_order_id: ClientOrderId,
-    strategy_id: StrategyId,
-) -> CustomerOrderRef:
+def make_customer_order_ref(client_order_id: ClientOrderId) -> CustomerOrderRef:
     """
-    Remove the strategy name from customer_order_ref; it has a limited size and don't
-    control what length the strategy might be or what characters users might append.
+    User-set reference for the order.
+
+    From the Betfair docs:
+    An optional reference customers can set to identify instructions. No validation will be done on uniqueness and the
+    string is limited to 32 characters. If an empty string is provided it will be treated as null.
+
     """
-    return client_order_id.value.rsplit("-" + strategy_id.get_tag(), maxsplit=1)[0]
+    return client_order_id.value
 
 
 def nautilus_limit_to_place_instructions(
@@ -112,7 +112,6 @@ def nautilus_limit_to_place_instructions(
         ),
         customer_order_ref=make_customer_order_ref(
             client_order_id=command.order.client_order_id,
-            strategy_id=command.strategy_id,
         ),
     )
     return instructions
@@ -136,7 +135,6 @@ def nautilus_limit_on_close_to_place_instructions(
         ),
         customer_order_ref=make_customer_order_ref(
             client_order_id=command.order.client_order_id,
-            strategy_id=command.strategy_id,
         ),
     )
     return instructions
@@ -166,7 +164,6 @@ def nautilus_market_to_place_instructions(
         ),
         customer_order_ref=make_customer_order_ref(
             client_order_id=command.order.client_order_id,
-            strategy_id=command.strategy_id,
         ),
     )
     return instructions
@@ -189,7 +186,6 @@ def nautilus_market_on_close_to_place_instructions(
         ),
         customer_order_ref=make_customer_order_ref(
             client_order_id=command.order.client_order_id,
-            strategy_id=command.strategy_id,
         ),
     )
     return instructions

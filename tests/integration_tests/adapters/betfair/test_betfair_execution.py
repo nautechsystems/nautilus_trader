@@ -1010,7 +1010,7 @@ async def test_generate_order_status_reports_executable(exec_client):
 
 
 @pytest.mark.asyncio
-async def test_generate_trade_reports(exec_client):
+async def test_generate_fill_reports(exec_client):
     # Arrange
     mock_betfair_request(
         exec_client._client,
@@ -1018,7 +1018,7 @@ async def test_generate_trade_reports(exec_client):
     )
 
     # Act
-    trade_reports = await exec_client.generate_trade_reports()
+    trade_reports = await exec_client.generate_fill_reports()
 
     # Assert
     assert len(trade_reports) == 2

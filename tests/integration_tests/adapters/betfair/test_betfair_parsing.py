@@ -92,7 +92,6 @@ from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
@@ -747,18 +746,17 @@ class TestBetfairParsing:
 
     def test_customer_order_ref(self):
         # Arrange
-        strategy_id = StrategyId("ExampleStrategy-001")
         order = TestExecStubs.limit_order(
             instrument_id=self.instrument.id,
-            strategy_id=strategy_id,
         )
         client_order_id = order.client_order_id
 
         # Act
-        customer_order_ref = make_customer_order_ref(client_order_id, strategy_id)
+        customer_order_ref = make_customer_order_ref(client_order_id)
 
         # Assert
-        assert customer_order_ref == "O-20210410-022422-001"
+        assert customer_order_ref == "O-20210410-022422-001-001-1"
+        assert len(customer_order_ref) <= 32
 
     def test_encode_place_orders(self):
         place_orders = PlaceInstruction(
