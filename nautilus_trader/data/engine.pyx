@@ -78,6 +78,7 @@ from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
+from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.data cimport VenueStatus
@@ -894,6 +895,18 @@ cdef class DataEngine(Component):
                 priority=10,
             )
 
+        topic = f"data.book.depth.{instrument_id.venue}.{instrument_id.symbol}"
+
+        if not only_deltas and not self._msgbus.is_subscribed(
+            topic=topic,
+            handler=self._update_order_book,
+        ):
+            self._msgbus.subscribe(
+                topic=topic,
+                handler=self._update_order_book,
+                priority=10,
+            )
+
     cpdef void _handle_subscribe_ticker(
         self,
         MarketDataClient client,
@@ -1390,6 +1403,8 @@ cdef class DataEngine(Component):
             self._handle_order_book_delta(data)
         elif isinstance(data, OrderBookDeltas):
             self._handle_order_book_deltas(data)
+        elif isinstance(data, OrderBookDepth10):
+            self._handle_order_book_depth(data)
         elif isinstance(data, Ticker):
             self._handle_ticker(data)
         elif isinstance(data, QuoteTick):
@@ -1438,6 +1453,14 @@ cdef class DataEngine(Component):
                   f".{deltas.instrument_id.venue}"
                   f".{deltas.instrument_id.symbol}",
             msg=deltas,
+        )
+
+    cpdef void _handle_order_book_depth(self, OrderBookDepth10 depth):
+        self._msgbus.publish_c(
+            topic=f"data.book.depth"
+                  f".{depth.instrument_id.venue}"
+                  f".{depth.instrument_id.symbol}",
+            msg=depth,
         )
 
     cpdef void _handle_ticker(self, Ticker ticker):
