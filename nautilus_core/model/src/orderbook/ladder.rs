@@ -28,7 +28,7 @@ use crate::{
 };
 
 /// Represents a price level with a specified side in an order books ladder.
-#[derive(Copy, Clone, Debug, Eq)]
+#[derive(Clone, Copy, Debug, Eq)]
 pub struct BookPrice {
     pub value: Price,
     pub side: OrderSide,

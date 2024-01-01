@@ -41,7 +41,7 @@ pub const ERROR_PRICE: Price = Price {
 };
 
 #[repr(C)]
-#[derive(Copy, Clone, Eq, Default)]
+#[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
