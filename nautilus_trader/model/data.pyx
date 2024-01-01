@@ -1418,7 +1418,7 @@ cdef class OrderBookDelta(Data):
         The instrument ID for the book.
     action : BookAction {``ADD``, ``UPDATE``, ``DELETE``, ``CLEAR``}
         The order book delta action.
-    order : BookOrder
+    order : BookOrder, optional with no default so ``None`` must be passed explicitly
         The book order for the delta.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
@@ -1428,14 +1428,13 @@ cdef class OrderBookDelta(Data):
         A combination of packet end with matching engine status.
     sequence : uint64_t, default 0
         The unique sequence number for the update.
-        If default 0 then will increment the `sequence`.
     """
 
     def __init__(
         self,
         InstrumentId instrument_id not None,
         BookAction action,
-        BookOrder order,
+        BookOrder order: BookOrder | None,
         uint64_t ts_event,
         uint64_t ts_init,
         uint8_t flags=0,
