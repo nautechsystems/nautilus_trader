@@ -63,6 +63,8 @@ from tests.unit_tests.portfolio.test_portfolio import BETFAIR
 
 BITMEX = Venue("BITMEX")
 BINANCE = Venue("BINANCE")
+XNAS = Venue("XNAS")
+AAPL_XNAS = TestInstrumentProvider.equity()
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
@@ -1146,6 +1148,80 @@ class TestDataEngine:
         assert cached_book.instrument_id == ETHUSDT_BINANCE.id
         assert handler1[0] == cached_book
         assert handler2[0] == cached_book
+
+    def test_process_order_book_depth_when_multiple_subscribers_then_sends_to_registered_handlers(
+        self,
+    ):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        self.data_engine.process(AAPL_XNAS)  # <-- add necessary instrument for test
+
+        handler1 = []
+        handler2 = []
+        self.msgbus.subscribe(
+            topic="data.book.depth.XNAS.AAPL",
+            handler=handler1.append,
+        )
+        self.msgbus.subscribe(
+            topic="data.book.depth.XNAS.AAPL",
+            handler=handler2.append,
+        )
+
+        subscribe1 = Subscribe(
+            client_id=ClientId("DATABENTO"),
+            venue=BINANCE,
+            data_type=DataType(
+                OrderBook,
+                {
+                    "instrument_id": AAPL_XNAS.id,
+                    "book_type": BookType.L2_MBP,
+                    "depth": 10,
+                    "interval_ms": 1000,
+                },
+            ),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        subscribe2 = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
+            data_type=DataType(
+                OrderBook,
+                {
+                    "instrument_id": AAPL_XNAS.id,
+                    "book_type": BookType.L2_MBP,
+                    "depth": 10,
+                    "interval_ms": 1000,
+                },
+            ),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe1)
+        self.data_engine.execute(subscribe2)
+
+        depth = TestDataStubs.order_book_depth10(
+            instrument_id=AAPL_XNAS.id,
+            ts_event=1,
+        )
+
+        self.data_engine.process(depth)
+        events = self.clock.advance_time(2_000_000_000)
+        events[0].handle()
+
+        # Act
+        self.data_engine.process(depth)
+
+        # Assert
+        cached_book = self.cache.order_book(AAPL_XNAS.id)
+        assert isinstance(cached_book, OrderBook)
+        assert cached_book.instrument_id == AAPL_XNAS.id
+        assert handler1[0] == depth
+        assert handler2[0] == depth
 
     def test_order_book_delta_creates_book(self):
         # Arrange
