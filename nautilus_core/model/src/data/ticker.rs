@@ -52,8 +52,6 @@ impl Ticker {
     }
 }
 
-impl Serializable for Ticker {}
-
 impl Display for Ticker {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -63,3 +61,5 @@ impl Display for Ticker {
         )
     }
 }
+
+impl Serializable for Ticker {}

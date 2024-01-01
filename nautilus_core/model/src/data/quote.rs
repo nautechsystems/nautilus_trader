@@ -189,8 +189,6 @@ impl QuoteTick {
     }
 }
 
-impl Serializable for QuoteTick {}
-
 impl Display for QuoteTick {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -205,6 +203,8 @@ impl Display for QuoteTick {
         )
     }
 }
+
+impl Serializable for QuoteTick {}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Stubs
