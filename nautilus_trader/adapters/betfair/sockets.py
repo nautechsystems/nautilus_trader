@@ -177,6 +177,7 @@ class BetfairOrderStreamClient(BetfairStreamClient):
         await self.send(msgspec.json.encode(subscribe_msg))
 
     def post_reconnection(self):
+        super().post_reconnection()
         self._loop.create_task(self.post_connection())
 
 
@@ -286,4 +287,5 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         await self.send(msgspec.json.encode(self.auth_message()))
 
     def post_reconnection(self):
+        super().post_reconnection()
         self._loop.create_task(self.post_connection())

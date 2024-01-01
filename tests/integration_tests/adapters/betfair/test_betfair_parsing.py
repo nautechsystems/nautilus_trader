@@ -384,7 +384,7 @@ class TestBetfairParsing:
             ],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
             market_version=None,
-            customer_strategy_ref="4827311aa8c4c749978174ee384a98",
+            customer_strategy_ref="4827311aa8c4c74",
             async_=False,
         )
         assert result == expected
@@ -759,6 +759,33 @@ class TestBetfairParsing:
 
         # Assert
         assert customer_order_ref == "O-20210410-022422-001"
+
+    def test_encode_place_orders(self):
+        place_orders = PlaceInstruction(
+            order_type=OrderType.LIMIT,
+            selection_id="237486",
+            handicap="0",
+            side=Side.LAY,
+            limit_order=LimitOrder(
+                size="2",
+                price="3",
+                persistence_type=PersistenceType.PERSIST,
+            ),
+        )
+        result = msgspec.json.decode(msgspec.json.encode(place_orders))
+        result = {k: v for k, v in result.items() if v}
+        expected = {
+            "selectionId": "237486",
+            "handicap": "0",
+            "side": "LAY",
+            "orderType": "LIMIT",
+            "limitOrder": {
+                "size": "2",
+                "price": "3",
+                "persistenceType": "PERSIST",
+            },
+        }
+        assert result == expected
 
 
 def request_id() -> int:

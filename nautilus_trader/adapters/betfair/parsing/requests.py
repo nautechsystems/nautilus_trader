@@ -457,7 +457,7 @@ def create_customer_strategy_ref(trader_id: str, strategy_id: str) -> str:
         "trader_id": trader_id,
         "strategy_id": strategy_id,
     }
-    return hashlib.shake_256(msgspec.json.encode(data)).hexdigest(15)
+    return hashlib.shake_256(msgspec.json.encode(data)).hexdigest(8)[:15]
 
 
 def hashed_trade_id(

@@ -102,6 +102,8 @@ class BetfairHttpClient:
             headers=headers,
             body=body,
         )
+        if url not in SKIP_LOG_URLS:
+            self._log.debug(f"[RESP] {response.body.decode()}")
         return response
 
     async def _post(self, request: Request) -> Request.return_type:
@@ -286,3 +288,10 @@ class BetfairHttpClient:
             more_available = resp.more_available
             index = len(cleared_orders)
         return cleared_orders
+
+
+SKIP_LOG_URLS = {
+    "https://identitysso.betfair.com/api/login",
+    "https://api.betfair.com/exchange/betting/rest/v1/en/navigation/menu.json",
+    "https://api.betfair.com/exchange/betting/json-rpc/v1/SportsAPING/v1.0/listMarketCatalogue",
+}

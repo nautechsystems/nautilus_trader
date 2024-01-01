@@ -16,6 +16,7 @@
 import asyncio
 from collections import defaultdict
 
+import msgspec.json
 import pandas as pd
 from betfair_parser.exceptions import BetfairError
 from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
@@ -167,6 +168,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             self.stream.connect(),
             self.connection_account_state(),
             self.check_account_currency(),
+            self.load_venue_id_mapping_from_cache(),
         ]
         await asyncio.gather(*aws)
 
@@ -376,7 +378,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 self._log.debug(
                     f"Matching venue_order_id: {venue_order_id} to client_order_id: {client_order_id}",
                 )
-                self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
+                self.set_venue_id_mapping(venue_order_id, client_order_id)
                 self.generate_order_accepted(
                     command.strategy_id,
                     command.instrument_id,
@@ -469,7 +471,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
             place_instruction = report.place_instruction_report
             venue_order_id = VenueOrderId(str(place_instruction.bet_id))
-            self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
+            self.set_venue_id_mapping(venue_order_id, client_order_id)
             self.generate_order_updated(
                 command.strategy_id,
                 command.instrument_id,
@@ -531,7 +533,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._log.debug(
                 f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}",
             )
-            self.venue_order_id_to_client_order_id[venue_order_id] = command.client_order_id
+            self.set_venue_id_mapping(venue_order_id, command.client_order_id)
             self.generate_order_canceled(
                 command.strategy_id,
                 command.instrument_id,
@@ -559,6 +561,27 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
 
             self.cancel_order(command)
+
+    # -- CACHE  -----------------------------------------------------------------------------------
+
+    async def load_venue_id_mapping_from_cache(self) -> None:
+        self._log.info("Loading venue_id mapping from cache")
+        raw = self._cache.get("betfair_execution_client.venue_order_id_to_client_order_id") or b"{}"
+        self._log.info(f"venue_id_mapping: {raw.decode()=}")
+        self.venue_order_id_to_client_order_id = msgspec.json.decode(raw)
+
+    def set_venue_id_mapping(
+        self,
+        venue_order_id: VenueOrderId,
+        client_order_id: ClientOrderId,
+    ) -> None:
+        self._log.debug(f"Updating venue_id_mapping: {venue_order_id=} {client_order_id=}")
+        self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
+        self._log.debug("Updating venue_id_mapping in cache")
+        raw = msgspec.json.encode(
+            {k.value: v.value for k, v in self.venue_order_id_to_client_order_id.items()},
+        )
+        self._cache.add("betfair_execution_client.venue_order_id_to_client_order_id", raw)
 
     # -- ACCOUNT ----------------------------------------------------------------------------------
 
@@ -679,25 +702,15 @@ class BetfairExecutionClient(LiveExecutionClient):
         Handle update containing 'E' (executable) order update.
         """
         venue_order_id = VenueOrderId(str(unmatched_order.id))
-        client_order_id = self.venue_order_id_to_client_order_id[venue_order_id]
-        order = self._cache.order(client_order_id)
-        instrument = self._cache.instrument(order.instrument_id)
 
         # Check if this is the first time seeing this order (backtest or replay)
         if venue_order_id in self.venue_order_id_to_client_order_id:
             # We've already sent an accept for this order in self._submit_order
-            self._log.debug(
-                f"Skipping order_accept as order exists: venue_order_id={unmatched_order.id}",
-            )
-        else:
-            raise RuntimeError
-            # self.generate_order_accepted(
-            #     strategy_id=order.strategy_id,
-            #     instrument_id=instrument.id,
-            #     client_order_id=client_order_id,
-            #     venue_order_id=venue_order_id,
-            #     ts_event=millis_to_nanos(order_update["pd"]),
-            # )
+            self._log.info(f"Skipping order_accept as order exists: {venue_order_id=}")
+
+        client_order_id = self.venue_order_id_to_client_order_id[venue_order_id]
+        order = self._cache.order(client_order_id)
+        instrument = self._cache.instrument(order.instrument_id)
 
         # Check for any portion executed
         if unmatched_order.sm > 0 and unmatched_order.sm > order.filled_qty:
