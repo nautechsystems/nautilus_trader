@@ -25,8 +25,8 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
-from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
@@ -385,7 +385,7 @@ class TestLiveExecutionReconciliation:
             ts_init=0,
         )
 
-        trade_report = TradeReport(
+        fill_report = FillReport(
             account_id=self.account_id,
             instrument_id=AUDUSD_SIM.id,
             client_order_id=ClientOrderId("O-123456"),
@@ -402,7 +402,7 @@ class TestLiveExecutionReconciliation:
         )
 
         self.client.add_order_status_report(order_report)
-        self.client.add_trade_reports(venue_order_id, [trade_report])
+        self.client.add_fill_reports(venue_order_id, [fill_report])
 
         # Act
         result = await self.exec_engine.reconcile_state()
@@ -437,7 +437,7 @@ class TestLiveExecutionReconciliation:
             ts_init=0,
         )
 
-        trade_report = TradeReport(
+        fill_report = FillReport(
             account_id=self.account_id,
             instrument_id=AUDUSD_SIM.id,
             client_order_id=ClientOrderId("O-123456"),
@@ -455,7 +455,7 @@ class TestLiveExecutionReconciliation:
         )
 
         self.client.add_order_status_report(order_report)
-        self.client.add_trade_reports(venue_order_id, [trade_report])
+        self.client.add_fill_reports(venue_order_id, [fill_report])
 
         # Act
         result = await self.exec_engine.reconcile_state()
@@ -525,7 +525,7 @@ class TestLiveExecutionReconciliation:
             ts_init=0,
         )
 
-        trade_report = TradeReport(
+        fill_report = FillReport(
             account_id=self.account_id,
             instrument_id=AUDUSD_SIM.id,
             client_order_id=ClientOrderId("O-123456"),
@@ -543,7 +543,7 @@ class TestLiveExecutionReconciliation:
         )
 
         self.client.add_order_status_report(order_report)
-        self.client.add_trade_reports(venue_order_id, [trade_report])
+        self.client.add_fill_reports(venue_order_id, [fill_report])
 
         # Act
         result = await self.exec_engine.reconcile_state()

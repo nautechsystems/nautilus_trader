@@ -79,7 +79,7 @@ from nautilus_trader.trading.strategy import Strategy, StrategyConfig
 
 
 class MACDConfig(StrategyConfig):
-    instrument_id: str
+    instrument_id: InstrumentId
     fast_period: int = 12
     slow_period: int = 26
     trade_size: int = 1_000_000
@@ -91,11 +91,13 @@ class MACDStrategy(Strategy):
         super().__init__(config=config)
         # Our "trading signal"
         self.macd = MovingAverageConvergenceDivergence(
-            fast_period=config.fast_period, slow_period=config.slow_period, price_type=PriceType.MID
+            fast_period=config.fast_period,
+            slow_period=config.slow_period,
+            price_type=PriceType.MID,
         )
         # We copy some config values onto the class to make them easier to reference later on
         self.entry_threshold = config.entry_threshold
-        self.instrument_id = InstrumentId.from_str(config.instrument_id)
+        self.instrument_id = config.instrument_id
         self.trade_size = Quantity.from_int(config.trade_size)
 
         # Convenience
@@ -173,7 +175,7 @@ To configure a `BacktestNode`, we first need to create an instance of a `Backtes
 following (minimal) aspects of the backtest:
 
 - `engine` - The engine for the backtest representing our core system, which will also contain our strategies
-- `venues` - The simulated venues (exchanges or brokers) available in the backtest
+- `venues` - The simulated execution venues (exchanges or brokers) available in the backtest
 - `data` - The input data we would like to perform the backtest on
 
 There are many more configurable features which will be described later in the docs, for now this will get us up and running.
@@ -226,7 +228,7 @@ from nautilus_trader.model.data import QuoteTick
 data = BacktestDataConfig(
     catalog_path=str(catalog.path),
     data_cls=QuoteTick,
-    instrument_id=str(instruments[0].id),
+    instrument_id=instruments[0].id,
     end_time="2020-01-10",
 )
 ```
@@ -252,7 +254,7 @@ engine = BacktestEngineConfig(
             strategy_path="__main__:MACDStrategy",
             config_path="__main__:MACDConfig",
             config=dict(
-              instrument_id=instruments[0].id.value,
+              instrument_id=instruments[0].id,
               fast_period=12,
               slow_period=26,
             ),

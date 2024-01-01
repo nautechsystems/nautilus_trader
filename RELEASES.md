@@ -10,6 +10,8 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Changed `ComponentStateChanged` Arrow schema for `config` from `string` to `binary`
 - Changed `OrderInitialized` Arrow schema for `options` from `string` to `binary`
+- Changed `OrderBookDeltas` dictionary representation of `deltas` field from JSON `bytes` to a list of `dict` (standardize with all other data types)
+- Renamed `TradeReport` to `FillReport` (more conventional terminology, and more clearly separates market data from user execution reports)
 - Renamed `AssetType` enum to `InstrumentClass` (more conventional terminology)
 - Renamed `asset_type` to `instrument_class` across the codebase (more conventional terminology)
 - Renamed `AssetClass.BOND` to `AssetClass.DEBT` (more conventional terminology)

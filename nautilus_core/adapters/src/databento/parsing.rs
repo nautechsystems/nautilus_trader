@@ -17,29 +17,63 @@ use std::{
     cmp,
     ffi::{c_char, CStr},
     i64,
+    str::FromStr,
 };
 
 use anyhow::{anyhow, bail, Result};
 use dbn;
 use itoa;
-use nautilus_core::{datetime::secs_to_nanos, time::UnixNanos};
+use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, time::UnixNanos};
 use nautilus_model::{
     data::{
         bar::{Bar, BarSpecification, BarType},
         delta::OrderBookDelta,
+        depth::{OrderBookDepth10, DEPTH_10_LEN},
         order::BookOrder,
         quote::QuoteTick,
         trade::TradeTick,
+        Data,
     },
     enums::{
         AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction, InstrumentClass,
         OptionKind, OrderSide, PriceType,
     },
     identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
-    instruments::equity::Equity,
+    instruments::{
+        equity::Equity, futures_contract::FuturesContract, options_contract::OptionsContract,
+        Instrument,
+    },
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
-use rust_decimal_macros::dec;
+use ustr::Ustr;
+
+use super::{common::nautilus_instrument_id_from_databento, types::DatabentoPublisher};
+
+const BAR_SPEC_1S: BarSpecification = BarSpecification {
+    step: 1,
+    aggregation: BarAggregation::Second,
+    price_type: PriceType::Last,
+};
+const BAR_SPEC_1M: BarSpecification = BarSpecification {
+    step: 1,
+    aggregation: BarAggregation::Minute,
+    price_type: PriceType::Last,
+};
+const BAR_SPEC_1H: BarSpecification = BarSpecification {
+    step: 1,
+    aggregation: BarAggregation::Hour,
+    price_type: PriceType::Last,
+};
+const BAR_SPEC_1D: BarSpecification = BarSpecification {
+    step: 1,
+    aggregation: BarAggregation::Day,
+    price_type: PriceType::Last,
+};
+
+const BAR_CLOSE_ADJUSTMENT_1S: u64 = NANOSECONDS_IN_SECOND;
+const BAR_CLOSE_ADJUSTMENT_1M: u64 = NANOSECONDS_IN_SECOND * 60;
+const BAR_CLOSE_ADJUSTMENT_1H: u64 = NANOSECONDS_IN_SECOND * 60 * 60;
+const BAR_CLOSE_ADJUSTMENT_1D: u64 = NANOSECONDS_IN_SECOND * 60 * 60 * 24;
 
 pub fn parse_order_side(c: c_char) -> OrderSide {
     match c as u8 as char {
@@ -115,33 +149,103 @@ pub fn parse_min_price_increment(value: i64, currency: Currency) -> Result<Price
     }
 }
 
-pub fn parse_raw_symbol_to_string(raw_symbol: [c_char; dbn::SYMBOL_CSTR_LEN]) -> Result<String> {
-    let c_str: &CStr = unsafe { CStr::from_ptr(raw_symbol.as_ptr()) };
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+pub unsafe fn parse_raw_ptr_to_string(ptr: *const c_char) -> Result<String> {
+    let c_str: &CStr = unsafe { CStr::from_ptr(ptr) };
     let str_slice: &str = c_str.to_str().map_err(|e| anyhow!(e))?;
     Ok(str_slice.to_owned())
 }
 
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+pub unsafe fn parse_raw_ptr_to_ustr(ptr: *const c_char) -> Result<Ustr> {
+    let c_str: &CStr = unsafe { CStr::from_ptr(ptr) };
+    let str_slice: &str = c_str.to_str().map_err(|e| anyhow!(e))?;
+    Ok(Ustr::from(str_slice))
+}
+
 pub fn parse_equity(
-    record: dbn::InstrumentDefMsg,
+    record: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<Equity> {
-    // Use USD for all US equities venues for now
-    let currency = Currency::USD();
+    let currency = Currency::USD(); // TODO: Temporary hard coding of US equities for now
 
     Equity::new(
         instrument_id,
         instrument_id.symbol,
-        // Symbol::from_str(&parse_raw_symbol_to_string(record.raw_symbol)?)?,
         None, // No ISIN available yet
         currency,
         currency.precision,
         parse_min_price_increment(record.min_price_increment, currency)?,
-        dec!(0), // TBD
-        dec!(0), // TBD
-        dec!(0), // TBD
-        dec!(0), // TBD
         Some(Quantity::new(record.min_lot_size_round_lot.into(), 0)?),
+        None,           // TBD
+        None,           // TBD
+        None,           // TBD
+        None,           // TBD
+        record.ts_recv, // More accurate and reliable timestamp
+        ts_init,
+    )
+}
+
+pub fn parse_futures_contract(
+    record: &dbn::InstrumentDefMsg,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> Result<FuturesContract> {
+    let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
+    let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
+    let asset = unsafe { parse_raw_ptr_to_ustr(record.asset.as_ptr())? };
+    let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+
+    FuturesContract::new(
+        instrument_id,
+        instrument_id.symbol,
+        asset_class.unwrap_or(AssetClass::Commodity),
+        asset,
+        record.activation,
+        record.expiration,
+        currency,
+        currency.precision,
+        parse_min_price_increment(record.min_price_increment, currency)?,
+        Quantity::new(record.contract_multiplier.into(), 0)?,
+        None,           // TBD
+        None,           // TBD
+        None,           // TBD
+        None,           // TBD
+        None,           // TBD
+        record.ts_recv, // More accurate and reliable timestamp
+        ts_init,
+    )
+}
+
+pub fn parse_options_contract(
+    record: &dbn::InstrumentDefMsg,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> Result<OptionsContract> {
+    let currency_str = unsafe { parse_raw_ptr_to_string(record.currency.as_ptr())? };
+    let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
+    let currency = Currency::from_str(&currency_str)?;
+    let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+    let lot_size = Quantity::new(1.0, 0)?;
+
+    OptionsContract::new(
+        instrument_id,
+        instrument_id.symbol,
+        asset_class.unwrap_or(AssetClass::Commodity),
+        unsafe { parse_raw_ptr_to_ustr(record.asset.as_ptr())? },
+        parse_option_kind(record.instrument_class)?,
+        record.activation,
+        record.expiration,
+        Price::from_raw(record.strike_price, currency.precision)?,
+        currency,
+        currency.precision,
+        parse_min_price_increment(record.min_price_increment, currency)?,
+        Some(lot_size),
         None,           // TBD
         None,           // TBD
         None,           // TBD
@@ -156,15 +260,24 @@ pub fn is_trade_msg(order_side: OrderSide, action: c_char) -> bool {
 }
 
 pub fn parse_mbo_msg(
-    record: dbn::MboMsg,
+    record: &dbn::MboMsg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
-) -> Result<Option<OrderBookDelta>> {
+) -> Result<(Option<OrderBookDelta>, Option<TradeTick>)> {
     let side = parse_order_side(record.side);
     if is_trade_msg(side, record.action) {
-        return Ok(None);
-    }
+        let trade = TradeTick::new(
+            instrument_id,
+            Price::from_raw(record.price, price_precision)?,
+            Quantity::from_raw(record.size.into(), 0)?,
+            parse_aggressor_side(record.side),
+            TradeId::new(itoa::Buffer::new().format(record.sequence))?,
+            record.ts_recv,
+            ts_init,
+        );
+        return Ok((None, Some(trade)));
+    };
 
     let order = BookOrder::new(
         side,
@@ -183,34 +296,11 @@ pub fn parse_mbo_msg(
         ts_init,
     );
 
-    Ok(Some(delta))
-}
-
-pub fn parse_mbo_msg_trades(
-    record: dbn::MboMsg,
-    instrument_id: InstrumentId,
-    price_precision: u8,
-    ts_init: UnixNanos,
-) -> Result<Option<TradeTick>> {
-    if !is_trade_msg(parse_order_side(record.side), record.action) {
-        return Ok(None);
-    }
-
-    let trade = TradeTick::new(
-        instrument_id,
-        Price::from_raw(record.price, price_precision)?,
-        Quantity::from_raw(record.size.into(), 0)?,
-        parse_aggressor_side(record.side),
-        TradeId::new(itoa::Buffer::new().format(record.sequence))?,
-        record.ts_recv,
-        ts_init,
-    );
-
-    Ok(Some(trade))
+    Ok((Some(delta), None))
 }
 
 pub fn parse_trade_msg(
-    record: dbn::TradeMsg,
+    record: &dbn::TradeMsg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
@@ -229,11 +319,11 @@ pub fn parse_trade_msg(
 }
 
 pub fn parse_mbp1_msg(
-    record: dbn::Mbp1Msg,
+    record: &dbn::Mbp1Msg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
-) -> Result<Option<QuoteTick>> {
+) -> Result<(QuoteTick, Option<TradeTick>)> {
     let top_level = &record.levels[0];
     let quote = QuoteTick::new(
         instrument_id,
@@ -245,65 +335,38 @@ pub fn parse_mbp1_msg(
         ts_init,
     )?;
 
-    Ok(Some(quote))
-}
+    let trade = match record.action as u8 as char {
+        'T' => Some(TradeTick::new(
+            instrument_id,
+            Price::from_raw(record.price, price_precision)?,
+            Quantity::from_raw(record.size.into(), 0)?,
+            parse_aggressor_side(record.side),
+            TradeId::new(itoa::Buffer::new().format(record.sequence))?,
+            record.ts_recv,
+            ts_init,
+        )),
+        _ => None,
+    };
 
-pub fn parse_mbp1_msg_trades(
-    record: dbn::Mbp1Msg,
-    instrument_id: InstrumentId,
-    price_precision: u8,
-    ts_init: UnixNanos,
-) -> Result<Option<TradeTick>> {
-    if record.action as u8 as char != 'T' {
-        return Ok(None);
-    }
-
-    let trade = TradeTick::new(
-        instrument_id,
-        Price::from_raw(record.price, price_precision)?,
-        Quantity::from_raw(record.size.into(), 0)?,
-        parse_aggressor_side(record.side),
-        TradeId::new(itoa::Buffer::new().format(record.sequence))?,
-        record.ts_recv,
-        ts_init,
-    );
-
-    Ok(Some(trade))
+    Ok((quote, trade))
 }
 
 pub fn parse_mbp10_msg(
-    record: dbn::Mbp1Msg,
+    record: &dbn::Mbp10Msg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
-) -> Result<Vec<OrderBookDelta>> {
-    let mut deltas = Vec::with_capacity(21);
-    let clear = OrderBookDelta::clear(
-        instrument_id,
-        record.sequence.into(),
-        record.ts_recv,
-        ts_init,
-    );
-    deltas.push(clear);
+) -> Result<OrderBookDepth10> {
+    let mut bids = Vec::with_capacity(DEPTH_10_LEN);
+    let mut asks = Vec::with_capacity(DEPTH_10_LEN);
 
-    for level in record.levels {
+    for level in &record.levels {
         let bid_order = BookOrder::new(
             OrderSide::Buy,
             Price::from_raw(level.bid_px, price_precision)?,
             Quantity::from_raw(level.bid_sz.into(), 0)?,
             0,
         );
-        let delta = OrderBookDelta::new(
-            instrument_id,
-            BookAction::Add,
-            bid_order,
-            record.flags,
-            record.sequence.into(),
-            record.ts_recv,
-            ts_init,
-        );
-
-        deltas.push(delta);
 
         let ask_order = BookOrder::new(
             OrderSide::Sell,
@@ -311,87 +374,90 @@ pub fn parse_mbp10_msg(
             Quantity::from_raw(level.ask_sz.into(), 0)?,
             0,
         );
-        let delta = OrderBookDelta::new(
-            instrument_id,
-            BookAction::Add,
-            ask_order,
-            record.flags,
-            record.sequence.into(),
-            record.ts_recv,
-            ts_init,
-        );
 
-        deltas.push(delta);
+        bids.push(bid_order);
+        asks.push(ask_order);
     }
 
-    Ok(deltas)
+    let bids: [BookOrder; DEPTH_10_LEN] = bids.try_into().expect("Bids `Vec` length mismatch");
+    let asks: [BookOrder; DEPTH_10_LEN] = asks.try_into().expect("Asks `Vec` length mismatch");
+
+    let depth = OrderBookDepth10::new(
+        instrument_id,
+        bids,
+        asks,
+        record.flags,
+        record.sequence.into(),
+        record.ts_recv,
+        ts_init,
+    );
+
+    Ok(depth)
 }
 
-pub fn parse_bar_type(record: dbn::OhlcvMsg, instrument_id: InstrumentId) -> Result<BarType> {
-    match record.hd.rtype {
+pub fn parse_bar_type(record: &dbn::OhlcvMsg, instrument_id: InstrumentId) -> Result<BarType> {
+    let bar_type = match record.hd.rtype {
         32 => {
             // ohlcv-1s
-            let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
-            let bar_type = BarType::new(instrument_id, bar_spec, AggregationSource::External);
-            Ok(bar_type)
+            BarType::new(instrument_id, BAR_SPEC_1S, AggregationSource::External)
         }
         33 => {
             //  ohlcv-1m
-            let bar_spec = BarSpecification::new(1, BarAggregation::Minute, PriceType::Last);
-            let bar_type = BarType::new(instrument_id, bar_spec, AggregationSource::External);
-            Ok(bar_type)
+            BarType::new(instrument_id, BAR_SPEC_1M, AggregationSource::External)
         }
         34 => {
             // ohlcv-1h
-            let bar_spec = BarSpecification::new(1, BarAggregation::Hour, PriceType::Last);
-            let bar_type = BarType::new(instrument_id, bar_spec, AggregationSource::External);
-            Ok(bar_type)
+            BarType::new(instrument_id, BAR_SPEC_1H, AggregationSource::External)
         }
         35 => {
             // ohlcv-1d
-            let bar_spec = BarSpecification::new(1, BarAggregation::Day, PriceType::Last);
-            let bar_type = BarType::new(instrument_id, bar_spec, AggregationSource::External);
-            Ok(bar_type)
+            BarType::new(instrument_id, BAR_SPEC_1D, AggregationSource::External)
         }
         _ => bail!(
             "`rtype` is not a supported bar aggregation, was {}",
             record.hd.rtype
         ),
-    }
+    };
+
+    Ok(bar_type)
 }
 
-pub fn parse_ts_event_adjustment(record: dbn::OhlcvMsg) -> Result<UnixNanos> {
-    match record.hd.rtype {
+pub fn parse_ts_event_adjustment(record: &dbn::OhlcvMsg) -> Result<UnixNanos> {
+    let adjustment = match record.hd.rtype {
         32 => {
             // ohlcv-1s
-            Ok(secs_to_nanos(1.0))
+            BAR_CLOSE_ADJUSTMENT_1S
         }
         33 => {
             //  ohlcv-1m
-            Ok(secs_to_nanos(60.0))
+            BAR_CLOSE_ADJUSTMENT_1M
         }
         34 => {
             //  ohlcv-1h
-            Ok(secs_to_nanos(60.0 * 60.0))
+            BAR_CLOSE_ADJUSTMENT_1H
         }
         35 => {
             // ohlcv-1d
-            Ok(secs_to_nanos(60.0 * 60.0 * 24.0))
+            BAR_CLOSE_ADJUSTMENT_1D
         }
         _ => bail!(
             "`rtype` is not a supported bar aggregation, was {}",
             record.hd.rtype
         ),
-    }
+    };
+
+    Ok(adjustment)
 }
 
 pub fn parse_ohlcv_msg(
-    record: dbn::OhlcvMsg,
-    bar_type: BarType,
+    record: &dbn::OhlcvMsg,
+    instrument_id: InstrumentId,
     price_precision: u8,
-    ts_event_adjustment: UnixNanos,
     ts_init: UnixNanos,
 ) -> Result<Bar> {
+    let bar_type = parse_bar_type(record, instrument_id)?;
+    let ts_event_adjustment = parse_ts_event_adjustment(record)?;
+
     // Adjust `ts_event` from open to close of bar
     let ts_event = record.hd.ts_event + ts_event_adjustment;
     let ts_init = cmp::max(ts_init, ts_event);
@@ -408,4 +474,99 @@ pub fn parse_ohlcv_msg(
     );
 
     Ok(bar)
+}
+
+// pub fn parse_record_with_metadata<T>(
+//     record: T,
+//     publishers: IndexMap<PublisherId, DatabentoPublisher>,
+//     ts_init: UnixNanos,
+// ) -> Result<(Data, Option<Data>)> {
+//     let publisher_id: PublisherId = record.header().publisher_id;
+//     let publisher = publishers
+//         .get(&record.header().publisher_id)
+//         .ok_or_else(|| anyhow!("Publisher ID {publisher_id} not found in map"))?;
+//
+//     let raw_symbol = unsafe { parse_raw_ptr_to_ustr(record.raw_symbol.as_ptr())? };
+//     let instrument_id = nautilus_instrument_id_from_databento(raw_symbol, publisher);
+// }
+
+pub fn parse_record<T>(
+    record: T,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> Result<(Data, Option<Data>)>
+where
+    T: dbn::Record + dbn::HasRType,
+{
+    let record_ref = dbn::RecordRef::from(&record);
+
+    let result = match record.rtype()? {
+        dbn::RType::Mbo => {
+            let msg = record_ref.get::<dbn::MboMsg>().unwrap(); // SAFETY: RType known
+            let result = parse_mbo_msg(msg, instrument_id, 2, ts_init)?;
+            match result {
+                (Some(delta), None) => (Data::Delta(delta), None),
+                (None, Some(trade)) => (Data::Trade(trade), None),
+                _ => bail!("Invalid MboMsg parsing combination"),
+            }
+        }
+        dbn::RType::Mbp0 => {
+            let msg = record_ref.get::<dbn::TradeMsg>().unwrap(); // SAFETY: RType known
+            let trade = parse_trade_msg(msg, instrument_id, 2, ts_init)?;
+            (Data::Trade(trade), None)
+        }
+        dbn::RType::Mbp1 => {
+            let msg = record_ref.get::<dbn::Mbp1Msg>().unwrap(); // SAFETY: RType known
+            let result = parse_mbp1_msg(msg, instrument_id, 2, ts_init)?;
+            match result {
+                (quote, None) => (Data::Quote(quote), None),
+                (quote, Some(trade)) => (Data::Quote(quote), Some(Data::Trade(trade))),
+            }
+        }
+        dbn::RType::Ohlcv1S
+        | dbn::RType::Ohlcv1M
+        | dbn::RType::Ohlcv1H
+        | dbn::RType::Ohlcv1D
+        | dbn::RType::OhlcvEod => {
+            let msg = record_ref.get::<dbn::OhlcvMsg>().unwrap(); // SAFETY: RType known
+            let bar = parse_ohlcv_msg(msg, instrument_id, 2, ts_init)?;
+            (Data::Bar(bar), None)
+        }
+        dbn::RType::Mbp10 => {
+            let msg = record_ref.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
+            let depth = parse_mbp10_msg(msg, instrument_id, 2, ts_init)?;
+            (Data::Depth10(depth), None)
+        }
+        _ => bail!("RType is currently unsupported by NautilusTrader"),
+    };
+
+    Ok(result)
+}
+
+pub fn parse_instrument_def_msg(
+    record: &dbn::InstrumentDefMsg,
+    publisher: &DatabentoPublisher,
+    ts_init: UnixNanos,
+) -> Result<Box<dyn Instrument>> {
+    let raw_symbol = unsafe { parse_raw_ptr_to_ustr(record.raw_symbol.as_ptr())? };
+    let instrument_id = nautilus_instrument_id_from_databento(raw_symbol, publisher);
+
+    match record.instrument_class as u8 as char {
+        'C' | 'P' => Ok(Box::new(parse_options_contract(
+            record,
+            instrument_id,
+            ts_init,
+        )?)),
+        'K' => Ok(Box::new(parse_equity(record, instrument_id, ts_init)?)),
+        'F' => Ok(Box::new(parse_futures_contract(
+            record,
+            instrument_id,
+            ts_init,
+        )?)),
+        'X' => bail!("Unsupported `instrument_class` 'X' (FX_SPOT)"),
+        _ => bail!(
+            "Invalid `instrument_class`, was {}",
+            record.instrument_class
+        ),
+    }
 }

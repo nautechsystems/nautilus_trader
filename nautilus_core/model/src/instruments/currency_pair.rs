@@ -13,14 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![allow(dead_code)] // Allow for development
-
 use std::hash::{Hash, Hasher};
 
 use anyhow::Result;
 use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use super::Instrument;
@@ -45,10 +42,6 @@ pub struct CurrencyPair {
     pub size_precision: u8,
     pub price_increment: Price,
     pub size_increment: Quantity,
-    pub margin_init: Decimal,
-    pub margin_maint: Decimal,
-    pub maker_fee: Decimal,
-    pub taker_fee: Decimal,
     pub lot_size: Option<Quantity>,
     pub max_quantity: Option<Quantity>,
     pub min_quantity: Option<Quantity>,
@@ -69,10 +62,6 @@ impl CurrencyPair {
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
-        margin_init: Decimal,
-        margin_maint: Decimal,
-        maker_fee: Decimal,
-        taker_fee: Decimal,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
@@ -90,10 +79,6 @@ impl CurrencyPair {
             size_precision,
             price_increment,
             size_increment,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
             lot_size,
             max_quantity,
             min_quantity,
@@ -191,22 +176,6 @@ impl Instrument for CurrencyPair {
 
     fn min_price(&self) -> Option<Price> {
         self.min_price
-    }
-
-    fn margin_init(&self) -> Decimal {
-        self.margin_init
-    }
-
-    fn margin_maint(&self) -> Decimal {
-        self.margin_maint
-    }
-
-    fn maker_fee(&self) -> Decimal {
-        self.maker_fee
-    }
-
-    fn taker_fee(&self) -> Decimal {
-        self.taker_fee
     }
 
     fn ts_event(&self) -> UnixNanos {

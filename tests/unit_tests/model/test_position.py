@@ -44,7 +44,7 @@ from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-AAPL_NASDAQ = TestInstrumentProvider.equity(symbol="AAPL", venue="NASDAQ")
+AAPL_XNAS = TestInstrumentProvider.equity(symbol="AAPL", venue="XNAS")
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
@@ -164,20 +164,20 @@ class TestPosition:
     def test_long_position_to_dict_equity(self) -> None:
         # Arrange
         order = self.order_factory.market(
-            AAPL_NASDAQ.id,
+            AAPL_XNAS.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
         )
 
         fill = TestEventStubs.order_filled(
             order,
-            instrument=AAPL_NASDAQ,
+            instrument=AAPL_XNAS,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
         )
 
-        position = Position(instrument=AAPL_NASDAQ, fill=fill)
+        position = Position(instrument=AAPL_XNAS, fill=fill)
 
         # Act
         result = position.to_dict()
@@ -187,7 +187,7 @@ class TestPosition:
             "position_id": "P-123456",
             "trader_id": "TESTER-000",
             "strategy_id": "S-001",
-            "instrument_id": "AAPL.NASDAQ",
+            "instrument_id": "AAPL.XNAS",
             "account_id": "SIM-000",
             "opening_order_id": "O-19700101-0000-000-001-1",
             "closing_order_id": None,
@@ -213,20 +213,20 @@ class TestPosition:
     def test_short_position_to_dict_equity(self) -> None:
         # Arrange
         order = self.order_factory.market(
-            AAPL_NASDAQ.id,
+            AAPL_XNAS.id,
             OrderSide.SELL,
             Quantity.from_int(100_000),
         )
 
         fill = TestEventStubs.order_filled(
             order,
-            instrument=AAPL_NASDAQ,
+            instrument=AAPL_XNAS,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
         )
 
-        position = Position(instrument=AAPL_NASDAQ, fill=fill)
+        position = Position(instrument=AAPL_XNAS, fill=fill)
 
         # Act
         result = position.to_dict()
@@ -236,7 +236,7 @@ class TestPosition:
             "position_id": "P-123456",
             "trader_id": "TESTER-000",
             "strategy_id": "S-001",
-            "instrument_id": "AAPL.NASDAQ",
+            "instrument_id": "AAPL.XNAS",
             "account_id": "SIM-000",
             "opening_order_id": "O-19700101-0000-000-001-1",
             "closing_order_id": None,
@@ -1450,21 +1450,21 @@ class TestPosition:
     ) -> None:
         # Arrange
         order = self.order_factory.market(
-            AAPL_NASDAQ.id,
+            AAPL_XNAS.id,
             order_side,
             Quantity.from_int(quantity),
         )
 
         fill = TestEventStubs.order_filled(
             order,
-            instrument=AAPL_NASDAQ,
+            instrument=AAPL_XNAS,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("100"),
         )
 
         # Act
-        position = Position(instrument=AAPL_NASDAQ, fill=fill)
+        position = Position(instrument=AAPL_XNAS, fill=fill)
 
         # Assert
         assert position.signed_qty == expected_signed_qty

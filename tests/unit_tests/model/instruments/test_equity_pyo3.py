@@ -35,16 +35,12 @@ def test_to_dict():
     assert Equity.from_dict(dict) == _AAPL_EQUITY
     assert dict == {
         "type": "Equity",
-        "id": "AAPL.NASDAQ",
+        "id": "AAPL.XNAS",
         "raw_symbol": "AAPL",
         "isin": "US0378331005",
         "currency": "USD",
         "price_precision": 2,
         "price_increment": "0.01",
-        "margin_init": 0.0,
-        "margin_maint": 0.0,
-        "maker_fee": 0.001,
-        "taker_fee": 0.001,
         "lot_size": "100",
         "max_quantity": None,
         "min_quantity": None,

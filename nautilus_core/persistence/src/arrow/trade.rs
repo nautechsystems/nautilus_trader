@@ -201,7 +201,7 @@ mod tests {
 
     #[rstest]
     fn test_get_schema() {
-        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
         let schema = TradeTick::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
@@ -232,7 +232,7 @@ mod tests {
     #[rstest]
     fn test_encode_trade_tick() {
         // Create test data
-        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
 
         let tick1 = TradeTick {
@@ -290,7 +290,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_batch() {
-        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
 
         let price = Int64Array::from(vec![1_000_000_000_000, 1_010_000_000_000]);

@@ -17,7 +17,6 @@ import copy
 import pickle
 import time
 
-import msgspec
 import pandas as pd
 import pytest
 
@@ -557,25 +556,23 @@ class TestOrderBook:
             {
                 "type": "OrderBookDeltas",
                 "instrument_id": "AUD/USD.SIM",
-                "deltas": msgspec.json.encode(
-                    [
-                        {
-                            "type": "OrderBookDelta",
-                            "instrument_id": "AUD/USD.SIM",
-                            "action": "UPDATE",
-                            "order": {
-                                "price": "0.99009",
-                                "size": "200000",
-                                "side": "BUY",
-                                "order_id": 1,
-                            },
-                            "flags": 0,
-                            "sequence": 0,
-                            "ts_event": 1667288437852999936,
-                            "ts_init": 1667288437852999936,
+                "deltas": [
+                    {
+                        "type": "OrderBookDelta",
+                        "instrument_id": "AUD/USD.SIM",
+                        "action": "UPDATE",
+                        "order": {
+                            "price": "0.99009",
+                            "size": "200000",
+                            "side": "BUY",
+                            "order_id": 1,
                         },
-                    ],
-                ),
+                        "flags": 0,
+                        "sequence": 0,
+                        "ts_event": 1667288437852999936,
+                        "ts_init": 1667288437852999936,
+                    },
+                ],
                 "sequence": 0,
                 "ts_event": 1667288437852999936,
                 "ts_init": 1667288437852999936,

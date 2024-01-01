@@ -20,7 +20,7 @@ from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 @snapshot_memory(4000)
 def run(*args, **kwargs):
-    _ = TestDataStubs.trade_tick()
+    _ = TestDataStubs.order_book_depth10()
 
 
 if __name__ == "__main__":

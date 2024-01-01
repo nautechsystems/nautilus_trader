@@ -188,4 +188,4 @@ cdef class ExecutionClient(Component):
     cpdef void _send_order_event(self, OrderEvent event)
     cpdef void _send_mass_status_report(self, report)
     cpdef void _send_order_status_report(self, report)
-    cpdef void _send_trade_report(self, report)
+    cpdef void _send_fill_report(self, report)

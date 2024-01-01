@@ -52,8 +52,8 @@ from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
-from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
@@ -326,13 +326,13 @@ def bet_to_trade_report(
     client_order_id: ClientOrderId,
     ts_init,
     report_id,
-) -> TradeReport | None:
+) -> FillReport | None:
     if order.size_matched == 0.0:
         # No executions, skip
         return None
     ts_event = pd.Timestamp(order.matched_date).value
     trade_id = current_order_summary_to_trade_id(order)
-    return TradeReport(
+    return FillReport(
         client_order_id=client_order_id,
         instrument_id=instrument_id,
         account_id=account_id,

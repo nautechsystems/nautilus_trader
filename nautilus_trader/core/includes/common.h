@@ -420,6 +420,7 @@ const char *component_state_to_cstr(enum ComponentState value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum ComponentState component_state_from_cstr(const char *ptr);
@@ -430,6 +431,7 @@ const char *component_trigger_to_cstr(enum ComponentTrigger value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum ComponentTrigger component_trigger_from_cstr(const char *ptr);
@@ -440,6 +442,7 @@ const char *log_level_to_cstr(enum LogLevel value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum LogLevel log_level_from_cstr(const char *ptr);
@@ -450,6 +453,7 @@ const char *log_color_to_cstr(enum LogColor value);
  * Returns an enum from a Python string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum LogColor log_color_from_cstr(const char *ptr);

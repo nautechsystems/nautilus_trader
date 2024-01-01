@@ -88,7 +88,7 @@ class TestConfigStubs:
                 strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
                 config_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalanceConfig",
                 config={
-                    "instrument_id": AAPL_US.id.value,
+                    "instrument_id": AAPL_US.id,
                     "max_trade_size": 50,
                 },
             ),

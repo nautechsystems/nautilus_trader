@@ -77,6 +77,10 @@ class TestIdStubs:
         return InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
 
     @staticmethod
+    def aapl_xnas_id() -> InstrumentId:
+        return InstrumentId(Symbol("AAPL"), Venue("XNAS"))
+
+    @staticmethod
     def msft_xnas_id() -> InstrumentId:
         return InstrumentId(Symbol("MSFT"), Venue("XNAS"))
 
