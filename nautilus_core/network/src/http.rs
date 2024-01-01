@@ -252,55 +252,15 @@ impl HttpClient {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::{
-        convert::Infallible,
-        net::{SocketAddr, TcpListener},
-    };
+    use std::net::{SocketAddr, TcpListener};
 
-    use hyper::{
-        service::{make_service_fn, service_fn},
-        Body, Method, Request, Response, Server, StatusCode,
+    use axum::{
+        routing::{delete, get, patch, post},
+        serve, Router,
     };
-    use tokio::sync::oneshot;
+    use http::status::StatusCode;
 
     use super::*;
-
-    async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
-        match (req.method(), req.uri().path()) {
-            (&Method::GET, "/get") => {
-                let response = Response::new(Body::from("hello-world!"));
-                Ok(response)
-            }
-            (&Method::POST, "/post") => {
-                let response = Response::builder()
-                    .status(StatusCode::OK)
-                    .body(Body::empty())
-                    .unwrap();
-                Ok(response)
-            }
-            (&Method::PATCH, "/patch") => {
-                let response = Response::builder()
-                    .status(StatusCode::OK)
-                    .body(Body::empty())
-                    .unwrap();
-                Ok(response)
-            }
-            (&Method::DELETE, "/delete") => {
-                let response = Response::builder()
-                    .status(StatusCode::OK)
-                    .body(Body::empty())
-                    .unwrap();
-                Ok(response)
-            }
-            _ => {
-                let response = Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .body(Body::empty())
-                    .unwrap();
-                Ok(response)
-            }
-        }
-    }
 
     fn get_unique_port() -> u16 {
         // Create a temporary TcpListener to get an available port
@@ -314,37 +274,41 @@ mod tests {
         port
     }
 
-    fn start_test_server() -> (SocketAddr, oneshot::Sender<()>) {
-        let addr: SocketAddr = ([127, 0, 0, 1], get_unique_port()).into();
-        let make_svc = make_service_fn(|_conn| async { Ok::<_, Infallible>(service_fn(handle)) });
+    fn create_router() -> Router {
+        Router::new()
+            .route("/get", get(|| async { "hello-world!" }))
+            .route("/post", post(|| async { StatusCode::OK }))
+            .route("/patch", patch(|| async { StatusCode::OK }))
+            .route("/delete", delete(|| async { StatusCode::OK }))
+    }
 
-        let (tx, rx) = oneshot::channel::<()>();
+    async fn start_test_server() -> Result<SocketAddr, Box<dyn std::error::Error + Send + Sync>> {
+        let port = get_unique_port();
+        let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
 
-        let server = Server::bind(&addr).serve(make_svc);
-
-        let graceful = server.with_graceful_shutdown(async {
-            if let Err(e) = rx.await {
-                eprintln!("shutdown signal error: {e}");
-            }
+        tokio::spawn(async move {
+            serve(listener, create_router()).await.unwrap();
         });
 
-        tokio::spawn(async {
-            if let Err(e) = graceful.await {
-                eprintln!("server error: {e}");
-            }
-        });
-
-        (addr, tx)
+        Ok(addr)
     }
 
     #[tokio::test]
     async fn test_get() {
-        let (addr, _shutdown_tx) = start_test_server();
-        let url = format!("http://{}:{}", addr.ip(), addr.port());
+        let addr = start_test_server().await.unwrap();
+        let url = format!("http://{}", addr);
 
         let client = InnerHttpClient::default();
         let response = client
-            .send_request(Method::GET, format!("{url}/get"), HashMap::new(), None)
+            .send_request(
+                reqwest::Method::GET,
+                format!("{url}/get"),
+                HashMap::new(),
+                None,
+            )
             .await
             .unwrap();
 
@@ -354,12 +318,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_post() {
-        let (addr, _shutdown_tx) = start_test_server();
-        let url = format!("http://{}:{}", addr.ip(), addr.port());
+        let addr = start_test_server().await.unwrap();
+        let url = format!("http://{}", addr);
 
         let client = InnerHttpClient::default();
         let response = client
-            .send_request(Method::POST, format!("{url}/post"), HashMap::new(), None)
+            .send_request(
+                reqwest::Method::POST,
+                format!("{url}/post"),
+                HashMap::new(),
+                None,
+            )
             .await
             .unwrap();
 
@@ -368,8 +337,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_post_with_body() {
-        let (addr, _shutdown_tx) = start_test_server();
-        let url = format!("http://{}:{}", addr.ip(), addr.port());
+        let addr = start_test_server().await.unwrap();
+        let url = format!("http://{}", addr);
 
         let client = InnerHttpClient::default();
 
@@ -383,12 +352,14 @@ mod tests {
             serde_json::Value::String("value2".to_string()),
         );
 
+        println!("{:?}", body);
+
         let body_string = serde_json::to_string(&body).unwrap();
         let body_bytes = body_string.into_bytes();
 
         let response = client
             .send_request(
-                Method::POST,
+                reqwest::Method::POST,
                 format!("{url}/post"),
                 HashMap::new(),
                 Some(body_bytes),
@@ -401,12 +372,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_patch() {
-        let (addr, _shutdown_tx) = start_test_server();
-        let url = format!("http://{}:{}", addr.ip(), addr.port());
+        let addr = start_test_server().await.unwrap();
+        let url = format!("http://{}", addr);
 
         let client = InnerHttpClient::default();
         let response = client
-            .send_request(Method::PATCH, format!("{url}/patch"), HashMap::new(), None)
+            .send_request(
+                reqwest::Method::PATCH,
+                format!("{url}/patch"),
+                HashMap::new(),
+                None,
+            )
             .await
             .unwrap();
 
@@ -415,13 +391,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete() {
-        let (addr, _shutdown_tx) = start_test_server();
-        let url = format!("http://{}:{}", addr.ip(), addr.port());
+        let addr = start_test_server().await.unwrap();
+        let url = format!("http://{}", addr);
 
         let client = InnerHttpClient::default();
         let response = client
             .send_request(
-                Method::DELETE,
+                reqwest::Method::DELETE,
                 format!("{url}/delete"),
                 HashMap::new(),
                 None,
