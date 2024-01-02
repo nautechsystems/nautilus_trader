@@ -28,7 +28,7 @@ use nautilus_model::{
     data::{
         bar::{Bar, BarSpecification, BarType},
         delta::OrderBookDelta,
-        depth::{OrderBookDepth10, DEPTH_10_LEN},
+        depth::{OrderBookDepth10, DEPTH10_LEN},
         order::BookOrder,
         quote::QuoteTick,
         trade::TradeTick,
@@ -357,8 +357,8 @@ pub fn parse_mbp10_msg(
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> Result<OrderBookDepth10> {
-    let mut bids = Vec::with_capacity(DEPTH_10_LEN);
-    let mut asks = Vec::with_capacity(DEPTH_10_LEN);
+    let mut bids = Vec::with_capacity(DEPTH10_LEN);
+    let mut asks = Vec::with_capacity(DEPTH10_LEN);
 
     for level in &record.levels {
         let bid_order = BookOrder::new(
@@ -379,8 +379,8 @@ pub fn parse_mbp10_msg(
         asks.push(ask_order);
     }
 
-    let bids: [BookOrder; DEPTH_10_LEN] = bids.try_into().expect("Bids `Vec` length mismatch");
-    let asks: [BookOrder; DEPTH_10_LEN] = asks.try_into().expect("Asks `Vec` length mismatch");
+    let bids: [BookOrder; DEPTH10_LEN] = bids.try_into().expect("Bids `Vec` length mismatch");
+    let asks: [BookOrder; DEPTH10_LEN] = asks.try_into().expect("Asks `Vec` length mismatch");
 
     let depth = OrderBookDepth10::new(
         instrument_id,

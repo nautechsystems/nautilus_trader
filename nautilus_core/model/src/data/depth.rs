@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use super::order::BookOrder;
 use crate::identifiers::instrument_id::InstrumentId;
 
-pub const DEPTH_10_LEN: usize = 10;
+pub const DEPTH10_LEN: usize = 10;
 
 /// Represents a self-contained order book update with a fixed depth of 10 levels per side.
 ///
@@ -43,9 +43,9 @@ pub struct OrderBookDepth10 {
     /// The instrument ID for the book.
     pub instrument_id: InstrumentId,
     /// The bid orders for the depth update.
-    pub bids: [BookOrder; DEPTH_10_LEN],
+    pub bids: [BookOrder; DEPTH10_LEN],
     /// The ask orders for the depth update.
-    pub asks: [BookOrder; DEPTH_10_LEN],
+    pub asks: [BookOrder; DEPTH10_LEN],
     /// A combination of packet end with matching engine status.
     pub flags: u8,
     /// The message sequence number assigned at the venue.
@@ -61,8 +61,8 @@ impl OrderBookDepth10 {
     #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
-        bids: [BookOrder; DEPTH_10_LEN],
-        asks: [BookOrder; DEPTH_10_LEN],
+        bids: [BookOrder; DEPTH10_LEN],
+        asks: [BookOrder; DEPTH10_LEN],
         flags: u8,
         sequence: u64,
         ts_event: UnixNanos,
@@ -116,8 +116,8 @@ pub mod stubs {
         let ts_event = 1;
         let ts_init = 2;
 
-        let mut bids: [BookOrder; DEPTH_10_LEN] = [BookOrder::default(); DEPTH_10_LEN];
-        let mut asks: [BookOrder; DEPTH_10_LEN] = [BookOrder::default(); DEPTH_10_LEN];
+        let mut bids: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
+        let mut asks: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
 
         // Create bids
         let mut price = 99.00;

@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <Python.h>
 
-#define DEPTH_10_LEN 10
+#define DEPTH10_LEN 10
 
 #define FIXED_PRECISION 9
 
@@ -792,11 +792,11 @@ typedef struct OrderBookDepth10_t {
     /**
      * The bid orders for the depth update.
      */
-    struct BookOrder_t bids[DEPTH_10_LEN];
+    struct BookOrder_t bids[DEPTH10_LEN];
     /**
      * The ask orders for the depth update.
      */
-    struct BookOrder_t asks[DEPTH_10_LEN];
+    struct BookOrder_t asks[DEPTH10_LEN];
     /**
      * A combination of packet end with matching engine status.
      */
@@ -1404,6 +1404,10 @@ uint8_t orderbook_depth10_eq(const struct OrderBookDepth10_t *lhs,
                              const struct OrderBookDepth10_t *rhs);
 
 uint64_t orderbook_depth10_hash(const struct OrderBookDepth10_t *delta);
+
+const struct BookOrder_t *orderbook_depth10_bids_array(const struct OrderBookDepth10_t *depth);
+
+const struct BookOrder_t *orderbook_depth10_asks_array(const struct OrderBookDepth10_t *depth);
 
 struct BookOrder_t book_order_from_raw(enum OrderSide order_side,
                                        int64_t price_raw,
