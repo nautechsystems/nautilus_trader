@@ -63,6 +63,8 @@ from nautilus_trader.core.rust.backtest cimport time_event_accumulator_new
 from nautilus_trader.core.rust.common cimport TimeEventHandler_t
 from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
 from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.core cimport set_atomic_clock_realtime
+from nautilus_trader.core.rust.core cimport set_atomic_clock_static
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport BookType
@@ -779,7 +781,7 @@ cdef class BacktestEngine:
             self.end()
 
         # Change logger clock back to live clock for consistent time stamping
-        self.kernel.logger.change_clock(self._clock)
+        set_atomic_clock_realtime()
 
         # Reset DataEngine
         if self.kernel.data_engine.is_running:
@@ -940,7 +942,6 @@ cdef class BacktestEngine:
 
         self._run_finished = self._clock.utc_now()
         self._backtest_end = self.kernel.clock.utc_now()
-        self._kernel.logger.change_clock(self._clock)
 
         self._log_post_run()
 
@@ -1042,7 +1043,7 @@ cdef class BacktestEngine:
             self._kernel.start()
 
             # Change logger clock for the run
-            self._kernel.logger.change_clock(self.kernel.clock)
+            set_atomic_clock_static(start_ns)
             self._log_pre_run()
 
         self._log_run(start, end)

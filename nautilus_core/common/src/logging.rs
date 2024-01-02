@@ -108,7 +108,7 @@ impl LoggerConfig {
     pub fn from_env() -> Self {
         match env::var("NAUTILUS_LOG") {
             Ok(spec) => LoggerConfig::from_spec(&spec),
-            Err(_) => LoggerConfig::default(),
+            Err(e) => panic!("Error parsing `LoggerConfig` spec: {e}"),
         }
     }
 }
@@ -286,6 +286,7 @@ impl Logger {
             is_colored,
             is_bypassed: _,
         } = config;
+
         // Setup std I/O buffers
         let mut out_buf = BufWriter::new(io::stdout());
         let mut err_buf = BufWriter::new(io::stderr());

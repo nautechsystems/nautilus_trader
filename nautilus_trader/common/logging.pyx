@@ -203,49 +203,17 @@ cdef class Logger:
         """
         return self._is_bypassed
 
-    cpdef void change_clock(self, Clock clock):
-        """
-        Change the loggers internal clock to the given clock.
-
-        Parameters
-        ----------
-        clock : Clock
-
-        """
-        Condition.not_none(clock, "clock")
-
-        # TODO: Now a no-op (not required?)
-
     cdef void log(
         self,
         LogLevel level,
         LogColor color,
-        str component,
+        const char* component_cstr,
         str message,
-        dict annotations = None,
     ):
-        self._log(
-            level,
-            color,
-            component,
-            message,
-            annotations,
-        )
-
-    cdef void _log(
-        self,
-        LogLevel level,
-        LogColor color,
-        str component,
-        str message,
-        dict annotations,
-    ):
-        # TODO: Timestamp not longer required
-
         logger_log(
             level,
             color,
-            pystr_to_cstr(component),
+            component_cstr,
             pystr_to_cstr(message),
         )
 
@@ -271,6 +239,7 @@ cdef class LoggerAdapter:
 
         self._logger = logger
         self._component = component_name
+        self._component_cstr = pystr_to_cstr(component_name)
         self._is_colored = logger.is_colored
         self._is_bypassed = logger.is_bypassed
 
@@ -372,8 +341,6 @@ cdef class LoggerAdapter:
             The log message content.
         color : LogColor, optional
             The log message color.
-        annotations : dict[str, object], optional
-            The annotations for the log record.
 
         """
         Condition.not_none(message, "message")
@@ -384,9 +351,8 @@ cdef class LoggerAdapter:
         self._logger.log(
             LogLevel.DEBUG,
             color,
-            self.component,
+            self._component_cstr,
             message,
-            annotations,
         )
 
     cpdef void info(
@@ -415,9 +381,8 @@ cdef class LoggerAdapter:
         self._logger.log(
             LogLevel.INFO,
             color,
-            self.component,
+            self._component_cstr,
             message,
-            annotations,
         )
 
     cpdef void warning(
@@ -447,9 +412,8 @@ cdef class LoggerAdapter:
         self._logger.log(
             LogLevel.WARNING,
             color,
-            self.component,
+            self._component_cstr,
             message,
-            annotations,
         )
 
     cpdef void error(
@@ -479,9 +443,8 @@ cdef class LoggerAdapter:
         self._logger.log(
             LogLevel.ERROR,
             color,
-            self.component,
+            self._component_cstr,
             message,
-            annotations,
         )
 
     cpdef void exception(

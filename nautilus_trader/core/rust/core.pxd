@@ -53,6 +53,12 @@ cdef extern from "../includes/core.h":
     # Converts nanoseconds (ns) to microseconds (μs).
     uint64_t nanos_to_micros(uint64_t nanos);
 
+    # Sets the global atomic clock mode to real-time.
+    void set_atomic_clock_realtime();
+
+    # Sets the global atomic clock mode to static and sets the time to the given `time_ns`.
+    void set_atomic_clock_static(uint64_t time_ns);
+
     void cvec_drop(CVec cvec);
 
     CVec cvec_new();

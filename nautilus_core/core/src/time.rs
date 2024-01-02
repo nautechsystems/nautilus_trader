@@ -48,13 +48,15 @@ pub fn get_atomic_clock() -> &'static AtomicTime {
 }
 
 /// Sets the global atomic clock mode to real-time.
-pub fn set_atomic_clock_realtime() {
+#[no_mangle]
+pub extern "C" fn set_atomic_clock_realtime() {
     let clock = get_atomic_clock();
     clock.make_realtime();
 }
 
-/// Sets the global atomic clock mode to static.
-pub fn set_atomic_clock_static(time_ns: UnixNanos) {
+/// Sets the global atomic clock mode to static and sets the time to the given `time_ns`.
+#[no_mangle]
+pub extern "C" fn set_atomic_clock_static(time_ns: u64) {
     let clock = get_atomic_clock();
     clock.make_static();
     clock.set_time(time_ns);
@@ -113,7 +115,7 @@ impl AtomicTime {
     /// - Real-time mode returns current wall clock time since UNIX epoch (unique and monotonic).
     /// - Static mode returns currently stored time.
     #[must_use]
-    pub fn get_time_ns(&self) -> u64 {
+    pub fn get_time_ns(&self) -> UnixNanos {
         match self.realtime.load(Ordering::Relaxed) {
             true => self.time_since_epoch(),
             false => self.timestamp_ns.load(Ordering::Relaxed),
@@ -139,12 +141,12 @@ impl AtomicTime {
     }
 
     /// Sets new time for the clock.
-    pub fn set_time(&self, time: u64) {
+    pub fn set_time(&self, time: UnixNanos) {
         self.store(time, Ordering::Relaxed);
     }
 
     /// Increments current time with a delta and returns the updated time.
-    pub fn increment_time(&self, delta: u64) -> u64 {
+    pub fn increment_time(&self, delta: u64) -> UnixNanos {
         self.fetch_add(delta, Ordering::Relaxed) + delta
     }
 

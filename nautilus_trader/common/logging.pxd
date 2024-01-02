@@ -49,28 +49,19 @@ cdef class Logger:
     cdef bint _is_colored
     cdef bint _is_bypassed
 
-    cpdef void change_clock(self, Clock clock)
     cdef void log(
         self,
         LogLevel level,
         LogColor color,
-        str component,
+        const char* component_cstr,
         str message,
-        dict annotations=*,
-    )
-    cdef void _log(
-        self,
-        LogLevel level,
-        LogColor color,
-        str component,
-        str message,
-        dict annotations,
     )
 
 
 cdef class LoggerAdapter:
     cdef Logger _logger
     cdef str _component
+    cdef const char* _component_cstr
     cdef bint _is_colored
     cdef bint _is_bypassed
 
