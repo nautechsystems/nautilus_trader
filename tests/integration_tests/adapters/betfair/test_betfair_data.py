@@ -78,7 +78,7 @@ def instrument_list(mock_load_markets_metadata):
     logger = Logger(clock=LiveClock(), level_stdout=LogLevel.ERROR)
     client = BetfairTestStubs.betfair_client(loop=loop, logger=logger)
     market_ids = BetfairDataProvider.market_ids()
-    config = BetfairInstrumentProviderConfig(market_ids=market_ids)
+    config = BetfairInstrumentProviderConfig(market_ids=market_ids, account_currency="GBP")
     instrument_provider = BetfairInstrumentProvider(client=client, logger=logger, config=config)
 
     # Load instruments
