@@ -21,6 +21,7 @@ from typing import Any
 import pandas as pd
 import pytz
 from ibapi.common import BarData
+from ibapi.common import HistoricalTickLast
 from ibapi.common import MarketDataTypeEnum
 from ibapi.common import TickAttribBidAsk
 from ibapi.common import TickAttribLast
@@ -615,9 +616,10 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         """
         instrument = self._cache.instrument(bar_type.instrument_id)
+        if not instrument:
+            raise ValueError(f"No cached instrument for {bar_type.instrument_id}")
 
         ts_event = self._convert_ib_bar_date_to_unix_nanos(bar, bar_type)
-
         return Bar(
             bar_type=bar_type,
             open=instrument.make_price(bar.open),
@@ -630,7 +632,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             is_revision=is_revision,
         )
 
-    def _process_trade_ticks(self, req_id: int, ticks: list) -> None:
+    def _process_trade_ticks(self, req_id: int, ticks: list[HistoricalTickLast]) -> None:
         """
         Process received trade tick data, convert it to Nautilus Trader TradeTick type,
         and add it to the relevant request's result.
@@ -733,7 +735,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
     def tickByTickAllLast(
         self,
         req_id: int,
-        tick_type: int,
+        tick_type: str,
         time: int,
         price: float,
         size: Decimal,

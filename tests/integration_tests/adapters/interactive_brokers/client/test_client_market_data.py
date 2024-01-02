@@ -1,13 +1,28 @@
+import copy
 import functools
+from decimal import Decimal
 from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
 
 import pytest
+from ibapi.common import BarData
+from ibapi.common import HistoricalTickLast
+from ibapi.common import TickAttribBidAsk
+from ibapi.common import TickAttribLast
 
+from nautilus_trader.adapters.interactive_brokers.client.common import Request
 from nautilus_trader.adapters.interactive_brokers.client.common import Subscription
 from nautilus_trader.adapters.interactive_brokers.parsing.data import what_to_show
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
@@ -266,19 +281,221 @@ async def test_get_historical_ticks(ib_client):
     )
 
 
+def test_ib_bar_to_nautilus_bar(ib_client):
+    # Arrange
+    bar_type_str = "AAPL.NASDAQ-5-SECOND-BID-INTERNAL"
+    bar_type = BarType.from_str(bar_type_str)
+    bar = BarData()
+    bar.date = "1704067200"
+    bar.open = 100.01
+    bar.high = 101.00
+    bar.low = 99.01
+    bar.close = 100.50
+    bar.volume = Decimal(100)
+    bar.wap = Decimal(-1)
+    bar.barCount = -1
+    ts_init = 1704067205000000000
+    ib_client._cache.add_instrument(IBTestProviderStubs.aapl_instrument())
+
+    # Act
+    result = ib_client._ib_bar_to_nautilus_bar(bar_type, bar, ts_init, is_revision=False)
+
+    # Assert
+    assert result.bar_type == BarType.from_str(bar_type_str)
+    assert result.open == Price(100.01, precision=2)
+    assert result.high == Price(101.00, precision=2)
+    assert result.low == Price(99.01, precision=2)
+    assert result.close == Price(100.50, precision=2)
+    assert result.volume == Quantity(100, precision=0)
+    assert result.ts_event == 1704067200000000000
+    assert result.ts_init == 1704067205000000000
+    assert result.is_revision is False
+
+
 def test_process_bar_data(ib_client):
     # Arrange
+    bar_type_str = "AAPL.NASDAQ-5-SECOND-BID-INTERNAL"
+    previous_bar = BarData()
+    previous_bar.date = "1704067200"
+    previous_bar.open = 100.01
+    previous_bar.high = 101.00
+    previous_bar.low = 99.01
+    previous_bar.close = 100.50
+    previous_bar.volume = Decimal(100)
+    previous_bar.wap = Decimal(-1)
+    previous_bar.barCount = -1
+    ib_client._bar_type_to_last_bar[bar_type_str] = previous_bar
+    ib_client._clock.set_time(1704067205000000000)
+    ib_client._cache.add_instrument(IBTestProviderStubs.aapl_instrument())
+    bar = copy.deepcopy(previous_bar)
+    bar.date = "1704067205"
 
     # Act
+    result = ib_client._process_bar_data(
+        bar_type_str,
+        bar,
+        handle_revised_bars=False,
+        historical=False,
+    )
 
     # Assert
-    pass
+    assert isinstance(result, Bar)
+    assert result.bar_type == BarType.from_str(bar_type_str)
+    assert result.open == Price(100.01, precision=2)
+    assert result.high == Price(101.00, precision=2)
+    assert result.low == Price(99.01, precision=2)
+    assert result.close == Price(100.50, precision=2)
+    assert result.volume == Quantity(100, precision=0)
+    assert result.ts_event == 1704067200000000000
+    assert result.ts_init == 1704067205000000000
+    assert result.is_revision is False
 
 
+# @pytest.mark.skip(reason="WIP")
 def test_process_trade_ticks(ib_client):
     # Arrange
+    mock_request = Mock(spec=Request)
+    mock_request.name = ["AAPL.NASDAQ"]
+    mock_request.result = []
+    ib_client._requests = Mock()
+    ib_client._requests.get.return_value = mock_request
+
+    request_id = 1
+    trade_tick_1 = HistoricalTickLast()
+    trade_tick_1.time = 1704067200
+    trade_tick_1.price = 100.01
+    trade_tick_1.size = 100
+    trade_tick_2 = HistoricalTickLast()
+    trade_tick_2.time = 1704067205
+    trade_tick_2.price = 105.01
+    trade_tick_2.size = 200
+    ticks = [trade_tick_1, trade_tick_2]
 
     # Act
+    ib_client._process_trade_ticks(request_id, ticks)
 
     # Assert
-    pass
+    assert len(mock_request.result) == 2
+
+    result_1 = mock_request.result[0]
+    assert result_1.instrument_id == InstrumentId.from_str("AAPL.NASDAQ")
+    assert result_1.price == Price(100.01, precision=2)
+    assert result_1.size == Quantity(100, precision=0)
+    assert result_1.aggressor_side == AggressorSide.NO_AGGRESSOR
+    assert result_1.trade_id == TradeId("1704067200-100.01-100")
+    assert result_1.ts_event == 1704067200000000000
+    assert result_1.ts_init == 1704067200000000000
+
+    result_2 = mock_request.result[1]
+    assert result_2.instrument_id == InstrumentId.from_str("AAPL.NASDAQ")
+    assert result_2.price == Price(105.01, precision=2)
+    assert result_2.size == Quantity(200, precision=0)
+    assert result_2.aggressor_side == AggressorSide.NO_AGGRESSOR
+    assert result_2.trade_id == TradeId("1704067205-105.01-200")
+    assert result_2.ts_event == 1704067205000000000
+    assert result_2.ts_init == 1704067205000000000
+
+
+def test_tickByTickBidAsk(ib_client):
+    # Arrange
+    ib_client._clock.set_time(1704067205000000000)
+    mock_subscription = Mock(spec=Subscription)
+    mock_subscription.name = ["AAPL.NASDAQ"]
+    ib_client._subscriptions = Mock()
+    ib_client._subscriptions.get.return_value = mock_subscription
+    ib_client._handle_data = Mock()
+
+    # Act
+    ib_client.tickByTickBidAsk(
+        1,
+        1704067200,
+        100.01,
+        100.02,
+        Decimal(100),
+        Decimal(200),
+        TickAttribBidAsk(),
+    )
+
+    # Assert
+    quote_tick = QuoteTick(
+        instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
+        bid_price=Price(100.01, precision=2),
+        ask_price=Price(100.02, precision=2),
+        bid_size=Quantity(100, precision=0),
+        ask_size=Quantity(200, precision=0),
+        ts_event=1704067200000000000,
+        ts_init=1704067205000000000,
+    )
+    ib_client._handle_data.assert_called_once_with(quote_tick)
+
+
+def test_tickByTickAllLast(ib_client):
+    # Arrange
+    ib_client._clock.set_time(1704067205000000000)
+    mock_subscription = Mock(spec=Subscription)
+    mock_subscription.name = ["AAPL.NASDAQ"]
+    ib_client._subscriptions = Mock()
+    ib_client._subscriptions.get.return_value = mock_subscription
+    ib_client._handle_data = Mock()
+
+    # Act
+    ib_client.tickByTickAllLast(
+        1,
+        "Last",
+        1704067200,
+        100.01,
+        Decimal(100),
+        TickAttribLast(),
+        "",
+        "",
+    )
+
+    # Assert
+    trade_tick = TradeTick(
+        instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
+        price=Price(100.01, precision=2),
+        size=Quantity(100, precision=0),
+        aggressor_side=AggressorSide.NO_AGGRESSOR,
+        trade_id=TradeId("1704067200-100.01-100"),
+        ts_event=1704067200000000000,
+        ts_init=1704067205000000000,
+    )
+    ib_client._handle_data.assert_called_once_with(trade_tick)
+
+
+def test_realtimeBar(ib_client):
+    # Arrange
+    ib_client._clock.set_time(1704067205000000000)
+    mock_subscription = Mock(spec=Subscription)
+    bar_type_str = "AAPL.NASDAQ-5-SECOND-BID-INTERNAL"
+    mock_subscription.name = bar_type_str
+    ib_client._subscriptions = Mock()
+    ib_client._subscriptions.get.return_value = mock_subscription
+    ib_client._handle_data = Mock()
+
+    # Act
+    ib_client.realtimeBar(
+        1,
+        1704067200,
+        100.01,
+        101.00,
+        99.01,
+        100.50,
+        Decimal(100),
+        Decimal(-1),
+        Decimal(-1),
+    )
+
+    # Assert
+    bar = Bar(
+        bar_type=BarType.from_str(bar_type_str),
+        open=Price(100.01, precision=2),
+        high=Price(101.00, precision=2),
+        low=Price(99.01, precision=2),
+        close=Price(100.50, precision=2),
+        volume=Quantity(100, precision=0),
+        ts_event=1704067200000000000,
+        ts_init=1704067205000000000,
+        is_revision=False,
+    )
+    ib_client._handle_data.assert_called_once_with(bar)
