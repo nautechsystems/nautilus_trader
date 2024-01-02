@@ -15,7 +15,10 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::{time::AtomicTime, uuid::UUID4};
+use nautilus_core::{
+    time::{get_atomic_clock, AtomicTime},
+    uuid::UUID4,
+};
 use nautilus_model::{
     enums::{ContingencyType, OrderSide, TimeInForce},
     identifiers::{
@@ -34,39 +37,39 @@ use crate::generators::{
 
 #[repr(C)]
 pub struct OrderFactory {
+    clock: &'static AtomicTime,
     trader_id: TraderId,
     strategy_id: StrategyId,
     order_id_generator: ClientOrderIdGenerator,
     order_list_id_generator: OrderListIdGenerator,
-    clock: AtomicTime,
 }
 
 impl OrderFactory {
     pub fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
-        clock: AtomicTime,
         init_order_id_count: Option<usize>,
         init_order_list_id_count: Option<usize>,
+        clock: Option<&'static AtomicTime>,
     ) -> Self {
         let order_id_generator = ClientOrderIdGenerator::new(
             trader_id,
             strategy_id,
-            clock.clone(),
             init_order_id_count.unwrap_or(0),
+            clock,
         );
         let order_list_id_generator = OrderListIdGenerator::new(
             trader_id,
             strategy_id,
-            clock.clone(),
             init_order_list_id_count.unwrap_or(0),
+            clock,
         );
         Self {
+            clock: clock.unwrap_or(get_atomic_clock()),
             trader_id,
             strategy_id,
             order_id_generator,
             order_list_id_generator,
-            clock,
         }
     }
 

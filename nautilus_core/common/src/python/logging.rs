@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{time::AtomicTime, uuid::UUID4};
+use nautilus_core::{time::get_atomic_clock, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::prelude::*;
 
@@ -50,13 +50,18 @@ pub fn init_tracing() {
 /// beginning of the run.
 #[pyfunction]
 pub fn init_logging(
-    clock: AtomicTime,
     trader_id: TraderId,
     instance_id: UUID4,
     file_writer_config: FileWriterConfig,
     config: LoggerConfig,
 ) {
-    Logger::init_with_config(clock, trader_id, instance_id, file_writer_config, config);
+    Logger::init_with_config(
+        trader_id,
+        instance_id,
+        file_writer_config,
+        config,
+        Some(get_atomic_clock()),
+    );
 }
 
 #[pymethods]

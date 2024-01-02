@@ -17,7 +17,7 @@ use std::{
     ops::Deref,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc,
+        OnceLock,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -39,6 +39,27 @@ pub fn duration_since_unix_epoch() -> Duration {
         .expect("Error calling `SystemTime::now.duration_since`")
 }
 
+/// Provides a global atomic time for use across the system.
+pub static ATOMIC_CLOCK: OnceLock<AtomicTime> = OnceLock::new();
+
+/// Returns a static reference to the global atomic clock.
+pub fn get_atomic_clock() -> &'static AtomicTime {
+    ATOMIC_CLOCK.get_or_init(AtomicTime::default)
+}
+
+/// Sets the global atomic clock mode to real-time.
+pub fn set_atomic_clock_realtime() {
+    let clock = get_atomic_clock();
+    clock.make_realtime();
+}
+
+/// Sets the global atomic clock mode to static.
+pub fn set_atomic_clock_static(time_ns: UnixNanos) {
+    let clock = get_atomic_clock();
+    clock.make_static();
+    clock.set_time(time_ns);
+}
+
 /// Represents an atomic timekeeping structure.
 ///
 /// `AtomicTime` can act as a real-time clock or static clock based on its mode.
@@ -54,16 +75,13 @@ pub fn duration_since_unix_epoch() -> Duration {
 ///    the clock is in a manual or static mode, allowing for controlled time setting.
 /// - `timestamp_ns`: The last recorded time for the clock in Unix nanoseconds.
 ///    This value is atomically updated and represents the precise time measurement.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.core")
-)]
-#[derive(Clone, Debug)]
+#[repr(C)]
+#[derive(Debug)]
 pub struct AtomicTime {
     /// Atomic clock is operating in real-time mode if true, otherwise clock is operating in manual static mode.
-    pub realtime: Arc<AtomicBool>,
+    pub realtime: AtomicBool,
     /// The last recorded time for the clock in UNIX nanoseconds.
-    pub timestamp_ns: Arc<AtomicU64>,
+    pub timestamp_ns: AtomicU64,
 }
 
 impl Deref for AtomicTime {
@@ -74,13 +92,19 @@ impl Deref for AtomicTime {
     }
 }
 
+impl Default for AtomicTime {
+    fn default() -> Self {
+        Self::new(false, 0)
+    }
+}
+
 impl AtomicTime {
     /// New atomic clock set with the given UNIX time (nanoseconds).
     #[must_use]
-    pub fn new(realtime: bool, time: u64) -> Self {
+    pub fn new(realtime: bool, time: UnixNanos) -> Self {
         Self {
-            realtime: Arc::new(AtomicBool::new(realtime)),
-            timestamp_ns: Arc::new(AtomicU64::new(time)),
+            realtime: AtomicBool::new(realtime),
+            timestamp_ns: AtomicU64::new(time),
         }
     }
 
@@ -125,13 +149,13 @@ impl AtomicTime {
     }
 
     /// Stores and returns current time.
-    pub fn time_since_epoch(&self) -> u64 {
+    pub fn time_since_epoch(&self) -> UnixNanos {
         // Increment by 1 nanosecond to keep increasing time
         let now = duration_since_unix_epoch().as_nanos() as u64 + 1;
         let last = self.load(Ordering::SeqCst) + 1;
-        let new = now.max(last);
-        self.store(new, Ordering::SeqCst);
-        new
+        let time = now.max(last);
+        self.store(time, Ordering::SeqCst);
+        time
     }
 
     pub fn make_realtime(&self) {

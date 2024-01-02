@@ -28,7 +28,7 @@ use chrono::{prelude::*, Utc};
 use log::{set_boxed_logger, set_max_level, Level, LevelFilter, Log};
 use nautilus_core::{
     datetime::unix_nanos_to_iso8601,
-    time::{AtomicTime, UnixNanos},
+    time::{get_atomic_clock, AtomicTime, UnixNanos},
     uuid::UUID4,
 };
 use nautilus_model::identifiers::trader_id::TraderId;
@@ -143,10 +143,10 @@ impl FileWriterConfig {
 /// A separate thead is spawned at initialization which receives [`LogEvent`] structs over the
 /// channel.
 pub struct Logger {
+    /// Reference to the atomic clock used by the engine.
+    clock: &'static AtomicTime,
     /// Send log events to a different thread.
     tx: SyncSender<LogEvent>,
-    /// Reference to the atomic clock used by the engine.
-    clock: AtomicTime,
     /// Configure maximum levels for components and IO.
     pub config: LoggerConfig,
 }
@@ -224,21 +224,21 @@ impl Log for Logger {
 #[allow(clippy::too_many_arguments)]
 impl Logger {
     pub fn init_with_env(
-        clock: AtomicTime,
         trader_id: TraderId,
         instance_id: UUID4,
         file_writer_config: FileWriterConfig,
+        clock: Option<&'static AtomicTime>,
     ) {
         let config = LoggerConfig::from_env();
-        Logger::init_with_config(clock, trader_id, instance_id, file_writer_config, config);
+        Logger::init_with_config(trader_id, instance_id, file_writer_config, config, clock);
     }
 
     pub fn init_with_config(
-        clock: AtomicTime,
         trader_id: TraderId,
         instance_id: UUID4,
         file_writer_config: FileWriterConfig,
         config: LoggerConfig,
+        clock: Option<&'static AtomicTime>,
     ) {
         let (tx, rx) = sync_channel::<LogEvent>(0);
 
@@ -246,8 +246,8 @@ impl Logger {
         let instance_id_clone = instance_id.to_string();
 
         let logger = Self {
+            clock: clock.unwrap_or(get_atomic_clock()),
             tx,
-            clock,
             config: config.clone(),
         };
 
@@ -543,7 +543,7 @@ mod tests {
     use std::{collections::HashMap, time::Duration};
 
     use log::{info, LevelFilter};
-    use nautilus_core::{time::AtomicTime, uuid::UUID4};
+    use nautilus_core::{time::set_atomic_clock_static, uuid::UUID4};
     use nautilus_model::identifiers::trader_id::TraderId;
     use rstest::*;
     use serde_json::Value;
@@ -607,12 +607,14 @@ mod tests {
             ..Default::default()
         };
 
+        set_atomic_clock_static(1_650_000_000_000_000);
+
         Logger::init_with_config(
-            AtomicTime::new(false, 1_650_000_000_000_000),
             TraderId::from("TRADER-001"),
             UUID4::new(),
             file_writer_config,
             config,
+            None,
         );
 
         info!(
@@ -654,6 +656,7 @@ mod tests {
         );
     }
 
+    #[ignore] // TODO: Ignore pre nextest setup
     #[rstest]
     fn test_log_component_level_filtering() {
         let config = LoggerConfig::from_spec("stdout=Info;fileout=Debug;RiskEngine=Error");
@@ -664,12 +667,14 @@ mod tests {
             ..Default::default()
         };
 
+        set_atomic_clock_static(1_650_000_000_000_000);
+
         Logger::init_with_config(
-            AtomicTime::new(false, 1_650_000_000_000_000),
             TraderId::from("TRADER-001"),
             UUID4::new(),
             file_writer_config,
             config,
+            None,
         );
 
         info!(
@@ -716,12 +721,14 @@ mod tests {
             ..Default::default()
         };
 
+        set_atomic_clock_static(1_650_000_000_000_000);
+
         Logger::init_with_config(
-            AtomicTime::new(false, 1_650_000_000_000_000),
             TraderId::from("TRADER-001"),
             UUID4::new(),
             file_writer_config,
             config,
+            None,
         );
 
         info!(

@@ -30,9 +30,6 @@ use crate::{
 /// # Notes
 /// An active timer is one which has not expired (`timer.is_expired == False`).
 pub trait Clock {
-    /// Return a reference to the clocks internal `AtomicTime`.
-    fn get_atomic_time_clone(&self) -> AtomicTime;
-
     /// Return the names of active timers in the clock.
     fn timer_names(&self) -> Vec<&str>;
 
@@ -69,10 +66,6 @@ pub trait Clock {
     fn cancel_timers(&mut self);
 }
 
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
-)]
 pub struct TestClock {
     time: AtomicTime,
     timers: HashMap<String, TestTimer>,
@@ -89,10 +82,6 @@ impl TestClock {
             default_callback: None,
             callbacks: HashMap::new(),
         }
-    }
-
-    pub fn get_time_clone(&self) -> AtomicTime {
-        self.time.clone()
     }
 
     #[must_use]
@@ -161,10 +150,6 @@ impl Deref for TestClock {
 }
 
 impl Clock for TestClock {
-    fn get_atomic_time_clone(&self) -> AtomicTime {
-        self.time.clone()
-    }
-
     fn timer_names(&self) -> Vec<&str> {
         self.timers
             .iter()
@@ -260,10 +245,6 @@ impl Clock for TestClock {
     }
 }
 
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
-)]
 pub struct LiveClock {
     time: AtomicTime,
     timers: HashMap<String, TestTimer>,
@@ -298,10 +279,6 @@ impl Deref for LiveClock {
 }
 
 impl Clock for LiveClock {
-    fn get_atomic_time_clone(&self) -> AtomicTime {
-        self.time.clone()
-    }
-
     fn timer_names(&self) -> Vec<&str> {
         self.timers
             .iter()

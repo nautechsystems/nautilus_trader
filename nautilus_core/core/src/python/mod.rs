@@ -21,11 +21,10 @@ use pyo3::{
     wrap_pyfunction,
 };
 
-use crate::{time::AtomicTime, uuid::UUID4};
+use crate::uuid::UUID4;
 pub mod casing;
 pub mod datetime;
 pub mod serialization;
-pub mod time;
 pub mod uuid;
 
 /// Gets the type name for the given Python `obj`.
@@ -52,7 +51,6 @@ pub fn to_pyruntime_err(e: impl fmt::Display) -> PyErr {
 #[pymodule]
 pub fn core(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<UUID4>()?;
-    m.add_class::<AtomicTime>()?;
     m.add_function(wrap_pyfunction!(casing::py_convert_to_snake_case, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_secs_to_nanos, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_secs_to_millis, m)?)?;

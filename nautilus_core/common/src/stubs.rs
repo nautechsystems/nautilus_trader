@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::time::AtomicTime;
 use nautilus_model::identifiers::stubs::*;
 use rstest::fixture;
 
@@ -23,6 +22,5 @@ use crate::factories::OrderFactory;
 pub fn order_factory() -> OrderFactory {
     let trader_id = trader_id();
     let strategy_id = strategy_id_ema_cross();
-    let clock = AtomicTime::new(false, 0);
-    OrderFactory::new(trader_id, strategy_id, clock, None, None)
+    OrderFactory::new(trader_id, strategy_id, None, None, None)
 }

@@ -776,35 +776,6 @@ class ExecAlgorithmFactory:
         return exec_algorithm_cls(config=config_cls(**config.config))
 
 
-class TracingConfig(NautilusConfig, frozen=True):
-    """
-    Configuration for standard output and file logging for Rust tracing statements for a
-    ``NautilusKernel`` instance.
-
-    Parameters
-    ----------
-    stdout_level : str, optional
-        The minimum log level to write to stdout. Possible options are "debug",
-        "info", "warn", "error". Setting it None means no logs are written to
-        stdout.
-    stderr_level : str, optional
-        The minimum log level to write to stderr. Possible options are "debug",
-        "info", "warn", "error". Setting it None means no logs are written to
-        stderr.
-    file_config : tuple[str, str, str], optional
-        The minimum log level to write to log file. Possible options are "debug",
-        "info", "warn", "error". Setting it None means no logs are written to
-        the log file.
-        The second str is the prefix name of the log file and the third str is
-        the name of the directory.
-
-    """
-
-    stdout_level: str | None = None
-    stderr_level: str | None = None
-    file_level: tuple[str, str, str] | None = None
-
-
 class LoggingConfig(NautilusConfig, frozen=True):
     """
     Configuration for standard output and file logging for a ``NautilusKernel``
@@ -888,8 +859,6 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         If the asyncio event loop should be in debug mode.
     logging : LoggingConfig, optional
         The logging config for the kernel.
-    tracing : TracingConfig, optional
-        The tracing (core logging) config for the kernel.
     snapshot_orders : bool, default False
         If order state snapshot lists should be persisted.
         Snapshots will be taken at every order state update (when events are applied).
@@ -935,7 +904,6 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     save_state: bool = False
     loop_debug: bool = False
     logging: LoggingConfig | None = None
-    tracing: TracingConfig | None = None
     snapshot_orders: bool = False
     snapshot_positions: bool = False
     snapshot_positions_interval: PositiveFloat | None = None

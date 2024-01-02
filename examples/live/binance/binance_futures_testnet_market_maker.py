@@ -47,7 +47,6 @@ config_node = TradingNodeConfig(
         # log_file_format="json",
         log_colors=True,
     ),
-    # tracing=TracingConfig(stdout_level="DEBUG"),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,

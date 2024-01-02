@@ -167,7 +167,6 @@ class NautilusKernel:
 
         logger_config = LoggerConfig.from_spec("stdout=info;fileout=debug")
         init_logging(
-            self._clock.get_atomc_time(),
             self._trader_id,
             self._instance_id,
             file_writer_config,
