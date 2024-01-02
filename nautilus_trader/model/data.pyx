@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pickle
+
 from nautilus_trader.core import nautilus_pyo3
 
 from cpython.datetime cimport timedelta
@@ -2116,6 +2118,50 @@ cdef class OrderBookDepth10(Data):
                 sequence,
                 ts_event,
                 ts_init,
+            )
+        finally:
+            PyMem_Free(bids_array)
+            PyMem_Free(asks_array)
+
+    def __getstate__(self):
+        return (
+            self.instrument_id.value,
+            pickle.dumps(self._bids),
+            pickle.dumps(self._asks),
+            self._mem.flags,
+            self._mem.sequence,
+            self._mem.ts_event,
+            self._mem.ts_init,
+        )
+
+    def __setstate__(self, state):
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
+        self._bids = pickle.loads(state[1])
+        self._asks = pickle.loads(state[2])
+
+        # Create temporary arrays to copy data to Rust
+        cdef BookOrder_t *bids_array = <BookOrder_t *>PyMem_Malloc(DEPTH_10_LEN * sizeof(BookOrder_t))
+        cdef BookOrder_t *asks_array = <BookOrder_t *>PyMem_Malloc(DEPTH_10_LEN * sizeof(BookOrder_t))
+        if bids_array == NULL or asks_array == NULL:
+            raise MemoryError("Failed to allocate memory for `bids` or `asks`")
+
+        cdef uint64_t i
+        cdef BookOrder order
+        try:
+            for i in range(DEPTH_10_LEN):
+                order = self._bids[i]
+                bids_array[i] = <BookOrder_t>order._mem
+                order = self._asks[i]
+                asks_array[i] = <BookOrder_t>order._mem
+
+            self._mem = orderbook_depth10_new(
+                instrument_id._mem,
+                bids_array,
+                asks_array,
+                state[3],
+                state[4],
+                state[5],
+                state[6],
             )
         finally:
             PyMem_Free(bids_array)

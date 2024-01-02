@@ -40,13 +40,16 @@ AUDUSD = TestIdStubs.audusd_id()
         OrderSide.SELL,
     ],
 )
-def test_init(side: OrderSide) -> None:
+def test_book_order_init(side: OrderSide) -> None:
+    # Arrange, Act
     order = BookOrder(
         price=Price.from_str("100"),
         size=Quantity.from_str("10"),
         side=side,
         order_id=1,
     )
+
+    # Assert
     assert order.side == side
     assert order.price == 100
     assert order.size == 10
@@ -190,6 +193,7 @@ def test_delta_from_raw() -> None:
 
 
 def test_delta_pickle_round_trip() -> None:
+    # Arrange
     order = BookOrder(
         side=OrderSide.BUY,
         price=Price.from_str("10.0"),
@@ -575,6 +579,18 @@ def test_depth10_new() -> None:
     assert depth.sequence == 1
     assert depth.ts_event == 2
     assert depth.ts_init == 3
+
+
+def test_depth10_pickle_round_trip() -> None:
+    # Arrange
+    depth = TestDataStubs.order_book_depth10()
+
+    # Act
+    pickled = pickle.dumps(depth)
+    unpickled = pickle.loads(pickled)  # noqa
+
+    # Assert
+    assert depth == unpickled
 
 
 def test_depth10_hash_str_repr() -> None:
