@@ -49,7 +49,7 @@ class TestBetfairInstrumentProvider:
         self.provider = BetfairInstrumentProvider(
             client=self.client,
             logger=TestComponentStubs.logger(),
-            config=BetfairInstrumentProviderConfig(),
+            config=BetfairInstrumentProviderConfig(account_currency="GBP"),
         )
         self.parser = BetfairParser(currency="GBP")
 
