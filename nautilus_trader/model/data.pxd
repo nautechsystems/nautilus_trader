@@ -250,8 +250,6 @@ cdef class OrderBookDeltas(Data):
 
 cdef class OrderBookDepth10(Data):
     cdef OrderBookDepth10_t _mem
-    cdef list[BookOrder] _bids
-    cdef list[BookOrder] _asks
 
     @staticmethod
     cdef OrderBookDepth10 from_mem_c(OrderBookDepth10_t mem)

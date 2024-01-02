@@ -20,7 +20,8 @@ from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 @snapshot_memory(4000)
 def run(*args, **kwargs):
-    _ = TestDataStubs.order_book_depth10()
+    depth = TestDataStubs.order_book_depth10()
+    repr(depth)  # Copies bids and asks book order data from Rust on every iteration
 
 
 if __name__ == "__main__":

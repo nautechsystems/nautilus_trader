@@ -29,7 +29,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
-from nautilus_trader.core.rust.model cimport DEPTH_10_LEN
+from nautilus_trader.core.rust.model cimport DEPTH10_LEN
 from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport Bar_t
@@ -77,6 +77,8 @@ from nautilus_trader.core.rust.model cimport instrument_id_from_cstr
 from nautilus_trader.core.rust.model cimport orderbook_delta_eq
 from nautilus_trader.core.rust.model cimport orderbook_delta_hash
 from nautilus_trader.core.rust.model cimport orderbook_delta_new
+from nautilus_trader.core.rust.model cimport orderbook_depth10_asks_array
+from nautilus_trader.core.rust.model cimport orderbook_depth10_bids_array
 from nautilus_trader.core.rust.model cimport orderbook_depth10_eq
 from nautilus_trader.core.rust.model cimport orderbook_depth10_hash
 from nautilus_trader.core.rust.model cimport orderbook_depth10_new
@@ -2088,23 +2090,19 @@ cdef class OrderBookDepth10(Data):
     ):
         Condition.not_empty(bids, "bids")
         Condition.not_empty(asks, "asks")
-        Condition.true(len(bids) == DEPTH_10_LEN, f"bids length != 10, was {len(bids)}")
-        Condition.true(len(asks) == DEPTH_10_LEN, f"asks length != 10, was {len(asks)}")
-
-        # Retain the original lists on the Python side
-        self._bids = bids
-        self._asks = asks
+        Condition.true(len(bids) == DEPTH10_LEN, f"bids length != 10, was {len(bids)}")
+        Condition.true(len(asks) == DEPTH10_LEN, f"asks length != 10, was {len(asks)}")
 
         # Create temporary arrays to copy data to Rust
-        cdef BookOrder_t *bids_array = <BookOrder_t *>PyMem_Malloc(DEPTH_10_LEN * sizeof(BookOrder_t))
-        cdef BookOrder_t *asks_array = <BookOrder_t *>PyMem_Malloc(DEPTH_10_LEN * sizeof(BookOrder_t))
+        cdef BookOrder_t *bids_array = <BookOrder_t *>PyMem_Malloc(DEPTH10_LEN * sizeof(BookOrder_t))
+        cdef BookOrder_t *asks_array = <BookOrder_t *>PyMem_Malloc(DEPTH10_LEN * sizeof(BookOrder_t))
         if bids_array == NULL or asks_array == NULL:
             raise MemoryError("Failed to allocate memory for `bids` or `asks`")
 
         cdef uint64_t i
         cdef BookOrder order
         try:
-            for i in range(DEPTH_10_LEN):
+            for i in range(DEPTH10_LEN):
                 order = bids[i]
                 bids_array[i] = <BookOrder_t>order._mem
                 order = asks[i]
@@ -2120,14 +2118,15 @@ cdef class OrderBookDepth10(Data):
                 ts_init,
             )
         finally:
+            # Deallocate temporary data transfer arrays
             PyMem_Free(bids_array)
             PyMem_Free(asks_array)
 
     def __getstate__(self):
         return (
             self.instrument_id.value,
-            pickle.dumps(self._bids),
-            pickle.dumps(self._asks),
+            pickle.dumps(self.bids),
+            pickle.dumps(self.asks),
             self._mem.flags,
             self._mem.sequence,
             self._mem.ts_event,
@@ -2136,22 +2135,23 @@ cdef class OrderBookDepth10(Data):
 
     def __setstate__(self, state):
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
-        self._bids = pickle.loads(state[1])
-        self._asks = pickle.loads(state[2])
 
         # Create temporary arrays to copy data to Rust
-        cdef BookOrder_t *bids_array = <BookOrder_t *>PyMem_Malloc(DEPTH_10_LEN * sizeof(BookOrder_t))
-        cdef BookOrder_t *asks_array = <BookOrder_t *>PyMem_Malloc(DEPTH_10_LEN * sizeof(BookOrder_t))
+        cdef BookOrder_t *bids_array = <BookOrder_t *>PyMem_Malloc(DEPTH10_LEN * sizeof(BookOrder_t))
+        cdef BookOrder_t *asks_array = <BookOrder_t *>PyMem_Malloc(DEPTH10_LEN * sizeof(BookOrder_t))
         if bids_array == NULL or asks_array == NULL:
             raise MemoryError("Failed to allocate memory for `bids` or `asks`")
+
+        cdef list[BookOrder] bids = pickle.loads(state[1])
+        cdef list[BookOrder] asks = pickle.loads(state[2])
 
         cdef uint64_t i
         cdef BookOrder order
         try:
-            for i in range(DEPTH_10_LEN):
-                order = self._bids[i]
+            for i in range(DEPTH10_LEN):
+                order = bids[i]
                 bids_array[i] = <BookOrder_t>order._mem
-                order = self._asks[i]
+                order = asks[i]
                 asks_array[i] = <BookOrder_t>order._mem
 
             self._mem = orderbook_depth10_new(
@@ -2164,6 +2164,7 @@ cdef class OrderBookDepth10(Data):
                 state[6],
             )
         finally:
+            # Deallocate temporary data transfer arrays
             PyMem_Free(bids_array)
             PyMem_Free(asks_array)
 
@@ -2207,7 +2208,15 @@ cdef class OrderBookDepth10(Data):
         list[BookOrder]
 
         """
-        return self._bids
+        cdef const BookOrder_t* bids_array = orderbook_depth10_bids_array(&self._mem)
+        cdef list[BookOrder] bids = [];
+
+        cdef uint64_t i
+        for i in range(DEPTH10_LEN):
+            order = BookOrder.from_mem_c(bids_array[i])
+            bids.append(order)
+
+        return bids
 
     @property
     def asks(self) -> list[BookOrder]:
@@ -2219,7 +2228,15 @@ cdef class OrderBookDepth10(Data):
         list[BookOrder]
 
         """
-        return self._asks
+        cdef const BookOrder_t* asks_array = orderbook_depth10_asks_array(&self._mem)
+        cdef list[BookOrder] asks = [];
+
+        cdef uint64_t i
+        for i in range(DEPTH10_LEN):
+            order = BookOrder.from_mem_c(asks_array[i])
+            asks.append(order)
+
+        return asks
 
     @property
     def flags(self) -> uint8_t:

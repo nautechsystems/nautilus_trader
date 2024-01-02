@@ -22,7 +22,7 @@ use nautilus_core::time::UnixNanos;
 
 use crate::{
     data::{
-        depth::{OrderBookDepth10, DEPTH_10_LEN},
+        depth::{OrderBookDepth10, DEPTH10_LEN},
         order::BookOrder,
     },
     identifiers::instrument_id::InstrumentId,
@@ -43,14 +43,14 @@ pub unsafe extern "C" fn orderbook_depth10_new(
     ts_init: UnixNanos,
 ) -> OrderBookDepth10 {
     // Safety: Ensure that `bids_ptr` and `asks_ptr` are valid pointers.
-    // The caller must guarantee that they point to arrays of `BookOrder` of at least `DEPTH_10_LEN` length.
+    // The caller must guarantee that they point to arrays of `BookOrder` of at least `DEPTH10_LEN` length.
     assert!(!bids_ptr.is_null());
     assert!(!asks_ptr.is_null());
 
-    let bids_slice = std::slice::from_raw_parts(bids_ptr, DEPTH_10_LEN);
-    let asks_slice = std::slice::from_raw_parts(asks_ptr, DEPTH_10_LEN);
-    let bids: [BookOrder; DEPTH_10_LEN] = bids_slice.try_into().expect("Slice length mismatch");
-    let asks: [BookOrder; DEPTH_10_LEN] = asks_slice.try_into().expect("Slice length mismatch");
+    let bids_slice = std::slice::from_raw_parts(bids_ptr, DEPTH10_LEN);
+    let asks_slice = std::slice::from_raw_parts(asks_ptr, DEPTH10_LEN);
+    let bids: [BookOrder; DEPTH10_LEN] = bids_slice.try_into().expect("Slice length mismatch");
+    let asks: [BookOrder; DEPTH10_LEN] = asks_slice.try_into().expect("Slice length mismatch");
 
     OrderBookDepth10::new(
         instrument_id,
@@ -73,4 +73,14 @@ pub extern "C" fn orderbook_depth10_hash(delta: &OrderBookDepth10) -> u64 {
     let mut hasher = DefaultHasher::new();
     delta.hash(&mut hasher);
     hasher.finish()
+}
+
+#[no_mangle]
+pub extern "C" fn orderbook_depth10_bids_array(depth: &OrderBookDepth10) -> *const BookOrder {
+    depth.bids.as_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn orderbook_depth10_asks_array(depth: &OrderBookDepth10) -> *const BookOrder {
+    depth.asks.as_ptr()
 }
