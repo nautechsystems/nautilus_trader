@@ -507,7 +507,7 @@ where
             match result {
                 (Some(delta), None) => (Data::Delta(delta), None),
                 (None, Some(trade)) => (Data::Trade(trade), None),
-                _ => bail!("Invalid MboMsg parsing combination"),
+                _ => bail!("Invalid `MboMsg` parsing combination"),
             }
         }
         dbn::RType::Mbp0 => {
@@ -523,6 +523,11 @@ where
                 (quote, Some(trade)) => (Data::Quote(quote), Some(Data::Trade(trade))),
             }
         }
+        dbn::RType::Mbp10 => {
+            let msg = record_ref.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
+            let depth = parse_mbp10_msg(msg, instrument_id, 2, ts_init)?;
+            (Data::Depth10(depth), None)
+        }
         dbn::RType::Ohlcv1S
         | dbn::RType::Ohlcv1M
         | dbn::RType::Ohlcv1H
@@ -531,11 +536,6 @@ where
             let msg = record_ref.get::<dbn::OhlcvMsg>().unwrap(); // SAFETY: RType known
             let bar = parse_ohlcv_msg(msg, instrument_id, 2, ts_init)?;
             (Data::Bar(bar), None)
-        }
-        dbn::RType::Mbp10 => {
-            let msg = record_ref.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
-            let depth = parse_mbp10_msg(msg, instrument_id, 2, ts_init)?;
-            (Data::Depth10(depth), None)
         }
         _ => bail!("RType is currently unsupported by NautilusTrader"),
     };
