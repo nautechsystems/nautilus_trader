@@ -33,7 +33,8 @@ use crate::logging::{FileWriterConfig, Logger, LoggerConfig};
 pub fn init_tracing() {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)
-        .init();
+        .try_init()
+        .unwrap_or_else(|e| eprintln!("Cannot set tracing subscriber because of error: {}", e));
 }
 
 /// Initialize logging.

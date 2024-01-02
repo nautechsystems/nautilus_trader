@@ -251,18 +251,24 @@ impl Logger {
             config: config.clone(),
         };
 
-        thread::spawn(move || {
-            Self::handle_messages(
-                &trader_id_clone,
-                &instance_id_clone,
-                file_writer_config,
-                config,
-                rx,
-            );
-        });
+        match set_boxed_logger(Box::new(logger)) {
+            Ok(_) => {
+                thread::spawn(move || {
+                    Self::handle_messages(
+                        &trader_id_clone,
+                        &instance_id_clone,
+                        file_writer_config,
+                        config,
+                        rx,
+                    );
+                });
 
-        let _ = set_boxed_logger(Box::new(logger));
-        set_max_level(log::LevelFilter::Debug);
+                set_max_level(log::LevelFilter::Debug);
+            }
+            Err(e) => {
+                eprintln!("Cannot set logger because of error: {}", e)
+            }
+        }
     }
 
     #[allow(clippy::useless_format)] // Format is not actually useless as we escape braces
