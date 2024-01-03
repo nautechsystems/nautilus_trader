@@ -14,12 +14,16 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::hash_map::DefaultHasher,
+    collections::{hash_map::DefaultHasher, HashMap},
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::time::UnixNanos;
-use pyo3::{prelude::*, pyclass::CompareOp};
+use nautilus_core::{
+    python::{serialization::from_dict_pyo3, to_pyvalue_err},
+    serialization::Serializable,
+    time::UnixNanos,
+};
+use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 
 use crate::{
     data::{
@@ -129,5 +133,75 @@ impl OrderBookDepth10 {
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(OrderBookDepth10))
+    }
+
+    /// Return a dictionary representation of the object.
+    #[pyo3(name = "as_dict")]
+    fn py_as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        // Serialize object to JSON bytes
+        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
+        // Parse JSON into a Python dictionary
+        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
+            .call_method("loads", (json_str,), None)?
+            .extract()?;
+        Ok(py_dict)
+    }
+
+    /// Return a new object from the given dictionary representation.
+    #[staticmethod]
+    #[pyo3(name = "from_dict")]
+    fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
+        from_dict_pyo3(py, values)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "get_metadata")]
+    fn py_get_metadata(
+        instrument_id: &InstrumentId,
+        price_precision: u8,
+        size_precision: u8,
+    ) -> PyResult<HashMap<String, String>> {
+        Ok(Self::get_metadata(
+            instrument_id,
+            price_precision,
+            size_precision,
+        ))
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "get_fields")]
+    fn py_get_fields(py: Python<'_>) -> PyResult<&PyDict> {
+        let py_dict = PyDict::new(py);
+        for (k, v) in Self::get_fields() {
+            py_dict.set_item(k, v)?;
+        }
+
+        Ok(py_dict)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_json")]
+    fn py_from_json(data: Vec<u8>) -> PyResult<Self> {
+        Self::from_json_bytes(data).map_err(to_pyvalue_err)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_msgpack")]
+    fn py_from_msgpack(data: Vec<u8>) -> PyResult<Self> {
+        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
+    }
+
+    /// Return JSON encoded bytes representation of the object.
+    #[pyo3(name = "as_json")]
+    fn py_as_json(&self, py: Python<'_>) -> Py<PyAny> {
+        // Unwrapping is safe when serializing a valid object
+        self.as_json_bytes().unwrap().into_py(py)
+    }
+
+    /// Return MsgPack encoded bytes representation of the object.
+    #[pyo3(name = "as_msgpack")]
+    fn py_as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
+        // Unwrapping is safe when serializing a valid object
+        self.as_msgpack_bytes().unwrap().into_py(py)
     }
 }
