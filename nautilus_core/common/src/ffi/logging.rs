@@ -55,3 +55,9 @@ pub unsafe extern "C" fn logger_log(
         }
     }
 }
+
+/// Flush logger buffers.
+#[no_mangle]
+pub extern "C" fn logger_flush() {
+    log::logger().flush()
+}

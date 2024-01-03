@@ -306,6 +306,9 @@ cdef extern from "../includes/common.h":
                     const char *component_ptr,
                     const char *message_ptr);
 
+    # Flush logger buffers.
+    void logger_flush();
+
     # # Safety
     #
     # - Assumes `trader_id_ptr` is a valid C string pointer.

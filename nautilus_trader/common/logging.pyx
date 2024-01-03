@@ -39,6 +39,7 @@ from nautilus_trader.core.rust.common cimport log_color_from_cstr
 from nautilus_trader.core.rust.common cimport log_color_to_cstr
 from nautilus_trader.core.rust.common cimport log_level_from_cstr
 from nautilus_trader.core.rust.common cimport log_level_to_cstr
+from nautilus_trader.core.rust.common cimport logger_flush
 from nautilus_trader.core.rust.common cimport logger_log
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pybytes_to_cstr
@@ -216,6 +217,9 @@ cdef class Logger:
             component_cstr,
             pystr_to_cstr(message),
         )
+
+    cdef void flush(self):
+        logger_flush()
 
 
 cdef class LoggerAdapter:

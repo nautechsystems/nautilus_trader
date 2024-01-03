@@ -446,6 +446,11 @@ void logger_log(enum LogLevel level,
                 const char *message_ptr);
 
 /**
+ * Flush logger buffers.
+ */
+void logger_flush(void);
+
+/**
  * # Safety
  *
  * - Assumes `trader_id_ptr` is a valid C string pointer.
