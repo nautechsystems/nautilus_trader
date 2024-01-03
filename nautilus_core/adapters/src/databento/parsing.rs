@@ -28,7 +28,7 @@ use nautilus_model::{
     data::{
         bar::{Bar, BarSpecification, BarType},
         delta::OrderBookDelta,
-        depth::{OrderBookDepth10, DEPTH_10_LEN},
+        depth::{OrderBookDepth10, DEPTH10_LEN},
         order::BookOrder,
         quote::QuoteTick,
         trade::TradeTick,
@@ -357,8 +357,8 @@ pub fn parse_mbp10_msg(
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> Result<OrderBookDepth10> {
-    let mut bids = Vec::with_capacity(DEPTH_10_LEN);
-    let mut asks = Vec::with_capacity(DEPTH_10_LEN);
+    let mut bids = Vec::with_capacity(DEPTH10_LEN);
+    let mut asks = Vec::with_capacity(DEPTH10_LEN);
 
     for level in &record.levels {
         let bid_order = BookOrder::new(
@@ -379,8 +379,8 @@ pub fn parse_mbp10_msg(
         asks.push(ask_order);
     }
 
-    let bids: [BookOrder; DEPTH_10_LEN] = bids.try_into().expect("Bids `Vec` length mismatch");
-    let asks: [BookOrder; DEPTH_10_LEN] = asks.try_into().expect("Asks `Vec` length mismatch");
+    let bids: [BookOrder; DEPTH10_LEN] = bids.try_into().expect("Bids `Vec` length mismatch");
+    let asks: [BookOrder; DEPTH10_LEN] = asks.try_into().expect("Asks `Vec` length mismatch");
 
     let depth = OrderBookDepth10::new(
         instrument_id,
@@ -507,7 +507,7 @@ where
             match result {
                 (Some(delta), None) => (Data::Delta(delta), None),
                 (None, Some(trade)) => (Data::Trade(trade), None),
-                _ => bail!("Invalid MboMsg parsing combination"),
+                _ => bail!("Invalid `MboMsg` parsing combination"),
             }
         }
         dbn::RType::Mbp0 => {
@@ -523,6 +523,11 @@ where
                 (quote, Some(trade)) => (Data::Quote(quote), Some(Data::Trade(trade))),
             }
         }
+        dbn::RType::Mbp10 => {
+            let msg = record_ref.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
+            let depth = parse_mbp10_msg(msg, instrument_id, 2, ts_init)?;
+            (Data::Depth10(depth), None)
+        }
         dbn::RType::Ohlcv1S
         | dbn::RType::Ohlcv1M
         | dbn::RType::Ohlcv1H
@@ -531,11 +536,6 @@ where
             let msg = record_ref.get::<dbn::OhlcvMsg>().unwrap(); // SAFETY: RType known
             let bar = parse_ohlcv_msg(msg, instrument_id, 2, ts_init)?;
             (Data::Bar(bar), None)
-        }
-        dbn::RType::Mbp10 => {
-            let msg = record_ref.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
-            let depth = parse_mbp10_msg(msg, instrument_id, 2, ts_init)?;
-            (Data::Depth10(depth), None)
         }
         _ => bail!("RType is currently unsupported by NautilusTrader"),
     };

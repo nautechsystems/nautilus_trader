@@ -19,6 +19,7 @@ use nautilus_core::{
     correctness::check_valid_string,
     time::{AtomicTime, UnixNanos},
 };
+use ustr::Ustr;
 
 use crate::{
     handlers::EventHandler,
@@ -44,7 +45,7 @@ pub trait Clock {
     /// callback gets used to handle generated events.
     fn set_time_alert_ns(
         &mut self,
-        name: String,
+        name: &str,
         alert_time_ns: UnixNanos,
         callback: Option<EventHandler>,
     );
@@ -54,7 +55,7 @@ pub trait Clock {
     /// used to handle generated event.
     fn set_timer_ns(
         &mut self,
-        name: String,
+        name: &str,
         interval_ns: u64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
@@ -68,9 +69,9 @@ pub trait Clock {
 
 pub struct TestClock {
     time: AtomicTime,
-    timers: HashMap<String, TestTimer>,
+    timers: HashMap<Ustr, TestTimer>,
     default_callback: Option<EventHandler>,
-    callbacks: HashMap<String, EventHandler>,
+    callbacks: HashMap<Ustr, EventHandler>,
 }
 
 impl TestClock {
@@ -85,7 +86,7 @@ impl TestClock {
     }
 
     #[must_use]
-    pub fn get_timers(&self) -> &HashMap<String, TestTimer> {
+    pub fn get_timers(&self) -> &HashMap<Ustr, TestTimer> {
         &self.timers
     }
 
@@ -117,15 +118,11 @@ impl TestClock {
         events
             .into_iter()
             .map(|event| {
-                let handler = self
-                    .callbacks
-                    .get(event.name.as_str())
-                    .cloned()
-                    .unwrap_or_else(|| {
-                        // If callback_py is None, use the default_callback_py
-                        // TODO: clone for now
-                        self.default_callback.clone().unwrap()
-                    });
+                let handler = self.callbacks.get(&event.name).cloned().unwrap_or_else(|| {
+                    // If callback_py is None, use the default_callback_py
+                    // TODO: clone for now
+                    self.default_callback.clone().unwrap()
+                });
                 TimeEventHandler {
                     event,
                     callback_ptr: handler.as_ptr(),
@@ -171,58 +168,55 @@ impl Clock for TestClock {
 
     fn set_time_alert_ns(
         &mut self,
-        name: String,
+        name: &str,
         alert_time_ns: UnixNanos,
         callback: Option<EventHandler>,
     ) {
-        check_valid_string(&name, "`Timer` name").unwrap();
+        check_valid_string(name, "`Timer` name").unwrap();
         assert!(
             callback.is_some() | self.default_callback.is_some(),
             "All Python callbacks were `None`"
         );
 
+        let name_ustr = Ustr::from(name);
         match callback {
-            Some(callback_py) => self.callbacks.insert(name.clone(), callback_py),
+            Some(callback_py) => self.callbacks.insert(name_ustr, callback_py),
             None => None,
         };
 
         // TODO: should the atomic clock be shared
         // currently share timestamp nanoseconds
         let time_ns = self.time.get_time_ns();
-        let timer = TestTimer::new(
-            name.clone(),
-            alert_time_ns - time_ns,
-            time_ns,
-            Some(alert_time_ns),
-        );
-        self.timers.insert(name, timer);
+        let timer = TestTimer::new(name, alert_time_ns - time_ns, time_ns, Some(alert_time_ns));
+        self.timers.insert(name_ustr, timer);
     }
 
     fn set_timer_ns(
         &mut self,
-        name: String,
+        name: &str,
         interval_ns: u64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<EventHandler>,
     ) {
-        check_valid_string(&name, "`Timer` name").unwrap();
+        check_valid_string(name, "`Timer` name").unwrap();
         assert!(
             callback.is_some() | self.default_callback.is_some(),
             "All Python callbacks were `None`"
         );
 
+        let name_ustr = Ustr::from(name);
         match callback {
-            Some(callback_py) => self.callbacks.insert(name.clone(), callback_py),
+            Some(callback_py) => self.callbacks.insert(name_ustr, callback_py),
             None => None,
         };
 
-        let timer = TestTimer::new(name.clone(), interval_ns, start_time_ns, stop_time_ns);
-        self.timers.insert(name, timer);
+        let timer = TestTimer::new(name, interval_ns, start_time_ns, stop_time_ns);
+        self.timers.insert(name_ustr, timer);
     }
 
     fn next_time_ns(&self, name: &str) -> UnixNanos {
-        let timer = self.timers.get(name);
+        let timer = self.timers.get(&Ustr::from(name));
         match timer {
             None => 0,
             Some(timer) => timer.next_time_ns,
@@ -230,7 +224,7 @@ impl Clock for TestClock {
     }
 
     fn cancel_timer(&mut self, name: &str) {
-        let timer = self.timers.remove(name);
+        let timer = self.timers.remove(&Ustr::from(name));
         match timer {
             None => {}
             Some(mut timer) => timer.cancel(),
@@ -247,9 +241,9 @@ impl Clock for TestClock {
 
 pub struct LiveClock {
     time: AtomicTime,
-    timers: HashMap<String, TestTimer>,
+    timers: HashMap<Ustr, TestTimer>,
     default_callback: Option<EventHandler>,
-    callbacks: HashMap<String, EventHandler>,
+    callbacks: HashMap<Ustr, EventHandler>,
 }
 
 impl LiveClock {
@@ -300,57 +294,54 @@ impl Clock for LiveClock {
 
     fn set_time_alert_ns(
         &mut self,
-        name: String,
+        name: &str,
         mut alert_time_ns: UnixNanos,
         callback: Option<EventHandler>,
     ) {
-        check_valid_string(&name, "`Timer` name").unwrap();
+        check_valid_string(name, "`Timer` name").unwrap();
         assert!(
             callback.is_some() | self.default_callback.is_some(),
             "All Python callbacks were `None`"
         );
 
+        let name_ustr = Ustr::from(name);
         match callback {
-            Some(callback_py) => self.callbacks.insert(name.clone(), callback_py),
+            Some(callback_py) => self.callbacks.insert(name_ustr, callback_py),
             None => None,
         };
 
         let ts_now = self.get_time_ns();
         alert_time_ns = std::cmp::max(alert_time_ns, ts_now);
-        let timer = TestTimer::new(
-            name.clone(),
-            alert_time_ns - ts_now,
-            ts_now,
-            Some(alert_time_ns),
-        );
-        self.timers.insert(name, timer);
+        let timer = TestTimer::new(name, alert_time_ns - ts_now, ts_now, Some(alert_time_ns));
+        self.timers.insert(name_ustr, timer);
     }
 
     fn set_timer_ns(
         &mut self,
-        name: String,
+        name: &str,
         interval_ns: u64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<EventHandler>,
     ) {
-        check_valid_string(&name, "`Timer` name").unwrap();
+        check_valid_string(name, "`Timer` name").unwrap();
         assert!(
             callback.is_some() | self.default_callback.is_some(),
             "All Python callbacks were `None`"
         );
 
+        let name_ustr = Ustr::from(name);
         match callback {
-            Some(callback) => self.callbacks.insert(name.clone(), callback),
+            Some(callback) => self.callbacks.insert(name_ustr, callback),
             None => None,
         };
 
-        let timer = TestTimer::new(name.clone(), interval_ns, start_time_ns, stop_time_ns);
-        self.timers.insert(name, timer);
+        let timer = TestTimer::new(name, interval_ns, start_time_ns, stop_time_ns);
+        self.timers.insert(name_ustr, timer);
     }
 
     fn next_time_ns(&self, name: &str) -> UnixNanos {
-        let timer = self.timers.get(name);
+        let timer = self.timers.get(&Ustr::from(name));
         match timer {
             None => 0,
             Some(timer) => timer.next_time_ns,
@@ -358,7 +349,7 @@ impl Clock for LiveClock {
     }
 
     fn cancel_timer(&mut self, name: &str) {
-        let timer = self.timers.remove(name);
+        let timer = self.timers.remove(&Ustr::from(name));
         match timer {
             None => {}
             Some(mut timer) => timer.cancel(),
@@ -409,9 +400,10 @@ mod tests {
             let handler = EventHandler::new(Some(py_append), None);
             test_clock.register_default_handler(handler);
 
-            test_clock.set_timer_ns(String::from("TEST_TIME1"), 10, 0, None, None);
+            let timer_name = "TEST_TIME1";
+            test_clock.set_timer_ns(timer_name, 10, 0, None, None);
 
-            assert_eq!(test_clock.timer_names(), ["TEST_TIME1"]);
+            assert_eq!(test_clock.timer_names(), [timer_name]);
             assert_eq!(test_clock.timer_count(), 1);
         });
     }
@@ -426,8 +418,9 @@ mod tests {
             let handler = EventHandler::new(Some(py_append), None);
             test_clock.register_default_handler(handler);
 
-            test_clock.set_timer_ns(String::from("TEST_TIME1"), 10, 0, None, None);
-            test_clock.cancel_timer(String::from("TEST_TIME1").as_str());
+            let timer_name = "TEST_TIME1";
+            test_clock.set_timer_ns(timer_name, 10, 0, None, None);
+            test_clock.cancel_timer(timer_name);
 
             assert!(test_clock.timer_names().is_empty());
             assert_eq!(test_clock.timer_count(), 0);
@@ -444,7 +437,8 @@ mod tests {
             let handler = EventHandler::new(Some(py_append), None);
             test_clock.register_default_handler(handler);
 
-            test_clock.set_timer_ns(String::from("TEST_TIME1"), 10, 0, None, None);
+            let timer_name = "TEST_TIME1";
+            test_clock.set_timer_ns(timer_name, 10, 0, None, None);
             test_clock.cancel_timers();
 
             assert!(test_clock.timer_names().is_empty());
@@ -462,10 +456,11 @@ mod tests {
             let handler = EventHandler::new(Some(py_append), None);
             test_clock.register_default_handler(handler);
 
-            test_clock.set_timer_ns(String::from("TEST_TIME1"), 1, 1, Some(3), None);
+            let timer_name = "TEST_TIME1";
+            test_clock.set_timer_ns(timer_name, 1, 1, Some(3), None);
             test_clock.advance_time(2, true);
 
-            assert_eq!(test_clock.timer_names(), ["TEST_TIME1"]);
+            assert_eq!(test_clock.timer_names(), [timer_name]);
             assert_eq!(test_clock.timer_count(), 1);
         });
     }
@@ -480,7 +475,7 @@ mod tests {
             let handler = EventHandler::new(Some(py_append), None);
             test_clock.register_default_handler(handler);
 
-            test_clock.set_timer_ns(String::from("TEST_TIME1"), 2, 0, Some(3), None);
+            test_clock.set_timer_ns("TEST_TIME1", 2, 0, Some(3), None);
             test_clock.advance_time(3, true);
 
             assert_eq!(test_clock.timer_names().len(), 1);
@@ -499,7 +494,7 @@ mod tests {
             let handler = EventHandler::new(Some(py_append), None);
             test_clock.register_default_handler(handler);
 
-            test_clock.set_timer_ns(String::from("TEST_TIME1"), 2, 0, Some(3), None);
+            test_clock.set_timer_ns("TEST_TIME1", 2, 0, Some(3), None);
             test_clock.advance_time(3, false);
 
             assert_eq!(test_clock.timer_names().len(), 1);

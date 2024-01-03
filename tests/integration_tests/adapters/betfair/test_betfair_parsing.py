@@ -59,6 +59,7 @@ from nautilus_trader.adapters.betfair.parsing.common import instrument_id_betfai
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import determine_order_status
+from nautilus_trader.adapters.betfair.parsing.requests import make_customer_order_ref
 from nautilus_trader.adapters.betfair.parsing.requests import nautilus_limit_on_close_to_place_instructions
 from nautilus_trader.adapters.betfair.parsing.requests import nautilus_limit_to_place_instructions
 from nautilus_trader.adapters.betfair.parsing.requests import nautilus_market_on_close_to_place_instructions
@@ -377,12 +378,12 @@ class TestBetfairParsing:
                     ),
                     limit_on_close_order=None,
                     market_on_close_order=None,
-                    customer_order_ref="O-20210410-022422-001",
+                    customer_order_ref="O-20210410-022422-001-001-1",
                 ),
             ],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
             market_version=None,
-            customer_strategy_ref="S-001",
+            customer_strategy_ref="4827311aa8c4c74",
             async_=False,
         )
         assert result == expected
@@ -522,7 +523,7 @@ class TestBetfairParsing:
             ),
             limit_on_close_order=None,
             market_on_close_order=None,
-            customer_order_ref="O-20210410-022422-001",
+            customer_order_ref="O-20210410-022422-001-001-1",
         )
         assert result == expected
         assert msgspec.json.decode(msgspec.json.encode(result), type=PlaceInstruction) == expected
@@ -545,7 +546,7 @@ class TestBetfairParsing:
             limit_order=None,
             limit_on_close_order=LimitOnCloseOrder(liability=10.0, price=3.05),
             market_on_close_order=None,
-            customer_order_ref="O-20210410-022422-001",
+            customer_order_ref="O-20210410-022422-001-001-1",
         )
         assert result == expected
         assert msgspec.json.decode(msgspec.json.encode(result), type=PlaceInstruction) == expected
@@ -570,7 +571,7 @@ class TestBetfairParsing:
             ),
             limit_on_close_order=None,
             market_on_close_order=None,
-            customer_order_ref="O-20210410-022422-001",
+            customer_order_ref="O-20210410-022422-001-001-1",
         )
         assert result == expected
         assert msgspec.json.decode(msgspec.json.encode(result), type=PlaceInstruction) == expected
@@ -595,7 +596,7 @@ class TestBetfairParsing:
             ),
             limit_on_close_order=None,
             market_on_close_order=None,
-            customer_order_ref="O-20210410-022422-001",
+            customer_order_ref="O-20210410-022422-001-001-1",
         )
         assert result == expected
         assert msgspec.json.decode(msgspec.json.encode(result), type=PlaceInstruction) == expected
@@ -740,6 +741,47 @@ class TestBetfairParsing:
             "size": 100.0,
             "price": 55.0,
             "persistenceType": "LAPSE",
+        }
+        assert result == expected
+
+    def test_customer_order_ref(self):
+        # Arrange
+        order = TestExecStubs.limit_order(
+            instrument_id=self.instrument.id,
+        )
+        client_order_id = order.client_order_id
+
+        # Act
+        customer_order_ref = make_customer_order_ref(client_order_id)
+
+        # Assert
+        assert customer_order_ref == "O-20210410-022422-001-001-1"
+        assert len(customer_order_ref) <= 32
+
+    def test_encode_place_orders(self):
+        place_orders = PlaceInstruction(
+            order_type=OrderType.LIMIT,
+            selection_id="237486",
+            handicap="0",
+            side=Side.LAY,
+            limit_order=LimitOrder(
+                size="2",
+                price="3",
+                persistence_type=PersistenceType.PERSIST,
+            ),
+        )
+        result = msgspec.json.decode(msgspec.json.encode(place_orders))
+        result = {k: v for k, v in result.items() if v}
+        expected = {
+            "selectionId": "237486",
+            "handicap": "0",
+            "side": "LAY",
+            "orderType": "LIMIT",
+            "limitOrder": {
+                "size": "2",
+                "price": "3",
+                "persistenceType": "PERSIST",
+            },
         }
         assert result == expected
 

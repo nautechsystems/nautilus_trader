@@ -5,7 +5,7 @@ from nautilus_trader.core.rust.core cimport CVec, UUID4_t
 
 cdef extern from "../includes/model.h":
 
-    const uintptr_t DEPTH_10_LEN # = 10
+    const uintptr_t DEPTH10_LEN # = 10
 
     const uint8_t FIXED_PRECISION # = 9
 
@@ -432,9 +432,9 @@ cdef extern from "../includes/model.h":
         # The instrument ID for the book.
         InstrumentId_t instrument_id;
         # The bid orders for the depth update.
-        BookOrder_t bids[DEPTH_10_LEN];
+        BookOrder_t bids[DEPTH10_LEN];
         # The ask orders for the depth update.
-        BookOrder_t asks[DEPTH_10_LEN];
+        BookOrder_t asks[DEPTH10_LEN];
         # A combination of packet end with matching engine status.
         uint8_t flags;
         # The message sequence number assigned at the venue.
@@ -847,6 +847,10 @@ cdef extern from "../includes/model.h":
     uint8_t orderbook_depth10_eq(const OrderBookDepth10_t *lhs, const OrderBookDepth10_t *rhs);
 
     uint64_t orderbook_depth10_hash(const OrderBookDepth10_t *delta);
+
+    const BookOrder_t *orderbook_depth10_bids_array(const OrderBookDepth10_t *depth);
+
+    const BookOrder_t *orderbook_depth10_asks_array(const OrderBookDepth10_t *depth);
 
     BookOrder_t book_order_from_raw(OrderSide order_side,
                                     int64_t price_raw,

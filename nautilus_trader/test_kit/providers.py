@@ -276,9 +276,9 @@ class TestInstrumentProvider:
 
         """
         if activation is None:
-            activation = pd.Timestamp(2021, 12, 25, tz=pytz.utc)
+            activation = pd.Timestamp("2021-12-25", tz=pytz.utc)
         if expiration is None:
-            expiration = pd.Timestamp(2022, 3, 25, tz=pytz.utc)
+            expiration = pd.Timestamp("2022-3-25", tz=pytz.utc)
         return CryptoFuture(
             instrument_id=InstrumentId(
                 symbol=Symbol(f"BTCUSDT_{expiration.strftime('%y%m%d')}"),
@@ -533,8 +533,8 @@ class TestInstrumentProvider:
             underlying="AAPL",
             kind=OptionKind.CALL,
             strike_price=Price.from_str("149.00"),
-            activation_ns=pd.Timestamp(2021, 9, 17, tz=pytz.utc).value,
-            expiration_ns=pd.Timestamp(2021, 12, 17, tz=pytz.utc).value,
+            activation_ns=pd.Timestamp("2021-9-17", tz=pytz.utc).value,
+            expiration_ns=pd.Timestamp("2021-12-17", tz=pytz.utc).value,
             ts_event=0,
             ts_init=0,
         )

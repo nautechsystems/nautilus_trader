@@ -20,9 +20,11 @@ use std::{
 };
 
 use futures_util::{stream, StreamExt};
-use hyper::{Body, Client, Method, Request, Response};
-use hyper_tls::HttpsConnector;
 use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
+use reqwest::{
+    header::{HeaderMap, HeaderName},
+    Method, Response, Url,
+};
 
 use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
 
@@ -36,7 +38,7 @@ use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
 /// for the give `header_keys`.
 #[derive(Clone)]
 pub struct InnerHttpClient {
-    client: Client<HttpsConnector<hyper::client::HttpConnector>>,
+    client: reqwest::Client,
     header_keys: Vec<String>,
 }
 
@@ -48,25 +50,28 @@ impl InnerHttpClient {
         headers: HashMap<String, String>,
         body: Option<Vec<u8>>,
     ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>> {
-        let mut req_builder = Request::builder().method(method).uri(url);
+        let reqwest_url = Url::parse(url.as_str())?;
 
-        for (header_name, header_value) in &headers {
-            req_builder = req_builder.header(header_name, header_value);
+        let mut header_map = HeaderMap::new();
+        for (header_key, header_value) in &headers {
+            let key = HeaderName::from_bytes(header_key.as_bytes())?;
+            let _ = header_map.insert(key, header_value.parse().unwrap());
         }
 
-        let req = if let Some(body) = body {
-            req_builder.body(Body::from(body))?
-        } else {
-            req_builder.body(Body::empty())?
+        let request_builder = self.client.request(method, reqwest_url).headers(header_map);
+
+        let request = match body {
+            Some(b) => request_builder.body(b).build()?,
+            None => request_builder.build()?,
         };
 
-        let res = self.client.request(req).await?;
+        let res = self.client.execute(request).await?;
         self.to_response(res).await
     }
 
     pub async fn to_response(
         &self,
-        res: Response<Body>,
+        res: Response,
     ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>> {
         let headers: HashMap<String, String> = self
             .header_keys
@@ -76,7 +81,7 @@ impl InnerHttpClient {
             .map(|(k, v)| (k.clone(), v.to_owned()))
             .collect();
         let status = res.status().as_u16();
-        let bytes = hyper::body::to_bytes(res.into_body()).await?;
+        let bytes = res.bytes().await?;
 
         Ok(HttpResponse {
             status,
@@ -137,8 +142,7 @@ pub struct HttpResponse {
 
 impl Default for InnerHttpClient {
     fn default() -> Self {
-        let https = HttpsConnector::new();
-        let client = Client::builder().build::<_, hyper::Body>(https);
+        let client = reqwest::Client::new();
         Self {
             client,
             header_keys: Default::default(),
@@ -174,7 +178,7 @@ pub struct HttpClient {
 
 #[pymethods]
 impl HttpClient {
-    /// Create a new HttpClient
+    /// Create a new HttpClient.
     ///
     /// * `header_keys` - The key value pairs for the given `header_keys` are retained from the responses.
     /// * `keyed_quota` - A list of string quota pairs that gives quota for specific key values.
@@ -188,8 +192,7 @@ impl HttpClient {
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
     ) -> Self {
-        let https = HttpsConnector::new();
-        let client = Client::builder().build::<_, hyper::Body>(https);
+        let client = reqwest::Client::new();
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
         let client = InnerHttpClient {
@@ -249,55 +252,15 @@ impl HttpClient {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::{
-        convert::Infallible,
-        net::{SocketAddr, TcpListener},
-    };
+    use std::net::{SocketAddr, TcpListener};
 
-    use hyper::{
-        service::{make_service_fn, service_fn},
-        Body, Method, Request, Response, Server, StatusCode,
+    use axum::{
+        routing::{delete, get, patch, post},
+        serve, Router,
     };
-    use tokio::sync::oneshot;
+    use http::status::StatusCode;
 
     use super::*;
-
-    async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
-        match (req.method(), req.uri().path()) {
-            (&Method::GET, "/get") => {
-                let response = Response::new(Body::from("hello-world!"));
-                Ok(response)
-            }
-            (&Method::POST, "/post") => {
-                let response = Response::builder()
-                    .status(StatusCode::OK)
-                    .body(Body::empty())
-                    .unwrap();
-                Ok(response)
-            }
-            (&Method::PATCH, "/patch") => {
-                let response = Response::builder()
-                    .status(StatusCode::OK)
-                    .body(Body::empty())
-                    .unwrap();
-                Ok(response)
-            }
-            (&Method::DELETE, "/delete") => {
-                let response = Response::builder()
-                    .status(StatusCode::OK)
-                    .body(Body::empty())
-                    .unwrap();
-                Ok(response)
-            }
-            _ => {
-                let response = Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .body(Body::empty())
-                    .unwrap();
-                Ok(response)
-            }
-        }
-    }
 
     fn get_unique_port() -> u16 {
         // Create a temporary TcpListener to get an available port
@@ -311,37 +274,41 @@ mod tests {
         port
     }
 
-    fn start_test_server() -> (SocketAddr, oneshot::Sender<()>) {
-        let addr: SocketAddr = ([127, 0, 0, 1], get_unique_port()).into();
-        let make_svc = make_service_fn(|_conn| async { Ok::<_, Infallible>(service_fn(handle)) });
+    fn create_router() -> Router {
+        Router::new()
+            .route("/get", get(|| async { "hello-world!" }))
+            .route("/post", post(|| async { StatusCode::OK }))
+            .route("/patch", patch(|| async { StatusCode::OK }))
+            .route("/delete", delete(|| async { StatusCode::OK }))
+    }
 
-        let (tx, rx) = oneshot::channel::<()>();
+    async fn start_test_server() -> Result<SocketAddr, Box<dyn std::error::Error + Send + Sync>> {
+        let port = get_unique_port();
+        let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
 
-        let server = Server::bind(&addr).serve(make_svc);
-
-        let graceful = server.with_graceful_shutdown(async {
-            if let Err(e) = rx.await {
-                eprintln!("shutdown signal error: {e}");
-            }
+        tokio::spawn(async move {
+            serve(listener, create_router()).await.unwrap();
         });
 
-        tokio::spawn(async {
-            if let Err(e) = graceful.await {
-                eprintln!("server error: {e}");
-            }
-        });
-
-        (addr, tx)
+        Ok(addr)
     }
 
     #[tokio::test]
     async fn test_get() {
-        let (addr, _shutdown_tx) = start_test_server();
-        let url = format!("http://{}:{}", addr.ip(), addr.port());
+        let addr = start_test_server().await.unwrap();
+        let url = format!("http://{}", addr);
 
         let client = InnerHttpClient::default();
         let response = client
-            .send_request(Method::GET, format!("{url}/get"), HashMap::new(), None)
+            .send_request(
+                reqwest::Method::GET,
+                format!("{url}/get"),
+                HashMap::new(),
+                None,
+            )
             .await
             .unwrap();
 
@@ -351,12 +318,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_post() {
-        let (addr, _shutdown_tx) = start_test_server();
-        let url = format!("http://{}:{}", addr.ip(), addr.port());
+        let addr = start_test_server().await.unwrap();
+        let url = format!("http://{}", addr);
 
         let client = InnerHttpClient::default();
         let response = client
-            .send_request(Method::POST, format!("{url}/post"), HashMap::new(), None)
+            .send_request(
+                reqwest::Method::POST,
+                format!("{url}/post"),
+                HashMap::new(),
+                None,
+            )
             .await
             .unwrap();
 
@@ -365,8 +337,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_post_with_body() {
-        let (addr, _shutdown_tx) = start_test_server();
-        let url = format!("http://{}:{}", addr.ip(), addr.port());
+        let addr = start_test_server().await.unwrap();
+        let url = format!("http://{}", addr);
 
         let client = InnerHttpClient::default();
 
@@ -385,7 +357,7 @@ mod tests {
 
         let response = client
             .send_request(
-                Method::POST,
+                reqwest::Method::POST,
                 format!("{url}/post"),
                 HashMap::new(),
                 Some(body_bytes),
@@ -398,12 +370,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_patch() {
-        let (addr, _shutdown_tx) = start_test_server();
-        let url = format!("http://{}:{}", addr.ip(), addr.port());
+        let addr = start_test_server().await.unwrap();
+        let url = format!("http://{}", addr);
 
         let client = InnerHttpClient::default();
         let response = client
-            .send_request(Method::PATCH, format!("{url}/patch"), HashMap::new(), None)
+            .send_request(
+                reqwest::Method::PATCH,
+                format!("{url}/patch"),
+                HashMap::new(),
+                None,
+            )
             .await
             .unwrap();
 
@@ -412,13 +389,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete() {
-        let (addr, _shutdown_tx) = start_test_server();
-        let url = format!("http://{}:{}", addr.ip(), addr.port());
+        let addr = start_test_server().await.unwrap();
+        let url = format!("http://{}", addr);
 
         let client = InnerHttpClient::default();
         let response = client
             .send_request(
-                Method::DELETE,
+                reqwest::Method::DELETE,
                 format!("{url}/delete"),
                 HashMap::new(),
                 None,

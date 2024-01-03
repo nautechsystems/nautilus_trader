@@ -214,6 +214,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             BinanceErrorCode.DISCONNECTED,
             BinanceErrorCode.TOO_MANY_REQUESTS,  # Short retry delays may result in bans
             BinanceErrorCode.TIMEOUT,
+            BinanceErrorCode.SERVER_BUSY,
             BinanceErrorCode.INVALID_TIMESTAMP,
             BinanceErrorCode.CANCEL_REJECTED,
             BinanceErrorCode.ME_RECVWINDOW_REJECT,

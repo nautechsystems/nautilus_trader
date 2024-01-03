@@ -168,9 +168,6 @@ class OrderBookImbalance(Strategy):
         if not book.spread():
             return
 
-        # Uncomment for debugging
-        # self.log.info("\n" + book.pprint())
-
         bid_size: Quantity | None = book.best_bid_size()
         ask_size: Quantity | None = book.best_ask_size()
         if (bid_size is None or bid_size <= 0) or (ask_size is None or ask_size <= 0):

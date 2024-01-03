@@ -99,7 +99,7 @@ class BetfairTestStubs:
         return BetfairInstrumentProvider(
             client=betfair_client,
             logger=TestComponentStubs.logger(),
-            config=config or BetfairInstrumentProviderConfig(),
+            config=config or BetfairInstrumentProviderConfig(account_currency="GBP"),
         )
 
     @staticmethod
@@ -123,7 +123,7 @@ class BetfairTestStubs:
                 "SportsAPING/v1.0/placeOrders": BetfairResponses.betting_place_order_success,
                 "SportsAPING/v1.0/replaceOrders": BetfairResponses.betting_replace_orders_success,
                 "SportsAPING/v1.0/cancelOrders": BetfairResponses.betting_cancel_orders_success,
-                "SportsAPING/v1.0/listCurrentOrders": BetfairResponses.list_current_orders,
+                "SportsAPING/v1.0/listCurrentOrders": BetfairResponses.list_current_orders_executable,
                 "SportsAPING/v1.0/listClearedOrders": BetfairResponses.list_cleared_orders,
             }
             kw = {}
@@ -382,8 +382,12 @@ class BetfairResponses:
         return BetfairResponses.load("list_cleared_orders.json")
 
     @staticmethod
-    def list_current_orders():
-        return BetfairResponses.load("list_current_orders.json")
+    def list_current_orders_executable():
+        return BetfairResponses.load("list_current_orders_executable.json")
+
+    @staticmethod
+    def list_current_orders_execution_complete():
+        return BetfairResponses.load("list_current_orders_execution_complete.json")
 
     @staticmethod
     def list_current_orders_empty():
@@ -852,7 +856,7 @@ def load_betfair_data(catalog: ParquetDataCatalog) -> ParquetDataCatalog:
     filename = TEST_DATA_DIR / "betfair" / "1.166564490.bz2"
 
     # Write betting instruments
-    instruments = betting_instruments_from_file(filename)
+    instruments = betting_instruments_from_file(filename, currency="GBP")
     catalog.write_data(instruments)
 
     # Write data
