@@ -15,6 +15,7 @@ nautilus-common = { path = "../common" }
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model" }
 pyo3 = { workspace = true, optional = true }
+ustr = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

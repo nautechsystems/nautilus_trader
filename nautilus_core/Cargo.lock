@@ -2447,6 +2447,7 @@ dependencies = [
  "pyo3",
  "rstest",
  "tempfile",
+ "ustr",
 ]
 
 [[package]]
