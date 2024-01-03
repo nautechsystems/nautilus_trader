@@ -314,7 +314,7 @@ def betfair_account_to_account_state(
     )
 
 
-def bet_to_trade_report(
+def bet_to_fill_report(
     order: CurrentOrderSummary,
     account_id: AccountId,
     instrument_id: InstrumentId,

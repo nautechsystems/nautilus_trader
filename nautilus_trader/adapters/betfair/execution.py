@@ -43,8 +43,8 @@ from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
+from nautilus_trader.adapters.betfair.parsing.requests import bet_to_fill_report
 from nautilus_trader.adapters.betfair.parsing.requests import bet_to_order_status_report
-from nautilus_trader.adapters.betfair.parsing.requests import bet_to_trade_report
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import make_customer_order_ref
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_cancel_order_params
@@ -301,7 +301,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             date_range=TimeRange(from_=start, to=end),
         )
 
-        trade_reports = []
+        fill_reports = []
         for order in cleared_orders:
             instrument_id = betfair_instrument_id(
                 market_id=order.market_id,
@@ -310,7 +310,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
             venue_order_id = VenueOrderId(str(order.bet_id))
             client_order_id = self.venue_order_id_to_client_order_id.get(venue_order_id)
-            report = bet_to_trade_report(
+            report = bet_to_fill_report(
                 order=order,
                 account_id=self.account_id,
                 instrument_id=instrument_id,
@@ -320,9 +320,9 @@ class BetfairExecutionClient(LiveExecutionClient):
                 report_id=UUID4(),
             )
             if report is not None:
-                trade_reports.append(report)
+                fill_reports.append(report)
 
-        return trade_reports
+        return fill_reports
 
     async def generate_position_status_reports(
         self,
