@@ -154,10 +154,10 @@ class NautilusKernel:
                 f"environment {self._environment} not recognized",  # pragma: no cover (design-time error)
             )
 
-        # Initialize tracing for debugging async rust logic
+        # Initialize tracing for debugging async Rust logic
         init_tracing()
 
-        # Initialize logging for debugging python and sync rust logic
+        # Initialize logging for debugging Python and sync Rust logic
         logging: LoggingConfig = config.logging or LoggingConfig()
 
         file_writer_config = FileWriterConfig(
@@ -167,6 +167,7 @@ class NautilusKernel:
         )
 
         logger_config = LoggerConfig.from_spec("stdout=info;fileout=debug")
+        # logger_config = LoggerConfig.from_spec("stdout=info;print_config")
         init_logging(
             nautilus_pyo3.TraderId(self._trader_id.value),
             nautilus_pyo3.UUID4(self._instance_id.value),

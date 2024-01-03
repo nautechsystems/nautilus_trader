@@ -33,7 +33,7 @@ use crate::logging::{FileWriterConfig, Logger, LoggerConfig};
 /// beginning of the run.
 #[pyfunction]
 pub fn init_tracing() {
-    // skip tracing initialization if `RUST_LOG` is not set
+    // Skip tracing initialization if `RUST_LOG` is not set
     if env::var("RUST_LOG").is_ok() {
         tracing_subscriber::fmt()
             .with_max_level(tracing::Level::DEBUG)
@@ -60,12 +60,15 @@ pub fn init_logging(
     file_writer_config: FileWriterConfig,
     config: LoggerConfig,
 ) {
+    let clock = get_atomic_clock();
+    clock.make_realtime();
+
     Logger::init_with_config(
         trader_id,
         instance_id,
         file_writer_config,
         config,
-        Some(get_atomic_clock()),
+        Some(clock),
     );
 }
 

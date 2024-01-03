@@ -25,7 +25,7 @@ use std::{
 };
 
 use chrono::{prelude::*, Utc};
-use log::{set_boxed_logger, set_max_level, Level, LevelFilter, Log};
+use log::{set_boxed_logger, Level, LevelFilter, Log, STATIC_MAX_LEVEL};
 use nautilus_core::{
     datetime::unix_nanos_to_iso8601,
     time::{get_atomic_clock, AtomicTime, UnixNanos},
@@ -33,6 +33,7 @@ use nautilus_core::{
 };
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use crate::enums::LogColor;
 
@@ -42,17 +43,18 @@ use crate::enums::LogColor;
 )]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoggerConfig {
-    /// Maximum log level to write to stdout
+    /// Maximum log level to write to stdout.
     stdout_level: LevelFilter,
-    /// Maximum log level to write to file
+    /// Maximum log level to write to file.
     fileout_level: LevelFilter,
-    // TODO: replace component with Ustr
-    /// Maximum log level to write for a given component
-    component_level: HashMap<String, LevelFilter>,
+    /// Maximum log level to write for a given component.
+    component_level: HashMap<Ustr, LevelFilter>,
     /// If logger is using ANSI color codes.
     pub is_colored: bool,
     /// If logging is bypassed.
     pub is_bypassed: bool,
+    /// If the Rust logging config should be printed to stdout at initialization.
+    pub print_config: bool,
 }
 
 impl Default for LoggerConfig {
@@ -63,6 +65,7 @@ impl Default for LoggerConfig {
             component_level: HashMap::new(),
             is_colored: true,
             is_bypassed: false,
+            print_config: false,
         }
     }
 }
@@ -75,12 +78,15 @@ impl LoggerConfig {
             mut component_level,
             mut is_colored,
             mut is_bypassed,
+            mut print_config,
         } = Self::default();
         spec.split(';').for_each(|kv| {
             if kv == "is_colored" {
                 is_colored = true;
             } else if kv == "is_bypassed" {
                 is_bypassed = true;
+            } else if kv == "print_config" {
+                print_config = true;
             } else {
                 let mut kv = kv.split('=');
                 if let (Some(k), Some(Ok(lvl))) = (kv.next(), kv.next().map(LevelFilter::from_str))
@@ -90,7 +96,7 @@ impl LoggerConfig {
                     } else if k == "fileout" {
                         fileout_level = lvl;
                     } else {
-                        component_level.insert(k.to_string(), lvl);
+                        component_level.insert(Ustr::from(k), lvl);
                     }
                 }
             }
@@ -102,6 +108,7 @@ impl LoggerConfig {
             component_level,
             is_colored,
             is_bypassed,
+            print_config,
         }
     }
 
@@ -151,9 +158,12 @@ pub struct Logger {
     pub config: LoggerConfig,
 }
 
+/// Represents a type of log event.
 pub enum LogEvent {
-    Data(LogLine),
-    FlushCommand,
+    /// A log line event.
+    Log(LogLine),
+    /// A command to flush all logger buffers.
+    Flush,
 }
 
 /// Represents a log event which includes a message.
@@ -166,7 +176,7 @@ pub struct LogLine {
     /// The color for the log message content.
     color: LogColor,
     /// The Nautilus system component the log event originated from.
-    component: String,
+    component: Ustr,
     /// The log message content.
     message: String,
 }
@@ -185,24 +195,24 @@ impl Log for Logger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
         !self.config.is_bypassed
             && (metadata.level() == Level::Error
-                || self.config.stdout_level <= metadata.level()
-                || self.config.fileout_level <= metadata.level())
+                || metadata.level() >= self.config.stdout_level
+                || metadata.level() >= self.config.fileout_level)
     }
 
     fn log(&self, record: &log::Record) {
         // TODO remove unwraps
         if self.enabled(record.metadata()) {
             let timestamp = self.clock.get_time_ns();
-            let component = record
-                .key_values()
-                .get("component".into())
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| record.metadata().target().to_string());
             let color = record
                 .key_values()
                 .get("color".into())
                 .and_then(|v| v.to_u64().map(|v| (v as u8).into()))
                 .unwrap_or(LogColor::Normal);
+            let component = record
+                .key_values()
+                .get("component".into())
+                .map(|v| Ustr::from(&v.to_string()))
+                .unwrap_or_else(|| Ustr::from(record.metadata().target()));
             let line = LogLine {
                 timestamp,
                 level: record.level(),
@@ -210,14 +220,14 @@ impl Log for Logger {
                 component,
                 message: format!("{}", record.args()).to_string(),
             };
-            if let Err(SendError(LogEvent::Data(line))) = self.tx.send(LogEvent::Data(line)) {
+            if let Err(SendError(LogEvent::Log(line))) = self.tx.send(LogEvent::Log(line)) {
                 eprintln!("Error sending log event: {line}");
             }
         }
     }
 
     fn flush(&self) {
-        self.tx.send(LogEvent::FlushCommand).unwrap();
+        self.tx.send(LogEvent::Flush).unwrap();
     }
 }
 
@@ -251,6 +261,11 @@ impl Logger {
             config: config.clone(),
         };
 
+        if config.print_config {
+            println!("Initializing logger with {:?}", config);
+            println!("STATIC_MAX_LEVEL={}", STATIC_MAX_LEVEL);
+        }
+
         match set_boxed_logger(Box::new(logger)) {
             Ok(_) => {
                 thread::spawn(move || {
@@ -262,8 +277,6 @@ impl Logger {
                         rx,
                     );
                 });
-
-                set_max_level(log::LevelFilter::Debug);
             }
             Err(e) => {
                 eprintln!("Cannot set logger because of error: {}", e)
@@ -271,6 +284,7 @@ impl Logger {
         }
     }
 
+    #[allow(unused_variables)] // `is_bypassed` is unused
     #[allow(clippy::useless_format)] // Format is not actually useless as we escape braces
     fn handle_messages(
         trader_id: &str,
@@ -279,12 +293,17 @@ impl Logger {
         config: LoggerConfig,
         rx: Receiver<LogEvent>,
     ) {
+        if config.print_config {
+            println!("Logging `handle_messages` thread initialized")
+        }
+
         let LoggerConfig {
             stdout_level,
             fileout_level,
             component_level,
             is_colored,
-            is_bypassed: _,
+            is_bypassed,
+            print_config: _,
         } = config;
 
         // Setup std I/O buffers
@@ -340,12 +359,12 @@ impl Logger {
         // Continue to receive and handle log events until channel is hung up
         while let Ok(event) = rx.recv() {
             match event {
-                LogEvent::FlushCommand => {
+                LogEvent::Flush => {
                     Self::flush_stderr(&mut err_buf);
                     Self::flush_stdout(&mut out_buf);
                     file_buf.as_mut().map(Self::flush_file);
                 }
-                LogEvent::Data(line) => {
+                LogEvent::Log(line) => {
                     let component_level = component_level.get(&line.component);
 
                     // Check if the component exists in level_filters and if its level is greater than event.level
@@ -549,6 +568,7 @@ mod tests {
     use rstest::*;
     use serde_json::Value;
     use tempfile::tempdir;
+    use ustr::Ustr;
 
     use super::FileWriterConfig;
     use crate::{
@@ -563,7 +583,7 @@ mod tests {
             timestamp: 1_000_000_000,
             level: log::Level::Info,
             color: LogColor::Normal,
-            component: "Portfolio".to_string(),
+            component: Ustr::from("Portfolio"),
             message: "This is a log message".to_string(),
         };
 
@@ -585,11 +605,12 @@ mod tests {
                 stdout_level: LevelFilter::Info,
                 fileout_level: LevelFilter::Debug,
                 component_level: HashMap::from_iter(vec![(
-                    "RiskEngine".to_string(),
+                    Ustr::from("RiskEngine"),
                     LevelFilter::Error
                 )]),
                 is_colored: true,
                 is_bypassed: false,
+                print_config: false,
             }
         )
     }

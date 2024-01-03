@@ -57,7 +57,7 @@ cdef class Logger:
         str message,
     )
 
-    cdef void flush(self)
+    cpdef void flush(self)
 
 
 cdef class LoggerAdapter:

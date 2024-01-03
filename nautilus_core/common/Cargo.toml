@@ -25,7 +25,7 @@ ustr = { workspace = true }
 tracing = { workspace = true }
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
-log = { version = "0.4.20", features = ["std", "kv_unstable", "serde"] }
+log = { version = "0.4.20", features = ["std", "kv_unstable", "serde", "max_level_debug", "release_max_level_debug"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

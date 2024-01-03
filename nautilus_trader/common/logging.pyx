@@ -218,7 +218,7 @@ cdef class Logger:
             pystr_to_cstr(message),
         )
 
-    cdef void flush(self):
+    cpdef void flush(self):
         logger_flush()
 
 
