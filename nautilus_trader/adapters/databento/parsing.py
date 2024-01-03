@@ -30,8 +30,9 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
-from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggregationSource
@@ -305,45 +306,46 @@ def parse_mbp10_msg(
     record: databento.MBP10Msg,
     instrument_id: InstrumentId,
     ts_init: int,
-) -> OrderBookDeltas:
-    bids: list[OrderBookDelta] = []
-    asks: list[OrderBookDelta] = []
+) -> OrderBookDepth10:
+    bids: list[BookOrder] = []
+    asks: list[BookOrder] = []
+    bid_counts: list[int] = []
+    ask_counts: list[int] = []
 
     for level in record.levels:
-        bid = OrderBookDelta.from_raw(
-            instrument_id=instrument_id,
-            action=BookAction.ADD,
+        bid = BookOrder.from_raw(
             side=OrderSide.BUY,
             price_raw=level.bid_px,
-            price_prec=USD.precision,  # TODO(per instrument precision)
-            size_raw=int(level.bid_sz * FIXED_SCALAR),  # No fractional sizes
+            price_prec=USD.precision,
+            size_raw=int(level.bid_sz * FIXED_SCALAR),
             size_prec=0,  # No fractional units
             order_id=0,  # No order ID for MBP level
-            flags=record.flags,
-            sequence=record.sequence,
-            ts_event=record.ts_recv,  # More accurate and reliable timestamp
-            ts_init=ts_init,
         )
         bids.append(bid)
+        bid_counts.append(level.bid_ct)
 
-        ask = OrderBookDelta.from_raw(
-            instrument_id=instrument_id,
-            action=BookAction.ADD,
+        ask = BookOrder.from_raw(
             side=OrderSide.SELL,
             price_raw=level.ask_px,
-            price_prec=USD.precision,  # TODO(per instrument precision)
-            size_raw=int(level.ask_sz * FIXED_SCALAR),  # No fractional sizes
+            price_prec=USD.precision,
+            size_raw=int(level.ask_sz * FIXED_SCALAR),
             size_prec=0,  # No fractional units
             order_id=0,  # No order ID for MBP level
-            flags=record.flags,
-            sequence=record.sequence,
-            ts_event=record.ts_recv,  # More accurate and reliable timestamp
-            ts_init=ts_init,
         )
         asks.append(ask)
+        ask_counts.append(level.ask_ct)  # Currently a typo in type stub
 
-    clear = [OrderBookDelta.clear(instrument_id, record.ts_recv, record.ts_recv, record.sequence)]
-    return OrderBookDeltas(instrument_id=instrument_id, deltas=clear + bids + asks)
+    return OrderBookDepth10(
+        instrument_id=instrument_id,
+        bids=bids,
+        asks=asks,
+        bid_counts=bid_counts,
+        ask_counts=ask_counts,
+        flags=record.flags,
+        sequence=record.sequence,
+        ts_event=record.ts_recv,
+        ts_init=ts_init,
+    )
 
 
 def parse_trade_msg(

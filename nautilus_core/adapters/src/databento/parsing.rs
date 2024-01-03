@@ -359,6 +359,8 @@ pub fn parse_mbp10_msg(
 ) -> Result<OrderBookDepth10> {
     let mut bids = Vec::with_capacity(DEPTH10_LEN);
     let mut asks = Vec::with_capacity(DEPTH10_LEN);
+    let mut bid_counts = Vec::with_capacity(DEPTH10_LEN);
+    let mut ask_counts = Vec::with_capacity(DEPTH10_LEN);
 
     for level in &record.levels {
         let bid_order = BookOrder::new(
@@ -377,15 +379,21 @@ pub fn parse_mbp10_msg(
 
         bids.push(bid_order);
         asks.push(ask_order);
+        bid_counts.push(level.bid_ct);
+        ask_counts.push(level.ask_ct);
     }
 
-    let bids: [BookOrder; DEPTH10_LEN] = bids.try_into().expect("Bids `Vec` length mismatch");
-    let asks: [BookOrder; DEPTH10_LEN] = asks.try_into().expect("Asks `Vec` length mismatch");
+    let bids: [BookOrder; DEPTH10_LEN] = bids.try_into().expect("`bids` length != 10");
+    let asks: [BookOrder; DEPTH10_LEN] = asks.try_into().expect("`asks` length != 10");
+    let bid_counts: [u32; DEPTH10_LEN] = bid_counts.try_into().expect("`bid_counts` length != 10");
+    let ask_counts: [u32; DEPTH10_LEN] = ask_counts.try_into().expect("`ask_counts` length != 10");
 
     let depth = OrderBookDepth10::new(
         instrument_id,
         bids,
         asks,
+        bid_counts,
+        ask_counts,
         record.flags,
         record.sequence.into(),
         record.ts_recv,

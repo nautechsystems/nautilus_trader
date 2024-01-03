@@ -376,10 +376,15 @@ class TestDataStubs:
             quantity += 100.0
             order_id += 1
 
+        bid_counts = [1] * 10
+        ask_counts = [1] * 10
+
         return OrderBookDepth10(
             instrument_id=instrument_id or TestIdStubs.aapl_xnas_id(),
             bids=bids,
             asks=asks,
+            bid_counts=bid_counts,
+            ask_counts=ask_counts,
             flags=flags,
             sequence=sequence,
             ts_event=ts_event,
