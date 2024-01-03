@@ -22,18 +22,24 @@ use nautilus_core::time::UnixNanos;
 use pyo3::{prelude::*, pyclass::CompareOp};
 
 use crate::{
-    data::{depth::OrderBookDepth10, order::BookOrder},
+    data::{
+        depth::{OrderBookDepth10, DEPTH10_LEN},
+        order::BookOrder,
+    },
     identifiers::instrument_id::InstrumentId,
     python::PY_MODULE_MODEL,
 };
 
 #[pymethods]
 impl OrderBookDepth10 {
+    #[allow(clippy::too_many_arguments)]
     #[new]
     fn py_new(
         instrument_id: InstrumentId,
-        bids: [BookOrder; 10],
-        asks: [BookOrder; 10],
+        bids: [BookOrder; DEPTH10_LEN],
+        asks: [BookOrder; DEPTH10_LEN],
+        bid_counts: [u32; DEPTH10_LEN],
+        ask_counts: [u32; DEPTH10_LEN],
         flags: u8,
         sequence: u64,
         ts_event: UnixNanos,
@@ -43,6 +49,8 @@ impl OrderBookDepth10 {
             instrument_id,
             bids,
             asks,
+            bid_counts,
+            ask_counts,
             flags,
             sequence,
             ts_event,
@@ -78,13 +86,23 @@ impl OrderBookDepth10 {
     }
 
     #[getter]
-    fn bids(&self) -> [BookOrder; 10] {
+    fn bids(&self) -> [BookOrder; DEPTH10_LEN] {
         self.bids
     }
 
     #[getter]
-    fn asks(&self) -> [BookOrder; 10] {
+    fn asks(&self) -> [BookOrder; DEPTH10_LEN] {
         self.asks
+    }
+
+    #[getter]
+    fn bid_counts(&self) -> [u32; DEPTH10_LEN] {
+        self.bid_counts
+    }
+
+    #[getter]
+    fn ask_counts(&self) -> [u32; DEPTH10_LEN] {
+        self.ask_counts
     }
 
     #[getter]

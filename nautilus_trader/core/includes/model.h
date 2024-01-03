@@ -798,6 +798,14 @@ typedef struct OrderBookDepth10_t {
      */
     struct BookOrder_t asks[DEPTH10_LEN];
     /**
+     * The count of bid orders per level for the depth update.
+     */
+    uint32_t bid_counts[DEPTH10_LEN];
+    /**
+     * The count of ask orders per level for the depth update.
+     */
+    uint32_t ask_counts[DEPTH10_LEN];
+    /**
      * A combination of packet end with matching engine status.
      */
     uint8_t flags;
@@ -1390,11 +1398,13 @@ uint64_t orderbook_delta_hash(const struct OrderBookDelta_t *delta);
  * # Safety
  *
  * - Assumes `bids` and `asks` are valid pointers to arrays of `BookOrder` of length 10.
- * - Assumes Rust now takes ownership of the memory for `bids` and `asks`.
+ * - Assumes `bid_counts` and `ask_counts` are valid pointers to arrays of `u32` of length 10.
  */
 struct OrderBookDepth10_t orderbook_depth10_new(struct InstrumentId_t instrument_id,
                                                 const struct BookOrder_t *bids_ptr,
                                                 const struct BookOrder_t *asks_ptr,
+                                                const uint32_t *bid_counts_ptr,
+                                                const uint32_t *ask_counts_ptr,
                                                 uint8_t flags,
                                                 uint64_t sequence,
                                                 uint64_t ts_event,
@@ -1408,6 +1418,10 @@ uint64_t orderbook_depth10_hash(const struct OrderBookDepth10_t *delta);
 const struct BookOrder_t *orderbook_depth10_bids_array(const struct OrderBookDepth10_t *depth);
 
 const struct BookOrder_t *orderbook_depth10_asks_array(const struct OrderBookDepth10_t *depth);
+
+const uint32_t *orderbook_depth10_bid_counts_array(const struct OrderBookDepth10_t *depth);
+
+const uint32_t *orderbook_depth10_ask_counts_array(const struct OrderBookDepth10_t *depth);
 
 struct BookOrder_t book_order_from_raw(enum OrderSide order_side,
                                        int64_t price_raw,

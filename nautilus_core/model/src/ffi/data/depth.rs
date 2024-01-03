@@ -31,12 +31,14 @@ use crate::{
 /// # Safety
 ///
 /// - Assumes `bids` and `asks` are valid pointers to arrays of `BookOrder` of length 10.
-/// - Assumes Rust now takes ownership of the memory for `bids` and `asks`.
+/// - Assumes `bid_counts` and `ask_counts` are valid pointers to arrays of `u32` of length 10.
 #[no_mangle]
 pub unsafe extern "C" fn orderbook_depth10_new(
     instrument_id: InstrumentId,
     bids_ptr: *const BookOrder,
     asks_ptr: *const BookOrder,
+    bid_counts_ptr: *const u32,
+    ask_counts_ptr: *const u32,
     flags: u8,
     sequence: u64,
     ts_event: UnixNanos,
@@ -46,16 +48,25 @@ pub unsafe extern "C" fn orderbook_depth10_new(
     // The caller must guarantee that they point to arrays of `BookOrder` of at least `DEPTH10_LEN` length.
     assert!(!bids_ptr.is_null());
     assert!(!asks_ptr.is_null());
+    assert!(!bid_counts_ptr.is_null());
+    assert!(!ask_counts_ptr.is_null());
 
     let bids_slice = std::slice::from_raw_parts(bids_ptr, DEPTH10_LEN);
     let asks_slice = std::slice::from_raw_parts(asks_ptr, DEPTH10_LEN);
-    let bids: [BookOrder; DEPTH10_LEN] = bids_slice.try_into().expect("Slice length mismatch");
-    let asks: [BookOrder; DEPTH10_LEN] = asks_slice.try_into().expect("Slice length mismatch");
+    let bids: [BookOrder; DEPTH10_LEN] = bids_slice.try_into().expect("Slice length != 10");
+    let asks: [BookOrder; DEPTH10_LEN] = asks_slice.try_into().expect("Slice length != 10");
+
+    let bid_counts_slice = std::slice::from_raw_parts(bid_counts_ptr, DEPTH10_LEN);
+    let ask_counts_slice = std::slice::from_raw_parts(ask_counts_ptr, DEPTH10_LEN);
+    let bid_counts: [u32; DEPTH10_LEN] = bid_counts_slice.try_into().expect("Slice length != 10");
+    let ask_counts: [u32; DEPTH10_LEN] = ask_counts_slice.try_into().expect("Slice length != 10");
 
     OrderBookDepth10::new(
         instrument_id,
         bids,
         asks,
+        bid_counts,
+        ask_counts,
         flags,
         sequence,
         ts_event,
@@ -83,4 +94,14 @@ pub extern "C" fn orderbook_depth10_bids_array(depth: &OrderBookDepth10) -> *con
 #[no_mangle]
 pub extern "C" fn orderbook_depth10_asks_array(depth: &OrderBookDepth10) -> *const BookOrder {
     depth.asks.as_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn orderbook_depth10_bid_counts_array(depth: &OrderBookDepth10) -> *const u32 {
+    depth.bid_counts.as_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn orderbook_depth10_ask_counts_array(depth: &OrderBookDepth10) -> *const u32 {
+    depth.ask_counts.as_ptr()
 }

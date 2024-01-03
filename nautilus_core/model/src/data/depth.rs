@@ -46,6 +46,10 @@ pub struct OrderBookDepth10 {
     pub bids: [BookOrder; DEPTH10_LEN],
     /// The ask orders for the depth update.
     pub asks: [BookOrder; DEPTH10_LEN],
+    /// The count of bid orders per level for the depth update.
+    pub bid_counts: [u32; DEPTH10_LEN],
+    /// The count of ask orders per level for the depth update.
+    pub ask_counts: [u32; DEPTH10_LEN],
     /// A combination of packet end with matching engine status.
     pub flags: u8,
     /// The message sequence number assigned at the venue.
@@ -63,6 +67,8 @@ impl OrderBookDepth10 {
         instrument_id: InstrumentId,
         bids: [BookOrder; DEPTH10_LEN],
         asks: [BookOrder; DEPTH10_LEN],
+        bid_counts: [u32; DEPTH10_LEN],
+        ask_counts: [u32; DEPTH10_LEN],
         flags: u8,
         sequence: u64,
         ts_event: UnixNanos,
@@ -72,6 +78,8 @@ impl OrderBookDepth10 {
             instrument_id,
             bids,
             asks,
+            bid_counts,
+            ask_counts,
             flags,
             sequence,
             ts_event,
@@ -159,10 +167,15 @@ pub mod stubs {
             order_id += 1;
         }
 
+        let bid_counts: [u32; 10] = [1; 10];
+        let ask_counts: [u32; 10] = [1; 10];
+
         OrderBookDepth10::new(
             instrument_id,
             bids,
             asks,
+            bid_counts,
+            ask_counts,
             flags,
             sequence,
             ts_event,
@@ -196,6 +209,8 @@ mod tests {
         assert_eq!(depth.asks[0].price.as_f64(), 100.0);
         assert_eq!(depth.bids[0].price.as_f64(), 99.0);
         assert_eq!(depth.bids[9].price.as_f64(), 90.0);
+        assert_eq!(depth.bid_counts.len(), 10);
+        assert_eq!(depth.ask_counts.len(), 10);
         assert_eq!(depth.flags, flags);
         assert_eq!(depth.sequence, sequence);
         assert_eq!(depth.ts_event, ts_event);
