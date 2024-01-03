@@ -83,7 +83,7 @@ impl TimeEvent {
     }
 
     fn __repr__(&self) -> String {
-        format!("{}('{}')", stringify!(UUID4), self)
+        format!("{}('{}')", stringify!(TimeEvent), self)
     }
 
     #[getter]
