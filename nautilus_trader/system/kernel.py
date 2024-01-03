@@ -60,6 +60,7 @@ from nautilus_trader.core.datetime import nanos_to_millis
 from nautilus_trader.core.nautilus_pyo3.common import FileWriterConfig
 from nautilus_trader.core.nautilus_pyo3.common import LoggerConfig
 from nautilus_trader.core.nautilus_pyo3.common import init_logging
+from nautilus_trader.core.nautilus_pyo3.common import init_tracing
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.algorithm import ExecAlgorithm
@@ -154,7 +155,7 @@ class NautilusKernel:
             )
 
         # Initialize tracing for debugging async rust logic
-        # init_tracing()
+        init_tracing()
 
         # Initialize logging for debugging python and sync rust logic
         logging: LoggingConfig = config.logging or LoggingConfig()
