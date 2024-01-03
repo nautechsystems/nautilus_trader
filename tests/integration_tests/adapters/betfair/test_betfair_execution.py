@@ -990,23 +990,23 @@ async def test_generate_order_status_reports_executable(exec_client):
     mock_betfair_request(exec_client._client, BetfairResponses.list_current_orders_executable())
 
     # Act
-    order_status_reports = await exec_client.generate_order_status_reports()
+    reports = await exec_client.generate_order_status_reports()
 
     # Assert
-    assert len(order_status_reports) == 2
-    assert order_status_reports[0].order_side == OrderSide.SELL
-    assert order_status_reports[0].price == Price(5.0, BETFAIR_PRICE_PRECISION)
-    assert order_status_reports[0].quantity == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
-    assert order_status_reports[0].order_status == OrderStatus.ACCEPTED
-    assert order_status_reports[0].filled_qty == 0.0
-    assert order_status_reports[0].time_in_force == TimeInForce.DAY
+    assert len(reports) == 2
+    assert reports[0].order_side == OrderSide.SELL
+    assert reports[0].price == Price(5.0, BETFAIR_PRICE_PRECISION)
+    assert reports[0].quantity == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
+    assert reports[0].order_status == OrderStatus.ACCEPTED
+    assert reports[0].filled_qty == 0.0
+    assert reports[0].time_in_force == TimeInForce.DAY
 
-    assert order_status_reports[1].order_side == OrderSide.BUY
-    assert order_status_reports[1].price == Price(2.0, BETFAIR_PRICE_PRECISION)
-    assert order_status_reports[1].quantity == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
-    assert order_status_reports[1].order_status == OrderStatus.ACCEPTED
-    assert order_status_reports[1].filled_qty == 0.0
-    assert order_status_reports[1].time_in_force == TimeInForce.DAY
+    assert reports[1].order_side == OrderSide.BUY
+    assert reports[1].price == Price(2.0, BETFAIR_PRICE_PRECISION)
+    assert reports[1].quantity == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
+    assert reports[1].order_status == OrderStatus.ACCEPTED
+    assert reports[1].filled_qty == 0.0
+    assert reports[1].time_in_force == TimeInForce.DAY
 
 
 @pytest.mark.asyncio
@@ -1018,14 +1018,14 @@ async def test_generate_fill_reports(exec_client):
     )
 
     # Act
-    trade_reports = await exec_client.generate_fill_reports()
+    reports = await exec_client.generate_fill_reports()
 
     # Assert
-    assert len(trade_reports) == 2
-    assert trade_reports[0].order_side == OrderSide.SELL
-    assert trade_reports[0].last_px == Price(1.9, BETFAIR_PRICE_PRECISION)
-    assert trade_reports[0].last_qty == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
+    assert len(reports) == 2
+    assert reports[0].order_side == OrderSide.SELL
+    assert reports[0].last_px == Price(1.9, BETFAIR_PRICE_PRECISION)
+    assert reports[0].last_qty == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
 
-    assert trade_reports[1].order_side == OrderSide.BUY
-    assert trade_reports[1].last_px == Price(1.92, BETFAIR_PRICE_PRECISION)
-    assert trade_reports[1].last_qty == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
+    assert reports[1].order_side == OrderSide.BUY
+    assert reports[1].last_px == Price(1.92, BETFAIR_PRICE_PRECISION)
+    assert reports[1].last_qty == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
