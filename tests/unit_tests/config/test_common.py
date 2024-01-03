@@ -22,6 +22,7 @@ from nautilus_trader.config.common import CUSTOM_DECODINGS
 from nautilus_trader.config.common import CUSTOM_ENCODINGS
 from nautilus_trader.config.common import DatabaseConfig
 from nautilus_trader.config.common import InstrumentProviderConfig
+from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.config.common import msgspec_decoding_hook
 from nautilus_trader.config.common import msgspec_encoding_hook
 from nautilus_trader.config.common import register_config_decoding
@@ -350,3 +351,36 @@ def test_decoding_unsupported_type() -> None:
 
         # Verifying the exception message
         assert str(exinfo) == "Decoding objects of type <class 'list'> is unsupported"
+
+
+def test_logging_config_rust_config_string_with_default_config() -> None:
+    # Arrange
+    logging = LoggingConfig()
+
+    # Act
+    config_str = logging.rust_config_string()
+
+    # Assert
+    assert config_str == "stdout=info;is_colored"
+
+
+def test_logging_config_rust_config_string() -> None:
+    # Arrange
+    logging = LoggingConfig(
+        log_level="INFO",
+        log_level_file="DEBUG",
+        log_component_levels={
+            "RiskEngine": "ERROR",
+            "OrderEmulator": "DEBUG",
+        },
+        log_colors=False,
+        print_config=True,
+    )
+
+    # Act
+    config_str = logging.rust_config_string()
+
+    # Assert
+    assert (
+        config_str == "stdout=info;fileout=debug;RiskEngine=error;OrderEmulator=debug;print_config"
+    )

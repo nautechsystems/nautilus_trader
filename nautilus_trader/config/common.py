@@ -804,6 +804,8 @@ class LoggingConfig(NautilusConfig, frozen=True):
         IDs (e.g. actor/strategy IDs) and values are log levels.
     bypass_logging : bool, default False
         If all logging should be bypassed.
+    print_config : bool, default False
+        If the core logging configuration should be printed to stdout at initialization.
 
     """
 
@@ -815,6 +817,23 @@ class LoggingConfig(NautilusConfig, frozen=True):
     log_colors: bool = True
     log_component_levels: dict[str, str] | None = None
     bypass_logging: bool = False
+    print_config: bool = False
+
+    def rust_config_string(self) -> str:
+        config_str = f"stdout={self.log_level.lower()}"
+        if self.log_level_file:
+            config_str += f";fileout={self.log_level_file.lower()}"
+        if self.log_component_levels:
+            for component, level in self.log_component_levels.items():
+                config_str += f";{component}={level.lower()}"
+        if self.log_colors:
+            config_str += ";is_colored"
+        if self.bypass_logging:
+            config_str += ";is_bypassed"
+        if self.print_config:
+            config_str += ";print_config"
+
+        return config_str
 
 
 class NautilusKernelConfig(NautilusConfig, frozen=True):

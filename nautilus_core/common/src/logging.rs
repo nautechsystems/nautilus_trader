@@ -25,7 +25,7 @@ use std::{
 };
 
 use chrono::{prelude::*, Utc};
-use log::{set_boxed_logger, Level, LevelFilter, Log, STATIC_MAX_LEVEL};
+use log::{set_boxed_logger, set_max_level, Level, LevelFilter, Log, STATIC_MAX_LEVEL};
 use nautilus_core::{
     datetime::unix_nanos_to_iso8601,
     time::{get_atomic_clock, AtomicTime, UnixNanos},
@@ -53,7 +53,7 @@ pub struct LoggerConfig {
     pub is_colored: bool,
     /// If logging is bypassed.
     pub is_bypassed: bool,
-    /// If the Rust logging config should be printed to stdout at initialization.
+    /// If the configuration should be printed to stdout at initialization.
     pub print_config: bool,
 }
 
@@ -277,6 +277,8 @@ impl Logger {
                         rx,
                     );
                 });
+
+                set_max_level(log::LevelFilter::Debug);
             }
             Err(e) => {
                 eprintln!("Cannot set logger because of error: {}", e)

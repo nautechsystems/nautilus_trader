@@ -166,8 +166,8 @@ class NautilusKernel:
             logging.log_file_name,
         )
 
-        logger_config = LoggerConfig.from_spec("stdout=info;fileout=debug")
-        # logger_config = LoggerConfig.from_spec("stdout=info;print_config")
+        logger_config = LoggerConfig.from_spec(logging.rust_config_string())
+
         init_logging(
             nautilus_pyo3.TraderId(self._trader_id.value),
             nautilus_pyo3.UUID4(self._instance_id.value),
