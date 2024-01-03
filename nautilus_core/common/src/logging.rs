@@ -149,6 +149,7 @@ impl FileWriterConfig {
 ///
 /// A separate thead is spawned at initialization which receives [`LogEvent`] structs over the
 /// channel.
+#[derive(Debug)]
 pub struct Logger {
     /// Reference to the atomic clock used by the engine.
     clock: &'static AtomicTime,
@@ -262,8 +263,8 @@ impl Logger {
         };
 
         if config.print_config {
-            println!("Initializing logger with {:?}", config);
-            println!("STATIC_MAX_LEVEL={}", STATIC_MAX_LEVEL);
+            println!("STATIC_MAX_LEVEL={STATIC_MAX_LEVEL}");
+            println!("Logger initialized with {:?}", config);
         }
 
         match set_boxed_logger(Box::new(logger)) {
@@ -278,10 +279,12 @@ impl Logger {
                     );
                 });
 
-                set_max_level(log::LevelFilter::Debug);
+                let level_filter = log::LevelFilter::Debug;
+                set_max_level(level_filter);
+                println!("Logger set as `log` implementation with max level {level_filter}");
             }
             Err(e) => {
-                eprintln!("Cannot set logger because of error: {}", e)
+                eprintln!("Cannot set logger because of error: {e}")
             }
         }
     }
@@ -296,7 +299,7 @@ impl Logger {
         rx: Receiver<LogEvent>,
     ) {
         if config.print_config {
-            println!("Logging `handle_messages` thread initialized")
+            println!("Logger thread `handle_messages` initialized")
         }
 
         let LoggerConfig {
