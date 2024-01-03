@@ -150,7 +150,7 @@ pub unsafe extern "C" fn test_clock_set_time_alert_ns(
     });
     let handler = EventHandler::new(callback_py.clone(), None);
 
-    clock.set_time_alert_ns(name, alert_time_ns, callback_py.map(|_| handler));
+    clock.set_time_alert_ns(&name, alert_time_ns, callback_py.map(|_| handler));
 }
 
 /// # Safety
@@ -181,7 +181,7 @@ pub unsafe extern "C" fn test_clock_set_timer_ns(
     let handler = EventHandler::new(callback_py.clone(), None);
 
     clock.set_timer_ns(
-        name,
+        &name,
         interval_ns,
         start_time_ns,
         stop_time_ns,
