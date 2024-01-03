@@ -279,9 +279,9 @@ impl Logger {
                     );
                 });
 
-                let level_filter = log::LevelFilter::Debug;
-                set_max_level(level_filter);
-                println!("Logger set as `log` implementation with max level {level_filter}");
+                let max_level = log::LevelFilter::Debug;
+                set_max_level(max_level);
+                println!("Logger set as `log` implementation with max level {max_level}");
             }
             Err(e) => {
                 eprintln!("Cannot set logger because of error: {e}")

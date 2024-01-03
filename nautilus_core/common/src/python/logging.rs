@@ -18,6 +18,7 @@ use std::env;
 use nautilus_core::{time::get_atomic_clock, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::prelude::*;
+use tracing_subscriber::EnvFilter;
 
 use crate::logging::{FileWriterConfig, Logger, LoggerConfig};
 
@@ -34,11 +35,12 @@ use crate::logging::{FileWriterConfig, Logger, LoggerConfig};
 #[pyfunction]
 pub fn init_tracing() {
     // Skip tracing initialization if `RUST_LOG` is not set
-    if env::var("RUST_LOG").is_ok() {
+    if let Ok(v) = env::var("RUST_LOG") {
         tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::DEBUG)
+            .with_env_filter(EnvFilter::new(v.clone()))
             .try_init()
-            .unwrap_or_else(|e| eprintln!("Cannot set tracing subscriber because of error: {}", e));
+            .unwrap_or_else(|e| eprintln!("Cannot set tracing subscriber because of error: {e}"));
+        println!("Initialized tracing logs with RUST_LOG={v}");
     }
 }
 
@@ -60,15 +62,12 @@ pub fn init_logging(
     file_writer_config: FileWriterConfig,
     config: LoggerConfig,
 ) {
-    let clock = get_atomic_clock();
-    clock.make_realtime();
-
     Logger::init_with_config(
         trader_id,
         instance_id,
         file_writer_config,
         config,
-        Some(clock),
+        Some(get_atomic_clock()),
     );
 }
 
