@@ -234,6 +234,20 @@ pub enum LogColor {
     Red = 6,
 }
 
+impl From<u8> for LogColor {
+    fn from(value: u8) -> Self {
+        match value {
+            1 => Self::Green,
+            2 => Self::Blue,
+            3 => Self::Magenta,
+            4 => Self::Cyan,
+            5 => Self::Yellow,
+            6 => Self::Red,
+            _ => Self::Normal,
+        }
+    }
+}
+
 /// An ANSI log line format specifier.
 /// This is used for formatting log messages with ANSI escape codes.
 #[repr(C)]

@@ -201,7 +201,7 @@ impl Log for Logger {
             let color = record
                 .key_values()
                 .get("color".into())
-                .and_then(|v| v.to_borrowed_str().map(|s| LogColor::from_str(s).unwrap()))
+                .and_then(|v| v.to_u64().map(|v| (v as u8).into()))
                 .unwrap_or(LogColor::Normal);
             let line = LogLine {
                 timestamp,
