@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::env;
+
 use nautilus_core::{time::get_atomic_clock, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::prelude::*;
@@ -31,10 +33,13 @@ use crate::logging::{FileWriterConfig, Logger, LoggerConfig};
 /// beginning of the run.
 #[pyfunction]
 pub fn init_tracing() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .try_init()
-        .unwrap_or_else(|e| eprintln!("Cannot set tracing subscriber because of error: {}", e));
+    // skip tracing initialization if `RUST_LOG` is not set
+    if env::var("RUST_LOG").is_ok() {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .try_init()
+            .unwrap_or_else(|e| eprintln!("Cannot set tracing subscriber because of error: {}", e));
+    }
 }
 
 /// Initialize logging.
