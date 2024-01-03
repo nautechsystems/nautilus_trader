@@ -166,7 +166,7 @@ class NautilusKernel:
             logging.log_file_name,
         )
 
-        logger_config = LoggerConfig.from_spec(logging.rust_config_string())
+        logger_config = LoggerConfig.from_spec(logging.spec_string())
 
         init_logging(
             nautilus_pyo3.TraderId(self._trader_id.value),

@@ -358,7 +358,7 @@ def test_logging_config_rust_config_string_with_default_config() -> None:
     logging = LoggingConfig()
 
     # Act
-    config_str = logging.rust_config_string()
+    config_str = logging.spec_string()
 
     # Assert
     assert config_str == "stdout=info;is_colored"
@@ -378,7 +378,7 @@ def test_logging_config_rust_config_string() -> None:
     )
 
     # Act
-    config_str = logging.rust_config_string()
+    config_str = logging.spec_string()
 
     # Assert
     assert (

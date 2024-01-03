@@ -819,7 +819,15 @@ class LoggingConfig(NautilusConfig, frozen=True):
     bypass_logging: bool = False
     print_config: bool = False
 
-    def rust_config_string(self) -> str:
+    def spec_string(self) -> str:
+        """
+        Return the 'spec' string for the core logging config to parse on initialization.
+
+        Returns
+        -------
+        str
+
+        """
         config_str = f"stdout={self.log_level.lower()}"
         if self.log_level_file:
             config_str += f";fileout={self.log_level_file.lower()}"
