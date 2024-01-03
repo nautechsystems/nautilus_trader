@@ -266,6 +266,10 @@ class OrderBookDelta:
     @staticmethod
     def get_fields() -> dict[str, str]: ...
 
+class OrderBookDepth10:
+    @staticmethod
+    def get_fields() -> dict[str, str]: ...
+
 class QuoteTick:
     def __init__(
         self,

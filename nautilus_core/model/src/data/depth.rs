@@ -13,8 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Display, Formatter};
+use std::{
+    collections::HashMap,
+    fmt::{Display, Formatter},
+};
 
+use indexmap::IndexMap;
 use nautilus_core::{serialization::Serializable, time::UnixNanos};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -85,6 +89,89 @@ impl OrderBookDepth10 {
             ts_event,
             ts_init,
         }
+    }
+
+    /// Returns the metadata for the type, for use with serialization formats.
+    pub fn get_metadata(
+        instrument_id: &InstrumentId,
+        price_precision: u8,
+        size_precision: u8,
+    ) -> HashMap<String, String> {
+        let mut metadata = HashMap::new();
+        metadata.insert("instrument_id".to_string(), instrument_id.to_string());
+        metadata.insert("price_precision".to_string(), price_precision.to_string());
+        metadata.insert("size_precision".to_string(), size_precision.to_string());
+        metadata
+    }
+
+    /// Returns the field map for the type, for use with Arrow schemas.
+    pub fn get_fields() -> IndexMap<String, String> {
+        let mut metadata = IndexMap::new();
+        metadata.insert("bid_price_0".to_string(), "Int64".to_string());
+        metadata.insert("bid_price_1".to_string(), "Int64".to_string());
+        metadata.insert("bid_price_2".to_string(), "Int64".to_string());
+        metadata.insert("bid_price_3".to_string(), "Int64".to_string());
+        metadata.insert("bid_price_4".to_string(), "Int64".to_string());
+        metadata.insert("bid_price_5".to_string(), "Int64".to_string());
+        metadata.insert("bid_price_6".to_string(), "Int64".to_string());
+        metadata.insert("bid_price_7".to_string(), "Int64".to_string());
+        metadata.insert("bid_price_8".to_string(), "Int64".to_string());
+        metadata.insert("bid_price_9".to_string(), "Int64".to_string());
+        metadata.insert("ask_price_0".to_string(), "Int64".to_string());
+        metadata.insert("ask_price_1".to_string(), "Int64".to_string());
+        metadata.insert("ask_price_2".to_string(), "Int64".to_string());
+        metadata.insert("ask_price_3".to_string(), "Int64".to_string());
+        metadata.insert("ask_price_4".to_string(), "Int64".to_string());
+        metadata.insert("ask_price_5".to_string(), "Int64".to_string());
+        metadata.insert("ask_price_6".to_string(), "Int64".to_string());
+        metadata.insert("ask_price_7".to_string(), "Int64".to_string());
+        metadata.insert("ask_price_8".to_string(), "Int64".to_string());
+        metadata.insert("ask_price_9".to_string(), "Int64".to_string());
+        metadata.insert("bid_size_0".to_string(), "UInt64".to_string());
+        metadata.insert("bid_size_1".to_string(), "UInt64".to_string());
+        metadata.insert("bid_size_2".to_string(), "UInt64".to_string());
+        metadata.insert("bid_size_3".to_string(), "UInt64".to_string());
+        metadata.insert("bid_size_4".to_string(), "UInt64".to_string());
+        metadata.insert("bid_size_5".to_string(), "UInt64".to_string());
+        metadata.insert("bid_size_6".to_string(), "UInt64".to_string());
+        metadata.insert("bid_size_7".to_string(), "UInt64".to_string());
+        metadata.insert("bid_size_8".to_string(), "UInt64".to_string());
+        metadata.insert("bid_size_9".to_string(), "UInt64".to_string());
+        metadata.insert("ask_size_0".to_string(), "UInt64".to_string());
+        metadata.insert("ask_size_1".to_string(), "UInt64".to_string());
+        metadata.insert("ask_size_2".to_string(), "UInt64".to_string());
+        metadata.insert("ask_size_3".to_string(), "UInt64".to_string());
+        metadata.insert("ask_size_4".to_string(), "UInt64".to_string());
+        metadata.insert("ask_size_5".to_string(), "UInt64".to_string());
+        metadata.insert("ask_size_6".to_string(), "UInt64".to_string());
+        metadata.insert("ask_size_7".to_string(), "UInt64".to_string());
+        metadata.insert("ask_size_8".to_string(), "UInt64".to_string());
+        metadata.insert("ask_size_9".to_string(), "UInt64".to_string());
+        metadata.insert("bid_count_0".to_string(), "UInt32".to_string());
+        metadata.insert("bid_count_1".to_string(), "UInt32".to_string());
+        metadata.insert("bid_count_2".to_string(), "UInt32".to_string());
+        metadata.insert("bid_count_3".to_string(), "UInt32".to_string());
+        metadata.insert("bid_count_4".to_string(), "UInt32".to_string());
+        metadata.insert("bid_count_5".to_string(), "UInt32".to_string());
+        metadata.insert("bid_count_6".to_string(), "UInt32".to_string());
+        metadata.insert("bid_count_7".to_string(), "UInt32".to_string());
+        metadata.insert("bid_count_8".to_string(), "UInt32".to_string());
+        metadata.insert("bid_count_9".to_string(), "UInt32".to_string());
+        metadata.insert("ask_count_0".to_string(), "UInt32".to_string());
+        metadata.insert("ask_count_1".to_string(), "UInt32".to_string());
+        metadata.insert("ask_count_2".to_string(), "UInt32".to_string());
+        metadata.insert("ask_count_3".to_string(), "UInt32".to_string());
+        metadata.insert("ask_count_4".to_string(), "UInt32".to_string());
+        metadata.insert("ask_count_5".to_string(), "UInt32".to_string());
+        metadata.insert("ask_count_6".to_string(), "UInt32".to_string());
+        metadata.insert("ask_count_7".to_string(), "UInt32".to_string());
+        metadata.insert("ask_count_8".to_string(), "UInt32".to_string());
+        metadata.insert("ask_count_9".to_string(), "UInt32".to_string());
+        metadata.insert("flags".to_string(), "UInt8".to_string());
+        metadata.insert("sequence".to_string(), "UInt64".to_string());
+        metadata.insert("ts_event".to_string(), "UInt64".to_string());
+        metadata.insert("ts_init".to_string(), "UInt64".to_string());
+        metadata
     }
 }
 

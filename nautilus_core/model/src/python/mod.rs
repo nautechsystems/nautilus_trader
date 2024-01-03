@@ -223,7 +223,7 @@ mod tests {
 /// Loaded as nautilus_pyo3.model
 #[pymodule]
 pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    // data
+    // Data
     m.add_class::<crate::data::bar::BarSpecification>()?;
     m.add_class::<crate::data::bar::BarType>()?;
     m.add_class::<crate::data::bar::Bar>()?;
@@ -233,7 +233,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::data::depth::OrderBookDepth10>()?;
     m.add_class::<crate::data::quote::QuoteTick>()?;
     m.add_class::<crate::data::trade::TradeTick>()?;
-    // enums
+    // Enums
     m.add_class::<enums::AccountType>()?;
     m.add_class::<enums::AggregationSource>()?;
     m.add_class::<enums::AggressorSide>()?;
@@ -258,7 +258,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<enums::TradingState>()?;
     m.add_class::<enums::TrailingOffsetType>()?;
     m.add_class::<enums::TriggerType>()?;
-    // identifiers
+    // Identifiers
     m.add_class::<crate::identifiers::account_id::AccountId>()?;
     m.add_class::<crate::identifiers::client_id::ClientId>()?;
     m.add_class::<crate::identifiers::client_order_id::ClientOrderId>()?;
@@ -273,7 +273,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::identifiers::trader_id::TraderId>()?;
     m.add_class::<crate::identifiers::venue::Venue>()?;
     m.add_class::<crate::identifiers::venue_order_id::VenueOrderId>()?;
-    // orders
+    // Orders
     m.add_class::<crate::orders::limit::LimitOrder>()?;
     m.add_class::<crate::orders::limit_if_touched::LimitIfTouchedOrder>()?;
     m.add_class::<crate::orders::market::MarketOrder>()?;
@@ -286,7 +286,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::types::money::Money>()?;
     m.add_class::<crate::types::price::Price>()?;
     m.add_class::<crate::types::quantity::Quantity>()?;
-    // instruments
+    // Instruments
     m.add_class::<crate::instruments::crypto_future::CryptoFuture>()?;
     m.add_class::<crate::instruments::crypto_perpetual::CryptoPerpetual>()?;
     m.add_class::<crate::instruments::currency_pair::CurrencyPair>()?;
@@ -294,7 +294,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::instruments::futures_contract::FuturesContract>()?;
     m.add_class::<crate::instruments::options_contract::OptionsContract>()?;
     m.add_class::<crate::instruments::synthetic::SyntheticInstrument>()?;
-    // events
+    // Events
     m.add_class::<crate::events::order::denied::OrderDenied>()?;
     m.add_class::<crate::events::order::filled::OrderFilled>()?;
     m.add_class::<crate::events::order::initialized::OrderInitialized>()?;
