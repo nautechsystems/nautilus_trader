@@ -250,7 +250,7 @@ async def test_get_historical_bars(ib_client):
 async def test_get_historical_ticks(ib_client):
     # Arrange
     ib_client._request_id_seq = 999
-    contract = IBTestDataStubs.contract()
+    contract = IBTestDataStubs.ib_contract()
     tick_type = "BidAsk"
     start_date_time = "20240101 01:00:00"
     end_date_time = "20240101 02:00:00"

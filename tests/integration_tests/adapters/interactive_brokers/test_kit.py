@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import datetime as dt
 import gzip
 import pathlib
 import pickle
@@ -20,18 +21,20 @@ from decimal import Decimal
 
 import msgspec
 import pandas as pd
+import pytz
 from ibapi.commission_report import CommissionReport
 from ibapi.common import BarData
 from ibapi.contract import Contract  # We use this for the expected response from IB
 from ibapi.contract import ContractDetails
 from ibapi.execution import Execution
+from ibapi.order import Order as IBOrder
+from ibapi.order_state import OrderState as IBOrderState
+from ibapi.softdollartier import SoftDollarTier
 from ibapi.tag_value import TagValue
 
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
-from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import OptionsContract
@@ -301,8 +304,28 @@ class IBTestProviderStubs:
 
 class IBTestDataStubs:
     @staticmethod
-    def contract(secType="STK", symbol="AAPL", exchange="NASDAQ", **kwargs):
+    def ib_contract(secType="STK", symbol="AAPL", exchange="NASDAQ", **kwargs):
         return IBContract(secType=secType, symbol=symbol, exchange=exchange, **kwargs)
+
+    @staticmethod
+    def contract(secType="STK", symbol="AAPL", exchange="NASDAQ"):
+        params = locals()
+        contract = Contract()
+        for key, value in params.items():
+            setattr(contract, key, value)
+        return contract
+
+    @staticmethod
+    def aapl_ib_contract(secType="STK", symbol="AAPL", exchange="NASDAQ", **kwargs):
+        return IBContract(secType=secType, symbol=symbol, exchange=exchange, **kwargs)
+
+    @staticmethod
+    def aapl_contract(secType="STK", symbol="AAPL", exchange="NASDAQ"):
+        params = locals()
+        contract = Contract()
+        for key, value in params.items():
+            setattr(contract, key, value)
+        return contract
 
     @staticmethod
     def account_values(fn: str = "account_values.json") -> list[dict]:
@@ -621,32 +644,317 @@ class IBTestExecStubs:
     #             ),
     #         ],
     #     )
+    @staticmethod
+    def aapl_buy_ib_order(
+        order_id: int = 600,
+        client_id: int = 2,
+        total_quantity: str = "100",
+        account_id: str = "DU123456",
+    ) -> IBOrder:
+        params = {
+            "softDollarTier": SoftDollarTier("", "", ""),
+            # order identifier
+            "orderId": order_id,
+            "clientId": client_id,
+            "permId": 1916994655,
+            # main order fields
+            "action": "BUY",
+            "totalQuantity": Decimal(total_quantity),
+            "orderType": "MKT",
+            "lmtPrice": 0.0,
+            "auxPrice": 0.0,
+            # extended order fields
+            "tif": "IOC",
+            "activeStartTime": "",
+            "activeStopTime": "",
+            "ocaGroup": "",
+            "ocaType": 3,
+            "orderRef": "O-20240102-1754-001-000-1:600",
+            "transmit": True,
+            "parentId": 0,
+            "blockOrder": False,
+            "sweepToFill": False,
+            "displaySize": 2147483647,
+            "triggerMethod": 0,
+            "outsideRth": False,
+            "hidden": False,
+            "goodAfterTime": "",
+            "goodTillDate": "",
+            "rule80A": "",
+            "allOrNone": False,
+            "minQty": 2147483647,
+            "percentOffset": 1.7976931348623157e308,
+            "overridePercentageConstraints": False,
+            "trailStopPrice": 1.7976931348623157e308,
+            "trailingPercent": 1.7976931348623157e308,
+            # financial advisors only
+            "faGroup": "",
+            "faProfile": "",
+            "faMethod": "",
+            "faPercentage": "",
+            # institutional (ie non-cleared) only
+            "designatedLocation": "",
+            "openClose": "",
+            "origin": 0,
+            "shortSaleSlot": 0,
+            "exemptCode": -1,
+            # SMART routing only
+            "discretionaryAmt": 0.0,
+            "optOutSmartRouting": False,
+            # BOX exchange orders only
+            "auctionStrategy": 0,
+            "startingPrice": 1.7976931348623157e308,
+            "stockRefPrice": 1.7976931348623157e308,
+            "delta": 1.7976931348623157e308,
+            # pegged to stock and VOL orders only
+            "stockRangeLower": 1.7976931348623157e308,
+            "stockRangeUpper": 1.7976931348623157e308,
+            "randomizePrice": False,
+            "randomizeSize": False,
+            # VOLATILITY ORDERS ONLY
+            "volatility": 1.7976931348623157e308,
+            "volatilityType": 0,
+            "deltaNeutralOrderType": "None",
+            "deltaNeutralAuxPrice": 1.7976931348623157e308,
+            "deltaNeutralConId": 0,
+            "deltaNeutralSettlingFirm": "",
+            "deltaNeutralClearingAccount": "",
+            "deltaNeutralClearingIntent": "",
+            "deltaNeutralOpenClose": "?",
+            "deltaNeutralShortSale": False,
+            "deltaNeutralShortSaleSlot": 0,
+            "deltaNeutralDesignatedLocation": "",
+            "continuousUpdate": False,
+            "referencePriceType": 0,
+            # COMBO ORDERS ONLY
+            "basisPoints": 1.7976931348623157e308,
+            "basisPointsType": 2147483647,
+            # SCALE ORDERS ONLY
+            "scaleInitLevelSize": 2147483647,
+            "scaleSubsLevelSize": 2147483647,
+            "scalePriceIncrement": 1.7976931348623157e308,
+            "scalePriceAdjustValue": 1.7976931348623157e308,
+            "scalePriceAdjustInterval": 2147483647,
+            "scaleProfitOffset": 1.7976931348623157e308,
+            "scaleAutoReset": False,
+            "scaleInitPosition": 2147483647,
+            "scaleInitFillQty": 2147483647,
+            "scaleRandomPercent": False,
+            "scaleTable": "",
+            # HEDGE ORDERS
+            "hedgeType": "",
+            "hedgeParam": "",
+            # Clearing info
+            "account": account_id,
+            "settlingFirm": "",
+            "clearingAccount": "",
+            "clearingIntent": "IB",
+            # ALGO ORDERS ONLY
+            "algoStrategy": "",
+            "algoParams": None,
+            "smartComboRoutingParams": None,
+            "algoId": "",
+            # What-if
+            "whatIf": False,
+            # Not Held
+            "notHeld": False,
+            "solicited": False,
+            # models
+            "modelCode": "",
+            # order combo legs
+            "orderComboLegs": None,
+            "orderMiscOptions": None,
+            # VER PEG2BENCH fields
+            "referenceContractId": 0,
+            "peggedChangeAmount": 0.0,
+            "isPeggedChangeAmountDecrease": False,
+            "referenceChangeAmount": 0.0,
+            "referenceExchangeId": "",
+            "adjustedOrderType": "None",
+            "triggerPrice": 1.7976931348623157e308,
+            "adjustedStopPrice": 1.7976931348623157e308,
+            "adjustedStopLimitPrice": 1.7976931348623157e308,
+            "adjustedTrailingAmount": 1.7976931348623157e308,
+            "adjustableTrailingUnit": 0,
+            "lmtPriceOffset": 1.7976931348623157e308,
+            "conditions": [],
+            "conditionsCancelOrder": False,
+            "conditionsIgnoreRth": False,
+            # ext operator
+            "extOperator": "",
+            # native cash quantity
+            "cashQty": 0.0,
+            "mifid2DecisionMaker": "",
+            "mifid2DecisionAlgo": "",
+            "mifid2ExecutionTrader": "",
+            "mifid2ExecutionAlgo": "",
+            "dontUseAutoPriceForHedge": True,
+            "isOmsContainer": False,
+            "discretionaryUpToLimitPrice": False,
+            "autoCancelDate": "",
+            "filledQuantity": Decimal("170141183460469231731687303715884105727"),
+            "refFuturesConId": 0,
+            "autoCancelParent": False,
+            "shareholder": "",
+            "imbalanceOnly": False,
+            "routeMarketableToBbo": False,
+            "parentPermId": 0,
+            "usePriceMgmtAlgo": False,
+            "duration": 2147483647,
+            "postToAts": 2147483647,
+            "advancedErrorOverride": "",
+            "manualOrderTime": "",
+            "minTradeQty": 2147483647,
+            "minCompeteSize": 100,
+            "competeAgainstBestOffset": 0.02,
+            "midOffsetAtWhole": 1.7976931348623157e308,
+            "midOffsetAtHalf": 1.7976931348623157e308,
+        }
+        order = IBOrder()
+        for key, value in params.items():
+            setattr(order, key, value)
+        return order
+
+    @staticmethod
+    def ib_order_state_presubmitted():
+        params = {
+            "status": "PreSubmitted",
+            "initMarginBefore": "1.7976931348623157E308",
+            "maintMarginBefore": "1.7976931348623157E308",
+            "equityWithLoanBefore": "1.7976931348623157E308",
+            "initMarginChange": "1.7976931348623157E308",
+            "maintMarginChange": "1.7976931348623157E308",
+            "equityWithLoanChange": "1.7976931348623157E308",
+            "initMarginAfter": "1.7976931348623157E308",
+            "maintMarginAfter": "1.7976931348623157E308",
+            "equityWithLoanAfter": "1.7976931348623157E308",
+            "commission": 1.7976931348623157e308,
+            "minCommission": 1.7976931348623157e308,
+            "maxCommission": 1.7976931348623157e308,
+            "commissionCurrency": "",
+            "warningText": "",
+            "completedTime": "",
+            "completedStatus": "",
+        }
+        order_state = IBOrderState()
+        for key, value in params.items():
+            setattr(order_state, key, value)
+        return order_state
+
+    @staticmethod
+    def ib_order_state_submitted():
+        params = {
+            "status": "Submitted",
+            "initMarginBefore": "1.7976931348623157E308",
+            "maintMarginBefore": "1.7976931348623157E308",
+            "equityWithLoanBefore": "1.7976931348623157E308",
+            "initMarginChange": "1.7976931348623157E308",
+            "maintMarginChange": "1.7976931348623157E308",
+            "equityWithLoanChange": "1.7976931348623157E308",
+            "initMarginAfter": "1.7976931348623157E308",
+            "maintMarginAfter": "1.7976931348623157E308",
+            "equityWithLoanAfter": "1.7976931348623157E308",
+            "commission": 1.7976931348623157e308,
+            "minCommission": 1.7976931348623157e308,
+            "maxCommission": 1.7976931348623157e308,
+            "commissionCurrency": "",
+            "warningText": "",
+            "completedTime": "",
+            "completedStatus": "",
+        }
+        order_state = IBOrderState()
+        for key, value in params.items():
+            setattr(order_state, key, value)
+        return order_state
+
+    @staticmethod
+    def ib_order_state_filled():
+        params = {
+            "status": "Filled",
+            "initMarginBefore": "1.7976931348623157E308",
+            "maintMarginBefore": "1.7976931348623157E308",
+            "equityWithLoanBefore": "1.7976931348623157E308",
+            "initMarginChange": "1.7976931348623157E308",
+            "maintMarginChange": "1.7976931348623157E308",
+            "equityWithLoanChange": "1.7976931348623157E308",
+            "initMarginAfter": "1.7976931348623157E308",
+            "maintMarginAfter": "1.7976931348623157E308",
+            "equityWithLoanAfter": "1.7976931348623157E308",
+            "commission": 1.8,
+            "minCommission": 1.7976931348623157e308,
+            "maxCommission": 1.7976931348623157e308,
+            "commissionCurrency": "USD",
+            "warningText": "",
+            "completedTime": "",
+            "completedStatus": "",
+        }
+        order_state = IBOrderState()
+        for key, value in params.items():
+            setattr(order_state, key, value)
+        return order_state
+
+    @staticmethod
+    def ib_order_state_pending_cancel():
+        params = {
+            "status": "PendingCancel",
+            "initMarginBefore": "1.7976931348623157E308",
+            "maintMarginBefore": "1.7976931348623157E308",
+            "equityWithLoanBefore": "1.7976931348623157E308",
+            "initMarginChange": "1.7976931348623157E308",
+            "maintMarginChange": "1.7976931348623157E308",
+            "equityWithLoanChange": "1.7976931348623157E308",
+            "initMarginAfter": "1.7976931348623157E308",
+            "maintMarginAfter": "1.7976931348623157E308",
+            "equityWithLoanAfter": "1.7976931348623157E308",
+            "commission": 1.7976931348623157e308,
+            "minCommission": 1.7976931348623157e308,
+            "maxCommission": 1.7976931348623157e308,
+            "commissionCurrency": "",
+            "warningText": "",
+            "completedTime": "",
+            "completedStatus": "",
+        }
+        order_state = IBOrderState()
+        for key, value in params.items():
+            setattr(order_state, key, value)
+        return order_state
 
     @staticmethod
     def execution(
-        client_order_id: ClientOrderId = ClientOrderId("C-1"),
-        venue_order_id: VenueOrderId = VenueOrderId("101"),
-        account: str = "DU123456",
+        order_id: int,
+        account_id: str = "DU123456",
+        exec_timestamp: dt.datetime = dt.datetime(
+            2022,
+            1,
+            4,
+            19,
+            32,
+            36,
+            0,
+            tzinfo=dt.timezone.utc,
+        ),
+        tz: str = "US/Eastern",
     ) -> Execution:
+        exec_timestamp = exec_timestamp.astimezone(pytz.timezone(tz))
         params = {
-            "execId": "1",
-            "time": "19700101 00:00:00 America/New_York",
-            "acctNumber": account,
+            "execId": "0000e0d5.6596b0d2.01.01",
+            "time": exec_timestamp.strftime("%Y%m%d %H:%M:%S %Z"),
+            "acctNumber": account_id,
             "exchange": "NYSE",
             "side": "BOT",
             "shares": Decimal(100),
             "price": 50.0,
-            "permId": 0,
+            "permId": 395704644,
             "clientId": 1,
-            "orderId": int(venue_order_id.value),
+            "orderId": order_id,
             "liquidation": 0,
             "cumQty": Decimal(100),
             "avgPrice": 50.0,
-            "orderRef": f"{client_order_id.value}:{venue_order_id.value}",
+            "orderRef": f"O-{exec_timestamp.strftime('%Y%m%d')}-{exec_timestamp.strftime('%H%M')}-001-000-1:{order_id}",
             "evRule": "",
             "evMultiplier": 0.0,
             "modelCode": "",
-            "lastLiquidity": 0,
+            "lastLiquidity": 2,
         }
         execution = Execution()
         for key, value in params.items():
@@ -671,3 +979,25 @@ class IBTestExecStubs:
 
 def filter_out_options(instrument) -> bool:
     return not isinstance(instrument, OptionsContract)
+
+
+{
+    "execId": "0000e0d5.6596b0d2.01.01",
+    "time": "20240104 14:32:36 US/Eastern",
+    "acctNumber": "DU5524716",
+    "exchange": "EDGEA",
+    "side": "BOT",
+    "shares": Decimal("100"),
+    "price": 182.54,
+    "permId": 395704644,
+    "clientId": 2,
+    "orderId": 581,
+    "liquidation": 0,
+    "cumQty": Decimal("100"),
+    "avgPrice": 182.54,
+    "orderRef": "O-20240104-1932-001-000-1:581",
+    "evRule": "",
+    "evMultiplier": 0.0,
+    "modelCode": "",
+    "lastLiquidity": 2,
+}

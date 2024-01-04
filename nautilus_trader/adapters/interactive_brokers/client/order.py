@@ -16,6 +16,7 @@
 from decimal import Decimal
 
 from ibapi.commission_report import CommissionReport
+from ibapi.contract import Contract
 from ibapi.execution import Execution
 from ibapi.order import Order as IBOrder
 from ibapi.order_state import OrderState as IBOrderState
@@ -112,7 +113,8 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
 
     async def get_open_orders(self, account_id: str) -> list[IBOrder]:
         """
-        Retrieve a list of open orders for a specific account.
+        Retrieve a list of open orders for a specific account. Once the request is
+        completed, openOrderEnd() will be called.
 
         Parameters
         ----------
@@ -126,7 +128,6 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         """
         self._log.debug(f"Requesting open orders for {account_id}")
         name = "OpenOrders"
-        orders: list[IBOrder] = []
         if not (request := self._requests.get(name=name)):
             request = self._requests.add(
                 req_id=self._next_req_id(),
@@ -134,15 +135,12 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                 handle=self._eclient.reqOpenOrders,
             )
             if not request:
-                return orders
+                return []
             request.handle()
-            all_orders: list[IBOrder] | None = await self._await_request(request, 30)
-        else:
-            all_orders = await self._await_request(request, 30)
+
+        all_orders: list[IBOrder] | None = await self._await_request(request, 30)
         if all_orders:
-            for order in all_orders:
-                if order.account_id == account_id:
-                    orders.append(order)
+            orders: list[IBOrder] = [order for order in all_orders if order.account == account_id]
         return orders
 
     def next_order_id(self) -> int:
@@ -178,7 +176,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
     def openOrder(
         self,
         order_id: int,
-        contract: IBContract,
+        contract: Contract,
         order: IBOrder,
         order_state: IBOrderState,
     ) -> None:
@@ -195,8 +193,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             # Validate and add reverse mapping, if not exists
             if order_ref := self._order_id_to_order_ref.get(order.orderId):
                 if not (
-                    order_ref.account_id == order.account_id
-                    and order_ref.order_id == order.orderRef
+                    order_ref.account_id == order.account and order_ref.order_id == order.orderRef
                 ):
                     self._log.warning(
                         f"Discrepancy found in order, expected {order_ref}, "
@@ -204,7 +201,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                     )
             else:
                 self._order_id_to_order_ref[order.orderId] = AccountOrderRef(
-                    account_id=order.account_id,
+                    account_id=order.account,
                     order_id=order.orderRef,
                 )
             return
@@ -259,7 +256,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
     def execDetails(
         self,
         req_id: int,
-        contract: IBContract,
+        contract: Contract,
         execution: Execution,
     ) -> None:
         """
