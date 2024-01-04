@@ -262,7 +262,8 @@ impl Logger {
             config: config.clone(),
         };
 
-        if config.print_config {
+        let print_config = config.print_config;
+        if print_config {
             println!("STATIC_MAX_LEVEL={STATIC_MAX_LEVEL}");
             println!("Logger initialized with {:?}", config);
         }
@@ -281,7 +282,9 @@ impl Logger {
 
                 let max_level = log::LevelFilter::Debug;
                 set_max_level(max_level);
-                println!("Logger set as `log` implementation with max level {max_level}");
+                if print_config {
+                    println!("Logger set as `log` implementation with max level {max_level}");
+                }
             }
             Err(e) => {
                 eprintln!("Cannot set logger because of error: {e}")
