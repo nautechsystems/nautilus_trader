@@ -29,27 +29,10 @@ use pyo3::{
 };
 
 use crate::{
-    clock::{get_atomic_clock, Clock, LiveClock, TestClock},
+    clock::{Clock, LiveClock, TestClock},
     handlers::EventHandler,
     timer::{TimeEvent, TimeEventHandler},
 };
-
-/// Sets the global atomic clock mode to real-time.
-#[no_mangle]
-pub extern "C" fn set_atomic_clock_realtime() {
-    println!("*** SETTING CLOCK TO REALTIME ***"); // TODO
-    let clock = get_atomic_clock();
-    clock.make_realtime();
-}
-
-/// Sets the global atomic clock mode to static and sets the time to the given `time_ns`.
-#[no_mangle]
-pub extern "C" fn set_atomic_clock_static(time_ns: u64) {
-    println!("*** SETTING CLOCK TO STATIC with `time_ns` {time_ns} ***"); // TODO
-    let clock = get_atomic_clock();
-    clock.make_static();
-    clock.set_time(time_ns);
-}
 
 /// Provides a C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
 ///

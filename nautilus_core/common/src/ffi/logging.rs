@@ -28,7 +28,6 @@ use nautilus_model::identifiers::trader_id::TraderId;
 use tracing_subscriber::EnvFilter;
 
 use crate::{
-    clock::get_atomic_clock,
     enums::{LogColor, LogLevel},
     logging::{FileWriterConfig, Logger, LoggerConfig},
 };
@@ -88,13 +87,7 @@ pub unsafe extern "C" fn logging_init(
     let file_format = optional_cstr_to_string(file_format_ptr);
     let file_writer_config = FileWriterConfig::new(directory, file_name, file_format);
 
-    Logger::init_with_config(
-        trader_id,
-        instance_id,
-        file_writer_config,
-        config,
-        Some(get_atomic_clock()),
-    );
+    Logger::init_with_config(trader_id, instance_id, file_writer_config, config);
 }
 
 /// Create a new log event.
@@ -105,6 +98,7 @@ pub unsafe extern "C" fn logging_init(
 /// - Assumes `message_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn logger_log(
+    timestamp_ns: u64,
     level: LogLevel,
     color: LogColor,
     component_ptr: *const c_char,
@@ -115,16 +109,16 @@ pub unsafe extern "C" fn logger_log(
     let message = cstr_to_string(message_ptr);
     match level {
         LogLevel::Debug => {
-            debug!(component = component.to_value(), color = Value::from(color as u8); "{}", message);
+            debug!(timestamp = timestamp_ns.to_value(), component = component.to_value(), color = Value::from(color as u8); "{}", message);
         }
         LogLevel::Info => {
-            info!(component = component.to_value(), color = Value::from(color as u8); "{}", message);
+            info!(timestamp = timestamp_ns.to_value(), component = component.to_value(), color = Value::from(color as u8); "{}", message);
         }
         LogLevel::Warning => {
-            warn!(component = component.to_value(), color = Value::from(color as u8); "{}", message);
+            warn!(timestamp = timestamp_ns.to_value(), component = component.to_value(), color = Value::from(color as u8); "{}", message);
         }
         LogLevel::Error => {
-            error!(component = component.to_value(), color = Value::from(color as u8); "{}", message);
+            error!(timestamp = timestamp_ns.to_value(),component = component.to_value(), color = Value::from(color as u8); "{}", message);
         }
     }
 }

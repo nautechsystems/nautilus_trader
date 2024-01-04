@@ -302,16 +302,6 @@ typedef struct TimeEventHandler_t {
 
 struct PyCallableWrapper_t dummy_callable(struct PyCallableWrapper_t c);
 
-/**
- * Sets the global atomic clock mode to real-time.
- */
-void set_atomic_clock_realtime(void);
-
-/**
- * Sets the global atomic clock mode to static and sets the time to the given `time_ns`.
- */
-void set_atomic_clock_static(uint64_t time_ns);
-
 struct TestClock_API test_clock_new(void);
 
 void test_clock_drop(struct TestClock_API clock);
@@ -489,7 +479,8 @@ void logging_init(TraderId_t trader_id,
  * - Assumes `component_ptr` is a valid C string pointer.
  * - Assumes `message_ptr` is a valid C string pointer.
  */
-void logger_log(enum LogLevel level,
+void logger_log(uint64_t timestamp_ns,
+                enum LogLevel level,
                 enum LogColor color,
                 const char *component_ptr,
                 const char *message_ptr);

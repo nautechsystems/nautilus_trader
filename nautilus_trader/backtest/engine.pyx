@@ -43,6 +43,7 @@ from nautilus_trader.backtest.models cimport LatencyModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
+from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.common.clock cimport TimeEventHandler
@@ -60,8 +61,6 @@ from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drain
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drop
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_new
 from nautilus_trader.core.rust.common cimport TimeEventHandler_t
-from nautilus_trader.core.rust.common cimport set_atomic_clock_realtime
-from nautilus_trader.core.rust.common cimport set_atomic_clock_static
 from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport AccountType
@@ -935,11 +934,11 @@ cdef class BacktestEngine:
         except AccountError:
             pass
 
-        self._backtest_end = self.kernel.clock.utc_now()
         self._run_finished = pd.Timestamp.utcnow()
+        self._backtest_end = self.kernel.clock.utc_now()
 
         # Change logger clock back to live clock for consistent time stamping
-        set_atomic_clock_realtime()
+        self._kernel.logger.change_clock(LiveClock())
 
         self._log_post_run()
 
@@ -1041,7 +1040,8 @@ cdef class BacktestEngine:
             self._kernel.start()
 
             # Change logger clock for the run
-            set_atomic_clock_static(start_ns)
+            self._kernel.clock.set_time(start_ns)
+            self._kernel.logger.change_clock(self._kernel.clock)
             self._log_pre_run()
 
         self._log_run(start, end)

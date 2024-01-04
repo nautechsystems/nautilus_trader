@@ -28,9 +28,8 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-use crate::{
-    clock::get_atomic_clock,
-    generators::{client_order_id::ClientOrderIdGenerator, order_list_id::OrderListIdGenerator},
+use crate::generators::{
+    client_order_id::ClientOrderIdGenerator, order_list_id::OrderListIdGenerator,
 };
 
 #[repr(C)]
@@ -48,7 +47,7 @@ impl OrderFactory {
         strategy_id: StrategyId,
         init_order_id_count: Option<usize>,
         init_order_list_id_count: Option<usize>,
-        clock: Option<&'static AtomicTime>,
+        clock: &'static AtomicTime,
     ) -> Self {
         let order_id_generator = ClientOrderIdGenerator::new(
             trader_id,
@@ -63,7 +62,7 @@ impl OrderFactory {
             clock,
         );
         Self {
-            clock: clock.unwrap_or(get_atomic_clock()),
+            clock,
             trader_id,
             strategy_id,
             order_id_generator,

@@ -19,7 +19,6 @@ use nautilus_model::identifiers::{
 };
 
 use super::get_datetime_tag;
-use crate::clock::get_atomic_clock;
 
 #[repr(C)]
 pub struct OrderListIdGenerator {
@@ -35,10 +34,10 @@ impl OrderListIdGenerator {
         trader_id: TraderId,
         strategy_id: StrategyId,
         initial_count: usize,
-        clock: Option<&'static AtomicTime>,
+        clock: &'static AtomicTime,
     ) -> Self {
         Self {
-            clock: clock.unwrap_or(get_atomic_clock()),
+            clock,
             trader_id,
             strategy_id,
             count: initial_count,
@@ -76,6 +75,7 @@ impl OrderListIdGenerator {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use nautilus_core::time::get_atomic_clock_static;
     use nautilus_model::identifiers::{
         order_list_id::OrderListId, strategy_id::StrategyId, trader_id::TraderId,
     };
@@ -86,7 +86,12 @@ mod tests {
     fn get_order_list_id_generator(initial_count: Option<usize>) -> OrderListIdGenerator {
         let trader_id = TraderId::from("TRADER-001");
         let strategy_id = StrategyId::from("EMACross-001");
-        OrderListIdGenerator::new(trader_id, strategy_id, initial_count.unwrap_or(0), None)
+        OrderListIdGenerator::new(
+            trader_id,
+            strategy_id,
+            initial_count.unwrap_or(0),
+            get_atomic_clock_static(),
+        )
     }
 
     #[rstest]

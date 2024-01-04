@@ -26,16 +26,12 @@ use std::{
 
 use chrono::{prelude::*, Utc};
 use log::{set_boxed_logger, set_max_level, Level, LevelFilter, Log, STATIC_MAX_LEVEL};
-use nautilus_core::{
-    datetime::unix_nanos_to_iso8601,
-    time::{AtomicTime, UnixNanos},
-    uuid::UUID4,
-};
+use nautilus_core::{datetime::unix_nanos_to_iso8601, time::UnixNanos, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use crate::{clock::get_atomic_clock, enums::LogColor};
+use crate::enums::LogColor;
 
 #[cfg_attr(
     feature = "python",
@@ -151,8 +147,6 @@ impl FileWriterConfig {
 /// channel.
 #[derive(Debug)]
 pub struct Logger {
-    /// Reference to the atomic clock used by the engine.
-    clock: &'static AtomicTime,
     /// Send log events to a different thread.
     tx: Sender<LogEvent>,
     /// Configure maximum levels for components and IO.
@@ -203,7 +197,11 @@ impl Log for Logger {
     fn log(&self, record: &log::Record) {
         // TODO remove unwraps
         if self.enabled(record.metadata()) {
-            let timestamp = self.clock.get_time_ns();
+            let timestamp = record
+                .key_values()
+                .get("timestamp".into())
+                .and_then(|v| v.to_u64())
+                .expect("No timestamp included in log `Record`");
             let color = record
                 .key_values()
                 .get("color".into())
@@ -238,10 +236,9 @@ impl Logger {
         trader_id: TraderId,
         instance_id: UUID4,
         file_writer_config: FileWriterConfig,
-        clock: Option<&'static AtomicTime>,
     ) {
         let config = LoggerConfig::from_env();
-        Logger::init_with_config(trader_id, instance_id, file_writer_config, config, clock);
+        Logger::init_with_config(trader_id, instance_id, file_writer_config, config);
     }
 
     pub fn init_with_config(
@@ -249,7 +246,6 @@ impl Logger {
         instance_id: UUID4,
         file_writer_config: FileWriterConfig,
         config: LoggerConfig,
-        clock: Option<&'static AtomicTime>,
     ) {
         let (tx, rx) = channel::<LogEvent>();
 
@@ -257,7 +253,6 @@ impl Logger {
         let instance_id_clone = instance_id.to_string();
 
         let logger = Self {
-            clock: clock.unwrap_or(get_atomic_clock()),
             tx,
             config: config.clone(),
         };
@@ -581,7 +576,6 @@ mod tests {
     use super::FileWriterConfig;
     use crate::{
         enums::LogColor,
-        ffi::clock::set_atomic_clock_static,
         logging::{LogLine, Logger, LoggerConfig},
         testing::wait_until,
     };
@@ -638,17 +632,15 @@ mod tests {
             ..Default::default()
         };
 
-        set_atomic_clock_static(1_650_000_000_000_000);
-
         Logger::init_with_config(
             TraderId::from("TRADER-001"),
             UUID4::new(),
             file_writer_config,
             config,
-            None,
         );
 
         info!(
+            timestamp = "1650000000000000",
             component = "RiskEngine";
             "This is a test."
         );
@@ -698,17 +690,15 @@ mod tests {
             ..Default::default()
         };
 
-        set_atomic_clock_static(1_650_000_000_000_000);
-
         Logger::init_with_config(
             TraderId::from("TRADER-001"),
             UUID4::new(),
             file_writer_config,
             config,
-            None,
         );
 
         info!(
+            timestamp = "1650000000000000",
             component = "RiskEngine";
             "This is a test."
         );
@@ -752,17 +742,15 @@ mod tests {
             ..Default::default()
         };
 
-        set_atomic_clock_static(1_650_000_000_000_000);
-
         Logger::init_with_config(
             TraderId::from("TRADER-001"),
             UUID4::new(),
             file_writer_config,
             config,
-            None,
         );
 
         info!(
+            timestamp = "1650000000000000",
             component = "RiskEngine";
             "This is a test."
         );

@@ -21,7 +21,6 @@ use nautilus_model::identifiers::{
 };
 
 use super::get_datetime_tag;
-use crate::clock::get_atomic_clock;
 
 #[repr(C)]
 pub struct PositionIdGenerator {
@@ -32,9 +31,9 @@ pub struct PositionIdGenerator {
 
 impl PositionIdGenerator {
     #[must_use]
-    pub fn new(trader_id: TraderId) -> Self {
+    pub fn new(trader_id: TraderId, clock: &'static AtomicTime) -> Self {
         Self {
-            clock: get_atomic_clock(),
+            clock,
             trader_id,
             counts: HashMap::new(),
         }
@@ -71,6 +70,7 @@ impl PositionIdGenerator {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use nautilus_core::time::get_atomic_clock_static;
     use nautilus_model::identifiers::{
         position_id::PositionId, strategy_id::StrategyId, trader_id::TraderId,
     };
@@ -80,7 +80,7 @@ mod tests {
 
     fn get_position_id_generator() -> PositionIdGenerator {
         let trader_id = TraderId::from("TRADER-001");
-        PositionIdGenerator::new(trader_id)
+        PositionIdGenerator::new(trader_id, get_atomic_clock_static())
     }
 
     #[rstest]

@@ -15,7 +15,10 @@
 
 use std::{
     ops::Deref,
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        OnceLock,
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -28,6 +31,22 @@ pub type UnixNanos = u64;
 
 /// Represents a timedelta in nanoseconds.
 pub type TimedeltaNanos = i64;
+
+/// Provides a global atomic time in real-time mode for use across the system.
+pub static ATOMIC_CLOCK_REALTIME: OnceLock<AtomicTime> = OnceLock::new();
+
+/// Provides a global atomic time in static mode for use across the system.
+pub static ATOMIC_CLOCK_STATIC: OnceLock<AtomicTime> = OnceLock::new();
+
+/// Returns a static reference to the global atomic clock in real-time mode.
+pub fn get_atomic_clock_realtime() -> &'static AtomicTime {
+    ATOMIC_CLOCK_REALTIME.get_or_init(AtomicTime::default)
+}
+
+/// Returns a static reference to the global atomic clock in static mode.
+pub fn get_atomic_clock_static() -> &'static AtomicTime {
+    ATOMIC_CLOCK_STATIC.get_or_init(|| AtomicTime::new(false, 0))
+}
 
 #[must_use]
 pub fn duration_since_unix_epoch() -> Duration {
@@ -70,7 +89,7 @@ impl Deref for AtomicTime {
 
 impl Default for AtomicTime {
     fn default() -> Self {
-        Self::new(true, 0) // TODO!: Derive this once bugs fixed
+        Self::new(true, 0)
     }
 }
 
@@ -78,7 +97,6 @@ impl AtomicTime {
     /// New atomic clock set with the given UNIX time (nanoseconds).
     #[must_use]
     pub fn new(realtime: bool, time: UnixNanos) -> Self {
-        println!("*** CREATING NEW `AtomicTime` {realtime} {time} ***"); // TODO!
         Self {
             realtime: AtomicBool::new(realtime),
             timestamp_ns: AtomicU64::new(time),

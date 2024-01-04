@@ -185,12 +185,6 @@ cdef extern from "../includes/common.h":
 
     PyCallableWrapper_t dummy_callable(PyCallableWrapper_t c);
 
-    # Sets the global atomic clock mode to real-time.
-    void set_atomic_clock_realtime();
-
-    # Sets the global atomic clock mode to static and sets the time to the given `time_ns`.
-    void set_atomic_clock_static(uint64_t time_ns);
-
     TestClock_API test_clock_new();
 
     void test_clock_drop(TestClock_API clock);
@@ -342,7 +336,8 @@ cdef extern from "../includes/common.h":
     #
     # - Assumes `component_ptr` is a valid C string pointer.
     # - Assumes `message_ptr` is a valid C string pointer.
-    void logger_log(LogLevel level,
+    void logger_log(uint64_t timestamp_ns,
+                    LogLevel level,
                     LogColor color,
                     const char *component_ptr,
                     const char *message_ptr);

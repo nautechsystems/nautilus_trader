@@ -140,7 +140,7 @@ cdef class Logger:
 
     def __init__(
         self,
-        Clock clock not None,  # TODO!: Remove this
+        Clock clock not None,
         TraderId trader_id = None,
         str machine_id = None,
         UUID4 instance_id = None,
@@ -161,6 +161,7 @@ cdef class Logger:
         if machine_id is None:
             machine_id = socket.gethostname()
 
+        self._clock = clock
         self._trader_id = trader_id
         self._instance_id = instance_id
         self._machine_id = machine_id
@@ -235,13 +236,31 @@ cdef class Logger:
         str message,
     ):
         logger_log(
+            self._clock.timestamp_ns(),
             level,
             color,
             component_cstr,
             pystr_to_cstr(message),
         )
 
+    cpdef void change_clock(self, Clock clock):
+        """
+        Change the loggers internal clock to the given clock.
+
+        Parameters
+        ----------
+        clock : Clock
+
+        """
+        Condition.not_none(clock, "clock")
+
+        self._clock = clock
+
     cpdef void flush(self):
+        """
+        Flush all logger buiffers.
+
+        """
         logger_flush()
 
 

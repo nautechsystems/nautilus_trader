@@ -53,6 +53,8 @@ cdef str RES
 
 
 cdef class Logger:
+    cdef Clock _clock
+
     cdef TraderId _trader_id
     cdef UUID4 _instance_id
     cdef str _machine_id
@@ -67,6 +69,7 @@ cdef class Logger:
         str message,
     )
 
+    cpdef void change_clock(self, Clock clock)
     cpdef void flush(self)
 
 
