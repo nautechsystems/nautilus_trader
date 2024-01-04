@@ -15,10 +15,7 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::{
-    time::{get_atomic_clock, AtomicTime},
-    uuid::UUID4,
-};
+use nautilus_core::{time::AtomicTime, uuid::UUID4};
 use nautilus_model::{
     enums::{ContingencyType, OrderSide, TimeInForce},
     identifiers::{
@@ -31,8 +28,9 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-use crate::generators::{
-    client_order_id::ClientOrderIdGenerator, order_list_id::OrderListIdGenerator,
+use crate::{
+    clock::get_atomic_clock,
+    generators::{client_order_id::ClientOrderIdGenerator, order_list_id::OrderListIdGenerator},
 };
 
 #[repr(C)]

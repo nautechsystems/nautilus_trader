@@ -302,6 +302,16 @@ typedef struct TimeEventHandler_t {
 
 struct PyCallableWrapper_t dummy_callable(struct PyCallableWrapper_t c);
 
+/**
+ * Sets the global atomic clock mode to real-time.
+ */
+void set_atomic_clock_realtime(void);
+
+/**
+ * Sets the global atomic clock mode to static and sets the time to the given `time_ns`.
+ */
+void set_atomic_clock_static(uint64_t time_ns);
+
 struct TestClock_API test_clock_new(void);
 
 void test_clock_drop(struct TestClock_API clock);

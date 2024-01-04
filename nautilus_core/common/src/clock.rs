@@ -13,11 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, ops::Deref};
+use std::{collections::HashMap, ops::Deref, sync::OnceLock};
 
 use nautilus_core::{
     correctness::check_valid_string,
-    time::{get_atomic_clock, AtomicTime, UnixNanos},
+    time::{AtomicTime, UnixNanos},
 };
 use ustr::Ustr;
 
@@ -25,6 +25,14 @@ use crate::{
     handlers::EventHandler,
     timer::{TestTimer, TimeEvent, TimeEventHandler},
 };
+
+/// Provides a global atomic time for use across the system.
+pub static ATOMIC_CLOCK: OnceLock<AtomicTime> = OnceLock::new();
+
+/// Returns a static reference to the global atomic clock.
+pub fn get_atomic_clock() -> &'static AtomicTime {
+    ATOMIC_CLOCK.get_or_init(AtomicTime::default)
+}
 
 /// Represents a type of clock.
 ///
@@ -77,6 +85,7 @@ pub struct TestClock {
 impl TestClock {
     #[must_use]
     pub fn new() -> Self {
+        println!("CREATING NEW `TestClock`"); // TODO!
         Self {
             time: get_atomic_clock(),
             timers: HashMap::new(),
@@ -92,9 +101,10 @@ impl TestClock {
 
     pub fn advance_time(&mut self, to_time_ns: UnixNanos, set_time: bool) -> Vec<TimeEvent> {
         // Time should increase monotonically
+        let current_time_ns = self.time.get_time_ns(); // TODO!: Tidy up
         assert!(
             to_time_ns >= self.time.get_time_ns(),
-            "`to_time_ns` was < `self._time_ns`"
+            "`to_time_ns` {to_time_ns} was < `self.time.get_time_ns()` {current_time_ns}"
         );
 
         if set_time {
@@ -249,6 +259,7 @@ pub struct LiveClock {
 impl LiveClock {
     #[must_use]
     pub fn new() -> Self {
+        println!("CREATING NEW `LiveClock`"); // TODO!
         Self {
             time: get_atomic_clock(),
             timers: HashMap::new(),

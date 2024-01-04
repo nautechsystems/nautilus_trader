@@ -110,8 +110,8 @@ cdef class Actor(Component):
             component_id = config.component_id
 
         super().__init__(
-            clock=LiveClock(),  # Use placeholder live clock until registered
-            logger=Logger(clock=LiveClock(), dummy=True),  # Use dummy logger until registered
+            clock=Clock(), # TODO! # LiveClock(),  # Use placeholder live clock until registered
+            logger=Logger(Clock()),  # TODO!  # Logger(clock=LiveClock(), dummy=True),  # Use dummy logger until registered
             component_id=component_id,
             config=config,
         )

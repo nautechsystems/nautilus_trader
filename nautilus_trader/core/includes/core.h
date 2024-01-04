@@ -80,16 +80,6 @@ uint64_t nanos_to_millis(uint64_t nanos);
  */
 uint64_t nanos_to_micros(uint64_t nanos);
 
-/**
- * Sets the global atomic clock mode to real-time.
- */
-void set_atomic_clock_realtime(void);
-
-/**
- * Sets the global atomic clock mode to static and sets the time to the given `time_ns`.
- */
-void set_atomic_clock_static(uint64_t time_ns);
-
 void cvec_drop(struct CVec cvec);
 
 struct CVec cvec_new(void);

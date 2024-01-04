@@ -15,12 +15,13 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::time::{get_atomic_clock, AtomicTime};
+use nautilus_core::time::AtomicTime;
 use nautilus_model::identifiers::{
     position_id::PositionId, strategy_id::StrategyId, trader_id::TraderId,
 };
 
 use super::get_datetime_tag;
+use crate::clock::get_atomic_clock;
 
 #[repr(C)]
 pub struct PositionIdGenerator {

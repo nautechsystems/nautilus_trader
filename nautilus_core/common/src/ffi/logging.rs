@@ -22,13 +22,13 @@ use log::{
 };
 use nautilus_core::{
     ffi::string::{cstr_to_string, optional_cstr_to_string},
-    time::get_atomic_clock,
     uuid::UUID4,
 };
 use nautilus_model::identifiers::trader_id::TraderId;
 use tracing_subscriber::EnvFilter;
 
 use crate::{
+    clock::get_atomic_clock,
     enums::{LogColor, LogLevel},
     logging::{FileWriterConfig, Logger, LoggerConfig},
 };

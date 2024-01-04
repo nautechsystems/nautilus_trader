@@ -43,7 +43,6 @@ from nautilus_trader.backtest.models cimport LatencyModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
-from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.common.clock cimport TimeEventHandler
@@ -61,10 +60,10 @@ from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drain
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drop
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_new
 from nautilus_trader.core.rust.common cimport TimeEventHandler_t
+from nautilus_trader.core.rust.common cimport set_atomic_clock_realtime
+from nautilus_trader.core.rust.common cimport set_atomic_clock_static
 from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
 from nautilus_trader.core.rust.core cimport CVec
-from nautilus_trader.core.rust.core cimport set_atomic_clock_realtime
-from nautilus_trader.core.rust.core cimport set_atomic_clock_static
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport BookType
@@ -115,7 +114,6 @@ cdef class BacktestEngine:
         self._config: BacktestEngineConfig  = config
 
         # Setup components
-        self._clock: Clock = LiveClock()  # Real-time for the engine
         self._accumulator = <TimeEventAccumulatorAPI>time_event_accumulator_new()
 
         # Run IDs
@@ -780,9 +778,6 @@ cdef class BacktestEngine:
             # End current backtest run
             self.end()
 
-        # Change logger clock back to live clock for consistent time stamping
-        set_atomic_clock_realtime()
-
         # Reset DataEngine
         if self.kernel.data_engine.is_running:
             self.kernel.data_engine.stop()
@@ -940,8 +935,11 @@ cdef class BacktestEngine:
         except AccountError:
             pass
 
-        self._run_finished = self._clock.utc_now()
         self._backtest_end = self.kernel.clock.utc_now()
+        self._run_finished = pd.Timestamp.utcnow()
+
+        # Change logger clock back to live clock for consistent time stamping
+        set_atomic_clock_realtime()
 
         self._log_post_run()
 
@@ -1020,7 +1018,7 @@ cdef class BacktestEngine:
             # Initialize run
             self._run_config_id = run_config_id  # Can be None
             self._run_id = UUID4()
-            self._run_started = self._clock.utc_now()
+            self._run_started = pd.Timestamp.utcnow()
             self._backtest_start = start
             for exchange in self._venues.values():
                 exchange.initialize_account()

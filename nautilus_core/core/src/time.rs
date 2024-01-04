@@ -15,10 +15,7 @@
 
 use std::{
     ops::Deref,
-    sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
-        OnceLock,
-    },
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -37,31 +34,6 @@ pub fn duration_since_unix_epoch() -> Duration {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Error calling `SystemTime::now.duration_since`")
-}
-
-/// Provides a global atomic time for use across the system.
-pub static ATOMIC_CLOCK: OnceLock<AtomicTime> = OnceLock::new();
-
-/// Returns a static reference to the global atomic clock.
-pub fn get_atomic_clock() -> &'static AtomicTime {
-    ATOMIC_CLOCK.get_or_init(AtomicTime::default)
-}
-
-/// Sets the global atomic clock mode to real-time.
-#[no_mangle]
-pub extern "C" fn set_atomic_clock_realtime() {
-    println!("*** SETTING CLOCK TO REALTIME ***"); // TODO
-    let clock = get_atomic_clock();
-    clock.make_realtime();
-}
-
-/// Sets the global atomic clock mode to static and sets the time to the given `time_ns`.
-#[no_mangle]
-pub extern "C" fn set_atomic_clock_static(time_ns: u64) {
-    println!("*** SETTING CLOCK TO STATIC with `time_ns` {time_ns} ***"); // TODO
-    let clock = get_atomic_clock();
-    clock.make_static();
-    clock.set_time(time_ns);
 }
 
 /// Represents an atomic timekeeping structure.
@@ -98,7 +70,7 @@ impl Deref for AtomicTime {
 
 impl Default for AtomicTime {
     fn default() -> Self {
-        Self::new(false, 0)
+        Self::new(true, 0) // TODO!: Derive this once bugs fixed
     }
 }
 

@@ -166,10 +166,8 @@ class NautilusKernel:
             logging.log_file_name,
         )
 
-        # Setup the logger with a `LiveClock` initially,
-        # which is later swapped out for a `TestClock` in the `BacktestEngine`.
         self._logger: Logger = Logger(
-            clock=self._clock if isinstance(self._clock, LiveClock) else LiveClock(),
+            clock=self._clock,
             trader_id=self._trader_id,
             machine_id=self._machine_id,
             instance_id=self._instance_id,

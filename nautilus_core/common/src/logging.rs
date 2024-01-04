@@ -28,14 +28,14 @@ use chrono::{prelude::*, Utc};
 use log::{set_boxed_logger, set_max_level, Level, LevelFilter, Log, STATIC_MAX_LEVEL};
 use nautilus_core::{
     datetime::unix_nanos_to_iso8601,
-    time::{get_atomic_clock, AtomicTime, UnixNanos},
+    time::{AtomicTime, UnixNanos},
     uuid::UUID4,
 };
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use crate::enums::LogColor;
+use crate::{clock::get_atomic_clock, enums::LogColor};
 
 #[cfg_attr(
     feature = "python",
@@ -571,7 +571,7 @@ mod tests {
     use std::{collections::HashMap, time::Duration};
 
     use log::{info, LevelFilter};
-    use nautilus_core::{time::set_atomic_clock_static, uuid::UUID4};
+    use nautilus_core::uuid::UUID4;
     use nautilus_model::identifiers::trader_id::TraderId;
     use rstest::*;
     use serde_json::Value;
@@ -581,6 +581,7 @@ mod tests {
     use super::FileWriterConfig;
     use crate::{
         enums::LogColor,
+        ffi::clock::set_atomic_clock_static,
         logging::{LogLine, Logger, LoggerConfig},
         testing::wait_until,
     };

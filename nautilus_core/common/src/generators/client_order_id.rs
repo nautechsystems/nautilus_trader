@@ -13,12 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::time::{get_atomic_clock, AtomicTime};
+use nautilus_core::time::AtomicTime;
 use nautilus_model::identifiers::{
     client_order_id::ClientOrderId, strategy_id::StrategyId, trader_id::TraderId,
 };
 
 use super::get_datetime_tag;
+use crate::clock::get_atomic_clock;
 
 #[repr(C)]
 pub struct ClientOrderIdGenerator {

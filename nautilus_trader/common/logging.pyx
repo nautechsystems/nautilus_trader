@@ -136,13 +136,11 @@ cdef class Logger:
         If ANSI codes should be used to produce colored log lines.
     bypass : bool, default False
         If the log output is bypassed.
-    dummy : bool, default False
-        If logger is a 'dummy' logger (intended as a placeholder during initialization).
     """
 
     def __init__(
         self,
-        Clock clock not None,
+        Clock clock not None,  # TODO!: Remove this
         TraderId trader_id = None,
         str machine_id = None,
         UUID4 instance_id = None,
@@ -155,7 +153,6 @@ cdef class Logger:
         dict component_levels: dict[ComponentId, LogLevel] = None,
         bint colors = True,
         bint bypass = False,
-        bint dummy = False,
     ):
         if trader_id is None:
             trader_id = TraderId("TRADER-000")
