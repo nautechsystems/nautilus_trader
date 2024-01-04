@@ -17,7 +17,7 @@ use std::{collections::HashMap, ops::Deref};
 
 use nautilus_core::{
     correctness::check_valid_string,
-    time::{AtomicTime, UnixNanos},
+    time::{get_atomic_clock, AtomicTime, UnixNanos},
 };
 use ustr::Ustr;
 
@@ -68,7 +68,7 @@ pub trait Clock {
 }
 
 pub struct TestClock {
-    time: AtomicTime,
+    time: &'static AtomicTime,
     timers: HashMap<Ustr, TestTimer>,
     default_callback: Option<EventHandler>,
     callbacks: HashMap<Ustr, EventHandler>,
@@ -78,7 +78,7 @@ impl TestClock {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            time: AtomicTime::new(false, 0),
+            time: get_atomic_clock(),
             timers: HashMap::new(),
             default_callback: None,
             callbacks: HashMap::new(),
@@ -142,7 +142,7 @@ impl Deref for TestClock {
     type Target = AtomicTime;
 
     fn deref(&self) -> &Self::Target {
-        &self.time
+        self.time
     }
 }
 
@@ -240,7 +240,7 @@ impl Clock for TestClock {
 }
 
 pub struct LiveClock {
-    time: AtomicTime,
+    time: &'static AtomicTime,
     timers: HashMap<Ustr, TestTimer>,
     default_callback: Option<EventHandler>,
     callbacks: HashMap<Ustr, EventHandler>,
@@ -250,7 +250,7 @@ impl LiveClock {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            time: AtomicTime::new(true, 0),
+            time: get_atomic_clock(),
             timers: HashMap::new(),
             default_callback: None,
             callbacks: HashMap::new(),
@@ -268,7 +268,7 @@ impl Deref for LiveClock {
     type Target = AtomicTime;
 
     fn deref(&self) -> &Self::Target {
-        &self.time
+        self.time
     }
 }
 
