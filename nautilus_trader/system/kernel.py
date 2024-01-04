@@ -163,7 +163,7 @@ class NautilusKernel:
             logging.spec_string(),
             logging.log_directory,
             logging.log_file_name,
-            logging.log_file_name,
+            logging.log_file_format,
         )
 
         self._logger: Logger = Logger(

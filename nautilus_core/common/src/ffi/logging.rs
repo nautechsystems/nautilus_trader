@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{env, ffi::c_char};
+use std::{
+    env,
+    ffi::{c_char, CStr},
+};
 
 use log::{
     debug, error, info,
@@ -21,7 +24,7 @@ use log::{
     warn,
 };
 use nautilus_core::{
-    ffi::string::{cstr_to_string, optional_cstr_to_string},
+    ffi::string::{cstr_to_string, cstr_to_ustr, optional_cstr_to_string},
     uuid::UUID4,
 };
 use nautilus_model::identifiers::trader_id::TraderId;
@@ -104,21 +107,22 @@ pub unsafe extern "C" fn logger_log(
     component_ptr: *const c_char,
     message_ptr: *const c_char,
 ) {
-    // TODO use ustr for components
-    let component = cstr_to_string(component_ptr);
-    let message = cstr_to_string(message_ptr);
+    let component = cstr_to_ustr(component_ptr);
+    let color = Value::from(color as u8);
+    let message = CStr::from_ptr(message_ptr).to_string_lossy();
+
     match level {
         LogLevel::Debug => {
-            debug!(timestamp = timestamp_ns.to_value(), component = component.to_value(), color = Value::from(color as u8); "{}", message);
+            debug!(timestamp = timestamp_ns, component = component.to_value(), color = color; "{}", message);
         }
         LogLevel::Info => {
-            info!(timestamp = timestamp_ns.to_value(), component = component.to_value(), color = Value::from(color as u8); "{}", message);
+            info!(timestamp = timestamp_ns, component = component.to_value(), color = color; "{}", message);
         }
         LogLevel::Warning => {
-            warn!(timestamp = timestamp_ns.to_value(), component = component.to_value(), color = Value::from(color as u8); "{}", message);
+            warn!(timestamp = timestamp_ns, component = component.to_value(), color = color; "{}", message);
         }
         LogLevel::Error => {
-            error!(timestamp = timestamp_ns.to_value(),component = component.to_value(), color = Value::from(color as u8); "{}", message);
+            error!(timestamp = timestamp_ns, component = component.to_value(), color = color; "{}", message);
         }
     }
 }

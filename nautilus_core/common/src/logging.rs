@@ -25,7 +25,7 @@ use std::{
 };
 
 use chrono::{prelude::*, Utc};
-use log::{set_boxed_logger, set_max_level, Level, LevelFilter, Log, STATIC_MAX_LEVEL};
+use log::{kv::Key, set_boxed_logger, set_max_level, Level, LevelFilter, Log, STATIC_MAX_LEVEL};
 use nautilus_core::{datetime::unix_nanos_to_iso8601, time::UnixNanos, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde::{Deserialize, Serialize};
@@ -197,21 +197,20 @@ impl Log for Logger {
     fn log(&self, record: &log::Record) {
         // TODO remove unwraps
         if self.enabled(record.metadata()) {
-            let timestamp = record
-                .key_values()
-                .get("timestamp".into())
+            let key_values = record.key_values();
+            let timestamp = key_values
+                .get(Key::from_str("timestamp"))
                 .and_then(|v| v.to_u64())
                 .expect("No timestamp included in log `Record`");
-            let color = record
-                .key_values()
+            let color = key_values
                 .get("color".into())
                 .and_then(|v| v.to_u64().map(|v| (v as u8).into()))
                 .unwrap_or(LogColor::Normal);
-            let component = record
-                .key_values()
+            let component = key_values
                 .get("component".into())
                 .map(|v| Ustr::from(&v.to_string()))
                 .unwrap_or_else(|| Ustr::from(record.metadata().target()));
+
             let line = LogLine {
                 timestamp,
                 level: record.level(),
