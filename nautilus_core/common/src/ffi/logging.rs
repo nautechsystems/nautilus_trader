@@ -42,16 +42,16 @@ pub unsafe extern "C" fn logger_log(
     let message = cstr_to_string(message_ptr);
     match level {
         LogLevel::Debug => {
-            debug!(component = component.to_value(), color = Value::from(color as u8); "{}", message)
+            debug!(component = component.to_value(), color = Value::from(color as u8); "{}", message);
         }
         LogLevel::Info => {
-            info!(component = component.to_value(), color = Value::from(color as u8); "{}", message)
+            info!(component = component.to_value(), color = Value::from(color as u8); "{}", message);
         }
         LogLevel::Warning => {
-            warn!(component = component.to_value(), color = Value::from(color as u8); "{}", message)
+            warn!(component = component.to_value(), color = Value::from(color as u8); "{}", message);
         }
         LogLevel::Error => {
-            error!(component = component.to_value(), color = Value::from(color as u8); "{}", message)
+            error!(component = component.to_value(), color = Value::from(color as u8); "{}", message);
         }
     }
 }

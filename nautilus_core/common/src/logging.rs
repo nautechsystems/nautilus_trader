@@ -20,7 +20,7 @@ use std::{
     io::{self, BufWriter, Stderr, Stdout, Write},
     path::{Path, PathBuf},
     str::FromStr,
-    sync::mpsc::{sync_channel, Receiver, SendError, SyncSender},
+    sync::mpsc::{channel, Receiver, SendError, Sender},
     thread,
 };
 
@@ -154,7 +154,7 @@ pub struct Logger {
     /// Reference to the atomic clock used by the engine.
     clock: &'static AtomicTime,
     /// Send log events to a different thread.
-    tx: SyncSender<LogEvent>,
+    tx: Sender<LogEvent>,
     /// Configure maximum levels for components and IO.
     pub config: LoggerConfig,
 }
@@ -251,7 +251,7 @@ impl Logger {
         config: LoggerConfig,
         clock: Option<&'static AtomicTime>,
     ) {
-        let (tx, rx) = sync_channel::<LogEvent>(0);
+        let (tx, rx) = channel::<LogEvent>();
 
         let trader_id_clone = trader_id.value.to_string();
         let instance_id_clone = instance_id.to_string();
