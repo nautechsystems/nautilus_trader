@@ -15,7 +15,7 @@
 
 use std::{
     collections::{HashMap, VecDeque},
-    sync::mpsc::{sync_channel, Receiver, SyncSender, TryRecvError},
+    sync::mpsc::{channel, Receiver, Sender, TryRecvError},
     thread,
     time::{Duration, Instant},
 };
@@ -72,7 +72,7 @@ pub struct RedisCacheDatabase {
     pub trader_id: TraderId,
     trader_key: String,
     conn: Connection,
-    tx: SyncSender<DatabaseCommand>,
+    tx: Sender<DatabaseCommand>,
 }
 
 impl CacheDatabase for RedisCacheDatabase {
@@ -87,7 +87,7 @@ impl CacheDatabase for RedisCacheDatabase {
         let client = redis::Client::open(redis_url)?;
         let conn = client.get_connection().unwrap();
 
-        let (tx, rx) = sync_channel::<DatabaseCommand>(0);
+        let (tx, rx) = channel::<DatabaseCommand>();
         let trader_key = get_trader_key(trader_id, instance_id, &config);
         let trader_key_clone = trader_key.clone();
 
