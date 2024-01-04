@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod logging;
 pub mod timer;
 
 use pyo3::prelude::*;
@@ -21,7 +20,6 @@ use pyo3::prelude::*;
 use crate::{
     enums,
     logging::{FileWriterConfig, LoggerConfig},
-    python::logging::{init_logging, init_tracing},
 };
 
 /// Loaded as nautilus_pyo3.common
@@ -34,8 +32,6 @@ pub fn common(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<enums::LogFormat>()?;
     m.add_class::<LoggerConfig>()?;
     m.add_class::<FileWriterConfig>()?;
-    m.add_function(wrap_pyfunction!(init_tracing, m)?)?;
-    m.add_function(wrap_pyfunction!(init_logging, m)?)?;
 
     Ok(())
 }

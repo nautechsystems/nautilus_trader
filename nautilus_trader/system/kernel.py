@@ -39,6 +39,8 @@ from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.logging import init_logging
+from nautilus_trader.common.logging import init_tracing
 from nautilus_trader.common.logging import nautilus_header
 from nautilus_trader.config import ActorFactory
 from nautilus_trader.config import DataEngineConfig
@@ -54,13 +56,8 @@ from nautilus_trader.config.common import ExecAlgorithmFactory
 from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.error import InvalidConfiguration
-from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import nanos_to_millis
-from nautilus_trader.core.nautilus_pyo3.common import FileWriterConfig
-from nautilus_trader.core.nautilus_pyo3.common import LoggerConfig
-from nautilus_trader.core.nautilus_pyo3.common import init_logging
-from nautilus_trader.core.nautilus_pyo3.common import init_tracing
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.algorithm import ExecAlgorithm
@@ -160,19 +157,13 @@ class NautilusKernel:
         # Initialize logging for debugging Python and sync Rust logic
         logging: LoggingConfig = config.logging or LoggingConfig()
 
-        file_writer_config = FileWriterConfig(
+        init_logging(
+            self._trader_id,
+            self._instance_id,
+            logging.spec_string(),
             logging.log_directory,
             logging.log_file_name,
             logging.log_file_name,
-        )
-
-        logger_config = LoggerConfig.from_spec(logging.spec_string())
-
-        init_logging(
-            nautilus_pyo3.TraderId(self._trader_id.value),
-            nautilus_pyo3.UUID4(self._instance_id.value),
-            file_writer_config,
-            logger_config,
         )
 
         # Setup the logger with a `LiveClock` initially,

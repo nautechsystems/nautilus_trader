@@ -41,11 +41,37 @@ from nautilus_trader.core.rust.common cimport log_level_from_cstr
 from nautilus_trader.core.rust.common cimport log_level_to_cstr
 from nautilus_trader.core.rust.common cimport logger_flush
 from nautilus_trader.core.rust.common cimport logger_log
+from nautilus_trader.core.rust.common cimport logging_init
+from nautilus_trader.core.rust.common cimport tracing_init
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pybytes_to_cstr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
+
+
+cpdef void init_tracing():
+    tracing_init()
+
+
+cpdef void init_logging(
+    TraderId trader_id,
+    UUID4 instance_id,
+    str config_spec,
+    str file_directory,
+    str file_name,
+    str file_format,
+):
+    Condition.valid_string(config_spec, "config_spec")
+
+    logging_init(
+        trader_id._mem,
+        instance_id._mem,
+        pystr_to_cstr(config_spec),
+        pystr_to_cstr(file_directory) if file_directory else NULL,
+        pystr_to_cstr(file_name) if file_name else NULL,
+        pystr_to_cstr(file_format) if file_format else NULL,
+    )
 
 
 cpdef LogColor log_color_from_str(str value):

@@ -25,6 +25,16 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 
 
+cpdef void init_tracing()
+cpdef void init_logging(
+    TraderId trader_id,
+    UUID4 instance_id,
+    str config_spec,
+    str file_directory,
+    str file_name,
+    str file_format,
+)
+
 cpdef LogColor log_color_from_str(str value)
 cpdef str log_color_to_str(LogColor value)
 
