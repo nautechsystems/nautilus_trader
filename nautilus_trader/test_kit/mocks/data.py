@@ -14,11 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 from pathlib import Path
+from typing import Literal
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.singleton import clear_singleton_instances
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
@@ -27,7 +27,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.trading.filters import NewsEvent
 
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+_AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class NewsEventData(NewsEvent):
@@ -36,9 +36,9 @@ class NewsEventData(NewsEvent):
     """
 
 
-def data_catalog_setup(
-    protocol: str,
-    path: str | Path | None = None,
+def setup_catalog(
+    protocol: Literal["memory", "file"],
+    path: Path | str | None = None,
 ) -> ParquetDataCatalog:
     if protocol not in ("memory", "file"):
         raise ValueError("`protocol` should only be one of `memory` or `file` for testing")
@@ -62,21 +62,17 @@ def data_catalog_setup(
     return catalog
 
 
-def aud_usd_data_loader(catalog: ParquetDataCatalog) -> None:
-    from nautilus_trader.test_kit.providers import TestInstrumentProvider
-
-    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
-
+def load_catalog_with_stub_quote_ticks_audusd(catalog: ParquetDataCatalog) -> None:
     clock = TestClock()
     logger = Logger(clock)
 
     instrument_provider = InstrumentProvider(
         logger=logger,
     )
-    instrument_provider.add(instrument)
+    instrument_provider.add(_AUDUSD_SIM)
 
-    wrangler = QuoteTickDataWrangler(instrument)
+    wrangler = QuoteTickDataWrangler(_AUDUSD_SIM)
     ticks = wrangler.process(TestDataProvider().read_csv_ticks("truefx/audusd-ticks.csv"))
     ticks.sort(key=lambda x: x.ts_init)  # CAUTION: data was not originally sorted
-    catalog.write_data([instrument])
+    catalog.write_data([_AUDUSD_SIM])
     catalog.write_data(ticks)

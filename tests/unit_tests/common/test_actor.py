@@ -51,7 +51,7 @@ from nautilus_trader.persistence.writer import StreamingFeatherWriter
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.mocks.actors import KaboomActor
 from nautilus_trader.test_kit.mocks.actors import MockActor
-from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.mocks.data import setup_catalog
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import UNIX_EPOCH
@@ -2051,7 +2051,7 @@ class TestActor:
             clock=self.clock,
             logger=self.logger,
         )
-        catalog = data_catalog_setup(protocol="memory", path="/catalog")
+        catalog = setup_catalog(protocol="memory", path="/catalog")
 
         writer = StreamingFeatherWriter(
             path=catalog.path,

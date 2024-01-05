@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 
-import msgspec.json
+import msgspec
 import pytest
 
 from nautilus_trader.backtest.engine import BacktestEngineConfig
@@ -29,13 +29,13 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.persistence.funcs import parse_bytes
-from nautilus_trader.test_kit.mocks.data import aud_usd_data_loader
-from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.mocks.data import load_catalog_with_stub_quote_ticks_audusd
+from nautilus_trader.test_kit.mocks.data import setup_catalog
 
 
 class TestBacktestNode:
     def setup(self):
-        self.catalog = data_catalog_setup(protocol="file", path="./data_catalog")
+        self.catalog = setup_catalog(protocol="file", path="./data_catalog")
         self.venue_config = BacktestVenueConfig(
             name="SIM",
             oms_type="HEDGING",
@@ -76,7 +76,7 @@ class TestBacktestNode:
                 data=[self.data_config],
             ),
         ]
-        aud_usd_data_loader(self.catalog)  # Load sample data
+        load_catalog_with_stub_quote_ticks_audusd(self.catalog)  # Load sample data
 
     def test_init(self):
         node = BacktestNode(configs=self.backtest_configs)

@@ -664,7 +664,7 @@ class TestOrderBook:
         assert book.ts_last == new.ts_last
         assert book.sequence == new.sequence
 
-    @pytest.mark.skip(reason="Used for development")
+    @pytest.mark.skip(reason="development_only")
     def test_orderbook_spy_xnas_itch_mbo_l3(self) -> None:
         # Arrange
         loader = DatabentoDataLoader()

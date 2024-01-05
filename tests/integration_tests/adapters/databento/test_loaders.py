@@ -46,7 +46,7 @@ from tests import TEST_DATA_DIR
 DATABENTO_TEST_DATA_DIR = TEST_DATA_DIR / "databento"
 
 
-@pytest.mark.skip(reason="Used for development")
+@pytest.mark.skip(reason="development_only")
 def test_loader_definition_glbx_all_symbols() -> None:
     # Arrange
     loader = DatabentoDataLoader()
@@ -59,7 +59,7 @@ def test_loader_definition_glbx_all_symbols() -> None:
     assert len(data) == 10_000_000
 
 
-@pytest.mark.skip(reason="Used for development")
+@pytest.mark.skip(reason="development_only")
 def test_loader_spy_xnas_itch_mbo() -> None:
     # Arrange
     loader = DatabentoDataLoader()
