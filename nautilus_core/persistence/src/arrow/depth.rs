@@ -435,6 +435,7 @@ impl DecodeDataFromRecordBatch for OrderBookDepth10 {
 mod tests {
 
     use datafusion::arrow::datatypes::{DataType, Field, Schema};
+    use nautilus_model::data::depth::stubs::stub_depth10;
     use rstest::rstest;
 
     use super::*;
@@ -579,6 +580,232 @@ mod tests {
         expected_map.insert("ask_count_7".to_string(), "UInt32".to_string());
         expected_map.insert("ask_count_8".to_string(), "UInt32".to_string());
         expected_map.insert("ask_count_9".to_string(), "UInt32".to_string());
+        expected_map.insert("flags".to_string(), "UInt8".to_string());
+        expected_map.insert("sequence".to_string(), "UInt64".to_string());
+        expected_map.insert("ts_event".to_string(), "UInt64".to_string());
+        expected_map.insert("ts_init".to_string(), "UInt64".to_string());
         assert_eq!(schema_map, expected_map);
+    }
+
+    #[rstest]
+    fn test_encode_batch(stub_depth10: OrderBookDepth10) {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = OrderBookDepth10::get_metadata(&instrument_id, 2, 0);
+
+        let data = vec![stub_depth10];
+        let record_batch = OrderBookDepth10::encode_batch(&metadata, &data).unwrap();
+
+        let columns = record_batch.columns();
+
+        let bid_price_0_values = columns[0].as_any().downcast_ref::<Int64Array>().unwrap();
+        let bid_price_1_values = columns[1].as_any().downcast_ref::<Int64Array>().unwrap();
+        let bid_price_2_values = columns[2].as_any().downcast_ref::<Int64Array>().unwrap();
+        let bid_price_3_values = columns[3].as_any().downcast_ref::<Int64Array>().unwrap();
+        let bid_price_4_values = columns[4].as_any().downcast_ref::<Int64Array>().unwrap();
+        let bid_price_5_values = columns[5].as_any().downcast_ref::<Int64Array>().unwrap();
+        let bid_price_6_values = columns[6].as_any().downcast_ref::<Int64Array>().unwrap();
+        let bid_price_7_values = columns[7].as_any().downcast_ref::<Int64Array>().unwrap();
+        let bid_price_8_values = columns[8].as_any().downcast_ref::<Int64Array>().unwrap();
+        let bid_price_9_values = columns[9].as_any().downcast_ref::<Int64Array>().unwrap();
+
+        let ask_price_0_values = columns[10].as_any().downcast_ref::<Int64Array>().unwrap();
+        let ask_price_1_values = columns[11].as_any().downcast_ref::<Int64Array>().unwrap();
+        let ask_price_2_values = columns[12].as_any().downcast_ref::<Int64Array>().unwrap();
+        let ask_price_3_values = columns[13].as_any().downcast_ref::<Int64Array>().unwrap();
+        let ask_price_4_values = columns[14].as_any().downcast_ref::<Int64Array>().unwrap();
+        let ask_price_5_values = columns[15].as_any().downcast_ref::<Int64Array>().unwrap();
+        let ask_price_6_values = columns[16].as_any().downcast_ref::<Int64Array>().unwrap();
+        let ask_price_7_values = columns[17].as_any().downcast_ref::<Int64Array>().unwrap();
+        let ask_price_8_values = columns[18].as_any().downcast_ref::<Int64Array>().unwrap();
+        let ask_price_9_values = columns[19].as_any().downcast_ref::<Int64Array>().unwrap();
+
+        let bid_size_0_values = columns[20].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let bid_size_1_values = columns[21].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let bid_size_2_values = columns[22].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let bid_size_3_values = columns[23].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let bid_size_4_values = columns[24].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let bid_size_5_values = columns[25].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let bid_size_6_values = columns[26].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let bid_size_7_values = columns[27].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let bid_size_8_values = columns[28].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let bid_size_9_values = columns[29].as_any().downcast_ref::<UInt64Array>().unwrap();
+
+        let ask_size_0_values = columns[30].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ask_size_1_values = columns[31].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ask_size_2_values = columns[32].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ask_size_3_values = columns[33].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ask_size_4_values = columns[34].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ask_size_5_values = columns[35].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ask_size_6_values = columns[36].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ask_size_7_values = columns[37].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ask_size_8_values = columns[38].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ask_size_9_values = columns[39].as_any().downcast_ref::<UInt64Array>().unwrap();
+
+        let bid_counts_0_values = columns[40].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let bid_counts_1_values = columns[41].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let bid_counts_2_values = columns[42].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let bid_counts_3_values = columns[43].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let bid_counts_4_values = columns[44].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let bid_counts_5_values = columns[45].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let bid_counts_6_values = columns[46].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let bid_counts_7_values = columns[47].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let bid_counts_8_values = columns[48].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let bid_counts_9_values = columns[49].as_any().downcast_ref::<UInt32Array>().unwrap();
+
+        let ask_counts_0_values = columns[50].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let ask_counts_1_values = columns[51].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let ask_counts_2_values = columns[52].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let ask_counts_3_values = columns[53].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let ask_counts_4_values = columns[54].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let ask_counts_5_values = columns[55].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let ask_counts_6_values = columns[56].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let ask_counts_7_values = columns[57].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let ask_counts_8_values = columns[58].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let ask_counts_9_values = columns[59].as_any().downcast_ref::<UInt32Array>().unwrap();
+
+        let flags_values = columns[60].as_any().downcast_ref::<UInt8Array>().unwrap();
+        let sequence_values = columns[61].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ts_event_values = columns[62].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ts_init_values = columns[63].as_any().downcast_ref::<UInt64Array>().unwrap();
+
+        assert_eq!(columns.len(), 64);
+
+        assert_eq!(bid_price_0_values.len(), 1);
+        assert_eq!(bid_price_1_values.len(), 1);
+        assert_eq!(bid_price_2_values.len(), 1);
+        assert_eq!(bid_price_3_values.len(), 1);
+        assert_eq!(bid_price_4_values.len(), 1);
+        assert_eq!(bid_price_5_values.len(), 1);
+        assert_eq!(bid_price_6_values.len(), 1);
+        assert_eq!(bid_price_7_values.len(), 1);
+        assert_eq!(bid_price_8_values.len(), 1);
+        assert_eq!(bid_price_9_values.len(), 1);
+        assert_eq!(bid_price_0_values.value(0), 99_000_000_000);
+        assert_eq!(bid_price_1_values.value(0), 98_000_000_000);
+        assert_eq!(bid_price_2_values.value(0), 97_000_000_000);
+        assert_eq!(bid_price_3_values.value(0), 96_000_000_000);
+        assert_eq!(bid_price_4_values.value(0), 95_000_000_000);
+        assert_eq!(bid_price_5_values.value(0), 94_000_000_000);
+        assert_eq!(bid_price_6_values.value(0), 93_000_000_000);
+        assert_eq!(bid_price_7_values.value(0), 92_000_000_000);
+        assert_eq!(bid_price_8_values.value(0), 91_000_000_000);
+        assert_eq!(bid_price_9_values.value(0), 90_000_000_000);
+
+        assert_eq!(ask_price_0_values.len(), 1);
+        assert_eq!(ask_price_1_values.len(), 1);
+        assert_eq!(ask_price_2_values.len(), 1);
+        assert_eq!(ask_price_3_values.len(), 1);
+        assert_eq!(ask_price_4_values.len(), 1);
+        assert_eq!(ask_price_5_values.len(), 1);
+        assert_eq!(ask_price_6_values.len(), 1);
+        assert_eq!(ask_price_7_values.len(), 1);
+        assert_eq!(ask_price_8_values.len(), 1);
+        assert_eq!(ask_price_9_values.len(), 1);
+        assert_eq!(ask_price_0_values.value(0), 100_000_000_000);
+        assert_eq!(ask_price_1_values.value(0), 101_000_000_000);
+        assert_eq!(ask_price_2_values.value(0), 102_000_000_000);
+        assert_eq!(ask_price_3_values.value(0), 103_000_000_000);
+        assert_eq!(ask_price_4_values.value(0), 104_000_000_000);
+        assert_eq!(ask_price_5_values.value(0), 105_000_000_000);
+        assert_eq!(ask_price_6_values.value(0), 106_000_000_000);
+        assert_eq!(ask_price_7_values.value(0), 107_000_000_000);
+        assert_eq!(ask_price_8_values.value(0), 108_000_000_000);
+        assert_eq!(ask_price_9_values.value(0), 109_000_000_000);
+
+        assert_eq!(bid_size_0_values.len(), 1);
+        assert_eq!(bid_size_1_values.len(), 1);
+        assert_eq!(bid_size_2_values.len(), 1);
+        assert_eq!(bid_size_3_values.len(), 1);
+        assert_eq!(bid_size_4_values.len(), 1);
+        assert_eq!(bid_size_5_values.len(), 1);
+        assert_eq!(bid_size_6_values.len(), 1);
+        assert_eq!(bid_size_7_values.len(), 1);
+        assert_eq!(bid_size_8_values.len(), 1);
+        assert_eq!(bid_size_9_values.len(), 1);
+        assert_eq!(bid_size_0_values.value(0), 100_000_000_000);
+        assert_eq!(bid_size_1_values.value(0), 200_000_000_000);
+        assert_eq!(bid_size_2_values.value(0), 300_000_000_000);
+        assert_eq!(bid_size_3_values.value(0), 400_000_000_000);
+        assert_eq!(bid_size_4_values.value(0), 500_000_000_000);
+        assert_eq!(bid_size_5_values.value(0), 600_000_000_000);
+        assert_eq!(bid_size_6_values.value(0), 700_000_000_000);
+        assert_eq!(bid_size_7_values.value(0), 800_000_000_000);
+        assert_eq!(bid_size_8_values.value(0), 900_000_000_000);
+        assert_eq!(bid_size_9_values.value(0), 1_000_000_000_000);
+
+        assert_eq!(ask_size_0_values.len(), 1);
+        assert_eq!(ask_size_1_values.len(), 1);
+        assert_eq!(ask_size_2_values.len(), 1);
+        assert_eq!(ask_size_3_values.len(), 1);
+        assert_eq!(ask_size_4_values.len(), 1);
+        assert_eq!(ask_size_5_values.len(), 1);
+        assert_eq!(ask_size_6_values.len(), 1);
+        assert_eq!(ask_size_7_values.len(), 1);
+        assert_eq!(ask_size_8_values.len(), 1);
+        assert_eq!(ask_size_9_values.len(), 1);
+        assert_eq!(ask_size_0_values.value(0), 100_000_000_000);
+        assert_eq!(ask_size_1_values.value(0), 200_000_000_000);
+        assert_eq!(ask_size_2_values.value(0), 300_000_000_000);
+        assert_eq!(ask_size_3_values.value(0), 400_000_000_000);
+        assert_eq!(ask_size_4_values.value(0), 500_000_000_000);
+        assert_eq!(ask_size_5_values.value(0), 600_000_000_000);
+        assert_eq!(ask_size_6_values.value(0), 700_000_000_000);
+        assert_eq!(ask_size_7_values.value(0), 800_000_000_000);
+        assert_eq!(ask_size_8_values.value(0), 900_000_000_000);
+        assert_eq!(ask_size_9_values.value(0), 1_000_000_000_000);
+
+        assert_eq!(bid_counts_0_values.len(), 1);
+        assert_eq!(bid_counts_1_values.len(), 1);
+        assert_eq!(bid_counts_2_values.len(), 1);
+        assert_eq!(bid_counts_3_values.len(), 1);
+        assert_eq!(bid_counts_4_values.len(), 1);
+        assert_eq!(bid_counts_5_values.len(), 1);
+        assert_eq!(bid_counts_6_values.len(), 1);
+        assert_eq!(bid_counts_7_values.len(), 1);
+        assert_eq!(bid_counts_8_values.len(), 1);
+        assert_eq!(bid_counts_9_values.len(), 1);
+        assert_eq!(bid_counts_0_values.value(0), 1);
+        assert_eq!(bid_counts_1_values.value(0), 1);
+        assert_eq!(bid_counts_2_values.value(0), 1);
+        assert_eq!(bid_counts_3_values.value(0), 1);
+        assert_eq!(bid_counts_4_values.value(0), 1);
+        assert_eq!(bid_counts_5_values.value(0), 1);
+        assert_eq!(bid_counts_6_values.value(0), 1);
+        assert_eq!(bid_counts_7_values.value(0), 1);
+        assert_eq!(bid_counts_8_values.value(0), 1);
+        assert_eq!(bid_counts_9_values.value(0), 1);
+
+        assert_eq!(ask_counts_0_values.len(), 1);
+        assert_eq!(ask_counts_1_values.len(), 1);
+        assert_eq!(ask_counts_2_values.len(), 1);
+        assert_eq!(ask_counts_3_values.len(), 1);
+        assert_eq!(ask_counts_4_values.len(), 1);
+        assert_eq!(ask_counts_5_values.len(), 1);
+        assert_eq!(ask_counts_6_values.len(), 1);
+        assert_eq!(ask_counts_7_values.len(), 1);
+        assert_eq!(ask_counts_8_values.len(), 1);
+        assert_eq!(ask_counts_9_values.len(), 1);
+        assert_eq!(ask_counts_0_values.value(0), 1);
+        assert_eq!(ask_counts_1_values.value(0), 1);
+        assert_eq!(ask_counts_2_values.value(0), 1);
+        assert_eq!(ask_counts_3_values.value(0), 1);
+        assert_eq!(ask_counts_4_values.value(0), 1);
+        assert_eq!(ask_counts_5_values.value(0), 1);
+        assert_eq!(ask_counts_6_values.value(0), 1);
+        assert_eq!(ask_counts_7_values.value(0), 1);
+        assert_eq!(ask_counts_8_values.value(0), 1);
+        assert_eq!(ask_counts_9_values.value(0), 1);
+
+        assert_eq!(flags_values.len(), 1);
+        assert_eq!(flags_values.value(0), 0);
+
+        assert_eq!(sequence_values.len(), 1);
+        assert_eq!(sequence_values.value(0), 0);
+
+        assert_eq!(ts_event_values.len(), 1);
+        assert_eq!(ts_event_values.value(0), 1);
+
+        assert_eq!(ts_init_values.len(), 1);
+        assert_eq!(ts_init_values.value(0), 2);
     }
 }
