@@ -94,7 +94,7 @@ mod tests {
     fn test_bytes_to_usize_valid() {
         let payload: Vec<u8> = vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
         let result = bytes_to_usize(&payload).unwrap();
-        assert_eq!(result, 0x0807060504030201);
-        assert_eq!(result, 578437695752307201);
+        assert_eq!(result, 0x0807_0605_0403_0201);
+        assert_eq!(result, 578_437_695_752_307_201);
     }
 }

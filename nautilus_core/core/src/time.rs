@@ -154,11 +154,11 @@ impl AtomicTime {
     }
 
     pub fn make_realtime(&self) {
-        self.realtime.store(true, Ordering::Relaxed)
+        self.realtime.store(true, Ordering::Relaxed);
     }
 
     pub fn make_static(&self) {
-        self.realtime.store(false, Ordering::Relaxed)
+        self.realtime.store(false, Ordering::Relaxed);
     }
 }
 
