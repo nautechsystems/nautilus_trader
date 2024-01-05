@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,17 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::{c_char, CStr};
+use std::borrow::Cow;
 
-use nautilus_core::{
-    ffi::string::{cstr_to_string, cstr_to_ustr, optional_cstr_to_string},
-    uuid::UUID4,
-};
+use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
+use pyo3::prelude::*;
+use ustr::Ustr;
 
 use crate::{
     enums::{LogColor, LogLevel},
-    logging::{self},
+    logging::{self, FileWriterConfig, LoggerConfig},
 };
 
 /// Initialize tracing.
@@ -36,8 +35,9 @@ use crate::{
 ///
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
-#[no_mangle]
-pub extern "C" fn tracing_init() {
+#[pyfunction()]
+#[pyo3(name = "init_tracing")]
+pub fn py_init_tracing() {
     logging::init_tracing();
 }
 
@@ -52,26 +52,16 @@ pub extern "C" fn tracing_init() {
 ///
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
-///
-/// - Assume `config_spec_ptr` is a valid C string pointer.
-/// - Assume `directory_ptr` is either NULL or a valid C string pointer.
-/// - Assume `file_name_ptr` is either NULL or a valid C string pointer.
-/// - Assume `file_format_ptr` is either NULL or a valid C string pointer.
-#[no_mangle]
-pub unsafe extern "C" fn logging_init(
+#[pyfunction]
+#[pyo3(name = "init_logging")]
+pub fn py_init_logging(
     trader_id: TraderId,
     instance_id: UUID4,
-    config_spec_ptr: *const c_char,
-    directory_ptr: *const c_char,
-    file_name_ptr: *const c_char,
-    file_format_ptr: *const c_char,
+    config_spec: String,
+    directory: Option<String>,
+    file_name: Option<String>,
+    file_format: Option<String>,
 ) {
-    let config_spec = cstr_to_string(config_spec_ptr);
-
-    let directory = optional_cstr_to_string(directory_ptr);
-    let file_name = optional_cstr_to_string(file_name_ptr);
-    let file_format = optional_cstr_to_string(file_format_ptr);
-
     logging::init_logging(
         trader_id,
         instance_id,
@@ -83,27 +73,41 @@ pub unsafe extern "C" fn logging_init(
 }
 
 /// Create a new log event.
-///
-/// # Safety
-///
-/// - Assumes `component_ptr` is a valid C string pointer.
-/// - Assumes `message_ptr` is a valid C string pointer.
-#[no_mangle]
-pub unsafe extern "C" fn logger_log(
-    timestamp_ns: u64,
+#[pyfunction]
+#[pyo3(name = "logger_log")]
+pub fn py_logger_log(
+    timestamp_ns: UnixNanos,
     level: LogLevel,
     color: LogColor,
-    component_ptr: *const c_char,
-    message_ptr: *const c_char,
+    component: String,
+    message: String,
 ) {
-    let component = cstr_to_ustr(component_ptr);
-    let message = CStr::from_ptr(message_ptr).to_string_lossy();
-
-    logging::log(timestamp_ns, level, color, component, message);
+    logging::log(
+        timestamp_ns,
+        level,
+        color,
+        Ustr::from(&component),
+        Cow::from(message),
+    );
 }
 
-/// Flush logger buffers.
-#[no_mangle]
-pub extern "C" fn logger_flush() {
-    log::logger().flush()
+#[pymethods]
+impl FileWriterConfig {
+    #[new]
+    pub fn py_new(
+        directory: Option<String>,
+        file_name: Option<String>,
+        file_format: Option<String>,
+    ) -> Self {
+        Self::new(directory, file_name, file_format)
+    }
+}
+
+#[pymethods]
+impl LoggerConfig {
+    #[staticmethod]
+    #[pyo3(name = "from_spec")]
+    pub fn py_from_spec(spec: String) -> Self {
+        LoggerConfig::from_spec(&spec)
+    }
 }

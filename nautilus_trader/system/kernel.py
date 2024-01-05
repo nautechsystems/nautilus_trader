@@ -25,6 +25,9 @@ from datetime import timedelta
 
 import msgspec
 
+# from nautilus_trader.core import nautilus_pyo3
+# from nautilus_trader.core.nautilus_pyo3 import init_logging
+# from nautilus_trader.core.nautilus_pyo3 import init_tracing
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.cache.database import CacheDatabaseAdapter
@@ -158,6 +161,8 @@ class NautilusKernel:
         logging: LoggingConfig = config.logging or LoggingConfig()
 
         init_logging(
+            # nautilus_pyo3.TraderId(self._trader_id.value),  # TODO!: Reimplementing logging config
+            # nautilus_pyo3.UUID4(self._instance_id.value),  # TODO!: Reimplementing logging config
             self._trader_id,
             self._instance_id,
             logging.spec_string(),

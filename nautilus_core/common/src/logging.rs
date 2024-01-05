@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
+    borrow::Cow,
     collections::HashMap,
     env, fmt,
     fs::{create_dir_all, File},
@@ -25,13 +26,18 @@ use std::{
 };
 
 use chrono::{prelude::*, Utc};
-use log::{kv::Key, set_boxed_logger, set_max_level, Level, LevelFilter, Log, STATIC_MAX_LEVEL};
+use log::{
+    debug, error, info,
+    kv::{Key, ToValue, Value},
+    set_boxed_logger, set_max_level, warn, Level, LevelFilter, Log, STATIC_MAX_LEVEL,
+};
 use nautilus_core::{datetime::unix_nanos_to_iso8601, time::UnixNanos, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde::{Deserialize, Serialize};
+use tracing_subscriber::EnvFilter;
 use ustr::Ustr;
 
-use crate::enums::LogColor;
+use crate::enums::{LogColor, LogLevel};
 
 #[cfg_attr(
     feature = "python",
@@ -139,6 +145,52 @@ impl FileWriterConfig {
             file_format,
         }
     }
+}
+
+/// Initialize tracing.
+///
+/// Tracing is meant to be used to trace/debug async Rust code. It can be
+/// configured to filter modules and write up to a specific level only using
+/// by passing a configuration using the `RUST_LOG` environment variable.
+///
+/// # Safety
+///
+/// Should only be called once during an applications run, ideally at the
+/// beginning of the run.
+pub fn init_tracing() {
+    // Skip tracing initialization if `RUST_LOG` is not set
+    if let Ok(v) = env::var("RUST_LOG") {
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::new(v.clone()))
+            .try_init()
+            .unwrap_or_else(|e| eprintln!("Cannot set tracing subscriber because of error: {e}"));
+        println!("Initialized tracing logs with RUST_LOG={v}");
+    }
+}
+
+/// Initialize logging.
+///
+/// Logging should be used for Python and sync Rust logic which is most of
+/// the components in the main `nautilus_trader` package.
+/// Logging can be configured to filter components and write up to a specific level only
+/// by passing a configuration using the `NAUTILUS_LOG` environment variable.
+///
+/// # Safety
+///
+/// Should only be called once during an applications run, ideally at the
+/// beginning of the run.
+pub fn init_logging(
+    trader_id: TraderId,
+    instance_id: UUID4,
+    config_spec: String,
+    directory: Option<String>,
+    file_name: Option<String>,
+    file_format: Option<String>,
+) {
+    let config = LoggerConfig::from_spec(&config_spec);
+    let file_writer_config = FileWriterConfig::new(directory, file_name, file_format);
+
+    Logger::init_with_config(trader_id, instance_id, file_writer_config, config);
 }
 
 /// Provides a high-performance logger utilizing a MPSC channel under the hood.
@@ -553,6 +605,31 @@ impl Logger {
         match file_buf.flush() {
             Ok(()) => {}
             Err(e) => eprintln!("Error writing to file: {e:?}"),
+        }
+    }
+}
+
+pub fn log(
+    timestamp_ns: UnixNanos,
+    level: LogLevel,
+    color: LogColor,
+    component: Ustr,
+    message: Cow<'_, str>,
+) {
+    let color = Value::from(color as u8);
+
+    match level {
+        LogLevel::Debug => {
+            debug!(timestamp = timestamp_ns, component = component.to_value(), color = color; "{}", message);
+        }
+        LogLevel::Info => {
+            info!(timestamp = timestamp_ns, component = component.to_value(), color = color; "{}", message);
+        }
+        LogLevel::Warning => {
+            warn!(timestamp = timestamp_ns, component = component.to_value(), color = color; "{}", message);
+        }
+        LogLevel::Error => {
+            error!(timestamp = timestamp_ns, component = component.to_value(), color = color; "{}", message);
         }
     }
 }

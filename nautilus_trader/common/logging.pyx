@@ -50,6 +50,12 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 
 
+# TODO!: Reimplementing logging config
+# from nautilus_trader.core import nautilus_pyo3
+# from nautilus_trader.core.nautilus_pyo3 import logger_log
+
+
+
 cpdef void init_tracing():
     tracing_init()
 
@@ -58,7 +64,7 @@ cpdef void init_logging(
     TraderId trader_id,
     UUID4 instance_id,
     str config_spec,
-    str file_directory,
+    str directory,
     str file_name,
     str file_format,
 ):
@@ -68,7 +74,7 @@ cpdef void init_logging(
         trader_id._mem,
         instance_id._mem,
         pystr_to_cstr(config_spec),
-        pystr_to_cstr(file_directory) if file_directory else NULL,
+        pystr_to_cstr(directory) if directory else NULL,
         pystr_to_cstr(file_name) if file_name else NULL,
         pystr_to_cstr(file_format) if file_format else NULL,
     )
@@ -243,6 +249,22 @@ cdef class Logger:
             pystr_to_cstr(message),
         )
 
+    # TODO!: Reimplementing logging config
+    # cdef void log(
+    #     self,
+    #     level,
+    #     color,
+    #     str component,
+    #     str message,
+    # ):
+    #     logger_log(
+    #         self._clock.timestamp_ns(),
+    #         level,
+    #         nautilus_pyo3.LogColor.Normal,  # In development
+    #         component,
+    #         message,
+    #     )
+
     cpdef void change_clock(self, Clock clock):
         """
         Change the loggers internal clock to the given clock.
@@ -401,6 +423,14 @@ cdef class LoggerAdapter:
             message,
         )
 
+        # TODO!: Reimplementing logging config
+        # self._logger.log(
+        #     nautilus_pyo3.LogLevel.Debug,
+        #     color,
+        #     self._component,
+        #     message,
+        # )
+
     cpdef void info(
         self, str message,
         LogColor color = LogColor.NORMAL,
@@ -430,6 +460,14 @@ cdef class LoggerAdapter:
             self._component_cstr,
             message,
         )
+
+        # TODO!: Reimplementing logging config
+        # self._logger.log(
+        #     nautilus_pyo3.LogLevel.Info,
+        #     color,
+        #     self._component,
+        #     message,
+        # )
 
     cpdef void warning(
         self,
@@ -462,6 +500,14 @@ cdef class LoggerAdapter:
             message,
         )
 
+        # TODO!: Reimplementing logging config
+        # self._logger.log(
+        #     nautilus_pyo3.LogLevel.Warning,
+        #     color,
+        #     self._component,
+        #     message,
+        # )
+
     cpdef void error(
         self,
         str message,
@@ -492,6 +538,14 @@ cdef class LoggerAdapter:
             self._component_cstr,
             message,
         )
+
+        # TODO!: Reimplementing logging config
+        # self._logger.log(
+        #     nautilus_pyo3.LogLevel.Error,
+        #     color,
+        #     self._component,
+        #     message,
+        # )
 
     cpdef void exception(
         self,

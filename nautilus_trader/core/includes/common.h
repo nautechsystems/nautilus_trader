@@ -460,14 +460,14 @@ void tracing_init(void);
  * beginning of the run.
  *
  * - Assume `config_spec_ptr` is a valid C string pointer.
- * - Assume `file_directory_ptr` is either NULL or a valid C string pointer.
+ * - Assume `directory_ptr` is either NULL or a valid C string pointer.
  * - Assume `file_name_ptr` is either NULL or a valid C string pointer.
  * - Assume `file_format_ptr` is either NULL or a valid C string pointer.
  */
 void logging_init(TraderId_t trader_id,
                   UUID4_t instance_id,
                   const char *config_spec_ptr,
-                  const char *file_directory_ptr,
+                  const char *directory_ptr,
                   const char *file_name_ptr,
                   const char *file_format_ptr);
 
