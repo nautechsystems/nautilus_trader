@@ -18,18 +18,18 @@ import pytest
 from nautilus_trader.adapters.betfair.parsing.core import betting_instruments_from_file
 from nautilus_trader.adapters.betfair.parsing.core import parse_betfair_file
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.mocks.data import setup_catalog
 from tests import TEST_DATA_DIR
 
 
 @pytest.fixture(name="memory_data_catalog")
 def fixture_memory_data_catalog() -> ParquetDataCatalog:
-    return data_catalog_setup(protocol="memory")
+    return setup_catalog(protocol="memory")
 
 
 @pytest.fixture(name="data_catalog")
 def fixture_data_catalog() -> ParquetDataCatalog:
-    return data_catalog_setup(protocol="file")
+    return setup_catalog(protocol="file")
 
 
 @pytest.fixture(name="betfair_catalog")

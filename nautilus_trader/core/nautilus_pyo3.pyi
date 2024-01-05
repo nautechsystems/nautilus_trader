@@ -1251,9 +1251,10 @@ class SocketConfig:
 
 class NautilusDataType(Enum):
     OrderBookDelta = 1
-    QuoteTick = 2
-    TradeTick = 3
-    Bar = 4
+    OrderBookDepth10 = 2
+    QuoteTick = 3
+    TradeTick = 4
+    Bar = 5
 
 class DataBackendSession:
     def __init__(self, chunk_size: int = 5000) -> None: ...

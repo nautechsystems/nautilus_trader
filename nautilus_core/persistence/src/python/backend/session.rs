@@ -14,7 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::{ffi::cvec::CVec, python::to_pyruntime_err};
-use nautilus_model::data::{bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick};
+use nautilus_model::data::{
+    bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick, trade::TradeTick,
+};
 use pyo3::{prelude::*, types::PyCapsule};
 
 use crate::backend::session::{DataBackendSession, DataQueryResult};
@@ -25,9 +27,10 @@ use crate::backend::session::{DataBackendSession, DataQueryResult};
 pub enum NautilusDataType {
     // Custom = 0,  # First slot reserved for custom data
     OrderBookDelta = 1,
-    QuoteTick = 2,
-    TradeTick = 3,
-    Bar = 4,
+    OrderBookDepth10 = 2,
+    QuoteTick = 3,
+    TradeTick = 4,
+    Bar = 5,
 }
 
 #[pymethods]
@@ -64,6 +67,9 @@ impl DataBackendSession {
         match data_type {
             NautilusDataType::OrderBookDelta => slf
                 .add_file::<OrderBookDelta>(table_name, file_path, sql_query)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::OrderBookDepth10 => slf
+                .add_file::<OrderBookDepth10>(table_name, file_path, sql_query)
                 .map_err(to_pyruntime_err),
             NautilusDataType::QuoteTick => slf
                 .add_file::<QuoteTick>(table_name, file_path, sql_query)

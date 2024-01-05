@@ -13,22 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
+from pathlib import Path
 
 import pandas as pd
 
-from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
 from nautilus_trader.core.nautilus_pyo3 import NautilusDataType
 from nautilus_trader.model.data import capsule_to_list
+from tests import TEST_DATA_DIR
 
 
-def test_backend_session_order_book() -> None:
+def test_backend_session_order_book_deltas() -> None:
     # Arrange
-    parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/order_book_deltas.parquet")
-    assert pd.read_parquet(parquet_data_path).shape[0] == 1077
+    data_path = Path(TEST_DATA_DIR) / "order_book_deltas.parquet"
     session = DataBackendSession()
-    session.add_file(NautilusDataType.OrderBookDelta, "order_book_deltas", parquet_data_path)
+    session.add_file(NautilusDataType.OrderBookDelta, "order_book_deltas", str(data_path))
 
     # Act
     result = session.to_query_result()
@@ -38,6 +37,7 @@ def test_backend_session_order_book() -> None:
         ticks.extend(capsule_to_list(chunk))
 
     # Assert
+    assert pd.read_parquet(data_path).shape[0] == 1077
     assert len(ticks) == 1077
     is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
     assert is_ascending
@@ -45,9 +45,9 @@ def test_backend_session_order_book() -> None:
 
 def test_backend_session_quotes() -> None:
     # Arrange
-    parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
+    data_path = Path(TEST_DATA_DIR) / "quote_tick_data.parquet"
     session = DataBackendSession()
-    session.add_file(NautilusDataType.QuoteTick, "quote_ticks", parquet_data_path)
+    session.add_file(NautilusDataType.QuoteTick, "quote_ticks", str(data_path))
 
     # Act
     result = session.to_query_result()
@@ -57,7 +57,7 @@ def test_backend_session_quotes() -> None:
         ticks.extend(capsule_to_list(chunk))
 
     # Assert
-    assert len(ticks) == 9500
+    assert len(ticks) == 9_500
     assert str(ticks[-1]) == "EUR/USD.SIM,1.12130,1.12132,0,0,1577919652000000125"
     is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
     assert is_ascending
@@ -65,9 +65,9 @@ def test_backend_session_quotes() -> None:
 
 def test_backend_session_trades() -> None:
     # Arrange
-    trades_path = os.path.join(PACKAGE_ROOT, "tests/test_data/trade_tick_data.parquet")
+    data_path = Path(TEST_DATA_DIR) / "trade_tick_data.parquet"
     session = DataBackendSession()
-    session.add_file(NautilusDataType.TradeTick, "trade_ticks", trades_path)
+    session.add_file(NautilusDataType.TradeTick, "trade_ticks", str(data_path))
 
     # Act
     result = session.to_query_result()
@@ -84,9 +84,9 @@ def test_backend_session_trades() -> None:
 
 def test_backend_session_bars() -> None:
     # Arrange
-    trades_path = os.path.join(PACKAGE_ROOT, "tests/test_data/bar_data.parquet")
+    data_path = Path(TEST_DATA_DIR) / "bar_data.parquet"
     session = DataBackendSession()
-    session.add_file(NautilusDataType.Bar, "bars_01", trades_path)
+    session.add_file(NautilusDataType.Bar, "bars_01", str(data_path))
 
     # Act
     result = session.to_query_result()
@@ -103,11 +103,12 @@ def test_backend_session_bars() -> None:
 
 def test_backend_session_multiple_types() -> None:
     # Arrange
-    trades_path = os.path.join(PACKAGE_ROOT, "tests/test_data/trade_tick_data.parquet")
-    quotes_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
+    trades_path = Path(TEST_DATA_DIR) / "trade_tick_data.parquet"
+    quotes_path = Path(TEST_DATA_DIR) / "quote_tick_data.parquet"
+
     session = DataBackendSession()
-    session.add_file(NautilusDataType.TradeTick, "trades_01", trades_path)
-    session.add_file(NautilusDataType.QuoteTick, "quotes_01", quotes_path)
+    session.add_file(NautilusDataType.TradeTick, "trades_01", str(trades_path))
+    session.add_file(NautilusDataType.QuoteTick, "quotes_01", str(quotes_path))
 
     # Act
     result = session.to_query_result()
@@ -117,6 +118,6 @@ def test_backend_session_multiple_types() -> None:
         ticks.extend(capsule_to_list(chunk))
 
     # Assert
-    assert len(ticks) == 9600
+    assert len(ticks) == 9_600
     is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
     assert is_ascending
