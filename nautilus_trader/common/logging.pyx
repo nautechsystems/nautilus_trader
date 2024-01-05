@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -535,7 +535,7 @@ cpdef void nautilus_header(LoggerAdapter logger):
     logger.info(f"{color}=================================================================")
     logger.info(f"{color} NAUTILUS TRADER - Automated Algorithmic Trading Platform")
     logger.info(f"{color} by Nautech Systems Pty Ltd.")
-    logger.info(f"{color} Copyright (C) 2015-2023. All rights reserved.")
+    logger.info(f"{color} Copyright (C) 2015-2024. All rights reserved.")
     logger.info(f"{color}=================================================================")
     logger.info("")
     logger.info("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀")

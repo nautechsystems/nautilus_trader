@@ -23,7 +23,7 @@ sys.path.append(os.path.abspath("./_pygments"))
 # -- Project information -----------------------------------------------------
 project = "NautilusTrader"
 author = "Nautech Systems Pty Ltd."
-copyright = "2015-2023 Nautech Systems Pty Ltd"
+copyright = "2015-2024 Nautech Systems Pty Ltd"
 version = nautilus_trader.__version__
 
 # -- General configuration ---------------------------------------------------
