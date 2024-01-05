@@ -353,7 +353,7 @@ def test_decoding_unsupported_type() -> None:
         assert str(exinfo) == "Decoding objects of type <class 'list'> is unsupported"
 
 
-def test_logging_config_rust_config_string_with_default_config() -> None:
+def test_logging_config_spec_string_with_default_config() -> None:
     # Arrange
     logging = LoggingConfig()
 
@@ -364,7 +364,7 @@ def test_logging_config_rust_config_string_with_default_config() -> None:
     assert config_str == "stdout=info;is_colored"
 
 
-def test_logging_config_rust_config_string() -> None:
+def test_logging_config_spec_string() -> None:
     # Arrange
     logging = LoggingConfig(
         log_level="INFO",
