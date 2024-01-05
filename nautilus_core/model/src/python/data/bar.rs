@@ -282,12 +282,12 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::data::bar::{stubs::bar_audusd_sim_minute_bid, Bar};
+    use crate::data::bar::{stubs::stub_bar, Bar};
 
     #[rstest]
-    fn test_as_dict(bar_audusd_sim_minute_bid: Bar) {
+    fn test_as_dict(stub_bar: Bar) {
         pyo3::prepare_freethreaded_python();
-        let bar = bar_audusd_sim_minute_bid;
+        let bar = stub_bar;
 
         Python::with_gil(|py| {
             let dict_string = bar.py_as_dict(py).unwrap().to_string();
@@ -297,9 +297,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_as_from_dict(bar_audusd_sim_minute_bid: Bar) {
+    fn test_as_from_dict(stub_bar: Bar) {
         pyo3::prepare_freethreaded_python();
-        let bar = bar_audusd_sim_minute_bid;
+        let bar = stub_bar;
 
         Python::with_gil(|py| {
             let dict = bar.py_as_dict(py).unwrap();
@@ -309,9 +309,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_pyobject(bar_audusd_sim_minute_bid: Bar) {
+    fn test_from_pyobject(stub_bar: Bar) {
         pyo3::prepare_freethreaded_python();
-        let bar = bar_audusd_sim_minute_bid;
+        let bar = stub_bar;
 
         Python::with_gil(|py| {
             let bar_pyobject = bar.into_py(py);

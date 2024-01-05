@@ -191,7 +191,8 @@ impl Serializable for OrderBookDepth10 {}
 ////////////////////////////////////////////////////////////////////////////////
 // Stubs
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
+#[cfg(feature = "stubs")]
+#[allow(clippy::needless_range_loop)] // False positive?
 pub mod stubs {
     use rstest::fixture;
 
@@ -219,7 +220,7 @@ pub mod stubs {
         let mut quantity = 100.0;
         let mut order_id = 1;
 
-        for i in 0..10 {
+        for i in 0..DEPTH10_LEN {
             let order = BookOrder::new(
                 OrderSide::Buy,
                 Price::new(price, 2).unwrap(),
@@ -239,7 +240,7 @@ pub mod stubs {
         let mut quantity = 100.0;
         let mut order_id = 11;
 
-        for i in 0..10 {
+        for i in 0..DEPTH10_LEN {
             let order = BookOrder::new(
                 OrderSide::Sell,
                 Price::new(price, 2).unwrap(),
@@ -298,6 +299,8 @@ mod tests {
         assert_eq!(depth.bids[9].price.as_f64(), 90.0);
         assert_eq!(depth.bid_counts.len(), 10);
         assert_eq!(depth.ask_counts.len(), 10);
+        assert_eq!(depth.bid_counts[0], 1);
+        assert_eq!(depth.ask_counts[0], 1);
         assert_eq!(depth.flags, flags);
         assert_eq!(depth.sequence, sequence);
         assert_eq!(depth.ts_event, ts_event);
