@@ -16,7 +16,6 @@
 import datetime
 import sys
 from decimal import Decimal
-from typing import ClassVar
 
 import fsspec
 import pyarrow.dataset as ds
@@ -38,17 +37,15 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.test_kit.mocks.data import NewsEventData
-from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.mocks.data import setup_catalog
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 
 
 class TestPersistenceCatalog:
-    FS_PROTOCOL: ClassVar["str"] = "file"
-
     def setup(self) -> None:
-        self.catalog = data_catalog_setup(protocol=self.FS_PROTOCOL)
+        self.catalog = setup_catalog(protocol="file")
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
 
     def test_list_data_types(self, betfair_catalog: ParquetDataCatalog) -> None:

@@ -48,6 +48,7 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_list
@@ -351,7 +352,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         where: str | None = None,
         **kwargs: Any,
     ) -> list[Data | GenericData]:
-        if data_cls in (OrderBookDelta, QuoteTick, TradeTick, Bar):
+        if data_cls in (OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick, Bar):
             data = self.query_rust(
                 data_cls=data_cls,
                 instrument_ids=instrument_ids,
@@ -542,6 +543,8 @@ class ParquetDataCatalog(BaseDataCatalog):
     def _nautilus_data_cls_to_data_type(data_cls: type) -> NautilusDataType:
         if data_cls in (OrderBookDelta, OrderBookDeltas):
             return NautilusDataType.OrderBookDelta
+        elif data_cls == OrderBookDepth10:
+            return NautilusDataType.OrderBookDepth10
         elif data_cls == QuoteTick:
             return NautilusDataType.QuoteTick
         elif data_cls == TradeTick:
@@ -549,7 +552,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         elif data_cls == Bar:
             return NautilusDataType.Bar
         else:
-            raise RuntimeError("unsupported `data_cls` for Rust parquet, was {data_cls.__name__}")
+            raise RuntimeError(f"unsupported `data_cls` for Rust parquet, was {data_cls.__name__}")
 
     @staticmethod
     def _handle_table_nautilus(
@@ -563,10 +566,11 @@ class ParquetDataCatalog(BaseDataCatalog):
         module = data[0].__class__.__module__
         if "builtins" in module:
             cython_cls = {
-                "OrderBookDeltas": OrderBookDelta,
                 "OrderBookDelta": OrderBookDelta,
-                "TradeTick": TradeTick,
+                "OrderBookDeltas": OrderBookDelta,
+                "OrderBookDepth10": OrderBookDepth10,
                 "QuoteTick": QuoteTick,
+                "TradeTick": TradeTick,
                 "Bar": Bar,
             }.get(data_cls.__name__, data_cls.__name__)
             data = cython_cls.from_pyo3(data)
