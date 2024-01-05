@@ -18,7 +18,7 @@ NautilusTrader is developed and maintained by Nautech Systems, a technology
 company specializing in the development of high-performance trading systems. 
 For more information, visit https://nautilustrader.io.
 
-Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 
 ![nautechsystems](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/ns-logo.png?raw=true "nautechsystems")
 <img src="https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/ferris.png" width="128">
