@@ -32,7 +32,6 @@ class TestLogLevel:
             [LogLevel.INFO, "INF"],
             [LogLevel.WARNING, "WRN"],
             [LogLevel.ERROR, "ERR"],
-            [LogLevel.CRITICAL, "CRT"],
         ],
     )
     def test_log_level_to_str(self, enum, expected):
@@ -53,8 +52,6 @@ class TestLogLevel:
             ["WARNING", LogLevel.WARNING],
             ["ERR", LogLevel.ERROR],
             ["ERROR", LogLevel.ERROR],
-            ["CRT", LogLevel.CRITICAL],
-            ["CRITICAL", LogLevel.CRITICAL],
         ],
     )
     def test_log_level_from_str(self, string, expected):
@@ -173,26 +170,11 @@ class TestLoggerTests:
         # Assert
         assert True  # No exceptions raised
 
-    def test_log_critical_messages_to_console(self):
-        # Arrange
-        logger = Logger(
-            clock=TestClock(),
-            level_stdout=LogLevel.CRITICAL,
-            bypass=True,
-        )
-        logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
-
-        # Act
-        logger_adapter.critical("This is a log message.")
-
-        # Assert
-        assert True  # No exceptions raised
-
     def test_log_exception_messages_to_console(self):
         # Arrange
         logger = Logger(
             clock=TestClock(),
-            level_stdout=LogLevel.CRITICAL,
+            level_stdout=LogLevel.ERROR,
             bypass=True,
         )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)

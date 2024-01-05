@@ -94,7 +94,7 @@ pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
 
 #[fixture]
 pub fn xbtusd_bitmex() -> CryptoPerpetual {
-    return CryptoPerpetual::new(
+    CryptoPerpetual::new(
         InstrumentId::from("BTCUSDT.BITMEX"),
         Symbol::from("XBTUSD"),
         Currency::BTC(),
@@ -115,7 +115,7 @@ pub fn xbtusd_bitmex() -> CryptoPerpetual {
         0,
         0,
     )
-    .unwrap();
+    .unwrap()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

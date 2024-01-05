@@ -17,7 +17,7 @@ use std::{collections::HashMap, ops::Deref};
 
 use nautilus_core::{
     correctness::check_valid_string,
-    time::{AtomicTime, ClockMode, UnixNanos},
+    time::{get_atomic_clock_realtime, AtomicTime, UnixNanos},
 };
 use ustr::Ustr;
 
@@ -67,10 +67,6 @@ pub trait Clock {
     fn cancel_timers(&mut self);
 }
 
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
-)]
 pub struct TestClock {
     time: AtomicTime,
     timers: HashMap<Ustr, TestTimer>,
@@ -82,15 +78,11 @@ impl TestClock {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            time: AtomicTime::new(ClockMode::STATIC, 0),
+            time: AtomicTime::new(false, 0),
             timers: HashMap::new(),
             default_callback: None,
             callbacks: HashMap::new(),
         }
-    }
-
-    pub fn get_time_clone(&self) -> AtomicTime {
-        self.time.clone()
     }
 
     #[must_use]
@@ -102,7 +94,7 @@ impl TestClock {
         // Time should increase monotonically
         assert!(
             to_time_ns >= self.time.get_time_ns(),
-            "`to_time_ns` was < `self._time_ns`"
+            "`to_time_ns` was < `self.time.get_time_ns()`"
         );
 
         if set_time {
@@ -247,12 +239,8 @@ impl Clock for TestClock {
     }
 }
 
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
-)]
 pub struct LiveClock {
-    internal: AtomicTime,
+    time: &'static AtomicTime,
     timers: HashMap<Ustr, TestTimer>,
     default_callback: Option<EventHandler>,
     callbacks: HashMap<Ustr, EventHandler>,
@@ -262,7 +250,7 @@ impl LiveClock {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            internal: AtomicTime::new(ClockMode::LIVE, 0),
+            time: get_atomic_clock_realtime(),
             timers: HashMap::new(),
             default_callback: None,
             callbacks: HashMap::new(),
@@ -280,7 +268,7 @@ impl Deref for LiveClock {
     type Target = AtomicTime;
 
     fn deref(&self) -> &Self::Target {
-        &self.internal
+        self.time
     }
 }
 

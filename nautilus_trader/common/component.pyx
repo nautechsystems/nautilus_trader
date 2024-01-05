@@ -710,8 +710,8 @@ cdef class MessageBus:
     def __init__(
         self,
         TraderId trader_id not None,
-        Clock clock not None,
-        Logger logger not None,
+        Clock clock,
+        Logger logger,
         UUID4 instance_id = None,
         str name = None,
         Serializer serializer = None,

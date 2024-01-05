@@ -22,9 +22,9 @@ use super::get_datetime_tag;
 
 #[repr(C)]
 pub struct ClientOrderIdGenerator {
+    clock: &'static AtomicTime,
     trader_id: TraderId,
     strategy_id: StrategyId,
-    time: AtomicTime,
     count: usize,
 }
 
@@ -33,14 +33,14 @@ impl ClientOrderIdGenerator {
     pub fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
-        time: AtomicTime,
         initial_count: usize,
+        clock: &'static AtomicTime,
     ) -> Self {
         Self {
             trader_id,
             strategy_id,
-            time,
             count: initial_count,
+            clock,
         }
     }
 
@@ -58,7 +58,7 @@ impl ClientOrderIdGenerator {
     }
 
     pub fn generate(&mut self) -> ClientOrderId {
-        let datetime_tag = get_datetime_tag(self.time.get_time_ms());
+        let datetime_tag = get_datetime_tag(self.clock.get_time_ms());
         let trader_tag = self.trader_id.get_tag();
         let strategy_tag = self.strategy_id.get_tag();
         self.count += 1;
@@ -75,41 +75,40 @@ impl ClientOrderIdGenerator {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::time::AtomicTime;
+    use nautilus_core::time::get_atomic_clock_static;
     use nautilus_model::identifiers::{
         client_order_id::ClientOrderId, strategy_id::StrategyId, trader_id::TraderId,
     };
     use rstest::rstest;
 
-    use crate::{
-        clock::{stubs::test_clock, TestClock},
-        generators::client_order_id::ClientOrderIdGenerator,
-    };
+    use crate::generators::client_order_id::ClientOrderIdGenerator;
 
-    fn get_client_order_id_generator(
-        time: AtomicTime,
-        initial_count: Option<usize>,
-    ) -> ClientOrderIdGenerator {
+    fn get_client_order_id_generator(initial_count: Option<usize>) -> ClientOrderIdGenerator {
         let trader_id = TraderId::from("TRADER-001");
         let strategy_id = StrategyId::from("EMACross-001");
-        ClientOrderIdGenerator::new(trader_id, strategy_id, time, initial_count.unwrap_or(0))
+        ClientOrderIdGenerator::new(
+            trader_id,
+            strategy_id,
+            initial_count.unwrap_or(0),
+            get_atomic_clock_static(),
+        )
     }
 
     #[rstest]
-    fn test_init(test_clock: TestClock) {
-        let generator = get_client_order_id_generator(test_clock.get_time_clone(), None);
+    fn test_init() {
+        let generator = get_client_order_id_generator(None);
         assert_eq!(generator.count(), 0);
     }
 
     #[rstest]
-    fn test_init_with_initial_count(test_clock: TestClock) {
-        let generator = get_client_order_id_generator(test_clock.get_time_clone(), Some(7));
+    fn test_init_with_initial_count() {
+        let generator = get_client_order_id_generator(Some(7));
         assert_eq!(generator.count(), 7);
     }
 
     #[rstest]
-    fn test_generate_client_order_id_from_start(test_clock: TestClock) {
-        let mut generator = get_client_order_id_generator(test_clock.get_time_clone(), None);
+    fn test_generate_client_order_id_from_start() {
+        let mut generator = get_client_order_id_generator(None);
         let result1 = generator.generate();
         let result2 = generator.generate();
         let result3 = generator.generate();
@@ -129,8 +128,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_generate_client_order_id_from_initial(test_clock: TestClock) {
-        let mut generator = get_client_order_id_generator(test_clock.get_time_clone(), Some(5));
+    fn test_generate_client_order_id_from_initial() {
+        let mut generator = get_client_order_id_generator(Some(5));
         let result1 = generator.generate();
         let result2 = generator.generate();
         let result3 = generator.generate();
@@ -150,8 +149,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_reset(test_clock: TestClock) {
-        let mut generator = get_client_order_id_generator(test_clock.get_time_clone(), None);
+    fn test_reset() {
+        let mut generator = get_client_order_id_generator(None);
         generator.generate();
         generator.generate();
         generator.reset();
