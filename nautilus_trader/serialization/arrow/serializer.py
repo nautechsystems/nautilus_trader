@@ -84,8 +84,7 @@ def register_arrow(
         (i.e. if certain values may be missing in the first chunk).
     table : type, optional
         An optional table override for `cls`. Used if `cls` is going to be
-        transformed and stored in a table other than
-        its own.
+        transformed and stored in a table other than its own.
 
     """
     PyCondition.type(schema, pa.Schema, "schema")
