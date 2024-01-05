@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod logging;
 pub mod timer;
 
 use pyo3::prelude::*;
@@ -32,6 +33,9 @@ pub fn common(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<enums::LogFormat>()?;
     m.add_class::<LoggerConfig>()?;
     m.add_class::<FileWriterConfig>()?;
+    m.add_function(wrap_pyfunction!(logging::py_init_tracing, m)?)?;
+    m.add_function(wrap_pyfunction!(logging::py_init_logging, m)?)?;
+    m.add_function(wrap_pyfunction!(logging::py_logger_log, m)?)?;
 
     Ok(())
 }

@@ -30,7 +30,7 @@ cpdef void init_logging(
     TraderId trader_id,
     UUID4 instance_id,
     str config_spec,
-    str file_directory,
+    str directory,
     str file_name,
     str file_format,
 )
@@ -68,6 +68,14 @@ cdef class Logger:
         const char* component_cstr,
         str message,
     )
+
+    # cdef void log(
+    #     self,
+    #     level,
+    #     color,
+    #     str component,
+    #     str message,
+    # )
 
     cpdef void change_clock(self, Clock clock)
     cpdef void flush(self)
