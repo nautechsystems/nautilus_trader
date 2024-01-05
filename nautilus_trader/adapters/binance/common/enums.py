@@ -193,6 +193,7 @@ class BinanceOrderStatus(Enum):
     PENDING_CANCEL = "PENDING_CANCEL"
     REJECTED = "REJECTED"
     EXPIRED = "EXPIRED"
+    EXPIRED_IN_MATCH = "EXPIRED_IN_MATCH"
     NEW_INSURANCE = "NEW_INSURANCE"  # Liquidation with Insurance Fund
     NEW_ADL = "NEW_ADL"  # Counterparty Liquidation
 
@@ -478,6 +479,7 @@ class BinanceEnumParser:
             BinanceOrderStatus.NEW_ADL: OrderStatus.FILLED,
             BinanceOrderStatus.NEW_INSURANCE: OrderStatus.FILLED,
             BinanceOrderStatus.EXPIRED: OrderStatus.EXPIRED,
+            BinanceOrderStatus.EXPIRED_IN_MATCH: OrderStatus.CANCELED,  # Canceled due self-trade prevention (STP)
         }
 
         self.ext_to_int_order_side = {
