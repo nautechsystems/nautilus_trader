@@ -20,9 +20,20 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.rust.common cimport LogColor
-from nautilus_trader.core.rust.common cimport Logger_API
 from nautilus_trader.core.rust.common cimport LogLevel
+from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.identifiers cimport TraderId
 
+
+cpdef void init_tracing()
+cpdef void init_logging(
+    TraderId trader_id,
+    UUID4 instance_id,
+    str config_spec,
+    str file_directory,
+    str file_name,
+    str file_format,
+)
 
 cpdef LogColor log_color_from_str(str value)
 cpdef str log_color_to_str(LogColor value)
@@ -42,33 +53,30 @@ cdef str RES
 
 
 cdef class Logger:
-    cdef Logger_API _mem
     cdef Clock _clock
 
-    cpdef void change_clock(self, Clock clock)
+    cdef TraderId _trader_id
+    cdef UUID4 _instance_id
+    cdef str _machine_id
+    cdef bint _is_colored
+    cdef bint _is_bypassed
+
     cdef void log(
         self,
-        uint64_t timestamp,
         LogLevel level,
         LogColor color,
-        str component,
+        const char* component_cstr,
         str message,
-        dict annotations=*,
     )
-    cdef void _log(
-        self,
-        uint64_t timestamp,
-        LogLevel level,
-        LogColor color,
-        str component,
-        str message,
-        dict annotations,
-    )
+
+    cpdef void change_clock(self, Clock clock)
+    cpdef void flush(self)
 
 
 cdef class LoggerAdapter:
     cdef Logger _logger
     cdef str _component
+    cdef const char* _component_cstr
     cdef bint _is_colored
     cdef bint _is_bypassed
 
@@ -77,7 +85,6 @@ cdef class LoggerAdapter:
     cpdef void info(self, str message, LogColor color=*, dict annotations=*)
     cpdef void warning(self, str message, LogColor color=*, dict annotations=*)
     cpdef void error(self, str message, LogColor color=*, dict annotations=*)
-    cpdef void critical(self, str message, LogColor color=*, dict annotations=*)
     cpdef void exception(self, str message, ex, dict annotations=*)
 
 
