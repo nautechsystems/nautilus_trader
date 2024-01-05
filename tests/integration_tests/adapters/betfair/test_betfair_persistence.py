@@ -21,14 +21,14 @@ from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
-from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.mocks.data import setup_catalog
 from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 from tests.integration_tests.adapters.betfair.test_kit import load_betfair_data
 
 
 class TestBetfairPersistence:
     def setup(self):
-        self.catalog = data_catalog_setup(protocol="memory", path="/catalog")
+        self.catalog = setup_catalog(protocol="memory", path="/catalog")
         self.fs = self.catalog.fs
         self.instrument = betting_instrument()
 

@@ -52,7 +52,7 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.portfolio.portfolio import Portfolio
-from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.mocks.data import setup_catalog
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
@@ -2126,7 +2126,7 @@ class TestDataEngine:
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_request_instrument_when_catalog_registered(self):
         # Arrange
-        catalog = data_catalog_setup(protocol="file")
+        catalog = setup_catalog(protocol="file")
 
         idealpro = Venue("IDEALPRO")
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=idealpro)
@@ -2156,7 +2156,7 @@ class TestDataEngine:
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_request_instruments_for_venue_when_catalog_registered(self):
         # Arrange
-        catalog = data_catalog_setup(protocol="file")
+        catalog = setup_catalog(protocol="file")
 
         idealpro = Venue("IDEALPRO")
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=idealpro)

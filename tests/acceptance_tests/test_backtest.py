@@ -55,7 +55,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
-from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.mocks.data import setup_catalog
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TEST_DATA_DIR
@@ -697,7 +697,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
 class TestBacktestAcceptanceTestsOrderBookImbalance:
     def setup(self):
         # Fixture Setup
-        data_catalog_setup(protocol="memory")
+        setup_catalog(protocol="memory")
 
         config = BacktestEngineConfig(
             logging=LoggingConfig(bypass_logging=True),
@@ -758,7 +758,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
 class TestBacktestAcceptanceTestsMarketMaking:
     def setup(self):
         # Fixture Setup
-        data_catalog_setup(protocol="memory")
+        setup_catalog(protocol="memory")
 
         config = BacktestEngineConfig(
             logging=LoggingConfig(bypass_logging=True),
