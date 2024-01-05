@@ -75,6 +75,7 @@ const BAR_CLOSE_ADJUSTMENT_1M: u64 = NANOSECONDS_IN_SECOND * 60;
 const BAR_CLOSE_ADJUSTMENT_1H: u64 = NANOSECONDS_IN_SECOND * 60 * 60;
 const BAR_CLOSE_ADJUSTMENT_1D: u64 = NANOSECONDS_IN_SECOND * 60 * 60 * 24;
 
+#[must_use]
 pub fn parse_order_side(c: c_char) -> OrderSide {
     match c as u8 as char {
         'A' => OrderSide::Sell,
@@ -83,6 +84,7 @@ pub fn parse_order_side(c: c_char) -> OrderSide {
     }
 }
 
+#[must_use]
 pub fn parse_aggressor_side(c: c_char) -> AggressorSide {
     match c as u8 as char {
         'A' => AggressorSide::Seller,
@@ -144,7 +146,10 @@ pub fn parse_cfi_iso10926(value: &str) -> Result<(Option<AssetClass>, Option<Ins
 
 pub fn parse_min_price_increment(value: i64, currency: Currency) -> Result<Price> {
     match value {
-        0 | i64::MAX => Price::new(10f64.powi(-(currency.precision as i32)), currency.precision),
+        0 | i64::MAX => Price::new(
+            10f64.powi(-i32::from(currency.precision)),
+            currency.precision,
+        ),
         _ => Price::from_raw(value, currency.precision),
     }
 }
@@ -255,6 +260,7 @@ pub fn parse_options_contract(
     )
 }
 
+#[must_use]
 pub fn is_trade_msg(order_side: OrderSide, action: c_char) -> bool {
     order_side == OrderSide::NoOrderSide || action as u8 as char == 'T'
 }

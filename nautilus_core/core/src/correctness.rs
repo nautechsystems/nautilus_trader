@@ -208,7 +208,7 @@ mod tests {
         #[case] r: u64,
         #[case] desc: &str,
     ) {
-        assert!(check_u64_in_range_inclusive(value, l, r, desc).is_err())
+        assert!(check_u64_in_range_inclusive(value, l, r, desc).is_err());
     }
 
     #[rstest]

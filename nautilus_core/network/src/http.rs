@@ -284,7 +284,7 @@ mod tests {
 
     async fn start_test_server() -> Result<SocketAddr, Box<dyn std::error::Error + Send + Sync>> {
         let port = get_unique_port();
-        let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port))
+        let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}"))
             .await
             .unwrap();
         let addr = listener.local_addr().unwrap();
@@ -299,7 +299,7 @@ mod tests {
     #[tokio::test]
     async fn test_get() {
         let addr = start_test_server().await.unwrap();
-        let url = format!("http://{}", addr);
+        let url = format!("http://{addr}");
 
         let client = InnerHttpClient::default();
         let response = client
@@ -319,7 +319,7 @@ mod tests {
     #[tokio::test]
     async fn test_post() {
         let addr = start_test_server().await.unwrap();
-        let url = format!("http://{}", addr);
+        let url = format!("http://{addr}");
 
         let client = InnerHttpClient::default();
         let response = client
@@ -338,7 +338,7 @@ mod tests {
     #[tokio::test]
     async fn test_post_with_body() {
         let addr = start_test_server().await.unwrap();
-        let url = format!("http://{}", addr);
+        let url = format!("http://{addr}");
 
         let client = InnerHttpClient::default();
 
@@ -371,7 +371,7 @@ mod tests {
     #[tokio::test]
     async fn test_patch() {
         let addr = start_test_server().await.unwrap();
-        let url = format!("http://{}", addr);
+        let url = format!("http://{addr}");
 
         let client = InnerHttpClient::default();
         let response = client
@@ -390,7 +390,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete() {
         let addr = start_test_server().await.unwrap();
-        let url = format!("http://{}", addr);
+        let url = format!("http://{addr}");
 
         let client = InnerHttpClient::default();
         let response = client

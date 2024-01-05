@@ -18,6 +18,7 @@ use ustr::Ustr;
 
 use super::types::DatabentoPublisher;
 
+#[must_use]
 pub fn nautilus_instrument_id_from_databento(
     raw_symbol: Ustr,
     publisher: &DatabentoPublisher,
