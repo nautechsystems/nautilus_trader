@@ -43,136 +43,134 @@ from tests import TEST_DATA_DIR
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
-class TestBacktestEnginePerformance:
-    @staticmethod
-    def test_run_with_empty_strategy(benchmark):
-        def setup():
-            # Arrange
-            config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
-            engine = BacktestEngine(config=config)
+def test_run_with_empty_strategy(benchmark):
+    def setup():
+        # Arrange
+        config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
+        engine = BacktestEngine(config=config)
 
-            engine.add_venue(
-                venue=Venue("SIM"),
-                oms_type=OmsType.HEDGING,
-                account_type=AccountType.MARGIN,
-                base_currency=USD,
-                starting_balances=[Money(1_000_000, USD)],
-                fill_model=FillModel(),
-            )
+        engine.add_venue(
+            venue=Venue("SIM"),
+            oms_type=OmsType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[Money(1_000_000, USD)],
+            fill_model=FillModel(),
+        )
 
-            engine.add_instrument(USDJPY_SIM)
+        engine.add_instrument(USDJPY_SIM)
 
-            # Setup data
-            wrangler = QuoteTickDataWrangler(USDJPY_SIM)
-            provider = TestDataProvider()
-            ticks = wrangler.process_bar_data(
-                bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
-                ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
-            )
-            engine.add_data(ticks)
+        # Setup data
+        wrangler = QuoteTickDataWrangler(USDJPY_SIM)
+        provider = TestDataProvider()
+        ticks = wrangler.process_bar_data(
+            bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
+            ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
+        )
+        engine.add_data(ticks)
 
-            strategies = [Strategy()]
-            start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
-            end = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
-            return (engine, start, end, strategies), {}
+        strategies = [Strategy()]
+        start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
+        end = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
+        return (engine, start, end, strategies), {}
 
-        def run(engine, start, end, strategies):
-            engine.add_strategies(strategies=strategies)
-            engine.run(start=start, end=end)
+    def run(engine, start, end, strategies):
+        engine.add_strategies(strategies=strategies)
+        engine.run(start=start, end=end)
 
-        benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)
+    benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)
 
-    @staticmethod
-    def test_run_for_tick_processing(benchmark):
-        def setup():
-            config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
-            engine = BacktestEngine(config=config)
 
-            engine.add_venue(
-                venue=Venue("SIM"),
-                oms_type=OmsType.HEDGING,
-                account_type=AccountType.MARGIN,
-                base_currency=USD,
-                starting_balances=[Money(1_000_000, USD)],
-            )
+def test_run_for_tick_processing(benchmark):
+    def setup():
+        config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
+        engine = BacktestEngine(config=config)
 
-            engine.add_instrument(USDJPY_SIM)
+        engine.add_venue(
+            venue=Venue("SIM"),
+            oms_type=OmsType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[Money(1_000_000, USD)],
+        )
 
-            # Setup data
-            wrangler = QuoteTickDataWrangler(USDJPY_SIM)
-            provider = TestDataProvider()
-            ticks = wrangler.process_bar_data(
-                bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
-                ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
-            )
-            engine.add_data(ticks)
+        engine.add_instrument(USDJPY_SIM)
 
-            config = EMACrossConfig(
-                instrument_id=USDJPY_SIM.id,
-                bar_type=TestDataStubs.bartype_usdjpy_1min_bid(),
-                trade_size=Decimal(1_000_000),
-                fast_ema_period=10,
-                slow_ema_period=20,
-            )
-            strategy = EMACross(config=config)
+        # Setup data
+        wrangler = QuoteTickDataWrangler(USDJPY_SIM)
+        provider = TestDataProvider()
+        ticks = wrangler.process_bar_data(
+            bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
+            ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
+        )
+        engine.add_data(ticks)
 
-            start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
-            end = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
+        config = EMACrossConfig(
+            instrument_id=USDJPY_SIM.id,
+            bar_type=TestDataStubs.bartype_usdjpy_1min_bid(),
+            trade_size=Decimal(1_000_000),
+            fast_ema_period=10,
+            slow_ema_period=20,
+        )
+        strategy = EMACross(config=config)
 
-            return (engine, start, end, strategy), {}
+        start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+        end = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
 
-        def run(engine, start, end, strategy):
-            engine.add_strategy(strategy)
-            engine.run(start=start, end=end)
+        return (engine, start, end, strategy), {}
 
-        benchmark.pedantic(run, setup=setup, rounds=1, iterations=1)
+    def run(engine, start, end, strategy):
+        engine.add_strategy(strategy)
+        engine.run(start=start, end=end)
 
-    @staticmethod
-    def test_run_with_ema_cross_strategy(benchmark):
-        def setup():
-            config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
-            engine = BacktestEngine(config=config)
+    benchmark.pedantic(run, setup=setup, rounds=1, iterations=1)
 
-            provider = TestDataProvider()
-            interest_rate_data = pd.read_csv(TEST_DATA_DIR / "short-term-interest.csv")
-            config = FXRolloverInterestConfig(interest_rate_data)
-            fx_rollover_interest = FXRolloverInterestModule(config)
 
-            engine.add_venue(
-                venue=Venue("SIM"),
-                oms_type=OmsType.HEDGING,
-                account_type=AccountType.MARGIN,
-                base_currency=USD,
-                starting_balances=[Money(1_000_000, USD)],
-                modules=[fx_rollover_interest],
-            )
+def test_run_with_ema_cross_strategy(benchmark):
+    def setup():
+        config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
+        engine = BacktestEngine(config=config)
 
-            engine.add_instrument(USDJPY_SIM)
+        provider = TestDataProvider()
+        interest_rate_data = pd.read_csv(TEST_DATA_DIR / "short-term-interest.csv")
+        config = FXRolloverInterestConfig(interest_rate_data)
+        fx_rollover_interest = FXRolloverInterestModule(config)
 
-            # Setup data
-            wrangler = QuoteTickDataWrangler(USDJPY_SIM)
-            ticks = wrangler.process_bar_data(
-                bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
-                ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
-            )
-            engine.add_data(ticks)
+        engine.add_venue(
+            venue=Venue("SIM"),
+            oms_type=OmsType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[Money(1_000_000, USD)],
+            modules=[fx_rollover_interest],
+        )
 
-            config = EMACrossConfig(
-                instrument_id=USDJPY_SIM.id,
-                bar_type=TestDataStubs.bartype_usdjpy_1min_bid(),
-                trade_size=Decimal(1_000_000),
-                fast_ema_period=10,
-                slow_ema_period=20,
-            )
-            strategy = EMACross(config=config)
+        engine.add_instrument(USDJPY_SIM)
 
-            start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
-            end = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+        # Setup data
+        wrangler = QuoteTickDataWrangler(USDJPY_SIM)
+        ticks = wrangler.process_bar_data(
+            bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
+            ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
+        )
+        engine.add_data(ticks)
 
-            return (engine, start, end, [strategy]), {}
+        config = EMACrossConfig(
+            instrument_id=USDJPY_SIM.id,
+            bar_type=TestDataStubs.bartype_usdjpy_1min_bid(),
+            trade_size=Decimal(1_000_000),
+            fast_ema_period=10,
+            slow_ema_period=20,
+        )
+        strategy = EMACross(config=config)
 
-        def run(engine, start, end, strategies):
-            engine.add_strategies(strategies)
-            engine.run(start=start, end=end)
+        start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+        end = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
-        benchmark.pedantic(run, setup=setup, rounds=1, iterations=1)
+        return (engine, start, end, [strategy]), {}
+
+    def run(engine, start, end, strategies):
+        engine.add_strategies(strategies)
+        engine.run(start=start, end=end)
+
+    benchmark.pedantic(run, setup=setup, rounds=1, iterations=1)

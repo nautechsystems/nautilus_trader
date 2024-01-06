@@ -23,19 +23,19 @@ _FILL_MODEL = FillModel(
 )
 
 
-class TestFillModelPerformance:
-    def test_is_limit_filled(self, benchmark):
-        benchmark.pedantic(
-            target=_FILL_MODEL.is_limit_filled,
-            iterations=100_000,
-            rounds=1,
-        )
-        # ~0.0ms / ~0.1μs / 106ns minimum of 100,000 runs @ 1 iteration each run.
+def test_is_limit_filled(benchmark):
+    benchmark.pedantic(
+        target=_FILL_MODEL.is_limit_filled,
+        iterations=100_000,
+        rounds=1,
+    )
+    # ~0.0ms / ~0.1μs / 106ns minimum of 100,000 runs @ 1 iteration each run.
 
-    def test_is_stop_filled(self, benchmark):
-        benchmark.pedantic(
-            target=_FILL_MODEL.is_stop_filled,
-            iterations=100_000,
-            rounds=1,
-        )
-        # ~0.0ms / ~0.1μs / 106ns minimum of 100,000 runs @ 1 iteration each run.
+
+def test_is_stop_filled(benchmark):
+    benchmark.pedantic(
+        target=_FILL_MODEL.is_stop_filled,
+        iterations=100_000,
+        rounds=1,
+    )
+    # ~0.0ms / ~0.1μs / 106ns minimum of 100,000 runs @ 1 iteration each run.

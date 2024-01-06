@@ -49,7 +49,7 @@ def test_load_quote_ticks(benchmark: Any) -> None:
     benchmark.pedantic(run, rounds=10, iterations=1, warmup_rounds=1)
 
 
-@pytest.mark.skip("Development use")
+@pytest.mark.skip(reason="development_only")
 def test_load_single_stream(benchmark: Any) -> None:
     def setup():
         file_path = PACKAGE_ROOT / "bench_data" / "quotes_0005.parquet"
@@ -71,7 +71,7 @@ def test_load_single_stream(benchmark: Any) -> None:
     benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)
 
 
-@pytest.mark.skip("Development use")
+@pytest.mark.skip(reason="development_only")
 def test_load_multi_stream_catalog_v2(benchmark: Any) -> None:
     def setup():
         dir_path = PACKAGE_ROOT / "bench_data" / "multi_stream_data/"

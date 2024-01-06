@@ -15,57 +15,54 @@
 
 import uuid
 
-import pytest
-
 from nautilus_trader.core.uuid import UUID4
 
 
-class TestUUIDPerformance:
-    @pytest.mark.benchmark(group="core", disable_gc=True, warmup=True)
-    @staticmethod
-    def test_make_builtin_uuid(benchmark):
-        benchmark.pedantic(
-            target=uuid.uuid4,
-            iterations=100_000,
-            rounds=1,
-        )
+def test_make_builtin_uuid(benchmark):
+    benchmark.pedantic(
+        target=uuid.uuid4,
+        iterations=100_000,
+        rounds=1,
+    )
 
-    def test_make_builtin_uuid_bench(self, benchmark):
-        benchmark.pedantic(
-            target=uuid.uuid4,
-            rounds=100_000,
-            iterations=1,
-        )
-        # ~0.0ms / ~2.1μs / 2067ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @pytest.mark.benchmark(group="core", disable_gc=True, warmup=True)
-    @staticmethod
-    def test_make_nautilus_uuid(benchmark):
-        benchmark.pedantic(
-            target=UUID4,
-            iterations=100_000,
-            rounds=1,
-        )
+def test_make_builtin_uuid_bench(benchmark):
+    benchmark.pedantic(
+        target=uuid.uuid4,
+        rounds=100_000,
+        iterations=1,
+    )
+    # ~0.0ms / ~2.1μs / 2067ns minimum of 100,000 runs @ 1 iteration each run.
 
-    def test_make_nautilus_uuid_bench(self, benchmark):
-        benchmark.pedantic(
-            target=UUID4,
-            rounds=100_000,
-            iterations=1,
-        )
-        # ~0.0ms / ~0.8μs / 780ns minimum of 100,000 runs @ 1 iteration each run.
 
-    def test_nautilus_uuid_value_bench(self, benchmark):
-        uuid = UUID4()
+def test_make_nautilus_uuid(benchmark):
+    benchmark.pedantic(
+        target=UUID4,
+        iterations=100_000,
+        rounds=1,
+    )
 
-        def get_uuid_value():
-            uuid.value
 
-        benchmark.pedantic(
-            target=get_uuid_value,
-            rounds=100_000,
-            iterations=1,
-        )
-        # ~0.0ms / ~0.2μs / 152ns minimum of 100,000 runs @ 1 iteration each run. (readonly value)
-        # ~0.0ms / ~0.2μs / 163ns minimum of 100,000 runs @ 1 iteration each run. (cpdef str to_str())
-        # ~0.0ms / ~0.2μs / 212ns minimum of 100,000 runs @ 1 iteration each run. (property value)
+def test_make_nautilus_uuid_bench(benchmark):
+    benchmark.pedantic(
+        target=UUID4,
+        rounds=100_000,
+        iterations=1,
+    )
+    # ~0.0ms / ~0.8μs / 780ns minimum of 100,000 runs @ 1 iteration each run.
+
+
+def test_nautilus_uuid_value_bench(benchmark):
+    uuid = UUID4()
+
+    def get_uuid_value():
+        uuid.value
+
+    benchmark.pedantic(
+        target=get_uuid_value,
+        rounds=100_000,
+        iterations=1,
+    )
+    # ~0.0ms / ~0.2μs / 152ns minimum of 100,000 runs @ 1 iteration each run. (readonly value)
+    # ~0.0ms / ~0.2μs / 163ns minimum of 100,000 runs @ 1 iteration each run. (cpdef str to_str())
+    # ~0.0ms / ~0.2μs / 212ns minimum of 100,000 runs @ 1 iteration each run. (property value)
