@@ -216,7 +216,7 @@ Documentation of these changes in the release notes are made on a best-effort ba
 ### Branches
 
 - `master` branch will always reflect the source code for the latest released version
-- `nightly` branch is automatically merged from `develop` branch daily at 14:00 UTC, or when required
+- `nightly` branch is automatically merged from `develop` branch daily at 14:00 UTC, and also when required
 - `develop` branch is normally very active with frequent commits and may contain experimental features. We aim to maintain a stable
   passing build on this branch
 
@@ -257,7 +257,7 @@ Docker containers are built using a base `python:3.11-slim` with the following i
 
 - `nautilus_trader:latest` has the latest release version installed
 - `nautilus_trader:nightly` has the head of the `nightly` branch installed
-- `jupyterlab:latest` has the head of the `master` branch installed along with `jupyterlab` and an
+- `jupyterlab:latest` has the latest release version installed along with `jupyterlab` and an
   example backtest notebook with accompanying data
 - `jupyterlab:nightly` has the head of the `nightly` branch installed along with `jupyterlab` and an
   example backtest notebook with accompanying data
