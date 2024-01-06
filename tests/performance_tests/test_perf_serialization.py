@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import msgspec
-import pytest
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -26,14 +25,10 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.serialization.serializer import MsgSpecSerializer
-from nautilus_trader.test_kit.performance import PerformanceHarness
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-AUDUSD = TestIdStubs.audusd_id()
-
-
-class TestSerializationPerformance(PerformanceHarness):
+class TestSerializationPerformance:
     def setup(self):
         # Fixture Setup
         self.venue = Venue("SIM")
@@ -47,7 +42,7 @@ class TestSerializationPerformance(PerformanceHarness):
         )
 
         self.order = self.order_factory.market(
-            AUDUSD,
+            TestIdStubs.audusd_id(),
             OrderSide.BUY,
             Quantity.from_int(100_000),
         )
@@ -63,14 +58,8 @@ class TestSerializationPerformance(PerformanceHarness):
 
         self.serializer = MsgSpecSerializer(encoding=msgspec.msgpack)
 
-    @pytest.fixture(autouse=True)
-    @pytest.mark.benchmark(disable_gc=True, warmup=True)
-    def setup_benchmark(self, benchmark):
-        self.benchmark = benchmark
-
-    @pytest.mark.benchmark(disable_gc=True, warmup=True)
-    def test_serialize_submit_order(self):
-        self.benchmark.pedantic(
+    def test_serialize_submit_order(self, benchmark):
+        benchmark.pedantic(
             target=self.serializer.serialize,
             args=(self.command,),
             iterations=10_000,

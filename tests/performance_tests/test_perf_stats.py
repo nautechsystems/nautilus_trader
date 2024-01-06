@@ -14,17 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 import numpy as np
-import pytest
 
 from nautilus_trader.core.stats import fast_mean
 from nautilus_trader.core.stats import fast_std
-from nautilus_trader.test_kit.performance import PerformanceHarness
 
 
-class TestFunctionPerformance(PerformanceHarness):
-    @pytest.mark.benchmark(group="core", disable_gc=True, warmup=True)
-    def test_np_mean(self):
-        self.benchmark.pedantic(
+class TestFunctionPerformance:
+    def test_np_mean(self, benchmark):
+        benchmark.pedantic(
             target=np.mean,
             args=(np.random.default_rng(10).random(100),),
             iterations=10_000,
@@ -32,9 +29,8 @@ class TestFunctionPerformance(PerformanceHarness):
         )
         # ~0ms / ~9μs / 8464ns minimum of 10000 runs @ 1 iterations each run.
 
-    @pytest.mark.benchmark(group="core", disable_gc=True, warmup=True)
-    def test_np_std(self):
-        self.benchmark.pedantic(
+    def test_np_std(self, benchmark):
+        benchmark.pedantic(
             target=np.std,
             args=(np.random.default_rng(10).random(100),),
             iterations=10_000,
@@ -42,9 +38,8 @@ class TestFunctionPerformance(PerformanceHarness):
         )
         # ~0ms / ~20μs / 19517ns minimum of 10000 runs @ 1 iterations each run.
 
-    @pytest.mark.benchmark(group="core", disable_gc=True, warmup=True)
-    def test_fast_mean(self):
-        self.benchmark.pedantic(
+    def test_fast_mean(self, benchmark):
+        benchmark.pedantic(
             target=fast_mean,
             args=(np.random.default_rng(10).random(100),),
             iterations=100_000,
@@ -52,9 +47,8 @@ class TestFunctionPerformance(PerformanceHarness):
         )
         # ~0.0ms / ~0.4μs / 440ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @pytest.mark.benchmark(group="core", disable_gc=True, warmup=True)
-    def test_fast_std(self):
-        self.benchmark.pedantic(
+    def test_fast_std(self, benchmark):
+        benchmark.pedantic(
             target=fast_std,
             args=(np.random.default_rng(10).random(100),),
             iterations=100_000,

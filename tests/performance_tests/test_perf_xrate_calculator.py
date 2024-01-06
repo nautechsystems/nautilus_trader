@@ -17,7 +17,6 @@ from nautilus_trader.accounting.calculators import ExchangeRateCalculator
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.test_kit.performance import PerformanceBench
 
 
 class TestExchangeRateCalculatorPerformanceTests:
@@ -42,10 +41,10 @@ class TestExchangeRateCalculatorPerformanceTests:
             ask_quotes=ask_quotes,
         )
 
-    def test_get_xrate(self):
-        PerformanceBench.profile_function(
+    def test_get_xrate(self, benchmark):
+        benchmark.pedantic(
             target=self.get_xrate,
-            runs=100_000,
+            rounds=100_000,
             iterations=1,
         )
         # ~0.0ms / ~8.2μs / 8198ns minimum of 100,000 runs @ 1 iteration each run.

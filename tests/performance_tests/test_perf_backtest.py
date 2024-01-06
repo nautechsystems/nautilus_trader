@@ -33,7 +33,6 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
-from nautilus_trader.test_kit.performance import PerformanceHarness
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
@@ -44,7 +43,7 @@ from tests import TEST_DATA_DIR
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
-class TestBacktestEnginePerformance(PerformanceHarness):
+class TestBacktestEnginePerformance:
     @staticmethod
     def test_run_with_empty_strategy(benchmark):
         def setup():

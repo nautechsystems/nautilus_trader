@@ -16,10 +16,6 @@
 from nautilus_trader.core.message import Event
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.events import OrderSubmitted
-from nautilus_trader.test_kit.performance import PerformanceHarness
-
-
-EVENT = Event(UUID4(), 0, 0)
 
 
 class Experiments:
@@ -34,7 +30,7 @@ class Experiments:
         return x
 
 
-class TestPerformanceExperiments(PerformanceHarness):
+class TestPerformanceExperiments:
     @staticmethod
     def test_builtin_arithmetic(benchmark):
         benchmark.pedantic(
@@ -55,9 +51,11 @@ class TestPerformanceExperiments(PerformanceHarness):
 
     @staticmethod
     def test_is_instance(benchmark):
+        event = Event(UUID4(), 0, 0)
+
         benchmark.pedantic(
             target=isinstance,
-            args=(EVENT, OrderSubmitted),
+            args=(event, OrderSubmitted),
             iterations=100_000,
             rounds=1,
         )
