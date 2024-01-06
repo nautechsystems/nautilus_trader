@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from pathlib import Path
-
 import pandas as pd
 
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
@@ -25,7 +23,7 @@ from tests import TEST_DATA_DIR
 
 def test_backend_session_order_book_deltas() -> None:
     # Arrange
-    data_path = Path(TEST_DATA_DIR) / "nautilus" / "deltas.parquet"
+    data_path = TEST_DATA_DIR / "nautilus" / "deltas.parquet"
     session = DataBackendSession()
     session.add_file(NautilusDataType.OrderBookDelta, "order_book_deltas", str(data_path))
 
@@ -45,7 +43,7 @@ def test_backend_session_order_book_deltas() -> None:
 
 def test_backend_session_quotes() -> None:
     # Arrange
-    data_path = Path(TEST_DATA_DIR) / "nautilus" / "quotes.parquet"
+    data_path = TEST_DATA_DIR / "nautilus" / "quotes.parquet"
     session = DataBackendSession()
     session.add_file(NautilusDataType.QuoteTick, "quote_ticks", str(data_path))
 
@@ -65,7 +63,7 @@ def test_backend_session_quotes() -> None:
 
 def test_backend_session_trades() -> None:
     # Arrange
-    data_path = Path(TEST_DATA_DIR) / "nautilus" / "trades.parquet"
+    data_path = TEST_DATA_DIR / "nautilus" / "trades.parquet"
     session = DataBackendSession()
     session.add_file(NautilusDataType.TradeTick, "trade_ticks", str(data_path))
 
@@ -84,7 +82,7 @@ def test_backend_session_trades() -> None:
 
 def test_backend_session_bars() -> None:
     # Arrange
-    data_path = Path(TEST_DATA_DIR) / "nautilus" / "bars.parquet"
+    data_path = TEST_DATA_DIR / "nautilus" / "bars.parquet"
     session = DataBackendSession()
     session.add_file(NautilusDataType.Bar, "bars_01", str(data_path))
 
@@ -103,8 +101,8 @@ def test_backend_session_bars() -> None:
 
 def test_backend_session_multiple_types() -> None:
     # Arrange
-    trades_path = Path(TEST_DATA_DIR) / "nautilus" / "trades.parquet"
-    quotes_path = Path(TEST_DATA_DIR) / "nautilus" / "quotes.parquet"
+    trades_path = TEST_DATA_DIR / "nautilus" / "trades.parquet"
+    quotes_path = TEST_DATA_DIR / "nautilus" / "quotes.parquet"
 
     session = DataBackendSession()
     session.add_file(NautilusDataType.TradeTick, "trades_01", str(trades_path))
