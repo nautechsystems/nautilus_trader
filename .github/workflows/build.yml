@@ -113,7 +113,9 @@ jobs:
 
       - name: Run nautilus_core cargo tests (Linux, macOS)
         if: (runner.os == 'Linux') || (runner.os == 'macOS')
-        run: make cargo-test
+        run: |
+          cargo install cargo-nextest
+          make cargo-test
 
       - name: Run tests (Linux, macOS)
         if: (runner.os == 'Linux') || (runner.os == 'macOS')
