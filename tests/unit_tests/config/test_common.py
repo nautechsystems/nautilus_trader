@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import msgspec.json
+import msgspec
 import pandas as pd
 import pytest
 

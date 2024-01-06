@@ -16,7 +16,7 @@
 import time
 from collections.abc import Iterable
 
-import msgspec.json
+import msgspec
 import pandas as pd
 from betfair_parser.spec.betting.enums import MarketProjection
 from betfair_parser.spec.betting.type_definitions import MarketCatalogue

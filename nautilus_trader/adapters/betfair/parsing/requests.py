@@ -16,7 +16,7 @@ import hashlib
 from functools import lru_cache
 from typing import Literal
 
-import msgspec.json
+import msgspec
 import pandas as pd
 from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
 from betfair_parser.spec.accounts.type_definitions import AccountFundsResponse

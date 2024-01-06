@@ -15,7 +15,7 @@
 
 import asyncio
 
-import msgspec.json
+import msgspec
 import pandas as pd
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
