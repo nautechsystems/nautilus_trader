@@ -1,0 +1,25 @@
+name: nightly-merge
+
+on:
+  push:
+    branches: [nightly-merge-test]
+  schedule:
+    - cron: '0 14 * * *'  # At 14:00 UTC every day
+
+jobs:
+  nightly-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for all branches and tags
+
+      - name: Merge develop into nightly
+        run: |
+          git checkout nightly
+          git merge --no-ff origin/develop -m "Automated merge of develop into nightly"
+
+      - name: Push changes
+        run: |
+          git push origin nightly

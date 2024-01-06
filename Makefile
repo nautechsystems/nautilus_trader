@@ -102,7 +102,7 @@ cargo-doc:
 
 .PHONY: docker-build
 docker-build: clean
-	docker pull ${IMAGE_FULL} || docker pull ${IMAGE}:develop ||  true
+	docker pull ${IMAGE_FULL} || docker pull ${IMAGE}:nightly ||  true
 	docker build -f .docker/nautilus_trader.dockerfile --platform linux/x86_64 -t ${IMAGE_FULL} .
 
 .PHONY: docker-build-force

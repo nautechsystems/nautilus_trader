@@ -1,1 +1,4 @@
-{"latest": "", "develop": "develop"}
+{
+  "latest": "",
+  "nightly": "nightly"
+}

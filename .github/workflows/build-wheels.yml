@@ -1,10 +1,8 @@
 name: build-wheels
 
-# Build wheels on every push to `develop` branch
-
 on:
   push:
-    branches: [develop]
+    branches: [nightly]
 
 jobs:
   build-wheels:

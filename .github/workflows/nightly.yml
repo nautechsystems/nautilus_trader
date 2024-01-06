@@ -1,10 +1,8 @@
-name: build
+name: nightly
 
 on:
   push:
-    branches: [master, develop]
-  pull_request:
-    branches: [develop]
+    branches: [nightly]
 
 jobs:
   build:
@@ -12,7 +10,7 @@ jobs:
       fail-fast: false
       matrix:
         arch: [x64]
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.10", "3.11", "3.12"]
     defaults:
       run:

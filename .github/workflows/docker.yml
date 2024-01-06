@@ -1,10 +1,8 @@
 name: docker
 
-# Build NautilusTrader docker images
-
 on:
   push:
-    branches: [master, develop]
+    branches: [master, nightly]
 
 jobs:
   build-docker-images:
@@ -47,18 +45,18 @@ jobs:
         id: branch-name
         uses: tj-actions/branch-names@v7.0.7
 
-      - name: Build nautilus_trader image (develop)
-        if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
-        id: docker_build_trader_develop
+      - name: Build nautilus_trader image (nightly)
+        if: ${{ steps.branch-name.outputs.current_branch == 'nightly' }}
+        id: docker_build_trader_nightly
         uses: docker/build-push-action@v5
         with:
           file: ".docker/nautilus_trader.dockerfile"
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/nautilus_trader:develop
+          tags: ghcr.io/${{ github.repository_owner }}/nautilus_trader:nightly
           cache-from: type=gha
           cache-to: type=gha
       - name: Digest nautilus_trader image
-        run: echo ${{ steps.docker_build_trader_develop.outputs.digest }}
+        run: echo ${{ steps.docker_build_trader_nightly.outputs.digest }}
 
       - name: Build nautilus_trader image (latest)
         if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
@@ -73,20 +71,20 @@ jobs:
       - name: Digest nautilus_trader image
         run: echo ${{ steps.docker_build_trader_latest.outputs.digest }}
 
-      - name: Build jupyterlab image (develop)
-        if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
-        id: docker_build_jupyterlab_develop
+      - name: Build jupyterlab image (nightly)
+        if: ${{ steps.branch-name.outputs.current_branch == 'nightly' }}
+        id: docker_build_jupyterlab_nightly
         uses: docker/build-push-action@v5
         with:
           file: ".docker/jupyterlab.dockerfile"
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/jupyterlab:develop
+          tags: ghcr.io/${{ github.repository_owner }}/jupyterlab:nightly
           cache-from: type=gha
           cache-to: type=gha
           build-args: |
             GIT_TAG=${{ steps.branch-name.outputs.current_branch }}
       - name: Digest jupyterlab image
-        run: echo ${{ steps.docker_build_jupyterlab_develop.outputs.digest }}
+        run: echo ${{ steps.docker_build_jupyterlab_nightly.outputs.digest }}
 
       - name: Build jupyterlab image (latest)
         if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
