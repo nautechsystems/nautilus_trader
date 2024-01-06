@@ -15,6 +15,12 @@ jobs:
         with:
           fetch-depth: 0  # Fetch all history for all branches and tags
 
+      # Temporary config before nautilus-bot account
+      - name: Configure Git
+        run: |
+          git config --local user.email "chris@cjdsellers.io"
+          git config --local user.name "Chris Sellers"
+
       - name: Merge develop into nightly
         run: |
           git checkout nightly
