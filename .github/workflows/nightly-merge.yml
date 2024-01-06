@@ -3,8 +3,8 @@ name: nightly-merge
 on:
   push:
     branches: [nightly-merge-test]
-  schedule:
-    - cron: '0 14 * * *'  # At 14:00 UTC every day
+  # schedule:
+  #   - cron: '0 14 * * *'  # At 14:00 UTC every day
 
 jobs:
   nightly-merge:
