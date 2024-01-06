@@ -13,11 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
-
 import pytest
 
-from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.persistence.loaders import BinanceOrderBookDeltaDataLoader
@@ -25,12 +22,13 @@ from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from tests import TEST_DATA_DIR
 
 
 def test_load_binance_deltas() -> None:
     # Arrange
     instrument = TestInstrumentProvider.btcusdt_binance()
-    data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/binance/btcusdt-depth-snap.csv")
+    data_path = TEST_DATA_DIR / "binance" / "btcusdt-depth-snap.csv"
     df = BinanceOrderBookDeltaDataLoader.load(data_path)
 
     wrangler = OrderBookDeltaDataWrangler(instrument)

@@ -16,18 +16,17 @@
 The top-level package contains all sub-packages needed for NautilusTrader.
 """
 
-import os
 from importlib import resources
+from pathlib import Path
 
 import toml
 from importlib_metadata import version
 
 
-PACKAGE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PYPROJECT_PATH = os.path.join(PACKAGE_ROOT, "pyproject.toml")
+PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 
 try:
-    __version__ = toml.load(PYPROJECT_PATH)["tool"]["poetry"]["version"]
+    __version__ = toml.load(PACKAGE_ROOT / "pyproject.toml")["tool"]["poetry"]["version"]
 except FileNotFoundError:  # pragma: no cover
     __version__ = "latest"
 
