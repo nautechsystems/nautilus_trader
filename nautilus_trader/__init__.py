@@ -20,7 +20,6 @@ from importlib import resources
 from pathlib import Path
 
 import toml
-from importlib_metadata import version
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
@@ -60,10 +59,3 @@ def get_package_version_from_toml(
         if strip_specifiers:
             version = clean_version_string(version)
         return version
-
-
-def get_package_version_installed(package_name: str) -> str:
-    """
-    Return the package version installed for the given `package_name`.
-    """
-    return version(package_name)
