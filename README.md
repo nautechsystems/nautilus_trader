@@ -10,6 +10,7 @@
 | Branch    | Version                                                                                                                                             | Status                                                                                                                                                                                            |
 | :-------- | :-------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `master`  | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json)  | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)  |
+| `nightly` | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fnightly%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=nightly)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 | `develop` | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 
 | Platform           | Rust    | Python |
@@ -215,6 +216,7 @@ Documentation of these changes in the release notes are made on a best-effort ba
 ### Branches
 
 - `master` branch will always reflect the source code for the latest released version
+- `nightly` branch is automatically merged from `develop` branch daily at 14:00 UTC, or when required
 - `develop` branch is normally very active with frequent commits and may contain experimental features. We aim to maintain a stable
   passing build on this branch
 
@@ -254,8 +256,10 @@ The below are some examples of this:
 Docker containers are built using a base `python:3.11-slim` with the following image variant tags:
 
 - `nautilus_trader:latest` has the latest release version installed
-- `nautilus_trader:develop` has the head of the `develop` branch installed
-- `jupyterlab:develop` has the head of the `develop` branch installed along with `jupyterlab` and an
+- `nautilus_trader:nightly` has the head of the `nightly` branch installed
+- `jupyterlab:latest` has the head of the `master` branch installed along with `jupyterlab` and an
+  example backtest notebook with accompanying data
+- `jupyterlab:nightly` has the head of the `nightly` branch installed along with `jupyterlab` and an
   example backtest notebook with accompanying data
 
 The container images can be pulled as follows:
@@ -264,8 +268,8 @@ The container images can be pulled as follows:
 
 You can launch the backtest example container by running:
 
-    docker pull ghcr.io/nautechsystems/jupyterlab:develop --platform linux/amd64
-    docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:develop
+    docker pull ghcr.io/nautechsystems/jupyterlab:nightly --platform linux/amd64
+    docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:nightly
 
 Then open your browser at the following address:
 
@@ -399,6 +403,10 @@ class EMACross(Strategy):
 
 We aim to provide the most pleasant developer experience possible for this hybrid codebase of Python, Cython and Rust.
 Refer to the [Developer Guide](https://docs.nautilustrader.io/developer_guide/index.html) for helpful information.
+
+`cargo-nextest` is the standard Rust test runner for NautilusTrader. You can install it by running:
+
+    cargo install cargo-nextest    
 
 ## Contributing
 
