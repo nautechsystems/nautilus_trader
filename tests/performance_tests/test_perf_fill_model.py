@@ -14,28 +14,27 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.test_kit.performance import PerformanceHarness
 
 
-model = FillModel(
+_FILL_MODEL = FillModel(
     prob_fill_on_stop=0.95,
     prob_fill_on_limit=0.5,
     random_seed=42,
 )
 
 
-class TestFillModelPerformance(PerformanceHarness):
-    def test_is_limit_filled(self):
-        self.benchmark.pedantic(
-            target=model.is_limit_filled,
+class TestFillModelPerformance:
+    def test_is_limit_filled(self, benchmark):
+        benchmark.pedantic(
+            target=_FILL_MODEL.is_limit_filled,
             iterations=100_000,
             rounds=1,
         )
         # ~0.0ms / ~0.1μs / 106ns minimum of 100,000 runs @ 1 iteration each run.
 
-    def test_is_stop_filled(self):
-        self.benchmark.pedantic(
-            target=model.is_stop_filled,
+    def test_is_stop_filled(self, benchmark):
+        benchmark.pedantic(
+            target=_FILL_MODEL.is_stop_filled,
             iterations=100_000,
             rounds=1,
         )

@@ -33,7 +33,6 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.mocks.exec_clients import MockExecutionClient
-from nautilus_trader.test_kit.performance import PerformanceHarness
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
@@ -45,7 +44,7 @@ BINANCE = Venue("BINANCE")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
-class TestLiveExecutionPerformance(PerformanceHarness):
+class TestLiveExecutionPerformance:
     def setup(self):
         # Fixture Setup
         self.loop = asyncio.get_event_loop()
@@ -120,11 +119,6 @@ class TestLiveExecutionPerformance(PerformanceHarness):
             logger=self.logger,
         )
 
-    @pytest.fixture(autouse=True)
-    @pytest.mark.benchmark(disable_gc=True, warmup=True)
-    def setup_benchmark(self, benchmark):
-        self.benchmark = benchmark
-
     def submit_order(self):
         order = self.strategy.order_factory.market(
             BTCUSDT_BINANCE.id,
@@ -135,7 +129,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         self.strategy.submit_order(order)
 
     @pytest.mark.asyncio()
-    def test_execute_command(self):
+    def test_execute_command(self, benchmark):
         order = self.strategy.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
@@ -154,11 +148,11 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         def execute_command():
             self.exec_engine.execute(command)
 
-        self.benchmark.pedantic(execute_command, iterations=100, rounds=100, warmup_rounds=5)
+        benchmark.pedantic(execute_command, iterations=100, rounds=100, warmup_rounds=5)
         # ~0.0ms / ~0.2μs / 218ns minimum of 10,000 runs @ 1 iteration each run.
 
     @pytest.mark.asyncio()
-    async def test_submit_order(self):
+    async def test_submit_order(self, benchmark):
         self.exec_engine.start()
         await asyncio.sleep(1)
 
@@ -171,11 +165,11 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
             self.strategy.submit_order(order)
 
-        self.benchmark.pedantic(submit_order, iterations=100, rounds=100, warmup_rounds=5)
+        benchmark.pedantic(submit_order, iterations=100, rounds=100, warmup_rounds=5)
         # ~0.0ms / ~25.3μs / 25326ns minimum of 10,000 runs @ 1 iteration each run.
 
     @pytest.mark.asyncio()
-    async def test_submit_order_end_to_end(self):
+    async def test_submit_order_end_to_end(self, benchmark):
         self.exec_engine.start()
         await asyncio.sleep(1)
 
@@ -189,4 +183,4 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
                 self.strategy.submit_order(order)
 
-        self.benchmark.pedantic(run, rounds=10, warmup_rounds=5)
+        benchmark.pedantic(run, rounds=10, warmup_rounds=5)

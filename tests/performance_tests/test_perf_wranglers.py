@@ -15,14 +15,12 @@
 
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
-from nautilus_trader.test_kit.performance import PerformanceBench
-from nautilus_trader.test_kit.performance import PerformanceHarness
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
-class TestDataWranglersPerformance(PerformanceHarness):
-    def test_quote_tick_data_wrangler_process_tick_data(self):
+class TestDataWranglersPerformance:
+    def test_quote_tick_data_wrangler_process_tick_data(self, benchmark):
         usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
         wrangler = QuoteTickDataWrangler(instrument=usdjpy)
@@ -35,14 +33,14 @@ class TestDataWranglersPerformance(PerformanceHarness):
                 default_volume=1_000_000,
             )
 
-        PerformanceBench.profile_function(
+        benchmark.pedantic(
             target=wrangler_process,
-            runs=100,
+            rounds=100,
             iterations=1,
         )
         # ~7.8ms / ~7766.6μs / 7766626ns minimum of 100 runs @ 1 iteration each run.
 
-    def test_trade_tick_data_wrangler_process(self):
+    def test_trade_tick_data_wrangler_process(self, benchmark):
         ethusdt = TestInstrumentProvider.ethusdt_binance()
         wrangler = TradeTickDataWrangler(instrument=ethusdt)
         provider = TestDataProvider()
@@ -51,9 +49,9 @@ class TestDataWranglersPerformance(PerformanceHarness):
             # 69806 ticks in data
             wrangler.process(data=provider.read_csv_ticks("binance/ethusdt-trades.csv"))
 
-        PerformanceBench.profile_function(
+        benchmark.pedantic(
             target=wrangler_process,
-            runs=10,
+            rounds=10,
             iterations=1,
         )
         # ~500.2ms / ~500210.6μs / 500210608ns minimum of 10 runs @ 1 iteration each run.

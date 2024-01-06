@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
-
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -25,17 +23,14 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.test_kit.performance import PerformanceBench
-from nautilus_trader.test_kit.performance import PerformanceHarness
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-class TestObjectPerformance(PerformanceHarness):
-    @pytest.mark.benchmark(disable_gc=True, warmup=True)
-    def test_create_symbol(self):
-        self.benchmark.pedantic(
+class TestObjectPerformance:
+    def test_create_symbol(self, benchmark):
+        benchmark.pedantic(
             target=Symbol,
             args=("AUD/USD",),
             iterations=100_000,
@@ -43,9 +38,8 @@ class TestObjectPerformance(PerformanceHarness):
         )
         # ~0.0ms / ~0.4μs / 400ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @pytest.mark.benchmark(disable_gc=True, warmup=True)
-    def test_create_instrument_id(self):
-        self.benchmark.pedantic(
+    def test_create_instrument_id(self, benchmark):
+        benchmark.pedantic(
             target=InstrumentId,
             args=(Symbol("AUD/USD"), Venue("IDEALPRO")),
             iterations=100_000,
@@ -53,9 +47,8 @@ class TestObjectPerformance(PerformanceHarness):
         )
         # ~0.0ms / ~1.3μs / 1251ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @pytest.mark.benchmark(disable_gc=True, warmup=True)
-    def test_instrument_id_to_str(self):
-        self.benchmark.pedantic(
+    def test_instrument_id_to_str(self, benchmark):
+        benchmark.pedantic(
             target=str,
             args=(TestIdStubs.audusd_id(),),
             iterations=100_000,
@@ -63,8 +56,8 @@ class TestObjectPerformance(PerformanceHarness):
         )
         # ~0.0ms / ~0.2μs / 198ns minimum of 100,000 runs @ 1 iteration each run.
 
-    def test_create_bar(self):
-        self.benchmark.pedantic(
+    def test_create_bar(self, benchmark):
+        benchmark.pedantic(
             target=Bar,
             args=(
                 TestDataStubs.bartype_audusd_1min_bid(),
@@ -81,7 +74,7 @@ class TestObjectPerformance(PerformanceHarness):
         )
         # ~0.0ms / ~2.7μs / 2717ns minimum of 100,000 runs @ 1 iteration each run.
 
-    def test_create_quote_tick(self):
+    def test_create_quote_tick(self, benchmark):
         audusd_sim = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
         def create_quote_tick():
@@ -95,14 +88,14 @@ class TestObjectPerformance(PerformanceHarness):
                 ts_init=0,
             )
 
-        PerformanceBench.profile_function(
+        benchmark.pedantic(
             target=create_quote_tick,
-            runs=100000,
+            rounds=100000,
             iterations=1,
         )
         # ~0.0ms / ~2.8μs / 2798ns minimum of 100,000 runs @ 1 iteration each run.
 
-    def test_create_quote_tick_raw(self):
+    def test_create_quote_tick_raw(self, benchmark):
         audusd_sim = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
         def create_quote_tick():
@@ -120,14 +113,14 @@ class TestObjectPerformance(PerformanceHarness):
                 0,
             )
 
-        PerformanceBench.profile_function(
+        benchmark.pedantic(
             target=create_quote_tick,
-            runs=100000,
+            rounds=100000,
             iterations=1,
         )
         # ~0.0ms / ~0.2μs / 218ns minimum of 100,000 runs @ 1 iteration each run.
 
-    def test_create_trade_tick(self):
+    def test_create_trade_tick(self, benchmark):
         audusd_sim = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
         def create_trade_tick():
@@ -141,14 +134,14 @@ class TestObjectPerformance(PerformanceHarness):
                 ts_init=0,
             )
 
-        PerformanceBench.profile_function(
+        benchmark.pedantic(
             target=create_trade_tick,
-            runs=100000,
+            rounds=100000,
             iterations=1,
         )
         # ~0.0ms / ~2.5μs / 2492ns minimum of 100,000 runs @ 1 iteration each run.
 
-    def test_create_trade_tick_from_raw(self):
+    def test_create_trade_tick_from_raw(self, benchmark):
         audusd_sim = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
         def create_trade_tick():
@@ -164,9 +157,9 @@ class TestObjectPerformance(PerformanceHarness):
                 0,
             )
 
-        PerformanceBench.profile_function(
+        benchmark.pedantic(
             target=create_trade_tick,
-            runs=100000,
+            rounds=100000,
             iterations=1,
         )
         # ~0.0ms / ~0.7μs / 718ns minimum of 100,000 runs @ 1 iteration each run.
