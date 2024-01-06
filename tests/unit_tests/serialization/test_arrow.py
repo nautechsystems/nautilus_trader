@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import copy
-import pathlib
 import sys
 from typing import Any
 
@@ -48,7 +47,7 @@ from tests.unit_tests.serialization.conftest import nautilus_objects
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
-CATALOG_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/unit_tests/persistence/data_catalog")
+CATALOG_PATH = TESTS_PACKAGE_ROOT / "unit_tests" / "persistence" / "data_catalog"
 
 
 def _reset(catalog: ParquetDataCatalog) -> None:

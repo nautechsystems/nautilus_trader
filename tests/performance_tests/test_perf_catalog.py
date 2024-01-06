@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -53,7 +52,7 @@ def test_load_quote_ticks(benchmark: Any) -> None:
 @pytest.mark.skip("Development use")
 def test_load_single_stream(benchmark: Any) -> None:
     def setup():
-        file_path = Path(PACKAGE_ROOT) / "bench_data" / "quotes_0005.parquet"
+        file_path = PACKAGE_ROOT / "bench_data" / "quotes_0005.parquet"
         session = DataBackendSession()
         session.add_file(
             NautilusDataType.QuoteTick,
@@ -75,7 +74,7 @@ def test_load_single_stream(benchmark: Any) -> None:
 @pytest.mark.skip("Development use")
 def test_load_multi_stream_catalog_v2(benchmark: Any) -> None:
     def setup():
-        dir_path = os.path.join(PACKAGE_ROOT, "bench_data/multi_stream_data/")
+        dir_path = PACKAGE_ROOT / "bench_data" / "multi_stream_data/"
 
         session = DataBackendSession()
 
