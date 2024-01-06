@@ -15,11 +15,10 @@
 
 from unittest.mock import AsyncMock
 
-import msgspec.structs
+import msgspec
 import pytest
 from ibapi.contract import ContractDetails
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import InstrumentClass
@@ -29,9 +28,6 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
-
-
-# fmt: on
 
 
 def mock_ib_contract_calls(mocker, instrument_provider, contract_details: ContractDetails):

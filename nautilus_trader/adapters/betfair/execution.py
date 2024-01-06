@@ -16,7 +16,7 @@
 import asyncio
 from collections import defaultdict
 
-import msgspec.json
+import msgspec
 import pandas as pd
 from betfair_parser.exceptions import BetfairError
 from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
