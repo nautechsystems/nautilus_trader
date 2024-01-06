@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [master, develop]
+    branches: [master, nightly, develop]
   pull_request:
     branches: [develop]
 
@@ -12,8 +12,14 @@ jobs:
       fail-fast: false
       matrix:
         arch: [x64]
-        os: [ubuntu-latest, windows-latest]
-        python-version: ["3.10", "3.11", "3.12"]
+        include:
+          - os: ubuntu-latest
+            python-version: ["3.10", "3.11", "3.12"]
+          - os: windows-latest
+            python-version: ["3.10", "3.11", "3.12"]
+          - os: macos-latest
+            python-version: ["3.10", "3.11", "3.12"]
+            if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/nightly'
     defaults:
       run:
         shell: bash
