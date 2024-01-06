@@ -1320,7 +1320,9 @@ dependencies = [
  "itoa",
  "json-writer",
  "num_enum",
+ "pyo3",
  "streaming-iterator",
+ "strum",
  "thiserror",
  "time",
  "zstd",
@@ -2600,6 +2602,7 @@ dependencies = [
 name = "nautilus-pyo3"
 version = "0.14.0"
 dependencies = [
+ "nautilus-adapters",
  "nautilus-common",
  "nautilus-core",
  "nautilus-indicators",
