@@ -304,7 +304,7 @@ class MessageBusConfig(NautilusConfig, frozen=True):
         The actual window may extend up to one minute beyond the specified value since streams are
         trimmed at most once every minute.
         Note that this feature requires Redis version 6.2.0 or higher; otherwise it will result
-        in acommand syntax error.
+        in a command syntax error.
     stream : str, optional
         The additional prefix for externally published stream names (must have a `database` config).
     use_instance_id : bool, default False
