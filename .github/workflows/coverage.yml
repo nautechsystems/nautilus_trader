@@ -11,7 +11,7 @@ jobs:
       matrix:
         arch: [x64]
         os: [ubuntu-latest]
-        python-version: ["3.11"]
+        python-version: ["3.10"]  # Fails on 3.11 due Cython
     name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
