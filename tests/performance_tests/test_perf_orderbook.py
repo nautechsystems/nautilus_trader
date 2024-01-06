@@ -13,36 +13,48 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Any
+
 import pytest
 
-from nautilus_trader.model.book import OrderBook
+from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
+from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.objects import Price
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
-from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests import TEST_DATA_DIR
 
 
-def run_l3_test(book, feed):
-    for m in feed:
-        if m["op"] == "update":
-            book.update(order=m["order"])
-        elif m["op"] == "delete":
-            book.delete(order=m["order"])
-    return book
+@pytest.mark.skip(reason="development_only")
+def test_orderbook_spy_xnas_itch_mbo_l3(benchmark: Any) -> None:
+    loader = DatabentoDataLoader()
+    path = TEST_DATA_DIR / "databento" / "temp" / "spy-xnas-itch-20231127.mbo.dbn.zst"
+    instrument = TestInstrumentProvider.equity(symbol="SPY", venue="XNAS")
+    data = loader.from_dbn(path, instrument_id=instrument.id)
 
-
-@pytest.mark.skip(reason="Takes too long")
-def test_orderbook_updates(benchmark):
-    # We only care about the actual updates here, so instantiate orderbook and
-    # load updates outside of benchmark
-    book = OrderBook(
-        instrument_id=TestIdStubs.audusd_id(),
+    book = TestDataStubs.make_book(
+        instrument=instrument,
         book_type=BookType.L3_MBO,
     )
-    filename = TEST_DATA_DIR / "L3_feed.json"
-    feed = TestDataStubs.l3_feed(filename)
-    assert len(feed) == 100048  # 100k updates
 
-    # benchmark something
-    # book = benchmark(run_l3_test, book=book, feed=feed)
-    benchmark.pedantic(run_l3_test, args=(book, feed), rounds=10, iterations=10, warmup_rounds=5)
+    def _apply_deltas():
+        for delta in data:
+            if not isinstance(delta, OrderBookDelta):
+                continue
+            book.apply_delta(delta)
+
+    benchmark.run(
+        target=_apply_deltas,
+        iterations=1,
+        rounds=1,
+    )
+
+    # Assert
+    assert book.ts_last == 1701129555644234540
+    assert book.sequence == 429411899
+    assert book.count == 6197580
+    assert len(book.bids()) == 52
+    assert len(book.asks()) == 38
+    assert book.best_bid_price() == Price.from_str("454.84")
+    assert book.best_ask_price() == Price.from_str("454.90")
