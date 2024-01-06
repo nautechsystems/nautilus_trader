@@ -641,7 +641,7 @@ pub fn log(
 mod tests {
     use std::{collections::HashMap, time::Duration};
 
-    use log::{info, LevelFilter};
+    use log::{info, kv::ToValue, LevelFilter};
     use nautilus_core::uuid::UUID4;
     use nautilus_model::identifiers::trader_id::TraderId;
     use rstest::*;
@@ -694,7 +694,6 @@ mod tests {
         )
     }
 
-    #[ignore] // TODO: Ignore pre nextest setup
     #[rstest]
     fn test_logging_to_file() {
         let config = LoggerConfig {
@@ -716,7 +715,7 @@ mod tests {
         );
 
         info!(
-            timestamp = "1650000000000000",
+            timestamp = 1_650_000_000_000_000i64.to_value(),
             component = "RiskEngine";
             "This is a test."
         );
@@ -755,7 +754,6 @@ mod tests {
         );
     }
 
-    #[ignore] // TODO: Ignore pre nextest setup
     #[rstest]
     fn test_log_component_level_filtering() {
         let config = LoggerConfig::from_spec("stdout=Info;fileout=Debug;RiskEngine=Error");
@@ -774,7 +772,7 @@ mod tests {
         );
 
         info!(
-            timestamp = "1650000000000000",
+            timestamp = 1_650_000_000_000_000i64.to_value(),
             component = "RiskEngine";
             "This is a test."
         );
@@ -806,7 +804,6 @@ mod tests {
         );
     }
 
-    #[ignore] // TODO: Ignore pre nextest setup
     #[rstest]
     fn test_logging_to_file_in_json_format() {
         let config = LoggerConfig::from_spec("stdout=Info;fileout=Debug;RiskEngine=Info");
@@ -826,7 +823,7 @@ mod tests {
         );
 
         info!(
-            timestamp = "1650000000000000",
+            timestamp = 1_650_000_000_000_000i64.to_value(),
             component = "RiskEngine";
             "This is a test."
         );
