@@ -1290,21 +1290,6 @@ class DataTransformer:
     @staticmethod
     def pyo3_bars_to_record_batch_bytes(data: list[Bar]) -> bytes: ...
 
-class BarDataWrangler:
-    def __init__(
-        self,
-        bar_type: str,
-        price_precision: int,
-        size_precision: int,
-    ) -> None: ...
-    @property
-    def bar_type(self) -> str: ...
-    @property
-    def price_precision(self) -> int: ...
-    @property
-    def size_precision(self) -> int: ...
-    def process_record_batch_bytes(self, data: bytes) -> list[Bar]: ...
-
 class OrderBookDeltaDataWrangler:
     def __init__(
         self,
@@ -1350,10 +1335,26 @@ class TradeTickDataWrangler:
     def size_precision(self) -> int: ...
     def process_record_batch_bytes(self, data: bytes) -> list[TradeTick]: ...
 
+class BarDataWrangler:
+    def __init__(
+        self,
+        bar_type: str,
+        price_precision: int,
+        size_precision: int,
+    ) -> None: ...
+    @property
+    def bar_type(self) -> str: ...
+    @property
+    def price_precision(self) -> int: ...
+    @property
+    def size_precision(self) -> int: ...
+    def process_record_batch_bytes(self, data: bytes) -> list[Bar]: ...
+
 
 ###################################################################################################
 # Indicators
 ###################################################################################################
+
 class SimpleMovingAverage:
     def __init__(
         self,
