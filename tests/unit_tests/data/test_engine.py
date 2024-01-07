@@ -2186,7 +2186,7 @@ class TestDataEngine:
     # TODO: Implement with new Rust datafusion backend"
     # def test_request_quote_ticks_when_catalog_registered_using_rust(self) -> None:
     #     # Arrange
-    #     catalog = data_catalog_setup(protocol="file")
+    #     catalog = catalog_setup(protocol="file")
     #     self.clock.set_time(to_time_ns=1638058200000000000)  # <- Set to end of data
     #
     #     parquet_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.parquet")
@@ -2269,7 +2269,7 @@ class TestDataEngine:
 
     # def test_request_trade_ticks_when_catalog_registered_using_rust(self) -> None:
     #     # Arrange
-    #     catalog = data_catalog_setup(protocol="file")
+    #     catalog = catalog_setup(protocol="file")
     #     self.clock.set_time(to_time_ns=1638058200000000000)  # <- Set to end of data
     #
     #     parquet_data_path = os.path.join(TEST_DATA_DIR, "trade_tick_data.parquet")
@@ -2369,7 +2369,7 @@ class TestDataEngine:
     #
     # def test_request_bars_when_catalog_registered(self):
     #     # Arrange
-    #     catalog = data_catalog_setup(protocol="file")
+    #     catalog = catalog_setup(protocol="file")
     #     self.clock.set_time(to_time_ns=1638058200000000000)  # <- Set to end of data
     #
     #     bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()

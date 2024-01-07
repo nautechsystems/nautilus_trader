@@ -17,7 +17,6 @@ from enum import Enum
 
 import pyarrow as pa
 
-# fmt: off
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import BookOrder
@@ -31,9 +30,6 @@ from nautilus_trader.serialization.arrow.serializer import make_dict_deserialize
 from nautilus_trader.serialization.arrow.serializer import make_dict_serializer
 from nautilus_trader.serialization.arrow.serializer import register_arrow
 from nautilus_trader.serialization.base import register_serializable_object
-
-
-# fmt: on
 
 
 class SubscriptionStatus(Enum):

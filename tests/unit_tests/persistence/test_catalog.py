@@ -48,8 +48,8 @@ class TestPersistenceCatalog:
         self.catalog = setup_catalog(protocol="file")
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
 
-    def test_list_data_types(self, betfair_catalog: ParquetDataCatalog) -> None:
-        data_types = betfair_catalog.list_data_types()
+    def test_list_data_types(self, catalog_betfair: ParquetDataCatalog) -> None:
+        data_types = catalog_betfair.list_data_types()
         expected = [
             "betfair_ticker",
             "betting_instrument",
@@ -61,7 +61,7 @@ class TestPersistenceCatalog:
 
     def test_catalog_query_filtered(
         self,
-        betfair_catalog: ParquetDataCatalog,
+        catalog_betfair: ParquetDataCatalog,
     ) -> None:
         ticks = self.catalog.trade_ticks()
         assert len(ticks) == 283
@@ -80,7 +80,7 @@ class TestPersistenceCatalog:
 
     def test_catalog_query_custom_filtered(
         self,
-        betfair_catalog: ParquetDataCatalog,
+        catalog_betfair: ParquetDataCatalog,
     ) -> None:
         filtered_deltas = self.catalog.order_book_deltas(
             where=f"action = '{BookAction.DELETE.value}'",
@@ -89,14 +89,14 @@ class TestPersistenceCatalog:
 
     def test_catalog_instruments_df(
         self,
-        betfair_catalog: ParquetDataCatalog,
+        catalog_betfair: ParquetDataCatalog,
     ) -> None:
         instruments = self.catalog.instruments()
         assert len(instruments) == 2
 
     def test_catalog_instruments_filtered_df(
         self,
-        betfair_catalog: ParquetDataCatalog,
+        catalog_betfair: ParquetDataCatalog,
     ) -> None:
         instrument_id = self.catalog.instruments()[0].id.value
         instruments = self.catalog.instruments(instrument_ids=[instrument_id])
@@ -107,11 +107,11 @@ class TestPersistenceCatalog:
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_catalog_currency_with_null_max_price_loads(
         self,
-        betfair_catalog: ParquetDataCatalog,
+        catalog_betfair: ParquetDataCatalog,
     ) -> None:
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
-        betfair_catalog.write_data([instrument])
+        catalog_betfair.write_data([instrument])
 
         # Act
         instrument = self.catalog.instruments(instrument_ids=["AUD/USD.SIM"])[0]
@@ -145,7 +145,7 @@ class TestPersistenceCatalog:
     @pytest.mark.skip(reason="Not yet partitioning")
     def test_partioning_min_rows_per_group(
         self,
-        betfair_catalog: ParquetDataCatalog,
+        catalog_betfair: ParquetDataCatalog,
     ) -> None:
         # Arrange
         instrument = Equity(
@@ -191,7 +191,7 @@ class TestPersistenceCatalog:
 
     def test_catalog_filter(
         self,
-        betfair_catalog: ParquetDataCatalog,
+        catalog_betfair: ParquetDataCatalog,
     ) -> None:
         # Arrange, Act
         deltas = self.catalog.order_book_deltas()
@@ -274,11 +274,11 @@ class TestPersistenceCatalog:
 
     def test_catalog_bar_query_instrument_id(
         self,
-        betfair_catalog: ParquetDataCatalog,
+        catalog_betfair: ParquetDataCatalog,
     ) -> None:
         # Arrange
         bar = TestDataStubs.bar_5decimal()
-        betfair_catalog.write_data([bar])
+        catalog_betfair.write_data([bar])
 
         # Act
         data = self.catalog.bars(bar_types=[str(bar.bar_type)])
@@ -288,7 +288,7 @@ class TestPersistenceCatalog:
 
     def test_catalog_persists_equity(
         self,
-        betfair_catalog: ParquetDataCatalog,
+        catalog_betfair: ParquetDataCatalog,
     ) -> None:
         # Arrange
         instrument = Equity(
@@ -318,7 +318,7 @@ class TestPersistenceCatalog:
         )
 
         # Act
-        betfair_catalog.write_data([instrument, quote_tick])
+        catalog_betfair.write_data([instrument, quote_tick])
         instrument_from_catalog = self.catalog.instruments(
             instrument_ids=[instrument.id.value],
         )[0]
@@ -331,28 +331,28 @@ class TestPersistenceCatalog:
 
     def test_list_backtest_runs(
         self,
-        betfair_catalog: ParquetDataCatalog,
+        catalog_betfair: ParquetDataCatalog,
     ) -> None:
         # Arrange
-        mock_folder = f"{betfair_catalog.path}/backtest/abc"
-        betfair_catalog.fs.mkdir(mock_folder)
+        mock_folder = f"{catalog_betfair.path}/backtest/abc"
+        catalog_betfair.fs.mkdir(mock_folder)
 
         # Act
-        result = betfair_catalog.list_backtest_runs()
+        result = catalog_betfair.list_backtest_runs()
 
         # Assert
         assert result == ["abc"]
 
     def test_list_live_runs(
         self,
-        betfair_catalog: ParquetDataCatalog,
+        catalog_betfair: ParquetDataCatalog,
     ) -> None:
         # Arrange
-        mock_folder = f"{betfair_catalog.path}/live/abc"
-        betfair_catalog.fs.mkdir(mock_folder)
+        mock_folder = f"{catalog_betfair.path}/live/abc"
+        catalog_betfair.fs.mkdir(mock_folder)
 
         # Act
-        result = betfair_catalog.list_live_runs()
+        result = catalog_betfair.list_live_runs()
 
         # Assert
         assert result == ["abc"]

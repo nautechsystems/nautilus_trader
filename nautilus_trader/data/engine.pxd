@@ -139,7 +139,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_unsubscribe_bars(self, MarketDataClient client, BarType bar_type)
     cpdef void _handle_unsubscribe_data(self, DataClient client, DataType data_type)
     cpdef void _handle_request(self, DataRequest request)
-    cpdef void _query_data_catalog(self, DataRequest request)
+    cpdef void _query_catalog(self, DataRequest request)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 

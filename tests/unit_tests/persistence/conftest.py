@@ -22,26 +22,26 @@ from nautilus_trader.test_kit.mocks.data import setup_catalog
 from tests import TEST_DATA_DIR
 
 
-@pytest.fixture(name="memory_data_catalog")
-def fixture_memory_data_catalog() -> ParquetDataCatalog:
+@pytest.fixture(name="catalog_memory")
+def fixture_catalog_memory() -> ParquetDataCatalog:
     return setup_catalog(protocol="memory")
 
 
-@pytest.fixture(name="data_catalog")
-def fixture_data_catalog() -> ParquetDataCatalog:
+@pytest.fixture(name="catalog")
+def fixture_catalog() -> ParquetDataCatalog:
     return setup_catalog(protocol="file")
 
 
-@pytest.fixture(name="betfair_catalog")
-def fixture_betfair_catalog(data_catalog: ParquetDataCatalog) -> ParquetDataCatalog:
+@pytest.fixture(name="catalog_betfair")
+def fixture_catalog_betfair(catalog: ParquetDataCatalog) -> ParquetDataCatalog:
     filename = TEST_DATA_DIR / "betfair" / "1.166564490.bz2"
 
     # Write betting instruments
     instruments = betting_instruments_from_file(filename, currency="GBP")
-    data_catalog.write_data(instruments)
+    catalog.write_data(instruments)
 
     # Write data
     data = list(parse_betfair_file(filename, currency="GBP"))
-    data_catalog.write_data(data)
+    catalog.write_data(data)
 
-    return data_catalog
+    return catalog
