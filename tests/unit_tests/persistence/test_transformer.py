@@ -45,9 +45,9 @@ def test_pyo3_quote_ticks_to_record_batch_reader() -> None:
     ticks = wrangler.from_pandas(df)
 
     # Act
-    batches_bytes = DataTransformer.pyo3_quote_ticks_to_batch_bytes(ticks)
-    batches_stream = BytesIO(batches_bytes)
-    reader = pa.ipc.open_stream(batches_stream)
+    batch_bytes = DataTransformer.pyo3_quote_ticks_to_record_batch_bytes(ticks)
+    batch_stream = BytesIO(batch_bytes)
+    reader = pa.ipc.open_stream(batch_stream)
 
     # Assert
     assert len(ticks) == 100_000
@@ -62,9 +62,9 @@ def test_legacy_trade_ticks_to_record_batch_reader() -> None:
     ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv"))
 
     # Act
-    batches_bytes = DataTransformer.pyobjects_to_batches_bytes(ticks)
-    batches_stream = BytesIO(batches_bytes)
-    reader = pa.ipc.open_stream(batches_stream)
+    batch_bytes = DataTransformer.pyobjects_to_record_batch_bytes(ticks)
+    batch_stream = BytesIO(batch_bytes)
+    reader = pa.ipc.open_stream(batch_stream)
 
     # Assert
     assert len(ticks) == 69_806
@@ -95,9 +95,9 @@ def test_legacy_deltas_to_record_batch_reader() -> None:
     ]
 
     # Act
-    batches_bytes = DataTransformer.pyobjects_to_batches_bytes(ticks)
-    batches_stream = BytesIO(batches_bytes)
-    reader = pa.ipc.open_stream(batches_stream)
+    batch_bytes = DataTransformer.pyobjects_to_record_batch_bytes(ticks)
+    batch_stream = BytesIO(batch_bytes)
+    reader = pa.ipc.open_stream(batch_stream)
 
     # Assert
     assert len(ticks) == 1

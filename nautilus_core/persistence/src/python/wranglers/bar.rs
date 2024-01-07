@@ -60,7 +60,7 @@ impl BarDataWrangler {
         self.size_precision
     }
 
-    fn process_record_batches_bytes(&self, _py: Python, data: &[u8]) -> PyResult<Vec<Bar>> {
+    fn process_record_batch_bytes(&self, _py: Python, data: &[u8]) -> PyResult<Vec<Bar>> {
         // Create a StreamReader (from Arrow IPC)
         let cursor = Cursor::new(data);
         let reader = match StreamReader::try_new(cursor, None) {

@@ -115,14 +115,22 @@ class ArrowSerializer:
         data = sorted(data, key=lambda x: x.ts_init)
         processed = ArrowSerializer._unpack_container_objects(data_cls, data)
 
-        # TODO: WIP - Implement this for all types
-        if data_cls == QuoteTick:
+        if data_cls == OrderBookDelta:
+            pyo3_deltas = OrderBookDelta.to_pyo3_list(processed)
+            batch_bytes = DataTransformer.pyo3_order_book_deltas_to_record_batch_bytes(pyo3_deltas)
+        elif data_cls == QuoteTick:
             pyo3_quotes = QuoteTick.to_pyo3_list(processed)
-            batches_bytes = DataTransformer.pyo3_quote_ticks_to_batch_bytes(pyo3_quotes)
+            batch_bytes = DataTransformer.pyo3_quote_ticks_to_record_batch_bytes(pyo3_quotes)
+        elif data_cls == TradeTick:
+            pyo3_trades = TradeTick.to_pyo3_list(processed)
+            batch_bytes = DataTransformer.pyo3_trade_ticks_to_record_batch_bytes(pyo3_trades)
+        elif data_cls == Bar:
+            pyo3_bars = Bar.to_pyo3_list(processed)
+            batch_bytes = DataTransformer.pyo3_bars_to_record_batch_bytes(pyo3_bars)
         else:
-            batches_bytes = DataTransformer.pyobjects_to_batches_bytes(processed)
+            batch_bytes = DataTransformer.pyobjects_to_record_batch_bytes(processed)
 
-        reader = pa.ipc.open_stream(BytesIO(batches_bytes))
+        reader = pa.ipc.open_stream(BytesIO(batch_bytes))
         table: pa.Table = reader.read_all()
         return table
 

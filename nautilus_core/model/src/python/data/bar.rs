@@ -16,6 +16,7 @@
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     hash::{Hash, Hasher},
+    str::FromStr,
 };
 
 use nautilus_core::{
@@ -115,6 +116,12 @@ impl BarType {
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(BarType))
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(value: &str) -> PyResult<Self> {
+        BarType::from_str(value).map_err(to_pyvalue_err)
     }
 }
 

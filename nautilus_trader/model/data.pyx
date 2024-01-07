@@ -1016,25 +1016,27 @@ cdef class Bar(Data):
         """
         cdef list output = []
 
-        bar_type = None
+        pyo3_bar_type = None
         cdef uint8_t price_prec = 0
         cdef uint8_t volume_prec = 0
 
         cdef:
             Bar bar
+            BarType bar_type
         for bar in bars:
-            if bar_type is None:
-                bar_type = nautilus_pyo3.BarType.from_str(bar.bar_type.value)
+            if pyo3_bar_type is None:
+                bar_type = bar.bar_type
+                pyo3_bar_type = nautilus_pyo3.BarType.from_str(bar_type.to_str())
                 price_prec = bar._mem.open.precision
                 volume_prec = bar._mem.volume.precision
 
             pyo3_bar = nautilus_pyo3.Bar(
-                bar_type,
+                pyo3_bar_type,
                 nautilus_pyo3.Price.from_raw(bar._mem.open.raw, price_prec),
                 nautilus_pyo3.Price.from_raw(bar._mem.high.raw, price_prec),
-                nautilus_pyo3.Price.from_raw_c(bar._mem.low.raw, price_prec),
-                nautilus_pyo3.Price.from_raw_c(bar._mem.close.raw, price_prec),
-                nautilus_pyo3.Quantity.from_raw_c(bar._mem.volume.raw, volume_prec),
+                nautilus_pyo3.Price.from_raw(bar._mem.low.raw, price_prec),
+                nautilus_pyo3.Price.from_raw(bar._mem.close.raw, price_prec),
+                nautilus_pyo3.Quantity.from_raw(bar._mem.volume.raw, volume_prec),
                 bar._mem.ts_event,
                 bar._mem.ts_init,
             )
@@ -1944,6 +1946,56 @@ cdef class OrderBookDelta(Data):
 
         """
         return OrderBookDelta.clear_c(instrument_id, ts_event, ts_init, sequence)
+
+    @staticmethod
+    def to_pyo3_list(list[OrderBookDelta] deltas) -> list[nautilus_pyo3.OrderBookDelta]:
+        """
+        Return pyo3 Rust order book deltas converted from the given legacy Cython objects.
+
+        Parameters
+        ----------
+        pyo3_deltas : list[OrderBookDelta]
+            The pyo3 Rust order book deltas to convert from.
+
+        Returns
+        -------
+        list[nautilus_pyo3.OrderBookDelta]
+
+        """
+        cdef list output = []
+
+        pyo3_instrument_id = None
+        cdef uint8_t price_prec = 0
+        cdef uint8_t size_prec = 0
+
+        cdef:
+            OrderBookDelta delta
+            BookOrder book_order
+        for delta in deltas:
+            if pyo3_instrument_id is None:
+                pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(delta.instrument_id.value)
+                price_prec = delta.order.price.precision
+                size_prec = delta.order.size.precision
+
+            pyo3_book_order = nautilus_pyo3.BookOrder(
+               nautilus_pyo3.OrderSide(order_side_to_str(delta._mem.order.side)),
+               nautilus_pyo3.Price.from_raw(delta._mem.order.price.raw, price_prec),
+               nautilus_pyo3.Quantity.from_raw(delta._mem.order.size.raw, size_prec),
+               delta._mem.order.order_id,
+            )
+
+            pyo3_delta = nautilus_pyo3.OrderBookDelta(
+                pyo3_instrument_id,
+                nautilus_pyo3.BookAction(book_action_to_str(delta._mem.action)),
+                pyo3_book_order,
+                delta._mem.flags,
+                delta._mem.sequence,
+                delta._mem.ts_event,
+                delta._mem.ts_init,
+            )
+            output.append(pyo3_delta)
+
+        return output
 
     @staticmethod
     def from_pyo3_list(list pyo3_deltas) -> list[OrderBookDelta]:
@@ -3280,7 +3332,7 @@ cdef class QuoteTick(Data):
         """
         cdef list output = []
 
-        instrument_id = None
+        pyo3_instrument_id = None
         cdef uint8_t bid_prec = 0
         cdef uint8_t ask_prec = 0
         cdef uint8_t bid_size_prec = 0
@@ -3289,15 +3341,15 @@ cdef class QuoteTick(Data):
         cdef:
             QuoteTick quote
         for quote in quotes:
-            if instrument_id is None:
-                instrument_id = nautilus_pyo3.InstrumentId.from_str(quote.instrument_id.value)
+            if pyo3_instrument_id is None:
+                pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(quote.instrument_id.value)
                 bid_prec = quote.bid_price.precision
                 ask_prec = quote.ask_price.precision
                 bid_size_prec = quote.bid_size.precision
                 ask_size_prec = quote.ask_size.precision
 
             pyo3_quote = nautilus_pyo3.QuoteTick(
-                instrument_id,
+                pyo3_instrument_id,
                 nautilus_pyo3.Price.from_raw(quote._mem.bid_price.raw, bid_prec),
                 nautilus_pyo3.Price.from_raw(quote._mem.ask_price.raw, ask_prec),
                 nautilus_pyo3.Quantity.from_raw(quote._mem.bid_size.raw, bid_size_prec),
@@ -3716,6 +3768,48 @@ cdef class TradeTick(Data):
 
         """
         return TradeTick.to_dict_c(obj)
+
+    @staticmethod
+    def to_pyo3_list(list[TradeTick] trades) -> list[nautilus_pyo3.TradeTick]:
+        """
+        Return pyo3 Rust trade ticks converted from the given legacy Cython objects.
+
+        Parameters
+        ----------
+        ticks : list[TradeTick]
+            The legacy Cython Rust trade ticks to convert from.
+
+        Returns
+        -------
+        list[nautilus_pyo3.TradeTick]
+
+        """
+        cdef list output = []
+
+        pyo3_instrument_id = None
+        cdef uint8_t price_prec = 0
+        cdef uint8_t size_prec = 0
+
+        cdef:
+            TradeTick trade
+        for trade in trades:
+            if pyo3_instrument_id is None:
+                pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(trade.instrument_id.value)
+                price_prec = trade.price.precision
+                size_prec = trade.price.precision
+
+            pyo3_trade = nautilus_pyo3.TradeTick(
+                pyo3_instrument_id,
+                nautilus_pyo3.Price.from_raw(trade._mem.price.raw, price_prec),
+                nautilus_pyo3.Quantity.from_raw(trade._mem.size.raw, size_prec),
+                nautilus_pyo3.AggressorSide(aggressor_side_to_str(trade._mem.aggressor_side)),
+                nautilus_pyo3.TradeId(trade.trade_id.value),
+                trade._mem.ts_event,
+                trade._mem.ts_init,
+            )
+            output.append(pyo3_trade)
+
+        return output
 
     @staticmethod
     def from_pyo3_list(list pyo3_ticks) -> list[TradeTick]:
