@@ -14,18 +14,3 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod parsing;
-
-// use pyo3::prelude::*;
-
-// #[pymodule]
-// pub fn databento(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-//     m.add_function(wrap_pyfunction!(parsing::py_parse_equity, m)?)?;
-//     m.add_function(wrap_pyfunction!(parsing::py_parse_futures_contract, m)?)?;
-//     m.add_function(wrap_pyfunction!(parsing::py_parse_options_contract, m)?)?;
-//     m.add_function(wrap_pyfunction!(parsing::py_parse_mbo_msg, m)?)?;
-//     m.add_function(wrap_pyfunction!(parsing::py_parse_trade_msg, m)?)?;
-//     m.add_function(wrap_pyfunction!(parsing::py_parse_mbp1_msg, m)?)?;
-//     m.add_function(wrap_pyfunction!(parsing::py_parse_mbp10_msg, m)?)?;
-//
-//     Ok(())
-// }

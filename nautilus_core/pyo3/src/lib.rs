@@ -50,11 +50,11 @@ fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     // Set pyo3_nautilus to be recognized as a subpackage
     sys_modules.set_item(module_name, m)?;
 
-    // let n = "databento";
-    // let submodule = pyo3::wrap_pymodule!(nautilus_adapters::python::databento);
-    // m.add_wrapped(submodule)?;
-    // sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
-    // re_export_module_attributes(m, n)?;
+    let n = "databento";
+    let submodule = pyo3::wrap_pymodule!(databento);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    re_export_module_attributes(m, n)?;
 
     let n = "core";
     let submodule = pyo3::wrap_pymodule!(nautilus_core::python::core);
