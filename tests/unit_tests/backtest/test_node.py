@@ -35,7 +35,7 @@ from nautilus_trader.test_kit.mocks.data import setup_catalog
 
 class TestBacktestNode:
     def setup(self):
-        self.catalog = setup_catalog(protocol="file", path="./data_catalog")
+        self.catalog = setup_catalog(protocol="file", path="./catalog")
         self.venue_config = BacktestVenueConfig(
             name="SIM",
             oms_type="HEDGING",
@@ -144,7 +144,7 @@ class TestBacktestNode:
                 ],
                 "data": [
                     {
-                        "catalog_path": "data_catalog",
+                        "catalog_path": "catalog",
                         "data_cls": "nautilus_trader.model.data:QuoteTick",
                         "instrument_id": "AUD/USD.SIM",
                         "start_time": 1580398089820000000,

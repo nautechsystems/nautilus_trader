@@ -47,14 +47,14 @@ from tests.unit_tests.serialization.conftest import nautilus_objects
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
-CATALOG_PATH = TESTS_PACKAGE_ROOT / "unit_tests" / "persistence" / "data_catalog"
+CATALOG_PATH = TESTS_PACKAGE_ROOT / "unit_tests" / "persistence" / "catalog"
 
 
 def _reset(catalog: ParquetDataCatalog) -> None:
     """
     Cleanup resources before each test run.
     """
-    assert catalog.path.endswith("tests/unit_tests/persistence/data_catalog")
+    assert catalog.path.endswith("tests/unit_tests/persistence/catalog")
     if catalog.fs.exists(catalog.path):
         catalog.fs.rm(catalog.path, recursive=True)
     catalog.fs.mkdir(catalog.path)

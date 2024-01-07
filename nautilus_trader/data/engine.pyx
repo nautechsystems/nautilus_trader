@@ -1249,7 +1249,7 @@ cdef class DataEngine(Component):
         # Query data catalog
         if self._catalog:
             # For now we'll just query the catalog if its present (as very likely this is a backtest)
-            self._query_data_catalog(request)
+            self._query_catalog(request)
             return
 
         # Query data client
@@ -1315,7 +1315,7 @@ cdef class DataEngine(Component):
             except NotImplementedError:
                 self._log.error(f"Cannot handle request: unrecognized data type {request.data_type}.")
 
-    cpdef void _query_data_catalog(self, DataRequest request):
+    cpdef void _query_catalog(self, DataRequest request):
         cdef datetime start = request.data_type.metadata.get("start")
         cdef datetime end = request.data_type.metadata.get("end")
 

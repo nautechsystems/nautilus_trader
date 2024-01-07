@@ -12,7 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import asyncio
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -179,7 +181,7 @@ def parser() -> BetfairParser:
     return BetfairParser(currency="GBP")
 
 
-async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     async def write():
         writer.write(b"connected\r\n")
         while True:
@@ -205,7 +207,7 @@ async def socket_server():
 
 @pytest_asyncio.fixture(name="closing_socket_server")
 async def fixture_closing_socket_server():
-    async def handler(_, writer: asyncio.StreamWriter):
+    async def handler(_: Any, writer: asyncio.StreamWriter) -> None:
         async def write():
             print("SERVER CONNECTING")
             writer.write(b"connected\r\n")
