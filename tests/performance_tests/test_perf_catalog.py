@@ -26,7 +26,6 @@ from nautilus_trader.test_kit.mocks.data import load_catalog_with_stub_quote_tic
 from nautilus_trader.test_kit.mocks.data import setup_catalog
 
 
-@pytest.mark.skip("Too slow (currently WIP)")
 def test_write_quote_ticks(benchmark: Any) -> None:
     catalog = setup_catalog("file")
 

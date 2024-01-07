@@ -30,7 +30,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-AAPL_US = TestInstrumentProvider.equity(symbol="AAPL", venue="NASDAQ")
+_AAPL_US = TestInstrumentProvider.equity(symbol="AAPL", venue="NASDAQ")
 
 
 class TestConfigStubs:
@@ -62,7 +62,7 @@ class TestConfigStubs:
             strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
             config_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalanceConfig",
             config={
-                "instrument_id": instrument_id or AAPL_US,
+                "instrument_id": instrument_id or _AAPL_US,
                 "max_trade_size": 50,
             },
         )
@@ -87,7 +87,7 @@ class TestConfigStubs:
                 strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
                 config_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalanceConfig",
                 config={
-                    "instrument_id": AAPL_US.id,
+                    "instrument_id": _AAPL_US.id,
                     "max_trade_size": 50,
                 },
             ),
