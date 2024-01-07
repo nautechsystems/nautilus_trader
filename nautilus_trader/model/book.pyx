@@ -101,7 +101,7 @@ cdef class OrderBook(Data):
         self,
         InstrumentId instrument_id not None,
         BookType book_type,
-    ):
+    ) -> None:
         self._mem = orderbook_new(
             instrument_id._mem,
             book_type,

@@ -171,7 +171,7 @@ cdef class BarSpecification:
         int step,
         BarAggregation aggregation,
         PriceType price_type,
-    ):
+    ) -> None:
         Condition.positive_int(step, 'step')
 
         self._mem = bar_specification_new(
@@ -564,7 +564,7 @@ cdef class BarType:
         InstrumentId instrument_id not None,
         BarSpecification bar_spec not None,
         AggregationSource aggregation_source=AggregationSource.EXTERNAL,
-    ):
+    ) -> None:
         self._mem = bar_type_new(
             instrument_id._mem,
             bar_spec._mem,
@@ -764,7 +764,7 @@ cdef class Bar(Data):
         uint64_t ts_event,
         uint64_t ts_init,
         bint is_revision = False,
-    ):
+    ) -> None:
         Condition.true(high._mem.raw >= open._mem.raw, "high was < open")
         Condition.true(high._mem.raw >= low._mem.raw, "high was < low")
         Condition.true(high._mem.raw >= close._mem.raw, "high was < close")
@@ -1078,7 +1078,7 @@ cdef class DataType:
     the key and value contents of metadata must themselves be hashable.
     """
 
-    def __init__(self, type type not None, dict metadata = None):  # noqa (shadows built-in type)
+    def __init__(self, type type not None, dict metadata = None) -> None:  # noqa (shadows built-in type)
         if not issubclass(type, Data):
             raise TypeError("`type` was not a subclass of `Data`")
 
@@ -1132,7 +1132,7 @@ cdef class GenericData(Data):
         self,
         DataType data_type not None,
         Data data not None,
-    ):
+    ) -> None:
         self.data_type = data_type
         self.data = data
 
@@ -1195,7 +1195,7 @@ cdef class BookOrder:
         Price price not None,
         Quantity size not None,
         uint64_t order_id,
-    ):
+    ) -> None:
         self._mem = book_order_from_raw(
             side,
             price._mem.raw,
@@ -1453,7 +1453,7 @@ cdef class OrderBookDelta(Data):
         uint64_t ts_init,
         uint8_t flags=0,
         uint64_t sequence=0,
-    ):
+    ) -> None:
         # Placeholder for now
         cdef BookOrder_t book_order = order._mem if order is not None else book_order_from_raw(
             OrderSide.NO_ORDER_SIDE,
@@ -1974,7 +1974,7 @@ cdef class OrderBookDeltas(Data):
         self,
         InstrumentId instrument_id not None,
         list deltas not None,
-    ):
+    ) -> None:
         Condition.not_empty(deltas, "deltas")
 
         self.instrument_id = instrument_id
@@ -2100,7 +2100,7 @@ cdef class OrderBookDepth10(Data):
         uint64_t sequence,
         uint64_t ts_event,
         uint64_t ts_init,
-    ):
+    ) -> None:
         Condition.not_empty(bids, "bids")
         Condition.not_empty(asks, "asks")
         Condition.true(len(bids) == DEPTH10_LEN, f"`bids` length != 10, was {len(bids)}")
@@ -2492,7 +2492,7 @@ cdef class VenueStatus(Data):
         MarketStatus status,
         uint64_t ts_event,
         uint64_t ts_init,
-    ):
+    ) -> None:
         self.venue = venue
         self.status = status
         self.ts_event = ts_event
@@ -2596,7 +2596,7 @@ cdef class InstrumentStatus(Data):
         uint64_t ts_init,
         str trading_session = "Regular",
         HaltReason halt_reason = HaltReason.NOT_HALTED,
-    ):
+    ) -> None:
         if status != MarketStatus.HALT:
             Condition.equal(halt_reason, HaltReason.NOT_HALTED, "halt_reason", "NO_HALT")
 
@@ -2703,7 +2703,7 @@ cdef class InstrumentClose(Data):
         InstrumentCloseType close_type,
         uint64_t ts_event,
         uint64_t ts_init,
-    ):
+    ) -> None:
         self.instrument_id = instrument_id
         self.close_price = close_price
         self.close_type = close_type
@@ -2817,7 +2817,7 @@ cdef class QuoteTick(Data):
         Quantity ask_size not None,
         uint64_t ts_event,
         uint64_t ts_init,
-    ):
+    ) -> None:
         Condition.equal(bid_price._mem.precision, ask_price._mem.precision, "bid_price.precision", "ask_price.precision")
         Condition.equal(bid_size._mem.precision, ask_size._mem.precision, "bid_size.precision", "ask_size.precision")
 
@@ -3306,7 +3306,7 @@ cdef class TradeTick(Data):
         TradeId trade_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
-    ):
+    ) -> None:
         self._mem = trade_tick_new(
             instrument_id._mem,
             price._mem.raw,
@@ -3696,7 +3696,7 @@ cdef class Ticker(Data):
         InstrumentId instrument_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
-    ):
+    ) -> None:
         self.instrument_id = instrument_id
         self.ts_event = ts_event
         self.ts_init = ts_init
