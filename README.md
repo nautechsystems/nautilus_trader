@@ -404,7 +404,7 @@ class EMACross(Strategy):
 We aim to provide the most pleasant developer experience possible for this hybrid codebase of Python, Cython and Rust.
 Refer to the [Developer Guide](https://docs.nautilustrader.io/developer_guide/index.html) for helpful information.
 
-`cargo-nextest` is the standard Rust test runner for NautilusTrader. You can install it by running:
+[cargo-nextest](https://nexte.st) is the standard Rust test runner for NautilusTrader. You can install it by running:
 
     cargo install cargo-nextest    
 
