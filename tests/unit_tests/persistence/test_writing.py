@@ -45,8 +45,7 @@ def test_legacy_deltas_to_record_batch_reader() -> None:
 
     # Act
     batch_bytes = DataTransformer.pyobjects_to_record_batch_bytes(ticks)
-    batch_stream = BytesIO(batch_bytes)
-    reader = pa.ipc.open_stream(batch_stream)
+    reader = pa.ipc.open_stream(BytesIO(batch_bytes))
 
     # Assert
     assert len(ticks) == 1

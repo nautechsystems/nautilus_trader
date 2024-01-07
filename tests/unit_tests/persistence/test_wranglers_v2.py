@@ -23,25 +23,22 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TEST_DATA_DIR
 
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
-
-
 def test_quote_tick_data_wrangler() -> None:
     # Arrange
     path = TEST_DATA_DIR / "truefx" / "audusd-ticks.csv"
     df = pd.read_csv(path)
+    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
     # Act
-    wrangler = QuoteTickDataWrangler.from_instrument(AUDUSD_SIM)
+    wrangler = QuoteTickDataWrangler.from_instrument(instrument)
     ticks = wrangler.from_pandas(df)
 
-    cython_ticks = QuoteTick.from_pyo3_list(ticks)
+    cython_quotes = QuoteTick.from_pyo3_list(ticks)
 
     # Assert
     assert len(ticks) == 100_000
-    assert len(cython_ticks) == 100_000
-    assert isinstance(cython_ticks[0], QuoteTick)
+    assert len(cython_quotes) == 100_000
+    assert isinstance(cython_quotes[0], QuoteTick)
     assert str(ticks[0]) == "AUD/USD.SIM,0.67067,0.67070,1000000,1000000,1580398089820000000"
     assert str(ticks[-1]) == "AUD/USD.SIM,0.66934,0.66938,1000000,1000000,1580504394501000000"
 
@@ -50,16 +47,17 @@ def test_trade_tick_data_wrangler() -> None:
     # Arrange
     path = TEST_DATA_DIR / "binance" / "ethusdt-trades.csv"
     df = pd.read_csv(path)
+    instrument = TestInstrumentProvider.ethusdt_binance()
 
     # Act
-    wrangler = TradeTickDataWrangler.from_instrument(ETHUSDT_BINANCE)
+    wrangler = TradeTickDataWrangler.from_instrument(instrument)
     ticks = wrangler.from_pandas(df)
 
-    cython_ticks = TradeTick.from_pyo3_list(ticks)
+    cython_trades = TradeTick.from_pyo3_list(ticks)
 
     # Assert
     assert len(ticks) == 69806
-    assert len(cython_ticks) == 69806
-    assert isinstance(cython_ticks[0], TradeTick)
+    assert len(cython_trades) == 69806
+    assert isinstance(cython_trades[0], TradeTick)
     assert str(ticks[0]) == "ETHUSDT.BINANCE,423.76,2.67900,BUYER,148568980,1597399200223000000"
     assert str(ticks[-1]) == "ETHUSDT.BINANCE,426.89,0.16100,BUYER,148638715,1597417198693000000"
