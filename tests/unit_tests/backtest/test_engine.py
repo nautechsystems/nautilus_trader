@@ -369,7 +369,7 @@ class TestBacktestEngineData:
         path = TEST_DATA_DIR / "truefx" / "audusd-ticks.csv"
         df = pd.read_csv(path)
 
-        wrangler = wranglers_v2.QuoteTickDataWrangler.from_instrument(AUDUSD_SIM)
+        wrangler = wranglers_v2.QuoteTickDataWranglerV2.from_instrument(AUDUSD_SIM)
         ticks = wrangler.from_pandas(df)
 
         # Act, Assert

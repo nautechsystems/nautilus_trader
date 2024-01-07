@@ -25,7 +25,7 @@ from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
-from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
+from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWranglerV2
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TEST_DATA_DIR
@@ -38,7 +38,7 @@ def test_pyo3_quote_ticks_to_record_batch_reader() -> None:
     instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
     # Act
-    wrangler = QuoteTickDataWrangler.from_instrument(instrument)
+    wrangler = QuoteTickDataWranglerV2.from_instrument(instrument)
     quotes = wrangler.from_pandas(df)
 
     # Act

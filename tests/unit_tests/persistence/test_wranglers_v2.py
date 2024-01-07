@@ -17,8 +17,8 @@ import pandas as pd
 
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
-from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWrangler
+from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWranglerV2
+from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWranglerV2
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TEST_DATA_DIR
 
@@ -30,7 +30,7 @@ def test_quote_tick_data_wrangler() -> None:
     instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
     # Act
-    wrangler = QuoteTickDataWrangler.from_instrument(instrument)
+    wrangler = QuoteTickDataWranglerV2.from_instrument(instrument)
     pyo3_quotes = wrangler.from_pandas(df)
 
     quotes = QuoteTick.from_pyo3_list(pyo3_quotes)
@@ -50,7 +50,7 @@ def test_trade_tick_data_wrangler() -> None:
     instrument = TestInstrumentProvider.ethusdt_binance()
 
     # Act
-    wrangler = TradeTickDataWrangler.from_instrument(instrument)
+    wrangler = TradeTickDataWranglerV2.from_instrument(instrument)
     pyo3_trades = wrangler.from_pandas(df)
 
     trades = TradeTick.from_pyo3_list(pyo3_trades)

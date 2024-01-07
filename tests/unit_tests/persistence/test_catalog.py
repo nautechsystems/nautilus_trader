@@ -36,8 +36,8 @@ from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
-from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWrangler
+from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWranglerV2
+from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWranglerV2
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
@@ -248,7 +248,7 @@ def test_catalog_writing_pyo3_quote_ticks(catalog: ParquetDataCatalog) -> None:
     path = TEST_DATA_DIR / "truefx" / "audusd-ticks.csv"
     df = pd.read_csv(path)
     instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-    wrangler = QuoteTickDataWrangler.from_instrument(instrument)
+    wrangler = QuoteTickDataWranglerV2.from_instrument(instrument)
     # Data must be sorted as the raw data was not originally sorted
     pyo3_quotes = sorted(wrangler.from_pandas(df), key=lambda x: x.ts_init)
 
@@ -267,7 +267,7 @@ def test_catalog_writing_pyo3_trade_ticks(catalog: ParquetDataCatalog) -> None:
     path = TEST_DATA_DIR / "binance" / "ethusdt-trades.csv"
     df = pd.read_csv(path)
     instrument = TestInstrumentProvider.ethusdt_binance()
-    wrangler = TradeTickDataWrangler.from_instrument(instrument)
+    wrangler = TradeTickDataWranglerV2.from_instrument(instrument)
     pyo3_trades = wrangler.from_pandas(df)
 
     # Act
