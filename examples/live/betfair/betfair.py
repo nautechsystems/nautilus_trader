@@ -25,7 +25,6 @@ from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFact
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_instrument_provider
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
-from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import log_level_from_str
 from nautilus_trader.config import LoggingConfig
@@ -39,9 +38,12 @@ from nautilus_trader.live.node import TradingNode
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-async def main(instrument_config: BetfairInstrumentProviderConfig, log_level: str = "INFO"):
+async def main(
+    instrument_config: BetfairInstrumentProviderConfig,
+    log_level: str = "INFO",
+) -> TradingNode:
     # Connect to Betfair client early to load instruments and account currency
-    logger = Logger(clock=LiveClock(), level_stdout=log_level_from_str(log_level))
+    logger = Logger(level_stdout=log_level_from_str(log_level))
     client = get_cached_betfair_client(
         username=None,  # Pass here or will source from the `BETFAIR_USERNAME` env var
         password=None,  # Pass here or will source from the `BETFAIR_PASSWORD` env var

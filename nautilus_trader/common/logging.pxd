@@ -77,7 +77,7 @@ cdef class Logger:
     #     str message,
     # )
 
-    cpdef void change_clock(self, Clock clock)
+    cpdef void change_clock(self, Clock clock=*)
     cpdef void flush(self)
 
 
