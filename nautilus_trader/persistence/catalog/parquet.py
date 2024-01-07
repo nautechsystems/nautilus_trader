@@ -43,6 +43,7 @@ from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.message import Event
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
 from nautilus_trader.core.nautilus_pyo3 import NautilusDataType
+from nautilus_trader.model import NautilusRustDataType
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
@@ -275,7 +276,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     def write_data(
         self,
-        data: list[Data | Event],
+        data: list[Data | Event] | list[NautilusRustDataType],
         basename_template: str = "part-{i}",
         **kwargs: Any,
     ) -> None:
