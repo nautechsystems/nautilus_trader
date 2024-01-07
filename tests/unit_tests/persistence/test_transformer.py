@@ -39,15 +39,15 @@ def test_pyo3_quote_ticks_to_record_batch_reader() -> None:
 
     # Act
     wrangler = QuoteTickDataWrangler.from_instrument(instrument)
-    ticks = wrangler.from_pandas(df)
+    quotes = wrangler.from_pandas(df)
 
     # Act
-    batch_bytes = DataTransformer.pyo3_quote_ticks_to_record_batch_bytes(ticks)
+    batch_bytes = DataTransformer.pyo3_quote_ticks_to_record_batch_bytes(quotes)
     reader = pa.ipc.open_stream(BytesIO(batch_bytes))
 
     # Assert
-    assert len(ticks) == 100_000
-    assert len(reader.read_all()) == len(ticks)
+    assert len(quotes) == 100_000
+    assert len(reader.read_all()) == len(quotes)
     reader.close()
 
 
@@ -55,21 +55,21 @@ def test_legacy_trade_ticks_to_record_batch_reader() -> None:
     # Arrange
     instrument = TestInstrumentProvider.ethusdt_binance()
     wrangler = TradeTickDataWrangler(instrument=instrument)
-    ticks = wrangler.process(TestDataProvider().read_csv_ticks("binance/ethusdt-trades.csv"))
+    trades = wrangler.process(TestDataProvider().read_csv_ticks("binance/ethusdt-trades.csv"))
 
     # Act
-    batch_bytes = DataTransformer.pyobjects_to_record_batch_bytes(ticks)
+    batch_bytes = DataTransformer.pyobjects_to_record_batch_bytes(trades)
     reader = pa.ipc.open_stream(BytesIO(batch_bytes))
 
     # Assert
-    assert len(ticks) == 69_806
-    assert len(reader.read_all()) == len(ticks)
+    assert len(trades) == 69_806
+    assert len(reader.read_all()) == len(trades)
     reader.close()
 
 
 def test_legacy_deltas_to_record_batch_reader() -> None:
     # Arrange
-    ticks = [
+    deltas = [
         OrderBookDelta.from_dict(
             {
                 "action": "CLEAR",
@@ -90,12 +90,12 @@ def test_legacy_deltas_to_record_batch_reader() -> None:
     ]
 
     # Act
-    batch_bytes = DataTransformer.pyobjects_to_record_batch_bytes(ticks)
+    batch_bytes = DataTransformer.pyobjects_to_record_batch_bytes(deltas)
     reader = pa.ipc.open_stream(BytesIO(batch_bytes))
 
     # Assert
-    assert len(ticks) == 1
-    assert len(reader.read_all()) == len(ticks)
+    assert len(deltas) == 1
+    assert len(reader.read_all()) == len(deltas)
     reader.close()
 
 

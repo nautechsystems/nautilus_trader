@@ -17,6 +17,7 @@ import datetime
 import sys
 from decimal import Decimal
 
+import pandas as pd
 import pyarrow.dataset as ds
 import pytest
 
@@ -35,10 +36,13 @@ from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
+from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWrangler
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
+from tests import TEST_DATA_DIR
 
 
 def test_list_data_types(catalog_betfair: ParquetDataCatalog) -> None:
@@ -239,7 +243,41 @@ def test_catalog_bars(catalog: ParquetDataCatalog) -> None:
     assert len(bars) == len(stub_bars) == 10
 
 
-# def test_catalog_writing_pyo3_quote_ticks()
+def test_catalog_writing_pyo3_quote_ticks(catalog: ParquetDataCatalog) -> None:
+    # Arrange
+    path = TEST_DATA_DIR / "truefx" / "audusd-ticks.csv"
+    df = pd.read_csv(path)
+    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+    wrangler = QuoteTickDataWrangler.from_instrument(instrument)
+    # Data must be sorted as the raw data was not originally sorted
+    pyo3_quotes = sorted(wrangler.from_pandas(df), key=lambda x: x.ts_init)
+
+    # Act
+    catalog.write_data(pyo3_quotes)
+
+    # Assert
+    quotes = catalog.quote_ticks(instrument_ids=[instrument.id])
+    all_quotes = catalog.quote_ticks()
+    assert len(all_quotes) == 100_000
+    assert len(quotes) == 100_000
+
+
+def test_catalog_writing_pyo3_trade_ticks(catalog: ParquetDataCatalog) -> None:
+    # Arrange
+    path = TEST_DATA_DIR / "binance" / "ethusdt-trades.csv"
+    df = pd.read_csv(path)
+    instrument = TestInstrumentProvider.ethusdt_binance()
+    wrangler = TradeTickDataWrangler.from_instrument(instrument)
+    pyo3_trades = wrangler.from_pandas(df)
+
+    # Act
+    catalog.write_data(pyo3_trades)
+
+    # Assert
+    trades = catalog.trade_ticks(instrument_ids=[instrument.id])
+    all_trades = catalog.trade_ticks()
+    assert len(all_trades) == 69_806
+    assert len(trades) == 69_806
 
 
 def test_catalog_multiple_bar_types(catalog: ParquetDataCatalog) -> None:
@@ -288,46 +326,21 @@ def test_catalog_bar_query_instrument_id(
 
 
 def test_catalog_persists_equity(
-    catalog_betfair: ParquetDataCatalog,
+    catalog: ParquetDataCatalog,
 ) -> None:
     # Arrange
-    instrument = Equity(
-        instrument_id=InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")),
-        raw_symbol=Symbol("AAPL"),
-        currency=USD,
-        price_precision=2,
-        price_increment=Price.from_str("0.01"),
-        lot_size=Quantity.from_int(100),
-        isin="US0378331005",
-        ts_event=0,
-        ts_init=0,
-        margin_init=Decimal("0.01"),
-        margin_maint=Decimal("0.005"),
-        maker_fee=Decimal("0.005"),
-        taker_fee=Decimal("0.01"),
-    )
-
-    quote_tick = QuoteTick(
-        instrument_id=instrument.id,
-        bid_price=Price.from_str("2.1"),
-        ask_price=Price.from_str("2.0"),
-        bid_size=Quantity.from_int(10),
-        ask_size=Quantity.from_int(10),
-        ts_event=0,
-        ts_init=0,
-    )
+    instrument = TestInstrumentProvider.equity()
+    quote_tick = TestDataStubs.quote_tick(instrument=instrument)
 
     # Act
-    catalog_betfair.write_data([instrument, quote_tick])
-    instrument_from_catalog = catalog_betfair.instruments(
-        instrument_ids=[instrument.id.value],
-    )[0]
+    catalog.write_data([instrument, quote_tick])
 
     # Assert
-    assert instrument.taker_fee == instrument_from_catalog.taker_fee
-    assert instrument.maker_fee == instrument_from_catalog.maker_fee
-    assert instrument.margin_init == instrument_from_catalog.margin_init
-    assert instrument.margin_maint == instrument_from_catalog.margin_maint
+    instrument_from_catalog = catalog.instruments(instrument_ids=[instrument.id.value])[0]
+    quotes_from_catalog = catalog.quote_ticks(instrument_ids=[instrument.id.value])
+    assert instrument_from_catalog == instrument
+    assert len(quotes_from_catalog) == 1
+    assert quotes_from_catalog[0].instrument_id == instrument.id
 
 
 def test_list_backtest_runs(

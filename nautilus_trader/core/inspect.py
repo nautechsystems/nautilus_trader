@@ -22,6 +22,8 @@ def is_nautilus_class(cls: type) -> bool:
     """
     Determine whether a class is a builtin nautilus type.
     """
+    if cls.__module__.startswith("nautilus_trader.core.nautilus_pyo3.model"):
+        return True
     if cls.__module__.startswith("nautilus_trader.model"):
         return True
     if cls.__module__.startswith("nautilus_trader.common"):
