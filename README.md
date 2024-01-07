@@ -308,8 +308,8 @@ class EMACross(Strategy):
         super().__init__(config)
 
         # Configuration
-        self.instrument_id = InstrumentId.from_str(config.instrument_id)
-        self.bar_type = BarType.from_str(config.bar_type)
+        self.instrument_id = config.instrument_id
+        self.bar_type = config.bar_type
         self.trade_size = Decimal(config.trade_size)
 
         # Create the indicators for the strategy
