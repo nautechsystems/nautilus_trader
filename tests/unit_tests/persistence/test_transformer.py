@@ -45,7 +45,7 @@ def test_pyo3_quote_ticks_to_record_batch_reader() -> None:
     ticks = wrangler.from_pandas(df)
 
     # Act
-    batches_bytes = DataTransformer.pyo3_quote_ticks_to_batches_bytes(ticks)
+    batches_bytes = DataTransformer.pyo3_quote_ticks_to_batch_bytes(ticks)
     batches_stream = BytesIO(batches_bytes)
     reader = pa.ipc.open_stream(batches_stream)
 

@@ -114,7 +114,14 @@ class ArrowSerializer:
     def rust_objects_to_record_batch(data: list[Data], data_cls: type) -> pa.Table | pa.RecordBatch:
         data = sorted(data, key=lambda x: x.ts_init)
         processed = ArrowSerializer._unpack_container_objects(data_cls, data)
-        batches_bytes = DataTransformer.pyobjects_to_batches_bytes(processed)
+
+        # TODO: WIP - Implement this for all types
+        if data_cls == QuoteTick:
+            pyo3_quotes = QuoteTick.to_pyo3_list(processed)
+            batches_bytes = DataTransformer.pyo3_quote_ticks_to_batch_bytes(pyo3_quotes)
+        else:
+            batches_bytes = DataTransformer.pyobjects_to_batches_bytes(processed)
+
         reader = pa.ipc.open_stream(BytesIO(batches_bytes))
         table: pa.Table = reader.read_all()
         return table
