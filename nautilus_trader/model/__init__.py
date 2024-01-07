@@ -21,6 +21,8 @@ built around this domain model.
 
 """
 
+from typing import Union
+
 from nautilus_trader.core import nautilus_pyo3
 
 
@@ -31,3 +33,11 @@ NAUTILUS_PYO3_DATA_TYPES: tuple[type, ...] = (
     nautilus_pyo3.TradeTick,
     nautilus_pyo3.Bar,
 )
+
+NautilusRustDataType = Union[  # noqa: UP007 (mypy does not like pipe operators)
+    nautilus_pyo3.OrderBookDelta,
+    nautilus_pyo3.OrderBookDepth10,
+    nautilus_pyo3.QuoteTick,
+    nautilus_pyo3.TradeTick,
+    nautilus_pyo3.Bar,
+]

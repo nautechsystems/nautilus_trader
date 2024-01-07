@@ -361,8 +361,8 @@ def generate_signal_class(name: str, value_type: type) -> type:
     )
     register_arrow(
         data_cls=SignalData,
-        serializer=serialize_signal,
-        deserializer=deserialize_signal,
+        encoder=serialize_signal,
+        decoder=deserialize_signal,
         schema=schema,
     )
 

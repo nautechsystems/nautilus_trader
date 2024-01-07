@@ -252,16 +252,16 @@ class BetfairStartingPrice(Data):
 register_arrow(
     data_cls=BetfairTicker,
     schema=BetfairTicker.schema(),
-    serializer=make_dict_serializer(schema=BetfairTicker.schema()),
-    deserializer=make_dict_deserializer(BetfairTicker),
+    encoder=make_dict_serializer(schema=BetfairTicker.schema()),
+    decoder=make_dict_deserializer(BetfairTicker),
 )
 
 # Register serialization/parquet BetfairStartingPrice
 register_arrow(
     data_cls=BetfairStartingPrice,
     schema=BetfairStartingPrice.schema(),
-    serializer=make_dict_serializer(schema=BetfairStartingPrice.schema()),
-    deserializer=make_dict_deserializer(BetfairStartingPrice),
+    encoder=make_dict_serializer(schema=BetfairStartingPrice.schema()),
+    decoder=make_dict_deserializer(BetfairStartingPrice),
 )
 
 # Register serialization/parquet BSPOrderBookDeltas
@@ -273,7 +273,7 @@ register_serializable_object(
 
 register_arrow(
     data_cls=BSPOrderBookDelta,
-    serializer=BSPOrderBookDelta.to_batch,
-    deserializer=BSPOrderBookDelta.from_batch,
+    encoder=BSPOrderBookDelta.to_batch,
+    decoder=BSPOrderBookDelta.from_batch,
     schema=BSPOrderBookDelta.schema(),
 )
