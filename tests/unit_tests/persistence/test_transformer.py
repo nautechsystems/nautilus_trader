@@ -31,23 +31,19 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TEST_DATA_DIR
 
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
-
-
 def test_pyo3_quote_ticks_to_record_batch_reader() -> None:
     # Arrange
     path = TEST_DATA_DIR / "truefx" / "audusd-ticks.csv"
     df = pd.read_csv(path)
+    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
     # Act
-    wrangler = QuoteTickDataWrangler.from_instrument(AUDUSD_SIM)
+    wrangler = QuoteTickDataWrangler.from_instrument(instrument)
     ticks = wrangler.from_pandas(df)
 
     # Act
     batch_bytes = DataTransformer.pyo3_quote_ticks_to_record_batch_bytes(ticks)
-    batch_stream = BytesIO(batch_bytes)
-    reader = pa.ipc.open_stream(batch_stream)
+    reader = pa.ipc.open_stream(BytesIO(batch_bytes))
 
     # Assert
     assert len(ticks) == 100_000
@@ -57,14 +53,13 @@ def test_pyo3_quote_ticks_to_record_batch_reader() -> None:
 
 def test_legacy_trade_ticks_to_record_batch_reader() -> None:
     # Arrange
-    provider = TestDataProvider()
-    wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
-    ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv"))
+    instrument = TestInstrumentProvider.ethusdt_binance()
+    wrangler = TradeTickDataWrangler(instrument=instrument)
+    ticks = wrangler.process(TestDataProvider().read_csv_ticks("binance/ethusdt-trades.csv"))
 
     # Act
     batch_bytes = DataTransformer.pyobjects_to_record_batch_bytes(ticks)
-    batch_stream = BytesIO(batch_bytes)
-    reader = pa.ipc.open_stream(batch_stream)
+    reader = pa.ipc.open_stream(BytesIO(batch_bytes))
 
     # Assert
     assert len(ticks) == 69_806
@@ -96,8 +91,7 @@ def test_legacy_deltas_to_record_batch_reader() -> None:
 
     # Act
     batch_bytes = DataTransformer.pyobjects_to_record_batch_bytes(ticks)
-    batch_stream = BytesIO(batch_bytes)
-    reader = pa.ipc.open_stream(batch_stream)
+    reader = pa.ipc.open_stream(BytesIO(batch_bytes))
 
     # Assert
     assert len(ticks) == 1
