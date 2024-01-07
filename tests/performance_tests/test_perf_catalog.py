@@ -23,6 +23,7 @@ from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
 from nautilus_trader.core.nautilus_pyo3 import NautilusDataType
 from nautilus_trader.model.data import capsule_to_list
 from nautilus_trader.test_kit.mocks.data import load_catalog_with_stub_quote_ticks_audusd
+from nautilus_trader.test_kit.mocks.data import load_catalog_with_stub_trade_ticks_ethusdt
 from nautilus_trader.test_kit.mocks.data import setup_catalog
 
 
@@ -34,7 +35,7 @@ def test_write_quote_ticks(benchmark: Any) -> None:
         quotes = catalog.quote_ticks()
         assert len(quotes) == 100_000
 
-    benchmark.pedantic(run, rounds=10, iterations=1, warmup_rounds=1)
+    benchmark.pedantic(run, rounds=1, iterations=1, warmup_rounds=1)
 
 
 def test_load_quote_ticks(benchmark: Any) -> None:
@@ -44,6 +45,28 @@ def test_load_quote_ticks(benchmark: Any) -> None:
     def run():
         quotes = catalog.quote_ticks()
         assert len(quotes) == 100_000
+
+    benchmark.pedantic(run, rounds=10, iterations=1, warmup_rounds=1)
+
+
+def test_write_trade_ticks(benchmark: Any) -> None:
+    catalog = setup_catalog("file")
+
+    def run():
+        load_catalog_with_stub_trade_ticks_ethusdt(catalog)
+        trades = catalog.trade_ticks()
+        assert len(trades) == 69_806
+
+    benchmark.pedantic(run, rounds=1, iterations=1, warmup_rounds=1)
+
+
+def test_load_trade_ticks(benchmark: Any) -> None:
+    catalog = setup_catalog("file")
+    load_catalog_with_stub_trade_ticks_ethusdt(catalog)
+
+    def run():
+        trades = catalog.trade_ticks()
+        assert len(trades) == 69_806
 
     benchmark.pedantic(run, rounds=10, iterations=1, warmup_rounds=1)
 
@@ -65,7 +88,7 @@ def test_load_single_stream(benchmark: Any) -> None:
         for chunk in result:
             count += len(capsule_to_list(chunk))
 
-        assert count == 9689614
+        assert count == 9_689_614
 
     benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)
 
