@@ -14,8 +14,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.test_kit.fixtures.memory import snapshot_memory
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from tests.mem_leak_tests.conftest import snapshot_memory
 
 
 @snapshot_memory(4000)
