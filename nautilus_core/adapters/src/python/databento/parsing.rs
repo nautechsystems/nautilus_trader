@@ -29,16 +29,6 @@ use crate::databento::parsing::{
     parse_options_contract, parse_trade_msg,
 };
 
-// #[pyfunction]
-// #[pyo3(name = "parse_equity")]
-// pub fn py_parse_instrument_def_msg(
-//     record: &dbn::InstrumentDefMsg,
-//     publisher: &DatabentoPublisher,
-//     ts_init: UnixNanos,
-// ) -> PyResult<PyObject> {
-//     parse_instrument_def_msg(record, publisher, ts_init)
-// }
-
 #[pyfunction]
 #[pyo3(name = "parse_equity")]
 pub fn py_parse_equity(

@@ -333,7 +333,7 @@ def parse_mbp10_msg(
             order_id=0,  # No order ID for MBP level
         )
         asks.append(ask)
-        ask_counts.append(level.ask_ct)  # Currently a typo in type stub
+        ask_counts.append(level.ask_ct)  # Currently a typo in type stub  # type: ignore
 
     return OrderBookDepth10(
         instrument_id=instrument_id,
@@ -451,6 +451,25 @@ def parse_statistics_msg(
     )
 
 
+def parse_instrument_id(
+    record: databento.DBNRecord,
+    publishers: dict[int, DatabentoPublisher],
+    instrument_map: databento.InstrumentMap,
+) -> InstrumentId:
+    record_date = pd.Timestamp(record.ts_event, tz=pytz.utc).date()
+    raw_symbol = instrument_map.resolve(record.instrument_id, date=record_date)
+    if raw_symbol is None:
+        raise ValueError(
+            f"Cannot resolve instrument_id {record.instrument_id} on {record_date}",
+        )
+
+    publisher: DatabentoPublisher = publishers[record.publisher_id]
+    return nautilus_instrument_id_from_databento(
+        raw_symbol=raw_symbol,
+        publisher=publisher,
+    )
+
+
 def parse_record_with_metadata(
     record: databento.DBNRecord,
     publishers: dict[int, DatabentoPublisher],
@@ -470,11 +489,7 @@ def parse_record_with_metadata(
             f"Cannot resolve instrument_id {record.instrument_id} on {record_date}",
         )
 
-    publisher: DatabentoPublisher = publishers[record.publisher_id]
-    instrument_id: InstrumentId = nautilus_instrument_id_from_databento(
-        raw_symbol=raw_symbol,
-        publisher=publisher,
-    )
+    instrument_id: InstrumentId = parse_instrument_id(record, publishers, instrument_map)
 
     return parse_record(
         record=record,
