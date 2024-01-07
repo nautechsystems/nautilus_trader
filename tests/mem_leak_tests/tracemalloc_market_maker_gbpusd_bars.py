@@ -32,9 +32,9 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
-from nautilus_trader.test_kit.fixtures.memory import snapshot_memory
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from tests.mem_leak_tests.conftest import snapshot_memory
 
 
 @snapshot_memory(5)
