@@ -1000,6 +1000,49 @@ cdef class Bar(Data):
         return Bar.to_dict_c(obj)
 
     @staticmethod
+    def to_pyo3_list(list bars) -> list[nautilus_pyo3.Bar]:
+        """
+        Return pyo3 Rust bars converted from the given legacy Cython objects.
+
+        Parameters
+        ----------
+        bars : list[Bar]
+            The legacy Cython bars to convert from.
+
+        Returns
+        -------
+        list[nautilus_pyo3.Bar]
+
+        """
+        cdef list output = []
+
+        bar_type = None
+        cdef uint8_t price_prec = 0
+        cdef uint8_t volume_prec = 0
+
+        cdef:
+            Bar bar
+        for bar in bars:
+            if bar_type is None:
+                bar_type = nautilus_pyo3.BarType.from_str(bar.bar_type.value)
+                price_prec = bar._mem.open.precision
+                volume_prec = bar._mem.volume.precision
+
+            pyo3_bar = nautilus_pyo3.Bar(
+                bar_type,
+                nautilus_pyo3.Price.from_raw(bar._mem.open.raw, price_prec),
+                nautilus_pyo3.Price.from_raw(bar._mem.high.raw, price_prec),
+                nautilus_pyo3.Price.from_raw_c(bar._mem.low.raw, price_prec),
+                nautilus_pyo3.Price.from_raw_c(bar._mem.close.raw, price_prec),
+                nautilus_pyo3.Quantity.from_raw_c(bar._mem.volume.raw, volume_prec),
+                bar._mem.ts_event,
+                bar._mem.ts_init,
+            )
+            output.append(pyo3_bar)
+
+        return output
+
+    @staticmethod
     def from_pyo3_list(list pyo3_bars) -> list[Bar]:
         """
         Return legacy Cython bars converted from the given pyo3 Rust objects.
@@ -1007,7 +1050,7 @@ cdef class Bar(Data):
         Parameters
         ----------
         pyo3_bars : list[nautilus_pyo3.Bar]
-            The Rust pyo3 bars to convert from.
+            The pyo3 Rust bars to convert from.
 
         Returns
         -------
@@ -1905,12 +1948,12 @@ cdef class OrderBookDelta(Data):
     @staticmethod
     def from_pyo3_list(list pyo3_deltas) -> list[OrderBookDelta]:
         """
-        Return legacy Cython order book deltas converted from the given Rust pyo3 objects.
+        Return legacy Cython order book deltas converted from the given pyo3 Rust objects.
 
         Parameters
         ----------
         pyo3_deltas : list[nautilus_pyo3.OrderBookDelta]
-            The Rust pyo3 order book deltas to convert from.
+            The pyo3 Rust order book deltas to convert from.
 
         Returns
         -------
@@ -3178,7 +3221,7 @@ cdef class QuoteTick(Data):
         Parameters
         ----------
         pyo3_ticks : list[nautilus_pyo3.QuoteTick]
-            The Rust pyo3 quote ticks to convert from.
+            The pyo3 Rust quote ticks to convert from.
 
         Returns
         -------
@@ -3217,6 +3260,52 @@ cdef class QuoteTick(Data):
                 pyo3_tick.ts_init,
             )
             output.append(tick)
+
+        return output
+
+    @staticmethod
+    def to_pyo3_list(list[QuoteTick] quotes) -> list[nautilus_pyo3.QuoteTick]:
+        """
+        Return pyo3 Rust quote ticks converted from the given legacy Cython objects.
+
+        Parameters
+        ----------
+        quotes : list[QuoteTick]
+            The legacy Cython quote ticks to convert from.
+
+        Returns
+        -------
+        list[nautilus_pyo3.QuoteTick]
+
+        """
+        cdef list output = []
+
+        instrument_id = None
+        cdef uint8_t bid_prec = 0
+        cdef uint8_t ask_prec = 0
+        cdef uint8_t bid_size_prec = 0
+        cdef uint8_t ask_size_prec = 0
+
+        cdef:
+            QuoteTick quote
+        for quote in quotes:
+            if instrument_id is None:
+                instrument_id = nautilus_pyo3.InstrumentId.from_str(quote.instrument_id.value)
+                bid_prec = quote.bid_price.precision
+                ask_prec = quote.ask_price.precision
+                bid_size_prec = quote.bid_size.precision
+                ask_size_prec = quote.ask_size.precision
+
+            pyo3_quote = nautilus_pyo3.QuoteTick(
+                instrument_id,
+                nautilus_pyo3.Price.from_raw(quote._mem.bid_price.raw, bid_prec),
+                nautilus_pyo3.Price.from_raw(quote._mem.ask_price.raw, ask_prec),
+                nautilus_pyo3.Quantity.from_raw(quote._mem.bid_size.raw, bid_size_prec),
+                nautilus_pyo3.Quantity.from_raw(quote._mem.ask_size.raw, ask_size_prec),
+                quote._mem.ts_event,
+                quote._mem.ts_init,
+            )
+            output.append(pyo3_quote)
 
         return output
 
@@ -3636,7 +3725,7 @@ cdef class TradeTick(Data):
         Parameters
         ----------
         pyo3_ticks : list[nautilus_pyo3.TradeTick]
-            The Rust pyo3 trade ticks to convert from.
+            The pyo3 Rust trade ticks to convert from.
 
         Returns
         -------

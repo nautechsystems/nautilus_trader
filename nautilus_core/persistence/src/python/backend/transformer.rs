@@ -175,12 +175,12 @@ impl DataTransformer {
                 Self::pyo3_order_book_deltas_to_batches_bytes(py, deltas)
             }
             stringify!(QuoteTick) => {
-                let ticks = Self::pyobjects_to_quote_ticks(py, data)?;
-                Self::pyo3_quote_ticks_to_batches_bytes(py, ticks)
+                let quotes = Self::pyobjects_to_quote_ticks(py, data)?;
+                Self::pyo3_quote_ticks_to_batch_bytes(py, quotes)
             }
             stringify!(TradeTick) => {
-                let ticks = Self::pyobjects_to_trade_ticks(py, data)?;
-                Self::pyo3_trade_ticks_to_batches_bytes(py, ticks)
+                let trades = Self::pyobjects_to_trade_ticks(py, data)?;
+                Self::pyo3_trade_ticks_to_batches_bytes(py, trades)
             }
             stringify!(Bar) => {
                 let bars = Self::pyobjects_to_bars(py, data)?;
@@ -210,23 +210,20 @@ impl DataTransformer {
             first.order.size.precision,
         );
 
-        // Encode data to record batches
-        let batches: Result<Vec<RecordBatch>, ArrowError> = data
-            .into_iter()
-            .map(|d| OrderBookDelta::encode_batch(&metadata, &[d]))
-            .collect();
+        let result: Result<RecordBatch, ArrowError> =
+            OrderBookDelta::encode_batch(&metadata, &data);
 
-        match batches {
-            Ok(batches) => {
+        match result {
+            Ok(batch) => {
                 let schema = OrderBookDelta::get_schema(Some(metadata));
-                Self::record_batches_to_pybytes(py, batches, schema)
+                Self::record_batches_to_pybytes(py, vec![batch], schema)
             }
             Err(e) => Err(to_pyvalue_err(e)),
         }
     }
 
     #[staticmethod]
-    pub fn pyo3_quote_ticks_to_batches_bytes(
+    pub fn pyo3_quote_ticks_to_batch_bytes(
         py: Python<'_>,
         data: Vec<QuoteTick>,
     ) -> PyResult<Py<PyBytes>> {
@@ -243,16 +240,12 @@ impl DataTransformer {
             first.bid_size.precision,
         );
 
-        // Encode data to record batches
-        let batches: Result<Vec<RecordBatch>, ArrowError> = data
-            .into_iter()
-            .map(|q| QuoteTick::encode_batch(&metadata, &[q]))
-            .collect();
+        let result: Result<RecordBatch, ArrowError> = QuoteTick::encode_batch(&metadata, &data);
 
-        match batches {
-            Ok(batches) => {
+        match result {
+            Ok(batch) => {
                 let schema = QuoteTick::get_schema(Some(metadata));
-                Self::record_batches_to_pybytes(py, batches, schema)
+                Self::record_batches_to_pybytes(py, vec![batch], schema)
             }
             Err(e) => Err(to_pyvalue_err(e)),
         }
@@ -276,16 +269,12 @@ impl DataTransformer {
             first.size.precision,
         );
 
-        // Encode data to record batches
-        let batches: Result<Vec<RecordBatch>, ArrowError> = data
-            .into_iter()
-            .map(|t| TradeTick::encode_batch(&metadata, &[t]))
-            .collect();
+        let result: Result<RecordBatch, ArrowError> = TradeTick::encode_batch(&metadata, &data);
 
-        match batches {
-            Ok(batches) => {
+        match result {
+            Ok(batch) => {
                 let schema = TradeTick::get_schema(Some(metadata));
-                Self::record_batches_to_pybytes(py, batches, schema)
+                Self::record_batches_to_pybytes(py, vec![batch], schema)
             }
             Err(e) => Err(to_pyvalue_err(e)),
         }
@@ -306,16 +295,12 @@ impl DataTransformer {
             first.volume.precision,
         );
 
-        // Encode data to record batches
-        let batches: Result<Vec<RecordBatch>, ArrowError> = data
-            .into_iter()
-            .map(|b| Bar::encode_batch(&metadata, &[b]))
-            .collect();
+        let result: Result<RecordBatch, ArrowError> = Bar::encode_batch(&metadata, &data);
 
-        match batches {
-            Ok(batches) => {
+        match result {
+            Ok(batch) => {
                 let schema = Bar::get_schema(Some(metadata));
-                Self::record_batches_to_pybytes(py, batches, schema)
+                Self::record_batches_to_pybytes(py, vec![batch], schema)
             }
             Err(e) => Err(to_pyvalue_err(e)),
         }

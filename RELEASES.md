@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Improved Interactive Brokers adapter raising docker `RuntimeError` only when needed (not when using TWS), thanks @rsmb7z
 - Upgraded core HTTP client to `hyper` 1.1.0, thanks @ayush-sb
 - Optimized core MPSC channels with sync senders
+- Optimized Arrow encoding (resulting in ~100x faster writes for the Parquet data catalog)
 
 ### Breaking Changes
 - Changed `ComponentStateChanged` Arrow schema for `config` from `string` to `binary`
