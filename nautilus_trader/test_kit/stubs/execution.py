@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from nautilus_trader.accounting.accounts.betting import BettingAccount
 from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.accounting.accounts.margin import MarginAccount
