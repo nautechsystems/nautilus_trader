@@ -31,6 +31,7 @@ from nautilus_trader import __version__
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.common cimport LogColor
@@ -112,8 +113,9 @@ cdef class Logger:
 
     Parameters
     ----------
-    clock : Clock
+    clock : Clock, optional
         The clock for the logger.
+        If ``None`` then will use a new `LiveClock`.
     trader_id : TraderId, optional
         The trader ID for the logger.
     machine_id : str, optional
@@ -146,7 +148,7 @@ cdef class Logger:
 
     def __init__(
         self,
-        Clock clock not None,
+        Clock clock = None,
         TraderId trader_id = None,
         str machine_id = None,
         UUID4 instance_id = None,
@@ -159,7 +161,9 @@ cdef class Logger:
         dict component_levels: dict[ComponentId, LogLevel] = None,
         bint colors = True,
         bint bypass = False,
-    ):
+    ) -> None:
+        if clock is None:
+            clock = LiveClock()
         if trader_id is None:
             trader_id = TraderId("TRADER-000")
         if instance_id is None:
@@ -265,18 +269,17 @@ cdef class Logger:
     #         message,
     #     )
 
-    cpdef void change_clock(self, Clock clock):
+    cpdef void change_clock(self, Clock clock = None):
         """
-        Change the loggers internal clock to the given clock.
+        Change the loggers internal clock to the given clock or a new `LiveClock`.
 
         Parameters
         ----------
-        clock : Clock
+        clock : Clock, optional
+            The clock to change to.
 
         """
-        Condition.not_none(clock, "clock")
-
-        self._clock = clock
+        self._clock = clock or LiveClock()
 
     cpdef void flush(self):
         """

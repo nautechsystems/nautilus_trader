@@ -938,7 +938,7 @@ cdef class BacktestEngine:
         self._backtest_end = self.kernel.clock.utc_now()
 
         # Change logger clock back to live clock for consistent time stamping
-        self._kernel.logger.change_clock(LiveClock())
+        self._kernel.logger.change_clock()
 
         self._log_post_run()
 

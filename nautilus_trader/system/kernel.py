@@ -172,7 +172,6 @@ class NautilusKernel:
         )
 
         self._logger: Logger = Logger(
-            clock=LiveClock(),
             trader_id=self._trader_id,
             machine_id=self._machine_id,
             instance_id=self._instance_id,
