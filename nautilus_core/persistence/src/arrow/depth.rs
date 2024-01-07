@@ -142,7 +142,6 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
         metadata: &HashMap<String, String>,
         data: &[Self],
     ) -> Result<RecordBatch, ArrowError> {
-        // Create array builders
         let mut bid_price_builders = Vec::with_capacity(DEPTH10_LEN);
         let mut ask_price_builders = Vec::with_capacity(DEPTH10_LEN);
         let mut bid_size_builders = Vec::with_capacity(DEPTH10_LEN);
@@ -164,7 +163,6 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
-        // Iterate over data
         for depth in data {
             for i in 0..DEPTH10_LEN {
                 bid_price_builders[i].append_value(depth.bids[i].price.raw);
@@ -181,7 +179,6 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
             ts_init_builder.append_value(depth.ts_init);
         }
 
-        // Build arrays
         let bid_price_arrays = bid_price_builders
             .into_iter()
             .map(|mut b| Arc::new(b.finish()) as Arc<dyn Array>)
@@ -212,7 +209,6 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
         let ts_event_array = Arc::new(ts_event_builder.finish());
         let ts_init_array = Arc::new(ts_init_builder.finish());
 
-        // Build record batch
         let mut columns = Vec::new();
         columns.extend_from_slice(&bid_price_arrays);
         columns.extend_from_slice(&ask_price_arrays);
@@ -234,10 +230,7 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
-        // Parse and validate metadata
         let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
-
-        // Extract field value arrays
         let cols = record_batch.columns();
 
         let bid_price_col_names = [
@@ -382,7 +375,6 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
                 let mut ask_count_arr = [0u32; DEPTH10_LEN];
 
                 for j in 0..DEPTH10_LEN {
-                    // Assuming Price and Quantity can be constructed from the raw values
                     bids[j] = BookOrder::new(
                         OrderSide::Buy,
                         Price::from_raw(bid_prices[j].value(i), price_precision).unwrap(),

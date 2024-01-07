@@ -2592,7 +2592,6 @@ dependencies = [
  "quickcheck",
  "quickcheck_macros",
  "rand",
- "rayon",
  "rstest",
  "sqlx",
  "thiserror",

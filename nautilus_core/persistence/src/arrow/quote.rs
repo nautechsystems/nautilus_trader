@@ -26,7 +26,6 @@ use nautilus_model::{
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
-use rayon::iter::{IntoParallelRefIterator, ParallelExtend, ParallelIterator};
 
 use super::{
     extract_column, DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
@@ -81,31 +80,29 @@ impl EncodeToRecordBatch for QuoteTick {
         metadata: &HashMap<String, String>,
         data: &[Self],
     ) -> Result<RecordBatch, ArrowError> {
-        // Preallocate vectors
-        let mut bid_prices: Vec<i64> = Vec::with_capacity(data.len());
-        let mut ask_prices: Vec<i64> = Vec::with_capacity(data.len());
-        let mut bid_sizes: Vec<u64> = Vec::with_capacity(data.len());
-        let mut ask_sizes: Vec<u64> = Vec::with_capacity(data.len());
-        let mut ts_events: Vec<u64> = Vec::with_capacity(data.len());
-        let mut ts_inits: Vec<u64> = Vec::with_capacity(data.len());
+        let mut bid_price_builder = Int64Array::builder(data.len());
+        let mut ask_price_builder = Int64Array::builder(data.len());
+        let mut bid_size_builder = UInt64Array::builder(data.len());
+        let mut ask_size_builder = UInt64Array::builder(data.len());
+        let mut ts_event_builder = UInt64Array::builder(data.len());
+        let mut ts_init_builder = UInt64Array::builder(data.len());
 
-        // Parallel processing of fields
-        bid_prices.par_extend(data.par_iter().map(|q| q.bid_price.raw));
-        ask_prices.par_extend(data.par_iter().map(|q| q.ask_price.raw));
-        bid_sizes.par_extend(data.par_iter().map(|q| q.bid_size.raw));
-        ask_sizes.par_extend(data.par_iter().map(|q| q.ask_size.raw));
-        ts_events.par_extend(data.par_iter().map(|q| q.ts_event));
-        ts_inits.par_extend(data.par_iter().map(|q| q.ts_init));
+        for quote in data {
+            bid_price_builder.append_value(quote.bid_price.raw);
+            ask_price_builder.append_value(quote.ask_price.raw);
+            bid_size_builder.append_value(quote.bid_size.raw);
+            ask_size_builder.append_value(quote.ask_size.raw);
+            ts_event_builder.append_value(quote.ts_event);
+            ts_init_builder.append_value(quote.ts_init);
+        }
 
-        // Convert vectors to Arrow arrays
-        let bid_price_array = Int64Array::from(bid_prices);
-        let ask_price_array = Int64Array::from(ask_prices);
-        let bid_size_array = UInt64Array::from(bid_sizes);
-        let ask_size_array = UInt64Array::from(ask_sizes);
-        let ts_event_array = UInt64Array::from(ts_events);
-        let ts_init_array = UInt64Array::from(ts_inits);
+        let bid_price_array = bid_price_builder.finish();
+        let ask_price_array = ask_price_builder.finish();
+        let bid_size_array = bid_size_builder.finish();
+        let ask_size_array = ask_size_builder.finish();
+        let ts_event_array = ts_event_builder.finish();
+        let ts_init_array = ts_init_builder.finish();
 
-        // Build record batch
         RecordBatch::try_new(
             Self::get_schema(Some(metadata.clone())).into(),
             vec![
@@ -125,10 +122,7 @@ impl DecodeFromRecordBatch for QuoteTick {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
-        // Parse and validate metadata
         let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
-
-        // Extract field value arrays
         let cols = record_batch.columns();
 
         let bid_price_values = extract_column::<Int64Array>(cols, "bid_price", 0, DataType::Int64)?;
@@ -138,7 +132,6 @@ impl DecodeFromRecordBatch for QuoteTick {
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 4, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 5, DataType::UInt64)?;
 
-        // Map record batch rows to vector of objects
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
                 let bid_price =

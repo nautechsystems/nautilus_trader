@@ -84,7 +84,6 @@ impl EncodeToRecordBatch for OrderBookDelta {
         metadata: &HashMap<String, String>,
         data: &[Self],
     ) -> Result<RecordBatch, ArrowError> {
-        // Create array builders
         let mut action_builder = UInt8Array::builder(data.len());
         let mut side_builder = UInt8Array::builder(data.len());
         let mut price_builder = Int64Array::builder(data.len());
@@ -95,7 +94,6 @@ impl EncodeToRecordBatch for OrderBookDelta {
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
-        // Iterate over data
         for delta in data {
             action_builder.append_value(delta.action as u8);
             side_builder.append_value(delta.order.side as u8);
@@ -108,7 +106,6 @@ impl EncodeToRecordBatch for OrderBookDelta {
             ts_init_builder.append_value(delta.ts_init);
         }
 
-        // Build arrays
         let action_array = action_builder.finish();
         let side_array = side_builder.finish();
         let price_array = price_builder.finish();
@@ -119,7 +116,6 @@ impl EncodeToRecordBatch for OrderBookDelta {
         let ts_event_array = ts_event_builder.finish();
         let ts_init_array = ts_init_builder.finish();
 
-        // Build record batch
         RecordBatch::try_new(
             Self::get_schema(Some(metadata.clone())).into(),
             vec![
@@ -142,10 +138,7 @@ impl DecodeFromRecordBatch for OrderBookDelta {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
-        // Parse and validate metadata
         let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
-
-        // Extract field value arrays
         let cols = record_batch.columns();
 
         let action_values = extract_column::<UInt8Array>(cols, "action", 0, DataType::UInt8)?;
@@ -158,7 +151,6 @@ impl DecodeFromRecordBatch for OrderBookDelta {
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 7, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 8, DataType::UInt64)?;
 
-        // Map record batch rows to vector of objects
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
                 let action_value = action_values.value(i);
