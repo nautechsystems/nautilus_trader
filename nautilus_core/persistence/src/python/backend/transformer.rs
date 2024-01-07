@@ -20,8 +20,8 @@ use datafusion::arrow::{
 };
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{
-    bar::Bar, delta::OrderBookDelta, is_monotonically_increasing_by_init, quote::QuoteTick,
-    trade::TradeTick,
+    bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, is_monotonically_increasing_by_init,
+    quote::QuoteTick, trade::TradeTick,
 };
 use pyo3::{
     exceptions::{PyRuntimeError, PyTypeError, PyValueError},
@@ -102,9 +102,9 @@ impl DataTransformer {
     }
 
     /// Transforms the given record `batches` into Python `bytes`.
-    fn record_batches_to_pybytes(
+    fn record_batch_to_pybytes(
         py: Python<'_>,
-        batches: Vec<RecordBatch>,
+        batch: RecordBatch,
         schema: Schema,
     ) -> PyResult<Py<PyBytes>> {
         // Create a cursor to write to a byte array in memory
@@ -112,11 +112,10 @@ impl DataTransformer {
         {
             let mut writer = StreamWriter::try_new(&mut cursor, &schema)
                 .map_err(|err| PyRuntimeError::new_err(format!("{err}")))?;
-            for batch in batches {
-                writer
-                    .write(&batch)
-                    .map_err(|err| PyRuntimeError::new_err(format!("{err}")))?;
-            }
+
+            writer
+                .write(&batch)
+                .map_err(|err| PyRuntimeError::new_err(format!("{err}")))?;
 
             writer
                 .finish()
@@ -137,6 +136,7 @@ impl DataTransformer {
         let cls_str: &str = cls.getattr("__name__")?.extract()?;
         let result_map = match cls_str {
             stringify!(OrderBookDelta) => OrderBookDelta::get_schema_map(),
+            stringify!(OrderBookDepth10) => OrderBookDepth10::get_schema_map(),
             stringify!(QuoteTick) => QuoteTick::get_schema_map(),
             stringify!(TradeTick) => TradeTick::get_schema_map(),
             stringify!(Bar) => Bar::get_schema_map(),
@@ -153,7 +153,7 @@ impl DataTransformer {
     /// Return Python `bytes` from the given list of 'legacy' data objects, which can be passed
     /// to `pa.ipc.open_stream` to create a `RecordBatchReader`.
     #[staticmethod]
-    pub fn pyobjects_to_batches_bytes(
+    pub fn pyobjects_to_record_batch_bytes(
         py: Python<'_>,
         data: Vec<PyObject>,
     ) -> PyResult<Py<PyBytes>> {
@@ -172,19 +172,19 @@ impl DataTransformer {
         match data_type.as_str() {
             stringify!(OrderBookDelta) => {
                 let deltas = Self::pyobjects_to_order_book_deltas(py, data)?;
-                Self::pyo3_order_book_deltas_to_batches_bytes(py, deltas)
+                Self::pyo3_order_book_deltas_to_record_batch_bytes(py, deltas)
             }
             stringify!(QuoteTick) => {
                 let quotes = Self::pyobjects_to_quote_ticks(py, data)?;
-                Self::pyo3_quote_ticks_to_batch_bytes(py, quotes)
+                Self::pyo3_quote_ticks_to_record_batch_bytes(py, quotes)
             }
             stringify!(TradeTick) => {
                 let trades = Self::pyobjects_to_trade_ticks(py, data)?;
-                Self::pyo3_trade_ticks_to_batches_bytes(py, trades)
+                Self::pyo3_trade_ticks_to_record_batch_bytes(py, trades)
             }
             stringify!(Bar) => {
                 let bars = Self::pyobjects_to_bars(py, data)?;
-                Self::pyo3_bars_to_batches_bytes(py, bars)
+                Self::pyo3_bars_to_record_batch_bytes(py, bars)
             }
             _ => Err(PyValueError::new_err(format!(
                 "unsupported data type: {data_type}"
@@ -193,7 +193,7 @@ impl DataTransformer {
     }
 
     #[staticmethod]
-    pub fn pyo3_order_book_deltas_to_batches_bytes(
+    pub fn pyo3_order_book_deltas_to_record_batch_bytes(
         py: Python<'_>,
         data: Vec<OrderBookDelta>,
     ) -> PyResult<Py<PyBytes>> {
@@ -216,14 +216,44 @@ impl DataTransformer {
         match result {
             Ok(batch) => {
                 let schema = OrderBookDelta::get_schema(Some(metadata));
-                Self::record_batches_to_pybytes(py, vec![batch], schema)
+                Self::record_batch_to_pybytes(py, batch, schema)
             }
             Err(e) => Err(to_pyvalue_err(e)),
         }
     }
 
     #[staticmethod]
-    pub fn pyo3_quote_ticks_to_batch_bytes(
+    pub fn pyo3_order_book_depth10_to_record_batch_bytes(
+        py: Python<'_>,
+        data: Vec<OrderBookDepth10>,
+    ) -> PyResult<Py<PyBytes>> {
+        if data.is_empty() {
+            return Err(PyValueError::new_err(ERROR_EMPTY_DATA));
+        }
+
+        // Take first element and extract metadata
+        // SAFETY: Unwrap safe as already checked that `data` not empty
+        let first = data.first().unwrap();
+        let metadata = OrderBookDepth10::get_metadata(
+            &first.instrument_id,
+            first.bids[0].price.precision,
+            first.bids[0].size.precision,
+        );
+
+        let result: Result<RecordBatch, ArrowError> =
+            OrderBookDepth10::encode_batch(&metadata, &data);
+
+        match result {
+            Ok(batch) => {
+                let schema = OrderBookDepth10::get_schema(Some(metadata));
+                Self::record_batch_to_pybytes(py, batch, schema)
+            }
+            Err(e) => Err(to_pyvalue_err(e)),
+        }
+    }
+
+    #[staticmethod]
+    pub fn pyo3_quote_ticks_to_record_batch_bytes(
         py: Python<'_>,
         data: Vec<QuoteTick>,
     ) -> PyResult<Py<PyBytes>> {
@@ -245,14 +275,14 @@ impl DataTransformer {
         match result {
             Ok(batch) => {
                 let schema = QuoteTick::get_schema(Some(metadata));
-                Self::record_batches_to_pybytes(py, vec![batch], schema)
+                Self::record_batch_to_pybytes(py, batch, schema)
             }
             Err(e) => Err(to_pyvalue_err(e)),
         }
     }
 
     #[staticmethod]
-    pub fn pyo3_trade_ticks_to_batches_bytes(
+    pub fn pyo3_trade_ticks_to_record_batch_bytes(
         py: Python<'_>,
         data: Vec<TradeTick>,
     ) -> PyResult<Py<PyBytes>> {
@@ -274,14 +304,17 @@ impl DataTransformer {
         match result {
             Ok(batch) => {
                 let schema = TradeTick::get_schema(Some(metadata));
-                Self::record_batches_to_pybytes(py, vec![batch], schema)
+                Self::record_batch_to_pybytes(py, batch, schema)
             }
             Err(e) => Err(to_pyvalue_err(e)),
         }
     }
 
     #[staticmethod]
-    pub fn pyo3_bars_to_batches_bytes(py: Python<'_>, data: Vec<Bar>) -> PyResult<Py<PyBytes>> {
+    pub fn pyo3_bars_to_record_batch_bytes(
+        py: Python<'_>,
+        data: Vec<Bar>,
+    ) -> PyResult<Py<PyBytes>> {
         if data.is_empty() {
             return Err(to_pyvalue_err(ERROR_EMPTY_DATA));
         }
@@ -300,7 +333,7 @@ impl DataTransformer {
         match result {
             Ok(batch) => {
                 let schema = Bar::get_schema(Some(metadata));
-                Self::record_batches_to_pybytes(py, vec![batch], schema)
+                Self::record_batch_to_pybytes(py, batch, schema)
             }
             Err(e) => Err(to_pyvalue_err(e)),
         }

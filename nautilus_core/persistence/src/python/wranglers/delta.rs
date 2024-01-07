@@ -61,7 +61,7 @@ impl OrderBookDeltaDataWrangler {
         self.size_precision
     }
 
-    fn process_record_batches_bytes(
+    fn process_record_batch_bytes(
         &self,
         _py: Python,
         data: &[u8],

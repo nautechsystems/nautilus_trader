@@ -15,7 +15,6 @@
 
 import pickle
 
-from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -26,8 +25,6 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
-from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
@@ -196,22 +193,6 @@ class TestQuoteTick:
 
         # Assert
         assert tick == unpickled
-
-    def test_to_pyo3_list(self):
-        # Arrange
-        wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
-
-        quotes = wrangler.process(
-            data=TestDataProvider().read_csv_ticks("truefx/audusd-ticks.csv"),
-            default_volume=1_000_000,
-        )
-
-        # Act
-        pyo3_quotes = QuoteTick.to_pyo3_list(quotes)
-
-        # Assert
-        assert len(pyo3_quotes)
-        assert isinstance(pyo3_quotes[0], nautilus_pyo3.QuoteTick)
 
 
 class TestTradeTick:

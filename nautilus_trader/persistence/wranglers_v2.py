@@ -92,7 +92,7 @@ class OrderBookDeltaDataWrangler(WranglerBase):
         writer.close()
 
         data: bytes = sink.getvalue().to_pybytes()
-        return self._inner.process_record_batches_bytes(data)
+        return self._inner.process_record_batch_bytes(data)
 
     def from_pandas(
         self,
@@ -192,7 +192,7 @@ class QuoteTickDataWrangler(WranglerBase):
         writer.close()
 
         data: bytes = sink.getvalue().to_pybytes()
-        return self._inner.process_record_batches_bytes(data)
+        return self._inner.process_record_batch_bytes(data)
 
     def from_pandas(
         self,
@@ -314,7 +314,7 @@ class TradeTickDataWrangler(WranglerBase):
         writer.close()
 
         data: bytes = sink.getvalue().to_pybytes()
-        return self._inner.process_record_batches_bytes(data)
+        return self._inner.process_record_batch_bytes(data)
 
     def from_json(
         self,
@@ -438,7 +438,7 @@ class BarDataWrangler(WranglerBase):
         writer.close()
 
         data = sink.getvalue().to_pybytes()
-        return self._inner.process_record_batches_bytes(data)
+        return self._inner.process_record_batch_bytes(data)
 
     def from_pandas(
         self,
