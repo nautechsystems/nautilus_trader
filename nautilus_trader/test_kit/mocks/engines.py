@@ -48,8 +48,8 @@ class MockLiveDataEngine(LiveDataEngine):
     def execute(self, command):
         self.commands.append(command)
 
-    def process(self, event):
-        self.events.append(event)
+    def process(self, data):
+        self.events.append(data)
 
     def receive(self, response):
         self.responses.append(response)
