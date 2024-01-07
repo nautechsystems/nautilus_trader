@@ -56,7 +56,7 @@ cdef class Position:
         self,
         Instrument instrument not None,
         OrderFilled fill not None,
-    ):
+    ) -> None:
         Condition.equal(instrument.id, fill.instrument_id, "instrument.id", "fill.instrument_id")
         Condition.not_none(fill.position_id, "fill.position_id")
 
