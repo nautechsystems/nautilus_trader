@@ -23,16 +23,15 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.instruments import Instrument
 
 
-###################################################################################################
-# These classes are only intended to be used under the hood of the ParquetDataCatalog v2 at this stage
-###################################################################################################
-
-
 class WranglerBase(abc.ABC):
     IGNORE_KEYS: ClassVar[set[bytes]] = {b"class", b"pandas"}
 
     @classmethod
-    def from_instrument(cls, instrument: Instrument, **kwargs: Any):
+    def from_instrument(
+        cls,
+        instrument: Instrument,
+        **kwargs: Any,
+    ) -> Any:
         return cls(  # type: ignore
             instrument_id=instrument.id.value,
             price_precision=instrument.price_precision,
@@ -41,7 +40,10 @@ class WranglerBase(abc.ABC):
         )
 
     @classmethod
-    def from_schema(cls, schema: pa.Schema):
+    def from_schema(
+        cls,
+        schema: pa.Schema,
+    ) -> Any:
         def decode(k, v):
             if k in (b"price_precision", b"size_precision"):
                 return int(v.decode())
@@ -54,7 +56,7 @@ class WranglerBase(abc.ABC):
         )
 
 
-class OrderBookDeltaDataWrangler(WranglerBase):
+class OrderBookDeltaDataWranglerV2(WranglerBase):
     """
     Provides a means of building lists of Nautilus `OrderBookDelta` objects.
 
@@ -159,7 +161,7 @@ class OrderBookDeltaDataWrangler(WranglerBase):
         return self.from_arrow(table)
 
 
-class QuoteTickDataWrangler(WranglerBase):
+class QuoteTickDataWranglerV2(WranglerBase):
     """
     Provides a means of building lists of Nautilus `QuoteTick` objects.
 
@@ -276,7 +278,7 @@ class QuoteTickDataWrangler(WranglerBase):
         return self.from_arrow(table)
 
 
-class TradeTickDataWrangler(WranglerBase):
+class TradeTickDataWranglerV2(WranglerBase):
     """
     Provides a means of building lists of Nautilus `TradeTick` objects.
 
@@ -393,7 +395,7 @@ def _map_aggressor_side(val: bool) -> int:
     return 1 if val else 2
 
 
-class BarDataWrangler(WranglerBase):
+class BarDataWranglerV2(WranglerBase):
     IGNORE_KEYS = {b"class", b"pandas", b"instrument_id"}
     """
     Provides a means of building lists of Nautilus `Bar` objects.

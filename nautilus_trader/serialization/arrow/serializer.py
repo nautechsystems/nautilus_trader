@@ -38,10 +38,10 @@ from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import PositionEvent
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.persistence.wranglers_v2 import BarDataWrangler
-from nautilus_trader.persistence.wranglers_v2 import OrderBookDeltaDataWrangler
-from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
-from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWrangler
+from nautilus_trader.persistence.wranglers_v2 import BarDataWranglerV2
+from nautilus_trader.persistence.wranglers_v2 import OrderBookDeltaDataWranglerV2
+from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWranglerV2
+from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWranglerV2
 from nautilus_trader.serialization.arrow.implementations import account_state
 from nautilus_trader.serialization.arrow.implementations import component_events
 from nautilus_trader.serialization.arrow.implementations import instruments
@@ -247,11 +247,11 @@ class ArrowSerializer:
     @staticmethod
     def _deserialize_rust(data_cls: type, table: pa.Table) -> list[Data | Event]:
         Wrangler = {
-            QuoteTick: QuoteTickDataWrangler,
-            TradeTick: TradeTickDataWrangler,
-            Bar: BarDataWrangler,
-            OrderBookDelta: OrderBookDeltaDataWrangler,
-            OrderBookDeltas: OrderBookDeltaDataWrangler,
+            OrderBookDelta: OrderBookDeltaDataWranglerV2,
+            OrderBookDeltas: OrderBookDeltaDataWranglerV2,
+            QuoteTick: QuoteTickDataWranglerV2,
+            TradeTick: TradeTickDataWranglerV2,
+            Bar: BarDataWranglerV2,
         }[data_cls]
         wrangler = Wrangler.from_schema(table.schema)
         ticks = wrangler.from_arrow(table)
