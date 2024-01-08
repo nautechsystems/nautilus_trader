@@ -31,9 +31,9 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
-from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
 # fmt: on
@@ -43,17 +43,17 @@ pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
 
 @pytest.fixture()
 def contract_details():
-    return IBTestProviderStubs.aapl_equity_contract_details()
+    return IBTestContractStubs.aapl_equity_ib_contract_details()
 
 
 @pytest.fixture()
 def contract(contract_details):
-    return contract_details.contract
+    return IBTestContractStubs.aapl_equity_ib_contract()
 
 
 def instrument_setup(exec_client, cache, instrument=None, contract_details=None):
-    instrument = instrument or IBTestProviderStubs.aapl_instrument()
-    contract_details = contract_details or IBTestProviderStubs.aapl_equity_contract_details()
+    instrument = instrument or IBTestContractStubs.aapl_instrument()
+    contract_details = contract_details or IBTestContractStubs.aapl_equity_contract_details()
     exec_client._instrument_provider.contract_details[instrument.id.value] = contract_details
     exec_client._instrument_provider.contract_id_to_instrument_id[
         contract_details.contract.conId

@@ -7,14 +7,14 @@ from unittest.mock import Mock
 import pytest
 
 from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
-from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
 
 
 def test_place_order(ib_client):
     # Arrange
     ib_order = IBTestExecStubs.aapl_buy_ib_order(order_id=1)
-    ib_order.contract = IBTestDataStubs.aapl_contract()
+    ib_order.contract = IBTestContractStubs.aapl_equity_ib_contract()
     ib_client._eclient.placeOrder = MagicMock()
 
     # Act
@@ -99,9 +99,9 @@ def test_openOrder(ib_client):
     ib_client._event_subscriptions.get = Mock(return_value=handler_mock)
 
     order_id = 1
-    contract = IBTestDataStubs.aapl_contract()
+    contract = IBTestContractStubs.aapl_equity_contract()
     order = IBTestExecStubs.aapl_buy_ib_order(order_id=order_id)
-    order_state = IBTestExecStubs.ib_order_state_presubmitted()
+    order_state = IBTestExecStubs.ib_order_state(state="PreSubmitted")
 
     # Act
     ib_client.openOrder(
@@ -158,6 +158,16 @@ def test_execDetails(ib_client):
         account_id="DU123456",
     )
 
+    commission_report_mock = Mock()
+
+    ib_client._exec_id_details = {
+        execution.execId: {
+            "execution": execution,
+            "order_ref": execution.orderRef,
+            "commission_report": commission_report_mock,
+        },
+    }
+
     handler_func = Mock()
     ib_client._event_subscriptions = Mock()
     ib_client._event_subscriptions.get = MagicMock(return_value=handler_func)
@@ -170,12 +180,39 @@ def test_execDetails(ib_client):
     )
 
     # Assert
+    handler_func.assert_called_with(
+        order_ref="O-20220104-1432-001-000-1",
+        execution=execution,
+        commission_report=commission_report_mock,
+    )
 
 
 def test_commissionReport(ib_client):
     # Arrange
+    execution = IBTestExecStubs.execution(
+        order_id=1,
+        account_id="DU123456",
+    )
+    commission_report = IBTestExecStubs.commission()
+
+    ib_client._exec_id_details = {
+        commission_report.execId: {
+            "execution": execution,
+            "order_ref": execution.orderRef.rsplit(":", 1)[0],
+            "commission_report": commission_report,
+        },
+    }
+
+    handler_func = Mock()
+    ib_client._event_subscriptions = Mock()
+    ib_client._event_subscriptions.get = MagicMock(return_value=handler_func)
 
     # Act
+    ib_client.commissionReport(commission_report)
 
     # Assert
-    pass
+    handler_func.assert_called_with(
+        order_ref="O-20220104-1432-001-000-1",
+        execution=execution,
+        commission_report=commission_report,
+    )

@@ -10,7 +10,7 @@ import pytest
 from ibapi import decoder
 
 from nautilus_trader.adapters.interactive_brokers.client.common import IBPosition
-from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 
 
 def test_accounts(ib_client):
@@ -90,21 +90,27 @@ def test_unsubscribe_account_summary(ib_client):
 async def test_get_positions_simulates_two_positions(ib_client):
     # Arrange
     ib_client._eclient.reqPositions = MagicMock()
+    aapl = IBTestContractStubs.aapl_equity_ib_contract()
+    spy = IBTestContractStubs.create_contract(secType="STK", symbol="SPY", exchange="ARCA")
+    spy = IBTestContractStubs.convert_contract_to_ib_contract(spy)
+    tsla = IBTestContractStubs.create_contract(secType="STK", symbol="TSLA", exchange="ARCA")
+    tsla = IBTestContractStubs.convert_contract_to_ib_contract(tsla)
+
     position_1 = IBPosition(
         "DU1234567",
-        IBTestDataStubs.contract(secType="STK", symbol="AAPL", exchange="NASDAQ"),
+        aapl,
         Decimal(5),
         10.0,
     )
     position_2 = IBPosition(
         "DU7654321",
-        IBTestDataStubs.contract(secType="STK", symbol="SPY", exchange="ARCA"),
+        spy,
         Decimal(10),
         20.0,
     )
     position_3 = IBPosition(
         "DU7654321",
-        IBTestDataStubs.contract(secType="STK", symbol="TSLA", exchange="ARCA"),
+        tsla,
         Decimal(10),
         20.0,
     )

@@ -29,7 +29,7 @@ from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
-from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 
 
 # fmt: on
@@ -42,7 +42,7 @@ def venue():
 
 @pytest.fixture()
 def instrument():
-    return IBTestProviderStubs.aapl_instrument()
+    return IBTestContractStubs.aapl_instrument()
 
 
 @pytest.fixture()

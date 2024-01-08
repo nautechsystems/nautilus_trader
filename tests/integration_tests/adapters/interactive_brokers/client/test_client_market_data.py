@@ -23,8 +23,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
-from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 
 
 @pytest.mark.asyncio
@@ -70,8 +69,8 @@ async def test_subscribe(ib_client):
 async def test_subscribe_ticks(ib_client):
     # Arrange
     ib_client._request_id_seq = 999
-    instrument_id = IBTestProviderStubs.aapl_instrument().id
-    contract = IBTestDataStubs.contract()
+    instrument_id = IBTestContractStubs.aapl_instrument().id
+    contract = IBTestContractStubs.aapl_equity_ib_contract()
     tick_type = "BidAsk"
     ib_client._eclient.reqTickByTickData = Mock()
 
@@ -92,8 +91,8 @@ async def test_subscribe_ticks(ib_client):
 async def test_unsubscribe_ticks(ib_client):
     # Arrange
     ib_client._request_id_seq = 999
-    instrument_id = IBTestProviderStubs.aapl_instrument().id
-    contract = IBTestDataStubs.contract()
+    instrument_id = IBTestContractStubs.aapl_instrument().id
+    contract = IBTestContractStubs.aapl_equity_ib_contract()
     tick_type = "BidAsk"
     ib_client._eclient.reqTickByTickData = Mock()
     ib_client._eclient.cancelTickByTickData = Mock()
@@ -113,7 +112,7 @@ async def test_subscribe_realtime_bars(ib_client):
     # Arrange
     ib_client._request_id_seq = 999
     bar_type = BarType.from_str("AAPL.SMART-5-SECOND-BID-EXTERNAL")
-    contract = IBTestDataStubs.contract()
+    contract = IBTestContractStubs.aapl_equity_ib_contract()
     use_rth = True
     ib_client._eclient.reqRealTimeBars = Mock()
 
@@ -136,7 +135,7 @@ async def test_unsubscribe_realtime_bars(ib_client):
     # Arrange
     ib_client._request_id_seq = 999
     bar_type = BarType.from_str("AAPL.SMART-5-SECOND-BID-EXTERNAL")
-    contract = IBTestDataStubs.contract()
+    contract = IBTestContractStubs.aapl_equity_ib_contract()
     use_rth = True
     ib_client._eclient.reqRealTimeBars = Mock()
     ib_client._eclient.cancelRealTimeBars = Mock()
@@ -156,7 +155,7 @@ async def test_subscribe_historical_bars(ib_client):
     # Arrange
     ib_client._request_id_seq = 999
     bar_type = BarType.from_str("AAPL.SMART-5-SECOND-BID-EXTERNAL")
-    contract = IBTestDataStubs.contract()
+    contract = IBTestContractStubs.aapl_equity_ib_contract()
     use_rth = True
     handle_revised_bars = True
     ib_client._eclient.reqHistoricalData = Mock()
@@ -189,7 +188,7 @@ async def test_unsubscribe_historical_bars(ib_client):
     # Arrange
     ib_client._request_id_seq = 999
     bar_type = BarType.from_str("AAPL.SMART-5-SECOND-BID-EXTERNAL")
-    contract = IBTestDataStubs.contract()
+    contract = IBTestContractStubs.aapl_equity_ib_contract()
     use_rth = True
     handle_revised_bars = True
     ib_client._eclient.reqHistoricalData = Mock()
@@ -215,7 +214,7 @@ async def test_get_historical_bars(ib_client):
     # Arrange
     ib_client._request_id_seq = 999
     bar_type = BarType.from_str("AAPL.SMART-5-SECOND-BID-EXTERNAL")
-    contract = IBTestDataStubs.contract()
+    contract = IBTestContractStubs.aapl_equity_ib_contract()
     use_rth = True
     end_date_time = "20240101-010000"
     duration = "5 S"
@@ -250,7 +249,7 @@ async def test_get_historical_bars(ib_client):
 async def test_get_historical_ticks(ib_client):
     # Arrange
     ib_client._request_id_seq = 999
-    contract = IBTestDataStubs.ib_contract()
+    contract = IBTestContractStubs.aapl_equity_ib_contract()
     tick_type = "BidAsk"
     start_date_time = "20240101 01:00:00"
     end_date_time = "20240101 02:00:00"
@@ -295,7 +294,7 @@ def test_ib_bar_to_nautilus_bar(ib_client):
     bar.wap = Decimal(-1)
     bar.barCount = -1
     ts_init = 1704067205000000000
-    ib_client._cache.add_instrument(IBTestProviderStubs.aapl_instrument())
+    ib_client._cache.add_instrument(IBTestContractStubs.aapl_instrument())
 
     # Act
     result = ib_client._ib_bar_to_nautilus_bar(bar_type, bar, ts_init, is_revision=False)
@@ -326,7 +325,7 @@ def test_process_bar_data(ib_client):
     previous_bar.barCount = -1
     ib_client._bar_type_to_last_bar[bar_type_str] = previous_bar
     ib_client._clock.set_time(1704067205000000000)
-    ib_client._cache.add_instrument(IBTestProviderStubs.aapl_instrument())
+    ib_client._cache.add_instrument(IBTestContractStubs.aapl_instrument())
     bar = copy.deepcopy(previous_bar)
     bar.date = "1704067205"
 

@@ -3,14 +3,14 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 
 
 @pytest.mark.asyncio
 async def test_get_contract_details(ib_client):
     # Arrange
     ib_client._request_id_seq = 1
-    contract = IBTestProviderStubs.aapl_equity_contract_details().contract
+    contract = IBTestContractStubs.aapl_equity_contract()
     ib_client._eclient.reqContractDetails = Mock()
 
     # Act
@@ -28,7 +28,7 @@ async def test_get_contract_details(ib_client):
 async def test_get_option_chains(ib_client):
     # Arrange
     ib_client._request_id_seq = 1
-    underlying = IBTestProviderStubs.aapl_equity_contract_details().contract
+    underlying = IBTestContractStubs.aapl_equity_contract()
 
     ib_client._eclient.reqSecDefOptParams = Mock()
 

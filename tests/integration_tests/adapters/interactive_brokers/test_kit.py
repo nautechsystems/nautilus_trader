@@ -23,6 +23,7 @@ import msgspec
 import pandas as pd
 import pytz
 from ibapi.commission_report import CommissionReport
+from ibapi.common import UNSET_DECIMAL
 from ibapi.common import BarData
 from ibapi.contract import Contract  # We use this for the expected response from IB
 from ibapi.contract import ContractDetails
@@ -37,6 +38,7 @@ from nautilus_trader.adapters.interactive_brokers.common import IBContractDetail
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionsContract
 from tests import TESTS_PACKAGE_ROOT
 
@@ -46,6 +48,12 @@ RESPONSES_PATH = pathlib.Path(TEST_PATH / "resources" / "responses")
 STREAMING_PATH = pathlib.Path(TEST_PATH / "resources" / "streaming")
 
 
+def set_attributes(obj, params: dict):
+    for key, value in params.items():
+        setattr(obj, key, value)
+    return obj
+
+
 class IBTestIncomingMessages:
     @staticmethod
     def get_msg(msg_type: str) -> bytes:
@@ -53,280 +61,381 @@ class IBTestIncomingMessages:
             return f.read()
 
 
-class IBTestProviderStubs:
+class IBTestContractStubs:
+    @staticmethod
+    def create_contract(
+        conId=0,
+        symbol="",
+        secType="",
+        lastTradeDateOrContractMonth="",
+        strike=0.0,
+        right="",
+        multiplier="",
+        exchange="",
+        currency="",
+        localSymbol="",
+        primaryExchange="",
+        tradingClass="",
+        includeExpired=False,
+        secIdType="",
+        secId="",
+        description="",
+        issuerId="",
+        comboLegsDescrip="",
+        comboLegs=None,
+        deltaNeutralContract=None,
+    ) -> Contract:
+        return set_attributes(Contract(), locals())
+
+    def convert_contract_to_ib_contract(contract: Contract) -> IBContract:
+        return IBContract(**contract.__dict__)
+
+    @staticmethod
+    def create_contract_details(
+        contract=Contract(),
+        marketName="",
+        minTick=0.0,
+        orderTypes="",
+        validExchanges="",
+        priceMagnifier=0,
+        underConId=0,
+        longName="",
+        contractMonth="",
+        industry="",
+        category="",
+        subcategory="",
+        timeZoneId="",
+        tradingHours="",
+        liquidHours="",
+        evRule="",
+        evMultiplier=0,
+        mdSizeMultiplier=None,
+        aggGroup=0,
+        underSymbol="",
+        underSecType="",
+        marketRuleIds="",
+        secIdList=None,
+        realExpirationDate="",
+        lastTradeTime="",
+        stockType="",
+        minSize=UNSET_DECIMAL,
+        sizeIncrement=UNSET_DECIMAL,
+        suggestedSizeIncrement=UNSET_DECIMAL,
+        cusip="",
+        ratings="",
+        descAppend="",
+        bondType="",
+        couponType="",
+        callable=False,
+        putable=False,
+        coupon=0,
+        convertible=False,
+        maturity="",
+        issueDate="",
+        nextOptionDate="",
+        nextOptionType="",
+        nextOptionPartial=False,
+        notes="",
+    ) -> Contract:
+        return set_attributes(ContractDetails(), locals())
+
+    @staticmethod
+    def convert_contract_details_to_ib_contract_details(
+        contract_details: ContractDetails,
+    ) -> IBContractDetails:
+        contract_details.contract = IBTestContractStubs.convert_contract_to_ib_contract(
+            contract_details.contract,
+        )
+        return IBContractDetails(**contract_details.__dict__)
+
+    @staticmethod
+    def create_instrument(contract_details: ContractDetails) -> Instrument:
+        contract_details = IBTestContractStubs.convert_contract_details_to_ib_contract_details(
+            contract_details,
+        )
+        return parse_instrument(contract_details=contract_details)
+
+    @staticmethod
+    def aapl_equity_contract() -> Contract:
+        params = {
+            "secType": "STK",
+            "conId": 265598,
+            "symbol": "AAPL",
+            "exchange": "SMART",
+            "primaryExchange": "NASDAQ",
+            "currency": "USD",
+            "localSymbol": "AAPL",
+            "tradingClass": "NMS",
+        }
+        return IBTestContractStubs.create_contract(**params)
+
+    @staticmethod
+    def aapl_equity_ib_contract() -> IBContract:
+        contract = IBTestContractStubs.aapl_equity_contract()
+        return IBTestContractStubs.convert_contract_to_ib_contract(contract)
+
     @staticmethod
     def aapl_equity_contract_details() -> ContractDetails:
-        details = ContractDetails()
-        details.contract = Contract()
-        details.contract.secType = "STK"
-        details.contract.conId = 265598
-        details.contract.symbol = "AAPL"
-        details.contract.exchange = "SMART"
-        details.contract.primaryExchange = "NASDAQ"
-        details.contract.currency = "USD"
-        details.contract.localSymbol = "AAPL"
-        details.contract.tradingClass = "NMS"
-        details.marketName = "NMS"
-        details.minTick = 0.01
-        details.orderTypes = "ACTIVETIM,AD,ADJUST,ALERT,ALLOC,AVGCOST,BASKET,BENCHPX,CASHQTY,COND,CONDORDER,DAY,DEACT,DEACTDIS,DEACTEOD,GAT,GTC,GTD,GTT,HID,IOC,LIT,LMT,MIT,MKT,MTL,NGCOMB,NONALGO,OCA,PEGBENCH,SCALE,SCALERST,SNAPMID,SNAPMKT,SNAPREL,STP,STPLMT,TRAIL,TRAILLIT,TRAILLMT,TRAILMIT,WHATIF"  # noqa
-        details.validExchanges = "SMART,AMEX,NYSE,CBOE,PHLX,ISE,CHX,ARCA,ISLAND,DRCTEDGE,BEX,BATS,EDGEA,CSFBALGO,JEFFALGO,BYX,IEX,EDGX,FOXRIVER,PEARL,NYSENAT,LTSE,MEMX,TPLUS1,PSX"  # noqa
-        details.priceMagnifier = 1
-        details.underConId = 0
-        details.longName = "APPLE INC"
-        details.contractMonth = ""
-        details.industry = "Technology"
-        details.category = "Computers"
-        details.subcategory = "Computers"
-        details.timeZoneId = "US/Eastern"
-        details.tradingHours = "20221207:0700-20221207:2000;20221208:0700-20221208:2000;20221209:0700-20221209:2000;20221210:CLOSED;20221211:CLOSED;20221212:0700-20221212:2000"  # noqa
-        details.liquidHours = "20221207:0700-20221207:2000;20221208:0700-20221208:2000;20221209:0700-20221209:2000;20221210:CLOSED;20221211:CLOSED;20221212:0700-20221212:2000"  # noqa
-        details.evRule = ""
-        details.evMultiplier = 0
-        details.mdSizeMultiplier = 1
-        details.aggGroup = 1
-        details.underSymbol = ""
-        details.underSecType = ""
-        details.marketRuleIds = (
-            "26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26"
-        )
-        details.secIdList = [TagValue(tag="ISIN", value="US0378331005")]
-        details.realExpirationDate = ""
-        details.lastTradeTime = ""
-        details.stockType = "COMMON"
-        details.minSize = 1.0
-        details.sizeIncrement = 1.0
-        details.suggestedSizeIncrement = 100.0
-        details.cusip = ""
-        details.ratings = ""
-        details.descAppend = ""
-        details.bondType = ""
-        details.couponType = ""
-        details.callable = False
-        details.putable = False
-        details.coupon = 0
-        details.convertible = False
-        details.maturity = ""
-        details.issueDate = ""
-        details.nextOptionDate = ""
-        details.nextOptionType = ""
-        details.nextOptionPartial = False
-        details.notes = ""
-        return details
+        params = {
+            "contract": IBTestContractStubs.aapl_equity_contract(),
+            "marketName": "NMS",
+            "minTick": 0.01,
+            "orderTypes": "ACTIVETIM,AD,ADJUST,ALERT,ALLOC,AVGCOST,BASKET,BENCHPX,CASHQTY,COND,CONDORDER,DAY,DEACT,DEACTDIS,DEACTEOD,GAT,GTC,GTD,GTT,HID,IOC,LIT,LMT,MIT,MKT,MTL,NGCOMB,NONALGO,OCA,PEGBENCH,SCALE,SCALERST,SNAPMID,SNAPMKT,SNAPREL,STP,STPLMT,TRAIL,TRAILLIT,TRAILLMT,TRAILMIT,WHATIF",  # noqa: E501
+            "validExchanges": "SMART,AMEX,NYSE,CBOE,PHLX,ISE,CHX,ARCA,ISLAND,DRCTEDGE,BEX,BATS,EDGEA,CSFBALGO,JEFFALGO,BYX,IEX,EDGX,FOXRIVER,PEARL,NYSENAT,LTSE,MEMX,TPLUS1,PSX",  # noqa: E501
+            "priceMagnifier": 1,
+            "underConId": 0,
+            "longName": "APPLE INC",
+            "contractMonth": "",
+            "industry": "Technology",
+            "category": "Computers",
+            "subcategory": "Computers",
+            "timeZoneId": "US/Eastern",
+            "tradingHours": "20221207:0700-20221207:2000;20221208:0700-20221208:2000;20221209:0700-20221209:2000;20221210:CLOSED;20221211:CLOSED;20221212:0700-20221212:2000",  # noqa: E501
+            "liquidHours": "20221207:0700-20221207:2000;20221208:0700-20221208:2000;20221209:0700-20221209:2000;20221210:CLOSED;20221211:CLOSED;20221212:0700-20221212:2000",  # noqa: E501
+            "evRule": "",
+            "evMultiplier": 0,
+            "mdSizeMultiplier": 1,
+            "aggGroup": 1,
+            "underSymbol": "",
+            "underSecType": "",
+            "marketRuleIds": "26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26",
+            "secIdList": [TagValue(tag="ISIN", value="US0378331005")],
+            "realExpirationDate": "",
+            "lastTradeTime": "",
+            "stockType": "COMMON",
+            "minSize": 1.0,
+            "sizeIncrement": 1.0,
+            "suggestedSizeIncrement": 100.0,
+            "cusip": "",
+            "ratings": "",
+            "descAppend": "",
+            "bondType": "",
+            "couponType": "",
+            "callable": False,
+            "putable": False,
+            "coupon": 0,
+            "convertible": False,
+            "maturity": "",
+            "issueDate": "",
+            "nextOptionDate": "",
+            "nextOptionType": "",
+            "nextOptionPartial": False,
+            "notes": "",
+        }
+        return IBTestContractStubs.create_contract_details(**params)
+
+    @staticmethod
+    def aapl_equity_ib_contract_details() -> IBContractDetails:
+        contract_details = IBTestContractStubs.aapl_equity_contract_details()
+        return IBTestContractStubs.convert_contract_details_to_ib_contract_details(contract_details)
+
+    @staticmethod
+    def cl_future_contract() -> Contract:
+        params = {
+            "secType": "FUT",
+            "conId": 174230596,
+            "symbol": "CL",
+            "lastTradeDateOrContractMonth": "20231120",
+            "multiplier": "1000",
+            "exchange": "NYMEX",
+            "currency": "USD",
+            "localSymbol": "CLZ3",
+            "tradingClass": "CL",
+        }
+        return IBTestContractStubs.create_contract(**params)
 
     @staticmethod
     def cl_future_contract_details() -> ContractDetails:
-        details = ContractDetails()
-        details.contract = Contract()
-        details.contract.secType = "FUT"
-        details.contract.conId = 174230596
-        details.contract.symbol = "CL"
-        details.contract.lastTradeDateOrContractMonth = "20231120"
-        details.contract.multiplier = "1000"
-        details.contract.exchange = "NYMEX"
-        details.contract.currency = "USD"
-        details.contract.localSymbol = "CLZ3"
-        details.contract.tradingClass = "CL"
-        details.marketName = "CL"
-        details.minTick = 0.01
-        details.orderTypes = "ACTIVETIM,AD,ADJUST,ALERT,ALGO,ALLOC,AVGCOST,BASKET,BENCHPX,COND,CONDORDER,DAY,DEACT,DEACTDIS,DEACTEOD,GAT,GTC,GTD,GTT,HID,ICE,IOC,LIT,LMT,LTH,MIT,MKT,MTL,NGCOMB,NONALGO,OCA,PEGBENCH,SCALE,SCALERST,SIZECHK,SNAPMID,SNAPMKT,SNAPREL,STP,STPLMT,TRAIL,TRAILLIT,TRAILLMT,TRAILMIT,WHATIF"  # noqa
-        details.validExchanges = "NYMEX,QBALGO"
-        details.priceMagnifier = 1
-        details.underConId = 17340715
-        details.longName = "Light Sweet Crude Oil"
-        details.contractMonth = "202312"
-        details.industry = ""
-        details.category = ""
-        details.subcategory = ""
-        details.timeZoneId = "US/Eastern"
-        details.tradingHours = "20221206:1800-20221207:1700;20221207:1800-20221208:1700;20221208:1800-20221209:1700;20221210:CLOSED;20221211:1800-20221212:1700;20221212:1800-20221213:1700"  # noqa
-        details.liquidHours = "20221207:0930-20221207:1700;20221208:0930-20221208:1700;20221209:0930-20221209:1700;20221210:CLOSED;20221211:CLOSED;20221212:0930-20221212:1700;20221212:1800-20221213:1700"  # noqa
-        details.evRule = ""
-        details.evMultiplier = 0
-        details.mdSizeMultiplier = 1
-        details.aggGroup = 2147483647
-        details.underSymbol = "CL"
-        details.underSecType = "IND"
-        details.marketRuleIds = "32,32"
-        details.secIdList = []
-        details.realExpirationDate = "20231120"
-        details.lastTradeTime = "14:30:00"
-        details.stockType = ""
-        details.minSize = 1.0
-        details.sizeIncrement = 1.0
-        details.suggestedSizeIncrement = 1.0
-        details.cusip = ""
-        details.ratings = ""
-        details.descAppend = ""
-        details.bondType = ""
-        details.couponType = ""
-        details.callable = False
-        details.putable = False
-        details.coupon = 0
-        details.convertible = False
-        details.maturity = ""
-        details.issueDate = ""
-        details.nextOptionDate = ""
-        details.nextOptionType = ""
-        details.nextOptionPartial = False
-        details.notes = ""
-        return details
+        params = {
+            "contract": IBTestContractStubs.cl_future_contract(),
+            "marketName": "CL",
+            "minTick": 0.01,
+            "orderTypes": "ACTIVETIM,AD,ADJUST,ALERT,ALGO,ALLOC,AVGCOST,BASKET,BENCHPX,COND,CONDORDER,DAY,DEACT,DEACTDIS,DEACTEOD,GAT,GTC,GTD,GTT,HID,ICE,IOC,LIT,LMT,LTH,MIT,MKT,MTL,NGCOMB,NONALGO,OCA,PEGBENCH,SCALE,SCALERST,SIZECHK,SNAPMID,SNAPMKT,SNAPREL,STP,STPLMT,TRAIL,TRAILLIT,TRAILLMT,TRAILMIT,WHATIF",  # noqa
+            "validExchanges": "NYMEX,QBALGO",
+            "priceMagnifier": 1,
+            "underConId": 17340715,
+            "longName": "Light Sweet Crude Oil",
+            "contractMonth": "202312",
+            "industry": "",
+            "category": "",
+            "subcategory": "",
+            "timeZoneId": "US/Eastern",
+            "tradingHours": "20221206:1800-20221207:1700;20221207:1800-20221208:1700;20221208:1800-20221209:1700;20221210:CLOSED;20221211:1800-20221212:1700;20221212:1800-20221213:1700",  # noqa
+            "liquidHours": "20221207:0930-20221207:1700;20221208:0930-20221208:1700;20221209:0930-20221209:1700;20221210:CLOSED;20221211:CLOSED;20221212:0930-20221212:1700;20221212:1800-20221213:1700",  # noqa
+            "evRule": "",
+            "evMultiplier": 0,
+            "mdSizeMultiplier": 1,
+            "aggGroup": 2147483647,
+            "underSymbol": "CL",
+            "underSecType": "IND",
+            "marketRuleIds": "32,32",
+            "secIdList": [],
+            "realExpirationDate": "20231120",
+            "lastTradeTime": "14:30:00",
+            "stockType": "",
+            "minSize": 1.0,
+            "sizeIncrement": 1.0,
+            "suggestedSizeIncrement": 1.0,
+            "cusip": "",
+            "ratings": "",
+            "descAppend": "",
+            "bondType": "",
+            "couponType": "",
+            "callable": False,
+            "putable": False,
+            "coupon": 0,
+            "convertible": False,
+            "maturity": "",
+            "issueDate": "",
+            "nextOptionDate": "",
+            "nextOptionType": "",
+            "nextOptionPartial": False,
+            "notes": "",
+        }
+        return IBTestContractStubs.create_contract_details(**params)
+
+    @staticmethod
+    def eurusd_forex_contract() -> Contract:
+        params = {
+            "secType": "CASH",
+            "conId": 12087792,
+            "symbol": "EUR",
+            "exchange": "IDEALPRO",
+            "currency": "USD",
+            "localSymbol": "EUR.USD",
+            "tradingClass": "EUR.USD",
+        }
+        return IBTestContractStubs.create_contract(**params)
 
     @staticmethod
     def eurusd_forex_contract_details() -> ContractDetails:
-        details = ContractDetails()
-        details.contract = Contract()
-        details.contract.secType = "CASH"
-        details.contract.conId = 12087792
-        details.contract.symbol = "EUR"
-        details.contract.exchange = "IDEALPRO"
-        details.contract.currency = "USD"
-        details.contract.localSymbol = "EUR.USD"
-        details.contract.tradingClass = "EUR.USD"
-        details.marketName = "EUR.USD"
-        details.minTick = 5e-05
-        details.orderTypes = "ACTIVETIM,AD,ADJUST,ALERT,ALGO,ALLOC,AVGCOST,BASKET,CASHQTY,COND,CONDORDER,DAY,DEACT,DEACTDIS,DEACTEOD,GAT,GTC,GTD,GTT,HID,IOC,LIT,LMT,MIT,MKT,NONALGO,OCA,REL,RELPCTOFS,SCALE,SCALERST,STP,STPLMT,TRAIL,TRAILLIT,TRAILLMT,TRAILMIT,WHATIF"  # noqa
-        details.validExchanges = "IDEALPRO"
-        details.priceMagnifier = 1
-        details.underConId = 0
-        details.longName = "European Monetary Union Euro"
-        details.contractMonth = ""
-        details.industry = ""
-        details.category = ""
-        details.subcategory = ""
-        details.timeZoneId = "US/Eastern"
-        details.tradingHours = "20221205:1715-20221206:1700;20221206:1715-20221207:1700;20221207:1715-20221208:1700;20221208:1715-20221209:1700;20221210:CLOSED;20221211:1715-20221212:1700"  # noqa
-        details.liquidHours = "20221205:1715-20221206:1700;20221206:1715-20221207:1700;20221207:1715-20221208:1700;20221208:1715-20221209:1700;20221210:CLOSED;20221211:1715-20221212:1700"  # noqa
-        details.evRule = ""
-        details.evMultiplier = 0
-        details.mdSizeMultiplier = 1
-        details.aggGroup = 4
-        details.underSymbol = ""
-        details.underSecType = ""
-        details.marketRuleIds = "239"
-        details.secIdList = []
-        details.realExpirationDate = ""
-        details.lastTradeTime = ""
-        details.stockType = ""
-        details.minSize = 1.0
-        details.sizeIncrement = 1.0
-        details.suggestedSizeIncrement = 1.0
-        details.cusip = ""
-        details.ratings = ""
-        details.descAppend = ""
-        details.bondType = ""
-        details.couponType = ""
-        details.callable = False
-        details.putable = False
-        details.coupon = 0
-        details.convertible = False
-        details.maturity = ""
-        details.issueDate = ""
-        details.nextOptionDate = ""
-        details.nextOptionType = ""
-        details.nextOptionPartial = False
-        details.notes = ""
-        return details
+        params = {
+            "contract": IBTestContractStubs.eurusd_forex_contract(),
+            "marketName": "EUR.USD",
+            "minTick": 5e-05,
+            "orderTypes": "ACTIVETIM,AD,ADJUST,ALERT,ALGO,ALLOC,AVGCOST,BASKET,CASHQTY,COND,CONDORDER,DAY,DEACT,DEACTDIS,DEACTEOD,GAT,GTC,GTD,GTT,HID,IOC,LIT,LMT,MIT,MKT,NONALGO,OCA,REL,RELPCTOFS,SCALE,SCALERST,STP,STPLMT,TRAIL,TRAILLIT,TRAILLMT,TRAILMIT,WHATIF",  # noqa
+            "validExchanges": "IDEALPRO",
+            "priceMagnifier": 1,
+            "underConId": 0,
+            "longName": "European Monetary Union Euro",
+            "contractMonth": "",
+            "industry": "",
+            "category": "",
+            "subcategory": "",
+            "timeZoneId": "US/Eastern",
+            "tradingHours": "20221205:1715-20221206:1700;20221206:1715-20221207:1700;20221207:1715-20221208:1700;20221208:1715-20221209:1700;20221210:CLOSED;20221211:1715-20221212:1700",  # noqa
+            "liquidHours": "20221205:1715-20221206:1700;20221206:1715-20221207:1700;20221207:1715-20221208:1700;20221208:1715-20221209:1700;20221210:CLOSED;20221211:1715-20221212:1700",  # noqa
+            "evRule": "",
+            "evMultiplier": 0,
+            "mdSizeMultiplier": 1,
+            "aggGroup": 4,
+            "underSymbol": "",
+            "underSecType": "",
+            "marketRuleIds": "239",
+            "secIdList": [],
+            "realExpirationDate": "",
+            "lastTradeTime": "",
+            "stockType": "",
+            "minSize": 1.0,
+            "sizeIncrement": 1.0,
+            "suggestedSizeIncrement": 1.0,
+            "cusip": "",
+            "ratings": "",
+            "descAppend": "",
+            "bondType": "",
+            "couponType": "",
+            "callable": False,
+            "putable": False,
+            "coupon": 0,
+            "convertible": False,
+            "maturity": "",
+            "issueDate": "",
+            "nextOptionDate": "",
+            "nextOptionType": "",
+            "nextOptionPartial": False,
+            "notes": "",
+        }
+        return IBTestContractStubs.create_contract_details(**params)
+
+    @staticmethod
+    def tsla_option_contract() -> Contract:
+        params = {
+            "secType": "OPT",
+            "conId": 445067953,
+            "symbol": "TSLA",
+            "lastTradeDateOrContractMonth": "20230120",
+            "strike": 100.0,
+            "right": "C",
+            "multiplier": "100",
+            "exchange": "MIAX",
+            "currency": "USD",
+            "localSymbol": "TSLA  230120C00100000",
+            "tradingClass": "TSLA",
+        }
+        return IBTestContractStubs.create_contract(**params)
 
     @staticmethod
     def tsla_option_contract_details() -> ContractDetails:
-        details = ContractDetails()
-        details.contract = Contract()
-        details.contract.secType = "OPT"
-        details.contract.conId = 445067953
-        details.contract.symbol = "TSLA"
-        details.contract.lastTradeDateOrContractMonth = "20230120"
-        details.contract.strike = 100.0
-        details.contract.right = "C"
-        details.contract.multiplier = "100"
-        details.contract.exchange = "MIAX"
-        details.contract.currency = "USD"
-        details.contract.localSymbol = "TSLA  230120C00100000"
-        details.contract.tradingClass = "TSLA"
-        details.marketName = "TSLA"
-        details.minTick = 0.01
-        details.orderTypes = "ACTIVETIM,AD,ADJUST,ALERT,ALLOC,AVGCOST,BASKET,COND,CONDORDER,DAY,DEACT,DEACTDIS,DEACTEOD,GAT,GTC,GTD,GTT,HID,IOC,LIT,LMT,MIT,MKT,MTL,NGCOMB,NONALGO,OCA,OPENCLOSE,SCALE,SCALERST,SNAPMID,SNAPMKT,SNAPREL,STP,STPLMT,TRAIL,TRAILLIT,TRAILLMT,TRAILMIT,WHATIF"  # noqa
-        details.validExchanges = "SMART,AMEX,CBOE,PHLX,PSE,ISE,BOX,BATS,NASDAQOM,CBOE2,NASDAQBX,MIAX,GEMINI,EDGX,MERCURY,PEARL,EMERALD"
-        details.priceMagnifier = 1
-        details.underConId = 76792991
-        details.longName = "TESLA INC"
-        details.contractMonth = "202301"
-        details.industry = ""
-        details.category = ""
-        details.subcategory = ""
-        details.timeZoneId = "US/Eastern"
-        details.tradingHours = "20221207:0930-20221207:1600;20221208:0930-20221208:1600;20221209:0930-20221209:1600;20221210:CLOSED;20221211:CLOSED;20221212:0930-20221212:1600"  # noqa
-        details.liquidHours = "20221207:0930-20221207:1600;20221208:0930-20221208:1600;20221209:0930-20221209:1600;20221210:CLOSED;20221211:CLOSED;20221212:0930-20221212:1600"  # noqa
-        details.evRule = ""
-        details.evMultiplier = 0
-        details.mdSizeMultiplier = 1
-        details.aggGroup = 2
-        details.underSymbol = "TSLA"
-        details.underSecType = "STK"
-        details.marketRuleIds = "32,109,109,109,109,109,109,109,32,109,32,109,109,109,109,109,109"
-        details.secIdList = []
-        details.realExpirationDate = "20230120"
-        details.lastTradeTime = ""
-        details.stockType = ""
-        details.minSize = 1.0
-        details.sizeIncrement = 1.0
-        details.suggestedSizeIncrement = 1.0
-        details.cusip = ""
-        details.ratings = ""
-        details.descAppend = ""
-        details.bondType = ""
-        details.couponType = ""
-        details.callable = False
-        details.putable = False
-        details.coupon = 0
-        details.convertible = False
-        details.maturity = ""
-        details.issueDate = ""
-        details.nextOptionDate = ""
-        details.nextOptionType = ""
-        details.nextOptionPartial = (False,)
-        details.notes = ""
-        return details
+        params = {
+            "contract": IBTestContractStubs.tsla_option_contract(),
+            "marketName": "TSLA",
+            "minTick": 0.01,
+            "orderTypes": "ACTIVETIM,AD,ADJUST,ALERT,ALLOC,AVGCOST,BASKET,COND,CONDORDER,DAY,DEACT,DEACTDIS,DEACTEOD,GAT,GTC,GTD,GTT,HID,IOC,LIT,LMT,MIT,MKT,MTL,NGCOMB,NONALGO,OCA,OPENCLOSE,SCALE,SCALERST,SNAPMID,SNAPMKT,SNAPREL,STP,STPLMT,TRAIL,TRAILLIT,TRAILLMT,TRAILMIT,WHATIF",  # noqa
+            "validExchanges": "SMART,AMEX,CBOE,PHLX,PSE,ISE,BOX,BATS,NASDAQOM,CBOE2,NASDAQBX,MIAX,GEMINI,EDGX,MERCURY,PEARL,EMERALD",
+            "priceMagnifier": 1,
+            "underConId": 76792991,
+            "longName": "TESLA INC",
+            "contractMonth": "202301",
+            "industry": "",
+            "category": "",
+            "subcategory": "",
+            "timeZoneId": "US/Eastern",
+            "tradingHours": "20221207:0930-20221207:1600;20221208:0930-20221208:1600;20221209:0930-20221209:1600;20221210:CLOSED;20221211:CLOSED;20221212:0930-20221212:1600",  # noqa: E501
+            "liquidHours": "20221207:0930-20221207:1600;20221208:0930-20221208:1600;20221209:0930-20221209:1600;20221210:CLOSED;20221211:CLOSED;20221212:0930-20221212:1600",  # noqa: E501
+            "evRule": "",
+            "evMultiplier": 0,
+            "mdSizeMultiplier": 1,
+            "aggGroup": 2,
+            "underSymbol": "TSLA",
+            "underSecType": "STK",
+            "marketRuleIds": "32,109,109,109,109,109,109,109,32,109,32,109,109,109,109,109,109",
+            "secIdList": [],
+            "realExpirationDate": "20230120",
+            "lastTradeTime": "",
+            "stockType": "",
+            "minSize": 1.0,
+            "sizeIncrement": 1.0,
+            "suggestedSizeIncrement": 1.0,
+            "cusip": "",
+            "ratings": "",
+            "descAppend": "",
+            "bondType": "",
+            "couponType": "",
+            "callable": False,
+            "putable": False,
+            "coupon": 0,
+            "convertible": False,
+            "maturity": "",
+            "issueDate": "",
+            "nextOptionDate": "",
+            "nextOptionType": "",
+            "nextOptionPartial": (False,),
+            "notes": "",
+        }
+        return IBTestContractStubs.create_contract_details(**params)
 
     @staticmethod
     def aapl_instrument() -> Equity:
-        contract_details = IBTestProviderStubs.aapl_equity_contract_details()
-        contract_details.contract = IBContract(**contract_details.contract.__dict__)
-        contract_details = IBContractDetails(**contract_details.__dict__)
-        return parse_instrument(contract_details=contract_details)
+        contract_details = IBTestContractStubs.aapl_equity_contract_details()
+        return IBTestContractStubs.create_instrument(contract_details)
 
     @staticmethod
     def eurusd_instrument() -> CurrencyPair:
-        contract_details = IBTestProviderStubs.eurusd_forex_contract_details()
-        contract_details.contract = IBContract(**contract_details.contract.__dict__)
-        contract_details = IBContractDetails(**contract_details.__dict__)
-        return parse_instrument(contract_details=contract_details)
+        contract_details = IBTestContractStubs.eurusd_forex_contract_details()
+        return IBTestContractStubs.create_instrument(contract_details)
 
 
 class IBTestDataStubs:
-    @staticmethod
-    def ib_contract(secType="STK", symbol="AAPL", exchange="NASDAQ", **kwargs):
-        return IBContract(secType=secType, symbol=symbol, exchange=exchange, **kwargs)
-
-    @staticmethod
-    def contract(secType="STK", symbol="AAPL", exchange="NASDAQ"):
-        params = locals()
-        contract = Contract()
-        for key, value in params.items():
-            setattr(contract, key, value)
-        return contract
-
-    @staticmethod
-    def aapl_ib_contract(secType="STK", symbol="AAPL", exchange="NASDAQ", **kwargs):
-        return IBContract(secType=secType, symbol=symbol, exchange=exchange, **kwargs)
-
-    @staticmethod
-    def aapl_contract(secType="STK", symbol="AAPL", exchange="NASDAQ"):
-        params = locals()
-        contract = Contract()
-        for key, value in params.items():
-            setattr(contract, key, value)
-        return contract
-
     @staticmethod
     def account_values(fn: str = "account_values.json") -> list[dict]:
         with open(RESPONSES_PATH / fn, "rb") as f:
@@ -358,292 +467,26 @@ class IBTestDataStubs:
 
 
 class IBTestExecStubs:
-    # @staticmethod
-    # def create_order(
-    #     order_id: int = 1,
-    #     client_id: int = 1,
-    #     permId: int = 0,
-    #     kind: str = "LIMIT",
-    #     action: str = "BUY",
-    #     quantity: int = 100000,
-    #     limit_price: float = 105.0,
-    #     client_order_id: ClientOrderId = ClientOrderId("C-1"),
-    #     account: str = 'DU123456',
-    # ):
-    #     if kind == "LIMIT":
-    #         return IBLimitOrder(
-    #             orderId=order_id,
-    #             clientId=client_id,
-    #             action=action,
-    #             totalQuantity=quantity,
-    #             lmtPrice=limit_price,
-    #             permId=permId,
-    #             orderRef=client_order_id.value,
-    #         )
-    #     else:
-    #         raise RuntimeError
-    #
-    # @staticmethod
-    # def trade_pending_submit(contract=None, order: IBOrder = None) -> Trade:
-    #     contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
-    #     order = order or IBTestExecStubs.create_order()
-    #     return Trade(
-    #         contract=contract,
-    #         order=order,
-    #         orderStatus=OrderStatus(
-    #             orderId=41,
-    #             status="PendingSubmit",
-    #             filled=0.0,
-    #             remaining=0.0,
-    #             avgFillPrice=0.0,
-    #             permId=0,
-    #             parentId=0,
-    #             lastFillPrice=0.0,
-    #             clientId=0,
-    #             whyHeld="",
-    #             mktCapPrice=0.0,
-    #         ),
-    #         fills=[],
-    #         log=[
-    #             TradeLogEntry(
-    #                 time=datetime.datetime(
-    #                     2022,
-    #                     3,
-    #                     5,
-    #                     3,
-    #                     6,
-    #                     23,
-    #                     492613,
-    #                     tzinfo=datetime.timezone.utc,
-    #                 ),
-    #                 status="PendingSubmit",
-    #                 message="",
-    #                 errorCode=0,
-    #             ),
-    #         ],
-    #     )
-    #
-    # @staticmethod
-    # def trade_pre_submit(
-    #     contract=None,
-    #     order: IBOrder = None,
-    #     client_order_id: ClientOrderId | None = None,
-    # ) -> Trade:
-    #     contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
-    #     order = order or IBTestExecStubs.create_order(client_order_id=client_order_id)
-    #     return Trade(
-    #         contract=contract,
-    #         order=order,
-    #         orderStatus=OrderStatus(
-    #             orderId=41,
-    #             status="PreSubmitted",
-    #             filled=0.0,
-    #             remaining=1.0,
-    #             avgFillPrice=0.0,
-    #             permId=189868420,
-    #             parentId=0,
-    #             lastFillPrice=0.0,
-    #             clientId=1,
-    #             whyHeld="",
-    #             mktCapPrice=0.0,
-    #         ),
-    #         fills=[],
-    #         log=[
-    #             TradeLogEntry(
-    #                 time=datetime.datetime(
-    #                     2022,
-    #                     3,
-    #                     5,
-    #                     3,
-    #                     6,
-    #                     23,
-    #                     492613,
-    #                     tzinfo=datetime.timezone.utc,
-    #                 ),
-    #                 status="PendingSubmit",
-    #                 message="",
-    #                 errorCode=0,
-    #             ),
-    #             TradeLogEntry(
-    #                 time=datetime.datetime(
-    #                     2022,
-    #                     3,
-    #                     5,
-    #                     3,
-    #                     6,
-    #                     26,
-    #                     871811,
-    #                     tzinfo=datetime.timezone.utc,
-    #                 ),
-    #                 status="PreSubmitted",
-    #                 message="",
-    #                 errorCode=0,
-    #             ),
-    #         ],
-    #     )
-    #
-    # @staticmethod
-    # def trade_submitted(
-    #     contract=None,
-    #     order: IBOrder = None,
-    #     client_order_id: ClientOrderId | None = None,
-    # ) -> Trade:
-    #     contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
-    #     order = order or IBTestExecStubs.create_order(client_order_id=client_order_id)
-    #     from ibapi.order import Order as IBOrder
-    #     from ibapi.order_state import OrderState as IBOrderState
-    #
-    #     return Trade(
-    #         contract=contract,
-    #         order=order,
-    #         orderStatus=OrderStatus(
-    #             orderId=41,
-    #             status="Submitted",
-    #             filled=0.0,
-    #             remaining=1.0,
-    #             avgFillPrice=0.0,
-    #             permId=order.permId,
-    #             parentId=0,
-    #             lastFillPrice=0.0,
-    #             clientId=1,
-    #             whyHeld="",
-    #             mktCapPrice=0.0,
-    #         ),
-    #         fills=[],
-    #         log=[
-    #             TradeLogEntry(
-    #                 time=datetime.datetime(
-    #                     2022,
-    #                     3,
-    #                     5,
-    #                     3,
-    #                     6,
-    #                     23,
-    #                     492613,
-    #                     tzinfo=datetime.timezone.utc,
-    #                 ),
-    #                 status="PendingSubmit",
-    #                 message="",
-    #                 errorCode=0,
-    #             ),
-    #             TradeLogEntry(
-    #                 time=datetime.datetime(
-    #                     2022,
-    #                     3,
-    #                     5,
-    #                     3,
-    #                     6,
-    #                     26,
-    #                     871811,
-    #                     tzinfo=datetime.timezone.utc,
-    #                 ),
-    #                 status="PreSubmitted",
-    #                 message="",
-    #                 errorCode=0,
-    #             ),
-    #             TradeLogEntry(
-    #                 time=datetime.datetime(
-    #                     2022,
-    #                     3,
-    #                     5,
-    #                     3,
-    #                     6,
-    #                     28,
-    #                     378175,
-    #                     tzinfo=datetime.timezone.utc,
-    #                 ),
-    #                 status="Submitted",
-    #                 message="",
-    #                 errorCode=0,
-    #             ),
-    #         ],
-    #     )
-    #
-    # @staticmethod
-    # def trade_pre_cancel(contract=None, order: IBOrder = None) -> Trade:
-    #     contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
-    #     order = order or IBTestExecStubs.create_order()
-    #     return Trade(
-    #         contract=contract,
-    #         order=order,
-    #         orderStatus=OrderStatus(
-    #             orderId=41,
-    #             status="PendingCancel",
-    #             filled=0.0,
-    #             remaining=1.0,
-    #             avgFillPrice=0.0,
-    #             permId=189868420,
-    #             parentId=0,
-    #             lastFillPrice=0.0,
-    #             clientId=1,
-    #             whyHeld="",
-    #             mktCapPrice=0.0,
-    #         ),
-    #         fills=[],
-    #         log=[
-    #             TradeLogEntry(
-    #                 time=datetime.datetime(
-    #                     2022,
-    #                     3,
-    #                     6,
-    #                     2,
-    #                     17,
-    #                     18,
-    #                     455087,
-    #                     tzinfo=datetime.timezone.utc,
-    #                 ),
-    #                 status="PendingCancel",
-    #                 message="",
-    #                 errorCode=0,
-    #             ),
-    #         ],
-    #     )
-    #
-    # @staticmethod
-    # def trade_canceled(contract=None, order: IBOrder = None) -> Trade:
-    #     contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
-    #     order = order or IBTestExecStubs.create_order()
-    #     return Trade(
-    #         contract=contract,
-    #         order=order,
-    #         orderStatus=OrderStatus(
-    #             orderId=41,
-    #             status="Cancelled",
-    #             filled=0.0,
-    #             remaining=1.0,
-    #             avgFillPrice=0.0,
-    #             permId=order.permId,
-    #             parentId=0,
-    #             lastFillPrice=0.0,
-    #             clientId=1,
-    #             whyHeld="",
-    #             mktCapPrice=0.0,
-    #         ),
-    #         fills=[],
-    #         log=[
-    #             TradeLogEntry(
-    #                 time=datetime.datetime(
-    #                     2022,
-    #                     3,
-    #                     6,
-    #                     2,
-    #                     17,
-    #                     18,
-    #                     455087,
-    #                     tzinfo=datetime.timezone.utc,
-    #                 ),
-    #                 status="PendingCancel",
-    #                 message="",
-    #                 errorCode=0,
-    #             ),
-    #             TradeLogEntry(
-    #                 time=datetime.datetime(2022, 3, 6, 2, 23, 2, 847, tzinfo=datetime.timezone.utc),
-    #                 status="Cancelled",
-    #                 message="Error 10148, reqId 45: OrderId 45 that needs to be cancelled cannot be cancelled, state: PendingCancel.",
-    #                 errorCode=10148,
-    #             ),
-    #         ],
-    #     )
+    ORDER_STATE_DEFAULT = {
+        "status": "",
+        "initMarginBefore": "1.7976931348623157E308",
+        "maintMarginBefore": "1.7976931348623157E308",
+        "equityWithLoanBefore": "1.7976931348623157E308",
+        "initMarginChange": "1.7976931348623157E308",
+        "maintMarginChange": "1.7976931348623157E308",
+        "equityWithLoanChange": "1.7976931348623157E308",
+        "initMarginAfter": "1.7976931348623157E308",
+        "maintMarginAfter": "1.7976931348623157E308",
+        "equityWithLoanAfter": "1.7976931348623157E308",
+        "commission": 1.7976931348623157e308,
+        "minCommission": 1.7976931348623157e308,
+        "maxCommission": 1.7976931348623157e308,
+        "commissionCurrency": "",
+        "warningText": "",
+        "completedTime": "",
+        "completedStatus": "",
+    }
+
     @staticmethod
     def aapl_buy_ib_order(
         order_id: int = 600,
@@ -669,7 +512,7 @@ class IBTestExecStubs:
             "activeStopTime": "",
             "ocaGroup": "",
             "ocaType": 3,
-            "orderRef": "O-20240102-1754-001-000-1:600",
+            "orderRef": f"O-20240102-1754-001-000-1:{order_id}",
             "transmit": True,
             "parentId": 0,
             "blockOrder": False,
@@ -810,131 +653,26 @@ class IBTestExecStubs:
             "midOffsetAtWhole": 1.7976931348623157e308,
             "midOffsetAtHalf": 1.7976931348623157e308,
         }
-        order = IBOrder()
-        for key, value in params.items():
-            setattr(order, key, value)
-        return order
+        return set_attributes(IBOrder(), params)
 
     @staticmethod
-    def ib_order_state_presubmitted():
-        params = {
-            "status": "PreSubmitted",
-            "initMarginBefore": "1.7976931348623157E308",
-            "maintMarginBefore": "1.7976931348623157E308",
-            "equityWithLoanBefore": "1.7976931348623157E308",
-            "initMarginChange": "1.7976931348623157E308",
-            "maintMarginChange": "1.7976931348623157E308",
-            "equityWithLoanChange": "1.7976931348623157E308",
-            "initMarginAfter": "1.7976931348623157E308",
-            "maintMarginAfter": "1.7976931348623157E308",
-            "equityWithLoanAfter": "1.7976931348623157E308",
-            "commission": 1.7976931348623157e308,
-            "minCommission": 1.7976931348623157e308,
-            "maxCommission": 1.7976931348623157e308,
-            "commissionCurrency": "",
-            "warningText": "",
-            "completedTime": "",
-            "completedStatus": "",
-        }
-        order_state = IBOrderState()
-        for key, value in params.items():
-            setattr(order_state, key, value)
-        return order_state
-
-    @staticmethod
-    def ib_order_state_submitted():
-        params = {
-            "status": "Submitted",
-            "initMarginBefore": "1.7976931348623157E308",
-            "maintMarginBefore": "1.7976931348623157E308",
-            "equityWithLoanBefore": "1.7976931348623157E308",
-            "initMarginChange": "1.7976931348623157E308",
-            "maintMarginChange": "1.7976931348623157E308",
-            "equityWithLoanChange": "1.7976931348623157E308",
-            "initMarginAfter": "1.7976931348623157E308",
-            "maintMarginAfter": "1.7976931348623157E308",
-            "equityWithLoanAfter": "1.7976931348623157E308",
-            "commission": 1.7976931348623157e308,
-            "minCommission": 1.7976931348623157e308,
-            "maxCommission": 1.7976931348623157e308,
-            "commissionCurrency": "",
-            "warningText": "",
-            "completedTime": "",
-            "completedStatus": "",
-        }
-        order_state = IBOrderState()
-        for key, value in params.items():
-            setattr(order_state, key, value)
-        return order_state
-
-    @staticmethod
-    def ib_order_state_filled():
-        params = {
-            "status": "Filled",
-            "initMarginBefore": "1.7976931348623157E308",
-            "maintMarginBefore": "1.7976931348623157E308",
-            "equityWithLoanBefore": "1.7976931348623157E308",
-            "initMarginChange": "1.7976931348623157E308",
-            "maintMarginChange": "1.7976931348623157E308",
-            "equityWithLoanChange": "1.7976931348623157E308",
-            "initMarginAfter": "1.7976931348623157E308",
-            "maintMarginAfter": "1.7976931348623157E308",
-            "equityWithLoanAfter": "1.7976931348623157E308",
-            "commission": 1.8,
-            "minCommission": 1.7976931348623157e308,
-            "maxCommission": 1.7976931348623157e308,
-            "commissionCurrency": "USD",
-            "warningText": "",
-            "completedTime": "",
-            "completedStatus": "",
-        }
-        order_state = IBOrderState()
-        for key, value in params.items():
-            setattr(order_state, key, value)
-        return order_state
-
-    @staticmethod
-    def ib_order_state_pending_cancel():
-        params = {
-            "status": "PendingCancel",
-            "initMarginBefore": "1.7976931348623157E308",
-            "maintMarginBefore": "1.7976931348623157E308",
-            "equityWithLoanBefore": "1.7976931348623157E308",
-            "initMarginChange": "1.7976931348623157E308",
-            "maintMarginChange": "1.7976931348623157E308",
-            "equityWithLoanChange": "1.7976931348623157E308",
-            "initMarginAfter": "1.7976931348623157E308",
-            "maintMarginAfter": "1.7976931348623157E308",
-            "equityWithLoanAfter": "1.7976931348623157E308",
-            "commission": 1.7976931348623157e308,
-            "minCommission": 1.7976931348623157e308,
-            "maxCommission": 1.7976931348623157e308,
-            "commissionCurrency": "",
-            "warningText": "",
-            "completedTime": "",
-            "completedStatus": "",
-        }
-        order_state = IBOrderState()
-        for key, value in params.items():
-            setattr(order_state, key, value)
-        return order_state
+    def ib_order_state(state: str = "PreSubmitted"):
+        params = IBTestExecStubs.ORDER_STATE_DEFAULT
+        params["status"] = state
+        if state == "Filled":
+            params["commission"] = 1.8
+            params["commissionCurrency"] = "USD"
+        return set_attributes(IBOrderState(), params)
 
     @staticmethod
     def execution(
         order_id: int,
         account_id: str = "DU123456",
-        exec_timestamp: dt.datetime = dt.datetime(
-            2022,
-            1,
-            4,
-            19,
-            32,
-            36,
-            0,
-            tzinfo=dt.timezone.utc,
-        ),
+        exec_timestamp: dt.datetime | None = None,
         tz: str = "US/Eastern",
     ) -> Execution:
+        random_default = dt.datetime(2022, 1, 4, 19, 32, 36, 0, tzinfo=dt.timezone.utc)
+        exec_timestamp = exec_timestamp or random_default
         exec_timestamp = exec_timestamp.astimezone(pytz.timezone(tz))
         params = {
             "execId": "0000e0d5.6596b0d2.01.01",
@@ -956,48 +694,20 @@ class IBTestExecStubs:
             "modelCode": "",
             "lastLiquidity": 2,
         }
-        execution = Execution()
-        for key, value in params.items():
-            setattr(execution, key, value)
-        return execution
+        return set_attributes(Execution(), params)
 
     @staticmethod
     def commission() -> CommissionReport:
         params = {
-            "execId": "1",
+            "execId": "0000e0d5.6596b0d2.01.01",
             "commission": 1.0,
             "currency": "USD",
             "realizedPNL": 0.0,
             "yield_": 0.0,
             "yieldRedemptionDate": 0,
         }
-        commission = CommissionReport()
-        for key, value in params.items():
-            setattr(commission, key, value)
-        return commission
+        return set_attributes(CommissionReport(), params)
 
 
 def filter_out_options(instrument) -> bool:
     return not isinstance(instrument, OptionsContract)
-
-
-{
-    "execId": "0000e0d5.6596b0d2.01.01",
-    "time": "20240104 14:32:36 US/Eastern",
-    "acctNumber": "DU5524716",
-    "exchange": "EDGEA",
-    "side": "BOT",
-    "shares": Decimal("100"),
-    "price": 182.54,
-    "permId": 395704644,
-    "clientId": 2,
-    "orderId": 581,
-    "liquidation": 0,
-    "cumQty": Decimal("100"),
-    "avgPrice": 182.54,
-    "orderRef": "O-20240104-1932-001-000-1:581",
-    "evRule": "",
-    "evMultiplier": 0.0,
-    "modelCode": "",
-    "lastLiquidity": 2,
-}

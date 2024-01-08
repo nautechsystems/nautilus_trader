@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Final, Literal
 
 from ibapi.common import UNSET_DECIMAL
+from ibapi.tag_value import TagValue
 
 from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.model.identifiers import Venue
@@ -200,7 +201,7 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     underSymbol: str = ""
     underSecType: str = ""
     marketRuleIds: str = ""
-    secIdList: list | None = None
+    secIdList: list[TagValue] | None = None
     realExpirationDate: str = ""
     lastTradeTime: str = ""
     stockType: str = ""
