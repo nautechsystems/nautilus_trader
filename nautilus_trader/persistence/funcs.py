@@ -19,7 +19,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 
 INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
-GENERIC_DATA_PREFIX = "genericdata_"
+CUSTOM_DATA_PREFIX = "custom_"
 
 # Taken from https://github.com/dask/dask/blob/261bf174931580230717abca93fe172e166cc1e8/dask/utils.py
 byte_sizes = {
@@ -88,7 +88,7 @@ def class_to_filename(cls: type) -> str:
     filename_mappings = {"OrderBookDeltas": "OrderBookDelta"}
     name = f"{convert_to_snake_case(filename_mappings.get(cls.__name__, cls.__name__))}"
     if not is_nautilus_class(cls):
-        name = f"{GENERIC_DATA_PREFIX}{name}"
+        name = f"{CUSTOM_DATA_PREFIX}{name}"
     return name
 
 

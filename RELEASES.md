@@ -13,6 +13,7 @@ Released on TBD (UTC).
 - Optimized Arrow encoding (resulting in ~100x faster writes for the Parquet data catalog)
 
 ### Breaking Changes
+- Changed `ParquetDataCatalog` custom data prefix from `geneticdata_` to `custom_` (you will need to rename any catalog subdirs)
 - Changed `ComponentStateChanged` Arrow schema for `config` from `string` to `binary`
 - Changed `OrderInitialized` Arrow schema for `options` from `string` to `binary`
 - Changed `OrderBookDeltas` dictionary representation of `deltas` field from JSON `bytes` to a list of `dict` (standardize with all other data types)
