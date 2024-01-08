@@ -1161,9 +1161,9 @@ cdef class DataType:
         return f"{type(self).__name__}(type={self.type.__name__}, metadata={self.metadata})"
 
 
-cdef class GenericData(Data):
+cdef class CustomData(Data):
     """
-    Provides a generic data wrapper which includes data type information.
+    Provides a wrapper for custom data which includes data type information.
 
     Parameters
     ----------

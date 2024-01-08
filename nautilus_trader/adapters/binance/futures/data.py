@@ -32,8 +32,8 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
@@ -155,5 +155,5 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
             BinanceFuturesMarkPriceUpdate,
             metadata={"instrument_id": instrument_id},
         )
-        generic = GenericData(data_type=data_type, data=data)
+        generic = CustomData(data_type=data_type, data=data)
         self._handle_data(generic)

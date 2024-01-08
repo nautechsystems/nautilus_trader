@@ -259,7 +259,7 @@ cdef class EMACross(Strategy):
 
     cpdef void on_data(self, Data data):
         """
-        Actions to be performed when the strategy is running and receives generic data.
+        Actions to be performed when the strategy is running and receives data.
 
         Parameters
         ----------

@@ -17,6 +17,9 @@ Released on TBD (UTC).
 - Changed `ComponentStateChanged` Arrow schema for `config` from `string` to `binary`
 - Changed `OrderInitialized` Arrow schema for `options` from `string` to `binary`
 - Changed `OrderBookDeltas` dictionary representation of `deltas` field from JSON `bytes` to a list of `dict` (standardize with all other data types)
+- Renamed `GenericData` to `CustomData` (more accurately reflects the nature of the type)
+- Renamed `DataClient.subscribed_generic_data` to `.subscribed_custom_data`
+- Renamed `ParquetDataCatalog.generic_data` to `.custom_data`
 - Renamed all version 2 data wrangler classes with a `V2` suffix for clarity
 - Renamed `TradeReport` to `FillReport` (more conventional terminology, and more clearly separates market data from user execution reports)
 - Renamed `AssetType` enum to `InstrumentClass` (more conventional terminology)

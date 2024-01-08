@@ -57,8 +57,8 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
@@ -956,7 +956,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             BinanceTicker,
             metadata={"instrument_id": instrument_id},
         )
-        custom = GenericData(data_type=data_type, data=ticker)
+        custom = CustomData(data_type=data_type, data=ticker)
         self._handle_data(custom)
 
     def _handle_kline(self, raw: bytes) -> None:

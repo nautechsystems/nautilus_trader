@@ -38,7 +38,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.rust.model import OrderSide
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import BookOrder
-from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
@@ -234,13 +234,13 @@ def test_market_bsp(data_client, mock_data_engine_process):
         "OrderBookDeltas": 11,
         "InstrumentStatus": 9,
         "BetfairTicker": 8,
-        "GenericData": 30,
+        "CustomData": 30,
         "InstrumentClose": 1,
     }
     assert dict(result) == expected
 
-    # Assert - Count of generic data messages
-    sp_deltas = [deltas.data for deltas in mock_call_args if isinstance(deltas, GenericData)]
+    # Assert - Count of custom data messages
+    sp_deltas = [deltas.data for deltas in mock_call_args if isinstance(deltas, CustomData)]
     assert len(sp_deltas) == 30
 
 
@@ -430,7 +430,7 @@ def test_betfair_starting_price(data_client, mock_data_engine_process):
     starting_prices = [
         t
         for t in mock_call_args
-        if isinstance(t, GenericData) and isinstance(t.data, BetfairStartingPrice)
+        if isinstance(t, CustomData) and isinstance(t.data, BetfairStartingPrice)
     ]
     assert len(starting_prices) == 36
 

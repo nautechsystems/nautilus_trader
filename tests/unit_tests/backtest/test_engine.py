@@ -39,8 +39,8 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
@@ -376,36 +376,36 @@ class TestBacktestEngineData:
         with pytest.raises(TypeError):
             self.engine.add_data(ticks)
 
-    def test_add_generic_data_adds_to_engine(self):
+    def test_add_custom_data_adds_to_engine(self):
         # Arrange
         data_type = DataType(MyData, metadata={"news_wire": "hacks"})
 
-        generic_data1 = [
-            GenericData(data_type, MyData("AAPL hacked")),
-            GenericData(
+        custom_data1 = [
+            CustomData(data_type, MyData("AAPL hacked")),
+            CustomData(
                 data_type,
                 MyData("AMZN hacked", 1000, 1000),
             ),
-            GenericData(
+            CustomData(
                 data_type,
                 MyData("NFLX hacked", 3000, 3000),
             ),
-            GenericData(
+            CustomData(
                 data_type,
                 MyData("MSFT hacked", 2000, 2000),
             ),
         ]
 
-        generic_data2 = [
-            GenericData(
+        custom_data2 = [
+            CustomData(
                 data_type,
                 MyData("FB hacked", 1500, 1500),
             ),
         ]
 
         # Act
-        self.engine.add_data(generic_data1, ClientId("NEWS_CLIENT"))
-        self.engine.add_data(generic_data2, ClientId("NEWS_CLIENT"))
+        self.engine.add_data(custom_data1, ClientId("NEWS_CLIENT"))
+        self.engine.add_data(custom_data2, ClientId("NEWS_CLIENT"))
 
         # Assert
         assert len(self.engine.data) == 5

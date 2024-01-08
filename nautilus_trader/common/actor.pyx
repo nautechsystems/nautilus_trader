@@ -448,7 +448,7 @@ cdef class Actor(Component):
 
     cpdef void on_data(self, Data data):
         """
-        Actions to be performed when running and receives generic data.
+        Actions to be performed when running and receives data.
 
         Parameters
         ----------

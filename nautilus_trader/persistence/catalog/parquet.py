@@ -45,8 +45,8 @@ from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
 from nautilus_trader.core.nautilus_pyo3 import NautilusDataType
 from nautilus_trader.model import NautilusRustDataType
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -352,7 +352,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         end: TimestampLike | None = None,
         where: str | None = None,
         **kwargs: Any,
-    ) -> list[Data | GenericData]:
+    ) -> list[Data | CustomData]:
         if data_cls in (OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick, Bar):
             data = self.query_rust(
                 data_cls=data_cls,
@@ -376,7 +376,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         if not is_nautilus_class(data_cls):
             # Special handling for generic data
             data = [
-                GenericData(data_type=DataType(data_cls, metadata=kwargs.get("metadata")), data=d)
+                CustomData(data_type=DataType(data_cls, metadata=kwargs.get("metadata")), data=d)
                 for d in data
             ]
         return data

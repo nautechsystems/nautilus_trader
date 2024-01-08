@@ -38,8 +38,8 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -262,11 +262,11 @@ class BetfairDataClient(LiveMarketDataClient):
             self._log.debug(f"{data}")
             if isinstance(data, BetfairStartingPrice | BSPOrderBookDelta):
                 # Not a regular data type
-                generic_data = GenericData(
+                custom_data = CustomData(
                     DataType(data.__class__, {"instrument_id": data.instrument_id}),
                     data,
                 )
-                self._handle_data(generic_data)
+                self._handle_data(custom_data)
             elif isinstance(data, Data):
                 if self._strict_handling and (
                     hasattr(data, "instrument_id")

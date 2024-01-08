@@ -22,8 +22,8 @@ from typing import Any
 
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
@@ -151,18 +151,18 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     ) -> list[Bar]:
         return self.query(data_cls=Bar, bar_types=bar_types, **kwargs)
 
-    def generic_data(
+    def custom_data(
         self,
         cls: type,
         as_nautilus: bool = False,
         metadata: dict | None = None,
         **kwargs: Any,
-    ) -> list[GenericData]:
+    ) -> list[CustomData]:
         data = self.query(data_cls=cls, **kwargs)
         if as_nautilus:
             if data is None:
                 return []
-            return [GenericData(data_type=DataType(cls, metadata=metadata), data=d) for d in data]
+            return [CustomData(data_type=DataType(cls, metadata=metadata), data=d) for d in data]
         return data
 
     @abstractmethod

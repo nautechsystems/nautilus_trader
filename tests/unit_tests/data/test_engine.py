@@ -434,7 +434,7 @@ class TestDataEngine:
 
         # Assert
         assert self.data_engine.command_count == 1
-        assert self.data_engine.subscribed_generic_data() == []
+        assert self.data_engine.subscribed_custom_data() == []
 
     def test_execute_unsubscribe_custom_data(self):
         # Arrange
@@ -470,7 +470,7 @@ class TestDataEngine:
 
         # Assert
         assert self.data_engine.command_count == 2
-        assert self.data_engine.subscribed_generic_data() == []
+        assert self.data_engine.subscribed_custom_data() == []
 
     def test_execute_unsubscribe_when_data_type_unrecognized_logs_and_does_nothing(
         self,
