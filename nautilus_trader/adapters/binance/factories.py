@@ -427,9 +427,9 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
 def _get_api_key(account_type: BinanceAccountType, is_testnet: bool) -> str:
     if is_testnet:
         if account_type.is_spot_or_margin:
-            get_env_key("BINANCE_TESTNET_API_KEY")
+            return get_env_key("BINANCE_TESTNET_API_KEY")
         else:
-            get_env_key("BINANCE_FUTURES_TESTNET_API_KEY")
+            return get_env_key("BINANCE_FUTURES_TESTNET_API_KEY")
 
     if account_type.is_spot_or_margin:
         return get_env_key("BINANCE_API_KEY")
