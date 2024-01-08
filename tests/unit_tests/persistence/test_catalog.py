@@ -191,8 +191,10 @@ def test_partioning_min_rows_per_group(
 def test_catalog_filter(
     catalog_betfair: ParquetDataCatalog,
 ) -> None:
-    # Arrange, Act
+    # Arrange
     deltas = catalog_betfair.order_book_deltas()
+
+    # Act
     filtered_deltas = catalog_betfair.order_book_deltas(
         where=f"Action = {BookAction.DELETE.value}",
     )
@@ -243,7 +245,20 @@ def test_catalog_bars(catalog: ParquetDataCatalog) -> None:
     assert len(bars) == len(stub_bars) == 10
 
 
-def test_catalog_writing_pyo3_quote_ticks(catalog: ParquetDataCatalog) -> None:
+@pytest.mark.skip(reason="WIP, currently failing value: MissingMetadata('instrument_id')")
+def test_catalog_write_order_book_depth10(catalog: ParquetDataCatalog) -> None:
+    # Arrange
+    instrument = TestInstrumentProvider.equity()
+    depth = TestDataStubs.order_book_depth10(instrument_id=instrument.id)
+
+    # Act
+    catalog.write_data([depth])
+
+    # Assert
+    assert len(catalog.order_book_depth10()) == 1
+
+
+def test_catalog_write_pyo3_quote_ticks(catalog: ParquetDataCatalog) -> None:
     # Arrange
     path = TEST_DATA_DIR / "truefx" / "audusd-ticks.csv"
     df = pd.read_csv(path)
@@ -262,7 +277,7 @@ def test_catalog_writing_pyo3_quote_ticks(catalog: ParquetDataCatalog) -> None:
     assert len(quotes) == 100_000
 
 
-def test_catalog_writing_pyo3_trade_ticks(catalog: ParquetDataCatalog) -> None:
+def test_catalog_write_pyo3_trade_ticks(catalog: ParquetDataCatalog) -> None:
     # Arrange
     path = TEST_DATA_DIR / "binance" / "ethusdt-trades.csv"
     df = pd.read_csv(path)

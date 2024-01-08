@@ -27,6 +27,7 @@ from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
@@ -77,8 +78,10 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
             try:
                 objs = self.query(data_cls=cls, instrument_ids=instrument_ids, **kwargs)
                 objects.extend(objs)
-            except AssertionError:
+            except AssertionError as e:
+                print(e)
                 continue
+
         return objects
 
     def instruments(
@@ -114,12 +117,19 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     ) -> list[InstrumentClose]:
         return self.query(data_cls=InstrumentClose, instrument_ids=instrument_ids, **kwargs)
 
-    def trade_ticks(
+    def order_book_deltas(
         self,
         instrument_ids: list[str] | None = None,
         **kwargs: Any,
-    ) -> list[TradeTick]:
-        return self.query(data_cls=TradeTick, instrument_ids=instrument_ids, **kwargs)
+    ) -> list[OrderBookDelta]:
+        return self.query(data_cls=OrderBookDelta, instrument_ids=instrument_ids, **kwargs)
+
+    def order_book_depth10(
+        self,
+        instrument_ids: list[str] | None = None,
+        **kwargs: Any,
+    ) -> list[OrderBookDepth10]:
+        return self.query(data_cls=OrderBookDepth10, instrument_ids=instrument_ids, **kwargs)
 
     def quote_ticks(
         self,
@@ -127,6 +137,13 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         **kwargs: Any,
     ) -> list[QuoteTick]:
         return self.query(data_cls=QuoteTick, instrument_ids=instrument_ids, **kwargs)
+
+    def trade_ticks(
+        self,
+        instrument_ids: list[str] | None = None,
+        **kwargs: Any,
+    ) -> list[TradeTick]:
+        return self.query(data_cls=TradeTick, instrument_ids=instrument_ids, **kwargs)
 
     def tickers(
         self,
@@ -141,13 +158,6 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         **kwargs: Any,
     ) -> list[Bar]:
         return self.query(data_cls=Bar, bar_types=bar_types, **kwargs)
-
-    def order_book_deltas(
-        self,
-        instrument_ids: list[str] | None = None,
-        **kwargs: Any,
-    ) -> list[OrderBookDelta]:
-        return self.query(data_cls=OrderBookDelta, instrument_ids=instrument_ids, **kwargs)
 
     def generic_data(
         self,

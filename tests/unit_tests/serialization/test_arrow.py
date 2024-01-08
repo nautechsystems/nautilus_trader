@@ -117,15 +117,15 @@ class TestArrowSerializer:
         return True
 
     @pytest.mark.parametrize(
-        "tick",
+        "data",
         [
             TestDataStubs.quote_tick(),
             TestDataStubs.trade_tick(),
             TestDataStubs.bar_5decimal(),
         ],
     )
-    def test_serialize_and_deserialize_tick(self, tick):
-        self._test_serialization(obj=tick)
+    def test_serialize_and_deserialize_tick(self, data):
+        self._test_serialization(obj=data)
 
     def test_serialize_and_deserialize_order_book_delta(self):
         # Arrange
