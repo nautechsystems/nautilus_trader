@@ -26,8 +26,8 @@ from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport CustomData
 from nautilus_trader.model.data cimport DataType
-from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport OrderBookDelta
@@ -90,7 +90,7 @@ cdef class DataEngine(Component):
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
-    cpdef list subscribed_generic_data(self)
+    cpdef list subscribed_custom_data(self)
     cpdef list subscribed_instruments(self)
     cpdef list subscribed_order_book_deltas(self)
     cpdef list subscribed_order_book_snapshots(self)
@@ -147,7 +147,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_quote_tick(self, QuoteTick tick)
     cpdef void _handle_trade_tick(self, TradeTick tick)
     cpdef void _handle_bar(self, Bar bar)
-    cpdef void _handle_generic_data(self, GenericData data)
+    cpdef void _handle_custom_data(self, CustomData data)
     cpdef void _handle_venue_status(self, VenueStatus data)
     cpdef void _handle_instrument_status(self, InstrumentStatus data)
     cpdef void _handle_close_price(self, InstrumentClose data)

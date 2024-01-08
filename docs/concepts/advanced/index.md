@@ -28,7 +28,7 @@ highest to lowest level (although they are self-contained and can be read in any
 Explore more advanced concepts of NautilusTrader through these guides:
 
 - [Actors](actors.md)
-- [Custom/Generic data](custom_data.md)
+- [Custom Data](custom_data.md)
 - [Advanced Orders](advanced_orders.md)
 - [Emulated Orders](emulated_orders.md)
 - [Synthetic Instruments](synthetic_instruments.md)

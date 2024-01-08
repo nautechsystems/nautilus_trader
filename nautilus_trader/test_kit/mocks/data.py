@@ -31,7 +31,7 @@ _ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 class NewsEventData(NewsEvent):
     """
-    Generic data NewsEvent.
+    Represents news event custom data.
     """
 
 

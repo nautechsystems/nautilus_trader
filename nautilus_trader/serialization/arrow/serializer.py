@@ -28,7 +28,7 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.core.nautilus_pyo3 import DataTransformer
 from nautilus_trader.model import NautilusRustDataType
 from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
@@ -160,7 +160,7 @@ class ArrowSerializer:
         data: Data | Event,
         data_cls: type[Data | Event] | None = None,
     ) -> pa.RecordBatch:
-        if isinstance(data, GenericData):
+        if isinstance(data, CustomData):
             data = data.data
         data_cls = data_cls or type(data)
         if data_cls is None:

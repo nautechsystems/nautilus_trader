@@ -103,9 +103,9 @@ cdef class DataClient(Component):
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
-    cpdef list subscribed_generic_data(self):
+    cpdef list subscribed_custom_data(self):
         """
-        Return the generic data types subscribed to.
+        Return the custom data types subscribed to.
 
         Returns
         -------
@@ -262,9 +262,9 @@ cdef class MarketDataClient(DataClient):
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
-    cpdef list subscribed_generic_data(self):
+    cpdef list subscribed_custom_data(self):
         """
-        Return the generic data types subscribed to.
+        Return the custom data types subscribed to.
 
         Returns
         -------

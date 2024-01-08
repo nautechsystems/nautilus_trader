@@ -103,7 +103,7 @@ def on_instrument(self, instrument: Instrument) -> None:
 def on_instrument_status(self, data: InstrumentStatus) -> None:
 def on_instrument_close(self, data: InstrumentClose) -> None:
 def on_historical_data(self, data: Data) -> None:
-def on_data(self, data: Data) -> None:  # Generic data passed to this handler
+def on_data(self, data: Data) -> None:  # Custom data passed to this handler
 ```
 
 #### Order management

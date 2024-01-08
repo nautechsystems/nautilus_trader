@@ -92,7 +92,7 @@ class TestBacktestConfig:
             "metadata": None,
         }
 
-    def test_backtest_data_config_generic_data(self):
+    def test_backtest_data_config_custom_data(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
         data = TestPersistenceStubs.news_events()

@@ -1,4 +1,4 @@
-# Custom/Generic Data
+# Custom Data
 Due to the modular nature of the Nautilus design, it is possible to set up systems 
 with very flexible data streams, including custom user defined data types. This
 guide covers some possible use cases for this functionality.
@@ -92,7 +92,7 @@ self.subscribe_data(
 
 This will result in your actor/strategy passing these received `MyDataPoint` 
 objects to your `on_data` method. You will need to check the type, as this 
-method acts as a flexible handler for all custom/generic data.
+method acts as a flexible handler for all custom data.
 
 ```python
 def on_data(self, data: Data) -> None:

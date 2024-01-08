@@ -339,9 +339,9 @@ cdef class DataEngine(Component):
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
-    cpdef list subscribed_generic_data(self):
+    cpdef list subscribed_custom_data(self):
         """
-        Return the generic data types subscribed to.
+        Return the custom data types subscribed to.
 
         Returns
         -------
@@ -351,7 +351,7 @@ cdef class DataEngine(Component):
         cdef list subscriptions = []
         cdef DataClient client
         for client in self._clients.values():
-            subscriptions += client.subscribed_generic_data()
+            subscriptions += client.subscribed_custom_data()
         return subscriptions
 
     cpdef list subscribed_instruments(self):
@@ -995,7 +995,7 @@ cdef class DataEngine(Component):
         Condition.not_none(data_type, "data_type")
 
         try:
-            if data_type not in client.subscribed_generic_data():
+            if data_type not in client.subscribed_custom_data():
                 client.subscribe(data_type)
         except NotImplementedError:
             self._log.error(
@@ -1310,7 +1310,7 @@ cdef class DataEngine(Component):
                 end=ts_end,
             )
         else:
-            data = self._catalog.generic_data(
+            data = self._catalog.custom_data(
                 cls=request.data_type.type,
                 metadata=request.data_type.metadata,
                 start=ts_start,
@@ -1360,8 +1360,8 @@ cdef class DataEngine(Component):
             self._handle_instrument_status(data)
         elif isinstance(data, InstrumentClose):
             self._handle_close_price(data)
-        elif isinstance(data, GenericData):
-            self._handle_generic_data(data)
+        elif isinstance(data, CustomData):
+            self._handle_custom_data(data)
         else:
             self._log.error(f"Cannot handle data: unrecognized type {type(data)} {data}.")
 
@@ -1480,7 +1480,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_close_price(self, InstrumentClose data):
         self._msgbus.publish_c(topic=f"data.venue.close_price.{data.instrument_id}", msg=data)
 
-    cpdef void _handle_generic_data(self, GenericData data):
+    cpdef void _handle_custom_data(self, CustomData data):
         self._msgbus.publish_c(topic=f"data.{data.data_type.topic}", msg=data.data)
 
 # -- RESPONSE HANDLERS ----------------------------------------------------------------------------

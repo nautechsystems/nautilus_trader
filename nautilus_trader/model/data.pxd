@@ -68,7 +68,7 @@ cdef class DataType:
     """The data types topic string.\n\n:returns: `str`"""
 
 
-cdef class GenericData(Data):
+cdef class CustomData(Data):
     cdef readonly DataType data_type
     """The data type.\n\n:returns: `DataType`"""
     cdef readonly Data data

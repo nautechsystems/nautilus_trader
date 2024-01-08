@@ -23,7 +23,7 @@ This inheritance ensures chronological data ordering (vital for backtesting), wh
 Consistency is key; data flows through the platform in exactly the same way for all system environment contexts (`backtest`, `sandbox`, `live`)
 primarily through the `MessageBus` to the `DataEngine` and onto subscribed or registered handlers.
 
-For those seeking customization, the platform supports user-defined data types. Refer to the advanced [Custom/Generic data guide](advanced/custom_data.md) for more details.
+For those seeking customization, the platform supports user-defined data types. Refer to the advanced [Custom data guide](advanced/custom_data.md) for more details.
 
 ## Loading data
 

@@ -41,7 +41,7 @@ cdef class DataClient(Component):
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
-    cpdef list subscribed_generic_data(self)
+    cpdef list subscribed_custom_data(self)
 
     cpdef void subscribe(self, DataType data_type)
     cpdef void unsubscribe(self, DataType data_type)

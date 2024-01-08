@@ -50,7 +50,7 @@ class TestBetfairPersistence:
 
         # Act
         self.catalog.write_data([bsp_delta, bsp_delta])
-        values = self.catalog.generic_data(BSPOrderBookDelta)
+        values = self.catalog.custom_data(BSPOrderBookDelta)
 
         # Assert
         assert len(values) == 2

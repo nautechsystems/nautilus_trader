@@ -70,7 +70,7 @@ from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.model.data cimport Bar
-from nautilus_trader.model.data cimport GenericData
+from nautilus_trader.model.data cimport CustomData
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
@@ -557,14 +557,14 @@ cdef class BacktestEngine:
         bint sort = True,
     ) -> None:
         """
-        Add the given data to the backtest engine.
+        Add the given custom data to the backtest engine.
 
         Parameters
         ----------
         data : list[Data]
             The data to add.
         client_id : ClientId, optional
-            The data client ID to associate with generic data.
+            The data client ID to associate with custom data.
         validate : bool, default True
             If `data` should be validated
             (recommended when adding data directly to the engine).
@@ -634,7 +634,7 @@ cdef class BacktestEngine:
                 Condition.not_none(client_id, "client_id")
                 # Check client has been registered
                 self._add_data_client_if_not_exists(client_id)
-                if isinstance(first, GenericData):
+                if isinstance(first, CustomData):
                     data_added_str = f"{type(first.data).__name__} "
 
         # Add data
