@@ -26,6 +26,7 @@ Released on TBD (UTC).
 - Removed `multiplier` param from `Equity` constructor (not applicable)
 - Removed `size_precision`, `size_increment`, and `multiplier` fields from `Equity` dictionary representation (not applicable)
 - Removed `TracingConfig` (now redundant with new logging implementation)
+- Removed `Ticker` data type and associated methods (not a type which can be practically normalized and so becomes adapter specific generic data)
 - Moved `AssetClass.SPORTS_BETTING` to `InstrumentClass.SPORTS_BETTING`
 
 ### Fixes

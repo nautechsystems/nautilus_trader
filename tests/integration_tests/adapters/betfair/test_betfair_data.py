@@ -43,7 +43,6 @@ from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import VenueStatus
 from nautilus_trader.model.enums import BookAction
@@ -456,7 +455,7 @@ def test_betfair_orderbook(data_client, parser) -> None:
                 book.apply_delta(message)
             elif isinstance(
                 message,
-                Ticker | TradeTick | InstrumentStatus | InstrumentClose,
+                BetfairTicker | TradeTick | InstrumentStatus | InstrumentClose,
             ):
                 pass
             else:

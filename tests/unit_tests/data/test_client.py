@@ -215,16 +215,6 @@ class TestMarketDataClient:
         # Assert
         assert self.data_engine.data_count == 1
 
-    def test_handle_ticker_sends_to_data_engine(self):
-        # Arrange
-        tick = TestDataStubs.ticker()
-
-        # Act
-        self.client._handle_data_py(tick)
-
-        # Assert
-        assert self.data_engine.data_count == 1
-
     def test_handle_quote_tick_sends_to_data_engine(self):
         # Arrange
         tick = TestDataStubs.quote_tick()

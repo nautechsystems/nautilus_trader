@@ -486,13 +486,6 @@ class LiveMarketDataClient(MarketDataClient):
             actions=lambda: self._add_subscription_order_book_snapshots(instrument_id),
         )
 
-    def subscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        self.create_task(
-            self._subscribe_ticker(instrument_id),
-            log_msg=f"subscribe: ticker {instrument_id}",
-            actions=lambda: self._add_subscription_ticker(instrument_id),
-        )
-
     def subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._subscribe_quote_ticks(instrument_id),
@@ -563,13 +556,6 @@ class LiveMarketDataClient(MarketDataClient):
             self._unsubscribe_order_book_snapshots(instrument_id),
             log_msg=f"unsubscribe: order_book_snapshots {instrument_id}",
             actions=lambda: self._remove_subscription_order_book_snapshots(instrument_id),
-        )
-
-    def unsubscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        self.create_task(
-            self._unsubscribe_ticker(instrument_id),
-            log_msg=f"unsubscribe: ticker {instrument_id}",
-            actions=lambda: self._remove_subscription_ticker(instrument_id),
         )
 
     def unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
@@ -762,11 +748,6 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_subscribe_order_book_snapshots` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        raise NotImplementedError(  # pragma: no cover
-            "implement the `_subscribe_ticker` coroutine",  # pragma: no cover
-        )
-
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_quote_ticks` coroutine",  # pragma: no cover
@@ -815,11 +796,6 @@ class LiveMarketDataClient(MarketDataClient):
     async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_order_book_snapshots` coroutine",  # pragma: no cover
-        )
-
-    async def _unsubscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        raise NotImplementedError(  # pragma: no cover
-            "implement the `_unsubscribe_ticker` coroutine",  # pragma: no cover
         )
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:

@@ -35,7 +35,6 @@ from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import VenueStatus
 from nautilus_trader.model.enums import AggressorSide
@@ -64,14 +63,6 @@ UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 
 class TestDataStubs:
-    @staticmethod
-    def ticker(instrument_id: InstrumentId | None = None) -> Ticker:
-        return Ticker(
-            instrument_id=instrument_id or TestIdStubs.audusd_id(),
-            ts_event=0,
-            ts_init=0,
-        )
-
     @staticmethod
     def quote_tick(
         instrument: Instrument | None = None,

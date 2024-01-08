@@ -379,9 +379,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 continue
             self._handle_data(deltas)
 
-    async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        await self._ws_client.subscribe_ticker(instrument_id.symbol.value)
-
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         await self._ws_client.subscribe_book_ticker(instrument_id.symbol.value)
 
@@ -434,9 +431,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
         pass  # TODO: Unsubscribe from Binance if no other subscriptions
-
-    async def _unsubscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        await self._ws_client.unsubscribe_ticker(instrument_id.symbol.value)
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         await self._ws_client.unsubscribe_book_ticker(instrument_id.symbol.value)

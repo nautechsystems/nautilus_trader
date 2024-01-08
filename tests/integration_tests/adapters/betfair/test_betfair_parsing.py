@@ -74,13 +74,13 @@ from nautilus_trader.adapters.betfair.parsing.streaming import market_definition
 from nautilus_trader.adapters.betfair.parsing.streaming import market_definition_to_instrument_status
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import MarketStatus
@@ -490,7 +490,7 @@ class TestBetfairParsing:
         assert len(updates) == 3
         trade, ticker, deltas = updates
         assert isinstance(trade, TradeTick)
-        assert isinstance(ticker, Ticker)
+        assert isinstance(ticker, Data)
         assert isinstance(deltas, OrderBookDeltas)
         assert len(deltas.deltas) == 2
 

@@ -411,11 +411,6 @@ class DatabentoDataClient(LiveMarketDataClient):
         )
         self._check_live_client_started(dataset, live_client)
 
-    async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        raise NotImplementedError(
-            f"Cannot subscribe to {instrument_id} ticker (not supported by Databento).",
-        )
-
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         await self._ensure_subscribed_for_instrument(instrument_id)
 
@@ -486,11 +481,6 @@ class DatabentoDataClient(LiveMarketDataClient):
         raise NotImplementedError(
             f"Cannot unsubscribe from {instrument_id} order book snapshots, "
             "unsubscribing not supported by Databento.",
-        )
-
-    async def _unsubscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        raise NotImplementedError(
-            f"Cannot unsubscribe from {instrument_id} ticker (not supported by Databento).",
         )
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
