@@ -103,7 +103,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
             **kwargs,
         )
 
-    def instrument_status_updates(
+    def instrument_status(
         self,
         instrument_ids: list[str] | None = None,
         **kwargs: Any,
