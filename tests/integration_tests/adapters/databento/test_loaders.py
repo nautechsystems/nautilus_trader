@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,7 +22,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDelta
-from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -46,7 +46,7 @@ from tests import TEST_DATA_DIR
 DATABENTO_TEST_DATA_DIR = TEST_DATA_DIR / "databento"
 
 
-@pytest.mark.skip(reason="Used for development")
+@pytest.mark.skip(reason="development_only")
 def test_loader_definition_glbx_all_symbols() -> None:
     # Arrange
     loader = DatabentoDataLoader()
@@ -59,7 +59,7 @@ def test_loader_definition_glbx_all_symbols() -> None:
     assert len(data) == 10_000_000
 
 
-@pytest.mark.skip(reason="Used for development")
+@pytest.mark.skip(reason="development_only")
 def test_loader_spy_xnas_itch_mbo() -> None:
     # Arrange
     loader = DatabentoDataLoader()
@@ -321,11 +321,28 @@ def test_loader_with_mbp_10() -> None:
 
     # Assert
     assert len(data) == 2
-    assert isinstance(data[0], OrderBookDeltas)
-    assert isinstance(data[1], OrderBookDeltas)
-    deltas = data[0]
-    assert deltas.instrument_id == InstrumentId.from_str("ESH1.GLBX")
-    assert len(deltas.deltas) == 21
+    assert isinstance(data[0], OrderBookDepth10)
+    assert isinstance(data[1], OrderBookDepth10)
+    depth = data[0]
+    assert depth.instrument_id == InstrumentId.from_str("ESH1.GLBX")
+    assert len(depth.bids) == 10
+    assert len(depth.asks) == 10
+    assert depth.bids[0].price == Price.from_str("3720.25")
+    assert depth.bids[0].size == Quantity.from_int(24)
+    assert depth.asks[0].price == Price.from_str("3720.50")
+    assert depth.asks[0].size == Quantity.from_int(10)
+    assert depth.bid_counts == [15, 18, 23, 26, 35, 28, 35, 39, 32, 39]
+    assert depth.ask_counts == [8, 24, 25, 17, 19, 33, 40, 38, 35, 26]
+    depth = data[1]
+    assert depth.instrument_id == InstrumentId.from_str("ESH1.GLBX")
+    assert len(depth.bids) == 10
+    assert len(depth.asks) == 10
+    assert depth.bids[0].price == Price.from_str("3720.25")
+    assert depth.bids[0].size == Quantity.from_int(24)
+    assert depth.asks[0].price == Price.from_str("3720.50")
+    assert depth.asks[0].size == Quantity.from_int(10)
+    assert depth.bid_counts == [15, 17, 23, 26, 35, 28, 35, 39, 32, 39]
+    assert depth.ask_counts == [8, 24, 25, 17, 19, 33, 40, 38, 35, 26]
 
 
 def test_loader_with_tbbo() -> None:

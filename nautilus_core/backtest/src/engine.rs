@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -113,6 +113,7 @@ mod tests {
     use nautilus_core::uuid::UUID4;
     use pyo3::{types::PyList, Py, Python};
     use rstest::*;
+    use ustr::Ustr;
 
     use super::*;
 
@@ -126,9 +127,12 @@ mod tests {
 
             let mut accumulator = TimeEventAccumulator::new();
 
-            let time_event1 = TimeEvent::new("TEST_EVENT_1", UUID4::new(), 100, 100).unwrap();
-            let time_event2 = TimeEvent::new("TEST_EVENT_2", UUID4::new(), 300, 300).unwrap();
-            let time_event3 = TimeEvent::new("TEST_EVENT_3", UUID4::new(), 200, 200).unwrap();
+            let time_event1 =
+                TimeEvent::new(Ustr::from("TEST_EVENT_1"), UUID4::new(), 100, 100).unwrap();
+            let time_event2 =
+                TimeEvent::new(Ustr::from("TEST_EVENT_2"), UUID4::new(), 300, 300).unwrap();
+            let time_event3 =
+                TimeEvent::new(Ustr::from("TEST_EVENT_3"), UUID4::new(), 200, 200).unwrap();
 
             // Note: as_ptr returns a borrowed pointer. It is valid as long
             // as the object is in scope. In this case `callback_ptr` is valid

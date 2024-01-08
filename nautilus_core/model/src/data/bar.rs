@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -336,7 +336,7 @@ impl Display for Bar {
 ////////////////////////////////////////////////////////////////////////////////
 // Stubs
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
+#[cfg(feature = "stubs")]
 pub mod stubs {
     use rstest::fixture;
 
@@ -348,7 +348,7 @@ pub mod stubs {
     };
 
     #[fixture]
-    pub fn bar_audusd_sim_minute_bid() -> Bar {
+    pub fn stub_bar() -> Bar {
         let instrument_id = InstrumentId {
             symbol: Symbol::new("AUDUSD").unwrap(),
             venue: Venue::new("SIM").unwrap(),
@@ -600,16 +600,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_json_serialization(bar_audusd_sim_minute_bid: Bar) {
-        let bar = bar_audusd_sim_minute_bid;
+    fn test_json_serialization(stub_bar: Bar) {
+        let bar = stub_bar;
         let serialized = bar.as_json_bytes().unwrap();
         let deserialized = Bar::from_json_bytes(serialized).unwrap();
         assert_eq!(deserialized, bar);
     }
 
     #[rstest]
-    fn test_msgpack_serialization(bar_audusd_sim_minute_bid: Bar) {
-        let bar = bar_audusd_sim_minute_bid;
+    fn test_msgpack_serialization(stub_bar: Bar) {
+        let bar = stub_bar;
         let serialized = bar.as_msgpack_bytes().unwrap();
         let deserialized = Bar::from_msgpack_bytes(serialized).unwrap();
         assert_eq!(deserialized, bar);

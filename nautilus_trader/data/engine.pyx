@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -78,6 +78,7 @@ from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
+from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.data cimport VenueStatus
@@ -894,6 +895,18 @@ cdef class DataEngine(Component):
                 priority=10,
             )
 
+        topic = f"data.book.depth.{instrument_id.venue}.{instrument_id.symbol}"
+
+        if not only_deltas and not self._msgbus.is_subscribed(
+            topic=topic,
+            handler=self._update_order_book,
+        ):
+            self._msgbus.subscribe(
+                topic=topic,
+                handler=self._update_order_book,
+                priority=10,
+            )
+
     cpdef void _handle_subscribe_ticker(
         self,
         MarketDataClient client,
@@ -1236,7 +1249,7 @@ cdef class DataEngine(Component):
         # Query data catalog
         if self._catalog:
             # For now we'll just query the catalog if its present (as very likely this is a backtest)
-            self._query_data_catalog(request)
+            self._query_catalog(request)
             return
 
         # Query data client
@@ -1302,7 +1315,7 @@ cdef class DataEngine(Component):
             except NotImplementedError:
                 self._log.error(f"Cannot handle request: unrecognized data type {request.data_type}.")
 
-    cpdef void _query_data_catalog(self, DataRequest request):
+    cpdef void _query_catalog(self, DataRequest request):
         cdef datetime start = request.data_type.metadata.get("start")
         cdef datetime end = request.data_type.metadata.get("end")
 
@@ -1390,6 +1403,8 @@ cdef class DataEngine(Component):
             self._handle_order_book_delta(data)
         elif isinstance(data, OrderBookDeltas):
             self._handle_order_book_deltas(data)
+        elif isinstance(data, OrderBookDepth10):
+            self._handle_order_book_depth(data)
         elif isinstance(data, Ticker):
             self._handle_ticker(data)
         elif isinstance(data, QuoteTick):
@@ -1438,6 +1453,14 @@ cdef class DataEngine(Component):
                   f".{deltas.instrument_id.venue}"
                   f".{deltas.instrument_id.symbol}",
             msg=deltas,
+        )
+
+    cpdef void _handle_order_book_depth(self, OrderBookDepth10 depth):
+        self._msgbus.publish_c(
+            topic=f"data.book.depth"
+                  f".{depth.instrument_id.venue}"
+                  f".{depth.instrument_id.symbol}",
+            msg=depth,
         )
 
     cpdef void _handle_ticker(self, Ticker ticker):

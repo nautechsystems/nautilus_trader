@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,7 +17,6 @@ from enum import Enum
 
 import pyarrow as pa
 
-# fmt: off
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import BookOrder
@@ -31,9 +30,6 @@ from nautilus_trader.serialization.arrow.serializer import make_dict_deserialize
 from nautilus_trader.serialization.arrow.serializer import make_dict_serializer
 from nautilus_trader.serialization.arrow.serializer import register_arrow
 from nautilus_trader.serialization.base import register_serializable_object
-
-
-# fmt: on
 
 
 class SubscriptionStatus(Enum):
@@ -256,16 +252,16 @@ class BetfairStartingPrice(Data):
 register_arrow(
     data_cls=BetfairTicker,
     schema=BetfairTicker.schema(),
-    serializer=make_dict_serializer(schema=BetfairTicker.schema()),
-    deserializer=make_dict_deserializer(BetfairTicker),
+    encoder=make_dict_serializer(schema=BetfairTicker.schema()),
+    decoder=make_dict_deserializer(BetfairTicker),
 )
 
 # Register serialization/parquet BetfairStartingPrice
 register_arrow(
     data_cls=BetfairStartingPrice,
     schema=BetfairStartingPrice.schema(),
-    serializer=make_dict_serializer(schema=BetfairStartingPrice.schema()),
-    deserializer=make_dict_deserializer(BetfairStartingPrice),
+    encoder=make_dict_serializer(schema=BetfairStartingPrice.schema()),
+    decoder=make_dict_deserializer(BetfairStartingPrice),
 )
 
 # Register serialization/parquet BSPOrderBookDeltas
@@ -277,7 +273,7 @@ register_serializable_object(
 
 register_arrow(
     data_cls=BSPOrderBookDelta,
-    serializer=BSPOrderBookDelta.to_batch,
-    deserializer=BSPOrderBookDelta.from_batch,
+    encoder=BSPOrderBookDelta.to_batch,
+    decoder=BSPOrderBookDelta.from_batch,
     schema=BSPOrderBookDelta.schema(),
 )

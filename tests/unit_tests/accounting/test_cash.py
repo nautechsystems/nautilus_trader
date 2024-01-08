@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -49,7 +49,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 ADABTC_BINANCE = TestInstrumentProvider.adabtc_binance()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
-AAPL_NASDAQ = TestInstrumentProvider.equity(symbol="AAPL", venue="NASDAQ")
+AAPL_XNAS = TestInstrumentProvider.equity(symbol="AAPL", venue="XNAS")
 
 
 class TestCashAccount:
@@ -332,7 +332,7 @@ class TestCashAccount:
 
         # Act
         result = account.calculate_balance_locked(
-            instrument=AAPL_NASDAQ,
+            instrument=AAPL_XNAS,
             side=OrderSide.SELL,
             quantity=Quantity.from_int(100),
             price=Price.from_str("1500.00"),

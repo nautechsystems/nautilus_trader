@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,6 +20,8 @@ use pyo3::{
     prelude::*,
     wrap_pyfunction,
 };
+
+use crate::uuid::UUID4;
 pub mod casing;
 pub mod datetime;
 pub mod serialization;
@@ -48,7 +50,7 @@ pub fn to_pyruntime_err(e: impl fmt::Display) -> PyErr {
 /// Loaded as nautilus_pyo3.core
 #[pymodule]
 pub fn core(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<crate::uuid::UUID4>()?;
+    m.add_class::<UUID4>()?;
     m.add_function(wrap_pyfunction!(casing::py_convert_to_snake_case, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_secs_to_nanos, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_secs_to_millis, m)?)?;

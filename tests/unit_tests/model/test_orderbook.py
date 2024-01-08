@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,7 +15,6 @@
 
 import copy
 import pickle
-import time
 
 import pandas as pd
 import pytest
@@ -663,40 +662,6 @@ class TestOrderBook:
         # Assert
         assert book.ts_last == new.ts_last
         assert book.sequence == new.sequence
-
-    @pytest.mark.skip(reason="Used for development")
-    def test_orderbook_spy_xnas_itch_mbo_l3(self) -> None:
-        # Arrange
-        loader = DatabentoDataLoader()
-        path = TEST_DATA_DIR / "databento" / "temp" / "spy-xnas-itch-20231127.mbo.dbn.zst"
-        instrument = TestInstrumentProvider.equity(symbol="SPY", venue="XNAS")
-
-        # Act
-        data = loader.from_dbn(path, instrument_id=instrument.id)
-
-        book = TestDataStubs.make_book(
-            instrument=instrument,
-            book_type=BookType.L3_MBO,
-        )
-
-        start_time = time.perf_counter()
-
-        for delta in data:
-            if not isinstance(delta, OrderBookDelta):
-                continue
-            book.apply_delta(delta)
-
-        end_time = time.perf_counter()
-
-        # Assert
-        print(f"Delta apply elapsed: {end_time - start_time}")
-        assert book.ts_last == 1701129555644234540
-        assert book.sequence == 429411899
-        assert book.count == 6197580
-        assert len(book.bids()) == 52
-        assert len(book.asks()) == 38
-        assert book.best_bid_price() == Price.from_str("454.84")
-        assert book.best_ask_price() == Price.from_str("454.90")
 
     def test_orderbook_esh4_glbx_20231224_mbo_l3(self) -> None:
         # Arrange

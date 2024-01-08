@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,6 +31,7 @@ from nautilus_trader import __version__
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.common cimport LogColor
@@ -39,19 +40,45 @@ from nautilus_trader.core.rust.common cimport log_color_from_cstr
 from nautilus_trader.core.rust.common cimport log_color_to_cstr
 from nautilus_trader.core.rust.common cimport log_level_from_cstr
 from nautilus_trader.core.rust.common cimport log_level_to_cstr
-from nautilus_trader.core.rust.common cimport logger_drop
-from nautilus_trader.core.rust.common cimport logger_get_instance_id
-from nautilus_trader.core.rust.common cimport logger_get_machine_id_cstr
-from nautilus_trader.core.rust.common cimport logger_get_trader_id_cstr
-from nautilus_trader.core.rust.common cimport logger_is_bypassed
-from nautilus_trader.core.rust.common cimport logger_is_colored
+from nautilus_trader.core.rust.common cimport logger_flush
 from nautilus_trader.core.rust.common cimport logger_log
-from nautilus_trader.core.rust.common cimport logger_new
+from nautilus_trader.core.rust.common cimport logging_init
+from nautilus_trader.core.rust.common cimport tracing_init
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pybytes_to_cstr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
+
+
+# TODO!: Reimplementing logging config
+# from nautilus_trader.core import nautilus_pyo3
+# from nautilus_trader.core.nautilus_pyo3 import logger_log
+
+
+
+cpdef void init_tracing():
+    tracing_init()
+
+
+cpdef void init_logging(
+    TraderId trader_id,
+    UUID4 instance_id,
+    str config_spec,
+    str directory,
+    str file_name,
+    str file_format,
+):
+    Condition.valid_string(config_spec, "config_spec")
+
+    logging_init(
+        trader_id._mem,
+        instance_id._mem,
+        pystr_to_cstr(config_spec),
+        pystr_to_cstr(directory) if directory else NULL,
+        pystr_to_cstr(file_name) if file_name else NULL,
+        pystr_to_cstr(file_format) if file_format else NULL,
+    )
 
 
 cpdef LogColor log_color_from_str(str value):
@@ -86,8 +113,9 @@ cdef class Logger:
 
     Parameters
     ----------
-    clock : Clock
+    clock : Clock, optional
         The clock for the logger.
+        If ``None`` then will use a new `LiveClock`.
     trader_id : TraderId, optional
         The trader ID for the logger.
     machine_id : str, optional
@@ -116,13 +144,11 @@ cdef class Logger:
         If ANSI codes should be used to produce colored log lines.
     bypass : bool, default False
         If the log output is bypassed.
-    dummy : bool, default False
-        If logger is a 'dummy' logger (intended as a placeholder during initialization).
     """
 
     def __init__(
         self,
-        Clock clock not None,
+        Clock clock = None,
         TraderId trader_id = None,
         str machine_id = None,
         UUID4 instance_id = None,
@@ -135,8 +161,9 @@ cdef class Logger:
         dict component_levels: dict[ComponentId, LogLevel] = None,
         bint colors = True,
         bint bypass = False,
-        bint dummy = False,
-    ):
+    ) -> None:
+        if clock is None:
+            clock = LiveClock()
         if trader_id is None:
             trader_id = TraderId("TRADER-000")
         if instance_id is None:
@@ -145,31 +172,11 @@ cdef class Logger:
             machine_id = socket.gethostname()
 
         self._clock = clock
-
-        cdef str trader_id_str = trader_id.to_str()
-        cdef str instance_id_str = instance_id.to_str()
-
-        if dummy:
-            return  # Do not initialize core Rust logger
-
-        self._mem = logger_new(
-            pystr_to_cstr(trader_id_str),
-            pystr_to_cstr(machine_id),
-            pystr_to_cstr(instance_id_str),
-            level_stdout,
-            level_file,
-            file_logging,
-            pystr_to_cstr(directory) if directory else NULL,
-            pystr_to_cstr(file_name) if file_name else NULL,
-            pystr_to_cstr(file_format) if file_format else NULL,
-            pybytes_to_cstr(msgspec.json.encode(component_levels)) if component_levels is not None else NULL,
-            colors,
-            bypass,
-        )
-
-    def __del__(self) -> None:
-        if self._mem._0 != NULL:
-            logger_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
+        self._trader_id = trader_id
+        self._instance_id = instance_id
+        self._machine_id = machine_id
+        self._is_bypassed = bypass
+        self._is_colored = colors
 
     @property
     def trader_id(self) -> TraderId:
@@ -181,9 +188,7 @@ cdef class Logger:
         TraderId
 
         """
-        if self._mem._0 == NULL:
-            return None  # Not initialized
-        return TraderId(cstr_to_pystr(logger_get_trader_id_cstr(&self._mem)))
+        return self._trader_id
 
     @property
     def machine_id(self) -> str:
@@ -195,9 +200,7 @@ cdef class Logger:
         str
 
         """
-        if self._mem._0 == NULL:
-            return None  # Not initialized
-        return cstr_to_pystr(logger_get_machine_id_cstr(&self._mem))
+        return self._machine_id
 
     @property
     def instance_id(self) -> UUID4:
@@ -209,9 +212,7 @@ cdef class Logger:
         UUID4
 
         """
-        if self._mem._0 == NULL:
-            return None  # Not initialized
-        return UUID4.from_mem_c(logger_get_instance_id(&self._mem))
+        return self._instance_id
 
     @property
     def is_colored(self) -> bool:
@@ -223,9 +224,7 @@ cdef class Logger:
         bool
 
         """
-        if self._mem._0 == NULL:
-            return False  # Not initialized
-        return logger_is_colored(&self._mem)
+        return self._is_colored
 
     @property
     def is_bypassed(self) -> bool:
@@ -237,62 +236,57 @@ cdef class Logger:
         bool
 
         """
-        if self._mem._0 == NULL:
-            return False  # Not initialized
-        return logger_is_bypassed(&self._mem)
-
-    cpdef void change_clock(self, Clock clock):
-        """
-        Change the loggers internal clock to the given clock.
-
-        Parameters
-        ----------
-        clock : Clock
-
-        """
-        Condition.not_none(clock, "clock")
-
-        self._clock = clock
+        return self._is_bypassed
 
     cdef void log(
         self,
-        uint64_t timestamp,
         LogLevel level,
         LogColor color,
-        str component,
+        const char* component_cstr,
         str message,
-        dict annotations = None,
     ):
-        self._log(
-            timestamp,
-            level,
-            color,
-            component,
-            message,
-            annotations,
-        )
-
-    cdef void _log(
-        self,
-        uint64_t timestamp,
-        LogLevel level,
-        LogColor color,
-        str component,
-        str message,
-        dict annotations,
-    ):
-        if self._mem._0 == NULL:
-            print("ERROR: Logger has not been initialized.")
-            return  # Not initialized
-
         logger_log(
-            &self._mem,
-            timestamp,
+            self._clock.timestamp_ns(),
             level,
             color,
-            pystr_to_cstr(component),
+            component_cstr,
             pystr_to_cstr(message),
         )
+
+    # TODO!: Reimplementing logging config
+    # cdef void log(
+    #     self,
+    #     level,
+    #     color,
+    #     str component,
+    #     str message,
+    # ):
+    #     logger_log(
+    #         self._clock.timestamp_ns(),
+    #         level,
+    #         nautilus_pyo3.LogColor.Normal,  # In development
+    #         component,
+    #         message,
+    #     )
+
+    cpdef void change_clock(self, Clock clock = None):
+        """
+        Change the loggers internal clock to the given clock or a new `LiveClock`.
+
+        Parameters
+        ----------
+        clock : Clock, optional
+            The clock to change to.
+
+        """
+        self._clock = clock or LiveClock()
+
+    cpdef void flush(self):
+        """
+        Flush all logger buiffers.
+
+        """
+        logger_flush()
 
 
 cdef class LoggerAdapter:
@@ -316,6 +310,7 @@ cdef class LoggerAdapter:
 
         self._logger = logger
         self._component = component_name
+        self._component_cstr = pystr_to_cstr(component_name)
         self._is_colored = logger.is_colored
         self._is_bypassed = logger.is_bypassed
 
@@ -417,8 +412,6 @@ cdef class LoggerAdapter:
             The log message content.
         color : LogColor, optional
             The log message color.
-        annotations : dict[str, object], optional
-            The annotations for the log record.
 
         """
         Condition.not_none(message, "message")
@@ -427,13 +420,19 @@ cdef class LoggerAdapter:
             return
 
         self._logger.log(
-            self._logger._clock.timestamp_ns(),
             LogLevel.DEBUG,
             color,
-            self.component,
+            self._component_cstr,
             message,
-            annotations,
         )
+
+        # TODO!: Reimplementing logging config
+        # self._logger.log(
+        #     nautilus_pyo3.LogLevel.Debug,
+        #     color,
+        #     self._component,
+        #     message,
+        # )
 
     cpdef void info(
         self, str message,
@@ -459,13 +458,19 @@ cdef class LoggerAdapter:
             return
 
         self._logger.log(
-            self._logger._clock.timestamp_ns(),
             LogLevel.INFO,
             color,
-            self.component,
+            self._component_cstr,
             message,
-            annotations,
         )
+
+        # TODO!: Reimplementing logging config
+        # self._logger.log(
+        #     nautilus_pyo3.LogLevel.Info,
+        #     color,
+        #     self._component,
+        #     message,
+        # )
 
     cpdef void warning(
         self,
@@ -492,13 +497,19 @@ cdef class LoggerAdapter:
             return
 
         self._logger.log(
-            self._logger._clock.timestamp_ns(),
             LogLevel.WARNING,
             color,
-            self.component,
+            self._component_cstr,
             message,
-            annotations,
         )
+
+        # TODO!: Reimplementing logging config
+        # self._logger.log(
+        #     nautilus_pyo3.LogLevel.Warning,
+        #     color,
+        #     self._component,
+        #     message,
+        # )
 
     cpdef void error(
         self,
@@ -525,46 +536,19 @@ cdef class LoggerAdapter:
             return
 
         self._logger.log(
-            self._logger._clock.timestamp_ns(),
             LogLevel.ERROR,
             color,
-            self.component,
+            self._component_cstr,
             message,
-            annotations,
         )
 
-    cpdef void critical(
-        self,
-        str message,
-        LogColor color = LogColor.RED,
-        dict annotations = None,
-    ):
-        """
-        Log the given critical message with the logger.
-
-        Parameters
-        ----------
-        message : str
-            The log message content.
-        color : LogColor, optional
-            The log message color.
-        annotations : dict[str, object], optional
-            The annotations for the log record.
-
-        """
-        Condition.not_none(message, "message")
-
-        if self.is_bypassed:
-            return
-
-        self._logger.log(
-            self._logger._clock.timestamp_ns(),
-            LogLevel.CRITICAL,
-            color,
-            self.component,
-            message,
-            annotations,
-        )
+        # TODO!: Reimplementing logging config
+        # self._logger.log(
+        #     nautilus_pyo3.LogLevel.Error,
+        #     color,
+        #     self._component,
+        #     message,
+        # )
 
     cpdef void exception(
         self,
@@ -608,7 +592,7 @@ cpdef void nautilus_header(LoggerAdapter logger):
     logger.info(f"{color}=================================================================")
     logger.info(f"{color} NAUTILUS TRADER - Automated Algorithmic Trading Platform")
     logger.info(f"{color} by Nautech Systems Pty Ltd.")
-    logger.info(f"{color} Copyright (C) 2015-2023. All rights reserved.")
+    logger.info(f"{color} Copyright (C) 2015-2024. All rights reserved.")
     logger.info(f"{color}=================================================================")
     logger.info("")
     logger.info("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀")

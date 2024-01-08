@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -78,7 +78,6 @@ impl EncodeToRecordBatch for Bar {
         metadata: &HashMap<String, String>,
         data: &[Self],
     ) -> Result<RecordBatch, ArrowError> {
-        // Create array builders
         let mut open_builder = Int64Array::builder(data.len());
         let mut high_builder = Int64Array::builder(data.len());
         let mut low_builder = Int64Array::builder(data.len());
@@ -87,7 +86,6 @@ impl EncodeToRecordBatch for Bar {
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
-        // Iterate over data
         for bar in data {
             open_builder.append_value(bar.open.raw);
             high_builder.append_value(bar.high.raw);
@@ -98,7 +96,6 @@ impl EncodeToRecordBatch for Bar {
             ts_init_builder.append_value(bar.ts_init);
         }
 
-        // Build arrays
         let open_array = open_builder.finish();
         let high_array = high_builder.finish();
         let low_array = low_builder.finish();
@@ -107,7 +104,6 @@ impl EncodeToRecordBatch for Bar {
         let ts_event_array = ts_event_builder.finish();
         let ts_init_array = ts_init_builder.finish();
 
-        // Build record batch
         RecordBatch::try_new(
             Self::get_schema(Some(metadata.clone())).into(),
             vec![
@@ -128,10 +124,7 @@ impl DecodeFromRecordBatch for Bar {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
-        // Parse and validate metadata
         let (bar_type, price_precision, size_precision) = parse_metadata(metadata)?;
-
-        // Extract field value arrays
         let cols = record_batch.columns();
 
         let open_values = extract_column::<Int64Array>(cols, "open", 0, DataType::Int64)?;
@@ -142,7 +135,6 @@ impl DecodeFromRecordBatch for Bar {
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 5, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 6, DataType::UInt64)?;
 
-        // Map record batch rows to vector of objects
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
                 let open = Price::from_raw(open_values.value(i), price_precision).unwrap();
@@ -194,7 +186,7 @@ mod tests {
 
     #[rstest]
     fn test_get_schema() {
-        let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
+        let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
         let schema = Bar::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
@@ -226,7 +218,7 @@ mod tests {
 
     #[rstest]
     fn test_encode_batch() {
-        let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
+        let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
 
         let bar1 = Bar::new(
@@ -288,7 +280,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_batch() {
-        let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
+        let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
 
         let open = Int64Array::from(vec![100_100_000_000, 10_000_000_000]);

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -171,10 +171,6 @@ pub enum LogLevel {
     #[strum(serialize = "ERR", serialize = "ERROR")]
     #[serde(rename = "ERROR")]
     Error = 40,
-    /// The **CRT** critical log level.
-    #[strum(serialize = "CRT", serialize = "CRITICAL")]
-    #[serde(rename = "CRITICAL")]
-    Critical = 50,
 }
 
 // Override `strum` implementation
@@ -185,7 +181,6 @@ impl std::fmt::Display for LogLevel {
             Self::Info => "INF",
             Self::Warning => "WRN",
             Self::Error => "ERR",
-            Self::Critical => "CRT",
         };
         write!(f, "{display}")
     }
@@ -234,15 +229,29 @@ pub enum LogColor {
     /// The yellow log color, typically used with [`LogLevel::Warning`] log levels.
     #[strum(serialize = "\x1b[1;33m")]
     Yellow = 5,
-    /// The red log color, typically used with [`LogLevel::Error`] or [`LogLevel::Critical`] log levels.
+    /// The red log color, typically used with [`LogLevel::Error`] level.
     #[strum(serialize = "\x1b[1;31m")]
     Red = 6,
+}
+
+impl From<u8> for LogColor {
+    fn from(value: u8) -> Self {
+        match value {
+            1 => Self::Green,
+            2 => Self::Blue,
+            3 => Self::Magenta,
+            4 => Self::Cyan,
+            5 => Self::Yellow,
+            6 => Self::Red,
+            _ => Self::Normal,
+        }
+    }
 }
 
 /// An ANSI log line format specifier.
 /// This is used for formatting log messages with ANSI escape codes.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(

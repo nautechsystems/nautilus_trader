@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -110,8 +110,8 @@ cdef class Actor(Component):
             component_id = config.component_id
 
         super().__init__(
-            clock=LiveClock(),  # Use placeholder live clock until registered
-            logger=Logger(clock=LiveClock(), dummy=True),  # Use dummy logger until registered
+            clock=Clock(),  # Use placeholder until registered
+            logger=Logger(Clock()),  # Use placeholder until registered
             component_id=component_id,
             config=config,
         )

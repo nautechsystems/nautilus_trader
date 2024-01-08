@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,6 +22,8 @@ def is_nautilus_class(cls: type) -> bool:
     """
     Determine whether a class is a builtin nautilus type.
     """
+    if cls.__module__.startswith("nautilus_trader.core.nautilus_pyo3.model"):
+        return True
     if cls.__module__.startswith("nautilus_trader.model"):
         return True
     if cls.__module__.startswith("nautilus_trader.common"):

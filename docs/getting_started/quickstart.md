@@ -14,9 +14,9 @@ deleted when the container is deleted.
 - To get started, install docker:
   - Go to [docker.com](https://docs.docker.com/get-docker/) and follow the instructions 
 - From a terminal, download the latest image
-  - `docker pull ghcr.io/nautechsystems/jupyterlab:develop --platform linux/amd64`
+  - `docker pull ghcr.io/nautechsystems/jupyterlab:nightly --platform linux/amd64`
 - Run the docker container, exposing the jupyter port: 
-  - `docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:develop`
+  - `docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:nightly`
 - Open your web browser to `localhost:{port}`
   - https://localhost:8888
 

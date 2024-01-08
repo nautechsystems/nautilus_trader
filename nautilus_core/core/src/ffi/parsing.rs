@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -170,7 +170,7 @@ mod tests {
     #[rstest]
     fn test_optional_bytes_to_json_empty() {
         let json_str = CString::new("{}").unwrap();
-        let ptr = json_str.as_ptr() as *const c_char;
+        let ptr = json_str.as_ptr().cast::<c_char>();
         let result = unsafe { optional_bytes_to_json(ptr) };
         assert_eq!(result, Some(HashMap::new()));
     }
@@ -200,7 +200,7 @@ mod tests {
     #[rstest]
     fn test_bytes_to_string_vec_valid() {
         let json_str = CString::new(r#"["value1", "value2", "value3"]"#).unwrap();
-        let ptr = json_str.as_ptr() as *const c_char;
+        let ptr = json_str.as_ptr().cast::<c_char>();
         let result = unsafe { bytes_to_string_vec(ptr) };
 
         let expected_vec = vec!["value1", "value2", "value3"]
@@ -214,7 +214,7 @@ mod tests {
     #[rstest]
     fn test_bytes_to_string_vec_invalid() {
         let json_str = CString::new(r#"["value1", 42, "value3"]"#).unwrap();
-        let ptr = json_str.as_ptr() as *const c_char;
+        let ptr = json_str.as_ptr().cast::<c_char>();
         let result = unsafe { bytes_to_string_vec(ptr) };
 
         let expected_vec = vec!["value1", "value3"]
@@ -228,7 +228,7 @@ mod tests {
     #[rstest]
     fn test_optional_bytes_to_json_valid() {
         let json_str = CString::new(r#"{"key1": "value1", "key2": 2}"#).unwrap();
-        let ptr = json_str.as_ptr() as *const c_char;
+        let ptr = json_str.as_ptr().cast::<c_char>();
         let result = unsafe { optional_bytes_to_json(ptr) };
         let mut expected_map = HashMap::new();
         expected_map.insert("key1".to_owned(), Value::String("value1".to_owned()));
@@ -242,7 +242,7 @@ mod tests {
     #[rstest]
     fn test_optional_bytes_to_json_invalid() {
         let json_str = CString::new(r#"{"key1": "value1", "key2": }"#).unwrap();
-        let ptr = json_str.as_ptr() as *const c_char;
+        let ptr = json_str.as_ptr().cast::<c_char>();
         let result = unsafe { optional_bytes_to_json(ptr) };
         assert_eq!(result, None);
     }

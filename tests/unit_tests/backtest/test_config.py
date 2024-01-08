@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -39,8 +39,8 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.test_kit.mocks.data import NewsEventData
-from nautilus_trader.test_kit.mocks.data import aud_usd_data_loader
-from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.mocks.data import load_catalog_with_stub_quote_ticks_audusd
+from nautilus_trader.test_kit.mocks.data import setup_catalog
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.config import TestConfigStubs
@@ -51,8 +51,8 @@ from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 class TestBacktestConfig:
     def setup(self):
         self.fs_protocol = "file"
-        self.catalog = data_catalog_setup(protocol=self.fs_protocol)
-        aud_usd_data_loader(self.catalog)
+        self.catalog = setup_catalog(protocol=self.fs_protocol)
+        load_catalog_with_stub_quote_ticks_audusd(self.catalog)
         self.venue = Venue("SIM")
         self.instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=self.venue)
         self.backtest_config = TestConfigStubs.backtest_run_config(catalog=self.catalog)
@@ -191,7 +191,7 @@ class TestBacktestConfig:
 
 class TestBacktestConfigParsing:
     def setup(self):
-        self.catalog = data_catalog_setup(protocol="memory", path="/.nautilus/")
+        self.catalog = setup_catalog(protocol="memory", path="/.nautilus/")
         self.venue = Venue("SIM")
         self.instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=self.venue)
         self.backtest_config = TestConfigStubs.backtest_run_config(catalog=self.catalog)

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
@@ -21,14 +22,14 @@ from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
-from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.mocks.data import setup_catalog
 from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 from tests.integration_tests.adapters.betfair.test_kit import load_betfair_data
 
 
 class TestBetfairPersistence:
     def setup(self):
-        self.catalog = data_catalog_setup(protocol="memory", path="/catalog")
+        self.catalog = setup_catalog(protocol="memory", path="/catalog")
         self.fs = self.catalog.fs
         self.instrument = betting_instrument()
 

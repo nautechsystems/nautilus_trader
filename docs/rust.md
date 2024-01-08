@@ -16,8 +16,8 @@ Use the following links to explore the Rust docs API references for two differen
 ## [Latest Rust docs](https://docs.nautilustrader.io/core)
 This API reference is built from the HEAD of the `master` branch and represents the latest stable release.
 
-## [Develop Rust docs](https://docs.nautilustrader.io/develop/core)
-This API reference is built from the HEAD of the `develop` branch and represents bleeding edge and experimental changes/features currently in development.
+## [Nightly Rust docs](https://docs.nautilustrader.io/nightly/core)
+This API reference is built from the HEAD of the `nightly` branch and represents bleeding edge and experimental changes/features currently in development.
 
 ## What is Rust?
 [Rust](https://www.rust-lang.org/) is a multi-paradigm programming language designed for performance and safety, especially safe

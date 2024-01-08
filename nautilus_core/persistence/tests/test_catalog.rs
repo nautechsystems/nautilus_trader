@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,7 +27,7 @@ use rstest::rstest;
 
 #[rstest]
 fn test_quote_tick_python_interface() {
-    let file_path = "../../tests/test_data/quote_tick_data.parquet";
+    let file_path = "../../tests/test_data/nautilus/quotes.parquet";
     let expected_length = 9500;
     let mut catalog = DataBackendSession::new(1000);
     catalog
@@ -54,7 +54,7 @@ fn test_quote_tick_python_interface() {
 fn test_quote_tick_python_control_flow() {
     pyo3::prepare_freethreaded_python();
 
-    let file_path = "../../tests/test_data/quote_tick_data.parquet";
+    let file_path = "../../tests/test_data/nautilus/quotes.parquet";
     let expected_length = 9500;
     let catalog = DataBackendSession::new(1_000_000);
     Python::with_gil(|py| {
@@ -89,7 +89,7 @@ fn test_quote_tick_python_control_flow() {
 #[rstest]
 fn test_order_book_delta_query() {
     let expected_length = 1077;
-    let file_path = "../../tests/test_data/order_book_deltas.parquet";
+    let file_path = "../../tests/test_data/nautilus/deltas.parquet";
     let mut catalog = DataBackendSession::new(1_000);
     catalog
         .add_file::<OrderBookDelta>(
@@ -109,7 +109,7 @@ fn test_order_book_delta_query() {
 fn test_order_book_delta_query_py() {
     pyo3::prepare_freethreaded_python();
 
-    let file_path = "../../tests/test_data/order_book_deltas.parquet";
+    let file_path = "../../tests/test_data/nautilus/deltas.parquet";
     let catalog = DataBackendSession::new(2_000);
     Python::with_gil(|py| {
         let pycatalog: Py<PyAny> = catalog.into_py(py);
@@ -135,7 +135,7 @@ fn test_order_book_delta_query_py() {
 #[rstest]
 fn test_quote_tick_query() {
     let expected_length = 9_500;
-    let file_path = "../../tests/test_data/quote_tick_data.parquet";
+    let file_path = "../../tests/test_data/nautilus/quotes.parquet";
     let mut catalog = DataBackendSession::new(10_000);
     catalog
         .add_file::<QuoteTick>("quote_005", file_path, None)
@@ -160,14 +160,14 @@ fn test_quote_tick_multiple_query() {
     catalog
         .add_file::<QuoteTick>(
             "quote_tick",
-            "../../tests/test_data/quote_tick_data.parquet",
+            "../../tests/test_data/nautilus/quotes.parquet",
             None,
         )
         .unwrap();
     catalog
         .add_file::<TradeTick>(
             "quote_tick_2",
-            "../../tests/test_data/trade_tick_data.parquet",
+            "../../tests/test_data/nautilus/trades.parquet",
             None,
         )
         .unwrap();
@@ -181,7 +181,7 @@ fn test_quote_tick_multiple_query() {
 #[rstest]
 fn test_trade_tick_query() {
     let expected_length = 100;
-    let file_path = "../../tests/test_data/trade_tick_data.parquet";
+    let file_path = "../../tests/test_data/nautilus/trades.parquet";
     let mut catalog = DataBackendSession::new(10_000);
     catalog
         .add_file::<TradeTick>("trade_001", file_path, None)
@@ -202,7 +202,7 @@ fn test_trade_tick_query() {
 #[rstest]
 fn test_bar_query() {
     let expected_length = 10;
-    let file_path = "../../tests/test_data/bar_data.parquet";
+    let file_path = "../../tests/test_data/nautilus/bars.parquet";
     let mut catalog = DataBackendSession::new(10_000);
     catalog.add_file::<Bar>("bar_001", file_path, None).unwrap();
     let query_result: QueryResult = catalog.get_query_result();

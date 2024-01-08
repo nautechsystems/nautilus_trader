@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,7 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import asyncio
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -30,7 +32,7 @@ from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
-from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.mocks.data import setup_catalog
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
@@ -169,7 +171,7 @@ def exec_client(
 
 @pytest.fixture()
 def data_catalog() -> ParquetDataCatalog:
-    catalog: ParquetDataCatalog = data_catalog_setup(protocol="memory", path="/")
+    catalog: ParquetDataCatalog = setup_catalog(protocol="memory", path="/")
     load_betfair_data(catalog)
     return catalog
 
@@ -179,7 +181,7 @@ def parser() -> BetfairParser:
     return BetfairParser(currency="GBP")
 
 
-async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     async def write():
         writer.write(b"connected\r\n")
         while True:
@@ -205,7 +207,7 @@ async def socket_server():
 
 @pytest_asyncio.fixture(name="closing_socket_server")
 async def fixture_closing_socket_server():
-    async def handler(_, writer: asyncio.StreamWriter):
+    async def handler(_: Any, writer: asyncio.StreamWriter) -> None:
         async def write():
             print("SERVER CONNECTING")
             writer.write(b"connected\r\n")

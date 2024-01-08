@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,6 +28,7 @@ use nautilus_model::{
     data::{
         bar::{Bar, BarSpecification, BarType},
         delta::OrderBookDelta,
+        depth::{OrderBookDepth10, DEPTH10_LEN},
         order::BookOrder,
         quote::QuoteTick,
         trade::TradeTick,
@@ -74,6 +75,7 @@ const BAR_CLOSE_ADJUSTMENT_1M: u64 = NANOSECONDS_IN_SECOND * 60;
 const BAR_CLOSE_ADJUSTMENT_1H: u64 = NANOSECONDS_IN_SECOND * 60 * 60;
 const BAR_CLOSE_ADJUSTMENT_1D: u64 = NANOSECONDS_IN_SECOND * 60 * 60 * 24;
 
+#[must_use]
 pub fn parse_order_side(c: c_char) -> OrderSide {
     match c as u8 as char {
         'A' => OrderSide::Sell,
@@ -82,6 +84,7 @@ pub fn parse_order_side(c: c_char) -> OrderSide {
     }
 }
 
+#[must_use]
 pub fn parse_aggressor_side(c: c_char) -> AggressorSide {
     match c as u8 as char {
         'A' => AggressorSide::Seller,
@@ -143,7 +146,10 @@ pub fn parse_cfi_iso10926(value: &str) -> Result<(Option<AssetClass>, Option<Ins
 
 pub fn parse_min_price_increment(value: i64, currency: Currency) -> Result<Price> {
     match value {
-        0 | i64::MAX => Price::new(10f64.powi(-(currency.precision as i32)), currency.precision),
+        0 | i64::MAX => Price::new(
+            10f64.powi(-i32::from(currency.precision)),
+            currency.precision,
+        ),
         _ => Price::from_raw(value, currency.precision),
     }
 }
@@ -254,6 +260,7 @@ pub fn parse_options_contract(
     )
 }
 
+#[must_use]
 pub fn is_trade_msg(order_side: OrderSide, action: c_char) -> bool {
     order_side == OrderSide::NoOrderSide || action as u8 as char == 'T'
 }
@@ -355,15 +362,11 @@ pub fn parse_mbp10_msg(
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
-) -> Result<Vec<OrderBookDelta>> {
-    let mut deltas = Vec::with_capacity(21);
-    let clear = OrderBookDelta::clear(
-        instrument_id,
-        record.sequence.into(),
-        record.ts_recv,
-        ts_init,
-    );
-    deltas.push(clear);
+) -> Result<OrderBookDepth10> {
+    let mut bids = Vec::with_capacity(DEPTH10_LEN);
+    let mut asks = Vec::with_capacity(DEPTH10_LEN);
+    let mut bid_counts = Vec::with_capacity(DEPTH10_LEN);
+    let mut ask_counts = Vec::with_capacity(DEPTH10_LEN);
 
     for level in &record.levels {
         let bid_order = BookOrder::new(
@@ -372,17 +375,6 @@ pub fn parse_mbp10_msg(
             Quantity::from_raw(level.bid_sz.into(), 0)?,
             0,
         );
-        let delta = OrderBookDelta::new(
-            instrument_id,
-            BookAction::Add,
-            bid_order,
-            record.flags,
-            record.sequence.into(),
-            record.ts_recv,
-            ts_init,
-        );
-
-        deltas.push(delta);
 
         let ask_order = BookOrder::new(
             OrderSide::Sell,
@@ -390,20 +382,31 @@ pub fn parse_mbp10_msg(
             Quantity::from_raw(level.ask_sz.into(), 0)?,
             0,
         );
-        let delta = OrderBookDelta::new(
-            instrument_id,
-            BookAction::Add,
-            ask_order,
-            record.flags,
-            record.sequence.into(),
-            record.ts_recv,
-            ts_init,
-        );
 
-        deltas.push(delta);
+        bids.push(bid_order);
+        asks.push(ask_order);
+        bid_counts.push(level.bid_ct);
+        ask_counts.push(level.ask_ct);
     }
 
-    Ok(deltas)
+    let bids: [BookOrder; DEPTH10_LEN] = bids.try_into().expect("`bids` length != 10");
+    let asks: [BookOrder; DEPTH10_LEN] = asks.try_into().expect("`asks` length != 10");
+    let bid_counts: [u32; DEPTH10_LEN] = bid_counts.try_into().expect("`bid_counts` length != 10");
+    let ask_counts: [u32; DEPTH10_LEN] = ask_counts.try_into().expect("`ask_counts` length != 10");
+
+    let depth = OrderBookDepth10::new(
+        instrument_id,
+        bids,
+        asks,
+        bid_counts,
+        ask_counts,
+        record.flags,
+        record.sequence.into(),
+        record.ts_recv,
+        ts_init,
+    );
+
+    Ok(depth)
 }
 
 pub fn parse_bar_type(record: &dbn::OhlcvMsg, instrument_id: InstrumentId) -> Result<BarType> {
@@ -518,7 +521,7 @@ where
             match result {
                 (Some(delta), None) => (Data::Delta(delta), None),
                 (None, Some(trade)) => (Data::Trade(trade), None),
-                _ => bail!("Invalid MboMsg parsing combination"),
+                _ => bail!("Invalid `MboMsg` parsing combination"),
             }
         }
         dbn::RType::Mbp0 => {
@@ -534,6 +537,11 @@ where
                 (quote, Some(trade)) => (Data::Quote(quote), Some(Data::Trade(trade))),
             }
         }
+        dbn::RType::Mbp10 => {
+            let msg = record_ref.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
+            let depth = parse_mbp10_msg(msg, instrument_id, 2, ts_init)?;
+            (Data::Depth10(depth), None)
+        }
         dbn::RType::Ohlcv1S
         | dbn::RType::Ohlcv1M
         | dbn::RType::Ohlcv1H
@@ -543,11 +551,6 @@ where
             let bar = parse_ohlcv_msg(msg, instrument_id, 2, ts_init)?;
             (Data::Bar(bar), None)
         }
-        // dbn::RType::Mbp10 => {
-        //     let msg = record_ref.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
-        //     let trade = parse_mbp10_msg(msg, instrument_id, 2, ts_init)?;
-        //     (Data::OrderBookDeltas(trade), None)
-        // }
         _ => bail!("RType is currently unsupported by NautilusTrader"),
     };
 

@@ -1,5 +1,5 @@
 # -----------------------------------book--------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,7 @@
 import time
 from collections.abc import Iterable
 
-import msgspec.json
+import msgspec
 import pandas as pd
 from betfair_parser.spec.betting.enums import MarketProjection
 from betfair_parser.spec.betting.type_definitions import MarketCatalogue
@@ -40,7 +40,8 @@ from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments.betting import null_handicap
 
 
-class BetfairInstrumentProviderConfig(InstrumentProviderConfig, frozen=True):
+class BetfairInstrumentProviderConfig(InstrumentProviderConfig, frozen=True, kw_only=True):
+    account_currency: str
     event_type_ids: list[str] | None = None
     event_ids: list[str] | None = None
     market_ids: list[str] | None = None
@@ -77,7 +78,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
         )
         self._config = config
         self._client = client
-        self._account_currency = None
+        self._account_currency = config.account_currency
 
     async def load_ids_async(
         self,

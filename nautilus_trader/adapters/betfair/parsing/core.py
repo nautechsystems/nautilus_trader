@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -90,7 +90,10 @@ def parse_betfair_file(
             yield from parser.parse(mcm)
 
 
-def betting_instruments_from_file(uri: PathLike[str] | str) -> list[BettingInstrument]:
+def betting_instruments_from_file(
+    uri: PathLike[str] | str,
+    currency: str,
+) -> list[BettingInstrument]:
     from nautilus_trader.adapters.betfair.providers import make_instruments
 
     instruments: list[BettingInstrument] = []
@@ -101,6 +104,6 @@ def betting_instruments_from_file(uri: PathLike[str] | str) -> list[BettingInstr
                 if mc.market_definition:
                     market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
                     mc = msgspec.structs.replace(mc, market_definition=market_def)
-                    instruments = make_instruments(mc.market_definition, currency="GBP")
+                    instruments = make_instruments(mc.market_definition, currency=currency)
                     instruments.extend(instruments)
     return list(set(instruments))

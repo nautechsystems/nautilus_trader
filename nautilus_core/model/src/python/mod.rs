@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -120,6 +120,7 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
 mod tests {
     use pyo3::{
         prelude::*,
+        prepare_freethreaded_python,
         types::{PyBool, PyInt, PyList, PyString},
     };
     use rstest::rstest;
@@ -129,6 +130,7 @@ mod tests {
 
     #[rstest]
     fn test_value_to_pydict() {
+        prepare_freethreaded_python();
         Python::with_gil(|py| {
             let json_str = r#"
         {
@@ -179,6 +181,7 @@ mod tests {
 
     #[rstest]
     fn test_value_to_pyobject_string() {
+        prepare_freethreaded_python();
         Python::with_gil(|py| {
             let val = Value::String("Hello, world!".to_string());
             let py_obj = value_to_pyobject(py, &val).unwrap();
@@ -189,6 +192,7 @@ mod tests {
 
     #[rstest]
     fn test_value_to_pyobject_bool() {
+        prepare_freethreaded_python();
         Python::with_gil(|py| {
             let val = Value::Bool(true);
             let py_obj = value_to_pyobject(py, &val).unwrap();
@@ -199,6 +203,7 @@ mod tests {
 
     #[rstest]
     fn test_value_to_pyobject_array() {
+        prepare_freethreaded_python();
         Python::with_gil(|py| {
             let val = Value::Array(vec![
                 Value::String("item1".to_string()),
@@ -223,15 +228,17 @@ mod tests {
 /// Loaded as nautilus_pyo3.model
 #[pymodule]
 pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    // data
+    // Data
     m.add_class::<crate::data::bar::BarSpecification>()?;
     m.add_class::<crate::data::bar::BarType>()?;
     m.add_class::<crate::data::bar::Bar>()?;
     m.add_class::<crate::data::order::BookOrder>()?;
     m.add_class::<crate::data::delta::OrderBookDelta>()?;
+    m.add_class::<crate::data::deltas::OrderBookDeltas>()?;
+    m.add_class::<crate::data::depth::OrderBookDepth10>()?;
     m.add_class::<crate::data::quote::QuoteTick>()?;
     m.add_class::<crate::data::trade::TradeTick>()?;
-    // enums
+    // Enums
     m.add_class::<enums::AccountType>()?;
     m.add_class::<enums::AggregationSource>()?;
     m.add_class::<enums::AggressorSide>()?;
@@ -256,7 +263,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<enums::TradingState>()?;
     m.add_class::<enums::TrailingOffsetType>()?;
     m.add_class::<enums::TriggerType>()?;
-    // identifiers
+    // Identifiers
     m.add_class::<crate::identifiers::account_id::AccountId>()?;
     m.add_class::<crate::identifiers::client_id::ClientId>()?;
     m.add_class::<crate::identifiers::client_order_id::ClientOrderId>()?;
@@ -271,7 +278,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::identifiers::trader_id::TraderId>()?;
     m.add_class::<crate::identifiers::venue::Venue>()?;
     m.add_class::<crate::identifiers::venue_order_id::VenueOrderId>()?;
-    // orders
+    // Orders
     m.add_class::<crate::orders::limit::LimitOrder>()?;
     m.add_class::<crate::orders::limit_if_touched::LimitIfTouchedOrder>()?;
     m.add_class::<crate::orders::market::MarketOrder>()?;
@@ -284,7 +291,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::types::money::Money>()?;
     m.add_class::<crate::types::price::Price>()?;
     m.add_class::<crate::types::quantity::Quantity>()?;
-    // instruments
+    // Instruments
     m.add_class::<crate::instruments::crypto_future::CryptoFuture>()?;
     m.add_class::<crate::instruments::crypto_perpetual::CryptoPerpetual>()?;
     m.add_class::<crate::instruments::currency_pair::CurrencyPair>()?;
@@ -292,7 +299,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::instruments::futures_contract::FuturesContract>()?;
     m.add_class::<crate::instruments::options_contract::OptionsContract>()?;
     m.add_class::<crate::instruments::synthetic::SyntheticInstrument>()?;
-    // events
+    // Events
     m.add_class::<crate::events::order::denied::OrderDenied>()?;
     m.add_class::<crate::events::order::filled::OrderFilled>()?;
     m.add_class::<crate::events::order::initialized::OrderInitialized>()?;

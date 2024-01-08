@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -94,7 +94,7 @@ pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
 
 #[fixture]
 pub fn xbtusd_bitmex() -> CryptoPerpetual {
-    return CryptoPerpetual::new(
+    CryptoPerpetual::new(
         InstrumentId::from("BTCUSDT.BITMEX"),
         Symbol::from("XBTUSD"),
         Currency::BTC(),
@@ -115,7 +115,7 @@ pub fn xbtusd_bitmex() -> CryptoPerpetual {
         0,
         0,
     )
-    .unwrap();
+    .unwrap()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -151,7 +151,7 @@ pub fn currency_pair_btcusdt() -> CurrencyPair {
 #[fixture]
 pub fn equity_aapl() -> Equity {
     Equity::new(
-        InstrumentId::from("AAPL.NASDAQ"),
+        InstrumentId::from("AAPL.XNAS"),
         Symbol::from("AAPL"),
         Some(Ustr::from("US0378331005")),
         Currency::from("USD"),

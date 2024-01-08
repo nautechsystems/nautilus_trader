@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,6 +25,9 @@ from datetime import timedelta
 
 import msgspec
 
+# from nautilus_trader.core import nautilus_pyo3
+# from nautilus_trader.core.nautilus_pyo3 import init_logging
+# from nautilus_trader.core.nautilus_pyo3 import init_tracing
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.cache.database import CacheDatabaseAdapter
@@ -39,6 +42,8 @@ from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.logging import init_logging
+from nautilus_trader.common.logging import init_tracing
 from nautilus_trader.common.logging import nautilus_header
 from nautilus_trader.config import ActorFactory
 from nautilus_trader.config import DataEngineConfig
@@ -53,12 +58,9 @@ from nautilus_trader.config.common import ControllerFactory
 from nautilus_trader.config.common import ExecAlgorithmFactory
 from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.config.common import NautilusKernelConfig
-from nautilus_trader.config.common import TracingConfig
 from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import nanos_to_millis
-from nautilus_trader.core.nautilus_pyo3 import LogGuard
-from nautilus_trader.core.nautilus_pyo3 import set_global_log_collector
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.algorithm import ExecAlgorithm
@@ -152,21 +154,24 @@ class NautilusKernel:
                 f"environment {self._environment} not recognized",  # pragma: no cover (design-time error)
             )
 
-        # Set the global tracing collector
-        # This should only be set once for the whole duration of the application
-        tracing: TracingConfig = config.tracing or TracingConfig()
-        self._log_guard: LogGuard = set_global_log_collector(
-            tracing.stdout_level,
-            tracing.stderr_level,
-            tracing.file_level,
-        )
+        # Initialize tracing for debugging async Rust logic
+        init_tracing()
 
+        # Initialize logging for debugging Python and sync Rust logic
         logging: LoggingConfig = config.logging or LoggingConfig()
 
-        # Setup the logger with a `LiveClock` initially,
-        # which is later swapped out for a `TestClock` in the `BacktestEngine`.
+        init_logging(
+            # nautilus_pyo3.TraderId(self._trader_id.value),  # TODO!: Reimplementing logging config
+            # nautilus_pyo3.UUID4(self._instance_id.value),  # TODO!: Reimplementing logging config
+            self._trader_id,
+            self._instance_id,
+            logging.spec_string(),
+            logging.log_directory,
+            logging.log_file_name,
+            logging.log_file_format,
+        )
+
         self._logger: Logger = Logger(
-            clock=self._clock if isinstance(self._clock, LiveClock) else LiveClock(),
             trader_id=self._trader_id,
             machine_id=self._machine_id,
             instance_id=self._instance_id,
@@ -924,6 +929,8 @@ class NautilusKernel:
 
         if self._writer:
             self._writer.close()
+
+        self._logger.flush()
 
     def cancel_all_tasks(self) -> None:
         """

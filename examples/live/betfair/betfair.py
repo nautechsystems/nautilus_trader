@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,8 +25,8 @@ from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFact
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_instrument_provider
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
-from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import log_level_from_str
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
@@ -38,9 +38,12 @@ from nautilus_trader.live.node import TradingNode
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-async def main(instrument_config: BetfairInstrumentProviderConfig):
+async def main(
+    instrument_config: BetfairInstrumentProviderConfig,
+    log_level: str = "INFO",
+) -> TradingNode:
     # Connect to Betfair client early to load instruments and account currency
-    logger = Logger(clock=LiveClock())
+    logger = Logger(level_stdout=log_level_from_str(log_level))
     client = get_cached_betfair_client(
         username=None,  # Pass here or will source from the `BETFAIR_USERNAME` env var
         password=None,  # Pass here or will source from the `BETFAIR_PASSWORD` env var
@@ -67,7 +70,7 @@ async def main(instrument_config: BetfairInstrumentProviderConfig):
         timeout_connection=30.0,
         timeout_disconnection=30.0,
         timeout_post_stop=30.0,
-        logging=LoggingConfig(log_level="DEBUG"),
+        logging=LoggingConfig(log_level=log_level),
         data_clients={
             "BETFAIR": BetfairDataClientConfig(
                 account_currency=account.currency_code,
@@ -95,7 +98,7 @@ async def main(instrument_config: BetfairInstrumentProviderConfig):
             config=OrderBookImbalanceConfig(
                 instrument_id=instrument.id,
                 max_trade_size=Decimal(10),
-                trigger_min_size=10,
+                trigger_min_size=2,
                 order_id_tag=instrument.selection_id,
                 subscribe_ticker=True,
             ),
@@ -127,6 +130,9 @@ if __name__ == "__main__":
     # Update the market ID with something coming up in `Next Races` from
     # https://www.betfair.com.au/exchange/plus/
     # The market ID will appear in the browser query string.
-    config = BetfairInstrumentProviderConfig(market_ids=["1.221718403"])
-    node = asyncio.run(main(instrument_config=config))
+    config = BetfairInstrumentProviderConfig(
+        account_currency="AUD",
+        market_ids=["1.223041451"],
+    )
+    node = asyncio.run(main(instrument_config=config, log_level="DEBUG"))
     node.dispose()

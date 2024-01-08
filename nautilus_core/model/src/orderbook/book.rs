@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,7 +19,10 @@ use thiserror::Error;
 
 use super::{ladder::BookPrice, level::Level};
 use crate::{
-    data::{delta::OrderBookDelta, order::BookOrder, quote::QuoteTick, trade::TradeTick},
+    data::{
+        delta::OrderBookDelta, depth::OrderBookDepth10, order::BookOrder, quote::QuoteTick,
+        trade::TradeTick,
+    },
     enums::{BookAction, BookType, OrderSide},
     identifiers::instrument_id::InstrumentId,
     orderbook::ladder::Ladder,
@@ -161,6 +164,19 @@ impl OrderBook {
             BookAction::Update => self.update(delta.order, delta.ts_event, delta.sequence),
             BookAction::Delete => self.delete(delta.order, delta.ts_event, delta.sequence),
             BookAction::Clear => self.clear(delta.ts_event, delta.sequence),
+        }
+    }
+
+    pub fn apply_depth(&mut self, depth: OrderBookDepth10) {
+        self.bids.clear();
+        self.asks.clear();
+
+        for order in depth.bids {
+            self.add(order, depth.ts_event, depth.sequence);
+        }
+
+        for order in depth.asks {
+            self.add(order, depth.ts_event, depth.sequence);
         }
     }
 
@@ -518,7 +534,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        data::order::BookOrder,
+        data::{depth::stubs::stub_depth10, order::BookOrder},
         enums::{AggressorSide, OrderSide},
         identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
         types::{price::Price, quantity::Quantity},
@@ -774,6 +790,20 @@ mod tests {
             book.get_quantity_for_price(Price::from("0.990"), OrderSide::Sell),
             3.0
         );
+    }
+
+    #[rstest]
+    fn test_apply_depth(stub_depth10: OrderBookDepth10) {
+        let depth = stub_depth10;
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+        book.apply_depth(depth);
+
+        assert_eq!(book.best_bid_price().unwrap().as_f64(), 99.00);
+        assert_eq!(book.best_ask_price().unwrap().as_f64(), 100.00);
+        assert_eq!(book.best_bid_size().unwrap().as_f64(), 100.0);
+        assert_eq!(book.best_ask_size().unwrap().as_f64(), 100.0);
     }
 
     #[rstest]

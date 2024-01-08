@@ -8,8 +8,6 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any
 
-from pyarrow import RecordBatch
-
 from nautilus_trader.core.data import Data
 
 
@@ -197,13 +195,20 @@ def convert_to_snake_case(s: str) -> str:
 # Common
 ###################################################################################################
 
-class LogGuard: ...
+### Logging
 
-def set_global_log_collector(
-    stdout_level: str | None,
-    stderr_level: str | None,
-    file_level: tuple[str, str, str] | None,
-) -> LogGuard: ...
+def init_tracing() -> None:
+    ...
+
+def init_logging(
+    trader_id: TraderId,
+    instance_id: UUID4,
+    config_spec: str,
+    directory: str,
+    file_name: str,
+    file_format: str,
+) -> None:
+    ...
 
 ###################################################################################################
 # Model
@@ -263,6 +268,10 @@ class Bar:
 class BookOrder: ...
 
 class OrderBookDelta:
+    @staticmethod
+    def get_fields() -> dict[str, str]: ...
+
+class OrderBookDepth10:
     @staticmethod
     def get_fields() -> dict[str, str]: ...
 
@@ -1240,9 +1249,10 @@ class SocketConfig:
 
 class NautilusDataType(Enum):
     OrderBookDelta = 1
-    QuoteTick = 2
-    TradeTick = 3
-    Bar = 4
+    OrderBookDepth10 = 2
+    QuoteTick = 3
+    TradeTick = 4
+    Bar = 5
 
 class DataBackendSession:
     def __init__(self, chunk_size: int = 5000) -> None: ...
@@ -1268,32 +1278,17 @@ class DataTransformer:
     @staticmethod
     def get_schema_map(data_cls: type) -> dict[str, str]: ...
     @staticmethod
-    def pyobjects_to_batches_bytes(data: list[Data]) -> bytes: ...
+    def pyobjects_to_record_batch_bytes(data: list[Data]) -> bytes: ...
     @staticmethod
-    def pyo3_order_book_deltas_to_batches_bytes(data: list[OrderBookDelta]) -> bytes: ...
+    def pyo3_order_book_deltas_to_record_batch_bytes(data: list[OrderBookDelta]) -> bytes: ...
     @staticmethod
-    def pyo3_quote_ticks_to_batches_bytes(data: list[QuoteTick]) -> bytes: ...
+    def pyo3_order_book_depth10_to_record_batch_bytes(data: list[OrderBookDepth10]) -> bytes: ...
     @staticmethod
-    def pyo3_trade_ticks_to_batches_bytes(data: list[TradeTick]) -> bytes: ...
+    def pyo3_quote_ticks_to_record_batch_bytes(data: list[QuoteTick]) -> bytes: ...
     @staticmethod
-    def pyo3_bars_to_batches_bytes(data: list[Bar]) -> bytes: ...
+    def pyo3_trade_ticks_to_record_batch_bytes(data: list[TradeTick]) -> bytes: ...
     @staticmethod
-    def record_batches_to_pybytes(batches: list[RecordBatch], schema: Any) -> bytes: ...
-
-class BarDataWrangler:
-    def __init__(
-        self,
-        bar_type: str,
-        price_precision: int,
-        size_precision: int,
-    ) -> None: ...
-    @property
-    def bar_type(self) -> str: ...
-    @property
-    def price_precision(self) -> int: ...
-    @property
-    def size_precision(self) -> int: ...
-    def process_record_batches_bytes(self, data: bytes) -> list[Bar]: ...
+    def pyo3_bars_to_record_batch_bytes(data: list[Bar]) -> bytes: ...
 
 class OrderBookDeltaDataWrangler:
     def __init__(
@@ -1308,7 +1303,7 @@ class OrderBookDeltaDataWrangler:
     def price_precision(self) -> int: ...
     @property
     def size_precision(self) -> int: ...
-    def process_record_batches_bytes(self, data: bytes) -> list[OrderBookDelta]: ...
+    def process_record_batch_bytes(self, data: bytes) -> list[OrderBookDelta]: ...
 
 class QuoteTickDataWrangler:
     def __init__(
@@ -1323,7 +1318,7 @@ class QuoteTickDataWrangler:
     def price_precision(self) -> int: ...
     @property
     def size_precision(self) -> int: ...
-    def process_record_batches_bytes(self, data: bytes) -> list[QuoteTick]: ...
+    def process_record_batch_bytes(self, data: bytes) -> list[QuoteTick]: ...
 
 class TradeTickDataWrangler:
     def __init__(
@@ -1338,12 +1333,28 @@ class TradeTickDataWrangler:
     def price_precision(self) -> int: ...
     @property
     def size_precision(self) -> int: ...
-    def process_record_batches_bytes(self, data: bytes) -> list[TradeTick]: ...
+    def process_record_batch_bytes(self, data: bytes) -> list[TradeTick]: ...
+
+class BarDataWrangler:
+    def __init__(
+        self,
+        bar_type: str,
+        price_precision: int,
+        size_precision: int,
+    ) -> None: ...
+    @property
+    def bar_type(self) -> str: ...
+    @property
+    def price_precision(self) -> int: ...
+    @property
+    def size_precision(self) -> int: ...
+    def process_record_batch_bytes(self, data: bytes) -> list[Bar]: ...
 
 
 ###################################################################################################
 # Indicators
 ###################################################################################################
+
 class SimpleMovingAverage:
     def __init__(
         self,

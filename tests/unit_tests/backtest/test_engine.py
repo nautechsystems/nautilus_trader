@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import sys
-import tempfile
 from decimal import Decimal
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -215,11 +215,10 @@ class TestBacktestEngine:
         assert report.index[0] == start
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
-    def test_persistence_files_cleaned_up(self):
+    def test_persistence_files_cleaned_up(self, tmp_path: Path) -> None:
         # Arrange
-        temp_dir = tempfile.mkdtemp()
         catalog = ParquetDataCatalog(
-            path=str(temp_dir),
+            path=tmp_path,
             fs_protocol="file",
         )
         config = TestConfigStubs.backtest_engine_config(persist=True, catalog=catalog)
@@ -228,9 +227,12 @@ class TestBacktestEngine:
             instrument=self.usdjpy,
             ticks=TestDataStubs.quote_ticks_usdjpy(),
         )
+
+        # Act
         engine.run()
         engine.dispose()
 
+        # Assert
         assert all(f.closed for f in engine.kernel.writer._files.values())
 
     def test_backtest_engine_multiple_runs(self):
@@ -367,7 +369,7 @@ class TestBacktestEngineData:
         path = TEST_DATA_DIR / "truefx" / "audusd-ticks.csv"
         df = pd.read_csv(path)
 
-        wrangler = wranglers_v2.QuoteTickDataWrangler.from_instrument(AUDUSD_SIM)
+        wrangler = wranglers_v2.QuoteTickDataWranglerV2.from_instrument(AUDUSD_SIM)
         ticks = wrangler.from_pandas(df)
 
         # Act, Assert

@@ -25,7 +25,7 @@ rust_decimal_macros = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
 ustr = { workspace = true }
-dbn = { version = "0.14.2", optional = true }
+dbn = { version = "0.14.2", optional = true, features = ["python"] }
 
 [features]
 extension-module = [

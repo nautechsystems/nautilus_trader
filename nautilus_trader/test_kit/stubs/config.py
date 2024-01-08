@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
@@ -31,7 +30,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-AAPL_US = TestInstrumentProvider.equity(symbol="AAPL", venue="NASDAQ")
+_AAPL_US = TestInstrumentProvider.equity(symbol="AAPL", venue="NASDAQ")
 
 
 class TestConfigStubs:
@@ -63,7 +62,7 @@ class TestConfigStubs:
             strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
             config_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalanceConfig",
             config={
-                "instrument_id": instrument_id or AAPL_US,
+                "instrument_id": instrument_id or _AAPL_US,
                 "max_trade_size": 50,
             },
         )
@@ -88,7 +87,7 @@ class TestConfigStubs:
                 strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
                 config_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalanceConfig",
                 config={
-                    "instrument_id": AAPL_US.id,
+                    "instrument_id": _AAPL_US.id,
                     "max_trade_size": 50,
                 },
             ),

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -35,7 +35,7 @@ def test_to_dict():
     assert Equity.from_dict(dict) == _AAPL_EQUITY
     assert dict == {
         "type": "Equity",
-        "id": "AAPL.NASDAQ",
+        "id": "AAPL.XNAS",
         "raw_symbol": "AAPL",
         "isin": "US0378331005",
         "currency": "USD",

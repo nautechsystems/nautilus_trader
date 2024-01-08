@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,30 +15,29 @@
 
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.test_kit.performance import PerformanceBench
 
 
-def test_symbol_equality():
+def test_symbol_equality(benchmark):
     symbol = Symbol("AUD/USD")
 
     def symbol_equality() -> bool:
         return symbol == symbol
 
-    PerformanceBench.profile_function(
+    benchmark.pedantic(
         target=symbol_equality,
-        runs=1_000_000,
+        rounds=1_000_000,
         iterations=1,
     )
 
 
-def test_venue_equality():
+def test_venue_equality(benchmark):
     venue = Venue("SIM")
 
     def venue_equality() -> bool:
         return venue == venue
 
-    PerformanceBench.profile_function(
+    benchmark.pedantic(
         target=venue_equality,
-        runs=1_000_000,
+        rounds=1_000_000,
         iterations=1,
     )

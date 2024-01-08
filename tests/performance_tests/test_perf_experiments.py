@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,10 +16,6 @@
 from nautilus_trader.core.message import Event
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.events import OrderSubmitted
-from nautilus_trader.test_kit.performance import PerformanceHarness
-
-
-EVENT = Event(UUID4(), 0, 0)
 
 
 class Experiments:
@@ -34,31 +30,31 @@ class Experiments:
         return x
 
 
-class TestPerformanceExperiments(PerformanceHarness):
-    @staticmethod
-    def test_builtin_arithmetic(benchmark):
-        benchmark.pedantic(
-            target=Experiments.built_in_arithmetic,
-            iterations=100_000,
-            rounds=1,
-        )
-        # ~0.0ms / ~0.1μs / 106ns minimum of 100,000 runs @ 1 iteration each run.
+def test_builtin_arithmetic(benchmark):
+    benchmark.pedantic(
+        target=Experiments.built_in_arithmetic,
+        iterations=100_000,
+        rounds=1,
+    )
+    # ~0.0ms / ~0.1μs / 106ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @staticmethod
-    def test_class_name(benchmark):
-        benchmark.pedantic(
-            target=Experiments.class_name,
-            iterations=100_000,
-            rounds=1,
-        )
-        # ~0.0ms / ~0.2μs / 161ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @staticmethod
-    def test_is_instance(benchmark):
-        benchmark.pedantic(
-            target=isinstance,
-            args=(EVENT, OrderSubmitted),
-            iterations=100_000,
-            rounds=1,
-        )
-        # ~0.0ms / ~0.2μs / 153ns minimum of 100,000 runs @ 1 iteration each run.
+def test_class_name(benchmark):
+    benchmark.pedantic(
+        target=Experiments.class_name,
+        iterations=100_000,
+        rounds=1,
+    )
+    # ~0.0ms / ~0.2μs / 161ns minimum of 100,000 runs @ 1 iteration each run.
+
+
+def test_is_instance(benchmark):
+    event = Event(UUID4(), 0, 0)
+
+    benchmark.pedantic(
+        target=isinstance,
+        args=(event, OrderSubmitted),
+        iterations=100_000,
+        rounds=1,
+    )
+    # ~0.0ms / ~0.2μs / 153ns minimum of 100,000 runs @ 1 iteration each run.

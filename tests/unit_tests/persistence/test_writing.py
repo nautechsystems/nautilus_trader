@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -44,9 +44,8 @@ def test_legacy_deltas_to_record_batch_reader() -> None:
     ]
 
     # Act
-    batches_bytes = DataTransformer.pyobjects_to_batches_bytes(ticks)
-    batches_stream = BytesIO(batches_bytes)
-    reader = pa.ipc.open_stream(batches_stream)
+    batch_bytes = DataTransformer.pyobjects_to_record_batch_bytes(ticks)
+    reader = pa.ipc.open_stream(BytesIO(batch_bytes))
 
     # Assert
     assert len(ticks) == 1

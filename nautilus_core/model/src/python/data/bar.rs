@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,6 +16,7 @@
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     hash::{Hash, Hasher},
+    str::FromStr,
 };
 
 use nautilus_core::{
@@ -115,6 +116,12 @@ impl BarType {
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(BarType))
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(value: &str) -> PyResult<Self> {
+        BarType::from_str(value).map_err(to_pyvalue_err)
     }
 }
 
@@ -282,12 +289,12 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::data::bar::{stubs::bar_audusd_sim_minute_bid, Bar};
+    use crate::data::bar::{stubs::stub_bar, Bar};
 
     #[rstest]
-    fn test_as_dict(bar_audusd_sim_minute_bid: Bar) {
+    fn test_as_dict(stub_bar: Bar) {
         pyo3::prepare_freethreaded_python();
-        let bar = bar_audusd_sim_minute_bid;
+        let bar = stub_bar;
 
         Python::with_gil(|py| {
             let dict_string = bar.py_as_dict(py).unwrap().to_string();
@@ -297,9 +304,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_as_from_dict(bar_audusd_sim_minute_bid: Bar) {
+    fn test_as_from_dict(stub_bar: Bar) {
         pyo3::prepare_freethreaded_python();
-        let bar = bar_audusd_sim_minute_bid;
+        let bar = stub_bar;
 
         Python::with_gil(|py| {
             let dict = bar.py_as_dict(py).unwrap();
@@ -309,9 +316,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_pyobject(bar_audusd_sim_minute_bid: Bar) {
+    fn test_from_pyobject(stub_bar: Bar) {
         pyo3::prepare_freethreaded_python();
-        let bar = bar_audusd_sim_minute_bid;
+        let bar = stub_bar;
 
         Python::with_gil(|py| {
             let bar_pyobject = bar.into_py(py);

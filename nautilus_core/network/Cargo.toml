@@ -20,16 +20,20 @@ tracing = { workspace = true }
 tokio = { workspace = true }
 dashmap = "5.5.3"
 futures-util = "0.3.29"
-hyper = { version = "0.14.28", features = ["client", "http1", "server"] }
+http = "1.0.0"
+http-body-util = "0.1.0"
+hyper = "1.1.0"
 hyper-tls = "0.5.0"
 nonzero_ext = "0.3.0"
+reqwest = "0.11.23"
 tokio-tungstenite = { path = "./tokio-tungstenite", features = ["rustls-tls-native-roots"] }
 
 [dev-dependencies]
 criterion = { workspace = true }
 serde_json = { workspace = true }
+rstest = { workspace = true }
+axum = "0.7.3"
 tracing-test = "0.2.4"
-rstest.workspace = true
 
 [features]
 extension-module = [

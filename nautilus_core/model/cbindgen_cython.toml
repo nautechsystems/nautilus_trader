@@ -12,6 +12,7 @@ header = '"../includes/model.h"'
 "libc.stdint" = [
     "uint8_t",
     "uint16_t",
+    "uint32_t",
     "uint64_t",
     "uintptr_t",
     "int64_t",
@@ -50,6 +51,8 @@ exclude = [
 "Money" = "Money_t"
 "OrderId" = "uint64_t"
 "OrderBookDelta" = "OrderBookDelta_t"
+"OrderBookDeltas" = "OrderBookDeltas_t"
+"OrderBookDepth10" = "OrderBookDepth10_t"
 "OrderInitialized" = "OrderInitialized_t"
 "OrderDenied" = "OrderDenied_t"
 "OrderEmulated" = "OrderEmulated_t"

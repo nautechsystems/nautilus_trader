@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -80,7 +80,6 @@ impl EncodeToRecordBatch for QuoteTick {
         metadata: &HashMap<String, String>,
         data: &[Self],
     ) -> Result<RecordBatch, ArrowError> {
-        // Create array builders
         let mut bid_price_builder = Int64Array::builder(data.len());
         let mut ask_price_builder = Int64Array::builder(data.len());
         let mut bid_size_builder = UInt64Array::builder(data.len());
@@ -88,17 +87,15 @@ impl EncodeToRecordBatch for QuoteTick {
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
-        // Iterate over data
-        for tick in data {
-            bid_price_builder.append_value(tick.bid_price.raw);
-            ask_price_builder.append_value(tick.ask_price.raw);
-            bid_size_builder.append_value(tick.bid_size.raw);
-            ask_size_builder.append_value(tick.ask_size.raw);
-            ts_event_builder.append_value(tick.ts_event);
-            ts_init_builder.append_value(tick.ts_init);
+        for quote in data {
+            bid_price_builder.append_value(quote.bid_price.raw);
+            ask_price_builder.append_value(quote.ask_price.raw);
+            bid_size_builder.append_value(quote.bid_size.raw);
+            ask_size_builder.append_value(quote.ask_size.raw);
+            ts_event_builder.append_value(quote.ts_event);
+            ts_init_builder.append_value(quote.ts_init);
         }
 
-        // Build arrays
         let bid_price_array = bid_price_builder.finish();
         let ask_price_array = ask_price_builder.finish();
         let bid_size_array = bid_size_builder.finish();
@@ -106,7 +103,6 @@ impl EncodeToRecordBatch for QuoteTick {
         let ts_event_array = ts_event_builder.finish();
         let ts_init_array = ts_init_builder.finish();
 
-        // Build record batch
         RecordBatch::try_new(
             Self::get_schema(Some(metadata.clone())).into(),
             vec![
@@ -126,10 +122,7 @@ impl DecodeFromRecordBatch for QuoteTick {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
-        // Parse and validate metadata
         let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
-
-        // Extract field value arrays
         let cols = record_batch.columns();
 
         let bid_price_values = extract_column::<Int64Array>(cols, "bid_price", 0, DataType::Int64)?;
@@ -139,7 +132,6 @@ impl DecodeFromRecordBatch for QuoteTick {
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 4, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 5, DataType::UInt64)?;
 
-        // Map record batch rows to vector of objects
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
                 let bid_price =
@@ -193,7 +185,7 @@ mod tests {
 
     #[rstest]
     fn test_get_schema() {
-        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
         let schema = QuoteTick::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
@@ -224,7 +216,7 @@ mod tests {
     #[rstest]
     fn test_encode_quote_tick() {
         // Create test data
-        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
         let tick1 = QuoteTick {
             instrument_id,
             bid_price: Price::from("100.10"),
@@ -281,7 +273,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_batch() {
-        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
 
         let bid_price = Int64Array::from(vec![10000, 9900]);

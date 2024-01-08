@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -144,7 +144,7 @@ impl Position {
             self.realized_pnl = None;
         }
 
-        self.events.push(fill.clone()); // Potentially do this last
+        self.events.push(fill); // Potentially do this last
         self.trade_ids.push(fill.trade_id);
 
         // Calculate cumulative commissions

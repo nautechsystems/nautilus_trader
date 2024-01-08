@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -710,8 +710,8 @@ cdef class MessageBus:
     def __init__(
         self,
         TraderId trader_id not None,
-        Clock clock not None,
-        Logger logger not None,
+        Clock clock,
+        Logger logger,
         UUID4 instance_id = None,
         str name = None,
         Serializer serializer = None,

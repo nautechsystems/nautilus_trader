@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -361,8 +361,8 @@ def generate_signal_class(name: str, value_type: type) -> type:
     )
     register_arrow(
         data_cls=SignalData,
-        serializer=serialize_signal,
-        deserializer=deserialize_signal,
+        encoder=serialize_signal,
+        decoder=deserialize_signal,
         schema=schema,
     )
 

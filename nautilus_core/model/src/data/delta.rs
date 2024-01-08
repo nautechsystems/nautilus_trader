@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -182,8 +182,6 @@ impl OrderBookDelta {
     }
 }
 
-impl Serializable for OrderBookDelta {}
-
 impl Display for OrderBookDelta {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -200,10 +198,12 @@ impl Display for OrderBookDelta {
     }
 }
 
+impl Serializable for OrderBookDelta {}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Stubs
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
+#[cfg(feature = "stubs")]
 pub mod stubs {
     use rstest::fixture;
 
@@ -215,7 +215,7 @@ pub mod stubs {
 
     #[fixture]
     pub fn stub_delta() -> OrderBookDelta {
-        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
         let action = BookAction::Add;
         let price = Price::from("100.00");
         let size = Quantity::from("10");
@@ -254,7 +254,7 @@ mod tests {
 
     #[rstest]
     fn test_new() {
-        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
         let action = BookAction::Add;
         let price = Price::from("100.00");
         let size = Quantity::from("10");
@@ -291,7 +291,7 @@ mod tests {
 
     #[rstest]
     fn test_clear() {
-        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
         let sequence = 1;
         let ts_event = 2;
         let ts_init = 3;
@@ -315,7 +315,7 @@ mod tests {
         let delta = stub_delta;
         assert_eq!(
             format!("{}", delta),
-            "AAPL.NASDAQ,ADD,100.00,10,BUY,123456,0,1,1,2".to_string()
+            "AAPL.XNAS,ADD,100.00,10,BUY,123456,0,1,1,2".to_string()
         );
     }
 

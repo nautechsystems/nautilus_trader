@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import copy
-import pathlib
 import sys
 from typing import Any
 
@@ -48,14 +47,14 @@ from tests.unit_tests.serialization.conftest import nautilus_objects
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
-CATALOG_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/unit_tests/persistence/data_catalog")
+CATALOG_PATH = TESTS_PACKAGE_ROOT / "unit_tests" / "persistence" / "catalog"
 
 
 def _reset(catalog: ParquetDataCatalog) -> None:
     """
     Cleanup resources before each test run.
     """
-    assert catalog.path.endswith("tests/unit_tests/persistence/data_catalog")
+    assert catalog.path.endswith("tests/unit_tests/persistence/catalog")
     if catalog.fs.exists(catalog.path):
         catalog.fs.rm(catalog.path, recursive=True)
     catalog.fs.mkdir(catalog.path)
@@ -118,15 +117,15 @@ class TestArrowSerializer:
         return True
 
     @pytest.mark.parametrize(
-        "tick",
+        "data",
         [
             TestDataStubs.quote_tick(),
             TestDataStubs.trade_tick(),
             TestDataStubs.bar_5decimal(),
         ],
     )
-    def test_serialize_and_deserialize_tick(self, tick):
-        self._test_serialization(obj=tick)
+    def test_serialize_and_deserialize_tick(self, data):
+        self._test_serialization(obj=data)
 
     def test_serialize_and_deserialize_order_book_delta(self):
         # Arrange

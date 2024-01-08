@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,8 +15,8 @@
 
 use std::collections::HashMap;
 
-use hyper::Method;
 use nautilus_network::http::InnerHttpClient;
+use reqwest::Method;
 
 const CONCURRENCY: usize = 256;
 const TOTAL: usize = 1_000_000;

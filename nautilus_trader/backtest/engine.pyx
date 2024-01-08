@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -113,7 +113,6 @@ cdef class BacktestEngine:
         self._config: BacktestEngineConfig  = config
 
         # Setup components
-        self._clock: Clock = LiveClock()  # Real-time for the engine
         self._accumulator = <TimeEventAccumulatorAPI>time_event_accumulator_new()
 
         # Run IDs
@@ -778,9 +777,6 @@ cdef class BacktestEngine:
             # End current backtest run
             self.end()
 
-        # Change logger clock back to live clock for consistent time stamping
-        self.kernel.logger.change_clock(self._clock)
-
         # Reset DataEngine
         if self.kernel.data_engine.is_running:
             self.kernel.data_engine.stop()
@@ -938,9 +934,11 @@ cdef class BacktestEngine:
         except AccountError:
             pass
 
-        self._run_finished = self._clock.utc_now()
+        self._run_finished = pd.Timestamp.utcnow()
         self._backtest_end = self.kernel.clock.utc_now()
-        self._kernel.logger.change_clock(self._clock)
+
+        # Change logger clock back to live clock for consistent time stamping
+        self._kernel.logger.change_clock()
 
         self._log_post_run()
 
@@ -1019,7 +1017,7 @@ cdef class BacktestEngine:
             # Initialize run
             self._run_config_id = run_config_id  # Can be None
             self._run_id = UUID4()
-            self._run_started = self._clock.utc_now()
+            self._run_started = pd.Timestamp.utcnow()
             self._backtest_start = start
             for exchange in self._venues.values():
                 exchange.initialize_account()
@@ -1042,7 +1040,8 @@ cdef class BacktestEngine:
             self._kernel.start()
 
             # Change logger clock for the run
-            self._kernel.logger.change_clock(self.kernel.clock)
+            self._kernel.clock.set_time(start_ns)
+            self._kernel.logger.change_clock(self._kernel.clock)
             self._log_pre_run()
 
         self._log_run(start, end)

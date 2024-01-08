@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,36 +14,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.enums import AggressorSide
-from nautilus_trader.model.identifiers import TradeId
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-
-# from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
-from nautilus_trader.test_kit.fixtures.memory import snapshot_memory
-
-# from nautilus_trader.test_kit.providers import TestDataProvider
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from tests.mem_leak_tests.conftest import snapshot_memory
 
 
-ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
-
-
-@snapshot_memory(1000)
+@snapshot_memory(4000)
 def run(*args, **kwargs):
-    # provider = TestDataProvider()
-    # wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
-    # _ = wrangler.process(provider.read_csv_ticks("binance/binance-ethusdt-trades.csv"))
-    _ = TradeTick(
-        ETHUSDT_BINANCE.id,
-        Price.from_str("1.00000"),
-        Quantity.from_str("1"),
-        AggressorSide.BUYER,
-        TradeId("123456789"),
-        1,
-        2,
-    )
+    _ = TestDataStubs.trade_tick()
 
 
 if __name__ == "__main__":

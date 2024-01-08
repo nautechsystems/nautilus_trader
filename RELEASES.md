@@ -5,12 +5,18 @@ Released on TBD (UTC).
 ### Enhancements
 - Added `NautilusConfig.json_primitives` to convert object to Python dictionary with JSON primitive values
 - Added `InstrumentClass.BOND`
+- Implemented core logging interface via the `log` library, thanks @twitu
+- Implemented global atomic clock in Rust (improves performance and ensures properly monotonic timestamps in real-time)
 - Improved Interactive Brokers adapter raising docker `RuntimeError` only when needed (not when using TWS), thanks @rsmb7z
+- Upgraded core HTTP client to `hyper` 1.1.0, thanks @ayush-sb
+- Optimized core MPSC channels with sync senders
+- Optimized Arrow encoding (resulting in ~100x faster writes for the Parquet data catalog)
 
 ### Breaking Changes
 - Changed `ComponentStateChanged` Arrow schema for `config` from `string` to `binary`
 - Changed `OrderInitialized` Arrow schema for `options` from `string` to `binary`
 - Changed `OrderBookDeltas` dictionary representation of `deltas` field from JSON `bytes` to a list of `dict` (standardize with all other data types)
+- Renamed all version 2 data wrangler classes with a `V2` suffix for clarity
 - Renamed `TradeReport` to `FillReport` (more conventional terminology, and more clearly separates market data from user execution reports)
 - Renamed `AssetType` enum to `InstrumentClass` (more conventional terminology)
 - Renamed `asset_type` to `instrument_class` across the codebase (more conventional terminology)
@@ -19,11 +25,15 @@ Released on TBD (UTC).
 - Removed `AssetClass.ENERGY` (not strictly an asset class, more a futures category)
 - Removed `multiplier` param from `Equity` constructor (not applicable)
 - Removed `size_precision`, `size_increment`, and `multiplier` fields from `Equity` dictionary representation (not applicable)
+- Removed `TracingConfig` (now redundant with new logging implementation)
 - Moved `AssetClass.SPORTS_BETTING` to `InstrumentClass.SPORTS_BETTING`
 
 ### Fixes
+- Fixed logger thread leak, thanks @twitu
 - Fixed handling of configuration objects to work with `StreamingFeatherWriter`
 - Fixed `BinanceSpotInstrumentProvider` fee loading key error for partial instruments load, thanks for reporting @doublier1
+- Added `BinanceErrorCode.SERVER_BUSY` (-1008). Also added to the retry error codes.
+- Added `BinanceOrderStatus.EXPIRED_IN_MATCH` which is when an order was canceled by the exchange due self-trade prevention (STP), thanks for reporting @doublier1
 
 ---
 

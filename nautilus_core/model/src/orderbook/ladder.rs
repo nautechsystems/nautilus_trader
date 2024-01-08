@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,7 +28,7 @@ use crate::{
 };
 
 /// Represents a price level with a specified side in an order books ladder.
-#[derive(Copy, Clone, Debug, Eq)]
+#[derive(Clone, Copy, Debug, Eq)]
 pub struct BookPrice {
     pub value: Price,
     pub side: OrderSide,

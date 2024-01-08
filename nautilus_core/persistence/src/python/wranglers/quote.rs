@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -60,7 +60,7 @@ impl QuoteTickDataWrangler {
         self.size_precision
     }
 
-    fn process_record_batches_bytes(&self, _py: Python, data: &[u8]) -> PyResult<Vec<QuoteTick>> {
+    fn process_record_batch_bytes(&self, _py: Python, data: &[u8]) -> PyResult<Vec<QuoteTick>> {
         // Create a StreamReader (from Arrow IPC)
         let cursor = Cursor::new(data);
         let reader = match StreamReader::try_new(cursor, None) {

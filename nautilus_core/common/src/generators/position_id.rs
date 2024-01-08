@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,17 +24,17 @@ use super::get_datetime_tag;
 
 #[repr(C)]
 pub struct PositionIdGenerator {
+    clock: &'static AtomicTime,
     trader_id: TraderId,
-    time: AtomicTime,
     counts: HashMap<StrategyId, usize>,
 }
 
 impl PositionIdGenerator {
     #[must_use]
-    pub fn new(trader_id: TraderId, time: AtomicTime) -> Self {
+    pub fn new(trader_id: TraderId, clock: &'static AtomicTime) -> Self {
         Self {
+            clock,
             trader_id,
-            time,
             counts: HashMap::new(),
         }
     }
@@ -56,7 +56,7 @@ impl PositionIdGenerator {
         let strategy = strategy_id;
         let next_count = self.count(strategy_id) + 1;
         self.set_count(next_count, strategy_id);
-        let datetime_tag = get_datetime_tag(self.time.get_time_ms());
+        let datetime_tag = get_datetime_tag(self.clock.get_time_ms());
         let trader_tag = self.trader_id.get_tag();
         let strategy_tag = strategy.get_tag();
         let flipped = if flipped { "F" } else { "" };
@@ -70,25 +70,22 @@ impl PositionIdGenerator {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::time::AtomicTime;
+    use nautilus_core::time::get_atomic_clock_static;
     use nautilus_model::identifiers::{
         position_id::PositionId, strategy_id::StrategyId, trader_id::TraderId,
     };
     use rstest::rstest;
 
-    use crate::{
-        clock::{stubs::test_clock, TestClock},
-        generators::position_id::PositionIdGenerator,
-    };
+    use crate::generators::position_id::PositionIdGenerator;
 
-    fn get_position_id_generator(time: AtomicTime) -> PositionIdGenerator {
+    fn get_position_id_generator() -> PositionIdGenerator {
         let trader_id = TraderId::from("TRADER-001");
-        PositionIdGenerator::new(trader_id, time)
+        PositionIdGenerator::new(trader_id, get_atomic_clock_static())
     }
 
     #[rstest]
-    fn test_generate_position_id_one_strategy(test_clock: TestClock) {
-        let mut generator = get_position_id_generator(test_clock.get_time_clone());
+    fn test_generate_position_id_one_strategy() {
+        let mut generator = get_position_id_generator();
         let result1 = generator.generate(StrategyId::from("S-001"), false);
         let result2 = generator.generate(StrategyId::from("S-001"), false);
 
@@ -97,8 +94,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_generate_position_id_multiple_strategies(test_clock: TestClock) {
-        let mut generator = get_position_id_generator(test_clock.get_time_clone());
+    fn test_generate_position_id_multiple_strategies() {
+        let mut generator = get_position_id_generator();
         let result1 = generator.generate(StrategyId::from("S-001"), false);
         let result2 = generator.generate(StrategyId::from("S-002"), false);
         let result3 = generator.generate(StrategyId::from("S-002"), false);
@@ -109,8 +106,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_generate_position_id_with_flipped_appends_correctly(test_clock: TestClock) {
-        let mut generator = get_position_id_generator(test_clock.get_time_clone());
+    fn test_generate_position_id_with_flipped_appends_correctly() {
+        let mut generator = get_position_id_generator();
         let result1 = generator.generate(StrategyId::from("S-001"), false);
         let result2 = generator.generate(StrategyId::from("S-002"), true);
         let result3 = generator.generate(StrategyId::from("S-001"), true);
@@ -121,16 +118,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_get_count_when_strategy_id_has_not_been_used(test_clock: TestClock) {
-        let generator = get_position_id_generator(test_clock.get_time_clone());
+    fn test_get_count_when_strategy_id_has_not_been_used() {
+        let generator = get_position_id_generator();
         let result = generator.count(StrategyId::from("S-001"));
 
         assert_eq!(result, 0);
     }
 
     #[rstest]
-    fn set_count_with_valid_strategy(test_clock: TestClock) {
-        let mut generator = get_position_id_generator(test_clock.get_time_clone());
+    fn set_count_with_valid_strategy() {
+        let mut generator = get_position_id_generator();
         generator.set_count(7, StrategyId::from("S-001"));
         let result = generator.count(StrategyId::from("S-001"));
 
@@ -138,8 +135,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_reset(test_clock: TestClock) {
-        let mut generator = get_position_id_generator(test_clock.get_time_clone());
+    fn test_reset() {
+        let mut generator = get_position_id_generator();
         generator.generate(StrategyId::from("S-001"), false);
         generator.generate(StrategyId::from("S-001"), false);
         generator.reset();

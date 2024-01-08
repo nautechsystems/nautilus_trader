@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
 
 import pandas as pd
 import pytz
@@ -65,9 +64,9 @@ class TestInstrumentProviderPyo3:
         expiration: pd.Timestamp | None = None,
     ) -> CryptoFuture:
         if activation is None:
-            activation = pd.Timestamp(2021, 12, 25, tz=pytz.utc)
+            activation = pd.Timestamp("2021-12-25", tz=pytz.utc)
         if expiration is None:
-            expiration = pd.Timestamp(2022, 3, 25, tz=pytz.utc)
+            expiration = pd.Timestamp("2022-3-25", tz=pytz.utc)
 
         instrument_id_str = f"BTCUSDT_{expiration.strftime('%y%m%d')}.BINANCE"
         return CryptoFuture(
@@ -119,9 +118,9 @@ class TestInstrumentProviderPyo3:
         expiration: pd.Timestamp | None = None,
     ) -> OptionsContract:
         if activation is None:
-            activation = pd.Timestamp(datetime(2021, 9, 17), tz=pytz.UTC)
+            activation = pd.Timestamp("2021-9-17", tz=pytz.utc)
         if expiration is None:
-            expiration = pd.Timestamp(datetime(2021, 12, 17), tz=pytz.UTC)
+            expiration = pd.Timestamp("2021-12-17", tz=pytz.utc)
         return OptionsContract(
             id=InstrumentId.from_str("AAPL211217C00150000.OPRA"),
             raw_symbol=Symbol("AAPL211217C00150000"),
@@ -146,7 +145,7 @@ class TestInstrumentProviderPyo3:
     @staticmethod
     def appl_equity() -> Equity:
         return Equity(
-            id=InstrumentId.from_str("AAPL.NASDAQ"),
+            id=InstrumentId.from_str("AAPL.XNAS"),
             raw_symbol=Symbol("AAPL"),
             isin="US0378331005",
             currency=TestTypesProviderPyo3.currency_usd(),
@@ -167,9 +166,9 @@ class TestInstrumentProviderPyo3:
         expiration: pd.Timestamp | None = None,
     ) -> FuturesContract:
         if activation is None:
-            activation = pd.Timestamp(2021, 9, 17, tz=pytz.utc)
+            activation = pd.Timestamp("2021-9-17", tz=pytz.utc)
         if expiration is None:
-            expiration = pd.Timestamp(2021, 12, 17, tz=pytz.utc)
+            expiration = pd.Timestamp("2021-12-17", tz=pytz.utc)
         return FuturesContract(
             id=InstrumentId.from_str("ESZ21.CME"),
             raw_symbol=Symbol("ESZ21"),

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -68,7 +68,7 @@ if __name__ == "__main__":
         # Add data
         provider = TestDataProvider()
         wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
-        ticks = wrangler.process(provider.read_csv_ticks("binance/binance/ethusdt-trades.csv"))
+        ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv"))
         engine.add_data(ticks)
 
         # Configure your strategy

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -35,7 +35,7 @@ impl TimeEvent {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> PyResult<Self> {
-        Self::new(name, event_id, ts_event, ts_init).map_err(to_pyvalue_err)
+        Self::new(Ustr::from(name), event_id, ts_event, ts_init).map_err(to_pyvalue_err)
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -67,7 +67,7 @@ impl TimeEvent {
 
     #[staticmethod]
     fn _safe_constructor() -> PyResult<Self> {
-        Ok(Self::new("NULL", UUID4::new(), 0, 0).unwrap()) // Safe default
+        Ok(Self::new(Ustr::from("NULL"), UUID4::new(), 0, 0).unwrap()) // Safe default
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -83,7 +83,7 @@ impl TimeEvent {
     }
 
     fn __repr__(&self) -> String {
-        format!("{}('{}')", stringify!(UUID4), self)
+        format!("{}('{}')", stringify!(TimeEvent), self)
     }
 
     #[getter]

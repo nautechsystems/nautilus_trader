@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -109,7 +109,7 @@ cdef class Quantity:
     https://www.onixs.biz/fix-dictionary/5.0.SP2/index.html#Qty
     """
 
-    def __init__(self, double value, uint8_t precision):
+    def __init__(self, double value, uint8_t precision) -> None:
         Condition.true(precision <= 9, f"invalid `precision` greater than max 9, was {precision}")
         if isnan(value):
             raise ValueError(
@@ -551,7 +551,7 @@ cdef class Price:
     https://www.onixs.biz/fix-dictionary/5.0.SP2/index.html#Price
     """
 
-    def __init__(self, double value, uint8_t precision):
+    def __init__(self, double value, uint8_t precision) -> None:
         Condition.true(precision <= 9, f"invalid `precision` greater than max 9, was {precision}")
         if isnan(value):
             raise ValueError(
@@ -924,7 +924,7 @@ cdef class Money:
         If `value` is less than -9_223_372_036.
     """
 
-    def __init__(self, value, Currency currency not None):
+    def __init__(self, value, Currency currency not None) -> None:
         cdef double value_f64 = 0.0 if value is None else float(value)
 
         if isnan(value_f64):
@@ -1274,7 +1274,7 @@ cdef class Currency:
         uint16_t iso4217,
         str name,
         CurrencyType currency_type,
-    ):
+    ) -> None:
         Condition.valid_string(code, "code")
         Condition.valid_string(name, "name")
         Condition.true(precision <= 9, f"invalid `precision` greater than max 9, was {precision}")
@@ -1573,7 +1573,7 @@ cdef class AccountBalance:
         Money total not None,
         Money locked not None,
         Money free not None,
-    ):
+    ) -> None:
         Condition.equal(total.currency, locked.currency, "total.currency", "locked.currency")
         Condition.equal(total.currency, free.currency, "total.currency", "free.currency")
         Condition.true(total.raw_int64_c() >= 0, "`total` amount was negative")
@@ -1674,7 +1674,7 @@ cdef class MarginBalance:
         Money initial not None,
         Money maintenance not None,
         InstrumentId instrument_id = None,
-    ):
+    ) -> None:
         Condition.equal(initial.currency, maintenance.currency, "initial.currency", "maintenance.currency")
         Condition.true(initial.raw_int64_c() >= 0, "initial margin was negative")
         Condition.true(maintenance.raw_int64_c() >= 0, "maintenance margin was negative")

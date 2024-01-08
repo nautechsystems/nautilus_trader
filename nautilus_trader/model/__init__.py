@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,12 +21,23 @@ built around this domain model.
 
 """
 
+from typing import Union
+
 from nautilus_trader.core import nautilus_pyo3
 
 
 NAUTILUS_PYO3_DATA_TYPES: tuple[type, ...] = (
     nautilus_pyo3.OrderBookDelta,
+    nautilus_pyo3.OrderBookDepth10,
     nautilus_pyo3.QuoteTick,
     nautilus_pyo3.TradeTick,
     nautilus_pyo3.Bar,
 )
+
+NautilusRustDataType = Union[  # noqa: UP007 (mypy does not like pipe operators)
+    nautilus_pyo3.OrderBookDelta,
+    nautilus_pyo3.OrderBookDepth10,
+    nautilus_pyo3.QuoteTick,
+    nautilus_pyo3.TradeTick,
+    nautilus_pyo3.Bar,
+]

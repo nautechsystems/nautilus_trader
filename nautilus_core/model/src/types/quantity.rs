@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -35,7 +35,7 @@ pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 pub const QUANTITY_MIN: f64 = 0.0;
 
 #[repr(C)]
-#[derive(Copy, Clone, Eq, Default)]
+#[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")

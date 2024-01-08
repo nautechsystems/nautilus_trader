@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -78,7 +78,7 @@ def instrument_list(mock_load_markets_metadata):
     logger = Logger(clock=LiveClock(), level_stdout=LogLevel.ERROR)
     client = BetfairTestStubs.betfair_client(loop=loop, logger=logger)
     market_ids = BetfairDataProvider.market_ids()
-    config = BetfairInstrumentProviderConfig(market_ids=market_ids)
+    config = BetfairInstrumentProviderConfig(market_ids=market_ids, account_currency="GBP")
     instrument_provider = BetfairInstrumentProvider(client=client, logger=logger, config=config)
 
     # Load instruments

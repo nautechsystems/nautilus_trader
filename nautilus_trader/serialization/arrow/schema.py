@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,6 +24,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
@@ -49,6 +50,12 @@ NAUTILUS_ARROW_SCHEMA = {
         [
             pa.field(k, pa.type_for_alias(v), False)
             for k, v in nautilus_pyo3.OrderBookDelta.get_fields().items()
+        ],
+    ),
+    OrderBookDepth10: pa.schema(
+        [
+            pa.field(k, pa.type_for_alias(v), False)
+            for k, v in nautilus_pyo3.OrderBookDepth10.get_fields().items()
         ],
     ),
     QuoteTick: pa.schema(

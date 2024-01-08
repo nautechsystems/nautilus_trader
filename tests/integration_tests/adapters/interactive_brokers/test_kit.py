@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,7 +15,6 @@
 
 import datetime as dt
 import gzip
-import pathlib
 import pickle
 from decimal import Decimal
 
@@ -43,9 +42,10 @@ from nautilus_trader.model.instruments import OptionsContract
 from tests import TESTS_PACKAGE_ROOT
 
 
-TEST_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/integration_tests/adapters/interactive_brokers/")
-RESPONSES_PATH = pathlib.Path(TEST_PATH / "resources" / "responses")
-STREAMING_PATH = pathlib.Path(TEST_PATH / "resources" / "streaming")
+TEST_PATH = TESTS_PACKAGE_ROOT / "integration_tests" / "adapters" / "interactive_brokers/"
+RESPONSES_PATH = TEST_PATH / "resources" / "responses"
+STREAMING_PATH = TEST_PATH / "resources" / "streaming"
+CONTRACT_PATH = RESPONSES_PATH / "contracts"
 
 
 def set_attributes(obj, params: dict):
