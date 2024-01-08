@@ -116,48 +116,6 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         self._decoder_futures_trade_msg = msgspec.json.Decoder(BinanceFuturesTradeMsg)
         self._decoder_futures_mark_price_msg = msgspec.json.Decoder(BinanceFuturesMarkPriceMsg)
 
-    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
-
-    async def _subscribe(self, data_type: DataType) -> None:
-        if data_type.type == BinanceFuturesMarkPriceUpdate:
-            if not self._binance_account_type.is_futures:
-                self._log.error(
-                    f"Cannot subscribe to `BinanceFuturesMarkPriceUpdate` "
-                    f"for {self._binance_account_type.value} account types.",
-                )
-                return
-            instrument_id: InstrumentId | None = data_type.metadata.get("instrument_id")
-            if instrument_id is None:
-                self._log.error(
-                    "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` "
-                    "no instrument ID in `data_type` metadata.",
-                )
-                return
-            await self._ws_client.subscribe_mark_price(instrument_id.symbol.value, speed=1000)
-        else:
-            self._log.error(
-                f"Cannot subscribe to {data_type.type} (not implemented).",
-            )
-
-    async def _unsubscribe(self, data_type: DataType) -> None:
-        if data_type.type == BinanceFuturesMarkPriceUpdate:
-            if not self._binance_account_type.is_futures:
-                self._log.error(
-                    "Cannot unsubscribe from `BinanceFuturesMarkPriceUpdate` "
-                    f"for {self._binance_account_type.value} account types.",
-                )
-                return
-            instrument_id: InstrumentId | None = data_type.metadata.get("instrument_id")
-            if instrument_id is None:
-                self._log.error(
-                    "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` no instrument ID in `data_type` metadata.",
-                )
-                return
-        else:
-            self._log.error(
-                f"Cannot unsubscribe from {data_type.type} (not implemented).",
-            )
-
     # -- WEBSOCKET HANDLERS ---------------------------------------------------------------------------------
 
     def _handle_book_partial_update(self, raw: bytes) -> None:

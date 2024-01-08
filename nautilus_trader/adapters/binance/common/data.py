@@ -35,6 +35,7 @@ from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
+from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
@@ -57,6 +58,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
@@ -266,8 +268,49 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     async def _subscribe(self, data_type: DataType) -> None:
-        # Replace method in child class, for exchange specific data types.
-        raise NotImplementedError(f"Cannot subscribe to {data_type.type} (not implemented).")
+        instrument_id: InstrumentId | None = data_type.metadata.get("instrument_id")
+        if instrument_id is None:
+            self._log.error(
+                f"Cannot subscribe to `{data_type.type}` no instrument ID in `data_type` metadata.",
+            )
+            return
+
+        if data_type.type == BinanceTicker:
+            await self._ws_client.subscribe_ticker(instrument_id.symbol.value)
+        elif data_type.type == BinanceFuturesMarkPriceUpdate:
+            if not self._binance_account_type.is_futures:
+                self._log.error(
+                    f"Cannot subscribe to `BinanceFuturesMarkPriceUpdate` "
+                    f"for {self._binance_account_type.value} account types.",
+                )
+                return
+            await self._ws_client.subscribe_mark_price(instrument_id.symbol.value, speed=1000)
+        else:
+            self._log.error(
+                f"Cannot subscribe to {data_type.type} (not implemented).",
+            )
+
+    async def _unsubscribe(self, data_type: DataType) -> None:
+        instrument_id: InstrumentId | None = data_type.metadata.get("instrument_id")
+        if instrument_id is None:
+            self._log.error(
+                "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` no instrument ID in `data_type` metadata.",
+            )
+            return
+
+        if data_type.type == BinanceTicker:
+            await self._ws_client.unsubscribe_ticker(instrument_id.symbol.value)
+        elif data_type.type == BinanceFuturesMarkPriceUpdate:
+            if not self._binance_account_type.is_futures:
+                self._log.error(
+                    "Cannot unsubscribe from `BinanceFuturesMarkPriceUpdate` "
+                    f"for {self._binance_account_type.value} account types.",
+                )
+                return
+        else:
+            self._log.error(
+                f"Cannot unsubscribe from {data_type.type} (not implemented).",
+            )
 
     async def _subscribe_instruments(self) -> None:
         pass  # Do nothing further
@@ -415,10 +458,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             symbol=bar_type.instrument_id.symbol.value,
             interval=interval.value,
         )
-
-    async def _unsubscribe(self, data_type: DataType) -> None:
-        # Replace method in child class, for exchange specific data types.
-        raise NotImplementedError(f"Cannot unsubscribe from {data_type.type} (not implemented).")
 
     async def _unsubscribe_instruments(self) -> None:
         pass  # Do nothing further
@@ -913,7 +952,12 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             instrument_id=instrument_id,
             ts_init=self._clock.timestamp_ns(),
         )
-        self._handle_data(ticker)
+        data_type = DataType(
+            BinanceTicker,
+            metadata={"instrument_id": instrument_id},
+        )
+        custom = GenericData(data_type=data_type, data=ticker)
+        self._handle_data(custom)
 
     def _handle_kline(self, raw: bytes) -> None:
         msg = self._decoder_candlestick_msg.decode(raw)
