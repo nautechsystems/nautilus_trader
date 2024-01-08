@@ -29,7 +29,6 @@ from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.singleton import Singleton
@@ -144,13 +143,6 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         **kwargs: Any,
     ) -> list[TradeTick]:
         return self.query(data_cls=TradeTick, instrument_ids=instrument_ids, **kwargs)
-
-    def tickers(
-        self,
-        instrument_ids: list[str] | None = None,
-        **kwargs: Any,
-    ) -> list[Ticker]:
-        return self._query_subclasses(base_cls=Ticker, instrument_ids=instrument_ids, **kwargs)
 
     def bars(
         self,

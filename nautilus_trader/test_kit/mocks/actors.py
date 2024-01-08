@@ -22,7 +22,6 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.instruments import Instrument
 
@@ -98,12 +97,6 @@ class MockActor(Actor):
         if current_frame:
             self.calls.append(current_frame.f_code.co_name)
         self.store.append(instruments)
-
-    def on_ticker(self, ticker: Ticker) -> None:
-        current_frame = inspect.currentframe()
-        if current_frame:
-            self.calls.append(current_frame.f_code.co_name)
-        self.store.append(ticker)
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         current_frame = inspect.currentframe()

@@ -48,8 +48,8 @@ from tests import TEST_DATA_DIR
 def test_list_data_types(catalog_betfair: ParquetDataCatalog) -> None:
     data_types = catalog_betfair.list_data_types()
     expected = [
-        "betfair_ticker",
         "betting_instrument",
+        "genericdata_betfair_ticker",
         "instrument_status",
         "order_book_delta",
         "trade_tick",

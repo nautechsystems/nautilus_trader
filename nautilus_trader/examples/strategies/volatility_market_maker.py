@@ -29,7 +29,6 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
@@ -135,7 +134,6 @@ class VolatilityMarketMaker(Strategy):
         self.subscribe_quote_ticks(self.instrument_id)
 
         # self.subscribe_trade_ticks(self.instrument_id)
-        # self.subscribe_ticker(self.instrument_id)  # For debugging
         # self.subscribe_order_book_deltas(self.instrument_id)  # For debugging
         # self.subscribe_order_book_snapshots(
         #     self.instrument_id,
@@ -202,19 +200,6 @@ class VolatilityMarketMaker(Strategy):
         """
         # For debugging (must add a subscription)
         self.log.info(repr(deltas), LogColor.CYAN)
-
-    def on_ticker(self, ticker: Ticker) -> None:
-        """
-        Actions to be performed when the strategy is running and receives a ticker.
-
-        Parameters
-        ----------
-        ticker : Ticker
-            The ticker received.
-
-        """
-        # For debugging (must add a subscription)
-        # self.log.info(repr(ticker), LogColor.CYAN)
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
@@ -375,7 +360,6 @@ class VolatilityMarketMaker(Strategy):
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_quote_ticks(self.instrument_id)
         # self.unsubscribe_trade_ticks(self.instrument_id)
-        # self.unsubscribe_ticker(self.instrument_id)  # For debugging
         # self.unsubscribe_order_book_deltas(self.instrument_id)  # For debugging
         # self.unsubscribe_order_book_snapshots(self.instrument_id)  # For debugging
 

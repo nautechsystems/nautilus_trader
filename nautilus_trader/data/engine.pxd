@@ -34,7 +34,6 @@ from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
-from nautilus_trader.model.data cimport Ticker
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.data cimport VenueStatus
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -95,7 +94,6 @@ cdef class DataEngine(Component):
     cpdef list subscribed_instruments(self)
     cpdef list subscribed_order_book_deltas(self)
     cpdef list subscribed_order_book_snapshots(self)
-    cpdef list subscribed_tickers(self)
     cpdef list subscribed_quote_ticks(self)
     cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_bars(self)
@@ -120,7 +118,6 @@ cdef class DataEngine(Component):
     cpdef void _handle_subscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
     cpdef void _handle_subscribe_order_book_snapshots(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
     cpdef void _setup_order_book(self, MarketDataClient client, InstrumentId instrument_id, dict metadata, bint only_deltas)  # noqa
-    cpdef void _handle_subscribe_ticker(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_subscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_subscribe_synthetic_quote_ticks(self, InstrumentId instrument_id)
     cpdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id)
@@ -133,7 +130,6 @@ cdef class DataEngine(Component):
     cpdef void _handle_unsubscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_unsubscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
     cpdef void _handle_unsubscribe_order_book_snapshots(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
-    cpdef void _handle_unsubscribe_ticker(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_unsubscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_unsubscribe_bars(self, MarketDataClient client, BarType bar_type)
@@ -148,7 +144,6 @@ cdef class DataEngine(Component):
     cpdef void _handle_order_book_delta(self, OrderBookDelta delta)
     cpdef void _handle_order_book_deltas(self, OrderBookDeltas deltas)
     cpdef void _handle_order_book_depth(self, OrderBookDepth10 depth)
-    cpdef void _handle_ticker(self, Ticker ticker)
     cpdef void _handle_quote_tick(self, QuoteTick tick)
     cpdef void _handle_trade_tick(self, TradeTick tick)
     cpdef void _handle_bar(self, Bar bar)

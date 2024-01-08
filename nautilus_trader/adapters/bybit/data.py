@@ -195,11 +195,11 @@ class BybitDataClient(LiveMarketDataClient):
         await ws_client.subscribe_trades(symbol.raw_symbol)
         self._log.info(f"Subscribed to trade ticks for {instrument_id}.")
 
-    async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        symbol = BybitSymbol(instrument_id.symbol.value)
-        ws_client = self._ws_clients[symbol.instrument_type]
-        await ws_client.subscribe_tickers(symbol.raw_symbol)
-        self._log.info(f"Subscribed to ticker for {instrument_id}.")
+    # async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
+    #     symbol = BybitSymbol(instrument_id.symbol.value)
+    #     ws_client = self._ws_clients[symbol.instrument_type]
+    #     await ws_client.subscribe_tickers(symbol.raw_symbol)
+    #     self._log.info(f"Subscribed to ticker for {instrument_id}.")
 
     def _handle_ws_message(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
         try:

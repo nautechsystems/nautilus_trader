@@ -26,7 +26,6 @@ from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import VenueStatus
 from nautilus_trader.model.events import OrderAccepted
@@ -74,13 +73,6 @@ NAUTILUS_ARROW_SCHEMA = {
         [
             pa.field(k, pa.type_for_alias(v), False)
             for k, v in nautilus_pyo3.Bar.get_fields().items()
-        ],
-    ),
-    Ticker: pa.schema(
-        [
-            pa.field("instrument_id", pa.dictionary(pa.int16(), pa.string()), False),
-            pa.field("ts_event", pa.uint64(), False),
-            pa.field("ts_init", pa.uint64(), False),
         ],
     ),
     VenueStatus: pa.schema(

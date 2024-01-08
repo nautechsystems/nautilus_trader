@@ -128,8 +128,9 @@ class OrderBookImbalance(Strategy):
             self.book_type = book_type_from_str(self.config.book_type)
             self.subscribe_order_book_deltas(self.instrument.id, self.book_type)
 
-        if self.config.subscribe_ticker:
-            self.subscribe_ticker(self.instrument.id)
+        # TODO: Need to subscribe for custom data type
+        # if self.config.subscribe_ticker:
+        #     self.subscribe_ticker(self.instrument.id)
 
         self._last_trigger_timestamp = self.clock.utc_now()
 
