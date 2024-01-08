@@ -102,14 +102,15 @@ which are used to aggregate multiple events to determine state.
 ### Data Types
 The following market data types can be requested historically, and also subscribed to as live streams when available from a venue / data provider, and implemented in an integrations adapter.
 - `OrderBookDelta` (L1/L2/L3)
-- `Ticker`
+- `OrderBookDeltas` (container type)
+- `OrderBookDepth10` (fixed depth of 10 levels per side)
 - `QuoteTick`
 - `TradeTick`
 - `Bar`
 - `Instrument`
-- `VenueStatus`
 - `InstrumentStatus`
 - `InstrumentClose`
+- `VenueStatus`
 
 The following PriceType options can be used for bar aggregations;
 - `BID`
