@@ -140,6 +140,15 @@ class VolatilityMarketMaker(Strategy):
         #     depth=20,
         #     interval_ms=1000,
         # )  # For debugging
+
+        # self.subscribe_data(
+        #     data_type=DataType(
+        #         BinanceTicker,
+        #         metadata={"instrument_id": self.instrument.id},
+        #     ),
+        #     client_id=ClientId("BINANCE"),
+        # )
+
         # self.subscribe_data(
         #     data_type=DataType(
         #         BinanceFuturesMarkPriceUpdate,
@@ -159,7 +168,7 @@ class VolatilityMarketMaker(Strategy):
 
         """
         # For debugging (must add a subscription)
-        # self.log.info(repr(data), LogColor.CYAN)
+        self.log.info(repr(data), LogColor.CYAN)
 
     def on_instrument(self, instrument: Instrument) -> None:
         """
