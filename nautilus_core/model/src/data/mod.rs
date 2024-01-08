@@ -19,7 +19,6 @@ pub mod deltas;
 pub mod depth;
 pub mod order;
 pub mod quote;
-pub mod ticker;
 pub mod trade;
 
 use nautilus_core::time::UnixNanos;

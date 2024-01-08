@@ -546,15 +546,6 @@ cdef extern from "../includes/model.h":
         TradeTick_t trade;
         Bar_t bar;
 
-    # Represents a single quote tick in a financial market.
-    cdef struct Ticker:
-        # The quotes instrument ID.
-        InstrumentId_t instrument_id;
-        # The UNIX timestamp (nanoseconds) when the tick event occurred.
-        uint64_t ts_event;
-        # The UNIX timestamp (nanoseconds) when the data object was initialized.
-        uint64_t ts_init;
-
     # Represents a valid trader ID.
     #
     # Must be correctly formatted with two valid strings either side of a hyphen.
@@ -901,11 +892,6 @@ cdef extern from "../includes/model.h":
 
     # Returns a [`QuoteTick`] as a C string pointer.
     const char *quote_tick_to_cstr(const QuoteTick_t *tick);
-
-    Ticker ticker_new(InstrumentId_t instrument_id, uint64_t ts_event, uint64_t ts_init);
-
-    # Returns a [`Ticker`] as a C string pointer.
-    const char *ticker_to_cstr(const Ticker *ticker);
 
     TradeTick_t trade_tick_new(InstrumentId_t instrument_id,
                                int64_t price_raw,
