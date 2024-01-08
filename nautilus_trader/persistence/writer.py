@@ -225,7 +225,7 @@ class StreamingFeatherWriter:
             table += f"_{str(bar.bar_type).lower()}"
 
         if table not in self._writers:
-            if table.startswith("genericdata_signal"):
+            if table.startswith("custom_signal"):
                 self._create_writer(cls=cls)
             elif table.startswith("bar"):
                 self._create_writer(cls=cls, table_name=table)

@@ -32,7 +32,7 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.singleton import Singleton
-from nautilus_trader.persistence.funcs import GENERIC_DATA_PREFIX
+from nautilus_trader.persistence.funcs import CUSTOM_DATA_PREFIX
 
 
 class _CombinedMeta(Singleton, ABCMeta):
@@ -172,9 +172,9 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     def list_generic_data_types(self) -> list[str]:
         data_types = self.list_data_types()
         return [
-            n.replace(GENERIC_DATA_PREFIX, "")
+            n.replace(CUSTOM_DATA_PREFIX, "")
             for n in data_types
-            if n.startswith(GENERIC_DATA_PREFIX)
+            if n.startswith(CUSTOM_DATA_PREFIX)
         ]
 
     @abstractmethod
