@@ -113,8 +113,7 @@ pub fn py_parse_mbp1_msg(
         Err(e) => {
             // Convert the Rust error to a Python exception
             Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                "Error parsing MBP1 message: {}",
-                e
+                "Error parsing MBP1 message: {e}"
             )))
         }
     }
