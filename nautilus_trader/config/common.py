@@ -261,9 +261,9 @@ class CacheConfig(NautilusConfig, frozen=True):
     flush_on_start : bool, default False
         If database should be flushed on start.
     use_trader_prefix : bool, default True
-        If a 'trader-' prefix is applied to keys.
+        If a 'trader-' prefix is used for keys.
     use_instance_id : bool, default False
-        If the traders instance ID should be used for keys.
+        If the traders instance ID is used for keys.
     tick_capacity : PositiveInt, default 10_000
         The maximum length for internal tick dequeues.
     bar_capacity : PositiveInt, default 10_000
@@ -310,11 +310,11 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     use_trader_id : bool, default True
         If the traders ID is used for stream names.
     use_instance_id : bool, default False
-        If the traders instance ID should be used for stream names.
+        If the traders instance ID is used for stream names.
     streams_prefix : str, default 'streams'
         The prefix for externally published stream names (must have a `database` config).
-        If `use_trader_id` and `use_instance_id` are *both* false, then its possible for many traders
-        to write to the same streams.
+        If `use_trader_id` and `use_instance_id` are *both* false, then it becomes possible for
+        many traders to be configured to write to the same streams.
     types_filter : list[type], optional
         A list of serializable types *not* to publish externally.
 
