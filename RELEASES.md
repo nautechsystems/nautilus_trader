@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added `NautilusConfig.json_primitives` to convert object to Python dictionary with JSON primitive values
 - Added `InstrumentClass.BOND`
+- Added `MessageBusConfig` `use_trader_prefix` and `use_trader_id` options (provides more control over stream names)
 - Implemented core logging interface via the `log` library, thanks @twitu
 - Implemented global atomic clock in Rust (improves performance and ensures properly monotonic timestamps in real-time)
 - Improved Interactive Brokers adapter raising docker `RuntimeError` only when needed (not when using TWS), thanks @rsmb7z
@@ -17,8 +18,10 @@ Released on TBD (UTC).
 - Changed `ComponentStateChanged` Arrow schema for `config` from `string` to `binary`
 - Changed `OrderInitialized` Arrow schema for `options` from `string` to `binary`
 - Changed `OrderBookDeltas` dictionary representation of `deltas` field from JSON `bytes` to a list of `dict` (standardize with all other data types)
+- Changed external message publishing stream name keys to be `trader-{trader_id}-{instance_id}-streams` (with options allows many traders to publish to the same streams)
 - Renamed `GenericData` to `CustomData` (more accurately reflects the nature of the type)
 - Renamed `DataClient.subscribed_generic_data` to `.subscribed_custom_data`
+- Renamed `MessageBusConfig.stream` to `.streams_prefix` (more accurate)
 - Renamed `ParquetDataCatalog.generic_data` to `.custom_data`
 - Renamed all version 2 data wrangler classes with a `V2` suffix for clarity
 - Renamed `TradeReport` to `FillReport` (more conventional terminology, and more clearly separates market data from user execution reports)
