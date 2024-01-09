@@ -747,20 +747,16 @@ cdef class MessageBus:
                 "recommended range is [10, 1000] milliseconds.",
             )
 
-        if (snapshot_orders or snapshot_positions) and not config.stream:
-            raise InvalidConfiguration(
-                "Invalid `MessageBusConfig`: Cannot configure snapshots without providing a `stream` name. "
-                "This is because currently the message bus will write to the same snapshot keys as the cache.",
-            )
-
         # Configuration
         self._log.info(f"{config.database=}", LogColor.BLUE)
         self._log.info(f"{config.encoding=}", LogColor.BLUE)
         self._log.info(f"{config.timestamps_as_iso8601=}", LogColor.BLUE)
         self._log.info(f"{config.buffer_interval_ms=}", LogColor.BLUE)
         self._log.info(f"{config.autotrim_mins=}", LogColor.BLUE)
-        self._log.info(f"{config.stream=}", LogColor.BLUE)
+        self._log.info(f"{config.use_trader_prefix=}", LogColor.BLUE)
+        self._log.info(f"{config.use_trader_id=}", LogColor.BLUE)
         self._log.info(f"{config.use_instance_id=}", LogColor.BLUE)
+        self._log.info(f"{config.streams_prefix=}", LogColor.BLUE)
         self._log.info(f"{config.types_filter=}", LogColor.BLUE)
 
         # Copy and clear `types_filter` before passing down to the core MessageBus
