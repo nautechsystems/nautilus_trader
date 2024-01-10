@@ -261,9 +261,9 @@ class CacheConfig(NautilusConfig, frozen=True):
     flush_on_start : bool, default False
         If database should be flushed on start.
     use_trader_prefix : bool, default True
-        If a 'trader-' prefix is applied to keys.
+        If a 'trader-' prefix is used for keys.
     use_instance_id : bool, default False
-        If the traders instance ID should be used for keys.
+        If the traders instance ID is used for keys.
     tick_capacity : PositiveInt, default 10_000
         The maximum length for internal tick dequeues.
     bar_capacity : PositiveInt, default 10_000
@@ -305,10 +305,16 @@ class MessageBusConfig(NautilusConfig, frozen=True):
         trimmed at most once every minute.
         Note that this feature requires Redis version 6.2.0 or higher; otherwise it will result
         in a command syntax error.
-    stream : str, optional
-        The additional prefix for externally published stream names (must have a `database` config).
+    use_trader_prefix : bool, default True
+        If a 'trader-' prefix is used for stream names.
+    use_trader_id : bool, default True
+        If the traders ID is used for stream names.
     use_instance_id : bool, default False
-        If the traders instance ID should be used in stream names.
+        If the traders instance ID is used for stream names.
+    streams_prefix : str, default 'streams'
+        The prefix for externally published stream names (must have a `database` config).
+        If `use_trader_id` and `use_instance_id` are *both* false, then it becomes possible for
+        many traders to be configured to write to the same streams.
     types_filter : list[type], optional
         A list of serializable types *not* to publish externally.
 
@@ -319,8 +325,10 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     timestamps_as_iso8601: bool = False
     buffer_interval_ms: PositiveInt | None = None
     autotrim_mins: int | None = None
-    stream: str | None = None
+    use_trader_prefix: bool = True
+    use_trader_id: bool = True
     use_instance_id: bool = False
+    streams_prefix: str = "streams"
     types_filter: list[type] | None = None
 
 
