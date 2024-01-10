@@ -253,6 +253,9 @@ lines-after-imports = 2
 [tool.ruff.mccabe]
 max-complexity = 10
 
+[tool.ruff.lint.per-file-ignores]
+"test_perf_logger.py" = ["S311"]
+
 [tool.mypy]
 python_version = "3.10"
 disallow_incomplete_defs = true
