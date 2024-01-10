@@ -357,14 +357,13 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
             )?);
         }
 
-        let flags =
-            extract_column::<UInt8Array>(cols, "flags", 4 * DEPTH10_LEN + 2, DataType::UInt8)?;
+        let flags = extract_column::<UInt8Array>(cols, "flags", 6 * DEPTH10_LEN, DataType::UInt8)?;
         let sequence =
-            extract_column::<UInt64Array>(cols, "sequence", 4 * DEPTH10_LEN + 3, DataType::UInt64)?;
+            extract_column::<UInt64Array>(cols, "sequence", 6 * DEPTH10_LEN + 1, DataType::UInt64)?;
         let ts_event =
-            extract_column::<UInt64Array>(cols, "ts_event", 4 * DEPTH10_LEN + 4, DataType::UInt64)?;
+            extract_column::<UInt64Array>(cols, "ts_event", 6 * DEPTH10_LEN + 2, DataType::UInt64)?;
         let ts_init =
-            extract_column::<UInt64Array>(cols, "ts_init", 4 * DEPTH10_LEN + 5, DataType::UInt64)?;
+            extract_column::<UInt64Array>(cols, "ts_init", 6 * DEPTH10_LEN + 3, DataType::UInt64)?;
 
         // Map record batch rows to vector of OrderBookDepth10
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
@@ -505,9 +504,11 @@ mod tests {
         ];
         let expected_schema = Schema::new_with_metadata(expected_fields, metadata);
         assert_eq!(schema, expected_schema);
+        assert_eq!(schema.metadata()["instrument_id"], "AAPL.XNAS");
+        assert_eq!(schema.metadata()["price_precision"], "2");
+        assert_eq!(schema.metadata()["size_precision"], "0");
     }
 
-    #[ignore] // WIP
     #[rstest]
     fn test_get_schema_map() {
         let schema_map = OrderBookDepth10::get_schema_map();
@@ -799,5 +800,17 @@ mod tests {
 
         assert_eq!(ts_init_values.len(), 1);
         assert_eq!(ts_init_values.value(0), 2);
+    }
+
+    #[rstest]
+    fn test_decode_batch(stub_depth10: OrderBookDepth10) {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = OrderBookDepth10::get_metadata(&instrument_id, 2, 0);
+
+        let data = vec![stub_depth10];
+        let record_batch = OrderBookDepth10::encode_batch(&metadata, &data).unwrap();
+        let decoded_data = OrderBookDepth10::decode_batch(&metadata, record_batch).unwrap();
+
+        assert_eq!(decoded_data.len(), 1);
     }
 }
