@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import random
 from typing import Any
 
 from nautilus_trader.common.clock import TestClock
@@ -22,15 +23,49 @@ from nautilus_trader.common.logging import LoggerAdapter
 
 
 def test_logging(benchmark: Any) -> None:
+    logger = Logger(
+        clock=TestClock(),
+        level_stdout=LogLevel.ERROR,
+        bypass=True,
+    )
+    logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
+    # messages of varying lengths
+    messages = [
+        "Initializing positronic matrix",
+        "Activating quantum singularity drive",
+        "Calibrating transdimensional phase array",
+        "Engaging hyperion particle accelerator",
+        "Deploying ionized plasma thrusters",
+        "Charging graviton emitter array",
+        "Initiating tachyon sensor sweep",
+        "Activating neural interface protocol",
+        "Initializing fusion reactor core",
+        "Engaging gravimetric distortion field",
+        "Deploying positron matrix containment",
+        "Initiating quantum entanglement protocol",
+        "Calibrating ion thruster array",
+        "Activating plasma conduit system",
+        "Charging phase inducer matrix",
+        "Engaging gravimetric warp drive",
+        "Deploying graviton beam array",
+        "Initializing graviton polarity array",
+        "Activating tachyon pulse generator",
+        "Initiating positron containment field",
+        "Initializing multi-phase quantum singularity containment field",
+        "Deploying ionized plasma thrusters for interstellar travel",
+        "Calibrating neural interface for optimal performance",
+        "Engaging gravimetric warp drive for faster-than-light travel",
+        "Activating tachyon pulse generator for temporal manipulation" "Activating shields",
+        "Charging plasma cannon",
+        "Deploying tractor beam",
+        "Initializing warp drive",
+        "Engaging hyperdrive",
+    ]
+
     def run():
-        logger = Logger(
-            clock=TestClock(),
-            level_stdout=LogLevel.ERROR,
-            bypass=True,
-        )
-        logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
+        for i in range(100_000):
+            message = random.choice(messages)
+            # unique log messages to prevent caching during string conversion
+            logger_adapter.error(f"{i}: {message}")
 
-        for i in range(20):
-            logger_adapter.error(f"{i}")
-
-    benchmark.pedantic(run, rounds=1_000_000, iterations=10, warmup_rounds=1)
+    benchmark.pedantic(run, rounds=10, iterations=2, warmup_rounds=1)
