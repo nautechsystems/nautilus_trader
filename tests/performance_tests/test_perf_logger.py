@@ -23,6 +23,7 @@ from nautilus_trader.common.logging import LoggerAdapter
 
 
 def test_logging(benchmark: Any) -> None:
+    random.seed(45362718)
     logger = Logger(
         clock=TestClock(),
         level_stdout=LogLevel.ERROR,
@@ -55,7 +56,8 @@ def test_logging(benchmark: Any) -> None:
         "Deploying ionized plasma thrusters for interstellar travel",
         "Calibrating neural interface for optimal performance",
         "Engaging gravimetric warp drive for faster-than-light travel",
-        "Activating tachyon pulse generator for temporal manipulation" "Activating shields",
+        "Activating tachyon pulse generator for temporal manipulation",
+        "Activating shields",
         "Charging plasma cannon",
         "Deploying tractor beam",
         "Initializing warp drive",
