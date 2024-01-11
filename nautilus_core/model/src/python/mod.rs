@@ -291,6 +291,9 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::types::money::Money>()?;
     m.add_class::<crate::types::price::Price>()?;
     m.add_class::<crate::types::quantity::Quantity>()?;
+    m.add_class::<crate::types::balance::AccountBalance>()?;
+    m.add_class::<crate::types::balance::MarginBalance>()?;
+
     // Instruments
     m.add_class::<crate::instruments::crypto_future::CryptoFuture>()?;
     m.add_class::<crate::instruments::crypto_perpetual::CryptoPerpetual>()?;
