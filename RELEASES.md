@@ -10,7 +10,6 @@ Released on TBD (UTC).
 - Implemented global atomic clock in Rust (improves performance and ensures properly monotonic timestamps in real-time)
 - Improved Interactive Brokers adapter raising docker `RuntimeError` only when needed (not when using TWS), thanks @rsmb7z
 - Upgraded core HTTP client to `hyper` 1.1.0, thanks @ayush-sb
-- Optimized core MPSC channels with sync senders
 - Optimized Arrow encoding (resulting in ~100x faster writes for the Parquet data catalog)
 
 ### Breaking Changes
@@ -41,6 +40,7 @@ Released on TBD (UTC).
 - Fixed handling of configuration objects to work with `StreamingFeatherWriter`
 - Fixed `BinanceSpotInstrumentProvider` fee loading key error for partial instruments load, thanks for reporting @doublier1
 - Fixed Binance API key configuration parsing for testnet (was falling through to non-testnet env vars)
+- Fixed TWAP execution algorithm scheduled size handling when first order should be for the entire size, thanks for reporting @pcgm-team
 - Added `BinanceErrorCode.SERVER_BUSY` (-1008). Also added to the retry error codes.
 - Added `BinanceOrderStatus.EXPIRED_IN_MATCH` which is when an order was canceled by the exchange due self-trade prevention (STP), thanks for reporting @doublier1
 
