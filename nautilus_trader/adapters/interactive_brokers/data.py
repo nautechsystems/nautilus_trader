@@ -169,11 +169,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             "implement the `_subscribe_order_book_snapshots` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        raise NotImplementedError(  # pragma: no cover
-            "implement the `_subscribe_ticker` coroutine",  # pragma: no cover
-        )
-
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         if not (instrument := self._cache.instrument(instrument_id)):
             self._log.error(
@@ -254,11 +249,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_order_book_snapshots` coroutine",  # pragma: no cover
-        )
-
-    async def _unsubscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        raise NotImplementedError(  # pragma: no cover
-            "implement the `_unsubscribe_ticker` coroutine",  # pragma: no cover
         )
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:

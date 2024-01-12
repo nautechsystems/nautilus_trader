@@ -29,7 +29,6 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
@@ -184,19 +183,6 @@ class EMACross(Strategy):
         # For debugging (must add a subscription)
         # self.log.info(repr(order_book), LogColor.CYAN)
 
-    def on_ticker(self, ticker: Ticker) -> None:
-        """
-        Actions to be performed when the strategy is running and receives a ticker.
-
-        Parameters
-        ----------
-        ticker : Ticker
-            The ticker received.
-
-        """
-        # For debugging (must add a subscription)
-        # self.log.info(repr(ticker), LogColor.CYAN)
-
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
         Actions to be performed when the strategy is running and receives a quote tick.
@@ -290,7 +276,7 @@ class EMACross(Strategy):
 
     def on_data(self, data: Data) -> None:
         """
-        Actions to be performed when the strategy is running and receives generic data.
+        Actions to be performed when the strategy is running and receives data.
 
         Parameters
         ----------

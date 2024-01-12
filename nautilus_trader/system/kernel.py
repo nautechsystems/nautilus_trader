@@ -154,22 +154,26 @@ class NautilusKernel:
                 f"environment {self._environment} not recognized",  # pragma: no cover (design-time error)
             )
 
-        # Initialize tracing for debugging async Rust logic
-        init_tracing()
-
-        # Initialize logging for debugging Python and sync Rust logic
         logging: LoggingConfig = config.logging or LoggingConfig()
-
-        init_logging(
-            # nautilus_pyo3.TraderId(self._trader_id.value),  # TODO!: Reimplementing logging config
-            # nautilus_pyo3.UUID4(self._instance_id.value),  # TODO!: Reimplementing logging config
-            self._trader_id,
-            self._instance_id,
-            logging.spec_string(),
-            logging.log_directory,
-            logging.log_file_name,
-            logging.log_file_format,
+        setup_logging = (
+            True if self._environment == Environment.LIVE else not logging.bypass_logging
         )
+
+        if setup_logging:
+            # Initialize tracing for async Rust
+            init_tracing()
+
+            # Initialize logging for sync Rust and Python
+            init_logging(
+                # nautilus_pyo3.TraderId(self._trader_id.value),  # TODO!: Reimplementing logging config
+                # nautilus_pyo3.UUID4(self._instance_id.value),  # TODO!: Reimplementing logging config
+                self._trader_id,
+                self._instance_id,
+                logging.spec_string(),
+                logging.log_directory,
+                logging.log_file_name,
+                logging.log_file_format,
+            )
 
         self._logger: Logger = Logger(
             trader_id=self._trader_id,
@@ -185,7 +189,7 @@ class NautilusKernel:
             file_format=logging.log_file_format,
             component_levels=logging.log_component_levels,
             colors=logging.log_colors,
-            bypass=False if self._environment == Environment.LIVE else logging.bypass_logging,
+            bypass=not setup_logging,
         )
 
         # Setup logging

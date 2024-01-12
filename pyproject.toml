@@ -40,7 +40,7 @@ requires = [
     "setuptools",
     "poetry-core>=1.8.1",
     "numpy>=1.26.3",
-    "Cython==3.0.7",
+    "Cython==3.0.8",
     "toml>=0.10.2",
 ]
 build-backend = "poetry.core.masonry.api"
@@ -51,7 +51,7 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
-cython = "==3.0.7"  # Build dependency (pinned for stability)
+cython = "==3.0.8"  # Build dependency (pinned for stability)
 numpy = "^1.26.3"  # Build dependency
 toml = "^0.10.2"  # Build dependency
 click = "^8.1.7"
@@ -67,7 +67,7 @@ uvloop = {version = "^0.19.0", markers = "sys_platform != 'win32'"}
 
 async-timeout = {version = "^4.0.3", optional = true}
 betfair_parser = {version = "==0.10.0", optional = true}  # Pinned for stability
-databento = {version = "^0.24.1", optional = true}
+databento = {version = "^0.25.0", optional = true}
 defusedxml = {version = "^0.7.1", optional = true}
 docker = {version = "^6.1.3", optional = true}
 nautilus_ibapi = {version = "==10.19.2", optional = true}  # Pinned for stability
@@ -87,7 +87,7 @@ docformatter = "^1.7.5"
 mypy = "^1.8.0"
 pandas-stubs = "^2.1.4"
 pre-commit = "^3.6.0"
-ruff = "^0.1.11"
+ruff = "^0.1.12"
 types-pytz = "^2023.3"
 types-requests = "^2.31"
 types-toml = "^0.10.2"
@@ -99,7 +99,7 @@ optional = true
 coverage = "^7.4.0"
 pytest = "^7.4.4"
 pytest-aiohttp = "^1.0.5"
-pytest-asyncio = "^0.21.1"
+pytest-asyncio = "==0.21.1"  # Pinned due Cython: cannot set '__pytest_asyncio_scoped_event_loop' attribute of immutable type
 pytest-benchmark = "^4.0.0"
 pytest-cov = "^4.1.0"
 pytest-mock = "^3.12.0"
@@ -252,6 +252,9 @@ lines-after-imports = 2
 
 [tool.ruff.mccabe]
 max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+"test_perf_logger.py" = ["S311"]
 
 [tool.mypy]
 python_version = "3.10"

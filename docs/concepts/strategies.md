@@ -91,12 +91,10 @@ from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import VenueStatus
-from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.instruments import Instrument
 
 def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
 def on_order_book(self, order_book: OrderBook) -> None:
-def on_ticker(self, ticker: Ticker) -> None:
 def on_quote_tick(self, tick: QuoteTick) -> None:
 def on_trade_tick(self, tick: TradeTick) -> None:
 def on_bar(self, bar: Bar) -> None:
@@ -105,7 +103,7 @@ def on_instrument(self, instrument: Instrument) -> None:
 def on_instrument_status(self, data: InstrumentStatus) -> None:
 def on_instrument_close(self, data: InstrumentClose) -> None:
 def on_historical_data(self, data: Data) -> None:
-def on_data(self, data: Data) -> None:  # Generic data passed to this handler
+def on_data(self, data: Data) -> None:  # Custom data passed to this handler
 ```
 
 #### Order management

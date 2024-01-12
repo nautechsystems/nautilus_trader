@@ -37,7 +37,7 @@ def test_clean_windows_key(s, expected):
     [
         (TradeTick, "trade_tick"),
         (OrderBookDelta, "order_book_delta"),
-        (pd.DataFrame, "genericdata_data_frame"),
+        (pd.DataFrame, "custom_data_frame"),
     ],
 )
 def test_class_to_filename(s, expected):

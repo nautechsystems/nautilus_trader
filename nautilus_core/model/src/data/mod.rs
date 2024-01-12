@@ -19,7 +19,6 @@ pub mod deltas;
 pub mod depth;
 pub mod order;
 pub mod quote;
-pub mod ticker;
 pub mod trade;
 
 use nautilus_core::time::UnixNanos;
@@ -30,7 +29,8 @@ use self::{
 };
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 #[allow(clippy::large_enum_variant)] // TODO: Optimize this (largest variant 1008 vs 136 bytes)
 pub enum Data {
     Delta(OrderBookDelta),
@@ -129,5 +129,5 @@ impl From<Bar> for Data {
 
 #[no_mangle]
 pub extern "C" fn data_clone(data: &Data) -> Data {
-    *data
+    *data // Actually a copy
 }

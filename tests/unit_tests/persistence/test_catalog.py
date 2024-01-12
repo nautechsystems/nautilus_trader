@@ -24,7 +24,7 @@ import pytest
 from nautilus_trader.core.rust.model import AggressorSide
 from nautilus_trader.core.rust.model import BookAction
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
@@ -48,8 +48,8 @@ from tests import TEST_DATA_DIR
 def test_list_data_types(catalog_betfair: ParquetDataCatalog) -> None:
     data_types = catalog_betfair.list_data_types()
     expected = [
-        "betfair_ticker",
         "betting_instrument",
+        "custom_betfair_ticker",
         "instrument_status",
         "order_book_delta",
         "trade_tick",
@@ -204,15 +204,15 @@ def test_catalog_filter(
     assert len(filtered_deltas) == 351
 
 
-def test_catalog_generic_data(catalog: ParquetDataCatalog) -> None:
+def test_catalog_custom_data(catalog: ParquetDataCatalog) -> None:
     # Arrange
     TestPersistenceStubs.setup_news_event_persistence()
     data = TestPersistenceStubs.news_events()
     catalog.write_data(data)
 
     # Act
-    df = catalog.generic_data(cls=NewsEventData, filter_expr=ds.field("currency") == "USD")
-    data = catalog.generic_data(
+    df = catalog.custom_data(cls=NewsEventData, filter_expr=ds.field("currency") == "USD")
+    data = catalog.custom_data(
         cls=NewsEventData,
         filter_expr=ds.field("currency") == "CHF",
     )
@@ -222,7 +222,7 @@ def test_catalog_generic_data(catalog: ParquetDataCatalog) -> None:
     assert data is not None
     assert len(df) == 22941
     assert len(data) == 2745
-    assert isinstance(data[0], GenericData)
+    assert isinstance(data[0], CustomData)
 
 
 def test_catalog_bars(catalog: ParquetDataCatalog) -> None:

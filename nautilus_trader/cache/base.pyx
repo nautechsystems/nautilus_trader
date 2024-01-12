@@ -17,7 +17,6 @@ from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
-from nautilus_trader.model.data cimport Ticker
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
@@ -52,10 +51,6 @@ cdef class CacheFacade:
 
 # -- DATA QUERIES ---------------------------------------------------------------------------------
 
-    cpdef list tickers(self, InstrumentId instrument_id):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method `tickers` must be implemented in the subclass")  # pragma: no cover
-
     cpdef list quote_ticks(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `quote_ticks` must be implemented in the subclass")  # pragma: no cover
@@ -76,10 +71,6 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `order_book` must be implemented in the subclass")  # pragma: no cover
 
-    cpdef Ticker ticker(self, InstrumentId instrument_id, int index=0):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method `ticker` must be implemented in the subclass")  # pragma: no cover
-
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index=0):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `quote_tick` must be implemented in the subclass")  # pragma: no cover
@@ -96,10 +87,6 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `book_update_count` must be implemented in the subclass")  # pragma: no cover
 
-    cpdef int ticker_count(self, InstrumentId instrument_id):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method `ticket_count` must be implemented in the subclass")  # pragma: no cover
-
     cpdef int quote_tick_count(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `quote_tick_count` must be implemented in the subclass")  # pragma: no cover
@@ -115,10 +102,6 @@ cdef class CacheFacade:
     cpdef bint has_order_book(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `has_order_book` must be implemented in the subclass")  # pragma: no cover
-
-    cpdef bint has_tickers(self, InstrumentId instrument_id):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method `has_tickers` must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint has_quote_ticks(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""

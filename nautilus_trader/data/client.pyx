@@ -103,9 +103,9 @@ cdef class DataClient(Component):
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
-    cpdef list subscribed_generic_data(self):
+    cpdef list subscribed_custom_data(self):
         """
-        Return the generic data types subscribed to.
+        Return the custom data types subscribed to.
 
         Returns
         -------
@@ -249,7 +249,6 @@ cdef class MarketDataClient(DataClient):
         # Subscriptions
         self._subscriptions_order_book_delta = set()     # type: set[InstrumentId]
         self._subscriptions_order_book_snapshot = set()  # type: set[InstrumentId]
-        self._subscriptions_ticker = set()               # type: set[InstrumentId]
         self._subscriptions_quote_tick = set()           # type: set[InstrumentId]
         self._subscriptions_trade_tick = set()           # type: set[InstrumentId]
         self._subscriptions_bar = set()                  # type: set[BarType]
@@ -263,9 +262,9 @@ cdef class MarketDataClient(DataClient):
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
-    cpdef list subscribed_generic_data(self):
+    cpdef list subscribed_custom_data(self):
         """
-        Return the generic data types subscribed to.
+        Return the custom data types subscribed to.
 
         Returns
         -------
@@ -306,17 +305,6 @@ cdef class MarketDataClient(DataClient):
 
         """
         return sorted(list(self._subscriptions_order_book_snapshot))
-
-    cpdef list subscribed_tickers(self):
-        """
-        Return the ticker instruments subscribed to.
-
-        Returns
-        -------
-        list[InstrumentId]
-
-        """
-        return sorted(list(self._subscriptions_ticker))
 
     cpdef list subscribed_quote_ticks(self):
         """
@@ -465,22 +453,6 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `subscribe_order_book_snapshots` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method `subscribe_order_book_snapshots` must be implemented in the subclass")
-
-    cpdef void subscribe_ticker(self, InstrumentId instrument_id):
-        """
-        Subscribe to `Ticker` data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The ticker instrument to subscribe to.
-
-        """
-        self._log.error(  # pragma: no cover
-            f"Cannot subscribe to `Ticker` data for {instrument_id}: not implemented. "  # pragma: no cover
-            f"You can implement by overriding the `subscribe_ticker` method for this client.",  # pragma: no cover
-        )
-        raise NotImplementedError("method `subscribe_ticker` must be implemented in the subclass")
 
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id):
         """
@@ -652,22 +624,6 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_order_book_snapshots` must be implemented in the subclass")
 
-    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id):
-        """
-        Unsubscribe from `Ticker` data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The ticker instrument to unsubscribe from.
-
-        """
-        self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from `Ticker` data for {instrument_id}: not implemented. "  # pragma: no cover
-            f"You can implement by overriding the `unsubscribe_ticker` method for this client.",  # pragma: no cover
-        )
-        raise NotImplementedError("method `unsubscribe_ticker` must be implemented in the subclass")
-
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id):
         """
         Unsubscribe from `QuoteTick` data for the given instrument ID.
@@ -784,11 +740,6 @@ cdef class MarketDataClient(DataClient):
 
         self._subscriptions_order_book_snapshot.add(instrument_id)
 
-    cpdef void _add_subscription_ticker(self, InstrumentId instrument_id):
-        Condition.not_none(instrument_id, "instrument_id")
-
-        self._subscriptions_ticker.add(instrument_id)
-
     cpdef void _add_subscription_quote_ticks(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
@@ -838,11 +789,6 @@ cdef class MarketDataClient(DataClient):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_order_book_snapshot.discard(instrument_id)
-
-    cpdef void _remove_subscription_ticker(self, InstrumentId instrument_id):
-        Condition.not_none(instrument_id, "instrument_id")
-
-        self._subscriptions_ticker.discard(instrument_id)
 
     cpdef void _remove_subscription_quote_ticks(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")

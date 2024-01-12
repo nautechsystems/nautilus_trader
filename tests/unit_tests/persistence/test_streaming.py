@@ -92,7 +92,7 @@ class TestPersistenceStreaming:
 
         assert result == expected
 
-    def test_feather_writer_generic_data(
+    def test_feather_writer_custom_data(
         self,
         catalog_betfair: ParquetDataCatalog,
     ) -> None:

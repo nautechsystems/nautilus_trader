@@ -45,8 +45,8 @@ from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
@@ -132,7 +132,7 @@ class BybitDataClient(LiveMarketDataClient):
         data = DataResponse(
             client_id=ClientId(BYBIT_VENUE.value),
             venue=BYBIT_VENUE,
-            data_type=DataType(GenericData),
+            data_type=DataType(CustomData),
             data=tickers,
             correlation_id=id,
             response_id=UUID4(),
@@ -195,11 +195,11 @@ class BybitDataClient(LiveMarketDataClient):
         await ws_client.subscribe_trades(symbol.raw_symbol)
         self._log.info(f"Subscribed to trade ticks for {instrument_id}.")
 
-    async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        symbol = BybitSymbol(instrument_id.symbol.value)
-        ws_client = self._ws_clients[symbol.instrument_type]
-        await ws_client.subscribe_tickers(symbol.raw_symbol)
-        self._log.info(f"Subscribed to ticker for {instrument_id}.")
+    # async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
+    #     symbol = BybitSymbol(instrument_id.symbol.value)
+    #     ws_client = self._ws_clients[symbol.instrument_type]
+    #     await ws_client.subscribe_tickers(symbol.raw_symbol)
+    #     self._log.info(f"Subscribed to ticker for {instrument_id}.")
 
     def _handle_ws_message(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
         try:

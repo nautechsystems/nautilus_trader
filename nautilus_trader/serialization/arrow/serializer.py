@@ -28,9 +28,10 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.core.nautilus_pyo3 import DataTransformer
 from nautilus_trader.model import NautilusRustDataType
 from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.events import AccountState
@@ -146,6 +147,11 @@ class ArrowSerializer:
                 elif data_cls == Bar:
                     pyo3_bars = Bar.to_pyo3_list(data)
                     batch_bytes = DataTransformer.pyo3_bars_to_record_batch_bytes(pyo3_bars)
+                elif data_cls == OrderBookDepth10:
+                    raise RuntimeError(
+                        f"Unsupported Rust defined data type for catalog write, was `{data_cls}`. "
+                        "You need to use a loader which returns `nautilus_pyo3.OrderBookDepth10` objects.",
+                    )
                 else:
                     raise RuntimeError(
                         f"Unsupported Rust defined data type for catalog write, was `{data_cls}`",
@@ -160,7 +166,7 @@ class ArrowSerializer:
         data: Data | Event,
         data_cls: type[Data | Event] | None = None,
     ) -> pa.RecordBatch:
-        if isinstance(data, GenericData):
+        if isinstance(data, CustomData):
             data = data.data
         data_cls = data_cls or type(data)
         if data_cls is None:
@@ -289,6 +295,7 @@ RUST_SERIALIZERS = {
     Bar,
     OrderBookDelta,
     OrderBookDeltas,
+    OrderBookDepth10,
 }
 RUST_STR_SERIALIZERS = {s.__name__ for s in RUST_SERIALIZERS}
 

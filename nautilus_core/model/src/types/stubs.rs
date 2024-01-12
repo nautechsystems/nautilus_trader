@@ -1,4 +1,3 @@
-// -------------------------------------------------------------------------------------------------
 //  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
@@ -13,23 +12,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::c_char;
+use rstest::fixture;
 
-use nautilus_core::{ffi::string::str_to_cstr, time::UnixNanos};
+use crate::{
+    identifiers::stubs::instrument_id_btc_usdt,
+    types::{
+        balance::{AccountBalance, MarginBalance},
+        money::Money,
+    },
+};
 
-use crate::{data::ticker::Ticker, identifiers::instrument_id::InstrumentId};
-
-#[no_mangle]
-pub extern "C" fn ticker_new(
-    instrument_id: InstrumentId,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-) -> Ticker {
-    Ticker::new(instrument_id, ts_event, ts_init)
+#[fixture]
+pub fn account_balance_test() -> AccountBalance {
+    let total = Money::from("1525000 USD");
+    let locked = Money::from("25000 USD");
+    let free = Money::from("1500000 USD");
+    AccountBalance::new(total, locked, free).unwrap()
 }
 
-/// Returns a [`Ticker`] as a C string pointer.
-#[no_mangle]
-pub extern "C" fn ticker_to_cstr(ticker: &Ticker) -> *const c_char {
-    str_to_cstr(&ticker.to_string())
+#[fixture]
+pub fn margin_balance_test() -> MarginBalance {
+    let initial = Money::from("5000 USD");
+    let maintenance = Money::from("20000 USD");
+    let instrument = instrument_id_btc_usdt();
+    MarginBalance::new(initial, maintenance, instrument).unwrap()
 }

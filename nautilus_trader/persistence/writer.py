@@ -26,7 +26,7 @@ from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
@@ -213,7 +213,7 @@ class StreamingFeatherWriter:
         PyCondition.not_none(obj, "obj")
 
         cls = obj.__class__
-        if isinstance(obj, GenericData):
+        if isinstance(obj, CustomData):
             cls = obj.data_type.type
         elif isinstance(obj, Instrument):
             if obj.id not in self._instruments:
@@ -225,7 +225,7 @@ class StreamingFeatherWriter:
             table += f"_{str(bar.bar_type).lower()}"
 
         if table not in self._writers:
-            if table.startswith("genericdata_signal"):
+            if table.startswith("custom_signal"):
                 self._create_writer(cls=cls)
             elif table.startswith("bar"):
                 self._create_writer(cls=cls, table_name=table)

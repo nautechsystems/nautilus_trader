@@ -108,6 +108,7 @@ cdef class Cache(CacheFacade):
         self._xrate_calculator = ExchangeRateCalculator()
 
         # Configuration
+        self._drop_instruments_on_reset = config.drop_instruments_on_reset
         self.tick_capacity = config.tick_capacity
         self.bar_capacity = config.bar_capacity
         self.snapshot_orders = snapshot_orders
@@ -116,7 +117,6 @@ cdef class Cache(CacheFacade):
         # Caches
         self._general: dict[str, bytes] = {}
         self._xrate_symbols: dict[InstrumentId, str] = {}
-        self._tickers: dict[InstrumentId, deque[Ticker]] = {}
         self._quote_ticks: dict[InstrumentId, deque[QuoteTick]] = {}
         self._trade_ticks: dict[InstrumentId, deque[TradeTick]] = {}
         self._order_books: dict[InstrumentId, OrderBook] = {}
@@ -721,7 +721,6 @@ cdef class Cache(CacheFacade):
 
         self._general.clear()
         self._xrate_symbols.clear()
-        self._tickers.clear()
         self._quote_ticks.clear()
         self._trade_ticks.clear()
         self._order_books.clear()
@@ -729,7 +728,6 @@ cdef class Cache(CacheFacade):
         self._bars_bid.clear()
         self._bars_ask.clear()
         self._currencies.clear()
-        self._instruments.clear()
         self._synthetics.clear()
         self._accounts.clear()
         self._orders.clear()
@@ -737,6 +735,9 @@ cdef class Cache(CacheFacade):
         self._positions.clear()
         self._position_snapshots.clear()
         self.clear_index()
+
+        if self._drop_instruments_on_reset:
+            self._instruments.clear()
 
         self._log.debug(f"Reset cache.")
 
@@ -1109,28 +1110,6 @@ cdef class Cache(CacheFacade):
         Condition.not_none(order_book, "order_book")
 
         self._order_books[order_book.instrument_id] = order_book
-
-    cpdef void add_ticker(self, Ticker ticker):
-        """
-        Add the given ticker to the cache.
-
-        Parameters
-        ----------
-        ticker : Ticker
-            The ticker to add.
-
-        """
-        Condition.not_none(ticker, "ticker")
-
-        cdef InstrumentId instrument_id = ticker.instrument_id
-        tickers = self._tickers.get(instrument_id)
-
-        if not tickers:
-            # The instrument_id was not registered
-            tickers = deque(maxlen=self.tick_capacity)
-            self._tickers[instrument_id] = tickers
-
-        tickers.appendleft(ticker)
 
     cpdef void add_quote_tick(self, QuoteTick tick):
         """
@@ -1973,24 +1952,6 @@ cdef class Cache(CacheFacade):
 
         return self._general.get(key)
 
-    cpdef list tickers(self, InstrumentId instrument_id):
-        """
-        Return the tickers for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the ticks to get.
-
-        Returns
-        -------
-        list[QuoteTick]
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-
-        return list(self._tickers.get(instrument_id, []))
-
     cpdef list quote_ticks(self, InstrumentId instrument_id):
         """
         Return the quote ticks for the given instrument ID.
@@ -2087,40 +2048,6 @@ cdef class Cache(CacheFacade):
 
         """
         return self._order_books.get(instrument_id)
-
-    cpdef Ticker ticker(self, InstrumentId instrument_id, int index = 0):
-        """
-        Return the ticker for the given instrument ID at the given index.
-
-        Last ticker if no index specified.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the ticker to get.
-        index : int, optional
-            The index for the ticker to get.
-
-        Returns
-        -------
-        Ticker or ``None``
-            If no tickers or no ticker at index then returns ``None``.
-
-        Notes
-        -----
-        Reverse indexed (most recent ticker at index 0).
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-
-        tickers = self._tickers.get(instrument_id)
-        if not tickers:
-            return None
-
-        try:
-            return tickers[index]
-        except IndexError:
-            return None
 
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index = 0):
         """
@@ -2248,24 +2175,6 @@ cdef class Cache(CacheFacade):
         else:
             return book.count
 
-    cpdef int ticker_count(self, InstrumentId instrument_id):
-        """
-        The count of tickers for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the tickers.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-
-        return len(self._tickers.get(instrument_id, []))
-
     cpdef int quote_tick_count(self, InstrumentId instrument_id):
         """
         The count of quote ticks for the given instrument ID.
@@ -2336,25 +2245,6 @@ cdef class Cache(CacheFacade):
 
         """
         return instrument_id in self._order_books
-
-    cpdef bint has_tickers(self, InstrumentId instrument_id):
-        """
-        Return a value indicating whether the cache has tickers for the given
-        instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the ticks.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-
-        return self.ticker_count(instrument_id) > 0
 
     cpdef bint has_quote_ticks(self, InstrumentId instrument_id):
         """

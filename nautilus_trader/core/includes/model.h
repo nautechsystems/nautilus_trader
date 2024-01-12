@@ -1012,24 +1012,6 @@ typedef struct Data_t {
 } Data_t;
 
 /**
- * Represents a single quote tick in a financial market.
- */
-typedef struct Ticker {
-    /**
-     * The quotes instrument ID.
-     */
-    struct InstrumentId_t instrument_id;
-    /**
-     * The UNIX timestamp (nanoseconds) when the tick event occurred.
-     */
-    uint64_t ts_event;
-    /**
-     * The UNIX timestamp (nanoseconds) when the data object was initialized.
-     */
-    uint64_t ts_init;
-} Ticker;
-
-/**
  * Represents a valid trader ID.
  *
  * Must be correctly formatted with two valid strings either side of a hyphen.
@@ -1468,13 +1450,6 @@ uint64_t quote_tick_hash(const struct QuoteTick_t *delta);
  * Returns a [`QuoteTick`] as a C string pointer.
  */
 const char *quote_tick_to_cstr(const struct QuoteTick_t *tick);
-
-struct Ticker ticker_new(struct InstrumentId_t instrument_id, uint64_t ts_event, uint64_t ts_init);
-
-/**
- * Returns a [`Ticker`] as a C string pointer.
- */
-const char *ticker_to_cstr(const struct Ticker *ticker);
 
 struct TradeTick_t trade_tick_new(struct InstrumentId_t instrument_id,
                                   int64_t price_raw,

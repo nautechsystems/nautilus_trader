@@ -68,7 +68,7 @@ cdef class DataType:
     """The data types topic string.\n\n:returns: `str`"""
 
 
-cdef class GenericData(Data):
+cdef class CustomData(Data):
     cdef readonly DataType data_type
     """The data type.\n\n:returns: `DataType`"""
     cdef readonly Data data
@@ -398,19 +398,3 @@ cdef class TradeTick(Data):
 
     @staticmethod
     cdef TradeTick from_mem_c(TradeTick_t mem)
-
-
-cdef class Ticker(Data):
-    cdef readonly InstrumentId instrument_id
-    """The ticker instrument ID.\n\n:returns: `InstrumentId`"""
-    cdef readonly uint64_t ts_event
-    """The UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
-    cdef readonly uint64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
-
-
-    @staticmethod
-    cdef Ticker from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(Ticker obj)

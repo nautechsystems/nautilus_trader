@@ -15,8 +15,8 @@
 
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.trading.filters import NewsEvent
 from nautilus_trader.trading.filters import NewsImpact
@@ -100,11 +100,11 @@ class TestDataType:
             ts_event=0,
             ts_init=0,
         )
-        generic_data = GenericData(data_type, data)
+        custom_data = CustomData(data_type, data)
 
         # Assert
-        assert generic_data.data_type == data_type
-        assert generic_data.data == data
+        assert custom_data.data_type == data_type
+        assert custom_data.data == data
 
     def test_equality_when_types_not_equal_returns_false(self):
         # Arrange

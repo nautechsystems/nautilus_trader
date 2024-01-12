@@ -215,19 +215,6 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._add_subscription_order_book_snapshots(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void subscribe_ticker(self, InstrumentId instrument_id):
-        Condition.not_none(instrument_id, "instrument_id")
-
-        if not self._cache.instrument(instrument_id):
-            self._log.error(
-                f"Cannot find instrument {instrument_id} to subscribe for `Ticker` data. "
-                "No data has been loaded for this instrument.",
-            )
-            return
-
-        self._add_subscription_ticker(instrument_id)
-        # Do nothing else for backtest
-
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
@@ -305,12 +292,6 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._remove_subscription_order_book_snapshots(instrument_id)
-        # Do nothing else for backtest
-
-    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id):
-        Condition.not_none(instrument_id, "instrument_id")
-
-        self._remove_subscription_ticker(instrument_id)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id):

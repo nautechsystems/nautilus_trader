@@ -39,7 +39,6 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
@@ -435,7 +434,7 @@ class TestDataEngine:
 
         # Assert
         assert self.data_engine.command_count == 1
-        assert self.data_engine.subscribed_generic_data() == []
+        assert self.data_engine.subscribed_custom_data() == []
 
     def test_execute_unsubscribe_custom_data(self):
         # Arrange
@@ -471,7 +470,7 @@ class TestDataEngine:
 
         # Assert
         assert self.data_engine.command_count == 2
-        assert self.data_engine.subscribed_generic_data() == []
+        assert self.data_engine.subscribed_custom_data() == []
 
     def test_execute_unsubscribe_when_data_type_unrecognized_logs_and_does_nothing(
         self,
@@ -1260,59 +1259,6 @@ class TestDataEngine:
         assert isinstance(cached_book, OrderBook)
         assert cached_book.instrument_id == ETHUSDT_BINANCE.id
         assert cached_book.best_bid_price() == 100
-
-    def test_execute_subscribe_ticker(self):
-        # Arrange
-        self.data_engine.register_client(self.binance_client)
-        self.binance_client.start()
-
-        handler = []
-        self.msgbus.subscribe(topic="data.quotes.BINANCE.ETH/USD", handler=handler.append)
-
-        subscribe = Subscribe(
-            client_id=ClientId(BINANCE.value),
-            venue=BINANCE,
-            data_type=DataType(Ticker, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-        )
-
-        self.data_engine.execute(subscribe)
-
-        # Assert
-        assert self.data_engine.subscribed_tickers() == [ETHUSDT_BINANCE.id]
-
-    def test_execute_unsubscribe_ticker(self):
-        # Arrange
-        self.data_engine.register_client(self.binance_client)
-        self.binance_client.start()
-
-        handler = []
-        self.msgbus.subscribe(topic="data.quotes.BINANCE.ETH/USD", handler=handler.append)
-
-        subscribe = Subscribe(
-            client_id=ClientId(BINANCE.value),
-            venue=BINANCE,
-            data_type=DataType(Ticker, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-        )
-
-        self.data_engine.execute(subscribe)
-
-        unsubscribe = Unsubscribe(
-            client_id=ClientId(BINANCE.value),
-            venue=BINANCE,
-            data_type=DataType(Ticker, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-        )
-
-        # Act
-        self.data_engine.execute(unsubscribe)
-
-        # Assert
-        assert self.data_engine.subscribed_tickers() == []
 
     def test_execute_subscribe_quote_ticks(self):
         # Arrange

@@ -33,10 +33,11 @@
 .ruff_cache/
 .vscode/
 
+/catalog/
+
 __pycache__
 _build/
 build/
-catalog/
 data_catalog/
 dist/
 env/
@@ -60,6 +61,7 @@ examples/backtest/notebooks/catalog
 nautilus_trader/**/.gitignore
 nautilus_trader/test_kit/mocks/.nautilus/
 tests/test_data/catalog/
+tests/unit_tests/persistence/catalog
 bench_data/
 
 !tests/integration_tests/adapters/betfair/responses/*.log
