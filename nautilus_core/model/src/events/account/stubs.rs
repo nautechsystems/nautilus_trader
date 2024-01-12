@@ -13,6 +13,46 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod state;
-#[cfg(feature = "stubs")]
-pub mod stubs;
+use rstest::fixture;
+
+use crate::{
+    enums::AccountType,
+    events::account::state::AccountState,
+    identifiers::stubs::{account_id, uuid4},
+    types::{
+        currency::Currency,
+        stubs::{account_balance_test, margin_balance_test},
+    },
+};
+
+#[fixture]
+pub fn cash_account_state() -> AccountState {
+    AccountState::new(
+        account_id(),
+        AccountType::Cash,
+        Currency::USD(),
+        vec![account_balance_test()],
+        vec![],
+        true,
+        uuid4(),
+        0,
+        0,
+    )
+    .unwrap()
+}
+
+#[fixture]
+pub fn margin_account_state() -> AccountState {
+    AccountState::new(
+        account_id(),
+        AccountType::Margin,
+        Currency::USD(),
+        vec![account_balance_test()],
+        vec![margin_balance_test()],
+        true,
+        uuid4(),
+        0,
+        0,
+    )
+    .unwrap()
+}

@@ -302,7 +302,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::instruments::futures_contract::FuturesContract>()?;
     m.add_class::<crate::instruments::options_contract::OptionsContract>()?;
     m.add_class::<crate::instruments::synthetic::SyntheticInstrument>()?;
-    // Events
+    // Events - order
     m.add_class::<crate::events::order::denied::OrderDenied>()?;
     m.add_class::<crate::events::order::filled::OrderFilled>()?;
     m.add_class::<crate::events::order::initialized::OrderInitialized>()?;
@@ -319,5 +319,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::events::order::cancel_rejected::OrderCancelRejected>()?;
     m.add_class::<crate::events::order::canceled::OrderCanceled>()?;
     m.add_class::<crate::events::order::expired::OrderExpired>()?;
+    // Events - account
+    m.add_class::<crate::events::account::state::AccountState>()?;
     Ok(())
 }

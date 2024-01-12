@@ -13,7 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::{Display, Formatter};
+
+use anyhow::Result;
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use pyo3::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     enums::AccountType,
@@ -25,7 +30,11 @@ use crate::{
 };
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct AccountState {
     pub account_id: AccountId,
     pub account_type: AccountType,
@@ -36,4 +45,98 @@ pub struct AccountState {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
+}
+
+impl AccountState {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        account_id: AccountId,
+        account_type: AccountType,
+        base_currency: Currency,
+        balances: Vec<AccountBalance>,
+        margins: Vec<MarginBalance>,
+        is_reported: bool,
+        event_id: UUID4,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Result<AccountState> {
+        Ok(AccountState {
+            account_id,
+            account_type,
+            base_currency,
+            balances,
+            margins,
+            is_reported,
+            event_id,
+            ts_event,
+            ts_init,
+        })
+    }
+}
+
+impl Display for AccountState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "AccountState(account_id={}, account_type={}, base_currency={}, is_reported={}, balances=[{}], margins=[{}], event_id={})",
+            self.account_id,
+            self.account_type,
+            self.base_currency.code,
+            self.is_reported,
+            self.balances.iter().map(|b| format!("{}", b)).collect::<Vec<String>>().join(","),
+            self.margins.iter().map(|m| format!("{}", m)).collect::<Vec<String>>().join(","),
+            self.event_id
+        )
+    }
+}
+
+impl PartialEq for AccountState {
+    fn eq(&self, other: &Self) -> bool {
+        self.account_id == other.account_id
+            && self.account_type == other.account_type
+            && self.event_id == other.event_id
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use crate::events::account::{
+        state::AccountState,
+        stubs::{cash_account_state, margin_account_state},
+    };
+
+    #[rstest]
+    fn test_equality() {
+        let cash_account_state_1 = cash_account_state();
+        let cash_account_state_2 = cash_account_state();
+        assert_eq!(cash_account_state_1, cash_account_state_2);
+    }
+
+    #[rstest]
+    fn test_display_cash_account_state(cash_account_state: AccountState) {
+        let display = format!("{}", cash_account_state);
+        assert_eq!(
+            display,
+            "AccountState(account_id=SIM-001, account_type=CASH, base_currency=USD, is_reported=true, \
+            balances=[AccountBalance(total=1525000.00 USD, locked=25000.00 USD, free=1500000.00 USD)], \
+            margins=[], event_id=16578139-a945-4b65-b46c-bc131a15d8e7)"
+        );
+    }
+
+    #[rstest]
+    fn test_display_margin_account_state(margin_account_state: AccountState) {
+        let display = format!("{}", margin_account_state);
+        assert_eq!(
+            display,
+            "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=true, \
+            balances=[AccountBalance(total=1525000.00 USD, locked=25000.00 USD, free=1500000.00 USD)], \
+            margins=[MarginBalance(initial=5000.00 USD, maintenance=20000.00 USD, instrument_id=BTCUSDT.COINBASE)], \
+            event_id=16578139-a945-4b65-b46c-bc131a15d8e7)"
+        );
+    }
 }
