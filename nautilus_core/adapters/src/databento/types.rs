@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use dbn;
+use databento::dbn;
 
 /// Represents a Databento publisher ID.
 pub type PublisherId = u16;
