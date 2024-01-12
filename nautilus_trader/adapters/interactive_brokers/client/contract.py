@@ -47,7 +47,7 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
 
         Returns
         -------
-        IBContractDetails | None
+        IBContractDetails | ``None``
 
         """
         name = str(contract)
@@ -80,7 +80,7 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
 
         Returns
         -------
-        list[IBContract] | None
+        list[IBContract] | ``None``
 
         """
         name = f"MatchingSymbols-{pattern}"
@@ -114,7 +114,7 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
 
         Returns
         -------
-        list[IBContractDetails] | None
+        list[IBContractDetails] | ``None``
 
         """
         name = f"OptionChains-{underlying!s}"

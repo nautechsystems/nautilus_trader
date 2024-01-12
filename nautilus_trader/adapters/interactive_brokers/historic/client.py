@@ -59,7 +59,7 @@ class HistoricInteractiveBrokersClient:
         port: int = 7497,
         client_id: int = 1,
         market_data_type: MarketDataTypeEnum = MarketDataTypeEnum.REALTIME,
-    ):
+    ) -> None:
         loop = asyncio.get_event_loop()
         loop.set_debug(True)
         clock = LiveClock()

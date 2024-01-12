@@ -49,10 +49,6 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             The order object containing details such as the order ID, contract
             details, and order specifics.
 
-        Returns
-        -------
-        None
-
         """
         self._order_id_to_order_ref[order.orderId] = AccountOrderRef(
             account_id=order.account,
@@ -70,10 +66,6 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         orders : list[IBOrder]
             A list of order objects to be placed.
 
-        Returns
-        -------
-        None
-
         """
         for order in orders:
             order.orderRef = f"{order.orderRef}:{order.orderId}"
@@ -90,21 +82,12 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         manual_cancel_order_time : str, optional
             The timestamp indicating when the order was canceled manually.
 
-        Returns
-        -------
-        None
-
         """
         self._eclient.cancelOrder(order_id, manual_cancel_order_time)
 
     def cancel_all_orders(self) -> None:
         """
         Request to cancel all open orders through the EClient.
-
-        Returns
-        -------
-        None
-
         """
         self._log.warning(
             "Canceling all open orders, regardless of how they were originally placed.",
@@ -141,6 +124,9 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         all_orders: list[IBOrder] | None = await self._await_request(request, 30)
         if all_orders:
             orders: list[IBOrder] = [order for order in all_orders if order.account == account_id]
+        else:
+            orders = []
+
         return orders
 
     def next_order_id(self) -> int:
