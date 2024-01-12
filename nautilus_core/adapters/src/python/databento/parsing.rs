@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use dbn;
+use databento::dbn;
 use nautilus_core::{python::to_pyvalue_err, time::UnixNanos};
 use nautilus_model::{
     data::{depth::OrderBookDepth10, trade::TradeTick},
