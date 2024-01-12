@@ -14,6 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.nautilus_pyo3 import UUID4
+from nautilus_trader.core.nautilus_pyo3 import AccountState
+from nautilus_trader.core.nautilus_pyo3 import AccountType
 from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
 from nautilus_trader.core.nautilus_pyo3 import ContingencyType
 from nautilus_trader.core.nautilus_pyo3 import Currency
@@ -45,12 +47,47 @@ from nautilus_trader.core.nautilus_pyo3 import TimeInForce
 from nautilus_trader.core.nautilus_pyo3 import TradeId
 from nautilus_trader.core.nautilus_pyo3 import TriggerType
 from nautilus_trader.test_kit.rust.identifiers_pyo3 import TestIdProviderPyo3
+from nautilus_trader.test_kit.rust.types_pyo3 import TestTypesProviderPyo3
 
 
 uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
 
 
 class TestEventsProviderPyo3:
+    @staticmethod
+    def cash_account_state() -> AccountState:
+        return AccountState(
+            account_id=TestIdProviderPyo3.account_id(),
+            account_type=AccountType.CASH,
+            base_currency=Currency.from_str("USD"),
+            balances=[
+                TestTypesProviderPyo3.account_balance(),
+            ],
+            margins=[],
+            is_reported=True,
+            event_id=UUID4("91762096-b188-49ea-8562-8d8a4cc22ff2"),
+            ts_init=0,
+            ts_event=0,
+        )
+
+    @staticmethod
+    def margin_account_state() -> AccountState:
+        return AccountState(
+            account_id=TestIdProviderPyo3.account_id(),
+            account_type=AccountType.MARGIN,
+            base_currency=Currency.from_str("USD"),
+            balances=[
+                TestTypesProviderPyo3.account_balance(),
+            ],
+            margins=[
+                TestTypesProviderPyo3.margin_balance(),
+            ],
+            is_reported=True,
+            event_id=UUID4("91762096-b188-49ea-8562-8d8a4cc22ff2"),
+            ts_init=0,
+            ts_event=0,
+        )
+
     @staticmethod
     def order_denied_max_submit_rate() -> OrderDenied:
         return OrderDenied(
