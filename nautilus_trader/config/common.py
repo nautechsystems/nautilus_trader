@@ -258,12 +258,14 @@ class CacheConfig(NautilusConfig, frozen=True):
         The buffer interval (milliseconds) between pipelined/batched transactions.
         The recommended range if using buffered pipeling is [10, 1000] milliseconds,
         with a good compromise being 100 milliseconds.
-    flush_on_start : bool, default False
-        If database should be flushed on start.
     use_trader_prefix : bool, default True
         If a 'trader-' prefix is used for keys.
     use_instance_id : bool, default False
         If the traders instance ID is used for keys.
+    flush_on_start : bool, default False
+        If database should be flushed on start.
+    drop_instruments_on_reset : bool, default True
+        If instruments data should be dropped from the caches memory on reset.
     tick_capacity : PositiveInt, default 10_000
         The maximum length for internal tick dequeues.
     bar_capacity : PositiveInt, default 10_000
@@ -275,9 +277,10 @@ class CacheConfig(NautilusConfig, frozen=True):
     encoding: str = "msgpack"
     timestamps_as_iso8601: bool = False
     buffer_interval_ms: PositiveInt | None = None
-    flush_on_start: bool = False
     use_trader_prefix: bool = True
     use_instance_id: bool = False
+    flush_on_start: bool = False
+    drop_instruments_on_reset: bool = True
     tick_capacity: PositiveInt = 10_000
     bar_capacity: PositiveInt = 10_000
 
