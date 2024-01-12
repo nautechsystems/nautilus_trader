@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_adapters::python::databento::parsing;
+use nautilus_adapters::databento::python::parsing;
 use pyo3::{
     prelude::*,
     types::{PyDict, PyString},
