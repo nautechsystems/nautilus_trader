@@ -132,7 +132,7 @@ use_parentheses = true
 filter_files = true
 
 [tool.black]
-target_version = ["py310", "py311"]
+target_version = ["py310", "py311", "py312"]
 line_length = 100
 
 [tool.docformatter]
