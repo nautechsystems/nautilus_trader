@@ -24,7 +24,7 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 
 
-map_trigger_method: dict[int, int] = {
+MAP_TRIGGER_METHOD: dict[int, int] = {
     TriggerType.DEFAULT: 0,
     TriggerType.DOUBLE_BID_ASK: 1,
     TriggerType.LAST_TRADE: 2,
@@ -34,7 +34,7 @@ map_trigger_method: dict[int, int] = {
     TriggerType.MID_POINT: 8,
 }
 
-map_time_in_force: dict[int, str] = {
+MAP_TIME_IN_FORCE: dict[int, str] = {
     TimeInForce.DAY: "DAY",
     TimeInForce.GTC: "GTC",
     TimeInForce.IOC: "IOC",
@@ -44,17 +44,17 @@ map_time_in_force: dict[int, str] = {
     # unsupported: 'DTC',
 }
 
-map_order_action: dict[int, str] = {
+MAP_ORDER_ACTION: dict[int, str] = {
     OrderSide.BUY: "BUY",
     OrderSide.SELL: "SELL",
 }
 
-order_side_to_order_action: dict[str, str] = {
+ORDER_SIDE_TO_ORDER_ACTION: dict[str, str] = {
     "BOT": "BUY",
     "SLD": "SELL",
 }
 
-map_order_type: dict[int, str] = {
+MAP_ORDER_TYPE: dict[int, str] = {
     OrderType.LIMIT: "LMT",
     OrderType.LIMIT_IF_TOUCHED: "LIT",
     OrderType.MARKET: "MKT",
@@ -67,17 +67,17 @@ map_order_type: dict[int, str] = {
 }
 
 
-map_order_fields: set[tuple[str, str, Callable]] = {
+MAP_ORDER_FIELDS: set[tuple[str, str, Callable]] = {
     # ref: (nautilus_order_field, ib_order_field, value_fn)
     ("client_order_id", "orderRef", lambda x: x.value),
     ("display_qty", "displaySize", lambda x: x.as_double()),
     ("expire_time", "goodTillDate", lambda x: x.strftime("%Y%m%d %H:%M:%S %Z")),
     ("limit_offset", "lmtPriceOffset", float),
-    ("order_type", "orderType", lambda x: map_order_type[x]),
+    ("order_type", "orderType", lambda x: MAP_ORDER_TYPE[x]),
     ("price", "lmtPrice", lambda x: x.as_double()),
     ("quantity", "totalQuantity", lambda x: x.as_decimal()),
-    ("side", "action", lambda x: map_order_action[x]),
-    ("time_in_force", "tif", lambda x: map_time_in_force[x]),
+    ("side", "action", lambda x: MAP_ORDER_ACTION[x]),
+    ("time_in_force", "tif", lambda x: MAP_TIME_IN_FORCE[x]),
     # ("trailing_offset", "trailStopPrice", lambda x: float(x)),
     # ("trigger_price", "auxPrice", lambda x: x.as_double()),
     # ("trigger_type", "triggerMethod", lambda x: map_trigger_method[x]),
@@ -85,7 +85,7 @@ map_order_fields: set[tuple[str, str, Callable]] = {
 }
 
 
-map_order_status = {
+MAP_ORDER_STATUS = {
     "ApiPending": OrderStatus.SUBMITTED,
     "PendingSubmit": OrderStatus.SUBMITTED,
     "PendingCancel": OrderStatus.PENDING_CANCEL,

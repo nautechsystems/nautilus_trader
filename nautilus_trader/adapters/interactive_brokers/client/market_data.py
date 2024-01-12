@@ -71,10 +71,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         market_data_type : MarketDataTypeEnum
             The market data type to be set
 
-        Returns
-        -------
-        None
-
         """
         self._log.info(f"Setting Market DataType to {MarketDataTypeEnum.to_str(market_data_type)}")
         self._eclient.reqMarketDataType(market_data_type)
@@ -108,7 +104,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         Returns
         -------
-        None
+        Subscription | ``None``
 
         """
         if not (subscription := self._subscriptions.get(name=name)):
@@ -153,10 +149,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         name : Any
             A unique identifier for the subscription.
 
-        Returns
-        -------
-        None
-
         """
         if subscription := self._subscriptions.get(name=name):
             self._subscriptions.remove(subscription.req_id)
@@ -183,10 +175,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         tick_type : str
             The type of tick data to subscribe to.
 
-        Returns
-        -------
-        None
-
         """
         name = (str(instrument_id), tick_type)
         await self._subscribe(
@@ -210,10 +198,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         tick_type : str
             The type of tick data to unsubscribe from.
 
-        Returns
-        -------
-        None
-
         """
         name = (str(instrument_id), tick_type)
         await self._unsubscribe(name, self._eclient.cancelTickByTickData)
@@ -236,10 +220,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         use_rth : bool
             Whether to use regular trading hours (RTH) only.
 
-        Returns
-        -------
-        None
-
         """
         name = str(bar_type)
         await self._subscribe(
@@ -261,10 +241,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         ----------
         bar_type : BarType
             The type of bar to unsubscribe from.
-
-        Returns
-        -------
-        None
 
         """
         name = str(bar_type)
@@ -291,10 +267,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             Whether to use regular trading hours (RTH) only.
         handle_revised_bars : bool
             Whether to handle revised bars or not.
-
-        Returns
-        -------
-        None
 
         """
         name = str(bar_type)
@@ -339,10 +311,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         bar_type : BarType
             The type of bar to unsubscribe from.
 
-        Returns
-        -------
-        None
-
         """
         name = str(bar_type)
         await self._unsubscribe(name, self._eclient.cancelHistoricalData)
@@ -376,7 +344,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         Returns
         -------
-        list[Bar]
+        list[Bar] | ``None``
 
         """
         name = str(bar_type)
@@ -441,7 +409,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         Returns
         -------
-        list[QuoteTick | TradeTick]
+        list[QuoteTick | TradeTick] | ``None``
 
         """
         if isinstance(start_date_time, pd.Timestamp):
@@ -502,7 +470,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         Returns
         -------
-        Bar | None
+        Bar | ``None``
 
         """
         previous_bar = self._bar_type_to_last_bar.get(bar_type_str)
@@ -644,10 +612,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         ticks : list
             A list of trade tick data received from Interactive Brokers.
 
-        Returns
-        -------
-        None
-
         """
         if request := self._requests.get(req_id=req_id):
             instrument_id = InstrumentId.from_str(request.name[0])
@@ -678,10 +642,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         ----------
         data : Data
             The processed market data ready to be forwarded.
-
-        Returns
-        -------
-        None
 
         """
         self._msgbus.send(endpoint="DataEngine.process", msg=data)

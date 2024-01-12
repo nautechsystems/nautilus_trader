@@ -45,7 +45,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         client: InteractiveBrokersClient,
         config: InteractiveBrokersInstrumentProviderConfig,
         logger: Logger,
-    ):
+    ) -> None:
         """
         Initialize a new instance of the ``InteractiveBrokersInstrumentProvider`` class.
 

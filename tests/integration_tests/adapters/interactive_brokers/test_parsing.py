@@ -22,21 +22,21 @@ import pytest
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.parsing.data import bar_spec_to_bar_size
 from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_CASH
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_CRYPTO
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FOP
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FOP_ORIGINAL
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FUT
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FUT_ORIGINAL
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_IND
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_OPT
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_CASH
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_CRYPTO
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_FUT
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_OPT
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import _tick_size_to_precision
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import re_cash
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import re_crypto
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import re_fop
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import re_fop_original
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import re_fut
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import re_fut_original
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import re_ind
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import re_opt
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import venues_cash
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import venues_crypto
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import venues_fut
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import venues_opt
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.identifiers import InstrumentId
 
@@ -118,10 +118,10 @@ def test_verified_venues_registered():
     expected_venues_fut = {"CBOT", "CME", "COMEX", "KCBT", "MGE", "NYMEX", "NYBOT", "SNFE"}
 
     # Assert
-    assert len(set(expected_venues_cash) - set(venues_cash)) == 0
-    assert len(set(expected_venues_crypto) - set(venues_crypto)) == 0
-    assert len(set(expected_venues_opt) - set(venues_opt)) == 0
-    assert len(set(expected_venues_fut) - set(venues_fut)) == 0
+    assert len(set(expected_venues_cash) - set(VENUES_CASH)) == 0
+    assert len(set(expected_venues_crypto) - set(VENUES_CRYPTO)) == 0
+    assert len(set(expected_venues_opt) - set(VENUES_OPT)) == 0
+    assert len(set(expected_venues_fut) - set(VENUES_FUT)) == 0
 
 
 def test_regular_expression_forex():
@@ -130,7 +130,7 @@ def test_regular_expression_forex():
     expected = {"symbol": "EUR", "currency": "USD"}
 
     # Act
-    result = re_cash.match(symbol).groupdict()
+    result = RE_CASH.match(symbol).groupdict()
 
     # Assert
     assert result == expected
@@ -142,7 +142,7 @@ def test_regular_expression_crypto():
     expected = {"symbol": "BTC", "currency": "USD"}
 
     # Act
-    result = re_crypto.match(symbol).groupdict()
+    result = RE_CRYPTO.match(symbol).groupdict()
 
     # Assert
     assert result == expected
@@ -160,7 +160,7 @@ def test_regular_expression_crypto():
 )
 def test_regular_expression_option(symbol, expected):
     # Arrange, Act
-    result = re_opt.match(symbol).groupdict()
+    result = RE_OPT.match(symbol).groupdict()
 
     # Act, Assert
     assert result == expected
@@ -175,7 +175,7 @@ def test_regular_expression_option(symbol, expected):
 )
 def test_regular_expression_index(symbol, expected):
     # Arrange, Act
-    result = re_ind.match(symbol).groupdict()
+    result = RE_IND.match(symbol).groupdict()
 
     # Act, Assert
     assert result == expected
@@ -190,7 +190,7 @@ def test_regular_expression_index(symbol, expected):
 )
 def test_regular_expression_future(symbol, expected):
     # Arrange, Act
-    result = re_fut.match(symbol).groupdict()
+    result = RE_FUT.match(symbol).groupdict()
 
     # Act, Assert
     assert result == expected
@@ -205,7 +205,7 @@ def test_regular_expression_future(symbol, expected):
 )
 def test_regular_expression_future_original(symbol, expected):
     # Arrange, Act
-    result = re_fut_original.match(symbol).groupdict()
+    result = RE_FUT_ORIGINAL.match(symbol).groupdict()
 
     # Act, Assert
     assert result == expected
@@ -222,7 +222,7 @@ def test_regular_expression_future_original(symbol, expected):
 )
 def test_regular_expression_future_options(symbol, expected):
     # Arrange, Act
-    result = re_fop.match(symbol).groupdict()
+    result = RE_FOP.match(symbol).groupdict()
 
     # Assert
     assert result == expected
@@ -239,7 +239,7 @@ def test_regular_expression_future_options(symbol, expected):
 )
 def test_regular_expression_future_options_original(symbol, expected):
     # Arrange, Act
-    result = re_fop_original.match(symbol).groupdict()
+    result = RE_FOP_ORIGINAL.match(symbol).groupdict()
 
     # Assert
     assert result == expected

@@ -31,13 +31,13 @@ from nautilus_trader.adapters.interactive_brokers.client import InteractiveBroke
 from nautilus_trader.adapters.interactive_brokers.client.common import IBPosition
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
-from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_order_action
-from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_order_fields
-from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_order_status
-from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_order_type
-from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_time_in_force
-from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_trigger_method
-from nautilus_trader.adapters.interactive_brokers.parsing.execution import order_side_to_order_action
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_ORDER_ACTION
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_ORDER_FIELDS
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_ORDER_STATUS
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_ORDER_TYPE
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_TIME_IN_FORCE
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_TRIGGER_METHOD
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import ORDER_SIDE_TO_ORDER_ACTION
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import timestring_to_timestamp
 from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
 from nautilus_trader.cache.cache import Cache
@@ -90,10 +90,10 @@ from nautilus_trader.model.orders.trailing_stop_market import TrailingStopMarket
 
 # fmt: on
 
-ib_to_nautilus_trigger_method = dict(zip(map_trigger_method.values(), map_trigger_method.keys()))
-ib_to_nautilus_time_in_force = dict(zip(map_time_in_force.values(), map_time_in_force.keys()))
-ib_to_nautilus_order_side = dict(zip(map_order_action.values(), map_order_action.keys()))
-ib_to_nautilus_order_type = dict(zip(map_order_type.values(), map_order_type.keys()))
+ib_to_nautilus_trigger_method = dict(zip(MAP_TRIGGER_METHOD.values(), MAP_TRIGGER_METHOD.keys()))
+ib_to_nautilus_time_in_force = dict(zip(MAP_TIME_IN_FORCE.values(), MAP_TIME_IN_FORCE.keys()))
+ib_to_nautilus_order_side = dict(zip(MAP_ORDER_ACTION.values(), MAP_ORDER_ACTION.keys()))
+ib_to_nautilus_order_type = dict(zip(MAP_ORDER_TYPE.values(), MAP_ORDER_TYPE.keys()))
 
 
 class InteractiveBrokersExecutionClient(LiveExecutionClient):
@@ -138,7 +138,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         instrument_provider: InteractiveBrokersInstrumentProvider,
         ibg_client_id: int,
         config: InteractiveBrokersExecClientConfig,
-    ):
+    ) -> None:
         super().__init__(
             loop=loop,
             # client_id=ClientId(f"{IB_VENUE.value}-{ibg_client_id:03d}"), # TODO: Fix account_id.get_id()
@@ -287,7 +287,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         if total_qty.as_double() > filled_qty.as_double() > 0:
             order_status = OrderStatus.PARTIALLY_FILLED
         else:
-            order_status = map_order_status[ib_order.order_state.status]
+            order_status = MAP_ORDER_STATUS[ib_order.order_state.status]
         ts_init = self._clock.timestamp_ns()
         price = (
             None if ib_order.lmtPrice == UNSET_DOUBLE else instrument.make_price(ib_order.lmtPrice)
@@ -499,7 +499,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     def _transform_order_to_ib_order(self, order: Order) -> IBOrder:
         ib_order = IBOrder()
-        for key, field, fn in map_order_fields:
+        for key, field, fn in MAP_ORDER_FIELDS:
             if value := getattr(order, key, None):
                 setattr(ib_order, field, fn(value))
 
@@ -511,7 +511,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ib_order.auxPrice = float(order.trailing_offset)
             if order.trigger_price:
                 ib_order.trailStopPrice = order.trigger_price.as_double()
-                ib_order.triggerMethod = map_trigger_method[order.trigger_type]
+                ib_order.triggerMethod = MAP_TRIGGER_METHOD[order.trigger_type]
         elif (
             isinstance(
                 order,
@@ -884,7 +884,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 venue_order_id=VenueOrderId(str(execution.orderId)),
                 venue_position_id=None,
                 trade_id=TradeId(execution.execId),
-                order_side=OrderSide[order_side_to_order_action[execution.side]],
+                order_side=OrderSide[ORDER_SIDE_TO_ORDER_ACTION[execution.side]],
                 order_type=nautilus_order.order_type,
                 last_qty=Quantity(execution.shares, precision=instrument.size_precision),
                 last_px=Price(execution.price, precision=instrument.price_precision),

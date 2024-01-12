@@ -58,10 +58,6 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
         is_warning : bool
             Indicates whether the message is a warning or an error.
 
-        Returns
-        -------
-        None
-
         """
         msg_type = "Warning" if is_warning else "Error"
         msg = f"{msg_type} {error_code} {req_id=}: {error_string}"
@@ -84,10 +80,6 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
             The error code.
         error_string : str
             The error message string.
-
-        Returns
-        -------
-        None
 
         """
         is_warning = error_code in self.WARNING_CODES or 2100 <= error_code < 2200
@@ -124,10 +116,6 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
             The error code.
         error_string : str
             The error message string.
-
-        Returns
-        -------
-        None
 
         """
         subscription = self._subscriptions.get(req_id=req_id)
@@ -167,10 +155,6 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
         error_string : str
             The error message string.
 
-        Returns
-        -------
-        None
-
         """
         request = self._requests.get(req_id=req_id)
         self._log.warning(f"{error_code}: {error_string}, {request}")
@@ -189,10 +173,6 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
             The error code.
         error_string : str
             The error message string.
-
-        Returns
-        -------
-        None
 
         """
         order_ref = self._order_id_to_order_ref.get(req_id, None)
@@ -219,6 +199,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
             )
 
     # -- EWrapper overrides -----------------------------------------------------------------------
+
     def error(
         self,
         req_id: int,

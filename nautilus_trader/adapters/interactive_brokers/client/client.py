@@ -88,7 +88,7 @@ class InteractiveBrokersClient(
         host: str = "127.0.0.1",
         port: int = 7497,
         client_id: int = 1,
-    ):
+    ) -> None:
         super().__init__(
             clock=clock,
             logger=logger,
@@ -157,22 +157,12 @@ class InteractiveBrokersClient(
     def _start(self) -> None:
         """
         Start the client.
-
-        Returns
-        -------
-        None
-
         """
         self._is_client_ready.set()
 
     def _stop(self) -> None:
         """
         Stop the client and cancel running tasks.
-
-        Returns
-        -------
-        None
-
         """
         if self.registered_nautilus_clients != set():
             self._log.warning(
@@ -196,11 +186,6 @@ class InteractiveBrokersClient(
     def _reset(self) -> None:
         """
         Reset the client state and restart connection watchdog.
-
-        Returns
-        -------
-        None
-
         """
         self._stop()
         self._eclient.reset()
@@ -211,11 +196,6 @@ class InteractiveBrokersClient(
     def _resume(self) -> None:
         """
         Resume the client and reset the connection attempt counter.
-
-        Returns
-        -------
-        None
-
         """
         self._is_client_ready.set()
         self._connection_attempt_counter = 0
@@ -223,11 +203,6 @@ class InteractiveBrokersClient(
     def _degrade(self) -> None:
         """
         Degrade the client when connectivity is lost.
-
-        Returns
-        -------
-        None
-
         """
         self._is_client_ready.clear()
         self._account_ids = set()
@@ -236,11 +211,6 @@ class InteractiveBrokersClient(
         """
         Start the incoming message reader and queue tasks, and initiate the start API
         call to the EClient.
-
-        Returns
-        -------
-        None
-
         """
         if self._tws_incoming_msg_reader_task:
             self._tws_incoming_msg_reader_task.cancel()
@@ -257,16 +227,6 @@ class InteractiveBrokersClient(
     async def _cancel_and_restart_subscriptions(self) -> None:
         """
         Attempt to cancel and restart all subscriptions.
-
-        Returns
-        -------
-        None
-
-        Raises
-        ------
-        Exception
-            If an error occurs during the cancelling or restarting of subscriptions.
-
         """
         for subscription in self._subscriptions.get_all():
             try:
@@ -276,6 +236,7 @@ class InteractiveBrokersClient(
                 else:
                     await self._loop.run_in_executor(None, subscription.handle)
             except Exception as e:
+                # The exception is handled, so won't be further raised
                 self._log.exception("Failed subscription", e)
 
     async def wait_until_ready(self, timeout: int = 300) -> None:
@@ -284,12 +245,8 @@ class InteractiveBrokersClient(
 
         Parameters
         ----------
-        timeout : int
-            Time in seconds to wait for the client to be ready. Defaults to 300 seconds.
-
-        Returns
-        -------
-        None
+        timeout : int, default 300
+            Time in seconds to wait for the client to be ready.
 
         """
         try:
@@ -298,21 +255,13 @@ class InteractiveBrokersClient(
         except asyncio.TimeoutError as e:
             self._log.error(f"Client is not ready. {e}")
 
-    async def _run_watch_dog(self):
+    async def _run_watch_dog(self) -> None:
         """
         Run a watchdog to monitor and manage the health of the socket connection.
+
         Continuously checks the connection status, manages client state based on
         connection health, and handles subscription management in case of network
         failure or forced IB connection reset.
-
-        Returns
-        -------
-        None
-
-        Raises
-        ------
-        asyncio.CancelledError
-            If the watchdog task gets cancelled.
 
         """
         try:
@@ -333,8 +282,8 @@ class InteractiveBrokersClient(
 
                 if self.is_initialized and not self.is_running:
                     self._start()
-
         except asyncio.CancelledError:
+            # The exception is handled, so won't be further raised
             self._log.debug("Client `watch_dog` task was canceled.")
 
     def _create_task(
@@ -396,10 +345,6 @@ class InteractiveBrokersClient(
         task : asyncio.Task
             The asyncio Task that has been completed.
 
-        Returns
-        -------
-        None
-
         """
         if task.exception():
             self._log.error(
@@ -428,10 +373,6 @@ class InteractiveBrokersClient(
         handler : Callable
             The handler function to be called when the event occurs.
 
-        Returns
-        -------
-        None
-
         """
         self._event_subscriptions[name] = handler
 
@@ -443,10 +384,6 @@ class InteractiveBrokersClient(
         ----------
         name : str
             The name of the event to unsubscribe from.
-
-        Returns
-        -------
-        None
 
         """
         self._event_subscriptions.pop(name)
@@ -464,7 +401,7 @@ class InteractiveBrokersClient(
 
         Returns
         -------
-        Any | None
+        Any | ``None``
             The result of the request, or None if the request timed out.
 
         """
@@ -493,10 +430,6 @@ class InteractiveBrokersClient(
         exception : type | BaseException | None, optional
             An exception to set on request failure. Defaults to None.
 
-        Returns
-        -------
-        None
-
         """
         if not (request := self._requests.get(req_id=req_id)):
             return
@@ -514,11 +447,6 @@ class InteractiveBrokersClient(
         """
         Continuously read messages from TWS/Gateway and then put them in the internal
         message queue for processing.
-
-        Returns
-        -------
-        None
-
         """
         self._log.debug("Client TWS incoming message reader starting...")
         buf = b""
@@ -545,11 +473,6 @@ class InteractiveBrokersClient(
     async def _run_internal_msg_queue(self) -> None:
         """
         Continuously process messages from the internal incoming message queue.
-
-        Returns
-        -------
-        None
-
         """
         self._log.debug(
             "Client internal message queue starting...",

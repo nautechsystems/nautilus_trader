@@ -45,10 +45,6 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         connects the socket, sends and receives version information, and then sets up
         the client.
 
-        Returns
-        -------
-        None
-
         Raises
         ------
         OSError
@@ -79,12 +75,8 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         """
         Initialize the connection parameters before attempting to connect.
 
-        Sets up the host, port, and client ID for the EClient instance and
-        increments the connection attempt counter. Logs the attempt information.
-
-        Returns
-        -------
-        None
+        Sets up the host, port, and client ID for the EClient instance and increments
+        the connection attempt counter. Logs the attempt information.
 
         """
         self._eclient._host = self._host
@@ -99,12 +91,9 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
     async def _connect_socket(self) -> None:
         """
         Connect the socket to TWS / Gateway and change the connection state to
-        CONNECTING. It is an asynchronous method that runs within the event loop
-        executor.
+        CONNECTING.
 
-        Returns
-        -------
-        None
+        It is an asynchronous method that runs within the event loop executor.
 
         """
         self._eclient.conn = Connection(self._host, self._port)
@@ -114,13 +103,9 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         """
         Send the API version information to TWS / Gateway.
 
-        Constructs and sends a message containing the API version prefix
-        and the version range supported by the client. This is part of
-        the initial handshake process with the server.
-
-        Returns
-        -------
-        Any
+        Constructs and sends a message containing the API version prefix and the version
+        range supported by the client. This is part of the initial handshake process
+        with the server.
 
         """
         v100prefix = "API\0"
@@ -140,10 +125,6 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
 
         Waits for the server to send its version information and connection time.
         Retries receiving this information up to a specified number of attempts.
-
-        Returns
-        -------
-        None
 
         Raises
         ------
@@ -184,10 +165,6 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         fields : list[str]
             The list to which the extracted fields will be appended.
 
-        Returns
-        -------
-        None
-
         """
         if not self._eclient.conn.isConnected() or retries_remaining <= 0:
             self._log.warning("Disconnected. Resetting connection...")
@@ -209,10 +186,6 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         ----------
         fields : list[str]
             The fields containing server version and connection time.
-
-        Returns
-        -------
-        None
 
         """
         server_version, conn_time = int(fields[0]), fields[1]
@@ -257,11 +230,6 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         """
         Perform a connectivity probe to TWS using a historical data request if the
         client is degraded.
-
-        Returns
-        -------
-        None
-
         """
         # Probe connectivity. Sometime restored event will not be received from TWS without this
         self._eclient.reqHistoricalData(
@@ -290,10 +258,6 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         e : Exception
             The exception that occurred during the connection process.
 
-        Returns
-        -------
-        None
-
         """
         if self._eclient.wrapper:
             self._eclient.wrapper.error(NO_VALID_ID, CONNECT_FAIL.code(), CONNECT_FAIL.msg())
@@ -303,13 +267,10 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
     # -- EWrapper overrides -----------------------------------------------------------------------
     def connectionClosed(self) -> None:
         """
-        Indicate the API connection has closed. Following a API <-> TWS broken socket
-        connection, this function is not called automatically but must be triggered by
-        API client code.
+        Indicate the API connection has closed.
 
-        Returns
-        -------
-        None
+        Following a API <-> TWS broken socket connection, this function is not called
+        automatically but must be triggered by API client code.
 
         """
         self.logAnswer(current_fn_name(), vars())

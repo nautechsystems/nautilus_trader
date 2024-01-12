@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import functools
 from decimal import Decimal
 
@@ -50,12 +51,10 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
 
     def subscribe_account_summary(self) -> None:
         """
-        Subscribe to the account summary for all accounts. It sends a request to
-        Interactive Brokers to retrieve account summary information.
+        Subscribe to the account summary for all accounts.
 
-        Returns
-        -------
-        None
+        It sends a request to Interactive Brokers to retrieve account summary
+        information.
 
         """
         name = "accountSummary"
@@ -90,10 +89,6 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         account_id : str
             The identifier of the account to unsubscribe from.
 
-        Returns
-        -------
-        None
-
         """
         name = "accountSummary"
         if subscription := self._subscriptions.get(name=name):
@@ -124,10 +119,6 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         avg_cost : float
             The average cost of the position.
 
-        Returns
-        -------
-        None
-
         """
         self.logAnswer(current_fn_name(), vars())
         if request := self._requests.get(name="OpenPositions"):
@@ -144,7 +135,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
 
         Returns
         -------
-        list[Position] | None
+        list[Position] | ``None``
 
         """
         self._log.debug(f"Requesting Open Positions for {account_id}")
@@ -170,6 +161,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         return positions
 
     # -- EWrapper overrides -----------------------------------------------------------------------
+
     def accountSummary(
         self,
         req_id: int,

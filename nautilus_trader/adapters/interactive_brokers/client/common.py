@@ -59,7 +59,7 @@ class Request(msgspec.Struct, frozen=True):
     future: asyncio.Future
     result: list[Any]
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash((self.req_id, self.name))
 
 
@@ -74,7 +74,7 @@ class Subscription(msgspec.Struct, frozen=True):
     cancel: Callable
     last: Any
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash((self.req_id, self.name))
 
 
@@ -84,12 +84,12 @@ class Base(ABC):
     requests.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._req_id_to_name: dict[int, str | tuple] = {}
         self._req_id_to_handle: dict[int, Callable] = {}
         self._req_id_to_cancel: dict[int, Callable] = {}
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}:\n{[self.get(req_id=k) for k in self._req_id_to_name]!r}"
 
     def _name_to_req_id(self, name: Any) -> int | None:
@@ -121,10 +121,6 @@ class Base(ABC):
             The request ID to validate.
         name : Any
             The name to validate.
-
-        Returns
-        -------
-        None
 
         Raises
         ------
@@ -161,10 +157,6 @@ class Base(ABC):
         cancel : Callable
             The cancel callback function for the request.
 
-        Returns
-        -------
-        None
-
         """
         self._validation_check(req_id, name)
         self._req_id_to_name[req_id] = name
@@ -179,10 +171,6 @@ class Base(ABC):
         ----------
         req_id : int
             The request ID to remove.
-
-        Returns
-        -------
-        None
 
         """
         self._req_id_to_name.pop(req_id, None)
@@ -204,10 +192,6 @@ class Base(ABC):
             The request ID to remove. If None, name is used to determine the request ID.
         name : InstrumentId | (BarType | str), optional
             The name associated with the request ID.
-
-        Returns
-        -------
-        None
 
         """
         if req_id is None:
@@ -253,7 +237,7 @@ class Base(ABC):
 
         Returns
         -------
-        Request | Subscription | None
+        Request | Subscription | ``None``
 
         """
 
@@ -264,7 +248,7 @@ class Subscriptions(Base):
     IDs.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self._req_id_to_last: dict[int, Any] = {}
 
@@ -294,7 +278,7 @@ class Subscriptions(Base):
 
         Returns
         -------
-        Subscription | None
+        Subscription | ``None``
 
         """
         super().add_req_id(req_id, name, handle, cancel)
@@ -318,10 +302,6 @@ class Subscriptions(Base):
         Args:
             req_id (Optional[int]):
             name (Optional[Union[str, tuple]]): The name of the subscription to remove.
-
-        Returns
-        -------
-        None
 
         """
         if not req_id:
@@ -347,7 +327,7 @@ class Subscriptions(Base):
 
         Returns
         -------
-        Subscription | None
+        Subscription | ``None``
 
         """
         if not req_id:
@@ -373,10 +353,6 @@ class Subscriptions(Base):
         value : Any
             The new value to set as the 'last' value for the subscription.
 
-        Returns
-        -------
-        None
-
         """
         self._req_id_to_last[req_id] = value
 
@@ -390,7 +366,7 @@ class Requests(Base):
 
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self._req_id_to_future: dict[int, asyncio.Future] = {}
         self._req_id_to_result: dict[int, Any] = {}
@@ -432,7 +408,7 @@ class Requests(Base):
 
         Returns
         -------
-        Request | None
+        Request | ``None``
 
         """
         super().add_req_id(req_id, name, handle, cancel)
@@ -454,10 +430,6 @@ class Requests(Base):
             The request ID of the data request to remove. If None, name is used.
         name : str | tuple, optional
             The name of the data request to remove.
-
-        Returns
-        -------
-        None
 
         """
         if not req_id:
@@ -484,7 +456,7 @@ class Requests(Base):
 
         Returns
         -------
-        Request | None
+        Request | ``None``
 
         """
         if not req_id:

@@ -64,7 +64,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_provider: InteractiveBrokersInstrumentProvider,
         ibg_client_id: int,
         config: InteractiveBrokersDataClientConfig,
-    ):
+    ) -> None:
         """
         Initialize a new instance of the ``InteractiveBrokersDataClient`` class.
 
