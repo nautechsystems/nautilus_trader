@@ -108,6 +108,7 @@ cdef class Cache(CacheFacade):
         self._xrate_calculator = ExchangeRateCalculator()
 
         # Configuration
+        self._drop_instruments_on_reset = config.drop_instruments_on_reset
         self.tick_capacity = config.tick_capacity
         self.bar_capacity = config.bar_capacity
         self.snapshot_orders = snapshot_orders
@@ -727,7 +728,6 @@ cdef class Cache(CacheFacade):
         self._bars_bid.clear()
         self._bars_ask.clear()
         self._currencies.clear()
-        self._instruments.clear()
         self._synthetics.clear()
         self._accounts.clear()
         self._orders.clear()
@@ -735,6 +735,9 @@ cdef class Cache(CacheFacade):
         self._positions.clear()
         self._position_snapshots.clear()
         self.clear_index()
+
+        if self._drop_instruments_on_reset:
+            self._instruments.clear()
 
         self._log.debug(f"Reset cache.")
 

@@ -6,6 +6,7 @@ Released on TBD (UTC).
 - Added `NautilusConfig.json_primitives` to convert object to Python dictionary with JSON primitive values
 - Added `InstrumentClass.BOND`
 - Added `MessageBusConfig` `use_trader_prefix` and `use_trader_id` options (provides more control over stream names)
+- Added `CacheConfig.drop_instruments_on_reset` (default true to retain current behavior)
 - Implemented core logging interface via the `log` library, thanks @twitu
 - Implemented global atomic clock in Rust (improves performance and ensures properly monotonic timestamps in real-time)
 - Improved Interactive Brokers adapter raising docker `RuntimeError` only when needed (not when using TWS), thanks @rsmb7z
