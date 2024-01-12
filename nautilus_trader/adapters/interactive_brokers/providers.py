@@ -235,7 +235,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self,
         instrument_id: InstrumentId | IBContract,
         filters: dict | None = None,
-    ):
+    ) -> None:
         """
         Search and load the instrument for the given IBContract. It is important that
         the Contract shall have enough parameters so only one match is returned.
