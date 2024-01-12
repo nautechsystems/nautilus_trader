@@ -691,6 +691,23 @@ class MarginBalance:
     def from_dict(cls, values: dict[str, str]) -> MarginBalance: ...
     def to_dict(self) -> dict[str, str]: ...
 
+class AccountState:
+    def __init__(
+        self,
+        account_id: AccountId,
+        account_type: AccountType,
+        base_currency: Currency,
+        balances: list[AccountBalance],
+        margins: list[MarginBalance],
+        is_reported: bool,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> AccountState: ...
+    def to_dict(self) -> dict[str, str]: ...
+
 ### Instruments
 
 class CryptoFuture:

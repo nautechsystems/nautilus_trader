@@ -57,7 +57,7 @@ impl Display for AccountBalance {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "AccountBalance(total={},locked={},free={})",
+            "AccountBalance(total={}, locked={}, free={})",
             self.total, self.locked, self.free,
         )
     }
@@ -96,7 +96,7 @@ impl Display for MarginBalance {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "MarginBalance(initial={},maintenance={},instrument_id={})",
+            "MarginBalance(initial={}, maintenance={}, instrument_id={})",
             self.initial, self.maintenance, self.instrument_id,
         )
     }
@@ -133,7 +133,7 @@ mod tests {
     fn test_account_balance_display(account_balance_test: AccountBalance) {
         let display = format!("{}", account_balance_test);
         assert_eq!(
-            "AccountBalance(total=1525000.00 USD,locked=25000.00 USD,free=1500000.00 USD)",
+            "AccountBalance(total=1525000.00 USD, locked=25000.00 USD, free=1500000.00 USD)",
             display
         )
     }
@@ -149,7 +149,7 @@ mod tests {
     fn test_margin_balance_display(margin_balance_test: MarginBalance) {
         let display = format!("{}", margin_balance_test);
         assert_eq!(
-            "MarginBalance(initial=5000.00 USD,maintenance=20000.00 USD,instrument_id=BTCUSDT.COINBASE)",
+            "MarginBalance(initial=5000.00 USD, maintenance=20000.00 USD, instrument_id=BTCUSDT.COINBASE)",
             display
         )
     }
