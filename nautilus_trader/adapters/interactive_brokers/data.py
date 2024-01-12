@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -99,10 +99,11 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             clock=clock,
             logger=logger,
             instrument_provider=instrument_provider,
-            config={
-                "name": f"{type(self).__name__}-{ibg_client_id:03d}",
-                "client_id": ibg_client_id,
-            },
+            config=config,  # TODO: Config needs to be fully formed earlier than this
+            # config={
+            #     "name": f"{type(self).__name__}-{ibg_client_id:03d}",
+            #     "client_id": ibg_client_id,
+            # },
         )
         self._client = client
         self._handle_revised_bars = config.handle_revised_bars
@@ -166,11 +167,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_snapshots` coroutine",  # pragma: no cover
-        )
-
-    async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        raise NotImplementedError(  # pragma: no cover
-            "implement the `_subscribe_ticker` coroutine",  # pragma: no cover
         )
 
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
@@ -253,11 +249,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_order_book_snapshots` coroutine",  # pragma: no cover
-        )
-
-    async def _unsubscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        raise NotImplementedError(  # pragma: no cover
-            "implement the `_unsubscribe_ticker` coroutine",  # pragma: no cover
         )
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:

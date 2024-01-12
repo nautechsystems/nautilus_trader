@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -130,7 +130,7 @@ mod tests {
         assert_eq!(len, vec_len);
         assert_eq!(cap, vec_cap);
 
-        let data = ptr as *mut u64;
+        let data = ptr.cast::<u64>();
         unsafe {
             assert_eq!(*data, test_data[0]);
             assert_eq!(*data.add(1), test_data[1]);
@@ -139,7 +139,7 @@ mod tests {
 
         unsafe {
             // reconstruct the struct and drop the memory to deallocate
-            let _ = Vec::from_raw_parts(ptr as *mut u64, len, cap);
+            let _ = Vec::from_raw_parts(ptr.cast::<u64>(), len, cap);
         }
     }
 
@@ -156,10 +156,10 @@ mod tests {
         };
 
         let CVec { ptr, len, cap } = cvec;
-        let data = ptr as *mut u64;
+        let data = ptr.cast::<u64>();
 
         unsafe {
-            let data: Vec<u64> = Vec::from_raw_parts(ptr as *mut u64, len, cap);
+            let data: Vec<u64> = Vec::from_raw_parts(ptr.cast::<u64>(), len, cap);
             drop(data);
         }
 
@@ -175,6 +175,6 @@ mod tests {
     fn empty_vec_should_give_null_ptr() {
         let data: Vec<u64> = vec![];
         let cvec: CVec = data.into();
-        assert_eq!(cvec.ptr as *mut u64, null() as *const u64 as *mut u64);
+        assert_eq!(cvec.ptr.cast::<u64>(), null::<u64>().cast_mut());
     }
 }

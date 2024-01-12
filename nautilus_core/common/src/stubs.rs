@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::time::{AtomicTime, ClockMode};
+use nautilus_core::time::get_atomic_clock_static;
 use nautilus_model::identifiers::stubs::*;
 use rstest::fixture;
 
@@ -23,6 +23,11 @@ use crate::factories::OrderFactory;
 pub fn order_factory() -> OrderFactory {
     let trader_id = trader_id();
     let strategy_id = strategy_id_ema_cross();
-    let clock = AtomicTime::new(ClockMode::STATIC, 0);
-    OrderFactory::new(trader_id, strategy_id, clock, None, None)
+    OrderFactory::new(
+        trader_id,
+        strategy_id,
+        None,
+        None,
+        get_atomic_clock_static(),
+    )
 }

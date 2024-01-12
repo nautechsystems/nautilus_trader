@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -128,7 +128,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
     def round_decimal_down(self, amount: Decimal, precision: int) -> Decimal:
         return amount.quantize(Decimal(f"1e-{precision}"), rounding=ROUND_DOWN)
 
-    def on_order(self, order: Order) -> None:  # noqa (too complex)
+    def on_order(self, order: Order) -> None:
         """
         Actions to be performed when running and receives an order.
 
@@ -204,33 +204,22 @@ class TWAPExecAlgorithm(ExecAlgorithm):
         qty_per_interval = instrument.make_qty(qty_quotient)
         qty_remainder = order.quantity.as_decimal() - (floored_quotient * num_intervals)
 
-        if qty_per_interval < instrument.size_increment:
-            self.log.error(
-                f"Cannot execute order: "
-                f"{qty_per_interval=} less than {instrument.id} {instrument.size_increment}.",
-            )
-            return
-
-        if instrument.min_quantity and qty_per_interval < instrument.min_quantity:
-            self.log.error(
-                f"Cannot execute order: "
-                f"{qty_per_interval=} less than {instrument.id} {instrument.min_quantity=}.",
-            )
-            return
+        if (
+            qty_per_interval == order.quantity
+            or qty_per_interval < instrument.size_increment
+            or (instrument.min_quantity and qty_per_interval < instrument.min_quantity)
+        ):
+            # Immediately submit first order for entire size
+            self.log.warning(f"Submitting for entire size {qty_per_interval=}, {order.quantity=}.")
+            self.submit_order(order)
+            return  # Done
 
         scheduled_sizes: list[Quantity] = [qty_per_interval] * num_intervals
-
         if qty_remainder:
             scheduled_sizes.append(instrument.make_qty(qty_remainder))
 
         assert sum(scheduled_sizes) == order.quantity
         self.log.info(f"Order execution size schedule: {scheduled_sizes}.", LogColor.BLUE)
-
-        # Immediately submit first order
-        if qty_per_interval == order.quantity:
-            self.log.warning(f"Submitting for entire size {qty_per_interval=}, {order.quantity=}.")
-            self.submit_order(order)
-            return  # Done
 
         self._scheduled_sizes[order.client_order_id] = scheduled_sizes
         first_qty: Quantity = scheduled_sizes.pop(0)

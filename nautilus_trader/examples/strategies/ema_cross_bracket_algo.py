@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -307,7 +307,7 @@ class EMACrossBracketAlgo(Strategy):
 
     def on_data(self, data: Data) -> None:
         """
-        Actions to be performed when the strategy is running and receives generic data.
+        Actions to be performed when the strategy is running and receives data.
 
         Parameters
         ----------

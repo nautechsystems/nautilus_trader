@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,7 +30,6 @@ just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
 from typing import Callable
-from typing import Optional
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import DataEngineConfig
@@ -79,6 +78,7 @@ from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
+from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.data cimport VenueStatus
@@ -116,7 +116,7 @@ cdef class DataEngine(Component):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        config: Optional[DataEngineConfig] = None,
+        config: DataEngineConfig | None = None,
     ):
         if config is None:
             config = DataEngineConfig()
@@ -126,15 +126,15 @@ cdef class DataEngine(Component):
             logger=logger,
             component_id=ComponentId("DataEngine"),
             msgbus=msgbus,
-            config=config.dict(),
+            config=config,
         )
 
         self._cache = cache
 
         self._clients: dict[ClientId, DataClient] = {}
         self._routing_map: dict[Venue, DataClient] = {}
-        self._default_client: Optional[DataClient] = None
-        self._catalog: Optional[ParquetDataCatalog] = None
+        self._default_client: DataClient | None = None
+        self._catalog: ParquetDataCatalog | None = None
         self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[Bar], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
         self._synthetic_quote_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
@@ -174,13 +174,13 @@ cdef class DataEngine(Component):
         return sorted(list(self._clients.keys()))
 
     @property
-    def default_client(self) -> Optional[ClientId]:
+    def default_client(self) -> ClientId | None:
         """
         Return the default data client registered with the engine.
 
         Returns
         -------
-        Optional[ClientId]
+        ClientId or ``None``
 
         """
         return self._default_client.id if self._default_client is not None else None
@@ -339,9 +339,9 @@ cdef class DataEngine(Component):
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
-    cpdef list subscribed_generic_data(self):
+    cpdef list subscribed_custom_data(self):
         """
-        Return the generic data types subscribed to.
+        Return the custom data types subscribed to.
 
         Returns
         -------
@@ -351,7 +351,7 @@ cdef class DataEngine(Component):
         cdef list subscriptions = []
         cdef DataClient client
         for client in self._clients.values():
-            subscriptions += client.subscribed_generic_data()
+            subscriptions += client.subscribed_custom_data()
         return subscriptions
 
     cpdef list subscribed_instruments(self):
@@ -397,21 +397,6 @@ cdef class DataEngine(Component):
         cdef MarketDataClient client
         for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
             subscriptions += client.subscribed_order_book_snapshots()
-        return subscriptions
-
-    cpdef list subscribed_tickers(self):
-        """
-        Return the ticker instruments subscribed to.
-
-        Returns
-        -------
-        list[InstrumentId]
-
-        """
-        cdef list subscriptions = []
-        cdef MarketDataClient client
-        for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
-            subscriptions += client.subscribed_tickers()
         return subscriptions
 
     cpdef list subscribed_quote_ticks(self):
@@ -669,11 +654,6 @@ cdef class DataEngine(Component):
                 command.data_type.metadata.get("instrument_id"),
                 command.data_type.metadata,
             )
-        elif command.data_type.type == Ticker:
-            self._handle_subscribe_ticker(
-                client,
-                command.data_type.metadata.get("instrument_id"),
-            )
         elif command.data_type.type == QuoteTick:
             self._handle_subscribe_quote_ticks(
                 client,
@@ -725,11 +705,6 @@ cdef class DataEngine(Component):
                 client,
                 command.data_type.metadata.get("instrument_id"),
                 command.data_type.metadata,
-            )
-        elif command.data_type.type == Ticker:
-            self._handle_unsubscribe_ticker(
-                client,
-                command.data_type.metadata.get("instrument_id"),
             )
         elif command.data_type.type == QuoteTick:
             self._handle_unsubscribe_quote_ticks(
@@ -895,20 +870,17 @@ cdef class DataEngine(Component):
                 priority=10,
             )
 
-    cpdef void _handle_subscribe_ticker(
-        self,
-        MarketDataClient client,
-        InstrumentId instrument_id,
-    ):
-        Condition.not_none(client, "client")
-        Condition.not_none(instrument_id, "instrument_id")
+        topic = f"data.book.depth.{instrument_id.venue}.{instrument_id.symbol}"
 
-        if instrument_id.is_synthetic():
-            self._log.error("Cannot subscribe for synthetic instrument `Ticker` data.")
-            return
-
-        if instrument_id not in client.subscribed_tickers():
-            client.subscribe_ticker(instrument_id)
+        if not only_deltas and not self._msgbus.is_subscribed(
+            topic=topic,
+            handler=self._update_order_book,
+        ):
+            self._msgbus.subscribe(
+                topic=topic,
+                handler=self._update_order_book,
+                priority=10,
+            )
 
     cpdef void _handle_subscribe_quote_ticks(
         self,
@@ -1023,7 +995,7 @@ cdef class DataEngine(Component):
         Condition.not_none(data_type, "data_type")
 
         try:
-            if data_type not in client.subscribed_generic_data():
+            if data_type not in client.subscribed_custom_data():
                 client.subscribe(data_type)
         except NotImplementedError:
             self._log.error(
@@ -1140,25 +1112,6 @@ cdef class DataEngine(Component):
         ):
             client.unsubscribe_order_book_snapshots(instrument_id)
 
-    cpdef void _handle_unsubscribe_ticker(
-        self,
-        MarketDataClient client,
-        InstrumentId instrument_id,
-    ):
-        Condition.not_none(client, "client")
-        Condition.not_none(instrument_id, "instrument_id")
-
-        if instrument_id.is_synthetic():
-            self._log.error("Cannot unsubscribe from synthetic instrument `Ticker` data.")
-            return
-
-        if not self._msgbus.has_subscribers(
-            f"data.tickers"
-            f".{instrument_id.venue}"
-            f".{instrument_id.symbol}",
-        ):
-            client.unsubscribe_ticker(instrument_id)
-
     cpdef void _handle_unsubscribe_quote_ticks(
         self,
         MarketDataClient client,
@@ -1237,7 +1190,7 @@ cdef class DataEngine(Component):
         # Query data catalog
         if self._catalog:
             # For now we'll just query the catalog if its present (as very likely this is a backtest)
-            self._query_data_catalog(request)
+            self._query_catalog(request)
             return
 
         # Query data client
@@ -1303,7 +1256,7 @@ cdef class DataEngine(Component):
             except NotImplementedError:
                 self._log.error(f"Cannot handle request: unrecognized data type {request.data_type}.")
 
-    cpdef void _query_data_catalog(self, DataRequest request):
+    cpdef void _query_catalog(self, DataRequest request):
         cdef datetime start = request.data_type.metadata.get("start")
         cdef datetime end = request.data_type.metadata.get("end")
 
@@ -1357,7 +1310,7 @@ cdef class DataEngine(Component):
                 end=ts_end,
             )
         else:
-            data = self._catalog.generic_data(
+            data = self._catalog.custom_data(
                 cls=request.data_type.type,
                 metadata=request.data_type.metadata,
                 start=ts_start,
@@ -1391,8 +1344,8 @@ cdef class DataEngine(Component):
             self._handle_order_book_delta(data)
         elif isinstance(data, OrderBookDeltas):
             self._handle_order_book_deltas(data)
-        elif isinstance(data, Ticker):
-            self._handle_ticker(data)
+        elif isinstance(data, OrderBookDepth10):
+            self._handle_order_book_depth(data)
         elif isinstance(data, QuoteTick):
             self._handle_quote_tick(data)
         elif isinstance(data, TradeTick):
@@ -1407,8 +1360,8 @@ cdef class DataEngine(Component):
             self._handle_instrument_status(data)
         elif isinstance(data, InstrumentClose):
             self._handle_close_price(data)
-        elif isinstance(data, GenericData):
-            self._handle_generic_data(data)
+        elif isinstance(data, CustomData):
+            self._handle_custom_data(data)
         else:
             self._log.error(f"Cannot handle data: unrecognized type {type(data)} {data}.")
 
@@ -1441,13 +1394,12 @@ cdef class DataEngine(Component):
             msg=deltas,
         )
 
-    cpdef void _handle_ticker(self, Ticker ticker):
-        self._cache.add_ticker(ticker)
+    cpdef void _handle_order_book_depth(self, OrderBookDepth10 depth):
         self._msgbus.publish_c(
-            topic=f"data.tickers"
-                  f".{ticker.instrument_id.venue}"
-                  f".{ticker.instrument_id.symbol}",
-            msg=ticker,
+            topic=f"data.book.depth"
+                  f".{depth.instrument_id.venue}"
+                  f".{depth.instrument_id.symbol}",
+            msg=depth,
         )
 
     cpdef void _handle_quote_tick(self, QuoteTick tick):
@@ -1528,7 +1480,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_close_price(self, InstrumentClose data):
         self._msgbus.publish_c(topic=f"data.venue.close_price.{data.instrument_id}", msg=data)
 
-    cpdef void _handle_generic_data(self, GenericData data):
+    cpdef void _handle_custom_data(self, CustomData data):
         self._msgbus.publish_c(topic=f"data.{data.data_type.topic}", msg=data.data)
 
 # -- RESPONSE HANDLERS ----------------------------------------------------------------------------

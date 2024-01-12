@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import gzip
-import pathlib
 import pickle
 from decimal import Decimal
 
@@ -38,10 +37,10 @@ from nautilus_trader.model.instruments import OptionsContract
 from tests import TESTS_PACKAGE_ROOT
 
 
-TEST_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/integration_tests/adapters/interactive_brokers/")
-RESPONSES_PATH = pathlib.Path(TEST_PATH / "responses")
-STREAMING_PATH = pathlib.Path(TEST_PATH / "streaming")
-CONTRACT_PATH = pathlib.Path(RESPONSES_PATH / "contracts")
+TEST_PATH = TESTS_PACKAGE_ROOT / "integration_tests" / "adapters" / "interactive_brokers/"
+RESPONSES_PATH = TEST_PATH / "responses"
+STREAMING_PATH = TEST_PATH / "streaming"
+CONTRACT_PATH = RESPONSES_PATH / "contracts"
 
 
 class IBTestProviderStubs:
@@ -398,7 +397,7 @@ class IBTestExecStubs:
     # def trade_pre_submit(
     #     contract=None,
     #     order: IBOrder = None,
-    #     client_order_id: Optional[ClientOrderId] = None,
+    #     client_order_id: ClientOrderId | None = None,
     # ) -> Trade:
     #     contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
     #     order = order or IBTestExecStubs.create_order(client_order_id=client_order_id)
@@ -457,7 +456,7 @@ class IBTestExecStubs:
     # def trade_submitted(
     #     contract=None,
     #     order: IBOrder = None,
-    #     client_order_id: Optional[ClientOrderId] = None,
+    #     client_order_id: ClientOrderId | None = None,
     # ) -> Trade:
     #     contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
     #     order = order or IBTestExecStubs.create_order(client_order_id=client_order_id)

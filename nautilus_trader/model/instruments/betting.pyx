@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 import pandas as pd
 
@@ -25,7 +24,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AssetClass
-from nautilus_trader.core.rust.model cimport AssetType
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -102,8 +101,8 @@ cdef class BettingInstrument(Instrument):
         super().__init__(
             instrument_id=InstrumentId(symbol=symbol, venue=Venue(venue_name)),
             raw_symbol=symbol,
-            asset_class=AssetClass.SPORTS_BETTING,
-            asset_type=AssetType.SPOT,
+            asset_class=AssetClass.ALTERNATIVE,
+            instrument_class=InstrumentClass.SPORTS_BETTING,
             quote_currency=Currency.from_str_c(currency),
             is_inverse=False,
             size_precision=4,

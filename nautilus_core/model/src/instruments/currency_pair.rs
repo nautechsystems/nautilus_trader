@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,24 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![allow(dead_code)] // Allow for development
-
 use std::hash::{Hash, Hasher};
 
 use anyhow::Result;
+use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use super::Instrument;
 use crate::{
-    enums::{AssetClass, AssetType},
+    enums::{AssetClass, InstrumentClass},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
 
 #[repr(C)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -44,15 +42,13 @@ pub struct CurrencyPair {
     pub size_precision: u8,
     pub price_increment: Price,
     pub size_increment: Quantity,
-    pub margin_init: Decimal,
-    pub margin_maint: Decimal,
-    pub maker_fee: Decimal,
-    pub taker_fee: Decimal,
     pub lot_size: Option<Quantity>,
     pub max_quantity: Option<Quantity>,
     pub min_quantity: Option<Quantity>,
     pub max_price: Option<Price>,
     pub min_price: Option<Price>,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }
 
 impl CurrencyPair {
@@ -66,15 +62,13 @@ impl CurrencyPair {
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
-        margin_init: Decimal,
-        margin_maint: Decimal,
-        maker_fee: Decimal,
-        taker_fee: Decimal,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
         min_price: Option<Price>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
     ) -> Result<Self> {
         Ok(Self {
             id,
@@ -85,15 +79,13 @@ impl CurrencyPair {
             size_precision,
             price_increment,
             size_increment,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
             lot_size,
             max_quantity,
             min_quantity,
             max_price,
             min_price,
+            ts_event,
+            ts_init,
         })
     }
 }
@@ -125,8 +117,8 @@ impl Instrument for CurrencyPair {
         AssetClass::FX
     }
 
-    fn asset_type(&self) -> AssetType {
-        AssetType::Spot
+    fn instrument_class(&self) -> InstrumentClass {
+        InstrumentClass::Spot
     }
 
     fn quote_currency(&self) -> &Currency {
@@ -186,20 +178,12 @@ impl Instrument for CurrencyPair {
         self.min_price
     }
 
-    fn margin_init(&self) -> Decimal {
-        self.margin_init
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
     }
 
-    fn margin_maint(&self) -> Decimal {
-        self.margin_maint
-    }
-
-    fn maker_fee(&self) -> Decimal {
-        self.maker_fee
-    }
-
-    fn taker_fee(&self) -> Decimal {
-        self.taker_fee
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }
 

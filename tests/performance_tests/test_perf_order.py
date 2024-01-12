@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
-
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -24,14 +22,10 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.test_kit.performance import PerformanceHarness
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-AUDUSD_SIM = TestIdStubs.audusd_id()
-
-
-class TestOrderPerformance(PerformanceHarness):
+class TestOrderPerformance:
     def setup(self):
         # Fixture Setup
         self.generator = ClientOrderIdGenerator(
@@ -46,23 +40,19 @@ class TestOrderPerformance(PerformanceHarness):
             clock=TestClock(),
         )
 
-    @pytest.fixture(autouse=True)
-    def setup_benchmark(self, benchmark):
-        self.benchmark = benchmark
-
-    def test_order_id_generator(self):
-        self.benchmark.pedantic(
+    def test_order_id_generator(self, benchmark):
+        benchmark.pedantic(
             target=self.generator.generate,
             iterations=100_000,
             rounds=1,
         )
         # ~0.0ms / ~2.9μs / 2894ns minimum of 100,000 runs @ 1 iteration each run.
 
-    def test_market_order_creation(self):
-        self.benchmark.pedantic(
+    def test_market_order_creation(self, benchmark):
+        benchmark.pedantic(
             target=self.order_factory.market,
             args=(
-                AUDUSD_SIM,
+                TestIdStubs.audusd_id(),
                 OrderSide.BUY,
                 Quantity.from_int(100_000),
             ),
@@ -71,11 +61,11 @@ class TestOrderPerformance(PerformanceHarness):
         )
         # ~0.0ms / ~10.7μs / 10682ns minimum of 10,000 runs @ 1 iteration each run.
 
-    def test_limit_order_creation(self):
-        self.benchmark.pedantic(
+    def test_limit_order_creation(self, benchmark):
+        benchmark.pedantic(
             target=self.order_factory.limit,
             args=(
-                AUDUSD_SIM,
+                TestIdStubs.audusd_id(),
                 OrderSide.BUY,
                 Quantity.from_int(100_000),
                 Price.from_str("0.80010"),

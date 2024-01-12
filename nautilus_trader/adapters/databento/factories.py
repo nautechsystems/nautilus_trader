@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,11 +20,14 @@ import databento
 
 from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento.data import DatabentoDataClient
+from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
+from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
 from nautilus_trader.adapters.env import get_env_key
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.config.common import InstrumentProviderConfig
 from nautilus_trader.live.factories import LiveDataClientFactory
 
 
@@ -63,6 +66,55 @@ def get_cached_databento_http_client(
         client = databento.Historical(key=key, gateway=gateway or databento.HistoricalGateway.BO1)
         DATABENTO_HTTP_CLIENTS[client_key] = client
     return DATABENTO_HTTP_CLIENTS[client_key]
+
+
+@lru_cache(1)
+def get_cached_databento_instrument_provider(
+    http_client: databento.Historical,
+    logger: Logger,
+    clock: LiveClock,
+    live_api_key: str | None = None,
+    live_gateway: str | None = None,
+    loader: DatabentoDataLoader | None = None,
+    config: InstrumentProviderConfig | None = None,
+) -> DatabentoInstrumentProvider:
+    """
+    Cache and return a Databento instrument provider.
+
+    If a cached provider already exists, then that provider will be returned.
+
+    Parameters
+    ----------
+    http_client : databento.Historical
+        The client for the instrument provider.
+    logger : Logger
+        The logger for the instrument provider.
+    clock : LiveClock
+        The clock for the instrument provider.
+    live_api_key : str, optional
+        The specific API secret key for Databento live clients.
+        If not provided then will use the historical HTTP client API key.
+    live_gateway : str, optional
+        The live gateway override for Databento live clients.
+    loader : DatabentoDataLoader, optional
+        The loader for the provider.
+    config : InstrumentProviderConfig
+        The configuration for the instrument provider.
+
+    Returns
+    -------
+    DatabentoInstrumentProvider
+
+    """
+    return DatabentoInstrumentProvider(
+        http_client=http_client,
+        logger=logger,
+        clock=clock,
+        live_api_key=live_api_key,
+        live_gateway=live_gateway,
+        loader=loader,
+        config=config,
+    )
 
 
 class DatabentoLiveDataClientFactory(LiveDataClientFactory):
@@ -111,6 +163,17 @@ class DatabentoLiveDataClientFactory(LiveDataClientFactory):
             gateway=config.http_gateway,
         )
 
+        loader = DatabentoDataLoader()
+        provider = get_cached_databento_instrument_provider(
+            http_client=http_client,
+            logger=logger,
+            clock=clock,
+            live_api_key=config.api_key,
+            live_gateway=config.live_gateway,
+            loader=loader,
+            config=config.instrument_provider,
+        )
+
         return DatabentoDataClient(
             loop=loop,
             http_client=http_client,
@@ -118,5 +181,7 @@ class DatabentoLiveDataClientFactory(LiveDataClientFactory):
             cache=cache,
             clock=clock,
             logger=logger,
+            instrument_provider=provider,
+            loader=loader,
             config=config,
         )

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,13 +22,13 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDelta
-from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BookAction
+from nautilus_trader.model.enums import InstrumentClass
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
@@ -39,13 +39,14 @@ from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TEST_DATA_DIR
 
 
 DATABENTO_TEST_DATA_DIR = TEST_DATA_DIR / "databento"
 
 
-@pytest.mark.skip(reason="Used for initial development")
+@pytest.mark.skip(reason="development_only")
 def test_loader_definition_glbx_all_symbols() -> None:
     # Arrange
     loader = DatabentoDataLoader()
@@ -56,6 +57,21 @@ def test_loader_definition_glbx_all_symbols() -> None:
 
     # Assert
     assert len(data) == 10_000_000
+
+
+@pytest.mark.skip(reason="development_only")
+def test_loader_spy_xnas_itch_mbo() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "spy-xnas-itch-20231127.mbo.dbn.zst"
+
+    instrument = TestInstrumentProvider.equity(symbol="SPY", venue="XNAS")
+
+    # Act
+    data = loader.from_dbn(path, instrument_id=instrument.id)
+
+    # Assert
+    assert len(data) == 6_272_549
 
 
 def test_get_publishers() -> None:
@@ -111,7 +127,7 @@ def test_loader_definition_glbx_futures() -> None:
     assert instrument.id == InstrumentId.from_str("ESM3.GLBX")
     assert instrument.raw_symbol == Symbol("ESM3")
     assert instrument.asset_class == AssetClass.INDEX
-    assert instrument.asset_type == AssetType.FUTURE
+    assert instrument.instrument_class == InstrumentClass.FUTURE
     assert instrument.quote_currency == USD
     assert not instrument.is_inverse
     assert instrument.underlying == "ES"
@@ -141,7 +157,7 @@ def test_loader_definition_glbx_futures_spread() -> None:
     assert instrument.id == InstrumentId.from_str("ESH5-ESM5.GLBX")
     assert instrument.raw_symbol == Symbol("ESH5-ESM5")
     assert instrument.asset_class == AssetClass.INDEX
-    assert instrument.asset_type == AssetType.FUTURE
+    assert instrument.instrument_class == InstrumentClass.FUTURE
     assert instrument.quote_currency == USD
     assert not instrument.is_inverse
     assert instrument.underlying == "ES"
@@ -171,7 +187,7 @@ def test_loader_definition_glbx_options() -> None:
     assert instrument.id == InstrumentId.from_str("ESM4 C4250.GLBX")
     assert instrument.raw_symbol == Symbol("ESM4 C4250")
     assert instrument.asset_class == AssetClass.EQUITY
-    assert instrument.asset_type == AssetType.OPTION
+    assert instrument.instrument_class == InstrumentClass.OPTION
     assert instrument.quote_currency == USD
     assert not instrument.is_inverse
     assert instrument.underlying == "ESM4"
@@ -203,7 +219,7 @@ def test_loader_definition_opra_pillar() -> None:
     assert instrument.id == InstrumentId.from_str("SPY   240119P00340000.OPRA")  # OSS symbol
     assert instrument.raw_symbol == Symbol("SPY   240119P00340000")
     assert instrument.asset_class == AssetClass.EQUITY
-    assert instrument.asset_type == AssetType.OPTION
+    assert instrument.instrument_class == InstrumentClass.OPTION
     assert instrument.quote_currency == USD
     assert not instrument.is_inverse
     assert instrument.underlying == "SPY"
@@ -235,7 +251,7 @@ def test_loader_with_xnasitch_definition() -> None:
     assert instrument.id == InstrumentId.from_str("MSFT.XNAS")
     assert instrument.raw_symbol == Symbol("MSFT")
     assert instrument.asset_class == AssetClass.EQUITY
-    assert instrument.asset_type == AssetType.SPOT
+    assert instrument.instrument_class == InstrumentClass.SPOT
     assert instrument.quote_currency == USD
     assert not instrument.is_inverse
     assert instrument.price_precision == 2
@@ -263,7 +279,7 @@ def test_loader_with_xnasitch_mbo() -> None:
     delta = data[0]
     assert delta.instrument_id == InstrumentId.from_str("ESH1.GLBX")
     assert delta.action == BookAction.DELETE
-    assert delta.order.side == OrderSide.BUY
+    assert delta.order.side == OrderSide.SELL
     assert delta.order.price == Price.from_str("3722.75")
     assert delta.order.size == Quantity.from_int(1)
     assert delta.order.order_id == 647784973705
@@ -305,11 +321,28 @@ def test_loader_with_mbp_10() -> None:
 
     # Assert
     assert len(data) == 2
-    assert isinstance(data[0], OrderBookDeltas)
-    assert isinstance(data[1], OrderBookDeltas)
-    deltas = data[0]
-    assert deltas.instrument_id == InstrumentId.from_str("ESH1.GLBX")
-    assert len(deltas.deltas) == 21
+    assert isinstance(data[0], OrderBookDepth10)
+    assert isinstance(data[1], OrderBookDepth10)
+    depth = data[0]
+    assert depth.instrument_id == InstrumentId.from_str("ESH1.GLBX")
+    assert len(depth.bids) == 10
+    assert len(depth.asks) == 10
+    assert depth.bids[0].price == Price.from_str("3720.25")
+    assert depth.bids[0].size == Quantity.from_int(24)
+    assert depth.asks[0].price == Price.from_str("3720.50")
+    assert depth.asks[0].size == Quantity.from_int(10)
+    assert depth.bid_counts == [15, 18, 23, 26, 35, 28, 35, 39, 32, 39]
+    assert depth.ask_counts == [8, 24, 25, 17, 19, 33, 40, 38, 35, 26]
+    depth = data[1]
+    assert depth.instrument_id == InstrumentId.from_str("ESH1.GLBX")
+    assert len(depth.bids) == 10
+    assert len(depth.asks) == 10
+    assert depth.bids[0].price == Price.from_str("3720.25")
+    assert depth.bids[0].size == Quantity.from_int(24)
+    assert depth.asks[0].price == Price.from_str("3720.50")
+    assert depth.asks[0].size == Quantity.from_int(10)
+    assert depth.bid_counts == [15, 17, 23, 26, 35, 28, 35, 39, 32, 39]
+    assert depth.ask_counts == [8, 24, 25, 17, 19, 33, 40, 38, 35, 26]
 
 
 def test_loader_with_tbbo() -> None:
@@ -338,7 +371,7 @@ def test_loader_with_tbbo() -> None:
     assert trade.instrument_id == InstrumentId.from_str("ESH1.GLBX")
     assert trade.price == Price.from_str("3720.25")
     assert trade.size == Quantity.from_int(5)
-    assert trade.aggressor_side == AggressorSide.BUYER
+    assert trade.aggressor_side == AggressorSide.SELLER
     assert trade.trade_id == TradeId("1170380")
     assert trade.ts_event == 1609160400099150057
     assert trade.ts_init == 1609160400099150057
@@ -360,7 +393,7 @@ def test_loader_with_trades() -> None:
     assert trade.instrument_id == InstrumentId.from_str("ESH1.GLBX")
     assert trade.price == Price.from_str("3720.25")
     assert trade.size == Quantity.from_int(5)
-    assert trade.aggressor_side == AggressorSide.BUYER
+    assert trade.aggressor_side == AggressorSide.SELLER
     assert trade.trade_id == TradeId("1170380")
     assert trade.ts_event == 1609160400099150057
     assert trade.ts_init == 1609160400099150057

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,7 +30,6 @@ from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport QuoteTick
-from nautilus_trader.model.data cimport Ticker
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
@@ -58,7 +57,6 @@ cdef class Cache(CacheFacade):
 
     cdef dict _general
     cdef dict _xrate_symbols
-    cdef dict _tickers
     cdef dict _quote_ticks
     cdef dict _trade_ticks
     cdef dict _order_books
@@ -101,6 +99,7 @@ cdef class Cache(CacheFacade):
     cdef set _index_actors
     cdef set _index_strategies
     cdef set _index_exec_algorithms
+    cdef bint _drop_instruments_on_reset
 
     cdef readonly int tick_capacity
     """The caches tick capacity.\n\n:returns: `int`"""
@@ -147,7 +146,6 @@ cdef class Cache(CacheFacade):
     cpdef void load_strategy(self, Strategy strategy)
 
     cpdef void add_order_book(self, OrderBook order_book)
-    cpdef void add_ticker(self, Ticker ticker)
     cpdef void add_quote_tick(self, QuoteTick tick)
     cpdef void add_trade_tick(self, TradeTick tick)
     cpdef void add_bar(self, Bar bar)

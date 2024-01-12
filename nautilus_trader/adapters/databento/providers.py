@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -46,6 +46,8 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         If not provided then will use the historical HTTP client API key.
     live_gateway : str, optional
         The live gateway override for Databento live clients.
+    loader : DatabentoDataLoader, optional
+        The loader for the provider.
     config : InstrumentProviderConfig, optional
         The configuration for the provider.
 
@@ -58,6 +60,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         clock: LiveClock,
         live_api_key: str | None = None,
         live_gateway: str | None = None,
+        loader: DatabentoDataLoader | None = None,
         config: InstrumentProviderConfig | None = None,
     ):
         super().__init__(
@@ -72,7 +75,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         self._http_client = http_client
         self._live_clients: dict[str, databento.Live] = {}
-        self._loader = DatabentoDataLoader()
+        self._loader = loader or DatabentoDataLoader()
 
     async def load_all_async(self, filters: dict | None = None) -> None:
         raise RuntimeError(
@@ -90,7 +93,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         Load the latest instrument definitions for the given instrument IDs into the
         provider by requesting the latest instrument definition messages from Databento.
 
-        You can only request instrument definitions from one dataset at a time.
+        You must only request instrument definitions from one dataset at a time.
         The Databento dataset will be determined from either the filters, or the venues for the
         instrument IDs.
 
@@ -116,29 +119,35 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         instrument_ids_to_decode = set(instrument_ids)
 
         dataset = self._check_all_datasets_equal(instrument_ids)
-        live_client = self._get_live_client(dataset)
+        live_client = databento.Live(key=self._live_api_key, gateway=self._live_gateway)
 
-        live_client.subscribe(
-            dataset=dataset,
-            schema=databento.Schema.DEFINITION,
-            symbols=[i.symbol.value for i in instrument_ids],
-            stype_in=databento.SType.RAW_SYMBOL,
-            start=0,  # From start of current session (latest definition)
-        )
-        for record in live_client:
-            if isinstance(record, databento.InstrumentDefMsg):
-                instrument = parse_record_with_metadata(
-                    record,
-                    publishers=self._loader.publishers,
-                    ts_init=self._clock.timestamp_ns(),
-                )
-                self.add(instrument=instrument)
-                self._log.debug(f"Added instrument {instrument.id}.")
+        try:
+            live_client.subscribe(
+                dataset=dataset,
+                schema=databento.Schema.DEFINITION,
+                symbols=[i.symbol.value for i in instrument_ids],
+                stype_in=databento.SType.RAW_SYMBOL,
+                start=0,  # From start of current session (latest definition)
+            )
+            for record in live_client:
+                if isinstance(record, databento.SystemMsg) and record.is_heartbeat:
+                    break
 
-                instrument_ids_to_decode.discard(instrument.id)
-                if not instrument_ids_to_decode:
-                    # Close the connection (we will still process all received data)
-                    live_client.stop()
+                if isinstance(record, databento.InstrumentDefMsg):
+                    instrument = parse_record_with_metadata(
+                        record,
+                        publishers=self._loader.publishers,
+                        ts_init=self._clock.timestamp_ns(),
+                    )
+                    self.add(instrument=instrument)
+                    self._log.debug(f"Added instrument {instrument.id}.")
+
+                    instrument_ids_to_decode.discard(instrument.id)
+                    if not instrument_ids_to_decode:
+                        break  # All requested instrument IDs now decoded
+        finally:
+            # Close the connection (we will still process all received data)
+            live_client.stop()
 
     async def load_async(
         self,
@@ -233,12 +242,3 @@ class DatabentoInstrumentProvider(InstrumentProvider):
                 )
 
         return first_dataset
-
-    def _get_live_client(self, dataset: str) -> databento.Live:
-        client = self._live_clients.get(dataset)
-
-        if client is None:
-            client = databento.Live(key=self._live_api_key, gateway=self._live_gateway)
-            self._live_clients[dataset] = client
-
-        return client

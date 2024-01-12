@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,8 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from typing import Optional
 
 from libc.stdint cimport uint64_t
 
@@ -109,7 +107,7 @@ cdef class PositionEvent(Event):
         PositionId position_id not None,
         AccountId account_id not None,
         ClientOrderId opening_order_id not None,
-        ClientOrderId closing_order_id: Optional[ClientOrderId],
+        ClientOrderId closing_order_id: ClientOrderId | None,
         OrderSide entry,
         PositionSide side,
         double signed_qty,
@@ -533,11 +531,11 @@ cdef class PositionChanged(PositionEvent):
         The last fill price for the position (not average price).
     currency : Currency
         The position quote currency.
-    avg_px_open : Decimal
+    avg_px_open : double
         The average open price.
-    avg_px_close : Decimal, optional
+    avg_px_close : double
         The average close price.
-    realized_return : Decimal
+    realized_return : double
         The realized return for the position.
     realized_pnl : Money
         The realized PnL for the position.
@@ -570,7 +568,7 @@ cdef class PositionChanged(PositionEvent):
         Price last_px not None,
         Currency currency not None,
         double avg_px_open,
-        double avg_px_close,  # TODO(cs): Is this needed?
+        double avg_px_close,
         double realized_return,
         Money realized_pnl not None,
         Money unrealized_pnl not None,

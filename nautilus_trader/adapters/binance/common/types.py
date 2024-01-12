@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,9 +18,9 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
+from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
-from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -195,7 +195,7 @@ class BinanceBar(Bar):
         }
 
 
-class BinanceTicker(Ticker):
+class BinanceTicker(Data):
     """
     Represents a `Binance` 24hr statistics ticker.
 
@@ -283,12 +283,7 @@ class BinanceTicker(Ticker):
         ask_price: Decimal | None = None,
         ask_qty: Decimal | None = None,
     ) -> None:
-        super().__init__(
-            instrument_id=instrument_id,
-            ts_event=ts_event,
-            ts_init=ts_init,
-        )
-
+        self.instrument_id = instrument_id
         self.price_change = price_change
         self.price_change_percent = price_change_percent
         self.weighted_avg_price = weighted_avg_price
@@ -309,6 +304,16 @@ class BinanceTicker(Ticker):
         self.first_id = first_id
         self.last_id = last_id
         self.count = count
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, BinanceTicker):
+            return False
+        return self.instrument_id == other.instrument_id
+
+    def __hash__(self) -> int:
+        return hash(self.instrument_id)
 
     def __repr__(self) -> str:
         return (
@@ -337,6 +342,30 @@ class BinanceTicker(Ticker):
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
+
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
 
     @staticmethod
     def from_dict(values: dict[str, Any]) -> BinanceTicker:

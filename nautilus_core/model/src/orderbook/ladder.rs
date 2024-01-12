@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,7 +28,7 @@ use crate::{
 };
 
 /// Represents a price level with a specified side in an order books ladder.
-#[derive(Copy, Clone, Debug, Eq)]
+#[derive(Clone, Copy, Debug, Eq)]
 pub struct BookPrice {
     pub value: Price,
     pub side: OrderSide,
@@ -108,23 +108,27 @@ impl Ladder {
     }
 
     pub fn add(&mut self, order: BookOrder) {
+        let order_id = order.order_id;
         let book_price = order.to_book_price();
+
+        self.cache.insert(order_id, book_price);
+
         match self.levels.get_mut(&book_price) {
             Some(level) => {
                 level.add(order);
             }
             None => {
-                let order_id = order.order_id;
                 let level = Level::from_order(order);
-                self.cache.insert(order_id, book_price);
                 self.levels.insert(book_price, level);
             }
         }
     }
 
     pub fn update(&mut self, order: BookOrder) {
-        if let Some(price) = self.cache.get(&order.order_id) {
-            if let Some(level) = self.levels.get_mut(price) {
+        let price_opt = self.cache.get(&order.order_id).copied();
+
+        if let Some(price) = price_opt {
+            if let Some(level) = self.levels.get_mut(&price) {
                 if order.price == level.price.value {
                     // Update at current price level
                     level.update(order);
@@ -132,9 +136,10 @@ impl Ladder {
                 }
 
                 // Price update: delete and insert at new level
+                self.cache.remove(&order.order_id);
                 level.delete(&order);
                 if level.is_empty() {
-                    self.levels.remove(price);
+                    self.levels.remove(&price);
                 }
             }
         }
@@ -142,14 +147,14 @@ impl Ladder {
         self.add(order);
     }
 
-    pub fn delete(&mut self, order: BookOrder) {
-        self.remove(order.order_id);
+    pub fn delete(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
+        self.remove(order.order_id, ts_event, sequence);
     }
 
-    pub fn remove(&mut self, order_id: OrderId) {
+    pub fn remove(&mut self, order_id: OrderId, ts_event: u64, sequence: u64) {
         if let Some(price) = self.cache.remove(&order_id) {
             if let Some(level) = self.levels.get_mut(&price) {
-                level.remove_by_id(order_id);
+                level.remove_by_id(order_id, ts_event, sequence);
                 if level.is_empty() {
                     self.levels.remove(&price);
                 }
@@ -402,7 +407,7 @@ mod tests {
         let mut ladder = Ladder::new(OrderSide::Buy);
         let order = BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(20), 1);
 
-        ladder.delete(order);
+        ladder.delete(order, 0, 0);
 
         assert_eq!(ladder.len(), 0);
     }
@@ -416,7 +421,7 @@ mod tests {
 
         let order = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(10), 1);
 
-        ladder.delete(order);
+        ladder.delete(order, 0, 0);
         assert_eq!(ladder.len(), 0);
         assert_eq!(ladder.sizes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);
@@ -432,7 +437,7 @@ mod tests {
 
         let order = BookOrder::new(OrderSide::Sell, Price::from("10.00"), Quantity::from(10), 1);
 
-        ladder.delete(order);
+        ladder.delete(order, 0, 0);
         assert_eq!(ladder.len(), 0);
         assert_eq!(ladder.sizes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);

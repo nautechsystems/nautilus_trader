@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -91,7 +91,7 @@ class TestInstrument:
             "id": "BTCUSDT.BINANCE",
             "raw_symbol": "BTCUSDT",
             "asset_class": "CRYPTOCURRENCY",
-            "asset_type": "SPOT",
+            "instrument_class": "SPOT",
             "quote_currency": "USDT",
             "is_inverse": False,
             "price_precision": 2,
@@ -122,7 +122,7 @@ class TestInstrument:
             "id": "BTCUSDT.BINANCE",
             "raw_symbol": "BTCUSDT",
             "asset_class": "CRYPTOCURRENCY",
-            "asset_type": "SPOT",
+            "instrument_class": "SPOT",
             "quote_currency": "USDT",
             "is_inverse": False,
             "price_precision": 2,
@@ -232,10 +232,7 @@ class TestInstrument:
             "currency": "USD",
             "price_precision": 2,
             "price_increment": "0.01",
-            "size_precision": 0,
-            "size_increment": "1",
-            "multiplier": "1",
-            "lot_size": "1",
+            "lot_size": "100",
             "isin": "US0378331005",
             "margin_init": "0",
             "margin_maint": "0",

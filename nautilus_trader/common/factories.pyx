@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -81,7 +81,7 @@ cdef class OrderFactory:
         TraderId trader_id not None,
         StrategyId strategy_id not None,
         Clock clock not None,
-        CacheFacade cache: Optional[CacheFacade]=None,
+        CacheFacade cache: CacheFacade | None = None,
         int initial_order_id_count=0,
         int initial_order_list_id_count=0,
     ):

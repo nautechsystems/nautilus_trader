@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,12 +20,6 @@ from time import sleep
 from typing import ClassVar, Literal
 
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersGatewayConfig
-
-
-try:
-    import docker
-except ImportError as e:
-    raise RuntimeError("Docker required for Gateway, install via `pip install docker`") from e
 
 
 class ContainerStatus(IntEnum):
@@ -81,9 +75,19 @@ class InteractiveBrokersGateway:
         self.read_only_api = read_only_api
         self.host = host
         self.port = port or self.PORTS[trading_mode]
+        self.log = logger or logging.getLogger("nautilus_trader")
+
+        try:
+            import docker
+
+            self._docker_module = docker
+        except ImportError as e:
+            raise RuntimeError(
+                "Docker required for Gateway, install via `pip install docker`",
+            ) from e
+
         self._docker = docker.from_env()
         self._container = None
-        self.log = logger or logging.getLogger("nautilus_trader")
         if start:
             self.start(timeout)
 
@@ -189,7 +193,7 @@ class InteractiveBrokersGateway:
     def safe_start(self, wait: int = 90):
         try:
             self.start(wait=wait)
-        except docker.errors.APIError as e:
+        except self._docker_module.errors.APIError as e:
             raise RuntimeError("Container already exists") from e
 
     def stop(self):

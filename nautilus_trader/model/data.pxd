@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,6 +32,7 @@ from nautilus_trader.core.rust.model cimport HaltReason
 from nautilus_trader.core.rust.model cimport InstrumentCloseType
 from nautilus_trader.core.rust.model cimport MarketStatus
 from nautilus_trader.core.rust.model cimport OrderBookDelta_t
+from nautilus_trader.core.rust.model cimport OrderBookDepth10_t
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.rust.model cimport QuoteTick_t
@@ -67,7 +68,7 @@ cdef class DataType:
     """The data types topic string.\n\n:returns: `str`"""
 
 
-cdef class GenericData(Data):
+cdef class CustomData(Data):
     cdef readonly DataType data_type
     """The data type.\n\n:returns: `DataType`"""
     cdef readonly Data data
@@ -247,6 +248,25 @@ cdef class OrderBookDeltas(Data):
     cdef dict to_dict_c(OrderBookDeltas obj)
 
 
+cdef class OrderBookDepth10(Data):
+    cdef OrderBookDepth10_t _mem
+
+    @staticmethod
+    cdef OrderBookDepth10 from_mem_c(OrderBookDepth10_t mem)
+
+    @staticmethod
+    cdef OrderBookDepth10 from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderBookDepth10 obj)
+
+    @staticmethod
+    cdef list capsule_to_list_c(capsule)
+
+    @staticmethod
+    cdef object list_to_capsule_c(list items)
+
+
 cdef class VenueStatus(Data):
     cdef readonly Venue venue
     """The venue.\n\n:returns: `Venue`"""
@@ -378,19 +398,3 @@ cdef class TradeTick(Data):
 
     @staticmethod
     cdef TradeTick from_mem_c(TradeTick_t mem)
-
-
-cdef class Ticker(Data):
-    cdef readonly InstrumentId instrument_id
-    """The ticker instrument ID.\n\n:returns: `InstrumentId`"""
-    cdef readonly uint64_t ts_event
-    """The UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
-    cdef readonly uint64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
-
-
-    @staticmethod
-    cdef Ticker from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(Ticker obj)

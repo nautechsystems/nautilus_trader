@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,8 +32,8 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
@@ -116,48 +116,6 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         self._decoder_futures_trade_msg = msgspec.json.Decoder(BinanceFuturesTradeMsg)
         self._decoder_futures_mark_price_msg = msgspec.json.Decoder(BinanceFuturesMarkPriceMsg)
 
-    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
-
-    async def _subscribe(self, data_type: DataType) -> None:
-        if data_type.type == BinanceFuturesMarkPriceUpdate:
-            if not self._binance_account_type.is_futures:
-                self._log.error(
-                    f"Cannot subscribe to `BinanceFuturesMarkPriceUpdate` "
-                    f"for {self._binance_account_type.value} account types.",
-                )
-                return
-            instrument_id: InstrumentId | None = data_type.metadata.get("instrument_id")
-            if instrument_id is None:
-                self._log.error(
-                    "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` "
-                    "no instrument ID in `data_type` metadata.",
-                )
-                return
-            await self._ws_client.subscribe_mark_price(instrument_id.symbol.value, speed=1000)
-        else:
-            self._log.error(
-                f"Cannot subscribe to {data_type.type} (not implemented).",
-            )
-
-    async def _unsubscribe(self, data_type: DataType) -> None:
-        if data_type.type == BinanceFuturesMarkPriceUpdate:
-            if not self._binance_account_type.is_futures:
-                self._log.error(
-                    "Cannot unsubscribe from `BinanceFuturesMarkPriceUpdate` "
-                    f"for {self._binance_account_type.value} account types.",
-                )
-                return
-            instrument_id: InstrumentId | None = data_type.metadata.get("instrument_id")
-            if instrument_id is None:
-                self._log.error(
-                    "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` no instrument ID in `data_type` metadata.",
-                )
-                return
-        else:
-            self._log.error(
-                f"Cannot unsubscribe from {data_type.type} (not implemented).",
-            )
-
     # -- WEBSOCKET HANDLERS ---------------------------------------------------------------------------------
 
     def _handle_book_partial_update(self, raw: bytes) -> None:
@@ -197,5 +155,5 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
             BinanceFuturesMarkPriceUpdate,
             metadata={"instrument_id": instrument_id},
         )
-        generic = GenericData(data_type=data_type, data=data)
+        generic = CustomData(data_type=data_type, data=data)
         self._handle_data(generic)

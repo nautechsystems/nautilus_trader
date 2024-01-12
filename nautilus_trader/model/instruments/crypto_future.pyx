@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 import pandas as pd
 import pytz
@@ -23,7 +22,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AssetClass
-from nautilus_trader.core.rust.model cimport AssetType
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -138,19 +137,19 @@ cdef class CryptoFuture(Instrument):
         uint64_t ts_init,
         multiplier=Quantity.from_int_c(1),
         lot_size=Quantity.from_int_c(1),
-        Quantity max_quantity: Optional[Quantity] = None,
-        Quantity min_quantity: Optional[Quantity] = None,
-        Money max_notional: Optional[Money] = None,
-        Money min_notional: Optional[Money] = None,
-        Price max_price: Optional[Price] = None,
-        Price min_price: Optional[Price] = None,
+        Quantity max_quantity: Quantity | None = None,
+        Quantity min_quantity: Quantity | None = None,
+        Money max_notional: Money | None = None,
+        Money min_notional: Money | None = None,
+        Price max_price: Price | None = None,
+        Price min_price: Price | None = None,
         dict info = None,
     ):
         super().__init__(
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
             asset_class=AssetClass.CRYPTOCURRENCY,
-            asset_type=AssetType.FUTURE,
+            instrument_class=InstrumentClass.FUTURE,
             quote_currency=quote_currency,
             is_inverse=False,
             price_precision=price_precision,

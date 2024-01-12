@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,7 +29,6 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
@@ -135,13 +134,21 @@ class VolatilityMarketMaker(Strategy):
         self.subscribe_quote_ticks(self.instrument_id)
 
         # self.subscribe_trade_ticks(self.instrument_id)
-        # self.subscribe_ticker(self.instrument_id)  # For debugging
         # self.subscribe_order_book_deltas(self.instrument_id)  # For debugging
         # self.subscribe_order_book_snapshots(
         #     self.instrument_id,
         #     depth=20,
         #     interval_ms=1000,
         # )  # For debugging
+
+        # self.subscribe_data(
+        #     data_type=DataType(
+        #         BinanceTicker,
+        #         metadata={"instrument_id": self.instrument.id},
+        #     ),
+        #     client_id=ClientId("BINANCE"),
+        # )
+
         # self.subscribe_data(
         #     data_type=DataType(
         #         BinanceFuturesMarkPriceUpdate,
@@ -152,7 +159,7 @@ class VolatilityMarketMaker(Strategy):
 
     def on_data(self, data: Data) -> None:
         """
-        Actions to be performed when the strategy is running and receives generic data.
+        Actions to be performed when the strategy is running and receives data.
 
         Parameters
         ----------
@@ -161,7 +168,7 @@ class VolatilityMarketMaker(Strategy):
 
         """
         # For debugging (must add a subscription)
-        # self.log.info(repr(data), LogColor.CYAN)
+        self.log.info(repr(data), LogColor.CYAN)
 
     def on_instrument(self, instrument: Instrument) -> None:
         """
@@ -202,19 +209,6 @@ class VolatilityMarketMaker(Strategy):
         """
         # For debugging (must add a subscription)
         self.log.info(repr(deltas), LogColor.CYAN)
-
-    def on_ticker(self, ticker: Ticker) -> None:
-        """
-        Actions to be performed when the strategy is running and receives a ticker.
-
-        Parameters
-        ----------
-        ticker : Ticker
-            The ticker received.
-
-        """
-        # For debugging (must add a subscription)
-        # self.log.info(repr(ticker), LogColor.CYAN)
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
@@ -375,7 +369,6 @@ class VolatilityMarketMaker(Strategy):
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_quote_ticks(self.instrument_id)
         # self.unsubscribe_trade_ticks(self.instrument_id)
-        # self.unsubscribe_ticker(self.instrument_id)  # For debugging
         # self.unsubscribe_order_book_deltas(self.instrument_id)  # For debugging
         # self.unsubscribe_order_book_snapshots(self.instrument_id)  # For debugging
 

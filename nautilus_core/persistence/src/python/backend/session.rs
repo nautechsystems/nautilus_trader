@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,20 +14,23 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::{ffi::cvec::CVec, python::to_pyruntime_err};
-use nautilus_model::data::{bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick};
+use nautilus_model::data::{
+    bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick, trade::TradeTick,
+};
 use pyo3::{prelude::*, types::PyCapsule};
 
 use crate::backend::session::{DataBackendSession, DataQueryResult};
 
 #[repr(C)]
 #[pyclass]
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum NautilusDataType {
     // Custom = 0,  # First slot reserved for custom data
     OrderBookDelta = 1,
-    QuoteTick = 2,
-    TradeTick = 3,
-    Bar = 4,
+    OrderBookDepth10 = 2,
+    QuoteTick = 3,
+    TradeTick = 4,
+    Bar = 5,
 }
 
 #[pymethods]
@@ -48,6 +51,7 @@ impl DataBackendSession {
     /// query "SELECT * FROM <table_name>" is run.
     ///
     /// # Safety
+    ///
     /// The file data must be ordered by the ts_init in ascending order for this
     /// to work correctly.
     #[pyo3(name = "add_file")]
@@ -63,6 +67,9 @@ impl DataBackendSession {
         match data_type {
             NautilusDataType::OrderBookDelta => slf
                 .add_file::<OrderBookDelta>(table_name, file_path, sql_query)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::OrderBookDepth10 => slf
+                .add_file::<OrderBookDepth10>(table_name, file_path, sql_query)
                 .map_err(to_pyruntime_err),
             NautilusDataType::QuoteTick => slf
                 .add_file::<QuoteTick>(table_name, file_path, sql_query)

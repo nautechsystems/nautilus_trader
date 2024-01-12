@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,7 +26,6 @@ attempts to operate without a managing `Trader` instance.
 
 import asyncio
 from concurrent.futures import Executor
-from typing import Optional
 
 import cython
 
@@ -68,7 +67,6 @@ from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
-from nautilus_trader.model.data cimport Ticker
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.data cimport VenueStatus
 from nautilus_trader.model.identifiers cimport ClientId
@@ -100,7 +98,7 @@ cdef class Actor(Component):
     - Do not call components such as `clock` and `logger` in the `__init__` prior to registration.
     """
 
-    def __init__(self, config: Optional[ActorConfig] = None):
+    def __init__(self, config: ActorConfig | None = None):
         if config is None:
             config = ActorConfig()
         Condition.type(config, ActorConfig, "config")
@@ -111,10 +109,10 @@ cdef class Actor(Component):
             component_id = config.component_id
 
         super().__init__(
-            clock=LiveClock(),  # Use placeholder live clock until registered
-            logger=Logger(clock=LiveClock(), dummy=True),  # Use dummy logger until registered
+            clock=Clock(),  # Use placeholder until registered
+            logger=Logger(Clock()),  # Use placeholder until registered
             component_id=component_id,
-            config=config.dict(),
+            config=config,
         )
 
         self._warning_events: set[type] = set()
@@ -400,22 +398,6 @@ cdef class Actor(Component):
         """
         # Optionally override in subclass
 
-    cpdef void on_ticker(self, Ticker ticker):
-        """
-        Actions to be performed when running and receives a ticker.
-
-        Parameters
-        ----------
-        ticker : Ticker
-            The ticker received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        # Optionally override in subclass
-
     cpdef void on_quote_tick(self, QuoteTick tick):
         """
         Actions to be performed when running and receives a quote tick.
@@ -466,7 +448,7 @@ cdef class Actor(Component):
 
     cpdef void on_data(self, Data data):
         """
-        Actions to be performed when running and receives generic data.
+        Actions to be performed when running and receives data.
 
         Parameters
         ----------
@@ -1332,39 +1314,6 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_ticker(self, InstrumentId instrument_id, ClientId client_id = None):
-        """
-        Subscribe to streaming `Ticker` data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The tick instrument to subscribe to.
-        client_id : ClientId, optional
-            The specific client ID for the command.
-            If ``None`` then will be inferred from the venue in the instrument ID.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
-
-        self._msgbus.subscribe(
-            topic=f"data.tickers"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol}",
-            handler=self.handle_ticker,
-        )
-
-        cdef Subscribe command = Subscribe(
-            client_id=client_id,
-            venue=instrument_id.venue,
-            data_type=DataType(Ticker, metadata={"instrument_id": instrument_id}),
-            command_id=UUID4(),
-            ts_init=self._clock.timestamp_ns(),
-        )
-
-        self._send_data_cmd(command)
-
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Subscribe to streaming `QuoteTick` data for the given instrument ID.
@@ -1740,39 +1689,6 @@ cdef class Actor(Component):
                 "instrument_id": instrument_id,
                 "interval_ms": interval_ms,
             }),
-            command_id=UUID4(),
-            ts_init=self._clock.timestamp_ns(),
-        )
-
-        self._send_data_cmd(command)
-
-    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id, ClientId client_id = None):
-        """
-        Unsubscribe from streaming `Ticker` data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The tick instrument to unsubscribe from.
-        client_id : ClientId, optional
-            The specific client ID for the command.
-            If ``None`` then will be inferred from the venue in the instrument ID.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
-
-        self._msgbus.unsubscribe(
-            topic=f"data.tickers"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol}",
-            handler=self.handle_ticker,
-        )
-
-        cdef Unsubscribe command = Unsubscribe(
-            client_id=client_id,
-            venue=instrument_id.venue,
-            data_type=DataType(Ticker, metadata={"instrument_id": instrument_id}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
@@ -2525,31 +2441,6 @@ cdef class Actor(Component):
                 self.on_order_book(order_book)
             except Exception as e:
                 self._log.exception(f"Error on handling {repr(order_book)}", e)
-                raise
-
-    cpdef void handle_ticker(self, Ticker ticker):
-        """
-        Handle the given ticker.
-
-        If state is ``RUNNING`` then passes to `on_ticker`.
-
-        Parameters
-        ----------
-        ticker : Ticker
-            The ticker received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(ticker, "ticker")
-
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_ticker(ticker)
-            except Exception as e:
-                self._log.exception(f"Error on handling {repr(ticker)}", e)
                 raise
 
     cpdef void handle_quote_tick(self, QuoteTick tick):

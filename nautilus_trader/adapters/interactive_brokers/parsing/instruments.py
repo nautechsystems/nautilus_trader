@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -114,7 +114,7 @@ def sec_type_to_asset_class(sec_type: str) -> AssetClass:
         "STK": "EQUITY",
         "IND": "INDEX",
         "CASH": "FX",
-        "BOND": "BOND",
+        "BOND": "DEBT",
     }
     return asset_class_from_str(mapping.get(sec_type, sec_type))
 
@@ -161,8 +161,7 @@ def parse_equity_contract(details: IBContractDetails) -> Equity:
         currency=Currency.from_str(details.contract.currency),
         price_precision=price_precision,
         price_increment=Price(details.minTick, price_precision),
-        multiplier=Quantity.from_int(1),
-        lot_size=Quantity.from_int(1),
+        lot_size=Quantity.from_int(100),
         isin=_extract_isin(details),
         ts_event=timestamp,
         ts_init=timestamp,

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,6 +30,7 @@ from ibapi.order_state import OrderState as IBOrderState
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.client.common import IBPosition
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_order_action
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_order_fields
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_order_status
@@ -51,9 +52,9 @@ from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
-from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
@@ -119,6 +120,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         The instrument provider.
     ibg_client_id : int
         Client ID used to connect TWS/Gateway.
+    config : InteractiveBrokersExecClientConfig, optional
+        The configuration for the instance.
 
     """
 
@@ -133,6 +136,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         logger: Logger,
         instrument_provider: InteractiveBrokersInstrumentProvider,
         ibg_client_id: int,
+        config: InteractiveBrokersExecClientConfig,
     ):
         super().__init__(
             loop=loop,
@@ -147,10 +151,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             cache=cache,
             clock=clock,
             logger=logger,
-            config={
-                "name": f"{type(self).__name__}-{ibg_client_id:03d}",
-                "client_id": ibg_client_id,
-            },
+            config=config,
         )
         self._client: InteractiveBrokersClient = client
         self._set_account_id(account_id)
@@ -399,15 +400,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             report.append(order_status)
         return report
 
-    async def generate_trade_reports(
+    async def generate_fill_reports(
         self,
         instrument_id: InstrumentId | None = None,
         venue_order_id: VenueOrderId | None = None,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-    ) -> list[TradeReport]:
+    ) -> list[FillReport]:
         """
-        Generate a list of `TradeReport`s with optional query filters. The returned list
+        Generate a list of `FillReport`s with optional query filters. The returned list
         may be empty if no trades match the given parameters.
 
         Parameters
@@ -423,10 +424,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         Returns
         -------
-        list[TradeReport]
+        list[FillReport]
 
         """
-        self._log.warning("Cannot generate `list[TradeReport]`: not yet implemented.")
+        self._log.warning("Cannot generate `list[FillReport]`: not yet implemented.")
 
         return []  # TODO: Implement
 

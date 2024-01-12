@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -171,7 +171,7 @@ async def test_place_orders(betfair_client):
     instrument = betting_instrument()
     limit_order = TestExecStubs.limit_order(
         instrument_id=instrument.id,
-        order_side=OrderSide.BUY,
+        order_side=OrderSide.SELL,
         price=betfair_float_to_price(2.0),
         quantity=betfair_float_to_quantity(10),
     )
@@ -198,12 +198,12 @@ async def test_place_orders(betfair_client):
                     ),
                     limit_on_close_order=None,
                     market_on_close_order=None,
-                    customer_order_ref="O-20210410-022422-001",
+                    customer_order_ref="O-20210410-022422-001-001-1",
                 ),
             ],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
             market_version=None,
-            customer_strategy_ref="S-001",
+            customer_strategy_ref="4827311aa8c4c74",
             async_=False,
         ),
         id=request.id,
@@ -235,7 +235,7 @@ async def test_place_orders_handicap(betfair_client):
                     order_type=OrderType.LIMIT,
                     selection_id=5304641,
                     handicap=-5.5,
-                    side=Side.BACK,
+                    side=Side.LAY,
                     limit_order=LimitOrder(
                         price=2.0,
                         size=10.0,
@@ -243,12 +243,12 @@ async def test_place_orders_handicap(betfair_client):
                     ),
                     limit_on_close_order=None,
                     market_on_close_order=None,
-                    customer_order_ref="O-20210410-022422-001",
+                    customer_order_ref="O-20210410-022422-001-001-1",
                 ),
             ],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
             market_version=None,
-            customer_strategy_ref="S-001",
+            customer_strategy_ref="4827311aa8c4c74",
             async_=False,
         ),
         id=request.id,
@@ -290,16 +290,16 @@ async def test_place_orders_market_on_close(betfair_client):
                     order_type=OrderType.MARKET_ON_CLOSE,
                     selection_id=50214,
                     handicap=None,
-                    side=Side.BACK,
+                    side=Side.LAY,
                     limit_order=None,
                     limit_on_close_order=None,
                     market_on_close_order=MarketOnCloseOrder(liability=10.0),
-                    customer_order_ref="O-20210410-022422-001",
+                    customer_order_ref="O-20210410-022422-001-001-1",
                 ),
             ],
             customer_ref="be7dffa046f2fce5d820c7634d022ca1",
             market_version=None,
-            customer_strategy_ref="S-001",
+            customer_strategy_ref="4827311aa8c4c74",
             async_=False,
         ),
         id=request.id,
@@ -368,9 +368,9 @@ async def test_cancel_orders(betfair_client):
 
 @pytest.mark.asyncio()
 async def test_list_current_orders(betfair_client):
-    mock_betfair_request(betfair_client, response=BetfairResponses.list_current_orders())
+    mock_betfair_request(betfair_client, response=BetfairResponses.list_current_orders_executable())
     current_orders = await betfair_client.list_current_orders()
-    assert len(current_orders) == 4
+    assert len(current_orders) == 2
 
     _, request = betfair_client._request.call_args[0]
     expected = ListCurrentOrders(

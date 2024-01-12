@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,7 +15,6 @@
 
 from typing import Any
 from typing import Callable
-from typing import Optional
 
 from libc.stdint cimport uint64_t
 
@@ -53,8 +52,8 @@ cdef class DataCommand(Command):
 
     def __init__(
         self,
-        ClientId client_id: Optional[ClientId],
-        Venue venue: Optional[Venue],
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
         DataType data_type not None,
         UUID4 command_id not None,
         uint64_t ts_init,
@@ -105,8 +104,8 @@ cdef class Subscribe(DataCommand):
 
     def __init__(
         self,
-        ClientId client_id: Optional[ClientId],
-        Venue venue: Optional[Venue],
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
         DataType data_type not None,
         UUID4 command_id not None,
         uint64_t ts_init,
@@ -146,8 +145,8 @@ cdef class Unsubscribe(DataCommand):
 
     def __init__(
         self,
-        ClientId client_id: Optional[ClientId],
-        Venue venue: Optional[Venue],
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
         DataType data_type not None,
         UUID4 command_id not None,
         uint64_t ts_init,
@@ -189,8 +188,8 @@ cdef class DataRequest(Request):
 
     def __init__(
         self,
-        ClientId client_id: Optional[ClientId],
-        Venue venue: Optional[Venue],
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
         DataType data_type not None,
         callback not None: Callable[[Any], None],
         UUID4 request_id not None,
@@ -251,8 +250,8 @@ cdef class DataResponse(Response):
 
     def __init__(
         self,
-        ClientId client_id: Optional[ClientId],
-        Venue venue: Optional[Venue],
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
         DataType data_type,
         data not None,
         UUID4 correlation_id not None,

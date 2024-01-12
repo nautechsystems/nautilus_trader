@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,8 +18,8 @@ use std::{ffi::c_char, str::FromStr};
 use nautilus_core::ffi::string::{cstr_to_str, str_to_cstr};
 
 use crate::enums::{
-    AccountType, AggregationSource, AggressorSide, AssetClass, AssetType, BarAggregation,
-    BookAction, BookType, ContingencyType, CurrencyType, HaltReason, InstrumentCloseType,
+    AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
+    BookType, ContingencyType, CurrencyType, HaltReason, InstrumentClass, InstrumentCloseType,
     LiquiditySide, MarketStatus, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
     PositionSide, PriceType, TimeInForce, TradingState, TrailingOffsetType, TriggerType,
 };
@@ -32,6 +32,7 @@ pub extern "C" fn account_type_to_cstr(value: AccountType) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn account_type_from_cstr(ptr: *const c_char) -> AccountType {
@@ -48,6 +49,7 @@ pub extern "C" fn aggregation_source_to_cstr(value: AggregationSource) -> *const
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn aggregation_source_from_cstr(ptr: *const c_char) -> AggregationSource {
@@ -64,6 +66,7 @@ pub extern "C" fn aggressor_side_to_cstr(value: AggressorSide) -> *const c_char 
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn aggressor_side_from_cstr(ptr: *const c_char) -> AggressorSide {
@@ -80,6 +83,7 @@ pub extern "C" fn asset_class_to_cstr(value: AssetClass) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn asset_class_from_cstr(ptr: *const c_char) -> AssetClass {
@@ -89,19 +93,20 @@ pub unsafe extern "C" fn asset_class_from_cstr(ptr: *const c_char) -> AssetClass
 }
 
 #[no_mangle]
-pub extern "C" fn asset_type_to_cstr(value: AssetType) -> *const c_char {
+pub extern "C" fn instrument_class_to_cstr(value: InstrumentClass) -> *const c_char {
     str_to_cstr(value.as_ref())
 }
 
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn asset_type_from_cstr(ptr: *const c_char) -> AssetType {
+pub unsafe extern "C" fn instrument_class_from_cstr(ptr: *const c_char) -> InstrumentClass {
     let value = cstr_to_str(ptr);
-    AssetType::from_str(value)
-        .unwrap_or_else(|_| panic!("invalid `AssetType` enum string value, was '{value}'"))
+    InstrumentClass::from_str(value)
+        .unwrap_or_else(|_| panic!("invalid `InstrumentClass` enum string value, was '{value}'"))
 }
 
 #[no_mangle]
@@ -112,6 +117,7 @@ pub extern "C" fn bar_aggregation_to_cstr(value: BarAggregation) -> *const c_cha
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn bar_aggregation_from_cstr(ptr: *const c_char) -> BarAggregation {
@@ -128,6 +134,7 @@ pub extern "C" fn book_action_to_cstr(value: BookAction) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn book_action_from_cstr(ptr: *const c_char) -> BookAction {
@@ -144,6 +151,7 @@ pub extern "C" fn book_type_to_cstr(value: BookType) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn book_type_from_cstr(ptr: *const c_char) -> BookType {
@@ -160,6 +168,7 @@ pub extern "C" fn contingency_type_to_cstr(value: ContingencyType) -> *const c_c
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn contingency_type_from_cstr(ptr: *const c_char) -> ContingencyType {
@@ -176,6 +185,7 @@ pub extern "C" fn currency_type_to_cstr(value: CurrencyType) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn currency_type_from_cstr(ptr: *const c_char) -> CurrencyType {
@@ -187,6 +197,7 @@ pub unsafe extern "C" fn currency_type_from_cstr(ptr: *const c_char) -> Currency
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn instrument_close_type_from_cstr(
@@ -211,6 +222,7 @@ pub extern "C" fn liquidity_side_to_cstr(value: LiquiditySide) -> *const c_char 
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn liquidity_side_from_cstr(ptr: *const c_char) -> LiquiditySide {
@@ -227,6 +239,7 @@ pub extern "C" fn market_status_to_cstr(value: MarketStatus) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn market_status_from_cstr(ptr: *const c_char) -> MarketStatus {
@@ -243,6 +256,7 @@ pub extern "C" fn halt_reason_to_cstr(value: HaltReason) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn halt_reason_from_cstr(ptr: *const c_char) -> HaltReason {
@@ -259,6 +273,7 @@ pub extern "C" fn oms_type_to_cstr(value: OmsType) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn oms_type_from_cstr(ptr: *const c_char) -> OmsType {
@@ -275,6 +290,7 @@ pub extern "C" fn option_kind_to_cstr(value: OptionKind) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn option_kind_from_cstr(ptr: *const c_char) -> OptionKind {
@@ -291,6 +307,7 @@ pub extern "C" fn order_side_to_cstr(value: OrderSide) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn order_side_from_cstr(ptr: *const c_char) -> OrderSide {
@@ -307,6 +324,7 @@ pub extern "C" fn order_status_to_cstr(value: OrderStatus) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn order_status_from_cstr(ptr: *const c_char) -> OrderStatus {
@@ -323,6 +341,7 @@ pub extern "C" fn order_type_to_cstr(value: OrderType) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn order_type_from_cstr(ptr: *const c_char) -> OrderType {
@@ -339,6 +358,7 @@ pub extern "C" fn position_side_to_cstr(value: PositionSide) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn position_side_from_cstr(ptr: *const c_char) -> PositionSide {
@@ -355,6 +375,7 @@ pub extern "C" fn price_type_to_cstr(value: PriceType) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn price_type_from_cstr(ptr: *const c_char) -> PriceType {
@@ -371,6 +392,7 @@ pub extern "C" fn time_in_force_to_cstr(value: TimeInForce) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn time_in_force_from_cstr(ptr: *const c_char) -> TimeInForce {
@@ -387,6 +409,7 @@ pub extern "C" fn trading_state_to_cstr(value: TradingState) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn trading_state_from_cstr(ptr: *const c_char) -> TradingState {
@@ -403,6 +426,7 @@ pub extern "C" fn trailing_offset_type_to_cstr(value: TrailingOffsetType) -> *co
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn trailing_offset_type_from_cstr(ptr: *const c_char) -> TrailingOffsetType {
@@ -419,6 +443,7 @@ pub extern "C" fn trigger_type_to_cstr(value: TriggerType) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn trigger_type_from_cstr(ptr: *const c_char) -> TriggerType {

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -68,7 +68,7 @@ class BybitHttpClient:
         self._base_url: str = base_url
         self._headers: dict[str, Any] = {
             "Content-Type": "application/json",
-            "User-Agent": "nautilus-trader/" + nautilus_trader.__version__,
+            "User-Agent": nautilus_trader.USER_AGENT,
             "X-BAPI-API-KEY": self._api_key,
         }
         self._client = HttpClient(

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -46,7 +46,7 @@ from nautilus_trader.trading import Strategy
 
 
 class RequestDemoStrategyConfig(StrategyConfig, frozen=True):
-    instrument_id: str
+    instrument_id: InstrumentId
     interval: int
 
 
@@ -64,7 +64,7 @@ class RequestDemoStrategy(Strategy):
     def __init__(self, config: RequestDemoStrategyConfig):
         super().__init__()
         self.interval = config.interval
-        self.instrument_id = InstrumentId.from_str(config.instrument_id)
+        self.instrument_id = config.instrument_id
 
     def on_start(self):
         seconds_delta = timedelta(seconds=self.interval)
@@ -124,7 +124,7 @@ config_node = TradingNodeConfig(
 
 node = TradingNode(config=config_node)
 
-instrument_id = "ETHUSDT-LINEAR.BYBIT"
+instrument_id = InstrumentId.from_str("ETHUSDT-LINEAR.BYBIT")
 strategy_config = RequestDemoStrategyConfig(
     instrument_id=instrument_id,
     interval=10,

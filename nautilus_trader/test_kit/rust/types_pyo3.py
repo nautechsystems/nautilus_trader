@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,8 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+from nautilus_trader.core.nautilus_pyo3 import AccountBalance
 from nautilus_trader.core.nautilus_pyo3 import Currency
+from nautilus_trader.core.nautilus_pyo3 import MarginBalance
+from nautilus_trader.core.nautilus_pyo3 import Money
+from nautilus_trader.test_kit.rust.identifiers_pyo3 import TestIdProviderPyo3
 
 
 class TestTypesProviderPyo3:
@@ -40,3 +43,19 @@ class TestTypesProviderPyo3:
     @staticmethod
     def currency_eth() -> Currency:
         return Currency.from_str("ETH")
+
+    @staticmethod
+    def account_balance(
+        total=Money.from_str("1525000 USD"),
+        locked=Money.from_str("25000 USD"),
+        free=Money.from_str("1500000 USD"),
+    ) -> AccountBalance:
+        return AccountBalance(total, locked, free)
+
+    @staticmethod
+    def margin_balance(
+        initial=Money(1, Currency.from_str("USD")),
+        maintenance=Money(1, Currency.from_str("USD")),
+        instrument=TestIdProviderPyo3.audusd_id(),
+    ) -> MarginBalance:
+        return MarginBalance(initial, maintenance, instrument)

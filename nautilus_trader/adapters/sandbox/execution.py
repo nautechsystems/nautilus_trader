@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,9 +30,9 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.data import Data
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
-from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import OrderBookDelta
@@ -173,13 +173,13 @@ class SandboxExecutionClient(LiveExecutionClient):
     ) -> list[OrderStatusReport]:
         return []
 
-    async def generate_trade_reports(
+    async def generate_fill_reports(
         self,
         instrument_id: InstrumentId | None = None,
         venue_order_id: VenueOrderId | None = None,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-    ) -> list[TradeReport]:
+    ) -> list[FillReport]:
         return []
 
     async def generate_position_status_reports(

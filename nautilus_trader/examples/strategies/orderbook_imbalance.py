@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -128,8 +128,9 @@ class OrderBookImbalance(Strategy):
             self.book_type = book_type_from_str(self.config.book_type)
             self.subscribe_order_book_deltas(self.instrument.id, self.book_type)
 
-        if self.config.subscribe_ticker:
-            self.subscribe_ticker(self.instrument.id)
+        # TODO: Need to subscribe for custom data type
+        # if self.config.subscribe_ticker:
+        #     self.subscribe_ticker(self.instrument.id)
 
         self._last_trigger_timestamp = self.clock.utc_now()
 
@@ -167,9 +168,6 @@ class OrderBookImbalance(Strategy):
 
         if not book.spread():
             return
-
-        # Uncomment for debugging
-        # self.log.info("\n" + book.pprint())
 
         bid_size: Quantity | None = book.best_bid_size()
         ask_size: Quantity | None = book.best_ask_size()

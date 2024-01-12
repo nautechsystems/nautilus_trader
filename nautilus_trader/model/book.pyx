@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -45,6 +45,7 @@ from nautilus_trader.core.rust.model cimport level_price
 from nautilus_trader.core.rust.model cimport level_size
 from nautilus_trader.core.rust.model cimport orderbook_add
 from nautilus_trader.core.rust.model cimport orderbook_apply_delta
+from nautilus_trader.core.rust.model cimport orderbook_apply_depth
 from nautilus_trader.core.rust.model cimport orderbook_asks
 from nautilus_trader.core.rust.model cimport orderbook_best_ask_price
 from nautilus_trader.core.rust.model cimport orderbook_best_ask_size
@@ -79,6 +80,9 @@ from nautilus_trader.core.rust.model cimport vec_levels_drop
 from nautilus_trader.core.rust.model cimport vec_orders_drop
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.model.data cimport BookOrder
+from nautilus_trader.model.data cimport OrderBookDelta
+from nautilus_trader.model.data cimport OrderBookDeltas
+from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.functions cimport book_type_to_str
 from nautilus_trader.model.functions cimport order_side_to_str
@@ -97,7 +101,7 @@ cdef class OrderBook(Data):
         self,
         InstrumentId instrument_id not None,
         BookType book_type,
-    ):
+    ) -> None:
         self._mem = orderbook_new(
             instrument_id._mem,
             book_type,
@@ -328,6 +332,20 @@ cdef class OrderBook(Data):
         for delta in deltas.deltas:
             self.apply_delta(delta)
 
+    cpdef void apply_depth(self, OrderBookDepth10 depth):
+        """
+        Apply the depth update to the order book.
+
+        Parameters
+        ----------
+        depth : OrderBookDepth10
+            The depth update to apply.
+
+        """
+        Condition.not_none(depth, "depth")
+
+        orderbook_apply_depth(&self._mem, depth._mem)
+
     cpdef void apply(self, Data data):
         """
         Apply the given data to the order book.
@@ -338,10 +356,12 @@ cdef class OrderBook(Data):
             The data to apply.
 
         """
-        if isinstance(data, OrderBookDeltas):
-            self.apply_deltas(deltas=data)
-        elif isinstance(data, OrderBookDelta):
-            self.apply_delta(delta=data)
+        if isinstance(data, OrderBookDelta):
+            self.apply_delta(data)
+        elif isinstance(data, OrderBookDeltas):
+            self.apply_deltas(data)
+        elif isinstance(data, OrderBookDepth10):
+            self.apply_depth(data)
         else:  # pragma: no-cover (design time error)
             raise RuntimeError(f"invalid order book data type, was {type(data)}")  # pragma: no-cover (design time error)
 

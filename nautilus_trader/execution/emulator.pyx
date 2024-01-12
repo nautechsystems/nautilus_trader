@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,8 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from typing import Optional
 
 from nautilus_trader.config.common import OrderEmulatorConfig
 
@@ -106,7 +104,7 @@ cdef class OrderEmulator(Actor):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        config: Optional[OrderEmulatorConfig] = None,
+        config: OrderEmulatorConfig | None = None,
     ):
         if config is None:
             config = OrderEmulatorConfig()
@@ -186,7 +184,7 @@ cdef class OrderEmulator(Actor):
         """
         return self._manager.get_submit_order_commands()
 
-    def get_matching_core(self, InstrumentId instrument_id) -> Optional[MatchingCore]:
+    def get_matching_core(self, InstrumentId instrument_id) -> MatchingCore | None:
         """
         Return the emulators matching core for the given instrument ID.
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -193,6 +193,7 @@ class BinanceOrderStatus(Enum):
     PENDING_CANCEL = "PENDING_CANCEL"
     REJECTED = "REJECTED"
     EXPIRED = "EXPIRED"
+    EXPIRED_IN_MATCH = "EXPIRED_IN_MATCH"
     NEW_INSURANCE = "NEW_INSURANCE"  # Liquidation with Insurance Fund
     NEW_ADL = "NEW_ADL"  # Counterparty Liquidation
 
@@ -270,6 +271,7 @@ class BinanceErrorCode(Enum):
     NO_SUCH_IP = -1005
     UNEXPECTED_RESP = -1006
     TIMEOUT = -1007
+    SERVER_BUSY = -1008
     ERROR_MSG_RECEIVED = -1010
     NON_WHITE_LIST = -1011
     INVALID_MESSAGE = -1013
@@ -477,6 +479,7 @@ class BinanceEnumParser:
             BinanceOrderStatus.NEW_ADL: OrderStatus.FILLED,
             BinanceOrderStatus.NEW_INSURANCE: OrderStatus.FILLED,
             BinanceOrderStatus.EXPIRED: OrderStatus.EXPIRED,
+            BinanceOrderStatus.EXPIRED_IN_MATCH: OrderStatus.CANCELED,  # Canceled due self-trade prevention (STP)
         }
 
         self.ext_to_int_order_side = {

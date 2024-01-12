@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,11 +23,11 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.rust.model cimport AssetClass
-from nautilus_trader.core.rust.model cimport AssetType
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.model.functions cimport asset_class_from_str
 from nautilus_trader.model.functions cimport asset_class_to_str
-from nautilus_trader.model.functions cimport asset_type_from_str
-from nautilus_trader.model.functions cimport asset_type_to_str
+from nautilus_trader.model.functions cimport instrument_class_from_str
+from nautilus_trader.model.functions cimport instrument_class_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -104,7 +104,7 @@ cdef class FuturesContract(Instrument):
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
             asset_class=asset_class,
-            asset_type=AssetType.FUTURE,
+            instrument_class=InstrumentClass.FUTURE,
             quote_currency=currency,
             is_inverse=False,
             price_precision=price_precision,
@@ -137,7 +137,7 @@ cdef class FuturesContract(Instrument):
             f"(id={self.id.to_str()}, "
             f"raw_symbol={self.raw_symbol}, "
             f"asset_class={asset_class_to_str(self.asset_class)}, "
-            f"asset_type={asset_type_to_str(self.asset_type)}, "
+            f"instrument_class={instrument_class_to_str(self.instrument_class)}, "
             f"quote_currency={self.quote_currency}, "
             f"underlying={self.underlying}, "
             f"activation={format_iso8601(self.activation_utc)}, "

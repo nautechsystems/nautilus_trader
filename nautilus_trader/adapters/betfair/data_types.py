@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,16 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from enum import Enum
 
 import pyarrow as pa
 
-# fmt: off
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
-from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
@@ -31,9 +31,6 @@ from nautilus_trader.serialization.arrow.serializer import make_dict_deserialize
 from nautilus_trader.serialization.arrow.serializer import make_dict_serializer
 from nautilus_trader.serialization.arrow.serializer import register_arrow
 from nautilus_trader.serialization.base import register_serializable_object
-
-
-# fmt: on
 
 
 class SubscriptionStatus(Enum):
@@ -48,7 +45,7 @@ class SubscriptionStatus(Enum):
 
 class BSPOrderBookDelta(OrderBookDelta):
     @staticmethod
-    def from_batch(batch: pa.RecordBatch) -> list["BSPOrderBookDelta"]:
+    def from_batch(batch: pa.RecordBatch) -> list[BSPOrderBookDelta]:
         PyCondition.not_none(batch, "batch")
         data = []
         for idx in range(batch.num_rows):
@@ -81,7 +78,7 @@ class BSPOrderBookDelta(OrderBookDelta):
         return data
 
     @staticmethod
-    def to_batch(self: "BSPOrderBookDelta") -> pa.RecordBatch:
+    def to_batch(self: BSPOrderBookDelta) -> pa.RecordBatch:
         metadata = {
             b"instrument_id": self.instrument_id.value.encode(),
             b"price_precision": str(self.order.price.precision).encode(),
@@ -121,7 +118,7 @@ class BSPOrderBookDelta(OrderBookDelta):
         )
 
 
-class BetfairTicker(Ticker):
+class BetfairTicker(Data):
     """
     Represents a `Betfair` ticker.
     """
@@ -136,11 +133,45 @@ class BetfairTicker(Ticker):
         starting_price_near: float | None = None,
         starting_price_far: float | None = None,
     ):
-        super().__init__(instrument_id=instrument_id, ts_event=ts_event, ts_init=ts_init)
+        self.instrument_id = instrument_id
         self.last_traded_price = last_traded_price
         self.traded_volume = traded_volume
         self.starting_price_near = starting_price_near
         self.starting_price_far = starting_price_far
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, BetfairTicker):
+            return False
+        return self.instrument_id == other.instrument_id
+
+    def __hash__(self) -> int:
+        return hash(self.instrument_id)
+
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
 
     @classmethod
     def schema(cls):
@@ -174,12 +205,12 @@ class BetfairTicker(Ticker):
         )
 
     @staticmethod
-    def to_dict(self: "BetfairTicker"):
+    def to_dict(self: BetfairTicker):
         return {
             "type": type(self).__name__,
             "instrument_id": self.instrument_id.value,
-            "ts_event": self.ts_event,
-            "ts_init": self.ts_init,
+            "ts_event": self._ts_event,
+            "ts_init": self._ts_init,
             "last_traded_price": self.last_traded_price,
             "traded_volume": self.traded_volume,
             "starting_price_near": self.starting_price_near,
@@ -206,19 +237,34 @@ class BetfairStartingPrice(Data):
         ts_init: int,
         bsp: float | None = None,
     ):
-        super().__init__()
-        self._ts_event = ts_event
-        self._ts_init = ts_init
         self.instrument_id: InstrumentId = instrument_id
         self.bsp = bsp
-
-    @property
-    def ts_init(self) -> int:
-        return self._ts_init
+        self._ts_event = ts_event
+        self._ts_init = ts_init
 
     @property
     def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
         return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
 
     @classmethod
     def schema(cls):
@@ -256,16 +302,16 @@ class BetfairStartingPrice(Data):
 register_arrow(
     data_cls=BetfairTicker,
     schema=BetfairTicker.schema(),
-    serializer=make_dict_serializer(schema=BetfairTicker.schema()),
-    deserializer=make_dict_deserializer(BetfairTicker),
+    encoder=make_dict_serializer(schema=BetfairTicker.schema()),
+    decoder=make_dict_deserializer(BetfairTicker),
 )
 
 # Register serialization/parquet BetfairStartingPrice
 register_arrow(
     data_cls=BetfairStartingPrice,
     schema=BetfairStartingPrice.schema(),
-    serializer=make_dict_serializer(schema=BetfairStartingPrice.schema()),
-    deserializer=make_dict_deserializer(BetfairStartingPrice),
+    encoder=make_dict_serializer(schema=BetfairStartingPrice.schema()),
+    decoder=make_dict_deserializer(BetfairStartingPrice),
 )
 
 # Register serialization/parquet BSPOrderBookDeltas
@@ -277,7 +323,7 @@ register_serializable_object(
 
 register_arrow(
     data_cls=BSPOrderBookDelta,
-    serializer=BSPOrderBookDelta.to_batch,
-    deserializer=BSPOrderBookDelta.from_batch,
+    encoder=BSPOrderBookDelta.to_batch,
+    decoder=BSPOrderBookDelta.from_batch,
     schema=BSPOrderBookDelta.schema(),
 )

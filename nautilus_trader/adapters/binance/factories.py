@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -427,9 +427,9 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
 def _get_api_key(account_type: BinanceAccountType, is_testnet: bool) -> str:
     if is_testnet:
         if account_type.is_spot_or_margin:
-            get_env_key("BINANCE_TESTNET_API_KEY")
+            return get_env_key("BINANCE_TESTNET_API_KEY")
         else:
-            get_env_key("BINANCE_FUTURES_TESTNET_API_KEY")
+            return get_env_key("BINANCE_FUTURES_TESTNET_API_KEY")
 
     if account_type.is_spot_or_margin:
         return get_env_key("BINANCE_API_KEY")

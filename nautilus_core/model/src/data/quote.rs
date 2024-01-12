@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -38,12 +38,13 @@ use crate::{
 
 /// Represents a single quote tick in a financial market.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
+#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct QuoteTick {
     /// The quotes instrument ID.
     pub instrument_id: InstrumentId,
@@ -189,8 +190,6 @@ impl QuoteTick {
     }
 }
 
-impl Serializable for QuoteTick {}
-
 impl Display for QuoteTick {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -206,10 +205,12 @@ impl Display for QuoteTick {
     }
 }
 
+impl Serializable for QuoteTick {}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Stubs
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
+#[cfg(feature = "stubs")]
 pub mod stubs {
     use rstest::fixture;
 

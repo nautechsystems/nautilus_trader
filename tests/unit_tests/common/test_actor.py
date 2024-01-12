@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -51,7 +51,7 @@ from nautilus_trader.persistence.writer import StreamingFeatherWriter
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.mocks.actors import KaboomActor
 from nautilus_trader.test_kit.mocks.actors import MockActor
-from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.mocks.data import setup_catalog
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import UNIX_EPOCH
@@ -406,23 +406,6 @@ class TestActor:
 
         # Act
         actor.on_order_book_deltas(TestDataStubs.order_book_snapshot())
-
-        # Assert
-        assert True  # Exception not raised
-
-    def test_on_ticker_when_not_overridden_does_nothing(self) -> None:
-        # Arrange
-        actor = Actor(config=ActorConfig(component_id=self.component_id))
-        actor.register_base(
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        # Act
-        actor.on_ticker(TestDataStubs.ticker())
 
         # Assert
         assert True  # Exception not raised
@@ -1180,28 +1163,6 @@ class TestActor:
         assert actor.calls == []
         assert actor.store == []
 
-    def test_handle_ticker_when_running_sends_to_on_quote_tick(self) -> None:
-        # Arrange
-        actor = MockActor()
-        actor.register_base(
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        actor.start()
-
-        ticker = TestDataStubs.ticker()
-
-        # Act
-        actor.handle_ticker(ticker)
-
-        # Assert
-        assert actor.calls == ["on_start", "on_ticker"]
-        assert actor.store[0] == ticker
-
     def test_handle_quote_tick_when_not_running_does_not_send_to_on_quote_tick(self) -> None:
         # Arrange
         actor = MockActor()
@@ -1213,10 +1174,10 @@ class TestActor:
             logger=self.logger,
         )
 
-        ticker = TestDataStubs.ticker()
+        quote = TestDataStubs.quote_tick()
 
         # Act
-        actor.handle_ticker(ticker)
+        actor.handle_quote_tick(quote)
 
         # Assert
         assert actor.calls == []
@@ -1854,45 +1815,6 @@ class TestActor:
         assert self.data_engine.subscribed_instruments() == []
         assert self.data_engine.command_count == 2
 
-    def test_subscribe_ticker(self) -> None:
-        # Arrange
-        actor = MockActor()
-        actor.register_base(
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        # Act
-        actor.subscribe_ticker(AUDUSD_SIM.id)
-
-        # Assert
-        expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
-        assert self.data_engine.subscribed_tickers() == [expected_instrument]
-        assert self.data_engine.command_count == 1
-
-    def test_unsubscribe_ticker(self) -> None:
-        # Arrange
-        actor = MockActor()
-        actor.register_base(
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        actor.subscribe_ticker(AUDUSD_SIM.id)
-
-        # Act
-        actor.unsubscribe_ticker(AUDUSD_SIM.id)
-
-        # Assert
-        assert self.data_engine.subscribed_tickers() == []
-        assert self.data_engine.command_count == 2
-
     def test_subscribe_quote_ticks(self) -> None:
         # Arrange
         actor = MockActor()
@@ -2051,7 +1973,7 @@ class TestActor:
             clock=self.clock,
             logger=self.logger,
         )
-        catalog = data_catalog_setup(protocol="memory", path="/catalog")
+        catalog = setup_catalog(protocol="memory", path="/catalog")
 
         writer = StreamingFeatherWriter(
             path=catalog.path,
@@ -2068,7 +1990,7 @@ class TestActor:
         actor.publish_signal(name="Test", value=5.0, ts_event=0)
 
         # Assert
-        assert catalog.fs.exists(f"{catalog.path}/genericdata_signal_test.feather")
+        assert catalog.fs.exists(f"{catalog.path}/custom_signal_test.feather")
 
     def test_subscribe_bars(self) -> None:
         # Arrange

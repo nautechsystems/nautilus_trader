@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,10 +23,9 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.test_kit.performance import PerformanceBench
 
 
-STUB_ORDER_DENIED = OrderDenied(
+_STUB_ORDER_DENIED = OrderDenied(
     trader_id=TraderId("TRADER-001"),
     strategy_id=StrategyId("SCALPER-001"),
     instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
@@ -51,26 +50,26 @@ def stub_order_denied() -> OrderDenied:
     )
 
 
-def test_order_denied_to_dict():
+def test_order_denied_to_dict(benchmark):
     def call_to_dict() -> None:
-        OrderDenied.to_dict(STUB_ORDER_DENIED)
+        OrderDenied.to_dict(_STUB_ORDER_DENIED)
 
-    PerformanceBench.profile_function(
+    benchmark.pedantic(
         target=call_to_dict,
-        runs=100_000,
+        rounds=100_000,
         iterations=1,
     )
     # ~0.0ms / ~1.8μs / 1841ns minimum of 100,000 runs @ 1 iteration each run.
 
 
-def test_order_denied_to_dict_then_msgspec_to_json():
+def test_order_denied_to_dict_then_msgspec_to_json(benchmark):
     def call_to_dict_then_json() -> None:
-        denied_dict = OrderDenied.to_dict(STUB_ORDER_DENIED)
+        denied_dict = OrderDenied.to_dict(_STUB_ORDER_DENIED)
         msgspec.json.encode(denied_dict)
 
-    PerformanceBench.profile_function(
+    benchmark.pedantic(
         target=call_to_dict_then_json,
-        runs=100_000,
+        rounds=100_000,
         iterations=1,
     )
     # ~0.0ms / ~2.4μs / 2441ns minimum of 100,000 runs @ 1 iteration each run.

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -414,8 +414,6 @@ class TradingNode:
         If save strategy is configured, then strategy states will be saved.
 
         """
-        self.kernel.log.info("STOPPING...")
-
         if self._task_heartbeats:
             self.kernel.log.info("Cancelling `task_heartbeats` task...")
             self._task_heartbeats.cancel()

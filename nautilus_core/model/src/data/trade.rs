@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -33,12 +33,13 @@ use crate::{
 
 /// Represents a single trade tick in a financial market.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
+#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct TradeTick {
     /// The trade instrument ID.
     pub instrument_id: InstrumentId,
@@ -142,8 +143,6 @@ impl TradeTick {
     }
 }
 
-impl Serializable for TradeTick {}
-
 impl Display for TradeTick {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -159,10 +158,12 @@ impl Display for TradeTick {
     }
 }
 
+impl Serializable for TradeTick {}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Stubs
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
+#[cfg(feature = "stubs")]
 pub mod stubs {
     use rstest::fixture;
 
@@ -174,7 +175,7 @@ pub mod stubs {
     };
 
     #[fixture]
-    pub fn trade_tick_ethusdt_buyer() -> TradeTick {
+    pub fn stub_trade_tick_ethusdt_buyer() -> TradeTick {
         TradeTick {
             instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
             price: Price::from("10000.0000"),
@@ -200,8 +201,8 @@ mod tests {
     use crate::{data::trade::TradeTick, enums::AggressorSide};
 
     #[rstest]
-    fn test_to_string(trade_tick_ethusdt_buyer: TradeTick) {
-        let tick = trade_tick_ethusdt_buyer;
+    fn test_to_string(stub_trade_tick_ethusdt_buyer: TradeTick) {
+        let tick = stub_trade_tick_ethusdt_buyer;
         assert_eq!(
             tick.to_string(),
             "ETHUSDT-PERP.BINANCE,10000.0000,1.00000000,BUYER,123456789,0"
@@ -227,9 +228,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_pyobject(trade_tick_ethusdt_buyer: TradeTick) {
+    fn test_from_pyobject(stub_trade_tick_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = trade_tick_ethusdt_buyer;
+        let tick = stub_trade_tick_ethusdt_buyer;
 
         Python::with_gil(|py| {
             let tick_pyobject = tick.into_py(py);
@@ -239,16 +240,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_json_serialization(trade_tick_ethusdt_buyer: TradeTick) {
-        let tick = trade_tick_ethusdt_buyer;
+    fn test_json_serialization(stub_trade_tick_ethusdt_buyer: TradeTick) {
+        let tick = stub_trade_tick_ethusdt_buyer;
         let serialized = tick.as_json_bytes().unwrap();
         let deserialized = TradeTick::from_json_bytes(serialized).unwrap();
         assert_eq!(deserialized, tick);
     }
 
     #[rstest]
-    fn test_msgpack_serialization(trade_tick_ethusdt_buyer: TradeTick) {
-        let tick = trade_tick_ethusdt_buyer;
+    fn test_msgpack_serialization(stub_trade_tick_ethusdt_buyer: TradeTick) {
+        let tick = stub_trade_tick_ethusdt_buyer;
         let serialized = tick.as_msgpack_bytes().unwrap();
         let deserialized = TradeTick::from_msgpack_bytes(serialized).unwrap();
         assert_eq!(deserialized, tick);

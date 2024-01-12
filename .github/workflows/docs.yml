@@ -1,10 +1,8 @@
 name: docs
 
-# Build and deploy the NautilusTrader documentation
-
 on:
   push:
-    branches: [master, develop]
+    branches: [nightly]
 
 jobs:
   docs:
@@ -75,8 +73,8 @@ jobs:
       - name: Add CNAME
         run: echo "docs.nautilustrader.io" >> docs/build/html/CNAME
 
-      - name: Publish docs (develop)
-        if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
+      - name: Publish docs (nightly)
+        if: ${{ steps.branch-name.outputs.current_branch == 'nightly' }}
         uses: s0/git-publish-subdir-action@develop
         env:
           REPO: self
@@ -84,7 +82,7 @@ jobs:
           FOLDER: docs/build/html
           SQUASH_HISTORY: false
           GITHUB_TOKEN: ${{ secrets.GHPAGES_ACCESS }}
-          TARGET_DIR: develop
+          TARGET_DIR: nightly
 
       - name: Publish docs (latest)
         if: ${{ steps.branch-name.outputs.current_branch == 'master' }}

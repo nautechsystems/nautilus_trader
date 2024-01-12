@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,12 +17,12 @@ from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport AssetClass
-from nautilus_trader.core.rust.model cimport AssetType
 from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport CurrencyType
 from nautilus_trader.core.rust.model cimport HaltReason
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport InstrumentCloseType
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport MarketStatus
@@ -53,8 +53,8 @@ cpdef str aggressor_side_to_str(AggressorSide value)
 cpdef AssetClass asset_class_from_str(str value)
 cpdef str asset_class_to_str(AssetClass value)
 
-cpdef AssetType asset_type_from_str(str value)
-cpdef str asset_type_to_str(AssetType value)
+cpdef InstrumentClass instrument_class_from_str(str value)
+cpdef str instrument_class_to_str(InstrumentClass value)
 
 cpdef BarAggregation bar_aggregation_from_str(str value)
 cpdef str bar_aggregation_to_str(BarAggregation value)

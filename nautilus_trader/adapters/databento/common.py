@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,6 +17,7 @@ from pathlib import Path
 
 import databento
 
+import nautilus_trader
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import BarType
@@ -25,6 +26,11 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+
+
+# Update Databento user-agent constant value with NautilusTrader version
+if nautilus_trader.USER_AGENT not in databento.common.system.USER_AGENT:
+    databento.common.system.USER_AGENT += f" {nautilus_trader.USER_AGENT}"
 
 
 def check_file_path(path: Path) -> None:

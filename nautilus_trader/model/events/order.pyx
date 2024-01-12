@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,9 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import json
 from typing import Any
-from typing import Optional
 
 from libc.stdint cimport uint64_t
 
@@ -283,15 +281,15 @@ cdef class OrderInitialized(OrderEvent):
         bint quote_quantity,
         dict options not None,
         TriggerType emulation_trigger,
-        InstrumentId trigger_instrument_id: Optional[InstrumentId],
+        InstrumentId trigger_instrument_id: InstrumentId | None,
         ContingencyType contingency_type,
-        OrderListId order_list_id: Optional[OrderListId],
-        list linked_order_ids: Optional[list[ClientOrderId]],
-        ClientOrderId parent_order_id: Optional[ClientOrderId],
-        ExecAlgorithmId exec_algorithm_id: Optional[ExecAlgorithmId],
-        dict exec_algorithm_params: Optional[dict[str, Any]],
-        ClientOrderId exec_spawn_id: Optional[ClientOrderId],
-        str tags: Optional[str],
+        OrderListId order_list_id: OrderListId | None,
+        list linked_order_ids: list[ClientOrderId] | None,
+        ClientOrderId parent_order_id: ClientOrderId | None,
+        ExecAlgorithmId exec_algorithm_id: ExecAlgorithmId | None,
+        dict exec_algorithm_params: dict[str, Any] | None,
+        ClientOrderId exec_spawn_id: ClientOrderId | None,
+        str tags: str | None,
         UUID4 event_id not None,
         uint64_t ts_init,
         bint reconciliation=False,
@@ -528,7 +526,6 @@ cdef class OrderInitialized(OrderEvent):
         cdef str parent_order_id_str = values["parent_order_id"]
         cdef str exec_algorithm_id_str = values["exec_algorithm_id"]
         cdef str exec_spawn_id_str = values["exec_spawn_id"]
-        exec_algorithm_params_json = values["exec_algorithm_params"]
         return OrderInitialized(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -541,7 +538,7 @@ cdef class OrderInitialized(OrderEvent):
             post_only=values["post_only"],
             reduce_only=values["reduce_only"],
             quote_quantity=values["quote_quantity"],
-            options=json.loads(values["options"]),  # Using vanilla json due mixed schema types
+            options=values["options"],
             emulation_trigger=trigger_type_from_str(values["emulation_trigger"]),
             trigger_instrument_id=InstrumentId.from_str_c(trigger_instrument_id) if trigger_instrument_id is not None else None,
             contingency_type=contingency_type_from_str(values["contingency_type"]),
@@ -549,7 +546,7 @@ cdef class OrderInitialized(OrderEvent):
             linked_order_ids=[ClientOrderId(o_str) for o_str in linked_order_ids_str.split(",")] if linked_order_ids_str is not None else None,
             parent_order_id=ClientOrderId(parent_order_id_str) if parent_order_id_str is not None else None,
             exec_algorithm_id=ExecAlgorithmId(exec_algorithm_id_str) if exec_algorithm_id_str is not None else None,
-            exec_algorithm_params=json.loads(exec_algorithm_params_json) if exec_algorithm_params_json is not None else None,
+            exec_algorithm_params=values["exec_algorithm_params"],
             exec_spawn_id=ClientOrderId(exec_spawn_id_str) if exec_spawn_id_str is not None else None,
             tags=values["tags"],
             event_id=UUID4(values["event_id"]),
@@ -574,7 +571,7 @@ cdef class OrderInitialized(OrderEvent):
             "post_only": obj.post_only,
             "reduce_only": obj.reduce_only,
             "quote_quantity": obj.quote_quantity,
-            "options": json.dumps(obj.options),  # Using vanilla json due mixed schema types
+            "options": obj.options,
             "emulation_trigger": trigger_type_to_str(obj.emulation_trigger),
             "trigger_instrument_id": obj.trigger_instrument_id.value if obj.trigger_instrument_id is not None else None,
             "contingency_type": contingency_type_to_str(obj.contingency_type),
@@ -582,7 +579,7 @@ cdef class OrderInitialized(OrderEvent):
             "linked_order_ids": ",".join([o.value for o in obj.linked_order_ids]) if obj.linked_order_ids is not None else None,  # noqa
             "parent_order_id": obj.parent_order_id.value if obj.parent_order_id is not None else None,
             "exec_algorithm_id": obj.exec_algorithm_id.value if obj.exec_algorithm_id is not None else None,
-            "exec_algorithm_params": json.dumps(obj.exec_algorithm_params) if obj.exec_algorithm_params else None,
+            "exec_algorithm_params": obj.exec_algorithm_params,
             "exec_spawn_id": obj.exec_spawn_id.value if obj.exec_spawn_id is not None else None,
             "tags": obj.tags,
             "event_id": obj.id.value,
@@ -1659,8 +1656,7 @@ cdef class OrderAccepted(OrderEvent):
     """
     Represents an event where an order has been accepted by the trading venue.
 
-    This event often corresponds to a `NEW` OrdStatus <39> field in FIX
-    trade reports.
+    This event often corresponds to a `NEW` OrdStatus <39> field in FIX execution reports.
 
     Parameters
     ----------
@@ -2255,8 +2251,8 @@ cdef class OrderCanceled(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id: Optional[AccountId],
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        AccountId account_id: AccountId | None,
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
@@ -2525,8 +2521,8 @@ cdef class OrderExpired(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id: Optional[AccountId],
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        AccountId account_id: AccountId | None,
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
@@ -2797,8 +2793,8 @@ cdef class OrderTriggered(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id: Optional[AccountId],
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        AccountId account_id: AccountId | None,
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
@@ -3068,8 +3064,8 @@ cdef class OrderPendingUpdate(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id: Optional[AccountId],
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        AccountId account_id: AccountId | None,
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
@@ -3339,8 +3335,8 @@ cdef class OrderPendingCancel(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id: Optional[AccountId],
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        AccountId account_id: AccountId | None,
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
@@ -3617,8 +3613,8 @@ cdef class OrderModifyRejected(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id: Optional[AccountId],
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        AccountId account_id: AccountId | None,
         str reason not None,
         UUID4 event_id not None,
         uint64_t ts_event,
@@ -3915,8 +3911,8 @@ cdef class OrderCancelRejected(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id: Optional[AccountId],
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        AccountId account_id: AccountId | None,
         str reason not None,
         UUID4 event_id not None,
         uint64_t ts_event,
@@ -4216,11 +4212,11 @@ cdef class OrderUpdated(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id: Optional[AccountId],
+        VenueOrderId venue_order_id: VenueOrderId | None,
+        AccountId account_id: AccountId | None,
         Quantity quantity not None,
-        Price price: Optional[Price],
-        Price trigger_price: Optional[Price],
+        Price price: Price | None,
+        Price trigger_price: Price | None,
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
@@ -4539,7 +4535,7 @@ cdef class OrderFilled(OrderEvent):
         VenueOrderId venue_order_id not None,
         AccountId account_id not None,
         TradeId trade_id not None,
-        PositionId position_id: Optional[PositionId],
+        PositionId position_id: PositionId | None,
         OrderSide order_side,
         OrderType order_type,
         Quantity last_qty not None,

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -38,7 +38,7 @@ from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 from nautilus_trader.adapters.betfair.parsing.common import hash_market_trade
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.execution.reports import TradeReport
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.model.data import NULL_ORDER
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import InstrumentClose
@@ -539,7 +539,7 @@ async def generate_trades_list(
     venue_order_id: VenueOrderId,
     symbol: Symbol,
     since: datetime | None = None,
-) -> list[TradeReport]:
+) -> list[FillReport]:
     filled: list[ClearedOrderSummary] = self.client().betting.list_cleared_orders(
         bet_ids=[venue_order_id],
     )
@@ -549,7 +549,7 @@ async def generate_trades_list(
     fill = filled[0]
     ts_event = pd.Timestamp(fill.last_matched_date).value
     return [
-        TradeReport(
+        FillReport(
             account_id=AccountId("BETFAIR"),
             instrument_id=betfair_instrument_id(
                 fill.market_id,

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,11 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
-
+from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.execution.reports import ExecutionMassStatus
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
-from nautilus_trader.execution.reports import TradeReport
 
 from libc.stdint cimport uint64_t
 
@@ -88,7 +87,7 @@ cdef class ExecutionClient(Component):
         The clock for the client.
     logger : Logger
         The logger for the client.
-    config : dict[str, object], optional
+    config : NautilusConfig, optional
         The configuration for the instance.
 
     Raises
@@ -106,24 +105,23 @@ cdef class ExecutionClient(Component):
     def __init__(
         self,
         ClientId client_id not None,
-        Venue venue: Optional[Venue],
+        Venue venue: Venue | None,
         OmsType oms_type,
         AccountType account_type,
-        Currency base_currency: Optional[Currency],
+        Currency base_currency: Currency | None,
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        dict config = None,
+        config: NautilusConfig | None = None,
     ):
         Condition.not_equal(oms_type, OmsType.UNSPECIFIED, "oms_type", "UNSPECIFIED")
-        if config is None:
-            config = {}
+
         super().__init__(
             clock=clock,
             logger=logger,
             component_id=client_id,
-            component_name=config.get("name", f"ExecClient-{client_id}"),
+            component_name=f"ExecClient-{client_id}",
             msgbus=msgbus,
             config=config,
         )
@@ -717,7 +715,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        PositionId venue_position_id: Optional[PositionId],
+        PositionId venue_position_id: PositionId | None,
         TradeId trade_id,
         OrderSide order_side,
         OrderType order_type,
@@ -818,7 +816,7 @@ cdef class ExecutionClient(Component):
             msg=report,
         )
 
-    cpdef void _send_trade_report(self, report: TradeReport):
+    cpdef void _send_fill_report(self, report: FillReport):
         self._msgbus.send(
             endpoint="ExecEngine.reconcile_report",
             msg=report,

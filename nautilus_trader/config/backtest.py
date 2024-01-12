@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -54,7 +54,7 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     use_position_ids: bool = True
     use_random_ids: bool = False
     use_reduce_only: bool = True
-    # fill_model: Optional[FillModel] = None  # TODO(cs): Implement
+    # fill_model: FillModel | None = None  # TODO(cs): Implement
     modules: list[ImportableConfig] | None = None
 
 

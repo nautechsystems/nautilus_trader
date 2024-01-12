@@ -23,7 +23,7 @@ This inheritance ensures chronological data ordering (vital for backtesting), wh
 Consistency is key; data flows through the platform in exactly the same way for all system environment contexts (`backtest`, `sandbox`, `live`)
 primarily through the `MessageBus` to the `DataEngine` and onto subscribed or registered handlers.
 
-For those seeking customization, the platform supports user-defined data types. Refer to the advanced [Custom/Generic data guide](advanced/custom_data.md) for more details.
+For those seeking customization, the platform supports user-defined data types. Refer to the advanced [Custom data guide](advanced/custom_data.md) for more details.
 
 ## Loading data
 
@@ -88,16 +88,14 @@ Conceretely, this would involve:
 
 The following example shows how to accomplish the above in Python:
 ```python
-import os
-
-from nautilus_trader import PACKAGE_ROOT
+from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.persistence.loaders import BinanceOrderBookDeltaDataLoader
 from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 # Load raw data
-data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/binance/binance/btcusdt-depth-snap.csv")
+data_path = TEST_DATA_DIR / "binance" / "btcusdt-depth-snap.csv"
 df = BinanceOrderBookDeltaDataLoader.load(data_path)
 
 # Setup a wrangler
@@ -130,11 +128,11 @@ The data catalog can be initialized from a `NAUTILUS_PATH` environment variable,
 The following example shows how to initialize a data catalog where there is pre-existing data already written to disk at the given path.
 
 ```python
-import os
+from pathlib import Path
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
 
-CATALOG_PATH = os.getcwd() + "/catalog"
+CATALOG_PATH = Path.cwd() / "catalog"
 
 # Create a new catalog instance
 catalog = ParquetDataCatalog(CATALOG_PATH)

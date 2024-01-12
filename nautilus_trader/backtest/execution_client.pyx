@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.accounting.factory import AccountFactory
+from nautilus_trader.config.common import NautilusConfig
 
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.cache.cache cimport Cache
@@ -76,7 +77,6 @@ cdef class BacktestExecClient(ExecutionClient):
             cache=cache,
             clock=clock,
             logger=logger,
-            config={"routing": True} if routing else None,
         )
 
         self._set_account_id(AccountId(f"{exchange.id.value}-001"))

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,9 +29,9 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import ExecutionMassStatus
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
-from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
@@ -461,9 +461,9 @@ class TestLiveExecutionEngine:
         assert self.exec_engine.report_count == 1
 
     @pytest.mark.asyncio
-    async def test_handle_trade_report(self):
+    async def test_handle_fill_report(self):
         # Arrange
-        trade_report = TradeReport(
+        fill_report = FillReport(
             account_id=AccountId("SIM-001"),
             instrument_id=AUDUSD_SIM.id,
             client_order_id=ClientOrderId("O-123456789"),
@@ -481,7 +481,7 @@ class TestLiveExecutionEngine:
         )
 
         # Act
-        self.exec_engine.reconcile_report(trade_report)
+        self.exec_engine.reconcile_report(fill_report)
 
         # Assert
         assert self.exec_engine.report_count == 1

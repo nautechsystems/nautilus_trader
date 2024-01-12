@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,7 +19,10 @@ use thiserror::Error;
 
 use super::{ladder::BookPrice, level::Level};
 use crate::{
-    data::{delta::OrderBookDelta, order::BookOrder, quote::QuoteTick, trade::TradeTick},
+    data::{
+        delta::OrderBookDelta, depth::OrderBookDepth10, order::BookOrder, quote::QuoteTick,
+        trade::TradeTick,
+    },
     enums::{BookAction, BookType, OrderSide},
     identifiers::instrument_id::InstrumentId,
     orderbook::ladder::Ladder,
@@ -36,8 +39,8 @@ pub enum InvalidBookOperation {
 
 #[derive(Error, Debug)]
 pub enum BookIntegrityError {
-    #[error("Invalid book operation: order ID {0} not found")]
-    OrderNotFound(u64),
+    #[error("Integrity error: order not found: order_id={0}, ts_event={1}, sequence={2}")]
+    OrderNotFound(u64, u64, u64),
     #[error("Integrity error: invalid `NoOrderSide` in book")]
     NoOrderSide,
     #[error("Integrity error: orders in cross [{0} @ {1}]")]
@@ -131,8 +134,8 @@ impl OrderBook {
         };
 
         match order.side {
-            OrderSide::Buy => self.bids.delete(order),
-            OrderSide::Sell => self.asks.delete(order),
+            OrderSide::Buy => self.bids.delete(order, ts_event, sequence),
+            OrderSide::Sell => self.asks.delete(order, ts_event, sequence),
             _ => panic!("{}", BookIntegrityError::NoOrderSide),
         }
 
@@ -161,6 +164,19 @@ impl OrderBook {
             BookAction::Update => self.update(delta.order, delta.ts_event, delta.sequence),
             BookAction::Delete => self.delete(delta.order, delta.ts_event, delta.sequence),
             BookAction::Clear => self.clear(delta.ts_event, delta.sequence),
+        }
+    }
+
+    pub fn apply_depth(&mut self, depth: OrderBookDepth10) {
+        self.bids.clear();
+        self.asks.clear();
+
+        for order in depth.bids {
+            self.add(order, depth.ts_event, depth.sequence);
+        }
+
+        for order in depth.asks {
+            self.add(order, depth.ts_event, depth.sequence);
         }
     }
 
@@ -278,13 +294,29 @@ impl OrderBook {
     }
 
     pub fn update_quote_tick(&mut self, tick: &QuoteTick) {
-        self.update_bid(BookOrder::from_quote_tick(tick, OrderSide::Buy));
-        self.update_ask(BookOrder::from_quote_tick(tick, OrderSide::Sell));
+        self.update_bid(
+            BookOrder::from_quote_tick(tick, OrderSide::Buy),
+            tick.ts_event,
+            0,
+        );
+        self.update_ask(
+            BookOrder::from_quote_tick(tick, OrderSide::Sell),
+            tick.ts_event,
+            0,
+        );
     }
 
     pub fn update_trade_tick(&mut self, tick: &TradeTick) {
-        self.update_bid(BookOrder::from_trade_tick(tick, OrderSide::Buy));
-        self.update_ask(BookOrder::from_trade_tick(tick, OrderSide::Sell));
+        self.update_bid(
+            BookOrder::from_trade_tick(tick, OrderSide::Buy),
+            tick.ts_event,
+            0,
+        );
+        self.update_ask(
+            BookOrder::from_trade_tick(tick, OrderSide::Sell),
+            tick.ts_event,
+            0,
+        );
     }
 
     pub fn simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
@@ -441,12 +473,12 @@ impl OrderBook {
         }
     }
 
-    fn update_bid(&mut self, order: BookOrder) {
+    fn update_bid(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
         match self.bids.top() {
             Some(top_bids) => match top_bids.first() {
                 Some(top_bid) => {
                     let order_id = top_bid.order_id;
-                    self.bids.remove(order_id);
+                    self.bids.remove(order_id, ts_event, sequence);
                     self.bids.add(order);
                 }
                 None => {
@@ -459,12 +491,12 @@ impl OrderBook {
         }
     }
 
-    fn update_ask(&mut self, order: BookOrder) {
+    fn update_ask(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
         match self.asks.top() {
             Some(top_asks) => match top_asks.first() {
                 Some(top_ask) => {
                     let order_id = top_ask.order_id;
-                    self.asks.remove(order_id);
+                    self.asks.remove(order_id, ts_event, sequence);
                     self.asks.add(order);
                 }
                 None => {
@@ -502,7 +534,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        data::order::BookOrder,
+        data::{depth::stubs::stub_depth10, order::BookOrder},
         enums::{AggressorSide, OrderSide},
         identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
         types::{price::Price, quantity::Quantity},
@@ -758,6 +790,20 @@ mod tests {
             book.get_quantity_for_price(Price::from("0.990"), OrderSide::Sell),
             3.0
         );
+    }
+
+    #[rstest]
+    fn test_apply_depth(stub_depth10: OrderBookDepth10) {
+        let depth = stub_depth10;
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+        book.apply_depth(depth);
+
+        assert_eq!(book.best_bid_price().unwrap().as_f64(), 99.00);
+        assert_eq!(book.best_ask_price().unwrap().as_f64(), 100.00);
+        assert_eq!(book.best_bid_size().unwrap().as_f64(), 100.0);
+        assert_eq!(book.best_ask_size().unwrap().as_f64(), 100.0);
     }
 
     #[rstest]

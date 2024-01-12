@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,6 +21,7 @@ import databento_dbn
 import msgspec
 
 from nautilus_trader.adapters.databento.common import check_file_path
+from nautilus_trader.adapters.databento.parsing import parse_record
 from nautilus_trader.adapters.databento.parsing import parse_record_with_metadata
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.core.correctness import PyCondition
@@ -212,7 +213,11 @@ class DatabentoDataLoader:
         for inst in instruments:
             self._instruments[inst.id] = inst
 
-    def from_dbn(self, path: PathLike[str] | str) -> list[Data]:
+    def from_dbn(
+        self,
+        path: PathLike[str] | str,
+        instrument_id: InstrumentId | None = None,
+    ) -> list[Data]:
         """
         Return a list of Nautilus objects from the DBN file at the given `path`.
 
@@ -220,6 +225,9 @@ class DatabentoDataLoader:
         ----------
         path : PathLike[str] | str
             The path for the data.
+        instrument_id : InstrumentId, optional
+            The Nautilus instrument ID for the data. This is a parameter to optimize performance,
+            as all records will have their symbology overridden with the given Nautilus identifier.
 
         Returns
         -------
@@ -254,12 +262,20 @@ class DatabentoDataLoader:
             else:
                 ts_init = record.ts_recv
 
-            data = parse_record_with_metadata(
-                record=record,
-                publishers=self._publishers,
-                instrument_map=instrument_map,
-                ts_init=ts_init,
-            )
+            if instrument_id is not None:
+                data = parse_record(
+                    record=record,
+                    instrument_id=instrument_id,
+                    ts_init=ts_init,
+                )
+            else:
+                data = parse_record_with_metadata(
+                    record=record,
+                    publishers=self._publishers,
+                    instrument_map=instrument_map,
+                    ts_init=ts_init,
+                )
+
             if isinstance(data, tuple):
                 output.extend(data)
             else:

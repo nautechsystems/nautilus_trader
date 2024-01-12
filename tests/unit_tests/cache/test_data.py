@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -61,10 +61,6 @@ class TestCache:
         # Arrange, Act, Assert
         assert self.cache.instruments() == []
 
-    def test_tickers_for_unknown_instrument_returns_empty_list(self):
-        # Arrange, Act, Assert
-        assert self.cache.tickers(AUDUSD_SIM.id) == []
-
     def test_quote_ticks_for_unknown_instrument_returns_empty_list(self):
         # Arrange, Act, Assert
         assert self.cache.quote_ticks(AUDUSD_SIM.id) == []
@@ -85,10 +81,6 @@ class TestCache:
         # Arrange, Act, Assert
         assert self.cache.order_book(AUDUSD_SIM.id) is None
 
-    def test_ticker_when_no_tickers_returns_none(self):
-        # Arrange, Act, Assert
-        assert self.cache.ticker(AUDUSD_SIM.id) is None
-
     def test_quote_tick_when_no_ticks_returns_none(self):
         # Arrange, Act, Assert
         assert self.cache.quote_tick(AUDUSD_SIM.id) is None
@@ -101,10 +93,6 @@ class TestCache:
         # Arrange, Act, Assert
         assert self.cache.bar(TestDataStubs.bartype_gbpusd_1sec_mid()) is None
 
-    def test_ticker_count_for_unknown_instrument_returns_zero(self):
-        # Arrange, Act, Assert
-        assert self.cache.ticker_count(AUDUSD_SIM.id) == 0
-
     def test_quote_tick_count_for_unknown_instrument_returns_zero(self):
         # Arrange, Act, Assert
         assert self.cache.quote_tick_count(AUDUSD_SIM.id) == 0
@@ -116,10 +104,6 @@ class TestCache:
     def test_has_order_book_for_unknown_instrument_returns_false(self):
         # Arrange, Act, Assert
         assert not self.cache.has_order_book(AUDUSD_SIM.id)
-
-    def test_has_tickers_for_unknown_instrument_returns_false(self):
-        # Arrange, Act, Assert
-        assert not self.cache.has_tickers(AUDUSD_SIM.id)
 
     def test_has_quote_ticks_for_unknown_instrument_returns_false(self):
         # Arrange, Act, Assert

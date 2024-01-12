@@ -85,7 +85,7 @@ cdef extern from "../includes/common.h":
         CYAN # = 4,
         # The yellow log color, typically used with [`LogLevel::Warning`] log levels.
         YELLOW # = 5,
-        # The red log color, typically used with [`LogLevel::Error`] or [`LogLevel::Critical`] log levels.
+        # The red log color, typically used with [`LogLevel::Error`] level.
         RED # = 6,
 
     # The log level for log messages.
@@ -98,17 +98,8 @@ cdef extern from "../includes/common.h":
         WARNING # = 30,
         # The **ERR** error log level.
         ERROR # = 40,
-        # The **CRT** critical log level.
-        CRITICAL # = 50,
 
     cdef struct LiveClock:
-        pass
-
-    # Provides a high-performance logger utilizing a MPSC channel under the hood.
-    #
-    # A separate thead is spawned at initialization which receives [`LogEvent`] structs over the
-    # channel.
-    cdef struct Logger_t:
         pass
 
     # Provides a generic message bus to facilitate various messaging patterns.
@@ -162,17 +153,6 @@ cdef extern from "../includes/common.h":
     # both mutable and immutable access.
     cdef struct LiveClock_API:
         LiveClock *_0;
-
-    # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`Logger`].
-    #
-    # This struct wraps `Logger` in a way that makes it compatible with C function
-    # calls, enabling interaction with `Logger` in a C environment.
-    #
-    # It implements the `Deref` trait, allowing instances of `Logger_API` to be
-    # dereferenced to `Logger`, providing access to `Logger`'s methods without
-    # having to manually access the underlying `Logger` instance.
-    cdef struct Logger_API:
-        Logger_t *_0;
 
     # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`MessageBus`].
     #
@@ -284,6 +264,7 @@ cdef extern from "../includes/common.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     ComponentState component_state_from_cstr(const char *ptr);
 
@@ -292,6 +273,7 @@ cdef extern from "../includes/common.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     ComponentTrigger component_trigger_from_cstr(const char *ptr);
 
@@ -300,6 +282,7 @@ cdef extern from "../includes/common.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     LogLevel log_level_from_cstr(const char *ptr);
 
@@ -308,44 +291,44 @@ cdef extern from "../includes/common.h":
     # Returns an enum from a Python string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     LogColor log_color_from_cstr(const char *ptr);
 
-    # Creates a new logger.
+    # Initialize tracing.
+    #
+    # Tracing is meant to be used to trace/debug async Rust code. It can be
+    # configured to filter modules and write up to a specific level only using
+    # by passing a configuration using the `RUST_LOG` environment variable.
     #
     # # Safety
     #
-    # - Assumes `trader_id_ptr` is a valid C string pointer.
-    # - Assumes `machine_id_ptr` is a valid C string pointer.
-    # - Assumes `instance_id_ptr` is a valid C string pointer.
-    # - Assumes `directory_ptr` is a valid C string pointer or NULL.
-    # - Assumes `file_name_ptr` is a valid C string pointer or NULL.
-    # - Assumes `file_format_ptr` is a valid C string pointer or NULL.
-    # - Assumes `component_levels_ptr` is a valid C string pointer or NULL.
-    Logger_API logger_new(const char *trader_id_ptr,
-                          const char *machine_id_ptr,
-                          const char *instance_id_ptr,
-                          LogLevel level_stdout,
-                          LogLevel level_file,
-                          uint8_t file_logging,
-                          const char *directory_ptr,
-                          const char *file_name_ptr,
-                          const char *file_format_ptr,
-                          const char *component_levels_ptr,
-                          uint8_t is_colored,
-                          uint8_t is_bypassed);
+    # Should only be called once during an applications run, ideally at the
+    # beginning of the run.
+    void tracing_init();
 
-    void logger_drop(Logger_API logger);
-
-    const char *logger_get_trader_id_cstr(const Logger_API *logger);
-
-    const char *logger_get_machine_id_cstr(const Logger_API *logger);
-
-    UUID4_t logger_get_instance_id(const Logger_API *logger);
-
-    uint8_t logger_is_colored(const Logger_API *logger);
-
-    uint8_t logger_is_bypassed(const Logger_API *logger);
+    # Initialize logging.
+    #
+    # Logging should be used for Python and sync Rust logic which is most of
+    # the components in the main `nautilus_trader` package.
+    # Logging can be configured to filter components and write up to a specific level only
+    # by passing a configuration using the `NAUTILUS_LOG` environment variable.
+    #
+    # # Safety
+    #
+    # Should only be called once during an applications run, ideally at the
+    # beginning of the run.
+    #
+    # - Assume `config_spec_ptr` is a valid C string pointer.
+    # - Assume `directory_ptr` is either NULL or a valid C string pointer.
+    # - Assume `file_name_ptr` is either NULL or a valid C string pointer.
+    # - Assume `file_format_ptr` is either NULL or a valid C string pointer.
+    void logging_init(TraderId_t trader_id,
+                      UUID4_t instance_id,
+                      const char *config_spec_ptr,
+                      const char *directory_ptr,
+                      const char *file_name_ptr,
+                      const char *file_format_ptr);
 
     # Create a new log event.
     #
@@ -353,12 +336,14 @@ cdef extern from "../includes/common.h":
     #
     # - Assumes `component_ptr` is a valid C string pointer.
     # - Assumes `message_ptr` is a valid C string pointer.
-    void logger_log(Logger_API *logger,
-                    uint64_t timestamp_ns,
+    void logger_log(uint64_t timestamp_ns,
                     LogLevel level,
                     LogColor color,
                     const char *component_ptr,
                     const char *message_ptr);
+
+    # Flush logger buffers.
+    void logger_flush();
 
     # # Safety
     #

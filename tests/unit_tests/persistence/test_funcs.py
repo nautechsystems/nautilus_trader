@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,7 +37,7 @@ def test_clean_windows_key(s, expected):
     [
         (TradeTick, "trade_tick"),
         (OrderBookDelta, "order_book_delta"),
-        (pd.DataFrame, "genericdata_data_frame"),
+        (pd.DataFrame, "custom_data_frame"),
     ],
 )
 def test_class_to_filename(s, expected):

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,18 +14,17 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 from libc.math cimport pow
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AssetClass
-from nautilus_trader.core.rust.model cimport AssetType
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.model.functions cimport asset_class_from_str
 from nautilus_trader.model.functions cimport asset_class_to_str
-from nautilus_trader.model.functions cimport asset_type_from_str
-from nautilus_trader.model.functions cimport asset_type_to_str
+from nautilus_trader.model.functions cimport instrument_class_from_str
+from nautilus_trader.model.functions cimport instrument_class_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Quantity
@@ -48,8 +47,8 @@ cdef class Instrument(Data):
         The native/local/raw symbol for the instrument, assigned by the venue.
     asset_class : AssetClass
         The instrument asset class.
-    asset_type : AssetType
-        The instrument asset type.
+    instrument_class : InstrumentClass
+        The instrument class.
     quote_currency : Currency
         The quote currency.
     is_inverse : Currency
@@ -134,7 +133,7 @@ cdef class Instrument(Data):
         InstrumentId instrument_id not None,
         Symbol raw_symbol not None,
         AssetClass asset_class,
-        AssetType asset_type,
+        InstrumentClass instrument_class,
         Currency quote_currency not None,
         bint is_inverse,
         int price_precision,
@@ -147,14 +146,14 @@ cdef class Instrument(Data):
         taker_fee not None: Decimal,
         uint64_t ts_event,
         uint64_t ts_init,
-        Price price_increment: Optional[Price] = None,
-        Quantity lot_size: Optional[Quantity] = None,
-        Quantity max_quantity: Optional[Quantity] = None,
-        Quantity min_quantity: Optional[Quantity] = None,
-        Money max_notional: Optional[Money] = None,
-        Money min_notional: Optional[Money] = None,
-        Price max_price: Optional[Price] = None,
-        Price min_price: Optional[Price] = None,
+        Price price_increment: Price | None = None,
+        Quantity lot_size: Quantity | None = None,
+        Quantity max_quantity: Quantity | None = None,
+        Quantity min_quantity: Quantity | None = None,
+        Money max_notional: Money | None = None,
+        Money min_notional: Money | None = None,
+        Price max_price: Price | None = None,
+        Price min_price: Price | None = None,
         str tick_scheme_name = None,
         dict info = None,
     ):
@@ -195,7 +194,7 @@ cdef class Instrument(Data):
         self.id = instrument_id
         self.raw_symbol = raw_symbol
         self.asset_class = asset_class
-        self.asset_type = asset_type
+        self.instrument_class = instrument_class
         self.quote_currency = quote_currency
         self.is_inverse = is_inverse
         self.price_precision = price_precision
@@ -235,7 +234,7 @@ cdef class Instrument(Data):
             f"(id={self.id.to_str()}, "
             f"raw_symbol={self.raw_symbol}, "
             f"asset_class={asset_class_to_str(self.asset_class)}, "
-            f"asset_type={asset_type_to_str(self.asset_type)}, "
+            f"instrument_class={instrument_class_to_str(self.instrument_class)}, "
             f"quote_currency={self.quote_currency}, "
             f"is_inverse={self.is_inverse}, "
             f"price_precision={self.price_precision}, "
@@ -264,7 +263,7 @@ cdef class Instrument(Data):
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
             asset_class=asset_class_from_str(values["asset_class"]),
-            asset_type=asset_type_from_str(values["asset_type"]),
+            instrument_class=instrument_class_from_str(values["instrument_class"]),
             quote_currency=Currency.from_str_c(values["quote_currency"]),
             is_inverse=values["is_inverse"],
             price_precision=values["price_precision"],
@@ -295,7 +294,7 @@ cdef class Instrument(Data):
             "id": obj.id.to_str(),
             "raw_symbol": obj.raw_symbol.to_str(),
             "asset_class": asset_class_to_str(obj.asset_class),
-            "asset_type": asset_type_to_str(obj.asset_type),
+            "instrument_class": instrument_class_to_str(obj.instrument_class),
             "quote_currency": obj.quote_currency.code,
             "is_inverse": obj.is_inverse,
             "price_precision": obj.price_precision,

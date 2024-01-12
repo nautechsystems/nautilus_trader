@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,7 @@
 use std::ffi::c_char;
 
 use nautilus_core::{
-    ffi::string::{cstr_to_string, str_to_cstr},
+    ffi::string::{cstr_to_ustr, str_to_cstr},
     uuid::UUID4,
 };
 
@@ -32,7 +32,7 @@ pub unsafe extern "C" fn time_event_new(
     ts_event: u64,
     ts_init: u64,
 ) -> TimeEvent {
-    TimeEvent::new(&cstr_to_string(name_ptr), event_id, ts_event, ts_init).unwrap()
+    TimeEvent::new(cstr_to_ustr(name_ptr), event_id, ts_event, ts_init).unwrap()
 }
 
 /// Returns a [`TimeEvent`] as a C string pointer.

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -183,7 +183,7 @@ def test_synthetic_instrument_to_dict():
         "type": "SyntheticInstrument",
         "symbol": "BTC-ETH",
         "price_precision": 8,
-        "components": b'["BTCUSDT.BINANCE","ETHUSDT.BINANCE"]',
+        "components": ["BTCUSDT.BINANCE", "ETHUSDT.BINANCE"],
         "formula": "(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
         "ts_event": 0,
         "ts_init": 0,

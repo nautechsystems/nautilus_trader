@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,19 +17,30 @@ import msgspec
 import pyarrow as pa
 
 from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_ARROW_SCHEMA
 
 
-def serialize(event: OrderFilled) -> pa.RecordBatch:
+def serialize(event: OrderInitialized | OrderFilled) -> pa.RecordBatch:
     data = event.to_dict(event)
-    data["info"] = msgspec.json.encode(data["info"])
-    return pa.RecordBatch.from_pylist([data], schema=NAUTILUS_ARROW_SCHEMA[OrderFilled])
+    if isinstance(event, OrderInitialized):
+        data["options"] = msgspec.json.encode(data["options"])
+        data["exec_algorithm_params"] = msgspec.json.encode(data["exec_algorithm_params"])
+    elif isinstance(event, OrderFilled):
+        data["info"] = msgspec.json.encode(data["info"])
+    return pa.RecordBatch.from_pylist([data], schema=NAUTILUS_ARROW_SCHEMA[type(event)])
 
 
 def deserialize(cls):
-    def inner(batch: pa.RecordBatch) -> OrderFilled:
+    def inner(batch: pa.RecordBatch) -> OrderInitialized | OrderFilled:
         def parse(data):
-            data["info"] = msgspec.json.decode(data["info"])
+            if cls == OrderInitialized:
+                data["options"] = msgspec.json.decode(data["options"])
+                data["exec_algorithm_params"] = msgspec.json.decode(data["exec_algorithm_params"])
+            elif cls == OrderFilled:
+                data["info"] = msgspec.json.decode(data["info"])
+            else:
+                raise RuntimeError("OOPS")
             return data
 
         return [cls.from_dict(parse(d)) for d in batch.to_pylist()]

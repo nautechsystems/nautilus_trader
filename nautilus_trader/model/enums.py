@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,12 +17,12 @@ from nautilus_trader.core.rust.model import AccountType
 from nautilus_trader.core.rust.model import AggregationSource
 from nautilus_trader.core.rust.model import AggressorSide
 from nautilus_trader.core.rust.model import AssetClass
-from nautilus_trader.core.rust.model import AssetType
 from nautilus_trader.core.rust.model import BookAction
 from nautilus_trader.core.rust.model import BookType
 from nautilus_trader.core.rust.model import ContingencyType
 from nautilus_trader.core.rust.model import CurrencyType
 from nautilus_trader.core.rust.model import HaltReason
+from nautilus_trader.core.rust.model import InstrumentClass
 from nautilus_trader.core.rust.model import InstrumentCloseType
 from nautilus_trader.core.rust.model import LiquiditySide
 from nautilus_trader.core.rust.model import MarketStatus
@@ -46,8 +46,6 @@ from nautilus_trader.model.functions import aggressor_side_from_str
 from nautilus_trader.model.functions import aggressor_side_to_str
 from nautilus_trader.model.functions import asset_class_from_str
 from nautilus_trader.model.functions import asset_class_to_str
-from nautilus_trader.model.functions import asset_type_from_str
-from nautilus_trader.model.functions import asset_type_to_str
 from nautilus_trader.model.functions import bar_aggregation_from_str
 from nautilus_trader.model.functions import bar_aggregation_to_str
 from nautilus_trader.model.functions import book_action_from_str
@@ -60,6 +58,8 @@ from nautilus_trader.model.functions import currency_type_from_str
 from nautilus_trader.model.functions import currency_type_to_str
 from nautilus_trader.model.functions import halt_reason_from_str
 from nautilus_trader.model.functions import halt_reason_to_str
+from nautilus_trader.model.functions import instrument_class_from_str
+from nautilus_trader.model.functions import instrument_class_to_str
 from nautilus_trader.model.functions import instrument_close_type_from_str
 from nautilus_trader.model.functions import instrument_close_type_to_str
 from nautilus_trader.model.functions import liquidity_side_from_str
@@ -95,7 +95,7 @@ __all__ = [
     "AggregationSource",
     "AggressorSide",
     "AssetClass",
-    "AssetType",
+    "InstrumentClass",
     "BarAggregation",
     "BookAction",
     "BookType",
@@ -124,8 +124,8 @@ __all__ = [
     "aggressor_side_from_str",
     "asset_class_to_str",
     "asset_class_from_str",
-    "asset_type_to_str",
-    "asset_type_from_str",
+    "instrument_class_to_str",
+    "instrument_class_from_str",
     "bar_aggregation_to_str",
     "bar_aggregation_from_str",
     "book_action_to_str",

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,8 +23,6 @@ from nautilus_trader.core.rust.model cimport aggressor_side_from_cstr
 from nautilus_trader.core.rust.model cimport aggressor_side_to_cstr
 from nautilus_trader.core.rust.model cimport asset_class_from_cstr
 from nautilus_trader.core.rust.model cimport asset_class_to_cstr
-from nautilus_trader.core.rust.model cimport asset_type_from_cstr
-from nautilus_trader.core.rust.model cimport asset_type_to_cstr
 from nautilus_trader.core.rust.model cimport bar_aggregation_from_cstr
 from nautilus_trader.core.rust.model cimport bar_aggregation_to_cstr
 from nautilus_trader.core.rust.model cimport book_action_from_cstr
@@ -37,6 +35,8 @@ from nautilus_trader.core.rust.model cimport currency_type_from_cstr
 from nautilus_trader.core.rust.model cimport currency_type_to_cstr
 from nautilus_trader.core.rust.model cimport halt_reason_from_cstr
 from nautilus_trader.core.rust.model cimport halt_reason_to_cstr
+from nautilus_trader.core.rust.model cimport instrument_class_from_cstr
+from nautilus_trader.core.rust.model cimport instrument_class_to_cstr
 from nautilus_trader.core.rust.model cimport instrument_close_type_from_cstr
 from nautilus_trader.core.rust.model cimport instrument_close_type_to_cstr
 from nautilus_trader.core.rust.model cimport liquidity_side_from_cstr
@@ -101,12 +101,12 @@ cpdef str asset_class_to_str(AssetClass value):
     return cstr_to_pystr(asset_class_to_cstr(value))
 
 
-cpdef AssetType asset_type_from_str(str value):
-    return asset_type_from_cstr(pystr_to_cstr(value))
+cpdef InstrumentClass instrument_class_from_str(str value):
+    return instrument_class_from_cstr(pystr_to_cstr(value))
 
 
-cpdef str asset_type_to_str(AssetType value):
-    return cstr_to_pystr(asset_type_to_cstr(value))
+cpdef str instrument_class_to_str(InstrumentClass value):
+    return cstr_to_pystr(instrument_class_to_cstr(value))
 
 
 cpdef BarAggregation bar_aggregation_from_str(str value):

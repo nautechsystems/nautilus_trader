@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import random
-from typing import Optional
 
 from libc.stdint cimport uint64_t
 
@@ -53,7 +52,7 @@ cdef class FillModel:
         double prob_fill_on_limit = 1.0,
         double prob_fill_on_stop = 1.0,
         double prob_slippage = 0.0,
-        random_seed: Optional[int] = None,
+        random_seed: int | None = None,
     ):
         Condition.in_range(prob_fill_on_limit, 0.0, 1.0, "prob_fill_on_limit")
         Condition.in_range(prob_fill_on_stop, 0.0, 1.0, "prob_fill_on_stop")

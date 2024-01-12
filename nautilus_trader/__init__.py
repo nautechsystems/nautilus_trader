@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,15 +16,20 @@
 The top-level package contains all sub-packages needed for NautilusTrader.
 """
 
-import os
 from importlib import resources
+from pathlib import Path
 
 import toml
-from importlib_metadata import version
 
 
-PACKAGE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PYPROJECT_PATH = os.path.join(PACKAGE_ROOT, "pyproject.toml")
+PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+
+try:
+    __version__ = toml.load(PACKAGE_ROOT / "pyproject.toml")["tool"]["poetry"]["version"]
+except FileNotFoundError:  # pragma: no cover
+    __version__ = "latest"
+
+USER_AGENT = f"NautilusTrader/{__version__}"
 
 
 def clean_version_string(version: str) -> str:
@@ -54,16 +59,3 @@ def get_package_version_from_toml(
         if strip_specifiers:
             version = clean_version_string(version)
         return version
-
-
-def get_package_version_installed(package_name: str) -> str:
-    """
-    Return the package version installed for the given `package_name`.
-    """
-    return version(package_name)
-
-
-try:
-    __version__ = toml.load(PYPROJECT_PATH)["tool"]["poetry"]["version"]
-except FileNotFoundError:  # pragma: no cover
-    __version__ = "latest"

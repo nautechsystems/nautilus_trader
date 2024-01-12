@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,10 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_adapters::python::databento::parsing;
 use pyo3::{
     prelude::*,
     types::{PyDict, PyString},
 };
+
+/// This currently works around an issue where `databento` couldn't be recognised
+/// by the pyo3 `wrap_pymodule!` macro.
+///
+/// Loaded as nautilus_pyo3.databento
+#[pymodule]
+pub fn databento(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(parsing::py_parse_equity, m)?)?;
+    m.add_function(wrap_pyfunction!(parsing::py_parse_futures_contract, m)?)?;
+    m.add_function(wrap_pyfunction!(parsing::py_parse_options_contract, m)?)?;
+    m.add_function(wrap_pyfunction!(parsing::py_parse_mbo_msg, m)?)?;
+    m.add_function(wrap_pyfunction!(parsing::py_parse_trade_msg, m)?)?;
+    m.add_function(wrap_pyfunction!(parsing::py_parse_mbp1_msg, m)?)?;
+    m.add_function(wrap_pyfunction!(parsing::py_parse_mbp10_msg, m)?)?;
+
+    Ok(())
+}
 
 /// Need to modify sys modules so that submodule can be loaded directly as
 /// import supermodule.submodule
@@ -31,6 +49,12 @@ fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
 
     // Set pyo3_nautilus to be recognized as a subpackage
     sys_modules.set_item(module_name, m)?;
+
+    let n = "databento";
+    let submodule = pyo3::wrap_pymodule!(databento);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    re_export_module_attributes(m, n)?;
 
     let n = "core";
     let submodule = pyo3::wrap_pymodule!(nautilus_core::python::core);

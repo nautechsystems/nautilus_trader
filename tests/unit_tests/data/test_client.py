@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,8 +22,8 @@ from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -121,10 +121,10 @@ class TestDataClient:
             ts_event=0,
             ts_init=0,
         )
-        generic_data = GenericData(data_type, data)
+        custom_data = CustomData(data_type, data)
 
         # Act
-        self.client._handle_data_py(generic_data)
+        self.client._handle_data_py(custom_data)
 
         # Assert
         assert self.data_engine.data_count == 1
@@ -211,16 +211,6 @@ class TestMarketDataClient:
 
         # Act
         self.client._handle_data_py(deltas)
-
-        # Assert
-        assert self.data_engine.data_count == 1
-
-    def test_handle_ticker_sends_to_data_engine(self):
-        # Arrange
-        tick = TestDataStubs.ticker()
-
-        # Act
-        self.client._handle_data_py(tick)
 
         # Assert
         assert self.data_engine.data_count == 1

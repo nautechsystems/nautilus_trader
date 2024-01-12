@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,7 +21,6 @@ from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
-from nautilus_trader.model.data cimport Ticker
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
@@ -52,23 +51,19 @@ cdef class CacheFacade:
 
 # -- DATA QUERIES ---------------------------------------------------------------------------------
 
-    cpdef list tickers(self, InstrumentId instrument_id)
     cpdef list quote_ticks(self, InstrumentId instrument_id)
     cpdef list trade_ticks(self, InstrumentId instrument_id)
     cpdef list bars(self, BarType bar_type)
     cpdef Price price(self, InstrumentId instrument_id, PriceType price_type)
     cpdef OrderBook order_book(self, InstrumentId instrument_id)
-    cpdef Ticker ticker(self, InstrumentId instrument_id, int index=*)
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index=*)
     cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index=*)
     cpdef Bar bar(self, BarType bar_type, int index=*)
     cpdef int book_update_count(self, InstrumentId instrument_id)
-    cpdef int ticker_count(self, InstrumentId instrument_id)
     cpdef int quote_tick_count(self, InstrumentId instrument_id)
     cpdef int trade_tick_count(self, InstrumentId instrument_id)
     cpdef int bar_count(self, BarType bar_type)
     cpdef bint has_order_book(self, InstrumentId instrument_id)
-    cpdef bint has_tickers(self, InstrumentId instrument_id)
     cpdef bint has_quote_ticks(self, InstrumentId instrument_id)
     cpdef bint has_trade_ticks(self, InstrumentId instrument_id)
     cpdef bint has_bars(self, BarType bar_type)

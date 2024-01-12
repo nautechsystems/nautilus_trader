@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,12 +17,12 @@ import copy
 from collections import deque
 from typing import Any
 from typing import Callable
-from typing import Optional
 
 import cython
 import msgspec
 import numpy as np
 
+from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.core.rust.common import ComponentState as PyComponentState
 
@@ -170,13 +170,15 @@ cdef class Component:
         The custom component name.
     msgbus : MessageBus, optional
         The message bus for the component (required before initialized).
-    config : dict[str, Any], optional
+    config : NautilusConfig, optional
         The configuration for the component.
 
     Raises
     ------
     ValueError
         If `component_name` is not a valid string.
+    TypeError
+        If `config` is not of type `NautilusConfig`.
 
     Warnings
     --------
@@ -191,15 +193,14 @@ cdef class Component:
         Identifier component_id = None,
         str component_name = None,
         MessageBus msgbus = None,
-        dict config = None,
+        config: NautilusConfig | None = None,
     ):
-        if config is None:
-            config = {}
         if component_id is None:
             component_id = ComponentId(type(self).__name__)
         if component_name is None:
             component_name = component_id.value
         Condition.valid_string(component_name, "component_name")
+        Condition.type_or_none(config, NautilusConfig, "config")
 
         self.trader_id = msgbus.trader_id if msgbus is not None else None
         self.id = component_id
@@ -209,7 +210,7 @@ cdef class Component:
         self._clock = clock
         self._log = LoggerAdapter(component_name=component_name, logger=logger)
         self._fsm = ComponentFSMFactory.create()
-        self._config = config
+        self._config = config.json_primitives() if config is not None else {}
 
         if self._msgbus is not None:
             self._initialize()
@@ -619,7 +620,7 @@ cdef class Component:
         self,
         ComponentTrigger trigger,
         bint is_transitory,
-        action: Optional[Callable[[None], None]] = None,
+        action: Callable[[None], None] | None = None,
     ):
         try:
             self._fsm.trigger(trigger)
@@ -709,8 +710,8 @@ cdef class MessageBus:
     def __init__(
         self,
         TraderId trader_id not None,
-        Clock clock not None,
-        Logger logger not None,
+        Clock clock,
+        Logger logger,
         UUID4 instance_id = None,
         str name = None,
         Serializer serializer = None,
@@ -746,20 +747,16 @@ cdef class MessageBus:
                 "recommended range is [10, 1000] milliseconds.",
             )
 
-        if (snapshot_orders or snapshot_positions) and not config.stream:
-            raise InvalidConfiguration(
-                "Invalid `MessageBusConfig`: Cannot configure snapshots without providing a `stream` name. "
-                "This is because currently the message bus will write to the same snapshot keys as the cache.",
-            )
-
         # Configuration
         self._log.info(f"{config.database=}", LogColor.BLUE)
         self._log.info(f"{config.encoding=}", LogColor.BLUE)
         self._log.info(f"{config.timestamps_as_iso8601=}", LogColor.BLUE)
         self._log.info(f"{config.buffer_interval_ms=}", LogColor.BLUE)
         self._log.info(f"{config.autotrim_mins=}", LogColor.BLUE)
-        self._log.info(f"{config.stream=}", LogColor.BLUE)
+        self._log.info(f"{config.use_trader_prefix=}", LogColor.BLUE)
+        self._log.info(f"{config.use_trader_id=}", LogColor.BLUE)
         self._log.info(f"{config.use_instance_id=}", LogColor.BLUE)
+        self._log.info(f"{config.streams_prefix=}", LogColor.BLUE)
         self._log.info(f"{config.types_filter=}", LogColor.BLUE)
 
         # Copy and clear `types_filter` before passing down to the core MessageBus
@@ -1397,7 +1394,7 @@ cdef class Throttler:
         Clock clock not None,
         Logger logger not None,
         output_send not None: Callable[[Any], None],
-        output_drop: Optional[Callable[[Any], None]] = None,
+        output_drop: Callable[[Any], None] | None = None,
     ):
         Condition.valid_string(name, "name")
         Condition.positive_int(limit, "limit")

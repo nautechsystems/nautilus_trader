@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 import pandas as pd
 
@@ -37,7 +36,7 @@ from nautilus_trader.common.messages cimport TradingStateChanged
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.rust.model cimport AssetType
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport OrderType
@@ -112,7 +111,7 @@ cdef class RiskEngine(Component):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        config: Optional[RiskEngineConfig] = None,
+        config: RiskEngineConfig | None = None,
     ):
         if config is None:
             config = RiskEngineConfig()
@@ -122,7 +121,7 @@ cdef class RiskEngine(Component):
             logger=logger,
             component_id=ComponentId("RiskEngine"),
             msgbus=msgbus,
-            config=config.dict(),
+            config=config,
         )
 
         self._portfolio = portfolio
@@ -473,7 +472,7 @@ cdef class RiskEngine(Component):
 
         if not self._check_orders_risk(instrument, command.order_list.orders):
             # Deny all orders in list
-            self._deny_order_list(command.order_list, "OrderList DENIED")
+            self._deny_order_list(command.order_list, "OrderList {command.order_list.id.to_str()} DENIED")
             return # Denied
 
         self._execution_gateway(instrument, command)
@@ -608,7 +607,7 @@ cdef class RiskEngine(Component):
 
         # Determine max notional
         cdef Money max_notional = None
-        max_notional_setting: Optional[Decimal] = self._max_notional_per_order.get(instrument.id)
+        max_notional_setting: Decimal | None = self._max_notional_per_order.get(instrument.id)
         if max_notional_setting:
             # TODO(cs): Improve efficiency of this
             max_notional = Money(float(max_notional_setting), instrument.quote_currency)
@@ -767,7 +766,7 @@ cdef class RiskEngine(Component):
         if price.precision > instrument.price_precision:
             # Check failed
             return f"price {price} invalid (precision {price.precision} > {instrument.price_precision})"
-        if instrument.asset_type != AssetType.OPTION:
+        if instrument.instrument_class != InstrumentClass.OPTION:
             if price.raw_int64_c() <= 0:
                 # Check failed
                 return f"price {price} invalid (not positive)"
@@ -812,7 +811,7 @@ cdef class RiskEngine(Component):
         self._reject_modify_order(order, reason="Exceeded MAX_ORDER_MODIFY_RATE")
 
     cpdef void _deny_order(self, Order order, str reason):
-        self._log.error(f"SubmitOrder DENIED: {reason}.")
+        self._log.error(f"SubmitOrder for {order.client_order_id.to_str()} DENIED: {reason}.")
 
         if order is None:
             # Nothing to deny
@@ -847,16 +846,6 @@ cdef class RiskEngine(Component):
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cpdef void _execution_gateway(self, Instrument instrument, TradingCommand command):
-        if instrument is None:
-            # Get instrument for order
-            instrument = self._cache.instrument(command.instrument_id)
-            if instrument is None:
-                self._deny_command(
-                    command=command,
-                    reason=f"Instrument for {command.instrument_id} not found",
-                )
-                return  # Denied
-
         # Check TradingState
         cdef Order order
         if self.trading_state == TradingState.HALTED:

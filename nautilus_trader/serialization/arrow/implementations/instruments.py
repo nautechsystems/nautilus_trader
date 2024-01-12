@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -140,10 +140,7 @@ SCHEMAS = {
             "raw_symbol": pa.string(),
             "currency": pa.dictionary(pa.int16(), pa.string()),
             "price_precision": pa.uint8(),
-            "size_precision": pa.uint8(),
             "price_increment": pa.dictionary(pa.int16(), pa.string()),
-            "size_increment": pa.dictionary(pa.int16(), pa.string()),
-            "multiplier": pa.dictionary(pa.int16(), pa.string()),
             "lot_size": pa.dictionary(pa.int16(), pa.string()),
             "isin": pa.string(),
             "margin_init": pa.string(),

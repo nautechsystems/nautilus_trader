@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,7 +32,6 @@ from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
-from nautilus_trader.model.data cimport Ticker
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.data cimport VenueStatus
 from nautilus_trader.model.events.account cimport AccountState
@@ -106,7 +105,6 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     OrderBookDelta.__name__: OrderBookDelta.to_dict_c,
     OrderBookDeltas.__name__: OrderBookDeltas.to_dict_c,
     TradeTick.__name__: TradeTick.to_dict_c,
-    Ticker.__name__: Ticker.to_dict_c,
     QuoteTick.__name__: QuoteTick.to_dict_c,
     Bar.__name__: Bar.to_dict_c,
     InstrumentStatus.__name__: InstrumentStatus.to_dict_c,
@@ -157,7 +155,6 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     OrderBookDelta.__name__: OrderBookDelta.from_dict_c,
     OrderBookDeltas.__name__: OrderBookDeltas.from_dict_c,
     TradeTick.__name__: TradeTick.from_dict_c,
-    Ticker.__name__: Ticker.from_dict_c,
     QuoteTick.__name__: QuoteTick.from_dict_c,
     Bar.__name__: Bar.from_dict_c,
     InstrumentStatus.__name__: InstrumentStatus.from_dict_c,
@@ -211,7 +208,6 @@ EXTERNAL_PUBLISHING_TYPES = (
     OrderBookDelta,
     OrderBookDeltas,
     TradeTick,
-    Ticker,
     QuoteTick,
     Bar,
     InstrumentStatus,

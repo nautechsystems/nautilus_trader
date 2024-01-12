@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -100,9 +100,9 @@ cdef class OrderManager:
         Cache cache not None,
         str component_name not None,
         bint active_local,
-        submit_order_handler: Optional[Callable[[SubmitOrder], None]] = None,
-        cancel_order_handler: Optional[Callable[[Order], None]] = None,
-        modify_order_handler: Optional[Callable[[Order, Quantity], None]] = None,
+        submit_order_handler: Callable[[SubmitOrder], None] = None,
+        cancel_order_handler: Callable[[Order], None] = None,
+        modify_order_handler: Callable[[Order, Quantity], None] = None,
         bint debug = False,
     ):
         Condition.valid_string(component_name, "component_name")

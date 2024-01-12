@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,10 +16,10 @@
 import copy
 import pickle
 
-import msgspec
 import pandas as pd
 import pytest
 
+from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
@@ -33,6 +33,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from tests import TEST_DATA_DIR
 
 
 class TestOrderBook:
@@ -268,9 +269,9 @@ class TestOrderBook:
             1,
         )
 
-        print(book.pprint())
-
         # Assert
+        assert book.count == 2
+        assert book.ts_last == 1
         assert book.best_bid_price() == 10.0
         assert book.best_ask_price() == 11.0
         assert book.best_bid_size() == 5.0
@@ -295,6 +296,7 @@ class TestOrderBook:
         assert ask_level.price == Price.from_str("11.0")
 
     def test_repr(self):
+        # Arrange
         book = OrderBook(
             instrument_id=self.instrument.id,
             book_type=BookType.L2_MBP,
@@ -321,31 +323,26 @@ class TestOrderBook:
         )
 
         # Assert
-        assert isinstance(repr(book), str)  # <-- calls pprint internally
+        assert (
+            repr(book)
+            == "OrderBook L2_MBP\ninstrument: AUD/USD.SIM\nsequence: 0\nts_last: 0\ncount: 2\n╭──────┬───────┬──────╮\n│ bids │ price │ asks │\n├──────┼───────┼──────┤\n│      │ 11.0  │ [6]  │\n│ [5]  │ 10.0  │      │\n╰──────┴───────┴──────╯"  # noqa
+        )  # <-- Calls pprint internally
 
     def test_pprint_when_no_orders(self):
+        # Arrange
         ob = OrderBook(
             instrument_id=TestIdStubs.audusd_id(),
             book_type=BookType.L2_MBP,
         )
+
+        # Act
         result = ob.pprint()
 
+        # Assert
         assert result == "╭──────┬───────┬──────╮\n│ bids │ price │ asks │\n├──────┼───────┼──────┤"
 
-    # TODO(cs): Repair test
-    #     def test_pprint_full_book(self):
-    #         result = self.sample_book.pprint()
-    #         print(result)
-    #         expected = """bids     price   asks
-    # ------  -------  ------
-    #         0.90000  [20.0]
-    #         0.88700  [10.0]
-    #         0.88600  [5.0]
-    # [4.0]   0.83000
-    # [1.0]   0.82000"""
-    #         assert result == expected
-
     def test_add(self):
+        # Arrange, Act
         self.empty_book.add(
             BookOrder(
                 price=Price(10.0, 1),
@@ -356,18 +353,29 @@ class TestOrderBook:
             0,
             0,
         )
+
+        # Assert
         assert self.empty_book.best_bid_price() == 10.0
 
     def test_delete_l1(self):
+        # Arrange
         book = OrderBook(
             instrument_id=self.instrument.id,
             book_type=BookType.L1_MBP,
         )
+
         order = TestDataStubs.order(price=10.0, side=OrderSide.BUY)
         book.update(order, 0)
+
+        # Act
         book.delete(order, 0)
 
+        # Assert
+        assert len(book.bids()) == 0
+        assert len(book.asks()) == 0
+
     def test_top(self):
+        # Arrange, Act
         self.empty_book.add(
             BookOrder(
                 price=Price(10.0, 1),
@@ -422,32 +430,13 @@ class TestOrderBook:
             ),
             ts_event=5,
         )
+
+        # Assert
         assert self.empty_book.best_bid_price() == 20.0
         assert self.empty_book.best_ask_price() == 21.0
 
-    # TODO: TBD
-    # def test_check_integrity_empty(self):
-    #     self.empty_book.check_integrity()
-
-    # def test_check_integrity_shallow(self):
-    #     self.empty_book.add(BookOrder(price=10.0, size=5.0, side=OrderSide.SELL))
-    #     self.empty_book.check_integrity()
-    #     try:
-    #         # Orders will be in cross
-    #         self.empty_book.add(BookOrder(price=20.0, size=5.0, side=OrderSide.BUY))
-    #     except BookIntegrityError:
-    #         # Catch the integrity exception and pass to allow the test
-    #         pass
-    #
-    #     with pytest.raises(BookIntegrityError):
-    #         self.empty_book.check_integrity()
-    #
-    # def test_check_integrity_deep(self):
-    #     self.empty_book.add(BookOrder(price=10.0, size=5, side=OrderSide.BUY))
-    #     self.empty_book.add(BookOrder(price=5.0, size=5, side=OrderSide.BUY))
-    #     self.empty_book.check_integrity()
-
     def test_orderbook_operation_update(self):
+        # Arrange
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
             action=BookAction.UPDATE,
@@ -461,12 +450,17 @@ class TestOrderBook:
             ts_event=0,
             ts_init=0,
         )
+
+        # Act
         self.empty_book.apply_delta(delta)
+
+        # Assert
         assert self.empty_book.best_ask_price() == Price(0.5814, 4)
         assert self.empty_book.count == 1
         assert self.empty_book.sequence == 1
 
     def test_orderbook_operation_add(self):
+        # Arrange
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
             action=BookAction.ADD,
@@ -474,18 +468,23 @@ class TestOrderBook:
                 OrderSide.SELL,
                 Price(0.5900, 4),
                 Quantity(672.45, 2),
-                0,  # "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
+                0,
             ),
             sequence=1,
             ts_event=0,
             ts_init=0,
         )
+
+        # Act
         self.empty_book.apply_delta(delta)
+
+        # Assert
         assert self.empty_book.best_ask_price() == Price(0.5900, 4)
         assert self.empty_book.count == 1
         assert self.empty_book.sequence == 1
 
     def test_orderbook_operations(self):
+        # Arrange
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
             action=BookAction.UPDATE,
@@ -503,7 +502,11 @@ class TestOrderBook:
             instrument_id=TestIdStubs.audusd_id(),
             deltas=[delta],
         )
+
+        # Act
         self.empty_book.apply_deltas(deltas)
+
+        # Assert
         assert self.empty_book.best_ask_price() == Price(0.5814, 4)
 
     def test_orderbook_midpoint(self):
@@ -512,41 +515,12 @@ class TestOrderBook:
     def test_orderbook_midpoint_empty(self):
         assert self.empty_book.midpoint() is None
 
-    # def test_timestamp_ns(self):
-    #     delta = OrderBookDelta(
-    #         instrument_id=TestIdStubs.audusd_id(),
-    #         action=BookAction.ADD,
-    #         order=BookOrder(
-    #             0.5900,
-    #             672.45,
-    #             OrderSide.SELL,
-    #             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
-    #         ),
-    #         ts_event=0,
-    #         ts_init=0,
-    #     )
-    #     self.empty_book.apply_delta(delta)
-    #     assert self.empty_book.ts_last == delta.ts_init
-
-    @pytest.mark.skip(reason="TBD")
-    def test_l3_get_price_for_size(self):
-        bid_price = self.sample_book.get_price_for_size(True, 5.0)
-        ask_price = self.sample_book.get_price_for_size(False, 12.0)
+    def test_l3_get_avg_px_for_quantity(self):
+        bid_price = self.sample_book.get_avg_px_for_quantity(Quantity(5.0, 0), 1)
+        ask_price = self.sample_book.get_avg_px_for_quantity(Quantity(12.0, 0), 2)
         assert bid_price == 0.88600
-        assert ask_price == 0.0
+        assert ask_price == 0.82800
 
-    @pytest.mark.skip(reason="TBD")
-    @pytest.mark.parametrize(
-        ("is_buy", "quote_size", "expected"),
-        [
-            (True, 0.8860, 0.8860),
-            (False, 0.8300, 0.8300),
-        ],
-    )
-    def test_l3_get_price_for_quote_size(self, is_buy, quote_size, expected):
-        assert self.sample_book.get_price_for_quote_size(is_buy, quote_size) == expected
-
-    @pytest.mark.skip(reason="TBD")
     @pytest.mark.parametrize(
         ("is_buy", "price", "expected"),
         [
@@ -562,45 +536,14 @@ class TestOrderBook:
         ],
     )
     def test_get_quantity_for_price(self, is_buy, price, expected):
-        assert self.sample_book.get_quantity_for_price(is_buy, price) == expected
+        assert (
+            self.sample_book.get_quantity_for_price(
+                Price(price, 5),
+                OrderSide.BUY if is_buy else OrderSide.SELL,
+            )
+            == expected
+        )
 
-    @pytest.mark.skip(reason="TBD")
-    @pytest.mark.parametrize(
-        ("is_buy", "price", "expected"),
-        [
-            (True, 1.0, 31.3),
-            (True, 0.88600, 4.43),
-            (True, 0.88650, 4.43),
-            (True, 0.88700, 13.3),
-            (True, 0.82, 0.0),
-            (False, 0.83000, 3.32),
-            (False, 0.82000, 4.14),
-            (False, 0.80000, 4.14),
-            (False, 0.88700, 0.0),
-        ],
-    )
-    def test_get_quote_size_for_price(self, is_buy, price, expected):
-        assert self.sample_book.get_quote_size_for_price(is_buy, price) == expected
-
-    @pytest.mark.skip(reason="TBD")
-    @pytest.mark.parametrize(
-        ("is_buy", "size", "expected"),
-        [
-            (True, 1.0, 0.886),
-            (True, 3.0, 0.886),
-            (True, 5.0, 0.88599),
-            (True, 7.0, 0.88628),
-            (True, 15.0, 0.88666),
-            (True, 22.0, 0.89090),
-            (False, 1.0, 0.83),
-            (False, 3.0, 0.83),
-            (False, 5.0, 0.828),
-        ],
-    )
-    def test_get_vwap_for_size(self, is_buy, size, expected):
-        assert self.sample_book.get_vwap_for_size(is_buy, size) == pytest.approx(expected, 0.01)
-
-    @pytest.mark.skip(reason="TBD")
     def test_l2_update(self):
         # Arrange
         book = TestDataStubs.make_book(
@@ -611,39 +554,59 @@ class TestOrderBook:
         deltas = OrderBookDeltas.from_dict(
             {
                 "type": "OrderBookDeltas",
-                "instrument_id": self.instrument_id.value,
-                "deltas": msgspec.json.encode(
-                    [
-                        {
-                            "type": "OrderBookDelta",
-                            "instrument_id": self.instrument_id.value,
-                            "action": "UPDATE",
-                            "price": 0.990099,
-                            "size": 2.0,
+                "instrument_id": "AUD/USD.SIM",
+                "deltas": [
+                    {
+                        "type": "OrderBookDelta",
+                        "instrument_id": "AUD/USD.SIM",
+                        "action": "UPDATE",
+                        "order": {
+                            "price": "0.99009",
+                            "size": "200000",
                             "side": "BUY",
-                            "order_id": "ef93694d-64c7-4b26-b03b-48c0bc2afea7",
-                            "sequence": 0,
-                            "ts_event": 1667288437852999936,
-                            "ts_init": 1667288437852999936,
+                            "order_id": 1,
                         },
-                    ],
-                ),
+                        "flags": 0,
+                        "sequence": 0,
+                        "ts_event": 1667288437852999936,
+                        "ts_init": 1667288437852999936,
+                    },
+                ],
                 "sequence": 0,
                 "ts_event": 1667288437852999936,
                 "ts_init": 1667288437852999936,
             },
         )
 
-        # Act
         book.apply(deltas)
 
+        # Act
+        book.add(
+            BookOrder(
+                side=OrderSide.SELL,
+                price=Price(0.001, 3),
+                size=Quantity(55.81, 2),
+                order_id=0,
+            ),
+            1667288437852999936,
+            0,
+        )
+
         # Assert
-        expected_ask = Price(0.001, 3)
-        expected_ask.add(BookOrder(0.001, 55.81, OrderSide.SELL, "0.00100"))
+        expected_ask = Price(0.00100, 5)
         assert book.best_ask_price() == expected_ask
 
-        expected_bid = Price(0.990099, 6)
-        expected_bid.add(BookOrder(0.990099, 2.0, OrderSide.BUY, "0.99010"))
+        expected_bid = Price(0.99010, 5)
+        book.add(
+            BookOrder(
+                side=OrderSide.BUY,
+                price=Price(0.99010, 5),
+                size=Quantity(2.0, 2),
+                order_id=0,
+            ),
+            1667288437852999936,
+            0,
+        )
         assert book.best_bid_price() == expected_bid
 
     def test_book_order_pickle_round_trip(self):
@@ -699,3 +662,37 @@ class TestOrderBook:
         # Assert
         assert book.ts_last == new.ts_last
         assert book.sequence == new.sequence
+
+    def test_orderbook_esh4_glbx_20231224_mbo_l3(self) -> None:
+        # Arrange
+        loader = DatabentoDataLoader()
+        instrument = TestInstrumentProvider.es_future(expiry_year=2024, expiry_month=3)
+
+        path_20231224 = TEST_DATA_DIR / "databento" / "esh4-glbx-mdp3-20231224.mbo.dbn.zst"
+        path_20231225 = TEST_DATA_DIR / "databento" / "esh4-glbx-mdp3-20231225.mbo.dbn.zst"
+        # path_20231226 = TEST_DATA_DIR / "temp" / "databento" / "esh4-glbx-mdp3-20231226.mbo.dbn.zst"
+
+        # Act
+        data = loader.from_dbn(path_20231224, instrument_id=instrument.id)
+        data.extend(loader.from_dbn(path_20231225, instrument_id=instrument.id))
+        # data.extend(loader.from_dbn(path_20231226, instrument_id=instrument.id))
+
+        book = TestDataStubs.make_book(
+            instrument=instrument,
+            book_type=BookType.L3_MBO,
+        )
+
+        for delta in data:
+            if not isinstance(delta, OrderBookDelta):
+                continue
+            book.apply_delta(delta)
+
+        # Assert
+        assert len(data) == 77517
+        assert book.ts_last == 1703548799446821072
+        assert book.sequence == 59585
+        assert book.count == 74509
+        assert len(book.bids()) == 922
+        assert len(book.asks()) == 565
+        assert book.best_bid_price() == Price.from_str("4810.00")
+        assert book.best_ask_price() == Price.from_str("4810.25")

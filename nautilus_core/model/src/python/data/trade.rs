@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -271,9 +271,9 @@ mod tests {
     use crate::data::trade::{stubs::*, TradeTick};
 
     #[rstest]
-    fn test_as_dict(trade_tick_ethusdt_buyer: TradeTick) {
+    fn test_as_dict(stub_trade_tick_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = trade_tick_ethusdt_buyer;
+        let tick = stub_trade_tick_ethusdt_buyer;
 
         Python::with_gil(|py| {
             let dict_string = tick.py_as_dict(py).unwrap().to_string();
@@ -283,9 +283,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_dict(trade_tick_ethusdt_buyer: TradeTick) {
+    fn test_from_dict(stub_trade_tick_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = trade_tick_ethusdt_buyer;
+        let tick = stub_trade_tick_ethusdt_buyer;
 
         Python::with_gil(|py| {
             let dict = tick.py_as_dict(py).unwrap();
@@ -295,9 +295,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_pyobject(trade_tick_ethusdt_buyer: TradeTick) {
+    fn test_from_pyobject(stub_trade_tick_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = trade_tick_ethusdt_buyer;
+        let tick = stub_trade_tick_ethusdt_buyer;
 
         Python::with_gil(|py| {
             let tick_pyobject = tick.into_py(py);

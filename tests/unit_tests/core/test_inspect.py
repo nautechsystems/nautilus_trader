@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,8 +30,8 @@ from nautilus_trader.model.events import OrderAccepted
         (OrderBookDelta, True),
         (TradeTick, True),
         (OrderAccepted, True),
-        (BetfairStartingPrice, False),  # BetfairStartingPrice is an adapter specific type.
-        (BetfairTicker, True),  # BetfairTicker is a subclass of a nautilus type
+        (BetfairStartingPrice, False),  # BetfairStartingPrice is an adapter specific type
+        (BetfairTicker, False),  # BetfairTicker is an adapter specific type
         (pd.DataFrame, False),
     ],
 )

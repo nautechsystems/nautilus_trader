@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,7 +17,7 @@ from nautilus_trader.core.nautilus_pyo3 import CurrencyPair
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
-btcusdt_binance = TestInstrumentProviderPyo3.btcusdt_binance()
+_BTCUSDT = TestInstrumentProviderPyo3.btcusdt_binance()
 
 
 def test_equality():
@@ -27,12 +27,12 @@ def test_equality():
 
 
 def test_hash():
-    assert hash(btcusdt_binance) == hash(btcusdt_binance)
+    assert hash(_BTCUSDT) == hash(_BTCUSDT)
 
 
 def test_to_dict():
-    result = btcusdt_binance.to_dict()
-    assert CurrencyPair.from_dict(result) == btcusdt_binance
+    result = _BTCUSDT.to_dict()
+    assert CurrencyPair.from_dict(result) == _BTCUSDT
     assert result == {
         "type": "CurrencyPair",
         "id": "BTCUSDT.BINANCE",
@@ -43,13 +43,11 @@ def test_to_dict():
         "size_precision": 6,
         "price_increment": "0.01",
         "size_increment": "0.000001",
-        "margin_maint": 0.0,
-        "margin_init": 0.0,
-        "maker_fee": 0.0,
-        "taker_fee": 0.0,
         "lot_size": None,
         "max_quantity": "9000",
         "min_quantity": "0.00001",
         "min_price": "0.01",
         "max_price": "1000000",
+        "ts_event": 0,
+        "ts_init": 0,
     }

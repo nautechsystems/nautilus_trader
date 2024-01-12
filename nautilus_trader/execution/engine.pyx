@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,7 +31,6 @@ just need to override the `execute` and `process` methods.
 
 import time
 from decimal import Decimal
-from typing import Optional
 
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config.error import InvalidConfiguration
@@ -122,7 +121,7 @@ cdef class ExecutionEngine(Component):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        config: Optional[ExecEngineConfig] = None,
+        config: ExecEngineConfig | None = None,
     ) -> None:
         if config is None:
             config = ExecEngineConfig()
@@ -132,14 +131,14 @@ cdef class ExecutionEngine(Component):
             logger=logger,
             component_id=ComponentId("ExecEngine"),
             msgbus=msgbus,
-            config=config.dict(),
+            config=config,
         )
 
         self._cache: Cache = cache
 
         self._clients: dict[ClientId, ExecutionClient] = {}
         self._routing_map: dict[Venue, ExecutionClient] = {}
-        self._default_client: Optional[ExecutionClient] = None
+        self._default_client: ExecutionClient | None = None
         self._oms_overrides: dict[StrategyId, OmsType] = {}
         self._external_order_claims: dict[InstrumentId, StrategyId] = {}
 
@@ -187,7 +186,7 @@ cdef class ExecutionEngine(Component):
         return sorted(list(self._clients.keys()))
 
     @property
-    def default_client(self) -> Optional[ClientId]:
+    def default_client(self) -> ClientId | None:
         """
         Return the default execution client registered with the engine.
 

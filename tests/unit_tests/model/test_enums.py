@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,13 +19,13 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import HaltReason
+from nautilus_trader.model.enums import InstrumentClass
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import MarketStatus
@@ -48,8 +48,6 @@ from nautilus_trader.model.enums import aggressor_side_from_str
 from nautilus_trader.model.enums import aggressor_side_to_str
 from nautilus_trader.model.enums import asset_class_from_str
 from nautilus_trader.model.enums import asset_class_to_str
-from nautilus_trader.model.enums import asset_type_from_str
-from nautilus_trader.model.enums import asset_type_to_str
 from nautilus_trader.model.enums import bar_aggregation_from_str
 from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.enums import book_action_from_str
@@ -62,6 +60,8 @@ from nautilus_trader.model.enums import currency_type_from_str
 from nautilus_trader.model.enums import currency_type_to_str
 from nautilus_trader.model.enums import halt_reason_from_str
 from nautilus_trader.model.enums import halt_reason_to_str
+from nautilus_trader.model.enums import instrument_class_from_str
+from nautilus_trader.model.enums import instrument_class_to_str
 from nautilus_trader.model.enums import instrument_close_type_from_str
 from nautilus_trader.model.enums import instrument_close_type_to_str
 from nautilus_trader.model.enums import liquidity_side_from_str
@@ -196,12 +196,10 @@ class TestAssetClass:
             [AssetClass.FX, "FX"],
             [AssetClass.EQUITY, "EQUITY"],
             [AssetClass.COMMODITY, "COMMODITY"],
-            [AssetClass.METAL, "METAL"],
-            [AssetClass.ENERGY, "ENERGY"],
-            [AssetClass.BOND, "BOND"],
+            [AssetClass.DEBT, "DEBT"],
             [AssetClass.INDEX, "INDEX"],
             [AssetClass.CRYPTOCURRENCY, "CRYPTOCURRENCY"],
-            [AssetClass.SPORTS_BETTING, "SPORTS_BETTING"],
+            [AssetClass.ALTERNATIVE, "ALTERNATIVE"],
         ],
     )
     def test_asset_class_to_str(self, enum, expected):
@@ -217,12 +215,10 @@ class TestAssetClass:
             ["FX", AssetClass.FX],
             ["EQUITY", AssetClass.EQUITY],
             ["COMMODITY", AssetClass.COMMODITY],
-            ["METAL", AssetClass.METAL],
-            ["ENERGY", AssetClass.ENERGY],
-            ["BOND", AssetClass.BOND],
+            ["DEBT", AssetClass.DEBT],
             ["INDEX", AssetClass.INDEX],
             ["CRYPTOCURRENCY", AssetClass.CRYPTOCURRENCY],
-            ["SPORTS_BETTING", AssetClass.SPORTS_BETTING],
+            ["ALTERNATIVE", AssetClass.ALTERNATIVE],
         ],
     )
     def test_asset_class_from_str(self, string, expected):
@@ -233,22 +229,24 @@ class TestAssetClass:
         assert result == expected
 
 
-class TestAssetType:
+class TestInstrumentClass:
     @pytest.mark.parametrize(
         ("enum", "expected"),
         [
-            [AssetType.SPOT, "SPOT"],
-            [AssetType.SWAP, "SWAP"],
-            [AssetType.FUTURE, "FUTURE"],
-            [AssetType.FORWARD, "FORWARD"],
-            [AssetType.CFD, "CFD"],
-            [AssetType.OPTION, "OPTION"],
-            [AssetType.WARRANT, "WARRANT"],
+            [InstrumentClass.SPOT, "SPOT"],
+            [InstrumentClass.SWAP, "SWAP"],
+            [InstrumentClass.FUTURE, "FUTURE"],
+            [InstrumentClass.FORWARD, "FORWARD"],
+            [InstrumentClass.CFD, "CFD"],
+            [InstrumentClass.BOND, "BOND"],
+            [InstrumentClass.OPTION, "OPTION"],
+            [InstrumentClass.WARRANT, "WARRANT"],
+            [InstrumentClass.SPORTS_BETTING, "SPORTS_BETTING"],
         ],
     )
-    def test_asset_type_to_str(self, enum, expected):
+    def test_instrument_class_to_str(self, enum, expected):
         # Arrange, Act
-        result = asset_type_to_str(enum)
+        result = instrument_class_to_str(enum)
 
         # Assert
         assert result == expected
@@ -256,18 +254,20 @@ class TestAssetType:
     @pytest.mark.parametrize(
         ("string", "expected"),
         [
-            ["SPOT", AssetType.SPOT],
-            ["SWAP", AssetType.SWAP],
-            ["FUTURE", AssetType.FUTURE],
-            ["FORWARD", AssetType.FORWARD],
-            ["CFD", AssetType.CFD],
-            ["OPTION", AssetType.OPTION],
-            ["WARRANT", AssetType.WARRANT],
+            ["SPOT", InstrumentClass.SPOT],
+            ["SWAP", InstrumentClass.SWAP],
+            ["FUTURE", InstrumentClass.FUTURE],
+            ["FORWARD", InstrumentClass.FORWARD],
+            ["CFD", InstrumentClass.CFD],
+            ["BOND", InstrumentClass.BOND],
+            ["OPTION", InstrumentClass.OPTION],
+            ["WARRANT", InstrumentClass.WARRANT],
+            ["SPORTS_BETTING", InstrumentClass.SPORTS_BETTING],
         ],
     )
-    def test_asset_type_from_str(self, string, expected):
+    def test_instrument_class_from_str(self, string, expected):
         # Arrange, Act
-        result = asset_type_from_str(string)
+        result = instrument_class_from_str(string)
 
         # Assert
         assert result == expected

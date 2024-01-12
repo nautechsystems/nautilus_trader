@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,11 +34,11 @@ from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 from nautilus_trader.core.rust.model import OrderSide
+from nautilus_trader.core.rust.model import OrderStatus
 from nautilus_trader.core.rust.model import TimeInForce
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.order import OrderFilled
@@ -865,7 +865,7 @@ async def test_generate_order_status_report_venue_order_id(
     instrument: BettingInstrument,
 ) -> None:
     # Arrange
-    response = BetfairResponses.list_current_orders()
+    response = BetfairResponses.list_current_orders_execution_complete()
     response["result"]["currentOrders"] = response["result"]["currentOrders"][:1]
     mock_betfair_request(betfair_client, response=response)
 
@@ -982,3 +982,50 @@ async def test_fok_order_found_in_cache(exec_client, setup_order_state, strategy
 
     # Assert
     assert cache.order(client_order_id).status == OrderStatus.CANCELED
+
+
+@pytest.mark.asyncio
+async def test_generate_order_status_reports_executable(exec_client):
+    # Arrange
+    mock_betfair_request(exec_client._client, BetfairResponses.list_current_orders_executable())
+
+    # Act
+    reports = await exec_client.generate_order_status_reports()
+
+    # Assert
+    assert len(reports) == 2
+    assert reports[0].order_side == OrderSide.SELL
+    assert reports[0].price == Price(5.0, BETFAIR_PRICE_PRECISION)
+    assert reports[0].quantity == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
+    assert reports[0].order_status == OrderStatus.ACCEPTED
+    assert reports[0].filled_qty == 0.0
+    assert reports[0].time_in_force == TimeInForce.DAY
+
+    assert reports[1].order_side == OrderSide.BUY
+    assert reports[1].price == Price(2.0, BETFAIR_PRICE_PRECISION)
+    assert reports[1].quantity == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
+    assert reports[1].order_status == OrderStatus.ACCEPTED
+    assert reports[1].filled_qty == 0.0
+    assert reports[1].time_in_force == TimeInForce.DAY
+
+
+@pytest.mark.asyncio
+async def test_generate_fill_reports(exec_client):
+    # Arrange
+    mock_betfair_request(
+        exec_client._client,
+        BetfairResponses.list_current_orders_execution_complete(),
+    )
+
+    # Act
+    reports = await exec_client.generate_fill_reports()
+
+    # Assert
+    assert len(reports) == 2
+    assert reports[0].order_side == OrderSide.SELL
+    assert reports[0].last_px == Price(1.9, BETFAIR_PRICE_PRECISION)
+    assert reports[0].last_qty == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
+
+    assert reports[1].order_side == OrderSide.BUY
+    assert reports[1].last_px == Price(1.92, BETFAIR_PRICE_PRECISION)
+    assert reports[1].last_qty == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)

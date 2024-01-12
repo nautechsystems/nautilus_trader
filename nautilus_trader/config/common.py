@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -115,6 +115,18 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
     The base class for all Nautilus configuration objects.
     """
 
+    @property
+    def id(self) -> str:
+        """
+        Return the hashed identifier for the configuration.
+
+        Returns
+        -------
+        str
+
+        """
+        return tokenize_config(self)
+
     @classmethod
     def fully_qualified_name(cls) -> str:
         """
@@ -131,17 +143,24 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
         """
         return cls.__module__ + ":" + cls.__qualname__
 
-    @property
-    def id(self) -> str:
+    @classmethod
+    def parse(cls, raw: bytes) -> Any:
         """
-        Return the hashed identifier for the configuration.
+        Return a decoded object of the given `cls`.
+
+        Parameters
+        ----------
+        cls : type
+            The type to decode to.
+        raw : bytes
+            The raw bytes to decode.
 
         Returns
         -------
-        str
+        Any
 
         """
-        return tokenize_config(self)
+        return msgspec.json.decode(raw, type=cls, dec_hook=msgspec_decoding_hook)
 
     def dict(self) -> dict[str, Any]:
         """
@@ -165,24 +184,17 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
         """
         return msgspec.json.encode(self, enc_hook=msgspec_encoding_hook)
 
-    @classmethod
-    def parse(cls, raw: bytes) -> Any:
+    def json_primitives(self) -> dict[str, Any]:  # type: ignore [valid-type]
         """
-        Return a decoded object of the given `cls`.
-
-        Parameters
-        ----------
-        cls : type
-            The type to decode to.
-        raw : bytes
-            The raw bytes to decode.
+        Return a dictionary representation of the configuration with JSON primitive
+        types as values.
 
         Returns
         -------
-        Any
+        dict[str, Any]
 
         """
-        return msgspec.json.decode(raw, type=cls, dec_hook=msgspec_decoding_hook)
+        return msgspec.json.decode(self.json())
 
     def validate(self) -> bool:
         """
@@ -246,12 +258,14 @@ class CacheConfig(NautilusConfig, frozen=True):
         The buffer interval (milliseconds) between pipelined/batched transactions.
         The recommended range if using buffered pipeling is [10, 1000] milliseconds,
         with a good compromise being 100 milliseconds.
+    use_trader_prefix : bool, default True
+        If a 'trader-' prefix is used for keys.
+    use_instance_id : bool, default False
+        If the traders instance ID is used for keys.
     flush_on_start : bool, default False
         If database should be flushed on start.
-    use_trader_prefix : bool, default True
-        If a 'trader-' prefix is applied to keys.
-    use_instance_id : bool, default False
-        If the traders instance ID should be used for keys.
+    drop_instruments_on_reset : bool, default True
+        If instruments data should be dropped from the caches memory on reset.
     tick_capacity : PositiveInt, default 10_000
         The maximum length for internal tick dequeues.
     bar_capacity : PositiveInt, default 10_000
@@ -263,9 +277,10 @@ class CacheConfig(NautilusConfig, frozen=True):
     encoding: str = "msgpack"
     timestamps_as_iso8601: bool = False
     buffer_interval_ms: PositiveInt | None = None
-    flush_on_start: bool = False
     use_trader_prefix: bool = True
     use_instance_id: bool = False
+    flush_on_start: bool = False
+    drop_instruments_on_reset: bool = True
     tick_capacity: PositiveInt = 10_000
     bar_capacity: PositiveInt = 10_000
 
@@ -292,11 +307,17 @@ class MessageBusConfig(NautilusConfig, frozen=True):
         The actual window may extend up to one minute beyond the specified value since streams are
         trimmed at most once every minute.
         Note that this feature requires Redis version 6.2.0 or higher; otherwise it will result
-        in acommand syntax error.
-    stream : str, optional
-        The additional prefix for externally published stream names (must have a `database` config).
+        in a command syntax error.
+    use_trader_prefix : bool, default True
+        If a 'trader-' prefix is used for stream names.
+    use_trader_id : bool, default True
+        If the traders ID is used for stream names.
     use_instance_id : bool, default False
-        If the traders instance ID should be used in stream names.
+        If the traders instance ID is used for stream names.
+    streams_prefix : str, default 'streams'
+        The prefix for externally published stream names (must have a `database` config).
+        If `use_trader_id` and `use_instance_id` are *both* false, then it becomes possible for
+        many traders to be configured to write to the same streams.
     types_filter : list[type], optional
         A list of serializable types *not* to publish externally.
 
@@ -307,8 +328,10 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     timestamps_as_iso8601: bool = False
     buffer_interval_ms: PositiveInt | None = None
     autotrim_mins: int | None = None
-    stream: str | None = None
+    use_trader_prefix: bool = True
+    use_trader_id: bool = True
     use_instance_id: bool = False
+    streams_prefix: str = "streams"
     types_filter: list[type] | None = None
 
 
@@ -764,35 +787,6 @@ class ExecAlgorithmFactory:
         return exec_algorithm_cls(config=config_cls(**config.config))
 
 
-class TracingConfig(NautilusConfig, frozen=True):
-    """
-    Configuration for standard output and file logging for Rust tracing statements for a
-    ``NautilusKernel`` instance.
-
-    Parameters
-    ----------
-    stdout_level : str, optional
-        The minimum log level to write to stdout. Possible options are "debug",
-        "info", "warn", "error". Setting it None means no logs are written to
-        stdout.
-    stderr_level : str, optional
-        The minimum log level to write to stderr. Possible options are "debug",
-        "info", "warn", "error". Setting it None means no logs are written to
-        stderr.
-    file_config : tuple[str, str, str], optional
-        The minimum log level to write to log file. Possible options are "debug",
-        "info", "warn", "error". Setting it None means no logs are written to
-        the log file.
-        The second str is the prefix name of the log file and the third str is
-        the name of the directory.
-
-    """
-
-    stdout_level: str | None = None
-    stderr_level: str | None = None
-    file_level: tuple[str, str, str] | None = None
-
-
 class LoggingConfig(NautilusConfig, frozen=True):
     """
     Configuration for standard output and file logging for a ``NautilusKernel``
@@ -821,6 +815,8 @@ class LoggingConfig(NautilusConfig, frozen=True):
         IDs (e.g. actor/strategy IDs) and values are log levels.
     bypass_logging : bool, default False
         If all logging should be bypassed.
+    print_config : bool, default False
+        If the core logging configuration should be printed to stdout at initialization.
 
     """
 
@@ -832,6 +828,31 @@ class LoggingConfig(NautilusConfig, frozen=True):
     log_colors: bool = True
     log_component_levels: dict[str, str] | None = None
     bypass_logging: bool = False
+    print_config: bool = False
+
+    def spec_string(self) -> str:
+        """
+        Return the 'spec' string for the core logging config to parse on initialization.
+
+        Returns
+        -------
+        str
+
+        """
+        config_str = f"stdout={self.log_level.lower()}"
+        if self.log_level_file:
+            config_str += f";fileout={self.log_level_file.lower()}"
+        if self.log_component_levels:
+            for component, level in self.log_component_levels.items():
+                config_str += f";{component}={level.lower()}"
+        if self.log_colors:
+            config_str += ";is_colored"
+        if self.bypass_logging:
+            config_str += ";is_bypassed"
+        if self.print_config:
+            config_str += ";print_config"
+
+        return config_str
 
 
 class NautilusKernelConfig(NautilusConfig, frozen=True):
@@ -876,8 +897,6 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         If the asyncio event loop should be in debug mode.
     logging : LoggingConfig, optional
         The logging config for the kernel.
-    tracing : TracingConfig, optional
-        The tracing (core logging) config for the kernel.
     snapshot_orders : bool, default False
         If order state snapshot lists should be persisted.
         Snapshots will be taken at every order state update (when events are applied).
@@ -923,7 +942,6 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     save_state: bool = False
     loop_debug: bool = False
     logging: LoggingConfig | None = None
-    tracing: TracingConfig | None = None
     snapshot_orders: bool = False
     snapshot_positions: bool = False
     snapshot_positions_interval: PositiveFloat | None = None

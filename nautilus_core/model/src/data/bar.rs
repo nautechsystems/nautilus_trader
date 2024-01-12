@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -35,11 +35,12 @@ use crate::{
 /// Represents a bar aggregation specification including a step, aggregation
 /// method/rule and price type.
 #[repr(C)]
-#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
+#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct BarSpecification {
     /// The step for binning samples for bar aggregation.
     pub step: usize,
@@ -47,6 +48,17 @@ pub struct BarSpecification {
     pub aggregation: BarAggregation,
     /// The price type to use for aggregation.
     pub price_type: PriceType,
+}
+
+impl BarSpecification {
+    #[must_use]
+    pub fn new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> Self {
+        Self {
+            step,
+            aggregation,
+            price_type,
+        }
+    }
 }
 
 impl Display for BarSpecification {
@@ -70,6 +82,21 @@ pub struct BarType {
     pub spec: BarSpecification,
     /// The bar types aggregation source.
     pub aggregation_source: AggregationSource,
+}
+
+impl BarType {
+    #[must_use]
+    pub fn new(
+        instrument_id: InstrumentId,
+        spec: BarSpecification,
+        aggregation_source: AggregationSource,
+    ) -> Self {
+        Self {
+            instrument_id,
+            spec,
+            aggregation_source,
+        }
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -310,7 +337,7 @@ impl Display for Bar {
 ////////////////////////////////////////////////////////////////////////////////
 // Stubs
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
+#[cfg(feature = "stubs")]
 pub mod stubs {
     use rstest::fixture;
 
@@ -322,7 +349,7 @@ pub mod stubs {
     };
 
     #[fixture]
-    pub fn bar_audusd_sim_minute_bid() -> Bar {
+    pub fn stub_bar() -> Bar {
         let instrument_id = InstrumentId {
             symbol: Symbol::new("AUDUSD").unwrap(),
             venue: Venue::new("SIM").unwrap(),
@@ -574,16 +601,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_json_serialization(bar_audusd_sim_minute_bid: Bar) {
-        let bar = bar_audusd_sim_minute_bid;
+    fn test_json_serialization(stub_bar: Bar) {
+        let bar = stub_bar;
         let serialized = bar.as_json_bytes().unwrap();
         let deserialized = Bar::from_json_bytes(serialized).unwrap();
         assert_eq!(deserialized, bar);
     }
 
     #[rstest]
-    fn test_msgpack_serialization(bar_audusd_sim_minute_bid: Bar) {
-        let bar = bar_audusd_sim_minute_bid;
+    fn test_msgpack_serialization(stub_bar: Bar) {
+        let bar = stub_bar;
         let serialized = bar.as_msgpack_bytes().unwrap();
         let deserialized = Bar::from_msgpack_bytes(serialized).unwrap();
         assert_eq!(deserialized, bar);

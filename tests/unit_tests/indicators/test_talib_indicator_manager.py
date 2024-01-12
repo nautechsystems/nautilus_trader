@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import importlib.util
 import inspect
 import sys
@@ -21,6 +23,9 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 
+from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.enums import LogLevel
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.objects import Price
@@ -51,8 +56,19 @@ def bar_type() -> BarType:
 
 
 @pytest.fixture()
-def indicator_manager(bar_type) -> "TALibIndicatorManager":
-    return TALibIndicatorManager(bar_type=bar_type, period=10)
+def indicator_manager(bar_type: BarType) -> TALibIndicatorManager:
+    clock = TestClock()
+    logger = Logger(
+        clock=TestClock(),
+        level_stdout=LogLevel.INFO,
+        bypass=True,
+    )
+    return TALibIndicatorManager(
+        bar_type=bar_type,
+        period=10,
+        clock=clock,
+        logger=logger,
+    )
 
 
 @pytest.fixture()
@@ -115,9 +131,20 @@ def test_setup():
     # Arrange
     bar_type = BarType.from_str("EUR/USD.IDEALPRO-1-HOUR-MID-EXTERNAL")
     period = 10
+    clock = TestClock()
+    logger = Logger(
+        clock=TestClock(),
+        level_stdout=LogLevel.INFO,
+        bypass=True,
+    )
 
     # Act
-    indicator_manager = TALibIndicatorManager(bar_type=bar_type, period=period)
+    indicator_manager = TALibIndicatorManager(
+        bar_type=bar_type,
+        period=period,
+        clock=clock,
+        logger=logger,
+    )
 
     # Assert
     assert indicator_manager.bar_type == bar_type

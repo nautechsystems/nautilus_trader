@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,9 +19,9 @@ import pandas as pd
 
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.messages import TradingCommand
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
-from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import AccountId
@@ -204,7 +204,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
         self._set_account_id(AccountId(f"{client_id}-001"))
         self._order_status_reports: dict[VenueOrderId, OrderStatusReport] = {}
-        self._trades_reports: dict[VenueOrderId, list[TradeReport]] = {}
+        self._trades_reports: dict[VenueOrderId, list[FillReport]] = {}
         self._position_status_reports: dict[InstrumentId, list[PositionStatusReport]] = {}
 
         self.calls: list[str] = []
@@ -219,7 +219,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
     def add_order_status_report(self, report: OrderStatusReport) -> None:
         self._order_status_reports[report.venue_order_id] = report
 
-    def add_trade_reports(self, venue_order_id: VenueOrderId, trades: list[TradeReport]) -> None:
+    def add_fill_reports(self, venue_order_id: VenueOrderId, trades: list[FillReport]) -> None:
         self._trades_reports[venue_order_id] = trades
 
     def add_position_status_report(self, report: PositionStatusReport) -> None:
@@ -321,13 +321,13 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
         return reports
 
-    async def generate_trade_reports(
+    async def generate_fill_reports(
         self,
         instrument_id: InstrumentId | None = None,
         venue_order_id: VenueOrderId | None = None,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-    ) -> list[TradeReport]:
+    ) -> list[FillReport]:
         current_frame = inspect.currentframe()
         if current_frame:
             self.calls.append(current_frame.f_code.co_name)

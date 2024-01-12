@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -47,9 +47,9 @@ from nautilus_trader.core.rust.model import TimeInForce
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
-from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
@@ -240,14 +240,14 @@ class BybitExecutionClient(LiveExecutionClient):
             self._log.error(f"Failed to generate OrderStatusReport: {e}")
         return None
 
-    async def generate_trade_reports(
+    async def generate_fill_reports(
         self,
         instrument_id: InstrumentId | None = None,
         venue_order_id: VenueOrderId | None = None,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-    ) -> list[TradeReport]:
-        self._log.info("Requesting TradeReports...")
+    ) -> list[FillReport]:
+        self._log.info("Requesting FillReports...")
         return []
 
     async def generate_position_status_reports(

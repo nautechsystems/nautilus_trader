@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,16 +20,17 @@ pub mod equity;
 pub mod futures_contract;
 pub mod options_contract;
 pub mod synthetic;
-pub mod synthetic_api;
 
 #[cfg(feature = "stubs")]
 pub mod stubs;
 
 use anyhow::Result;
+use nautilus_core::time::UnixNanos;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 use crate::{
-    enums::{AssetClass, AssetType},
+    enums::{AssetClass, InstrumentClass},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
@@ -44,7 +45,7 @@ pub trait Instrument {
     }
     fn raw_symbol(&self) -> &Symbol;
     fn asset_class(&self) -> AssetClass;
-    fn asset_type(&self) -> AssetType;
+    fn instrument_class(&self) -> InstrumentClass;
     fn base_currency(&self) -> Option<&Currency>;
     fn quote_currency(&self) -> &Currency;
     fn settlement_currency(&self) -> &Currency;
@@ -59,10 +60,23 @@ pub trait Instrument {
     fn min_quantity(&self) -> Option<Quantity>;
     fn max_price(&self) -> Option<Price>;
     fn min_price(&self) -> Option<Price>;
-    fn margin_init(&self) -> Decimal;
-    fn margin_maint(&self) -> Decimal;
-    fn maker_fee(&self) -> Decimal;
-    fn taker_fee(&self) -> Decimal;
+    fn margin_init(&self) -> Decimal {
+        dec!(0) // Temporary until separate fee models
+    }
+
+    fn margin_maint(&self) -> Decimal {
+        dec!(0) // Temporary until separate fee models
+    }
+
+    fn maker_fee(&self) -> Decimal {
+        dec!(0) // Temporary until separate fee models
+    }
+
+    fn taker_fee(&self) -> Decimal {
+        dec!(0) // Temporary until separate fee models
+    }
+    fn ts_event(&self) -> UnixNanos;
+    fn ts_init(&self) -> UnixNanos;
 
     /// Creates a new price from the given `value` with the correct price precision for the instrument.
     fn make_price(&self, value: f64) -> Result<Price> {

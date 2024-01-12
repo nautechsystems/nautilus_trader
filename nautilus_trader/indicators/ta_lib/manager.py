@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,6 +34,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
@@ -60,7 +61,7 @@ class TAFunctionWrapper:
     ----------
     - name (str): The name of the technical indicator as defined in TA-Lib.
       For more information, visit https://ta-lib.github.io/ta-lib-python/
-    - params (frozenset[tuple[str, Union[int, float]]]): A set of tuples representing
+    - params (frozenset[tuple[str, int | float]]): A set of tuples representing
       the parameters for the technical indicator. Each tuple contains the parameter name
       and its value (either int or float). If unspecified, default parameters set by
       TA-Lib are used.
@@ -225,6 +226,10 @@ class TALibIndicatorManager(Indicator):
         If uniform price bars should be skipped.
     skip_zero_close_bar : bool, default True
         If zero sized bars should be skipped.
+    clock : Clock, optional
+        The clock for the manager.
+    logger : Logger, optional
+        The logger for the manager.
 
     Raises
     ------
@@ -242,6 +247,8 @@ class TALibIndicatorManager(Indicator):
         buffer_size: int | None = None,
         skip_uniform_price_bar: bool = True,
         skip_zero_close_bar: bool = True,
+        clock: Clock | None = None,
+        logger: Logger | None = None,
     ) -> None:
         super().__init__([])
 
@@ -269,8 +276,10 @@ class TALibIndicatorManager(Indicator):
         self.output_names: tuple | None = None
 
         # Initialize the logger
-        clock = LiveClock()
-        logger = Logger(clock)
+        if clock is None:
+            clock = LiveClock()
+        if logger is None:
+            logger = Logger(clock)
         self._log = LoggerAdapter(component_name=repr(self), logger=logger)
 
         # Initialize with empty indicators (acts as OHLCV placeholder in case no indicators are set)

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -41,7 +41,7 @@ pub const ERROR_PRICE: Price = Price {
 };
 
 #[repr(C)]
-#[derive(Copy, Clone, Eq, Default)]
+#[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -353,6 +353,7 @@ mod tests {
     fn test_with_maximum_value() {
         let price = Price::new(PRICE_MAX, 9).unwrap();
         assert_eq!(price.raw, 9_223_372_036_000_000_000);
+        assert_eq!(price.as_decimal(), dec!(9223372036));
         assert_eq!(price.to_string(), "9223372036.000000000");
     }
 
@@ -360,6 +361,7 @@ mod tests {
     fn test_with_minimum_positive_value() {
         let price = Price::new(0.000_000_001, 9).unwrap();
         assert_eq!(price.raw, 1);
+        assert_eq!(price.as_decimal(), dec!(0.000000001));
         assert_eq!(price.to_string(), "0.000000001");
     }
 
@@ -367,6 +369,7 @@ mod tests {
     fn test_with_minimum_value() {
         let price = Price::new(PRICE_MIN, 9).unwrap();
         assert_eq!(price.raw, -9_223_372_036_000_000_000);
+        assert_eq!(price.as_decimal(), dec!(-9223372036));
         assert_eq!(price.to_string(), "-9223372036.000000000");
     }
 
@@ -374,6 +377,7 @@ mod tests {
     fn test_max() {
         let price = Price::max(9);
         assert_eq!(price.raw, 9_223_372_036_000_000_000);
+        assert_eq!(price.as_decimal(), dec!(9223372036));
         assert_eq!(price.to_string(), "9223372036.000000000");
     }
 
@@ -381,6 +385,7 @@ mod tests {
     fn test_min() {
         let price = Price::min(9);
         assert_eq!(price.raw, -9_223_372_036_000_000_000);
+        assert_eq!(price.as_decimal(), dec!(-9223372036));
         assert_eq!(price.to_string(), "-9223372036.000000000");
     }
 

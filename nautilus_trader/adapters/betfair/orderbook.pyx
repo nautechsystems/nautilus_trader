@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -38,5 +38,4 @@ cpdef Price betfair_float_to_price(double value):
         return Price(value, BETFAIR_PRICE_PRECISION)
 
 cpdef Quantity betfair_float_to_quantity(double value):
-    cdef Quantity quantity = Quantity(value, BETFAIR_QUANTITY_PRECISION)
-    return quantity
+    return Quantity(value, BETFAIR_QUANTITY_PRECISION)

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,13 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import msgspec.json
+import msgspec
 import pandas as pd
 import pytest
 
 from nautilus_trader.config import ImportableConfig
 from nautilus_trader.config.common import CUSTOM_DECODINGS
 from nautilus_trader.config.common import CUSTOM_ENCODINGS
+from nautilus_trader.config.common import DatabaseConfig
+from nautilus_trader.config.common import InstrumentProviderConfig
+from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.config.common import msgspec_decoding_hook
 from nautilus_trader.config.common import msgspec_encoding_hook
 from nautilus_trader.config.common import register_config_decoding
@@ -30,6 +33,77 @@ from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+
+
+def test_equality_hash_repr() -> None:
+    # Arrange
+    config1 = DatabaseConfig()
+    config2 = DatabaseConfig(username="user")
+
+    # Act, Assert
+    assert config1 == config1
+    assert config1 != config2
+    assert isinstance(hash(config1), int)
+    assert (
+        repr(config1)
+        == "DatabaseConfig(type='redis', host=None, port=None, username=None, password=None, ssl=False)"
+    )
+
+
+def test_config_id() -> None:
+    # Arrange
+    config = DatabaseConfig()
+
+    # Act, Assert
+    assert config.id == "18a63bfe7acf0b0126940542dc4e261c58e326db70194e5c65949e26a2f5bf1b"
+
+
+def test_fully_qualified_name() -> None:
+    # Arrange
+    config = DatabaseConfig()
+
+    # Act, Assert
+    assert config.fully_qualified_name() == "nautilus_trader.config.common:DatabaseConfig"
+
+
+def test_dict() -> None:
+    # Arrange
+    config = DatabaseConfig()
+
+    # Act, Assert
+    assert config.dict() == {
+        "type": "redis",
+        "host": None,
+        "port": None,
+        "username": None,
+        "password": None,
+        "ssl": False,
+    }
+
+
+def test_json() -> None:
+    # Arrange
+    config = DatabaseConfig()
+
+    # Act, Assert
+    assert (
+        config.json()
+        == b'{"type":"redis","host":null,"port":null,"username":null,"password":null,"ssl":false}'
+    )
+
+
+def test_json_primitives() -> None:
+    # Arrange
+    config = InstrumentProviderConfig(load_ids=frozenset([InstrumentId.from_str("ESH4.GLBX")]))
+
+    # Act, Assert
+    assert config.json_primitives() == {
+        "load_all": False,
+        "load_ids": ["ESH4.GLBX"],
+        "filters": None,
+        "filter_callable": None,
+        "log_warnings": True,
+    }
 
 
 def test_importable_config_simple() -> None:
@@ -277,3 +351,36 @@ def test_decoding_unsupported_type() -> None:
 
         # Verifying the exception message
         assert str(exinfo) == "Decoding objects of type <class 'list'> is unsupported"
+
+
+def test_logging_config_spec_string_with_default_config() -> None:
+    # Arrange
+    logging = LoggingConfig()
+
+    # Act
+    config_str = logging.spec_string()
+
+    # Assert
+    assert config_str == "stdout=info;is_colored"
+
+
+def test_logging_config_spec_string() -> None:
+    # Arrange
+    logging = LoggingConfig(
+        log_level="INFO",
+        log_level_file="DEBUG",
+        log_component_levels={
+            "RiskEngine": "ERROR",
+            "OrderEmulator": "DEBUG",
+        },
+        log_colors=False,
+        print_config=True,
+    )
+
+    # Act
+    config_str = logging.spec_string()
+
+    # Assert
+    assert (
+        config_str == "stdout=info;fileout=debug;RiskEngine=error;OrderEmulator=debug;print_config"
+    )

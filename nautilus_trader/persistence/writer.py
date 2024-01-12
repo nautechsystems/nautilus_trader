@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,7 +26,7 @@ from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
@@ -213,7 +213,7 @@ class StreamingFeatherWriter:
         PyCondition.not_none(obj, "obj")
 
         cls = obj.__class__
-        if isinstance(obj, GenericData):
+        if isinstance(obj, CustomData):
             cls = obj.data_type.type
         elif isinstance(obj, Instrument):
             if obj.id not in self._instruments:
@@ -225,7 +225,7 @@ class StreamingFeatherWriter:
             table += f"_{str(bar.bar_type).lower()}"
 
         if table not in self._writers:
-            if table.startswith("genericdata_signal"):
+            if table.startswith("custom_signal"):
                 self._create_writer(cls=cls)
             elif table.startswith("bar"):
                 self._create_writer(cls=cls, table_name=table)
@@ -361,8 +361,8 @@ def generate_signal_class(name: str, value_type: type) -> type:
     )
     register_arrow(
         data_cls=SignalData,
-        serializer=serialize_signal,
-        deserializer=deserialize_signal,
+        encoder=serialize_signal,
+        decoder=deserialize_signal,
         schema=schema,
     )
 

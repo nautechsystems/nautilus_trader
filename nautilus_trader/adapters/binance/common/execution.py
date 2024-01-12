@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -49,9 +49,9 @@ from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
-from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
@@ -214,6 +214,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             BinanceErrorCode.DISCONNECTED,
             BinanceErrorCode.TOO_MANY_REQUESTS,  # Short retry delays may result in bans
             BinanceErrorCode.TIMEOUT,
+            BinanceErrorCode.SERVER_BUSY,
             BinanceErrorCode.INVALID_TIMESTAMP,
             BinanceErrorCode.CANCEL_REJECTED,
             BinanceErrorCode.ME_RECVWINDOW_REJECT,
@@ -479,14 +480,14 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         return reports
 
-    async def generate_trade_reports(
+    async def generate_fill_reports(
         self,
         instrument_id: InstrumentId | None = None,
         venue_order_id: VenueOrderId | None = None,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-    ) -> list[TradeReport]:
-        self._log.info("Requesting TradeReports...")
+    ) -> list[FillReport]:
+        self._log.info("Requesting FillReports...")
 
         try:
             # Check Binance for all trades on active symbols
@@ -502,16 +503,16 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 )
                 binance_trades.extend(response)
         except BinanceError as e:
-            self._log.exception(f"Cannot generate TradeReport: {e.message}", e)
+            self._log.exception(f"Cannot generate FillReport: {e.message}", e)
             return []
 
         # Parse all Binance trades
-        reports: list[TradeReport] = []
+        reports: list[FillReport] = []
         for trade in binance_trades:
             if trade.symbol is None:
                 self._log.warning(f"No symbol for trade {trade}.")
                 continue
-            report = trade.parse_to_trade_report(
+            report = trade.parse_to_fill_report(
                 account_id=self.account_id,
                 instrument_id=self._get_cached_instrument_id(trade.symbol),
                 report_id=UUID4(),
@@ -526,7 +527,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} TradeReport{plural}.")
+        self._log.info(f"Received {len(reports)} FillReport{plural}.")
 
         return reports
 

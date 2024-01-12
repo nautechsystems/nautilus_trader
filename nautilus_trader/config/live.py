@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -125,7 +125,7 @@ class LiveDataClientConfig(NautilusConfig, frozen=True):
     Parameters
     ----------
     handle_revised_bars : bool
-        If DataClient will emit bar updates as soon new bar opens.
+        If DataClient will emit bar updates when a new bar opens.
     instrument_provider : InstrumentProviderConfig
         The clients instrument provider configuration.
     routing : RoutingConfig

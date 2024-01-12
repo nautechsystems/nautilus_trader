@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -182,20 +182,27 @@ fn get_stream_name(
 ) -> String {
     let mut stream_name = String::new();
 
-    if let Some(Value::String(s)) = config.get("stream") {
-        if !s.is_empty() {
-            stream_name.push_str(s.trim_matches('"'));
-            stream_name.push(DELIMITER);
-        }
+    if let Some(json!(true)) = config.get("use_trader_prefix") {
+        stream_name.push_str("trader-");
     }
 
-    stream_name.push_str(trader_id.value.as_str());
-    stream_name.push(DELIMITER);
+    if let Some(json!(true)) = config.get("use_trader_id") {
+        stream_name.push_str(trader_id.value.as_str());
+        stream_name.push(DELIMITER);
+    }
 
     if let Some(json!(true)) = config.get("use_instance_id") {
         stream_name.push_str(&format!("{instance_id}"));
         stream_name.push(DELIMITER);
     }
+
+    let stream_prefix = config
+        .get("streams_prefix")
+        .expect("Invalid configuration: no `streams_prefix` key found")
+        .as_str()
+        .expect("Invalid configuration: `streams_prefix` is not a string");
+    stream_name.push_str(stream_prefix);
+    stream_name.push(DELIMITER);
 
     stream_name
 }
@@ -210,17 +217,31 @@ mod tests {
     use super::*;
 
     #[rstest]
-    fn test_get_stream_name_with_stream_prefix_and_instance_id() {
+    fn test_get_stream_name_with_trader_prefix_and_instance_id() {
         let trader_id = TraderId::from("tester-123");
         let instance_id = UUID4::new();
         let mut config = HashMap::new();
-        config.insert("stream".to_string(), json!("quoters"));
+        config.insert("use_trader_prefix".to_string(), json!(true));
+        config.insert("use_trader_id".to_string(), json!(true));
         config.insert("use_instance_id".to_string(), json!(true));
+        config.insert("streams_prefix".to_string(), json!("streams"));
 
         let key = get_stream_name(trader_id, instance_id, &config);
-        let expected_suffix = format!("{instance_id}:");
-        assert!(key.starts_with("quoters:tester-123:"));
-        assert!(key.ends_with(&expected_suffix));
+        assert_eq!(key, format!("trader-tester-123:{instance_id}:streams:"));
+    }
+
+    #[rstest]
+    fn test_get_stream_name_without_trader_prefix_or_instance_id() {
+        let trader_id = TraderId::from("tester-123");
+        let instance_id = UUID4::new();
+        let mut config = HashMap::new();
+        config.insert("use_trader_prefix".to_string(), json!(false));
+        config.insert("use_trader_id".to_string(), json!(false));
+        config.insert("use_instance_id".to_string(), json!(false));
+        config.insert("streams_prefix".to_string(), json!("streams"));
+
+        let key = get_stream_name(trader_id, instance_id, &config);
+        assert_eq!(key, format!("streams:"));
     }
 
     #[rstest]

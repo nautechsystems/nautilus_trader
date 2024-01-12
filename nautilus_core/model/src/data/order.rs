@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -46,11 +46,12 @@ pub const NULL_ORDER: BookOrder = BookOrder {
 
 /// Represents an order in a book.
 #[repr(C)]
-#[derive(Copy, Clone, Eq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Eq, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
+#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct BookOrder {
     /// The order side.
     pub side: OrderSide,
@@ -128,7 +129,11 @@ impl BookOrder {
     }
 }
 
-impl Serializable for BookOrder {}
+impl Default for BookOrder {
+    fn default() -> Self {
+        NULL_ORDER
+    }
+}
 
 impl PartialEq for BookOrder {
     fn eq(&self, other: &Self) -> bool {
@@ -152,10 +157,12 @@ impl Display for BookOrder {
     }
 }
 
+impl Serializable for BookOrder {}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Stubs
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
+#[cfg(feature = "stubs")]
 pub mod stubs {
     use rstest::fixture;
 

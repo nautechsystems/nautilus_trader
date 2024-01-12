@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,6 @@
 import asyncio
 from threading import Timer as TimerThread
 from typing import Callable
-from typing import Optional
 
 import cython
 import numpy as np
@@ -311,7 +310,7 @@ cdef class Clock:
         timedelta interval,
         datetime start_time = None,
         datetime stop_time = None,
-        callback: Optional[Callable[[TimeEvent], None]] = None,
+        callback: Callable[[TimeEvent], None] | None = None,
     ):
         """
         Set a timer to run.
@@ -366,7 +365,7 @@ cdef class Clock:
         uint64_t interval_ns,
         uint64_t start_time_ns,
         uint64_t stop_time_ns,
-        callback: Optional[Callable[[TimeEvent], None]] = None,
+        callback: Callable[[TimeEvent], None] | None = None,
     ):
         """
         Set a timer to run.
@@ -476,7 +475,7 @@ cdef class TestClock(Clock):
         self,
         str name,
         uint64_t alert_time_ns,
-        callback: Optional[Callable[[TimeEvent], None]] = None,
+        callback: Callable[[TimeEvent], None] | None = None,
     ):
         Condition.valid_string(name, "name")
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
@@ -494,7 +493,7 @@ cdef class TestClock(Clock):
         uint64_t interval_ns,
         uint64_t start_time_ns,
         uint64_t stop_time_ns,
-        callback: Optional[Callable[[TimeEvent], None]] = None,
+        callback: Callable[[TimeEvent], None] | None = None,
     ):
         Condition.valid_string(name, "name")
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
@@ -606,7 +605,7 @@ cdef class LiveClock(Clock):
         The event loop for the clocks timers.
     """
 
-    def __init__(self, loop: Optional[asyncio.AbstractEventLoop] = None):
+    def __init__(self, loop: asyncio.AbstractEventLoop | None = None):
         self._mem = live_clock_new()
         self._default_handler = None
         self._handlers: dict[str, Callable[[TimeEvent], None]] = {}
@@ -648,7 +647,7 @@ cdef class LiveClock(Clock):
         self,
         str name,
         uint64_t alert_time_ns,
-        callback: Optional[Callable[[TimeEvent], None]] = None,
+        callback: Callable[[TimeEvent], None] | None = None,
     ):
         Condition.valid_string(name, "name")
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
@@ -672,7 +671,7 @@ cdef class LiveClock(Clock):
         uint64_t interval_ns,
         uint64_t start_time_ns,
         uint64_t stop_time_ns,
-        callback: Optional[Callable[[TimeEvent], None]] = None,
+        callback: Callable[[TimeEvent], None] | None = None,
     ):
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
 

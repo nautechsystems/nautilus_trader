@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from typing import Callable
-from typing import Optional
 
 from libc.stdint cimport uint64_t
 
@@ -113,7 +112,7 @@ cdef class MatchingCore:
         return self._price_increment
 
     @property
-    def bid(self) -> Optional[Price]:
+    def bid(self) -> Price | None:
         """
         Return the current bid price for the matching core.
 
@@ -128,7 +127,7 @@ cdef class MatchingCore:
             return Price.from_raw_c(self.bid_raw, self._price_precision)
 
     @property
-    def ask(self) -> Optional[Price]:
+    def ask(self) -> Price | None:
         """
         Return the current ask price for the matching core.
 
@@ -143,7 +142,7 @@ cdef class MatchingCore:
             return Price.from_raw_c(self.ask_raw, self._price_precision)
 
     @property
-    def last(self) -> Optional[Price]:
+    def last(self) -> Price | None:
         """
         Return the current last price for the matching core.
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,8 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from typing import Optional
 
 from nautilus_trader.config import CacheConfig
 
@@ -30,7 +28,6 @@ from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
-from nautilus_trader.model.data cimport Ticker
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
@@ -71,7 +68,7 @@ cdef class CacheDatabaseFacade:
     def __init__(
         self,
         Logger logger not None,
-        config: Optional[CacheConfig] = None,
+        config: CacheConfig | None = None,
     ):
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
 

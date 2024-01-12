@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import hashlib
 from collections import defaultdict
 
 import msgspec
@@ -23,11 +22,13 @@ from betfair_parser.exceptions import BetfairError
 from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
 from betfair_parser.spec.betting.enums import ExecutionReportStatus
 from betfair_parser.spec.betting.enums import InstructionReportStatus
+from betfair_parser.spec.betting.enums import OrderProjection
 from betfair_parser.spec.betting.orders import PlaceOrders
 from betfair_parser.spec.betting.orders import ReplaceOrders
 from betfair_parser.spec.betting.type_definitions import CurrentOrderSummary
 from betfair_parser.spec.betting.type_definitions import PlaceExecutionReport
 from betfair_parser.spec.common import BetId
+from betfair_parser.spec.common import TimeRange
 from betfair_parser.spec.streaming import OCM
 from betfair_parser.spec.streaming import Connection
 from betfair_parser.spec.streaming import Order as UnmatchedOrder
@@ -37,15 +38,18 @@ from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
-from nautilus_trader.adapters.betfair.common import B2N_ORDER_SIDE
+from nautilus_trader.adapters.betfair.common import OrderSideParser
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
+from nautilus_trader.adapters.betfair.parsing.requests import bet_to_fill_report
 from nautilus_trader.adapters.betfair.parsing.requests import bet_to_order_status_report
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
+from nautilus_trader.adapters.betfair.parsing.requests import make_customer_order_ref
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_cancel_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_place_order_params
+from nautilus_trader.adapters.betfair.parsing.requests import order_to_trade_id
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_replace_order_params
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
@@ -63,9 +67,9 @@ from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
-from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
@@ -146,6 +150,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self.pending_update_order_client_ids: set[tuple[ClientOrderId, VenueOrderId]] = set()
         self.published_executions: dict[ClientOrderId, list[TradeId]] = defaultdict(list)
 
+        self._strategy_hashes: dict[str, str] = {}
         self._set_account_id(AccountId(f"{BETFAIR_VENUE}-001"))
         AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
 
@@ -164,6 +169,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             self.stream.connect(),
             self.connection_account_state(),
             self.check_account_currency(),
+            self.load_venue_id_mapping_from_cache(),
         ]
         await asyncio.gather(*aws)
 
@@ -210,16 +216,26 @@ class BetfairExecutionClient(LiveExecutionClient):
         client_order_id: ClientOrderId | None = None,
         venue_order_id: VenueOrderId | None = None,
     ) -> OrderStatusReport | None:
-        assert venue_order_id is not None, "`venue_order_id` is None"
-        bet_id = BetId(venue_order_id.value)
-        self._log.debug(f"Listing current orders for {venue_order_id=} {bet_id=}")
-        orders: list[CurrentOrderSummary] = await self._client.list_current_orders(bet_ids={bet_id})
+        self._log.debug(f"Listing current orders for {venue_order_id=} {client_order_id=}")
+        assert (
+            venue_order_id is not None or client_order_id is not None
+        ), "Require one of venue_order_id or client_order_id"
+        if venue_order_id is not None:
+            bet_id = BetId(venue_order_id.value)
+            orders = await self._client.list_current_orders(bet_ids={bet_id})
+        else:
+            customer_order_ref = make_customer_order_ref(client_order_id)
+            orders = await self._client.list_current_orders(
+                customer_order_refs={customer_order_ref},
+            )
 
         if not orders:
-            self._log.warning(f"Could not find order for venue_order_id={venue_order_id}")
+            self._log.warning(f"Could not find order for {venue_order_id=} {client_order_id=}")
             return None
         # We have a response, check list length and grab first entry
-        assert len(orders) == 1, f"More than one order found for {venue_order_id}"
+        assert (
+            len(orders) == 1
+        ), f"More than one order found for {venue_order_id=} {client_order_id=}"
         order: CurrentOrderSummary = orders[0]
         instrument = self._cache.instrument(instrument_id)
         venue_order_id = VenueOrderId(str(order.bet_id))
@@ -244,20 +260,69 @@ class BetfairExecutionClient(LiveExecutionClient):
         end: pd.Timestamp | None = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
-        self._log.warning("Cannot generate `OrderStatusReports`: not yet implemented.")
+        ts_init = self._clock.timestamp_ns()
+        current_orders: list[CurrentOrderSummary] = await self._client.list_current_orders(
+            order_projection=OrderProjection.EXECUTABLE,
+            date_range=TimeRange(from_=start, to=end),
+        )
 
-        return []
+        order_status_reports = []
+        for order in current_orders:
+            instrument_id = betfair_instrument_id(
+                market_id=order.market_id,
+                selection_id=order.selection_id,
+                selection_handicap=order.handicap,
+            )
+            venue_order_id = VenueOrderId(str(order.bet_id))
+            client_order_id = self.venue_order_id_to_client_order_id.get(venue_order_id)
+            report = bet_to_order_status_report(
+                order=order,
+                account_id=self.account_id,
+                instrument_id=instrument_id,
+                venue_order_id=venue_order_id,
+                client_order_id=client_order_id,
+                ts_init=ts_init,
+                report_id=UUID4(),
+            )
+            order_status_reports.append(report)
 
-    async def generate_trade_reports(
+        return order_status_reports
+
+    async def generate_fill_reports(
         self,
         instrument_id: InstrumentId | None = None,
         venue_order_id: VenueOrderId | None = None,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-    ) -> list[TradeReport]:
-        self._log.warning("Cannot generate `TradeReports`: not yet implemented.")
+    ) -> list[FillReport]:
+        ts_init = self._clock.timestamp_ns()
+        cleared_orders: list[CurrentOrderSummary] = await self._client.list_current_orders(
+            order_projection=OrderProjection.ALL,
+            date_range=TimeRange(from_=start, to=end),
+        )
 
-        return []
+        fill_reports = []
+        for order in cleared_orders:
+            instrument_id = betfair_instrument_id(
+                market_id=order.market_id,
+                selection_id=order.selection_id,
+                selection_handicap=order.handicap,
+            )
+            venue_order_id = VenueOrderId(str(order.bet_id))
+            client_order_id = self.venue_order_id_to_client_order_id.get(venue_order_id)
+            report = bet_to_fill_report(
+                order=order,
+                account_id=self.account_id,
+                instrument_id=instrument_id,
+                venue_order_id=venue_order_id,
+                client_order_id=client_order_id,
+                ts_init=ts_init,
+                report_id=UUID4(),
+            )
+            if report is not None:
+                fill_reports.append(report)
+
+        return fill_reports
 
     async def generate_position_status_reports(
         self,
@@ -324,7 +389,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 self._log.debug(
                     f"Matching venue_order_id: {venue_order_id} to client_order_id: {client_order_id}",
                 )
-                self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
+                self.set_venue_id_mapping(venue_order_id, client_order_id)
                 self.generate_order_accepted(
                     command.strategy_id,
                     command.instrument_id,
@@ -417,7 +482,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
             place_instruction = report.place_instruction_report
             venue_order_id = VenueOrderId(str(place_instruction.bet_id))
-            self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
+            self.set_venue_id_mapping(venue_order_id, client_order_id)
             self.generate_order_updated(
                 command.strategy_id,
                 command.instrument_id,
@@ -479,7 +544,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._log.debug(
                 f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}",
             )
-            self.venue_order_id_to_client_order_id[venue_order_id] = command.client_order_id
+            self.set_venue_id_mapping(venue_order_id, command.client_order_id)
             self.generate_order_canceled(
                 command.strategy_id,
                 command.instrument_id,
@@ -508,17 +573,26 @@ class BetfairExecutionClient(LiveExecutionClient):
 
             self.cancel_order(command)
 
-    # cpdef void bulk_submit_order(self, list commands):
-    # betfair allows up to 200 inserts per request
-    #     raise NotImplementedError
+    # -- CACHE  -----------------------------------------------------------------------------------
 
-    # cpdef void bulk_submit_update(self, list commands):
-    # betfair allows up to 60 updates per request
-    #     raise NotImplementedError
+    async def load_venue_id_mapping_from_cache(self) -> None:
+        self._log.info("Loading venue_id mapping from cache")
+        raw = self._cache.get("betfair_execution_client.venue_order_id_to_client_order_id") or b"{}"
+        self._log.info(f"venue_id_mapping: {raw.decode()=}")
+        self.venue_order_id_to_client_order_id = msgspec.json.decode(raw)
 
-    # cpdef void bulk_submit_delete(self, list commands):
-    # betfair allows up to 60 cancels per request
-    #     raise NotImplementedError
+    def set_venue_id_mapping(
+        self,
+        venue_order_id: VenueOrderId,
+        client_order_id: ClientOrderId,
+    ) -> None:
+        self._log.debug(f"Updating venue_id_mapping: {venue_order_id=} {client_order_id=}")
+        self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
+        self._log.debug("Updating venue_id_mapping in cache")
+        raw = msgspec.json.encode(
+            {k.value: v.value for k, v in self.venue_order_id_to_client_order_id.items()},
+        )
+        self._cache.add("betfair_execution_client.venue_order_id_to_client_order_id", raw)
 
     # -- ACCOUNT ----------------------------------------------------------------------------------
 
@@ -545,7 +619,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         """
         Handle an update from the order stream socket.
         """
-        self._log.debug(f"raw_exec: {raw.decode()}")
+        self._log.debug(f"[RECV]: {raw.decode()}")
         update = stream_decode(raw)
 
         if isinstance(update, OCM):
@@ -639,29 +713,19 @@ class BetfairExecutionClient(LiveExecutionClient):
         Handle update containing 'E' (executable) order update.
         """
         venue_order_id = VenueOrderId(str(unmatched_order.id))
-        client_order_id = self.venue_order_id_to_client_order_id[venue_order_id]
-        order = self._cache.order(client_order_id)
-        instrument = self._cache.instrument(order.instrument_id)
 
         # Check if this is the first time seeing this order (backtest or replay)
         if venue_order_id in self.venue_order_id_to_client_order_id:
             # We've already sent an accept for this order in self._submit_order
-            self._log.debug(
-                f"Skipping order_accept as order exists: venue_order_id={unmatched_order.id}",
-            )
-        else:
-            raise RuntimeError
-            # self.generate_order_accepted(
-            #     strategy_id=order.strategy_id,
-            #     instrument_id=instrument.id,
-            #     client_order_id=client_order_id,
-            #     venue_order_id=venue_order_id,
-            #     ts_event=millis_to_nanos(order_update["pd"]),
-            # )
+            self._log.info(f"Skipping order_accept as order exists: {venue_order_id=}")
+
+        client_order_id = self.venue_order_id_to_client_order_id[venue_order_id]
+        order = self._cache.order(client_order_id)
+        instrument = self._cache.instrument(order.instrument_id)
 
         # Check for any portion executed
         if unmatched_order.sm > 0 and unmatched_order.sm > order.filled_qty:
-            trade_id = create_trade_id(unmatched_order)
+            trade_id = order_to_trade_id(unmatched_order)
             if trade_id not in self.published_executions[client_order_id]:
                 fill_qty = unmatched_order.sm - order.filled_qty
                 fill_price = self._determine_fill_price(
@@ -675,7 +739,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     venue_order_id=venue_order_id,
                     venue_position_id=None,  # Can be None
                     trade_id=trade_id,
-                    order_side=B2N_ORDER_SIDE[unmatched_order.side],
+                    order_side=OrderSideParser.to_nautilus(unmatched_order.side),
                     order_type=OrderType.LIMIT,
                     last_qty=betfair_float_to_quantity(fill_qty),
                     last_px=betfair_float_to_price(fill_price),
@@ -729,8 +793,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         assert instrument
 
         if unmatched_order.sm > 0 and unmatched_order.sm > order.filled_qty:
-            self._log.debug("")
-            trade_id = create_trade_id(unmatched_order)
+            trade_id = order_to_trade_id(unmatched_order)
             if trade_id not in self.published_executions[client_order_id]:
                 fill_qty = unmatched_order.sm - order.filled_qty
                 fill_price = self._determine_fill_price(
@@ -745,7 +808,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     venue_order_id=venue_order_id,
                     venue_position_id=None,  # Can be None
                     trade_id=trade_id,
-                    order_side=B2N_ORDER_SIDE[unmatched_order.side],
+                    order_side=OrderSideParser.to_nautilus(unmatched_order.side),
                     order_type=OrderType.LIMIT,
                     last_qty=betfair_float_to_quantity(fill_qty),
                     last_px=betfair_float_to_price(fill_price),
@@ -833,21 +896,3 @@ class BetfairExecutionClient(LiveExecutionClient):
             else:
                 self._log.info("Attempting reconnect")
                 self._loop.create_task(self.stream.connect())
-
-
-def create_trade_id(uo: UnmatchedOrder) -> TradeId:
-    data: bytes = msgspec.json.encode(
-        (
-            uo.id,
-            uo.p,
-            uo.s,
-            uo.side,
-            uo.pt,
-            uo.ot,
-            uo.pd,
-            uo.md,
-            uo.avp,
-            uo.sm,
-        ),
-    )
-    return TradeId(hashlib.sha256(data).hexdigest()[:40])

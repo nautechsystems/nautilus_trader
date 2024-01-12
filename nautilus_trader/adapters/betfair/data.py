@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -38,8 +38,8 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -172,7 +172,7 @@ class BetfairDataClient(LiveMarketDataClient):
         book_type: BookType,
         depth: int | None = None,
         kwargs: dict | None = None,
-    ):
+    ) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
 
         instrument: BettingInstrument = self._instrument_provider.find(instrument_id)
@@ -222,29 +222,29 @@ class BetfairDataClient(LiveMarketDataClient):
         for instrument in self._instrument_provider.list_all():
             self._handle_data(instrument)
 
-    async def _subscribe_instrument_status(self, instrument_id: InstrumentId):
+    async def _subscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
         pass  # Subscribed as part of orderbook
 
-    async def _subscribe_instrument_close(self, instrument_id: InstrumentId):
+    async def _subscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
         pass  # Subscribed as part of orderbook
 
-    async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId):
+    async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
         # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
         #  subscription message - when we have a use case
 
         self._log.warning("Betfair does not support unsubscribing from instruments")
 
-    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId):
+    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
         # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
         #  subscription message - when we have a use case
         self._log.warning("Betfair does not support unsubscribing from instruments")
 
     # -- STREAMS ----------------------------------------------------------------------------------
-    def on_market_update(self, raw: bytes):
+    def on_market_update(self, raw: bytes) -> None:
         """
         Handle an update from the data stream socket.
         """
-        self._log.debug(f"raw_data: {raw.decode()}")
+        self._log.debug(f"[RECV]: {raw.decode()}")
         update = stream_decode(raw)
         if isinstance(update, MCM):
             self._on_market_update(mcm=update)
@@ -255,18 +255,18 @@ class BetfairDataClient(LiveMarketDataClient):
         else:
             raise RuntimeError
 
-    def _on_market_update(self, mcm: MCM):
+    def _on_market_update(self, mcm: MCM) -> None:
         self._check_stream_unhealthy(update=mcm)
         updates = self.parser.parse(mcm=mcm)
         for data in updates:
             self._log.debug(f"{data}")
             if isinstance(data, BetfairStartingPrice | BSPOrderBookDelta):
                 # Not a regular data type
-                generic_data = GenericData(
+                custom_data = CustomData(
                     DataType(data.__class__, {"instrument_id": data.instrument_id}),
                     data,
                 )
-                self._handle_data(generic_data)
+                self._handle_data(custom_data)
             elif isinstance(data, Data):
                 if self._strict_handling and (
                     hasattr(data, "instrument_id")
@@ -283,7 +283,7 @@ class BetfairDataClient(LiveMarketDataClient):
             else:
                 raise RuntimeError
 
-    def _check_stream_unhealthy(self, update: MCM):
+    def _check_stream_unhealthy(self, update: MCM) -> None:
         if update.stream_unreliable:
             self._log.warning("Stream unhealthy, waiting for recover")
             self.degrade()
@@ -294,7 +294,7 @@ class BetfairDataClient(LiveMarketDataClient):
                         "Conflated stream - consuming data too slow (data received is delayed)",
                     )
 
-    def _handle_status_message(self, update: Status):
+    def _handle_status_message(self, update: Status) -> None:
         if update.status_code == "FAILURE" and update.connection_closed:
             self._log.warning(str(update))
             if update.error_code == "MAX_CONNECTION_LIMIT_EXCEEDED":
