@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.183.0"
+version = "1.184.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -87,7 +87,7 @@ docformatter = "^1.7.5"
 mypy = "^1.8.0"
 pandas-stubs = "^2.1.4"
 pre-commit = "^3.6.0"
-ruff = "^0.1.12"
+ruff = "^0.1.13"
 types-pytz = "^2023.3"
 types-requests = "^2.31"
 types-toml = "^0.10.2"

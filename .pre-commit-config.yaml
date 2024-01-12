@@ -82,7 +82,7 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.12
+    rev: v0.1.13
     hooks:
       - id: ruff
         args: ["--fix"]
