@@ -172,7 +172,7 @@ impl DataBackendSession {
     }
 }
 
-// Note: Intended to be used on a single python thread
+// Note: Intended to be used on a single Python thread
 unsafe impl Send for DataBackendSession {}
 
 #[cfg_attr(
@@ -234,5 +234,5 @@ impl Drop for DataQueryResult {
     }
 }
 
-// Note: Intended to be used on a single python thread
+// Note: Intended to be used on a single Python thread
 unsafe impl Send for DataQueryResult {}
