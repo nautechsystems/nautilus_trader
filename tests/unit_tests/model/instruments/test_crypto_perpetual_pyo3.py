@@ -52,6 +52,10 @@ def test_to_dict():
         "min_notional": "10.00000000 USDT",
         "max_price": "15000.0",
         "min_price": "1.0",
+        "maker_fee": 0.0002,
+        "margin_init": 1.0,
+        "margin_maint": 0.35,
+        "taker_fee": 0.0004,
         "ts_event": 0,
         "ts_init": 0,
     }

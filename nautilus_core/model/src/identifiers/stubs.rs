@@ -80,6 +80,11 @@ pub fn instrument_id_btc_usdt() -> InstrumentId {
     InstrumentId::from("BTCUSDT.COINBASE")
 }
 
+#[fixture]
+pub fn instrument_id_aud_usd_sim() -> InstrumentId {
+    InstrumentId::from("AUDUSD.SIM")
+}
+
 // ---- OrderListId ----
 
 #[fixture]

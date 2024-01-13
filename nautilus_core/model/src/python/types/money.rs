@@ -369,3 +369,9 @@ impl Money {
         self.to_formatted_string()
     }
 }
+
+impl ToPyObject for Money {
+    fn to_object(&self, py: Python) -> PyObject {
+        self.into_py(py)
+    }
+}

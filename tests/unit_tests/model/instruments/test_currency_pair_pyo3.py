@@ -48,6 +48,10 @@ def test_to_dict():
         "min_quantity": "0.00001",
         "min_price": "0.01",
         "max_price": "1000000",
+        "maker_fee": 0.00018,
+        "margin_init": 0.05,
+        "margin_maint": 0.025,
+        "taker_fee": 0.0002,
         "ts_event": 0,
         "ts_init": 0,
     }

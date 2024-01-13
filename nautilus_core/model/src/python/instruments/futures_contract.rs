@@ -77,6 +77,11 @@ impl FuturesContract {
         .map_err(to_pyvalue_err)
     }
 
+    #[getter]
+    fn instrument_type(&self) -> &str {
+        "FuturesContract"
+    }
+
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
             CompareOp::Eq => self.eq(other).into_py(py),

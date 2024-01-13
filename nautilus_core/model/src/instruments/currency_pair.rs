@@ -21,6 +21,7 @@ use std::{
 use anyhow::Result;
 use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use super::Instrument;
@@ -54,6 +55,14 @@ pub struct CurrencyPair {
     #[pyo3(get)]
     pub size_increment: Quantity,
     #[pyo3(get)]
+    pub maker_fee: Decimal,
+    #[pyo3(get)]
+    pub taker_fee: Decimal,
+    #[pyo3(get)]
+    pub margin_init: Decimal,
+    #[pyo3(get)]
+    pub margin_maint: Decimal,
+    #[pyo3(get)]
     pub lot_size: Option<Quantity>,
     #[pyo3(get)]
     pub max_quantity: Option<Quantity>,
@@ -80,6 +89,10 @@ impl CurrencyPair {
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
+        taker_fee: Decimal,
+        maker_fee: Decimal,
+        margin_init: Decimal,
+        margin_maint: Decimal,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
@@ -97,6 +110,10 @@ impl CurrencyPair {
             size_precision,
             price_increment,
             size_increment,
+            taker_fee,
+            maker_fee,
+            margin_init,
+            margin_maint,
             lot_size,
             max_quantity,
             min_quantity,
@@ -206,6 +223,18 @@ impl Instrument for CurrencyPair {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+    fn margin_init(&self) -> Decimal {
+        self.margin_init
+    }
+    fn margin_maint(&self) -> Decimal {
+        self.margin_maint
+    }
+    fn taker_fee(&self) -> Decimal {
+        self.taker_fee
+    }
+    fn maker_fee(&self) -> Decimal {
+        self.maker_fee
     }
 }
 
