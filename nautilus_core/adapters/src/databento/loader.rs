@@ -123,11 +123,13 @@ impl DatabentoDataLoader {
     }
 
     /// Return the internal Databento publishers currently held by the loader.
+    #[must_use]
     pub fn get_publishers(&self) -> &IndexMap<u16, DatabentoPublisher> {
         &self.publishers
     }
 
     // Return the dataset which matches the given `venue` (if found).
+    #[must_use]
     pub fn get_dataset_for_venue(&self, venue: &Venue) -> Option<&Dataset> {
         self.venue_dataset.get(venue)
     }
