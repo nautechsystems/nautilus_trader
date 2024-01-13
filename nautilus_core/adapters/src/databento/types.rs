@@ -14,10 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use databento::dbn;
+use serde::Deserialize;
 
 /// Represents a Databento publisher ID.
 pub type PublisherId = u16;
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
 pub struct DatabentoPublisher {
     pub publisher_id: PublisherId,
     pub dataset: dbn::Dataset,

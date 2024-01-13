@@ -38,7 +38,7 @@ class DatabentoDataLoader:
     Supported schemas:
      - MBO -> `OrderBookDelta`
      - MBP_1 -> `QuoteTick` | `TradeTick`
-     - MBP_10 -> `OrderBookDeltas` (as snapshots)
+     - MBP_10 -> `OrderBookDepth10`
      - TBBO -> `QuoteTick` | `TradeTick`
      - TRADES -> `TradeTick`
      - OHLCV_1S -> `Bar`
@@ -55,7 +55,7 @@ class DatabentoDataLoader:
 
     Warnings
     --------
-    The following Databento instrument classes are not supported:
+    The following Databento instrument classes are not currently supported:
      - ``FUTURE_SPREAD``
      - ``OPTION_SPEAD``
      - ``MIXED_SPREAD``
@@ -105,27 +105,6 @@ class DatabentoDataLoader:
         """
         return self._instruments
 
-    def get_venue_for_dataset(self, dataset: str) -> Venue:
-        """
-        Return a venue for the given `dataset`.
-
-        Parameters
-        ----------
-        dataset : str
-            The dataset for the venue.
-
-        Returns
-        -------
-        Venue
-
-        Raises
-        ------
-        KeyError
-            If `dataset` is not in the map of publishers.
-
-        """
-        return self._dataset_venue[dataset]
-
     def get_dataset_for_venue(self, venue: Venue) -> str:
         """
         Return a dataset for the given `venue`.
@@ -168,7 +147,6 @@ class DatabentoDataLoader:
         publishers: list[DatabentoPublisher] = decoder.decode(path.read_bytes())
 
         self._publishers = {p.publisher_id: p for p in publishers}
-        self._dataset_venue: dict[str, Venue] = {p.dataset: Venue(p.venue) for p in publishers}
         self._venue_dataset: dict[Venue, str] = {Venue(p.venue): p.dataset for p in publishers}
 
     def load_instruments(self, path: PathLike[str] | str) -> None:

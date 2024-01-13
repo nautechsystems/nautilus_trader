@@ -12,3 +12,18 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+use std::path::PathBuf;
+
+use nautilus_core::python::to_pyvalue_err;
+use pyo3::prelude::*;
+
+use crate::databento::loader::DatabentoDataLoader;
+
+#[pymethods]
+impl DatabentoDataLoader {
+    #[new]
+    pub fn py_new(path: Option<String>) -> PyResult<Self> {
+        DatabentoDataLoader::new(path.map(PathBuf::from)).map_err(to_pyvalue_err)
+    }
+}

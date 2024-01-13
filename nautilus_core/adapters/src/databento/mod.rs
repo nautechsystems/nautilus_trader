@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod common;
-pub mod historical;
 pub mod loader;
 pub mod parsing;
 pub mod types;
