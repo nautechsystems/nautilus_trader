@@ -2446,7 +2446,11 @@ dependencies = [
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "streaming-iterator",
  "thiserror",
+ "time",
  "tokio",
  "ustr",
 ]
@@ -3702,9 +3706,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.38.29"
+version = "0.38.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a1a81a2478639a14e68937903356dbac62cf52171148924f754bb8a8cd7a96c"
+checksum = "322394588aaf33c24007e8bb3238ee3e4c5c09c084ab32bc73890b99ff326bca"
 dependencies = [
  "bitflags 2.4.1",
  "errno",

@@ -22,6 +22,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Result};
 use databento::dbn;
+use dbn::Record;
 use itoa;
 use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, time::UnixNanos};
 use nautilus_model::{
@@ -490,33 +491,14 @@ pub fn parse_ohlcv_msg(
     Ok(bar)
 }
 
-// pub fn parse_record_with_metadata<T>(
-//     record: T,
-//     publishers: IndexMap<PublisherId, DatabentoPublisher>,
-//     ts_init: UnixNanos,
-// ) -> Result<(Data, Option<Data>)> {
-//     let publisher_id: PublisherId = record.header().publisher_id;
-//     let publisher = publishers
-//         .get(&record.header().publisher_id)
-//         .ok_or_else(|| anyhow!("Publisher ID {publisher_id} not found in map"))?;
-//
-//     let raw_symbol = unsafe { parse_raw_ptr_to_ustr(record.raw_symbol.as_ptr())? };
-//     let instrument_id = nautilus_instrument_id_from_databento(raw_symbol, publisher);
-// }
-
-pub fn parse_record<T>(
-    record: T,
+pub fn parse_record(
+    record: &dbn::RecordRef,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> Result<(Data, Option<Data>)>
-where
-    T: dbn::Record + dbn::HasRType,
-{
-    let record_ref = dbn::RecordRef::from(&record);
-
+) -> Result<(Data, Option<Data>)> {
     let result = match record.rtype()? {
         dbn::RType::Mbo => {
-            let msg = record_ref.get::<dbn::MboMsg>().unwrap(); // SAFETY: RType known
+            let msg = record.get::<dbn::MboMsg>().unwrap(); // SAFETY: RType known
             let result = parse_mbo_msg(msg, instrument_id, 2, ts_init)?;
             match result {
                 (Some(delta), None) => (Data::Delta(delta), None),
@@ -525,12 +507,12 @@ where
             }
         }
         dbn::RType::Mbp0 => {
-            let msg = record_ref.get::<dbn::TradeMsg>().unwrap(); // SAFETY: RType known
+            let msg = record.get::<dbn::TradeMsg>().unwrap(); // SAFETY: RType known
             let trade = parse_trade_msg(msg, instrument_id, 2, ts_init)?;
             (Data::Trade(trade), None)
         }
         dbn::RType::Mbp1 => {
-            let msg = record_ref.get::<dbn::Mbp1Msg>().unwrap(); // SAFETY: RType known
+            let msg = record.get::<dbn::Mbp1Msg>().unwrap(); // SAFETY: RType known
             let result = parse_mbp1_msg(msg, instrument_id, 2, ts_init)?;
             match result {
                 (quote, None) => (Data::Quote(quote), None),
@@ -538,7 +520,7 @@ where
             }
         }
         dbn::RType::Mbp10 => {
-            let msg = record_ref.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
+            let msg = record.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
             let depth = parse_mbp10_msg(msg, instrument_id, 2, ts_init)?;
             (Data::Depth10(depth), None)
         }
@@ -547,7 +529,7 @@ where
         | dbn::RType::Ohlcv1H
         | dbn::RType::Ohlcv1D
         | dbn::RType::OhlcvEod => {
-            let msg = record_ref.get::<dbn::OhlcvMsg>().unwrap(); // SAFETY: RType known
+            let msg = record.get::<dbn::OhlcvMsg>().unwrap(); // SAFETY: RType known
             let bar = parse_ohlcv_msg(msg, instrument_id, 2, ts_init)?;
             (Data::Bar(bar), None)
         }
