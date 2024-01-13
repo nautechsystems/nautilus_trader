@@ -24,6 +24,6 @@ use crate::databento::loader::DatabentoDataLoader;
 impl DatabentoDataLoader {
     #[new]
     pub fn py_new(path: Option<String>) -> PyResult<Self> {
-        DatabentoDataLoader::new(path.map(PathBuf::from)).map_err(to_pyvalue_err)
+        Self::new(path.map(PathBuf::from)).map_err(to_pyvalue_err)
     }
 }
