@@ -312,6 +312,8 @@ class DatabentoDataLoader:
             raise RuntimeError("Loading files with mixed schemas not currently supported")
 
         match schema:
+            case databento.Schema.DEFINITION:
+                return self._pyo3_loader.load_instruments(path)  # type: ignore
             case databento.Schema.MBO:
                 return self._pyo3_loader.load_order_book_deltas(path, pyo3_instrument_id)  # type: ignore
             case databento.Schema.MBP_1 | databento.Schema.TBBO:

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::path::PathBuf;
+use std::{any::Any, path::PathBuf};
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
@@ -22,8 +22,12 @@ use nautilus_model::{
         trade::TradeTick, Data,
     },
     identifiers::instrument_id::InstrumentId,
+    instruments::{
+        equity::Equity, futures_contract::FuturesContract, options_contract::OptionsContract,
+        Instrument,
+    },
 };
-use pyo3::prelude::*;
+use pyo3::{prelude::*, types::PyList};
 
 use crate::databento::loader::DatabentoDataLoader;
 
@@ -40,6 +44,29 @@ impl DatabentoDataLoader {
             .map_err(to_pyvalue_err)
     }
 
+    #[pyo3(name = "load_instruments")]
+    pub fn py_load_instruments(&self, py: Python, path: String) -> PyResult<PyObject> {
+        let path_buf = PathBuf::from(path);
+        let iter = self
+            .read_definition_records(path_buf)
+            .map_err(to_pyvalue_err)?;
+
+        let mut data = Vec::new();
+        for result in iter {
+            match result {
+                Ok(instrument) => {
+                    let py_object = convert_instrument_to_pyobject(py, instrument)?;
+                    data.push(py_object);
+                }
+                Err(e) => {
+                    eprintln!("{e}");
+                }
+            }
+        }
+
+        Ok(PyList::new(py, &data).into())
+    }
+
     #[pyo3(name = "load_order_book_deltas")]
     pub fn py_load_order_book_deltas(
         &self,
@@ -52,12 +79,11 @@ impl DatabentoDataLoader {
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
-
         for result in iter {
             match result {
                 Ok((item1, _)) => {
-                    if let Data::Delta(d) = item1 {
-                        data.push(d);
+                    if let Data::Delta(delta) = item1 {
+                        data.push(delta);
                     }
                 }
                 Err(e) => return Err(to_pyvalue_err(e)),
@@ -79,12 +105,11 @@ impl DatabentoDataLoader {
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
-
         for result in iter {
             match result {
                 Ok((item1, _)) => {
-                    if let Data::Depth10(d) = item1 {
-                        data.push(d);
+                    if let Data::Depth10(depth) = item1 {
+                        data.push(depth);
                     }
                 }
                 Err(e) => return Err(to_pyvalue_err(e)),
@@ -106,12 +131,11 @@ impl DatabentoDataLoader {
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
-
         for result in iter {
             match result {
                 Ok((item1, _)) => {
-                    if let Data::Quote(q) = item1 {
-                        data.push(q);
+                    if let Data::Quote(quote) = item1 {
+                        data.push(quote);
                     }
                 }
                 Err(e) => return Err(to_pyvalue_err(e)),
@@ -133,12 +157,11 @@ impl DatabentoDataLoader {
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
-
         for result in iter {
             match result {
                 Ok((_, maybe_item2)) => {
-                    if let Some(Data::Trade(t)) = maybe_item2 {
-                        data.push(t);
+                    if let Some(Data::Trade(trade)) = maybe_item2 {
+                        data.push(trade);
                     }
                 }
                 Err(e) => return Err(to_pyvalue_err(e)),
@@ -160,12 +183,11 @@ impl DatabentoDataLoader {
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
-
         for result in iter {
             match result {
                 Ok((item1, _)) => {
-                    if let Data::Trade(t) = item1 {
-                        data.push(t);
+                    if let Data::Trade(trade) = item1 {
+                        data.push(trade);
                     }
                 }
                 Err(e) => return Err(to_pyvalue_err(e)),
@@ -187,12 +209,11 @@ impl DatabentoDataLoader {
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
-
         for result in iter {
             match result {
                 Ok((item1, _)) => {
-                    if let Data::Bar(b) = item1 {
-                        data.push(b);
+                    if let Data::Bar(bar) = item1 {
+                        data.push(bar);
                     }
                 }
                 Err(e) => return Err(to_pyvalue_err(e)),
@@ -201,4 +222,24 @@ impl DatabentoDataLoader {
 
         Ok(data)
     }
+}
+
+fn convert_instrument_to_pyobject(
+    py: Python,
+    instrument: Box<dyn Instrument + 'static>,
+) -> PyResult<PyObject> {
+    let any_ref: &dyn Any = instrument.as_any();
+    if let Some(equity) = any_ref.downcast_ref::<Equity>() {
+        return Ok(equity.into_py(py));
+    }
+    if let Some(future) = any_ref.downcast_ref::<FuturesContract>() {
+        return Ok(future.into_py(py));
+    }
+    if let Some(option) = any_ref.downcast_ref::<OptionsContract>() {
+        return Ok(option.into_py(py));
+    }
+
+    Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+        "Unknown instrument type",
+    ))
 }

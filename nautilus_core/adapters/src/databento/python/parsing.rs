@@ -32,7 +32,7 @@ use crate::databento::parsing::{
 #[pyfunction]
 #[pyo3(name = "parse_equity")]
 pub fn py_parse_equity(
-    record: &dbn::InstrumentDefMsg,
+    record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> PyResult<Equity> {
@@ -42,7 +42,7 @@ pub fn py_parse_equity(
 #[pyfunction]
 #[pyo3(name = "parse_futures_contract")]
 pub fn py_parse_futures_contract(
-    record: &dbn::InstrumentDefMsg,
+    record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> PyResult<FuturesContract> {
@@ -52,7 +52,7 @@ pub fn py_parse_futures_contract(
 #[pyfunction]
 #[pyo3(name = "parse_options_contract")]
 pub fn py_parse_options_contract(
-    record: &dbn::InstrumentDefMsg,
+    record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> PyResult<OptionsContract> {

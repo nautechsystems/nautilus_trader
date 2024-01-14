@@ -18,6 +18,7 @@ use std::{env, fs, path::PathBuf};
 use anyhow::{bail, Result};
 use databento::dbn;
 use dbn::{
+    compat::InstrumentDefMsgV1,
     decode::{dbn::Decoder, DecodeDbn},
     Record,
 };
@@ -25,6 +26,7 @@ use indexmap::IndexMap;
 use nautilus_model::{
     data::Data,
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
+    instruments::Instrument,
     types::currency::Currency,
 };
 use pyo3::prelude::*;
@@ -32,7 +34,10 @@ use streaming_iterator::StreamingIterator;
 use time;
 use ustr::Ustr;
 
-use super::{parsing::parse_record, types::DatabentoPublisher};
+use super::{
+    parsing::{parse_instrument_def_msg, parse_record},
+    types::DatabentoPublisher,
+};
 
 pub type PublisherId = u16;
 pub type Dataset = Ustr;
@@ -223,6 +228,33 @@ impl DatabentoDataLoader {
                     };
 
                     match parse_record(&rec_ref, rtype, instrument_id, price_precision, None) {
+                        Ok(data) => Some(Ok(data)),
+                        Err(e) => Some(Err(e)),
+                    }
+                }
+                None => None,
+            }
+        }))
+    }
+
+    pub fn read_definition_records(
+        &self,
+        path: PathBuf,
+    ) -> Result<impl Iterator<Item = Result<Box<dyn Instrument>>> + '_> {
+        let mut decoder = Decoder::from_zstd_file(path)?;
+        decoder.set_upgrade_policy(dbn::VersionUpgradePolicy::Upgrade);
+        let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsgV1>();
+
+        Ok(std::iter::from_fn(move || {
+            dbn_stream.advance();
+            match dbn_stream.get() {
+                Some(record) => {
+                    let rec_ref = dbn::RecordRef::from(record);
+                    let msg = rec_ref.get::<InstrumentDefMsgV1>().unwrap();
+
+                    let publisher = self.publishers.get(&msg.hd.publisher_id).unwrap();
+
+                    match parse_instrument_def_msg(record, publisher, msg.ts_recv) {
                         Ok(data) => Some(Ok(data)),
                         Err(e) => Some(Err(e)),
                     }

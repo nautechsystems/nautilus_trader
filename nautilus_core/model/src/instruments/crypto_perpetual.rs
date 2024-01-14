@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::hash::{Hash, Hasher};
+use std::{
+    any::Any,
+    hash::{Hash, Hasher},
+};
 
 use anyhow::Result;
 use nautilus_core::time::UnixNanos;
@@ -195,6 +198,10 @@ impl Instrument for CryptoPerpetual {
 
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
