@@ -16,6 +16,13 @@
 use std::path::PathBuf;
 
 use nautilus_core::python::to_pyvalue_err;
+use nautilus_model::{
+    data::{
+        bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
+        trade::TradeTick, Data,
+    },
+    identifiers::instrument_id::InstrumentId,
+};
 use pyo3::prelude::*;
 
 use crate::databento::loader::DatabentoDataLoader;
@@ -25,5 +32,173 @@ impl DatabentoDataLoader {
     #[new]
     pub fn py_new(path: Option<String>) -> PyResult<Self> {
         Self::new(path.map(PathBuf::from)).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "schema_for_file")]
+    pub fn py_schema_for_file(&self, path: String) -> PyResult<Option<dbn::Schema>> {
+        self.schema_from_file(PathBuf::from(path))
+            .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "load_order_book_deltas")]
+    pub fn py_load_order_book_deltas(
+        &self,
+        path: String,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<Vec<OrderBookDelta>> {
+        let path_buf = PathBuf::from(path);
+        let iter = self
+            .read_records::<dbn::MboMsg>(path_buf, instrument_id)
+            .map_err(to_pyvalue_err)?;
+
+        let mut data = Vec::new();
+
+        for result in iter {
+            match result {
+                Ok((item1, _)) => {
+                    if let Data::Delta(d) = item1 {
+                        data.push(d);
+                    }
+                }
+                Err(e) => return Err(to_pyvalue_err(e)),
+            }
+        }
+
+        Ok(data)
+    }
+
+    #[pyo3(name = "load_order_book_depth10")]
+    pub fn py_load_order_book_depth10(
+        &self,
+        path: String,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<Vec<OrderBookDepth10>> {
+        let path_buf = PathBuf::from(path);
+        let iter = self
+            .read_records::<dbn::Mbp10Msg>(path_buf, instrument_id)
+            .map_err(to_pyvalue_err)?;
+
+        let mut data = Vec::new();
+
+        for result in iter {
+            match result {
+                Ok((item1, _)) => {
+                    if let Data::Depth10(d) = item1 {
+                        data.push(d);
+                    }
+                }
+                Err(e) => return Err(to_pyvalue_err(e)),
+            }
+        }
+
+        Ok(data)
+    }
+
+    #[pyo3(name = "load_quote_ticks")]
+    pub fn py_load_quote_ticks(
+        &self,
+        path: String,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<Vec<QuoteTick>> {
+        let path_buf = PathBuf::from(path);
+        let iter = self
+            .read_records::<dbn::Mbp1Msg>(path_buf, instrument_id)
+            .map_err(to_pyvalue_err)?;
+
+        let mut data = Vec::new();
+
+        for result in iter {
+            match result {
+                Ok((item1, _)) => {
+                    if let Data::Quote(q) = item1 {
+                        data.push(q);
+                    }
+                }
+                Err(e) => return Err(to_pyvalue_err(e)),
+            }
+        }
+
+        Ok(data)
+    }
+
+    #[pyo3(name = "load_tbbo_trade_ticks")]
+    pub fn py_load_tbbo_trade_ticks(
+        &self,
+        path: String,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<Vec<TradeTick>> {
+        let path_buf = PathBuf::from(path);
+        let iter = self
+            .read_records::<dbn::Mbp1Msg>(path_buf, instrument_id)
+            .map_err(to_pyvalue_err)?;
+
+        let mut data = Vec::new();
+
+        for result in iter {
+            match result {
+                Ok((_, maybe_item2)) => {
+                    if let Some(Data::Trade(t)) = maybe_item2 {
+                        data.push(t);
+                    }
+                }
+                Err(e) => return Err(to_pyvalue_err(e)),
+            }
+        }
+
+        Ok(data)
+    }
+
+    #[pyo3(name = "load_trade_ticks")]
+    pub fn py_load_trade_ticks(
+        &self,
+        path: String,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<Vec<TradeTick>> {
+        let path_buf = PathBuf::from(path);
+        let iter = self
+            .read_records::<dbn::TradeMsg>(path_buf, instrument_id)
+            .map_err(to_pyvalue_err)?;
+
+        let mut data = Vec::new();
+
+        for result in iter {
+            match result {
+                Ok((item1, _)) => {
+                    if let Data::Trade(t) = item1 {
+                        data.push(t);
+                    }
+                }
+                Err(e) => return Err(to_pyvalue_err(e)),
+            }
+        }
+
+        Ok(data)
+    }
+
+    #[pyo3(name = "load_bars")]
+    pub fn py_load_bars(
+        &self,
+        path: String,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<Vec<Bar>> {
+        let path_buf = PathBuf::from(path);
+        let iter = self
+            .read_records::<dbn::OhlcvMsg>(path_buf, instrument_id)
+            .map_err(to_pyvalue_err)?;
+
+        let mut data = Vec::new();
+
+        for result in iter {
+            match result {
+                Ok((item1, _)) => {
+                    if let Data::Bar(b) = item1 {
+                        data.push(b);
+                    }
+                }
+                Err(e) => return Err(to_pyvalue_err(e)),
+            }
+        }
+
+        Ok(data)
     }
 }
