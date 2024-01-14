@@ -188,17 +188,16 @@ impl DatabentoDataLoader {
         Ok(InstrumentId::new(symbol, venue))
     }
 
-    pub fn schema_from_file(&self, path: PathBuf) -> Result<dbn::Schema> {
+    pub fn schema_from_file(&self, path: PathBuf) -> Result<Option<dbn::Schema>> {
         let decoder = Decoder::from_zstd_file(path)?;
         let metadata = decoder.metadata();
-        Ok(metadata
-            .schema
-            .expect("Mixed schemas are not currently supported."))
+        Ok(metadata.schema)
     }
 
     pub fn read_records<T>(
         &self,
         path: PathBuf,
+        instrument_id: Option<InstrumentId>,
     ) -> Result<impl Iterator<Item = Result<(Data, Option<Data>)>> + '_>
     where
         T: dbn::Record + dbn::HasRType + 'static,
@@ -212,9 +211,12 @@ impl DatabentoDataLoader {
             match dbn_stream.get() {
                 Some(record) => {
                     let rec_ref = dbn::RecordRef::from(record);
-                    let instrument_id = self
-                        .get_nautilus_instrument_id_for_record(&rec_ref, &metadata)
-                        .unwrap();
+                    let instrument_id = match &instrument_id {
+                        Some(id) => *id, // Copy
+                        None => self
+                            .get_nautilus_instrument_id_for_record(&rec_ref, &metadata)
+                            .expect("Error resolving symbology mapping for {rec_ref}"),
+                    };
 
                     match parse_record(&rec_ref, instrument_id, 0) {
                         Ok(data) => Some(Ok(data)),

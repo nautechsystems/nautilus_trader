@@ -24,6 +24,7 @@ from nautilus_trader.adapters.databento.common import check_file_path
 from nautilus_trader.adapters.databento.parsing import parse_record
 from nautilus_trader.adapters.databento.parsing import parse_record_with_metadata
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.identifiers import InstrumentId
@@ -71,7 +72,12 @@ class DatabentoDataLoader:
         self._publishers: dict[int, DatabentoPublisher] = {}
         self._instruments: dict[InstrumentId, Instrument] = {}
 
-        self.load_publishers(path=Path(__file__).resolve().parent / "publishers.json")
+        publishers_path = Path(__file__).resolve().parent / "publishers.json"
+
+        self._pyo3_loader: nautilus_pyo3.DatabentoDataLoader = nautilus_pyo3.DatabentoDataLoader(
+            str(publishers_path.resolve()),
+        )
+        self.load_publishers(path=publishers_path)
 
     @property
     def publishers(self) -> dict[int, DatabentoPublisher]:
@@ -197,7 +203,7 @@ class DatabentoDataLoader:
         instrument_id: InstrumentId | None = None,
     ) -> list[Data]:
         """
-        Return a list of Nautilus objects from the DBN file at the given `path`.
+        Return a list of Nautilus objects decoded from the DBN file at the given `path`.
 
         Parameters
         ----------
@@ -260,3 +266,69 @@ class DatabentoDataLoader:
                 output.append(data)
 
         return output
+
+    def load_from_file_pyo3(
+        self,
+        path: PathLike[str] | str,
+        instrument_id: InstrumentId | None = None,
+    ) -> list[Data]:
+        """
+        Return a list of pyo3 data objects decoded from the DBN file at the given
+        `path`.
+
+        Parameters
+        ----------
+        path : PathLike[str] | str
+            The path for the DBN data file.
+        instrument_id : InstrumentId, optional
+            The Nautilus instrument ID for the data. This is a parameter to optimize performance,
+            as all records will have their symbology overridden with the given Nautilus identifier.
+            This option should only be used if the instrument ID is definitely know (for instance
+            if all records in a file are guarantted to be for the same instrument).
+
+        Returns
+        -------
+        list[Data]
+
+        Raises
+        ------
+        ValueError
+            If there is an error during decoding.
+        RuntimeError
+            If a feature is not currently supported.
+
+        """
+        if isinstance(path, Path):
+            path = str(path.resolve())
+
+        pyo3_instrument_id: nautilus_pyo3.InstrumentId | None = (
+            nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
+            if instrument_id is not None
+            else None
+        )
+
+        schema = self._pyo3_loader.schema_for_file(path)  # type: ignore
+        if schema is None:
+            raise RuntimeError("Loading files with mixed schemas not currently supported")
+
+        match schema:
+            case databento.Schema.MBO:
+                return self._pyo3_loader.load_order_book_deltas(path, pyo3_instrument_id)  # type: ignore
+            case databento.Schema.MBP_1 | databento.Schema.TBBO:
+                return self._pyo3_loader.load_quote_ticks(path, pyo3_instrument_id)  # type: ignore
+            case databento.Schema.MBP_10:
+                return self._pyo3_loader.load_order_book_depth10(path)  # type: ignore
+            case databento.Schema.TRADES:
+                return self._pyo3_loader.load_trade_ticks(path, pyo3_instrument_id)  # type: ignore
+            case databento.Schema.OHLCV_1S:
+                return self._pyo3_loader.load_bars(path, pyo3_instrument_id)  # type: ignore
+            case databento.Schema.OHLCV_1M:
+                return self._pyo3_loader.load_bars(path, pyo3_instrument_id)  # type: ignore
+            case databento.Schema.OHLCV_1H:
+                return self._pyo3_loader.load_bars(path, pyo3_instrument_id)  # type: ignore
+            case databento.Schema.OHLCV_1D:
+                return self._pyo3_loader.load_bars(path, pyo3_instrument_id)  # type: ignore
+            case databento.Schema.OHLCV_EOD:
+                return self._pyo3_loader.load_bars(path, pyo3_instrument_id)  # type: ignore
+            case _:
+                raise RuntimeError(f"Loading schema {schema} not currently supported")

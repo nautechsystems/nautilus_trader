@@ -18,6 +18,7 @@ import pytest
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.types import DatabentoImbalance
 from nautilus_trader.adapters.databento.types import DatabentoStatistics
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -455,7 +456,7 @@ def test_loader_with_ohlcv_1h() -> None:
     assert isinstance(data[1], Bar)
     bar = data[0]
     assert bar.bar_type == BarType.from_str("ESH1.GLBX-1-HOUR-LAST-EXTERNAL")
-    assert bar.open == Price.from_str("3720.25")  # Bug??
+    assert bar.open == Price.from_str("3720.25")
     assert bar.ts_event == 1609164000000000000
     assert bar.ts_init == 1609164000000000000
 
@@ -496,3 +497,148 @@ def test_loader_with_statistics() -> None:
     # Assert
     assert len(data) == 4
     assert isinstance(data[0], DatabentoStatistics)
+
+
+def test_load_order_book_deltas_pyo3() -> None:
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "mbo.dbn.zst"
+
+    # Act
+    data = loader.load_from_file_pyo3(path)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], nautilus_pyo3.OrderBookDelta)
+    assert isinstance(data[1], nautilus_pyo3.OrderBookDelta)
+
+
+def test_load_order_book_depth10_pyo3() -> None:
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "mbp-10.dbn.zst"
+
+    # Act
+    data = loader.load_from_file_pyo3(path)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], nautilus_pyo3.OrderBookDepth10)
+    assert isinstance(data[1], nautilus_pyo3.OrderBookDepth10)
+
+
+def test_load_quote_ticks_pyo3() -> None:
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "mbp-1.dbn.zst"
+
+    # Act
+    data = loader.load_from_file_pyo3(path)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], nautilus_pyo3.QuoteTick)
+    assert isinstance(data[1], nautilus_pyo3.QuoteTick)
+
+
+def test_load_mixed_ticks_pyo3() -> None:
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "tbbo.dbn.zst"
+
+    # Act
+    data = loader.load_from_file_pyo3(path)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], nautilus_pyo3.QuoteTick)
+    assert isinstance(data[1], nautilus_pyo3.QuoteTick)
+
+
+def test_load_trade_ticks_pyo3() -> None:
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "trades.dbn.zst"
+
+    # Act
+    data = loader.load_from_file_pyo3(path)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], nautilus_pyo3.TradeTick)
+    assert isinstance(data[1], nautilus_pyo3.TradeTick)
+
+
+@pytest.mark.parametrize(
+    ("filename", "bar_type", "open_price", "ts_event", "ts_init"),
+    [
+        [
+            "ohlcv-1s.dbn.zst",
+            "ESH1.GLBX-1-SECOND-LAST-EXTERNAL",
+            "3720.25",
+            1609160401000000000,
+            1609160401000000000,
+        ],
+        [
+            "ohlcv-1m.dbn.zst",
+            "ESH1.GLBX-1-MINUTE-LAST-EXTERNAL",
+            "3720.25",
+            1609160460000000000,
+            1609160460000000000,
+        ],
+        [
+            "ohlcv-1h.dbn.zst",
+            "ESH1.GLBX-1-HOUR-LAST-EXTERNAL",
+            "3720.25",
+            1609164000000000000,
+            1609164000000000000,
+        ],
+        # ohlcv-1d has no data?
+    ],
+)
+def test_load_bars_pyo3(
+    filename: str,
+    bar_type: str,
+    open_price: str,
+    ts_event: int,
+    ts_init: int,
+) -> None:
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / filename
+
+    # Act
+    data = loader.load_from_file_pyo3(path)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], nautilus_pyo3.Bar)
+    assert isinstance(data[1], nautilus_pyo3.Bar)
+    bar = data[0]
+    assert str(bar.bar_type) == bar_type
+    assert bar.open == nautilus_pyo3.Price.from_str(open_price)
+    assert bar.ts_event == ts_event
+    assert bar.ts_init == ts_init
+
+
+@pytest.mark.skip("development_only")
+def test_load_order_book_deltas_legacy_spy_large() -> None:
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "temp" / "spy-xnas-itch-20231127.mbo.dbn.zst"
+
+    # Act
+    data = loader.from_dbn(path)
+
+    # Assert
+    assert len(data) == 6272549  # Includes trades
+    assert isinstance(data[0], OrderBookDelta)
+    assert isinstance(data[1], OrderBookDelta)
+
+
+@pytest.mark.skip("development_only")
+def test_load_order_book_deltas_pyo3_spy_large() -> None:
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "temp" / "spy-xnas-itch-20231127.mbo.dbn.zst"
+    instrument_id = InstrumentId.from_str("ESH1.GLBX")
+
+    # Act
+    data = loader.load_from_file_pyo3(path, instrument_id)
+
+    # Assert
+    assert len(data) == 6197580  # No trades for now
+    assert isinstance(data[0], nautilus_pyo3.OrderBookDelta)
+    assert isinstance(data[1], nautilus_pyo3.OrderBookDelta)
