@@ -688,6 +688,22 @@ mod tests {
     }
 
     #[rstest]
+    fn log_config_parsing2() {
+        let config = LoggerConfig::from_spec("stdout=Warn;print_config;fileout=Error;");
+        assert_eq!(
+            config,
+            LoggerConfig {
+                stdout_level: LevelFilter::Warn,
+                fileout_level: LevelFilter::Error,
+                component_level: HashMap::new(),
+                is_colored: false,
+                is_bypassed: false,
+                print_config: true,
+            }
+        )
+    }
+
+    #[rstest]
     fn test_logging_to_file() {
         let config = LoggerConfig {
             fileout_level: LevelFilter::Debug,

@@ -58,6 +58,13 @@ def resolve_path(path: str) -> type:
     return cls
 
 
+def normalize_log_level_string(level_str: str) -> str:
+    level_str = level_str.lower()
+    if level_str == "warning":
+        level_str = "warn"
+    return level_str
+
+
 def msgspec_encoding_hook(obj: Any) -> Any:
     if isinstance(obj, Decimal):
         return str(obj)
@@ -839,12 +846,12 @@ class LoggingConfig(NautilusConfig, frozen=True):
         str
 
         """
-        config_str = f"stdout={self.log_level.lower()}"
+        config_str = f"stdout={normalize_log_level_string(self.log_level)}"
         if self.log_level_file:
-            config_str += f";fileout={self.log_level_file.lower()}"
+            config_str += f";fileout={normalize_log_level_string(self.log_level_file)}"
         if self.log_component_levels:
             for component, level in self.log_component_levels.items():
-                config_str += f";{component}={level.lower()}"
+                config_str += f";{component}={normalize_log_level_string(level)}"
         if self.log_colors:
             config_str += ";is_colored"
         if self.bypass_logging:
