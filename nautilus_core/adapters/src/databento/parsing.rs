@@ -22,7 +22,6 @@ use std::{
 
 use anyhow::{anyhow, bail, Result};
 use databento::dbn;
-use dbn::Record;
 use itoa;
 use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, time::UnixNanos};
 use nautilus_model::{
@@ -474,8 +473,8 @@ pub fn parse_ohlcv_msg(
     let ts_event_adjustment = parse_ts_event_adjustment(record)?;
 
     // Adjust `ts_event` from open to close of bar
-    let ts_event = record.hd.ts_event + ts_event_adjustment;
-    let ts_init = cmp::max(ts_init, ts_event);
+    let ts_event = record.hd.ts_event;
+    let ts_init = cmp::max(ts_init, ts_event) + ts_event_adjustment;
 
     let bar = Bar::new(
         bar_type,
@@ -493,13 +492,19 @@ pub fn parse_ohlcv_msg(
 
 pub fn parse_record(
     record: &dbn::RecordRef,
+    rtype: dbn::RType,
     instrument_id: InstrumentId,
-    ts_init: UnixNanos,
+    price_precision: u8,
+    ts_init: Option<UnixNanos>,
 ) -> Result<(Data, Option<Data>)> {
-    let result = match record.rtype()? {
+    let result = match rtype {
         dbn::RType::Mbo => {
             let msg = record.get::<dbn::MboMsg>().unwrap(); // SAFETY: RType known
-            let result = parse_mbo_msg(msg, instrument_id, 2, ts_init)?;
+            let ts_init = match ts_init {
+                Some(ts_init) => ts_init,
+                None => msg.ts_recv,
+            };
+            let result = parse_mbo_msg(msg, instrument_id, price_precision, ts_init)?;
             match result {
                 (Some(delta), None) => (Data::Delta(delta), None),
                 (None, Some(trade)) => (Data::Trade(trade), None),
@@ -508,12 +513,20 @@ pub fn parse_record(
         }
         dbn::RType::Mbp0 => {
             let msg = record.get::<dbn::TradeMsg>().unwrap(); // SAFETY: RType known
-            let trade = parse_trade_msg(msg, instrument_id, 2, ts_init)?;
+            let ts_init = match ts_init {
+                Some(ts_init) => ts_init,
+                None => msg.ts_recv,
+            };
+            let trade = parse_trade_msg(msg, instrument_id, price_precision, ts_init)?;
             (Data::Trade(trade), None)
         }
         dbn::RType::Mbp1 => {
             let msg = record.get::<dbn::Mbp1Msg>().unwrap(); // SAFETY: RType known
-            let result = parse_mbp1_msg(msg, instrument_id, 2, ts_init)?;
+            let ts_init = match ts_init {
+                Some(ts_init) => ts_init,
+                None => msg.ts_recv,
+            };
+            let result = parse_mbp1_msg(msg, instrument_id, price_precision, ts_init)?;
             match result {
                 (quote, None) => (Data::Quote(quote), None),
                 (quote, Some(trade)) => (Data::Quote(quote), Some(Data::Trade(trade))),
@@ -521,7 +534,11 @@ pub fn parse_record(
         }
         dbn::RType::Mbp10 => {
             let msg = record.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
-            let depth = parse_mbp10_msg(msg, instrument_id, 2, ts_init)?;
+            let ts_init = match ts_init {
+                Some(ts_init) => ts_init,
+                None => msg.ts_recv,
+            };
+            let depth = parse_mbp10_msg(msg, instrument_id, price_precision, ts_init)?;
             (Data::Depth10(depth), None)
         }
         dbn::RType::Ohlcv1S
@@ -530,10 +547,14 @@ pub fn parse_record(
         | dbn::RType::Ohlcv1D
         | dbn::RType::OhlcvEod => {
             let msg = record.get::<dbn::OhlcvMsg>().unwrap(); // SAFETY: RType known
-            let bar = parse_ohlcv_msg(msg, instrument_id, 2, ts_init)?;
+            let ts_init = match ts_init {
+                Some(ts_init) => ts_init,
+                None => msg.hd.ts_event,
+            };
+            let bar = parse_ohlcv_msg(msg, instrument_id, price_precision, ts_init)?;
             (Data::Bar(bar), None)
         }
-        _ => bail!("RType is currently unsupported by NautilusTrader"),
+        _ => bail!("RType {:?} is not currently supported", rtype),
     };
 
     Ok(result)

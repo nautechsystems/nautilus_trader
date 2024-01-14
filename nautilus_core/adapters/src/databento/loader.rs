@@ -25,6 +25,7 @@ use indexmap::IndexMap;
 use nautilus_model::{
     data::Data,
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
+    types::currency::Currency,
 };
 use pyo3::prelude::*;
 use streaming_iterator::StreamingIterator;
@@ -206,11 +207,14 @@ impl DatabentoDataLoader {
         let metadata = decoder.metadata().clone();
         let mut dbn_stream = decoder.decode_stream::<T>();
 
+        let price_precision = Currency::USD().precision; // Hard coded for now
+
         Ok(std::iter::from_fn(move || {
             dbn_stream.advance();
             match dbn_stream.get() {
                 Some(record) => {
                     let rec_ref = dbn::RecordRef::from(record);
+                    let rtype = rec_ref.rtype().expect("Invalid `rtype` for data loading");
                     let instrument_id = match &instrument_id {
                         Some(id) => *id, // Copy
                         None => self
@@ -218,7 +222,7 @@ impl DatabentoDataLoader {
                             .expect("Error resolving symbology mapping for {rec_ref}"),
                     };
 
-                    match parse_record(&rec_ref, instrument_id, 0) {
+                    match parse_record(&rec_ref, rtype, instrument_id, price_precision, None) {
                         Ok(data) => Some(Ok(data)),
                         Err(e) => Some(Err(e)),
                     }
