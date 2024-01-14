@@ -82,6 +82,11 @@ impl CryptoFuture {
         .map_err(to_pyvalue_err)
     }
 
+    #[getter]
+    fn instrument_type(&self) -> &str {
+        "CryptoFuture"
+    }
+
     fn __hash__(&self) -> isize {
         let mut hasher = DefaultHasher::new();
         self.hash(&mut hasher);
