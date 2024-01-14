@@ -111,3 +111,9 @@ impl InstrumentId {
         self.is_synthetic()
     }
 }
+
+impl ToPyObject for InstrumentId {
+    fn to_object(&self, py: Python) -> PyObject {
+        self.into_py(py)
+    }
+}

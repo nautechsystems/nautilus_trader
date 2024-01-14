@@ -7,7 +7,7 @@ from collections.abc import Callable
 from decimal import Decimal
 from enum import Enum
 from os import PathLike
-from typing import Any
+from typing import Any, TypeAlias
 
 from nautilus_trader.core.data import Data
 
@@ -214,6 +214,47 @@ def init_logging(
 ###################################################################################################
 # Model
 ###################################################################################################
+
+### Accounting
+class MarginAccount:
+    def __init__(
+        self,
+        event: AccountState,
+        calculate_account_state: bool
+    ) -> None: ...
+    @property
+    def id(self) -> AccountId: ...
+    @property
+    def default_leverage(self) -> float: ...
+    def leverages(self) -> dict[InstrumentId, float]: ...
+    def leverage(self,instrument_id: InstrumentId) -> float : ...
+    def set_default_leverage(self, leverage: float) -> None: ...
+    def set_leverage(self, instrument_id: InstrumentId, leverage: float) -> None: ...
+    def is_unleveraged(self) -> bool: ...
+
+    def update_initial_margin(self, instrument_id: InstrumentId, initial_margin: Money) -> None: ...
+
+    def initial_margin(self, instrument_id: InstrumentId) -> Money: ...
+    def initial_margins(self) -> dict[InstrumentId, Money]: ...
+
+    def update_maintenance_margin(self, instrument_id: InstrumentId, maintenance_margin: Money) -> None: ...
+
+    def maintenance_margin(self, instrument_id: InstrumentId) -> Money: ...
+    def maintenance_margins(self) -> dict[InstrumentId, Money]: ...
+    def calculate_initial_margin(
+        self,
+        instrument: Instrument,
+        quantity: Quantity,
+        price: Price,
+        use_quote_for_inverse: bool | None = None
+    ) -> Money: ...
+    def calculate_maintenance_margin(
+        self,
+        instrument: Instrument,
+        quantity: Quantity,
+        price: Price,
+        use_quote_for_inverse: bool | None = None
+    ) -> Money: ...
 
 ### Data types
 
@@ -767,6 +808,8 @@ class CryptoFuture:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None: ...
+    @property
+    def id(self) -> InstrumentId: ...
 
 class CryptoPerpetual:
     def __init__(
@@ -781,6 +824,10 @@ class CryptoPerpetual:
         size_precision: int,
         price_increment: Price,
         size_increment: Quantity,
+        maker_fee: Decimal,
+        taker_fee: Decimal,
+        margin_init: Decimal,
+        margin_maint: Decimal,
         ts_event: int,
         ts_init: int,
         lot_size: Quantity | None = None,
@@ -791,6 +838,8 @@ class CryptoPerpetual:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None: ...
+    @property
+    def id(self) -> InstrumentId: ...
 
 class CurrencyPair:
     def __init__(
@@ -803,6 +852,10 @@ class CurrencyPair:
         size_precision: int,
         price_increment: Price,
         size_increment: Quantity,
+        maker_fee: Decimal,
+        taker_fee: Decimal,
+        margin_init: Decimal,
+        margin_maint: Decimal,
         ts_event: int,
         ts_init: int,
         lot_size: Quantity | None = None,
@@ -811,6 +864,8 @@ class CurrencyPair:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None: ...
+    @property
+    def id(self) -> InstrumentId: ...
 
 class Equity:
     def __init__(
@@ -829,6 +884,8 @@ class Equity:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None: ...
+    @property
+    def id(self) -> InstrumentId: ...
 
 class FuturesContract:
     def __init__(
@@ -851,6 +908,8 @@ class FuturesContract:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None: ...
+    @property
+    def id(self) -> InstrumentId: ...
 
 class OptionsContract:
     def __init__(
@@ -874,8 +933,12 @@ class OptionsContract:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None : ...
+    @property
+    def id(self) -> InstrumentId: ...
 
 class SyntheticInstrument: ...
+
+Instrument: TypeAlias = Equity | FuturesContract | OptionsContract | CryptoFuture | CryptoPerpetual | CurrencyPair | SyntheticInstrument
 
 ### Events
 
