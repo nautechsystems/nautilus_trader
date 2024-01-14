@@ -173,7 +173,7 @@ pub unsafe fn parse_raw_ptr_to_ustr(ptr: *const c_char) -> Result<Ustr> {
 }
 
 pub fn parse_equity(
-    record: &dbn::InstrumentDefMsg,
+    record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<Equity> {
@@ -197,7 +197,7 @@ pub fn parse_equity(
 }
 
 pub fn parse_futures_contract(
-    record: &dbn::InstrumentDefMsg,
+    record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<FuturesContract> {
@@ -228,7 +228,7 @@ pub fn parse_futures_contract(
 }
 
 pub fn parse_options_contract(
-    record: &dbn::InstrumentDefMsg,
+    record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<OptionsContract> {
@@ -561,7 +561,7 @@ pub fn parse_record(
 }
 
 pub fn parse_instrument_def_msg(
-    record: &dbn::InstrumentDefMsg,
+    record: &dbn::compat::InstrumentDefMsgV1,
     publisher: &DatabentoPublisher,
     ts_init: UnixNanos,
 ) -> Result<Box<dyn Instrument>> {
@@ -569,21 +569,25 @@ pub fn parse_instrument_def_msg(
     let instrument_id = nautilus_instrument_id_from_databento(raw_symbol, publisher);
 
     match record.instrument_class as u8 as char {
-        'C' | 'P' => Ok(Box::new(parse_options_contract(
-            record,
-            instrument_id,
-            ts_init,
-        )?)),
         'K' => Ok(Box::new(parse_equity(record, instrument_id, ts_init)?)),
         'F' => Ok(Box::new(parse_futures_contract(
             record,
             instrument_id,
             ts_init,
         )?)),
+        'C' | 'P' => Ok(Box::new(parse_options_contract(
+            record,
+            instrument_id,
+            ts_init,
+        )?)),
+        'B' => bail!("Unsupported `instrument_class` 'B' (BOND)"),
+        'M' => bail!("Unsupported `instrument_class` 'M' (MIXEDSPREAD)"),
+        'S' => bail!("Unsupported `instrument_class` 'S' (FUTURESPREAD)"),
+        'T' => bail!("Unsupported `instrument_class` 'T' (OPTIONSPREAD)"),
         'X' => bail!("Unsupported `instrument_class` 'X' (FX_SPOT)"),
         _ => bail!(
-            "Invalid `instrument_class`, was {}",
-            record.instrument_class
+            "Unsupported `instrument_class` '{}'",
+            record.instrument_class as u8 as char
         ),
     }
 }

@@ -616,6 +616,21 @@ def test_load_bars_pyo3(
 
 
 @pytest.mark.skip("development_only")
+def test_load_instruments_pyo3() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "temp" / "glbx-mdp3-20240101.definition.dbn.zst"
+
+    # Act
+    instruments = loader.load_from_file_pyo3(path)
+
+    # Assert
+    expected_id = InstrumentId.from_str("ESM3.GLBX")
+    assert len(instruments) == 491037
+    assert instruments[0].id == expected_id
+
+
+@pytest.mark.skip("development_only")
 def test_load_order_book_deltas_legacy_spy_large() -> None:
     loader = DatabentoDataLoader()
     path = DATABENTO_TEST_DATA_DIR / "temp" / "spy-xnas-itch-20231127.mbo.dbn.zst"
