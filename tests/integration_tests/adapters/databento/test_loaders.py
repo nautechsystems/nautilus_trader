@@ -615,7 +615,7 @@ def test_load_bars_pyo3(
     assert bar.ts_init == ts_init
 
 
-@pytest.mark.skip("development_only")
+# @pytest.mark.skip("development_only")
 def test_load_instruments_pyo3() -> None:
     # Arrange
     loader = DatabentoDataLoader()
@@ -625,8 +625,8 @@ def test_load_instruments_pyo3() -> None:
     instruments = loader.load_from_file_pyo3(path)
 
     # Assert
-    expected_id = InstrumentId.from_str("ESM3.GLBX")
-    assert len(instruments) == 491037
+    expected_id = nautilus_pyo3.InstrumentId.from_str("LNEV6 C12500.GLBX")
+    assert len(instruments) == 491_037
     assert instruments[0].id == expected_id
 
 
@@ -639,7 +639,7 @@ def test_load_order_book_deltas_legacy_spy_large() -> None:
     data = loader.from_dbn(path)
 
     # Assert
-    assert len(data) == 6272549  # Includes trades
+    assert len(data) == 6_272_549  # Includes trades
     assert isinstance(data[0], OrderBookDelta)
     assert isinstance(data[1], OrderBookDelta)
 
@@ -654,6 +654,6 @@ def test_load_order_book_deltas_pyo3_spy_large() -> None:
     data = loader.load_from_file_pyo3(path, instrument_id)
 
     # Assert
-    assert len(data) == 6197580  # No trades for now
+    assert len(data) == 6_197_580  # No trades for now
     assert isinstance(data[0], nautilus_pyo3.OrderBookDelta)
     assert isinstance(data[1], nautilus_pyo3.OrderBookDelta)

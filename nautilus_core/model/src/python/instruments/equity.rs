@@ -81,6 +81,14 @@ impl Equity {
         hasher.finish() as isize
     }
 
+    #[getter]
+    fn isin(&self) -> Option<&str> {
+        match self.isin {
+            Some(isin) => Some(isin.as_str()),
+            None => None,
+        }
+    }
+
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
