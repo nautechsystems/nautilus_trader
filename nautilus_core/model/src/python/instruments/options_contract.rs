@@ -92,6 +92,11 @@ impl OptionsContract {
         hasher.finish() as isize
     }
 
+    #[getter]
+    fn underlying(&self) -> &str {
+        self.underlying.as_str()
+    }
+
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {

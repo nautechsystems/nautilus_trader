@@ -37,20 +37,35 @@ use crate::{
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct CurrencyPair {
+    #[pyo3(get)]
     pub id: InstrumentId,
+    #[pyo3(get)]
     pub raw_symbol: Symbol,
+    #[pyo3(get)]
     pub base_currency: Currency,
+    #[pyo3(get)]
     pub quote_currency: Currency,
+    #[pyo3(get)]
     pub price_precision: u8,
+    #[pyo3(get)]
     pub size_precision: u8,
+    #[pyo3(get)]
     pub price_increment: Price,
+    #[pyo3(get)]
     pub size_increment: Quantity,
+    #[pyo3(get)]
     pub lot_size: Option<Quantity>,
+    #[pyo3(get)]
     pub max_quantity: Option<Quantity>,
+    #[pyo3(get)]
     pub min_quantity: Option<Quantity>,
+    #[pyo3(get)]
     pub max_price: Option<Price>,
+    #[pyo3(get)]
     pub min_price: Option<Price>,
+    #[pyo3(get)]
     pub ts_event: UnixNanos,
+    #[pyo3(get)]
     pub ts_init: UnixNanos,
 }
 
