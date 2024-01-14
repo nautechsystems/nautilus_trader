@@ -9,9 +9,10 @@ None
 None
 
 ### Fixes
-None
+- Fixed `LoggingConfig` parsing of `WARNING` log level (was not being recognized), thanks for reporting @davidsblom
 
 ---
+
 # NautilusTrader 1.183.0 Beta
 
 Released on 12th January 2024 (UTC).

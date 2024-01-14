@@ -367,8 +367,8 @@ def test_logging_config_spec_string_with_default_config() -> None:
 def test_logging_config_spec_string() -> None:
     # Arrange
     logging = LoggingConfig(
-        log_level="INFO",
-        log_level_file="DEBUG",
+        log_level="WARNING",
+        log_level_file="ERROR",
         log_component_levels={
             "RiskEngine": "ERROR",
             "OrderEmulator": "DEBUG",
@@ -382,5 +382,5 @@ def test_logging_config_spec_string() -> None:
 
     # Assert
     assert (
-        config_str == "stdout=info;fileout=debug;RiskEngine=error;OrderEmulator=debug;print_config"
+        config_str == "stdout=warn;fileout=error;RiskEngine=error;OrderEmulator=debug;print_config"
     )
