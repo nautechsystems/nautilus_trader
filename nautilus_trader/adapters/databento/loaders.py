@@ -17,16 +17,17 @@ from os import PathLike
 from pathlib import Path
 
 import databento
-import databento_dbn
 import msgspec
 
 from nautilus_trader.adapters.databento.common import check_file_path
-from nautilus_trader.adapters.databento.parsing import parse_record
-from nautilus_trader.adapters.databento.parsing import parse_record_with_metadata
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDepth10
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
@@ -95,22 +96,6 @@ class DatabentoDataLoader:
         """
         return self._publishers
 
-    @property
-    def instruments(self) -> dict[InstrumentId, Instrument]:
-        """
-        Return the internal Nautilus instruments currently held by the loader.
-
-        Returns
-        -------
-        dict[InstrumentId, Instrument]
-
-        Notes
-        -----
-        Returns a copy of the internal dictionary.
-
-        """
-        return self._instruments
-
     def get_dataset_for_venue(self, venue: Venue) -> str:
         """
         Return a dataset for the given `venue`.
@@ -155,122 +140,11 @@ class DatabentoDataLoader:
         self._publishers = {p.publisher_id: p for p in publishers}
         self._venue_dataset: dict[Venue, str] = {Venue(p.venue): p.dataset for p in publishers}
 
-    def load_instruments(self, path: PathLike[str] | str) -> None:
-        """
-        Load instrument definitions from the DBN file at the given path.
-
-        Parameters
-        ----------
-        path : PathLike[str] | str
-            The path for the instruments data to load.
-
-        """
-        path = Path(path)
-        check_file_path(path)
-
-        instruments = self.from_dbn(path)
-
-        PyCondition.not_empty(instruments, "instruments")
-        PyCondition.type(instruments[0], Instrument, "instruments")
-
-        self._instruments = {i.id: i for i in instruments}
-
-    def add_instruments(self, instrument: Instrument | list[Instrument]) -> None:
-        """
-        Add the given `instrument`(s) for use by the loader.
-
-        Parameters
-        ----------
-        instrument : Instrument | list[Instrument]
-            The Nautilus instrument(s) to add.
-
-        Warnings
-        --------
-        Will overwrite any existing instrument(s) with the same Nautilus instrument ID(s).
-
-        """
-        if not isinstance(instrument, list):
-            instruments = [instrument]
-        else:
-            instruments = instrument
-
-        for inst in instruments:
-            self._instruments[inst.id] = inst
-
-    def from_dbn(
-        self,
-        path: PathLike[str] | str,
-        instrument_id: InstrumentId | None = None,
-    ) -> list[Data]:
-        """
-        Return a list of Nautilus objects decoded from the DBN file at the given `path`.
-
-        Parameters
-        ----------
-        path : PathLike[str] | str
-            The path for the data.
-        instrument_id : InstrumentId, optional
-            The Nautilus instrument ID for the data. This is a parameter to optimize performance,
-            as all records will have their symbology overridden with the given Nautilus identifier.
-
-        Returns
-        -------
-        list[Data]
-
-        Raises
-        ------
-        FileNotFoundError
-            If a non-existent file is specified.
-        ValueError
-            If an empty file is specified.
-
-        """
-        store = databento.from_dbn(path)
-        instrument_map = databento.InstrumentMap()
-        instrument_map.insert_metadata(metadata=store.metadata)
-
-        output: list[Data] = []
-
-        for record in store:
-            if isinstance(
-                record,
-                databento.ErrorMsg
-                | databento.SystemMsg
-                | databento.SymbolMappingMsg
-                | databento_dbn.SymbolMappingMsgV1,
-            ):
-                continue
-
-            if isinstance(record, databento.OHLCVMsg):
-                ts_init = record.ts_event
-            else:
-                ts_init = record.ts_recv
-
-            if instrument_id is not None:
-                data = parse_record(
-                    record=record,
-                    instrument_id=instrument_id,
-                    ts_init=ts_init,
-                )
-            else:
-                data = parse_record_with_metadata(
-                    record=record,
-                    publishers=self._publishers,
-                    instrument_map=instrument_map,
-                    ts_init=ts_init,
-                )
-
-            if isinstance(data, tuple):
-                output.extend(data)
-            else:
-                output.append(data)
-
-        return output
-
     def load_from_file_pyo3(
         self,
         path: PathLike[str] | str,
         instrument_id: InstrumentId | None = None,
+        as_legacy_cython: bool = False,
     ) -> list[Data]:
         """
         Return a list of pyo3 data objects decoded from the DBN file at the given
@@ -285,6 +159,8 @@ class DatabentoDataLoader:
             as all records will have their symbology overridden with the given Nautilus identifier.
             This option should only be used if the instrument ID is definitely know (for instance
             if all records in a file are guarantted to be for the same instrument).
+        as_legacy_cython : bool, False
+            If data should be converted to 'legacy Cython' objects.
 
         Returns
         -------
@@ -313,24 +189,38 @@ class DatabentoDataLoader:
 
         match schema:
             case databento.Schema.DEFINITION:
+                # TODO: pyo3 -> Cython conversion
                 return self._pyo3_loader.load_instruments(path)  # type: ignore
             case databento.Schema.MBO:
-                return self._pyo3_loader.load_order_book_deltas(path, pyo3_instrument_id)  # type: ignore
+                data = self._pyo3_loader.load_order_book_deltas(path, pyo3_instrument_id)  # type: ignore
+                if as_legacy_cython:
+                    data = OrderBookDelta.from_pyo3_list(data)
+                return data
             case databento.Schema.MBP_1 | databento.Schema.TBBO:
-                return self._pyo3_loader.load_quote_ticks(path, pyo3_instrument_id)  # type: ignore
+                data = self._pyo3_loader.load_quote_ticks(path, pyo3_instrument_id)  # type: ignore
+                if as_legacy_cython:
+                    data = QuoteTick.from_pyo3_list(data)
+                return data
             case databento.Schema.MBP_10:
-                return self._pyo3_loader.load_order_book_depth10(path)  # type: ignore
+                data = self._pyo3_loader.load_order_book_depth10(path)  # type: ignore
+                if as_legacy_cython:
+                    data = OrderBookDepth10.from_pyo3_list(data)
+                return data
             case databento.Schema.TRADES:
-                return self._pyo3_loader.load_trade_ticks(path, pyo3_instrument_id)  # type: ignore
-            case databento.Schema.OHLCV_1S:
-                return self._pyo3_loader.load_bars(path, pyo3_instrument_id)  # type: ignore
-            case databento.Schema.OHLCV_1M:
-                return self._pyo3_loader.load_bars(path, pyo3_instrument_id)  # type: ignore
-            case databento.Schema.OHLCV_1H:
-                return self._pyo3_loader.load_bars(path, pyo3_instrument_id)  # type: ignore
-            case databento.Schema.OHLCV_1D:
-                return self._pyo3_loader.load_bars(path, pyo3_instrument_id)  # type: ignore
-            case databento.Schema.OHLCV_EOD:
-                return self._pyo3_loader.load_bars(path, pyo3_instrument_id)  # type: ignore
+                data = self._pyo3_loader.load_trade_ticks(path, pyo3_instrument_id)  # type: ignore
+                if as_legacy_cython:
+                    data = TradeTick.from_pyo3_list(data)
+                return data
+            case (
+                databento.Schema.OHLCV_1S
+                | databento.Schema.OHLCV_1M
+                | databento.Schema.OHLCV_1H
+                | databento.Schema.OHLCV_1D
+                | databento.Schema.OHLCV_EOD
+            ):
+                data = self._pyo3_loader.load_bars(path, pyo3_instrument_id)  # type: ignore
+                if as_legacy_cython:
+                    data = Bar.from_pyo3_list(data)
+                return data
             case _:
                 raise RuntimeError(f"Loading schema {schema} not currently supported")

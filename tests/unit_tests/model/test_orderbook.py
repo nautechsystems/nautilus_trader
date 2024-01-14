@@ -630,7 +630,7 @@ class TestOrderBook:
         instrument_id = InstrumentId.from_str("1.166564490-237491-0.0.BETFAIR")
         book = OrderBook(instrument_id, BookType.L2_MBP)
 
-        def make_delta(side: OrderSide, price: float, size: float, ts):
+        def make_delta(side: OrderSide, price: float, size: float, ts: int) -> OrderBookDelta:
             order = BookOrder(
                 price=Price(price, 2),
                 size=Quantity(size, 0),
@@ -673,9 +673,25 @@ class TestOrderBook:
         # path_20231226 = TEST_DATA_DIR / "temp" / "databento" / "esh4-glbx-mdp3-20231226.mbo.dbn.zst"
 
         # Act
-        data = loader.from_dbn(path_20231224, instrument_id=instrument.id)
-        data.extend(loader.from_dbn(path_20231225, instrument_id=instrument.id))
-        # data.extend(loader.from_dbn(path_20231226, instrument_id=instrument.id))
+        data = loader.load_from_file_pyo3(
+            path_20231224,
+            instrument_id=instrument.id,
+            as_legacy_cython=True,
+        )
+        data.extend(
+            loader.load_from_file_pyo3(
+                path_20231225,
+                instrument_id=instrument.id,
+                as_legacy_cython=True,
+            ),
+        )
+        # data.extend(
+        #     loader.load_from_file_pyo3(
+        #         path_20231226,
+        #         instrument_id=instrument.id,
+        #         as_legacy_cython=True,
+        #     )
+        # )
 
         book = TestDataStubs.make_book(
             instrument=instrument,
@@ -688,7 +704,7 @@ class TestOrderBook:
             book.apply_delta(delta)
 
         # Assert
-        assert len(data) == 77517
+        assert len(data) == 74509  # No trades
         assert book.ts_last == 1703548799446821072
         assert book.sequence == 59585
         assert book.count == 74509
