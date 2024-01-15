@@ -14,10 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.nautilus_pyo3 import Equity
+from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
 _AAPL_EQUITY = TestInstrumentProviderPyo3.aapl_equity()
+
+
+def test_properties():
+    assert _AAPL_EQUITY.id == InstrumentId.from_str("AAPL.XNAS")
 
 
 def test_equality():
@@ -31,9 +36,9 @@ def test_hash():
 
 
 def test_to_dict():
-    values = _AAPL_EQUITY.to_dict()
-    assert Equity.from_dict(dict) == _AAPL_EQUITY
-    assert values == {
+    result = _AAPL_EQUITY.to_dict()
+    assert Equity.from_dict(result) == _AAPL_EQUITY
+    assert result == {
         "type": "Equity",
         "id": "AAPL.XNAS",
         "raw_symbol": "AAPL",

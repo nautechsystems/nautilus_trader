@@ -6,7 +6,8 @@ Released on TBD (UTC).
 None
 
 ### Breaking Changes
-None
+- Renamed `OptionKind` `kind` parameter and property to `option_kind` (better clarity)
+- Renamed `OptionsContract` Arrow schema field `kind` to `option_kind`
 
 ### Fixes
 - Fixed `LoggingConfig` parsing of `WARNING` log level (was not being recognized), thanks for reporting @davidsblom
