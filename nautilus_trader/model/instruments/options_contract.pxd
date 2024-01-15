@@ -23,8 +23,8 @@ from nautilus_trader.model.objects cimport Price
 cdef class OptionsContract(Instrument):
     cdef readonly str underlying
     """The underlying asset for the contract.\n\n:returns: `str`"""
-    cdef readonly OptionKind kind
-    """The options kind (PUT | CALL) for the contract.\n\n:returns: `OptionKind`"""
+    cdef readonly OptionKind option_kind
+    """The option kind (PUT | CALL) for the contract.\n\n:returns: `OptionKind`"""
     cdef readonly uint64_t activation_ns
     """The UNIX timestamp (nanoseconds) for contract activation.\n\n:returns: `unit64_t`"""
     cdef readonly uint64_t expiration_ns

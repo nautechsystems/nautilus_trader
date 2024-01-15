@@ -208,7 +208,7 @@ def parse_options_contract(
     timestamp = time.time_ns()
     instrument_id = ib_contract_to_instrument_id(details.contract)
     asset_class = sec_type_to_asset_class(details.underSecType)
-    kind = {
+    option_kind = {
         "C": OptionKind.CALL,
         "P": OptionKind.PUT,
     }[details.contract.right]
@@ -232,7 +232,7 @@ def parse_options_contract(
         strike_price=Price(details.contract.strike, price_precision),
         activation_ns=activation.value,
         expiration_ns=expiration.value,
-        kind=kind,
+        option_kind=option_kind,
         ts_event=timestamp,
         ts_init=timestamp,
         info=contract_details_to_dict(details),

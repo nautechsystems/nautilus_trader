@@ -60,6 +60,8 @@ cdef class OptionsContract(Instrument):
         The rounded lot unit size (standard/board).
     underlying : str
         The underlying asset.
+    option_kind : OptionKind
+        The kind of option (PUT | CALL).
     strike_price : Price
         The option strike price.
     activation_ns : uint64_t
@@ -96,7 +98,7 @@ cdef class OptionsContract(Instrument):
         Quantity multiplier not None,
         Quantity lot_size not None,
         str underlying,
-        OptionKind kind,
+        OptionKind option_kind,
         uint64_t activation_ns,
         uint64_t expiration_ns,
         Price strike_price not None,
@@ -133,7 +135,7 @@ cdef class OptionsContract(Instrument):
             info=info,
         )
         self.underlying = underlying
-        self.kind = kind
+        self.option_kind = option_kind
         self.activation_ns = activation_ns
         self.expiration_ns = expiration_ns
         self.strike_price = strike_price
@@ -177,7 +179,7 @@ cdef class OptionsContract(Instrument):
             multiplier=Quantity.from_str(values["multiplier"]),
             lot_size=Quantity.from_str(values["lot_size"]),
             underlying=values["underlying"],
-            kind=option_kind_from_str(values["kind"]),
+            option_kind=option_kind_from_str(values["option_kind"]),
             activation_ns=values["activation_ns"],
             expiration_ns=values["expiration_ns"],
             strike_price=Price.from_str(values["strike_price"]),
@@ -201,7 +203,7 @@ cdef class OptionsContract(Instrument):
             "multiplier": str(obj.multiplier),
             "lot_size": str(obj.lot_size),
             "underlying": str(obj.underlying),
-            "kind": option_kind_to_str(obj.kind),
+            "option_kind": option_kind_to_str(obj.option_kind),
             "activation_ns": obj.activation_ns,
             "expiration_ns": obj.expiration_ns,
             "strike_price": str(obj.strike_price),
