@@ -161,7 +161,7 @@ class TestInstrumentProviderPyo3:
         )
 
     @staticmethod
-    def appl_option(
+    def aapl_option(
         activation: pd.Timestamp | None = None,
         expiration: pd.Timestamp | None = None,
     ) -> OptionsContract:
@@ -191,7 +191,7 @@ class TestInstrumentProviderPyo3:
         )
 
     @staticmethod
-    def appl_equity() -> Equity:
+    def aapl_equity() -> Equity:
         return Equity(
             id=InstrumentId.from_str("AAPL.XNAS"),
             raw_symbol=Symbol("AAPL"),

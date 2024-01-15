@@ -17,12 +17,12 @@ from nautilus_trader.core.nautilus_pyo3 import OptionsContract
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
-_AAPL_OPTION = TestInstrumentProviderPyo3.appl_option()
+_AAPL_OPTION = TestInstrumentProviderPyo3.aapl_option()
 
 
 def test_equality():
-    item_1 = TestInstrumentProviderPyo3.appl_option()
-    item_2 = TestInstrumentProviderPyo3.appl_option()
+    item_1 = TestInstrumentProviderPyo3.aapl_option()
+    item_2 = TestInstrumentProviderPyo3.aapl_option()
     assert item_1 == item_2
 
 
