@@ -32,11 +32,12 @@ use crate::{
 };
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
+#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct OptionsContract {
     #[pyo3(get)]
     pub id: InstrumentId,
@@ -60,7 +61,9 @@ pub struct OptionsContract {
     #[pyo3(get)]
     pub price_increment: Price,
     #[pyo3(get)]
-    pub lot_size: Option<Quantity>,
+    pub multiplier: Quantity,
+    #[pyo3(get)]
+    pub lot_size: Quantity,
     #[pyo3(get)]
     pub max_quantity: Option<Quantity>,
     #[pyo3(get)]
@@ -89,7 +92,8 @@ impl OptionsContract {
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
-        lot_size: Option<Quantity>,
+        multiplier: Quantity,
+        lot_size: Quantity,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
@@ -109,6 +113,7 @@ impl OptionsContract {
             currency,
             price_precision,
             price_increment,
+            multiplier,
             lot_size,
             max_quantity,
             min_quantity,
@@ -184,11 +189,11 @@ impl Instrument for OptionsContract {
     }
 
     fn multiplier(&self) -> Quantity {
-        Quantity::from(1)
+        self.multiplier
     }
 
     fn lot_size(&self) -> Option<Quantity> {
-        self.lot_size
+        Some(self.lot_size)
     }
 
     fn max_quantity(&self) -> Option<Quantity> {

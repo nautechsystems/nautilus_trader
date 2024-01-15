@@ -810,6 +810,7 @@ class CryptoFuture:
     ) -> None: ...
     @property
     def id(self) -> InstrumentId: ...
+    def to_dict(self) -> dict[str, Any]: ...
 
 class CryptoPerpetual:
     def __init__(
@@ -840,6 +841,7 @@ class CryptoPerpetual:
     ) -> None: ...
     @property
     def id(self) -> InstrumentId: ...
+    def to_dict(self) -> dict[str, Any]: ...
 
 class CurrencyPair:
     def __init__(
@@ -866,6 +868,7 @@ class CurrencyPair:
     ) -> None: ...
     @property
     def id(self) -> InstrumentId: ...
+    def to_dict(self) -> dict[str, Any]: ...
 
 class Equity:
     def __init__(
@@ -886,6 +889,7 @@ class Equity:
     ) -> None: ...
     @property
     def id(self) -> InstrumentId: ...
+    def to_dict(self) -> dict[str, Any]: ...
 
 class FuturesContract:
     def __init__(
@@ -900,9 +904,9 @@ class FuturesContract:
         price_precision: int,
         price_increment: Price,
         multiplier: Quantity,
+        lot_size: Quantity,
         ts_event: int,
         ts_init: int,
-        lot_size: Quantity | None = None,
         max_quantity: Quantity | None = None,
         min_quantity: Quantity | None = None,
         max_price: Price | None = None,
@@ -910,6 +914,7 @@ class FuturesContract:
     ) -> None: ...
     @property
     def id(self) -> InstrumentId: ...
+    def to_dict(self) -> dict[str, Any]: ...
 
 class OptionsContract:
     def __init__(
@@ -925,9 +930,10 @@ class OptionsContract:
         currency: Currency,
         price_precision: int,
         price_increment: Price,
+        multiplier: Quantity,
+        lot_size: Quantity,
         ts_event: int,
         ts_init: int,
-        lot_size: Quantity | None = None,
         max_quantity: Quantity | None = None,
         min_quantity: Quantity | None = None,
         max_price: Price | None = None,
@@ -935,8 +941,11 @@ class OptionsContract:
     ) -> None : ...
     @property
     def id(self) -> InstrumentId: ...
+    def to_dict(self) -> dict[str, Any]: ...
 
-class SyntheticInstrument: ...
+class SyntheticInstrument:
+    def id(self) -> InstrumentId: ...
+    def to_dict(self) -> dict[str, Any]: ...
 
 Instrument: TypeAlias = Equity | FuturesContract | OptionsContract | CryptoFuture | CryptoPerpetual | CurrencyPair | SyntheticInstrument
 

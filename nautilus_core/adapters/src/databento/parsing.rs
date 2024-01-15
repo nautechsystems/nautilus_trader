@@ -217,12 +217,12 @@ pub fn parse_futures_contract(
         currency.precision,
         parse_min_price_increment(record.min_price_increment, currency)?,
         Quantity::new(record.contract_multiplier.into(), 0)?,
-        None,           // TBD
-        None,           // TBD
-        None,           // TBD
-        None,           // TBD
-        None,           // TBD
-        record.ts_recv, // More accurate and reliable timestamp
+        Quantity::new(1.0, 0)?, // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        record.ts_recv,         // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -236,7 +236,7 @@ pub fn parse_options_contract(
     let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
     let currency = Currency::from_str(&currency_str)?;
     let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
-    let lot_size = Quantity::new(1.0, 0)?;
+    let lot_size = Quantity::new(1.0, 0)?; // TBD
 
     OptionsContract::new(
         instrument_id,
@@ -250,7 +250,8 @@ pub fn parse_options_contract(
         currency,
         currency.precision,
         parse_min_price_increment(record.min_price_increment, currency)?,
-        Some(lot_size),
+        Quantity::new(record.contract_multiplier.into(), 0)?,
+        lot_size,
         None,           // TBD
         None,           // TBD
         None,           // TBD

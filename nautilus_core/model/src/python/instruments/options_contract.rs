@@ -48,9 +48,10 @@ impl OptionsContract {
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
+        multiplier: Quantity,
+        lot_size: Quantity,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-        lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
@@ -68,6 +69,7 @@ impl OptionsContract {
             currency,
             price_precision,
             price_increment,
+            multiplier,
             lot_size,
             max_quantity,
             min_quantity,
@@ -123,12 +125,10 @@ impl OptionsContract {
         dict.set_item("currency", self.currency.code.to_string())?;
         dict.set_item("price_precision", self.price_precision)?;
         dict.set_item("price_increment", self.price_increment.to_string())?;
+        dict.set_item("multiplier", self.multiplier.to_string())?;
+        dict.set_item("lot_size", self.multiplier.to_string())?;
         dict.set_item("ts_event", self.ts_event)?;
         dict.set_item("ts_init", self.ts_init)?;
-        match self.lot_size {
-            Some(value) => dict.set_item("lot_size", value.to_string())?,
-            None => dict.set_item("lot_size", py.None())?,
-        }
         match self.max_quantity {
             Some(value) => dict.set_item("max_quantity", value.to_string())?,
             None => dict.set_item("max_quantity", py.None())?,
