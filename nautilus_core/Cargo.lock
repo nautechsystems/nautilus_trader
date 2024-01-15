@@ -2442,6 +2442,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-model",
  "pyo3",
+ "pyo3-asyncio",
  "rand",
  "rstest",
  "rust_decimal",
