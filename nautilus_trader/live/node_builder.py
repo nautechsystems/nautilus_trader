@@ -226,7 +226,6 @@ class TradingNodeBuilder:
                 loop=self._loop,
                 name=name,
                 config=client_config,
-                portfolio=self._portfolio,
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
