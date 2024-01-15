@@ -19,6 +19,7 @@ chrono = { workspace = true }
 indexmap = { workspace = true }
 itoa = { workspace = true }
 pyo3 = { workspace = true, optional = true }
+pyo3-asyncio = { workspace = true, optional = true }
 rand = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
@@ -40,7 +41,7 @@ extension-module = [
   "nautilus-model/extension-module",
 ]
 databento = ["dep:databento", "dbn"]
-python = ["pyo3"]
+python = ["pyo3", "pyo3-asyncio"]
 default = ["databento", "python"]
 
 [dev-dependencies]
