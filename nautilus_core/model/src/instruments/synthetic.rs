@@ -50,7 +50,7 @@ pub struct SyntheticInstrument {
     pub ts_event: UnixNanos,
     #[pyo3(get)]
     pub ts_init: UnixNanos,
-    pub context: HashMapContext,
+    context: HashMapContext,
     variables: Vec<String>,
     operator_tree: Node,
 }

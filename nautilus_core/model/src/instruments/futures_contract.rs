@@ -32,11 +32,12 @@ use crate::{
 };
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
+#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct FuturesContract {
     #[pyo3(get)]
     pub id: InstrumentId,
@@ -58,7 +59,7 @@ pub struct FuturesContract {
     #[pyo3(get)]
     pub multiplier: Quantity,
     #[pyo3(get)]
-    pub lot_size: Option<Quantity>,
+    pub lot_size: Quantity,
     #[pyo3(get)]
     pub max_quantity: Option<Quantity>,
     #[pyo3(get)]
@@ -86,7 +87,7 @@ impl FuturesContract {
         price_precision: u8,
         price_increment: Price,
         multiplier: Quantity,
-        lot_size: Option<Quantity>,
+        lot_size: Quantity,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
@@ -180,11 +181,11 @@ impl Instrument for FuturesContract {
     }
 
     fn multiplier(&self) -> Quantity {
-        Quantity::from(1)
+        self.multiplier
     }
 
     fn lot_size(&self) -> Option<Quantity> {
-        self.lot_size
+        Some(self.lot_size)
     }
 
     fn max_quantity(&self) -> Option<Quantity> {
