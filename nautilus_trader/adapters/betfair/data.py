@@ -23,8 +23,6 @@ from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
-from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -36,10 +34,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
-from nautilus_trader.core.message import Event
 from nautilus_trader.live.data_client import LiveMarketDataClient
-from nautilus_trader.model.data import CustomData
-from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -82,7 +77,6 @@ class BetfairDataClient(LiveMarketDataClient):
         logger: Logger,
         instrument_provider: BetfairInstrumentProvider,
         account_currency: Currency,
-        strict_handling: bool = False,
     ):
         super().__init__(
             loop=loop,
@@ -107,7 +101,6 @@ class BetfairDataClient(LiveMarketDataClient):
 
         # Subscriptions
         self._subscribed_instrument_ids: set[InstrumentId] = set()
-        self._strict_handling = strict_handling
         self._subscribed_market_ids: set[InstrumentId] = set()
 
     @property
@@ -259,29 +252,9 @@ class BetfairDataClient(LiveMarketDataClient):
         self._check_stream_unhealthy(update=mcm)
         updates = self.parser.parse(mcm=mcm)
         for data in updates:
-            self._log.debug(f"{data}")
-            if isinstance(data, BetfairStartingPrice | BSPOrderBookDelta):
-                # Not a regular data type
-                custom_data = CustomData(
-                    DataType(data.__class__, {"instrument_id": data.instrument_id}),
-                    data,
-                )
-                self._handle_data(custom_data)
-            elif isinstance(data, Data):
-                if self._strict_handling and (
-                    hasattr(data, "instrument_id")
-                    and data.instrument_id not in self._subscribed_instrument_ids
-                ):
-                    # We receive data for multiple instruments within a subscription, don't emit data if we're not
-                    # subscribed to this particular instrument as this will trigger a bunch of error logs
-                    continue
-                self._handle_data(data)
-            elif isinstance(data, Event):
-                self._log.warning(
-                    f"Received event: {data}, DataEngine not yet setup to send events",
-                )
-            else:
-                raise RuntimeError
+            self._log.debug(f"{data=}")
+            assert isinstance(data, Data)
+            self._handle_data(data)
 
     def _check_stream_unhealthy(self, update: MCM) -> None:
         if update.stream_unreliable:
