@@ -43,6 +43,7 @@ from nautilus_trader.core.rust.common cimport log_level_to_cstr
 from nautilus_trader.core.rust.common cimport logger_flush
 from nautilus_trader.core.rust.common cimport logger_log
 from nautilus_trader.core.rust.common cimport logging_init
+from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.common cimport tracing_init
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pybytes_to_cstr
@@ -56,29 +57,8 @@ from nautilus_trader.model.identifiers cimport TraderId
 # from nautilus_trader.core.nautilus_pyo3 import logger_log
 
 
-
-cpdef void init_tracing():
-    tracing_init()
-
-
-cpdef void init_logging(
-    TraderId trader_id,
-    UUID4 instance_id,
-    str config_spec,
-    str directory,
-    str file_name,
-    str file_format,
-):
-    Condition.valid_string(config_spec, "config_spec")
-
-    logging_init(
-        trader_id._mem,
-        instance_id._mem,
-        pystr_to_cstr(config_spec),
-        pystr_to_cstr(directory) if directory else NULL,
-        pystr_to_cstr(file_name) if file_name else NULL,
-        pystr_to_cstr(file_format) if file_format else NULL,
-    )
+cpdef bint is_logging_initialized():
+    return <bint>logging_is_initialized()
 
 
 cpdef LogColor log_color_from_str(str value):
@@ -144,6 +124,8 @@ cdef class Logger:
         If ANSI codes should be used to produce colored log lines.
     bypass : bool, default False
         If the log output is bypassed.
+    print_config : bool, default False
+        If the core logging configuration should be printed to stdout on initialization.
     """
 
     def __init__(
@@ -161,15 +143,16 @@ cdef class Logger:
         dict component_levels: dict[ComponentId, LogLevel] = None,
         bint colors = True,
         bint bypass = False,
+        bint print_config = False,
     ) -> None:
         if clock is None:
             clock = LiveClock()
         if trader_id is None:
             trader_id = TraderId("TRADER-000")
-        if instance_id is None:
-            instance_id = UUID4()
         if machine_id is None:
             machine_id = socket.gethostname()
+        if instance_id is None:
+            instance_id = UUID4()
 
         self._clock = clock
         self._trader_id = trader_id
@@ -177,6 +160,28 @@ cdef class Logger:
         self._machine_id = machine_id
         self._is_bypassed = bypass
         self._is_colored = colors
+
+        if not self._is_bypassed and not logging_is_initialized():
+            # Initialize tracing for async Rust
+            tracing_init()
+
+            # Initialize logging for sync Rust and Python
+            logging_init(
+                # nautilus_pyo3.TraderId(self._trader_id.value),  # TODO!: Reimplementing logging config
+                # nautilus_pyo3.UUID4(self._instance_id.value),  # TODO!: Reimplementing logging config
+                self._trader_id._mem,
+                self._instance_id._mem,
+                level_stdout,
+                level_file,
+                file_logging,
+                pystr_to_cstr(directory) if directory else NULL,
+                pystr_to_cstr(file_name) if file_name else NULL,
+                pystr_to_cstr(file_format) if file_format else NULL,
+                pybytes_to_cstr(msgspec.json.encode(component_levels)) if component_levels else NULL,
+                colors,
+                bypass,
+                print_config,
+            )
 
     @property
     def trader_id(self) -> TraderId:
@@ -401,7 +406,6 @@ cdef class LoggerAdapter:
         self,
         str message,
         LogColor color = LogColor.NORMAL,
-        dict annotations = None,
     ):
         """
         Log the given debug message with the logger.
@@ -437,7 +441,6 @@ cdef class LoggerAdapter:
     cpdef void info(
         self, str message,
         LogColor color = LogColor.NORMAL,
-        dict annotations = None,
     ):
         """
         Log the given information message with the logger.
@@ -448,8 +451,6 @@ cdef class LoggerAdapter:
             The log message content.
         color : LogColor, optional
             The log message color.
-        annotations : dict[str, object], optional
-            The annotations for the log record.
 
         """
         Condition.not_none(message, "message")
@@ -476,7 +477,6 @@ cdef class LoggerAdapter:
         self,
         str message,
         LogColor color = LogColor.YELLOW,
-        dict annotations = None,
     ):
         """
         Log the given warning message with the logger.
@@ -487,8 +487,6 @@ cdef class LoggerAdapter:
             The log message content.
         color : LogColor, optional
             The log message color.
-        annotations : dict[str, object], optional
-            The annotations for the log record.
 
         """
         Condition.not_none(message, "message")
@@ -515,7 +513,6 @@ cdef class LoggerAdapter:
         self,
         str message,
         LogColor color = LogColor.RED,
-        dict annotations = None,
     ):
         """
         Log the given error message with the logger.
@@ -526,8 +523,6 @@ cdef class LoggerAdapter:
             The log message content.
         color : LogColor, optional
             The log message color.
-        annotations : dict[str, object], optional
-            The annotations for the log record.
 
         """
         Condition.not_none(message, "message")
@@ -554,7 +549,6 @@ cdef class LoggerAdapter:
         self,
         str message,
         ex,
-        dict annotations = None,
     ):
         """
         Log the given exception including stack trace information.
@@ -565,8 +559,6 @@ cdef class LoggerAdapter:
             The log message content.
         ex : Exception
             The exception to log.
-        annotations : dict[str, object], optional
-            The annotations for the log record.
 
         """
         Condition.not_none(ex, "ex")
@@ -580,7 +572,7 @@ cdef class LoggerAdapter:
         for line in stack_trace[:len(stack_trace) - 1]:
             stack_trace_lines += line
 
-        self.error(f"{message}\n{ex_string}\n{stack_trace_lines}", annotations=annotations)
+        self.error(f"{message}\n{ex_string}\n{stack_trace_lines}")
 
 
 cpdef void nautilus_header(LoggerAdapter logger):

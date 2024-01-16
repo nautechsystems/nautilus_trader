@@ -15,8 +15,7 @@
 
 use std::borrow::Cow;
 
-use nautilus_core::{time::UnixNanos, uuid::UUID4};
-use nautilus_model::identifiers::trader_id::TraderId;
+use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
@@ -52,25 +51,27 @@ pub fn py_init_tracing() {
 ///
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
-#[pyfunction]
-#[pyo3(name = "init_logging")]
-pub fn py_init_logging(
-    trader_id: TraderId,
-    instance_id: UUID4,
-    config_spec: String,
-    directory: Option<String>,
-    file_name: Option<String>,
-    file_format: Option<String>,
-) {
-    logging::init_logging(
-        trader_id,
-        instance_id,
-        config_spec,
-        directory,
-        file_name,
-        file_format,
-    );
-}
+// #[pyfunction]
+// #[pyo3(name = "init_logging")]
+// pub fn py_init_logging(
+//     trader_id: TraderId,
+//     instance_id: UUID4,
+//     level_stdout: LogLevel,
+//     level_file: LogLevel,
+//     file_logging: u8,
+//     directory: Option<String>,
+//     file_name: Option<String>,
+//     file_format: Option<String>,
+// ) {
+//     logging::init_logging(
+//         trader_id,
+//         instance_id,
+//         config_spec,
+//         directory,
+//         file_name,
+//         file_format,
+//     );
+// }
 
 /// Create a new log event.
 #[pyfunction]

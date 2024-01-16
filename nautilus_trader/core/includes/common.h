@@ -433,7 +433,12 @@ const char *log_color_to_cstr(enum LogColor value);
 enum LogColor log_color_from_cstr(const char *ptr);
 
 /**
- * Initialize tracing.
+ * Returns whether the core logger is enabled.
+ */
+uint8_t logging_is_initialized(void);
+
+/**
+ * Initializes tracing.
  *
  * Tracing is meant to be used to trace/debug async Rust code. It can be
  * configured to filter modules and write up to a specific level only using
@@ -447,7 +452,7 @@ enum LogColor log_color_from_cstr(const char *ptr);
 void tracing_init(void);
 
 /**
- * Initialize logging.
+ * Initializes logging.
  *
  * Logging should be used for Python and sync Rust logic which is most of
  * the components in the main `nautilus_trader` package.
@@ -459,20 +464,26 @@ void tracing_init(void);
  * Should only be called once during an applications run, ideally at the
  * beginning of the run.
  *
- * - Assume `config_spec_ptr` is a valid C string pointer.
  * - Assume `directory_ptr` is either NULL or a valid C string pointer.
  * - Assume `file_name_ptr` is either NULL or a valid C string pointer.
  * - Assume `file_format_ptr` is either NULL or a valid C string pointer.
+ * - Assume `component_level_ptr` is either NULL or a valid C string pointer.
  */
 void logging_init(TraderId_t trader_id,
                   UUID4_t instance_id,
-                  const char *config_spec_ptr,
+                  enum LogLevel level_stdout,
+                  enum LogLevel level_file,
+                  uint8_t file_logging,
                   const char *directory_ptr,
                   const char *file_name_ptr,
-                  const char *file_format_ptr);
+                  const char *file_format_ptr,
+                  const char *component_levels_ptr,
+                  uint8_t is_colored,
+                  uint8_t is_bypassed,
+                  uint8_t print_config);
 
 /**
- * Create a new log event.
+ * Creates a new log event.
  *
  * # Safety
  *
@@ -486,7 +497,7 @@ void logger_log(uint64_t timestamp_ns,
                 const char *message_ptr);
 
 /**
- * Flush logger buffers.
+ * Flushes logger buffers.
  */
 void logger_flush(void);
 
