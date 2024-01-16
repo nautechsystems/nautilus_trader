@@ -524,7 +524,7 @@ cdef class ExecutionEngine(Component):
             The execution mass status report to reconcile.
 
         """
-        # Should be overridden for live execution enginesj
+        # Should be overridden for live execution engines
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
