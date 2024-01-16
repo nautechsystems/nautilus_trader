@@ -16,6 +16,7 @@
 use chrono::{TimeZone, Utc};
 use nautilus_core::time::UnixNanos;
 use rstest::fixture;
+use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 use crate::{
@@ -79,6 +80,10 @@ pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
         0,
         Price::from("0.01"),
         Quantity::from("0.001"),
+        dec!(0.0002),
+        dec!(0.0004),
+        dec!(1.0),
+        dec!(0.35),
         None,
         Some(Quantity::from("10000.0")),
         Some(Quantity::from("0.001")),
@@ -105,6 +110,10 @@ pub fn xbtusd_bitmex() -> CryptoPerpetual {
         0,
         Price::from("0.5"),
         Quantity::from("1"),
+        dec!(-0.00025),
+        dec!(0.00075),
+        dec!(0.01),
+        dec!(0.0035),
         None,
         None,
         None,
@@ -133,6 +142,10 @@ pub fn currency_pair_btcusdt() -> CurrencyPair {
         6,
         Price::from("0.01"),
         Quantity::from("0.000001"),
+        dec!(0.0),
+        dec!(0.0),
+        dec!(0.001),
+        dec!(0.001),
         None,
         Some(Quantity::from("9000")),
         Some(Quantity::from("0.000001")),
@@ -142,6 +155,41 @@ pub fn currency_pair_btcusdt() -> CurrencyPair {
         0,
     )
     .unwrap()
+}
+
+pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
+    let target_venue = venue.unwrap_or(Venue::from("SIM"));
+    let instrument_id = InstrumentId::new(symbol, target_venue);
+    let base_currency = symbol.value.split('/').next().unwrap();
+    let quote_currency = symbol.value.split('/').last().unwrap();
+    let price_precision = if quote_currency == "JPY" { 3 } else { 5 };
+    let price_increment = Price::new(1.0 / 10.0f64, price_precision).unwrap();
+    CurrencyPair::new(
+        instrument_id,
+        symbol,
+        Currency::from(base_currency),
+        Currency::from(quote_currency),
+        price_precision,
+        0,
+        price_increment,
+        Quantity::from("1"),
+        dec!(0.00002),
+        dec!(0.00002),
+        dec!(0.03),
+        dec!(0.03),
+        Some(Quantity::from("1000")),
+        Some(Quantity::from("1000000")),
+        Some(Quantity::from("100")),
+        None,
+        None,
+        0,
+        0,
+    )
+    .unwrap()
+}
+#[fixture]
+pub fn audusd_sim() -> CurrencyPair {
+    default_fx_ccy(Symbol::from("AUD/USD"), Some(Venue::from("SIM")))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -168,6 +216,10 @@ pub fn equity_aapl() -> Equity {
     .unwrap()
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// FuturesContract
+////////////////////////////////////////////////////////////////////////////////
+
 #[fixture]
 pub fn futures_contract_es() -> FuturesContract {
     let activation = Utc.with_ymd_and_hms(2021, 4, 8, 0, 0, 0).unwrap();
@@ -182,8 +234,8 @@ pub fn futures_contract_es() -> FuturesContract {
         Currency::USD(),
         2,
         Price::from("0.01"),
-        Quantity::from("1.0"),
-        Some(Quantity::from("1.0")),
+        Quantity::from(1),
+        Quantity::from(1),
         None,
         None,
         None,
@@ -214,7 +266,8 @@ pub fn options_contract_appl() -> OptionsContract {
         Currency::USD(),
         2,
         Price::from("0.01"),
-        Some(Quantity::from("1.0")),
+        Quantity::from(1),
+        Quantity::from(1),
         None,
         None,
         None,

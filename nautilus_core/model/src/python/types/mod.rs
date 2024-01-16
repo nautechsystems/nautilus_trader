@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod balance;
 pub mod currency;
 pub mod money;
 pub mod price;

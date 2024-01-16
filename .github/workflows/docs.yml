@@ -2,7 +2,7 @@ name: docs
 
 on:
   push:
-    branches: [nightly]
+    branches: [master, nightly]
 
 jobs:
   docs:

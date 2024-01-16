@@ -59,7 +59,7 @@ class HistoricInteractiveBrokersClient:
         port: int = 7497,
         client_id: int = 1,
         market_data_type: MarketDataTypeEnum = MarketDataTypeEnum.REALTIME,
-    ):
+    ) -> None:
         loop = asyncio.get_event_loop()
         loop.set_debug(True)
         clock = LiveClock()
@@ -85,7 +85,7 @@ class HistoricInteractiveBrokersClient:
 
     async def _connect(self) -> None:
         # Connect client
-        await self._client.is_running_async()
+        await self._client.wait_until_ready()
         self._client.registered_nautilus_clients.add(1)
 
         # Set Market Data Type
@@ -132,6 +132,57 @@ class HistoricInteractiveBrokersClient:
         await provider.load_all_async()
         return list(provider._instruments.values())
 
+    async def _prepare_request_bars_parameters(
+        self,
+        bar_specifications: list[str],
+        end_date_time: datetime.datetime,
+        tz_name: str,
+        start_date_time: datetime.datetime | None = None,
+        duration: str | None = None,
+        contracts: list[IBContract] | None = None,
+        instrument_ids: list[str] | None = None,
+        use_rth: bool = True,
+    ) -> tuple[list[IBContract], datetime.datetime, datetime.datetime]:
+        """
+        Prepare and validate parameters for requesting bars.
+
+        Returns a tuple of (contracts, start_date_time, end_date_time).
+
+        """
+        # Perform all necessary validations
+        if start_date_time and duration:
+            raise ValueError("Either start_date_time or duration should be provided, not both.")
+
+        # Adjust start and end time based on the timezone
+        if start_date_time:
+            start_date_time = pd.Timestamp(start_date_time, tz=tz_name).tz_convert("UTC")
+        end_date_time = pd.Timestamp(end_date_time, tz=tz_name).tz_convert("UTC")
+
+        if start_date_time and start_date_time >= end_date_time:
+            raise ValueError("Start date must be before end date.")
+
+        if duration:
+            pattern = r"^\d+\s[SDWMY]$"
+            if not re.match(pattern, duration):
+                raise ValueError("duration must be in format: 'int S|D|W|M|Y'")
+
+        # Prepare contracts and instrument_ids
+        contracts = contracts or []
+        instrument_ids = instrument_ids or []
+        if not contracts and not instrument_ids:
+            raise ValueError("Either contracts or instrument_ids must be provided")
+
+        contracts.extend(
+            [
+                instrument_id_to_ib_contract(
+                    InstrumentId.from_str(instrument_id),
+                )
+                for instrument_id in instrument_ids
+            ],
+        )
+
+        return contracts, start_date_time, end_date_time
+
     async def request_bars(
         self,
         bar_specifications: list[str],
@@ -177,33 +228,15 @@ class HistoricInteractiveBrokersClient:
         list[Bar]
 
         """
-        if start_date_time and duration:
-            raise ValueError("Either start_date_time or duration should be provided, not both.")
-
-        # Derive duration if start_date_time and end_date_time are provided
-        if start_date_time and end_date_time:
-            start_date_time = pd.Timestamp(start_date_time, tz=tz_name).tz_convert("UTC")
-            end_date_time = pd.Timestamp(end_date_time, tz=tz_name).tz_convert("UTC")
-            if start_date_time >= end_date_time:
-                raise ValueError("Start date must be before end date.")
-        else:
-            pattern = r"^\d+\s[SDWMY]$"
-            if not re.match(pattern, duration):
-                raise ValueError("duration must be in format: 'int S|D|W|M|Y'")
-
-        contracts = contracts or []
-        instrument_ids = instrument_ids or []
-        if not contracts and not instrument_ids:
-            raise ValueError("Either contracts or instrument_ids must be provided")
-
-        # Convert instrument_id strings to IBContracts
-        contracts.extend(
-            [
-                instrument_id_to_ib_contract(
-                    InstrumentId.from_str(instrument_id),
-                )
-                for instrument_id in instrument_ids
-            ],
+        contracts, start_date_time, end_date_time = await self._prepare_request_bars_parameters(
+            bar_specifications,
+            end_date_time,
+            tz_name,
+            start_date_time,
+            duration,
+            contracts,
+            instrument_ids,
+            use_rth,
         )
 
         # Ensure instruments are fetched and cached
@@ -329,7 +362,7 @@ class HistoricInteractiveBrokersClient:
                     f"{instrument_id}: Requesting {tick_type} ticks from {current_start_date_time}",
                 )
 
-                ticks = await self._client.get_historical_ticks(
+                ticks: list[TradeTick | QuoteTick] = await self._client.get_historical_ticks(
                     contract=contract,
                     tick_type=tick_type,
                     start_date_time=current_start_date_time,

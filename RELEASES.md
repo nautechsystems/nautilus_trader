@@ -1,16 +1,32 @@
-# NautilusTrader 1.183.0 Beta
+# NautilusTrader 1.184.0 Beta
 
 Released on TBD (UTC).
+
+### Enhancements
+None
+
+### Breaking Changes
+- Renamed `OptionKind` `kind` parameter and property to `option_kind` (better clarity)
+- Renamed `OptionsContract` Arrow schema field `kind` to `option_kind`
+
+### Fixes
+- Fixed `LoggingConfig` parsing of `WARNING` log level (was not being recognized), thanks for reporting @davidsblom
+
+---
+
+# NautilusTrader 1.183.0 Beta
+
+Released on 12th January 2024 (UTC).
 
 ### Enhancements
 - Added `NautilusConfig.json_primitives` to convert object to Python dictionary with JSON primitive values
 - Added `InstrumentClass.BOND`
 - Added `MessageBusConfig` `use_trader_prefix` and `use_trader_id` options (provides more control over stream names)
+- Added `CacheConfig.drop_instruments_on_reset` (default true to retain current behavior)
 - Implemented core logging interface via the `log` library, thanks @twitu
-- Implemented global atomic clock in Rust (improves performance and ensures properly monotonic timestamps in real-time)
+- Implemented global atomic clock in Rust (improves performance and ensures properly monotonic timestamps in real-time), thanks @twitu
 - Improved Interactive Brokers adapter raising docker `RuntimeError` only when needed (not when using TWS), thanks @rsmb7z
-- Upgraded core HTTP client to `hyper` 1.1.0, thanks @ayush-sb
-- Optimized core MPSC channels with sync senders
+- Upgraded core HTTP client to latest `hyper` and `reqwest`, thanks @ayush-sb
 - Optimized Arrow encoding (resulting in ~100x faster writes for the Parquet data catalog)
 
 ### Breaking Changes
@@ -19,14 +35,14 @@ Released on TBD (UTC).
 - Changed `OrderInitialized` Arrow schema for `options` from `string` to `binary`
 - Changed `OrderBookDeltas` dictionary representation of `deltas` field from JSON `bytes` to a list of `dict` (standardize with all other data types)
 - Changed external message publishing stream name keys to be `trader-{trader_id}-{instance_id}-streams` (with options allows many traders to publish to the same streams)
+- Renamed all version 2 data wrangler classes with a `V2` suffix for clarity
 - Renamed `GenericData` to `CustomData` (more accurately reflects the nature of the type)
 - Renamed `DataClient.subscribed_generic_data` to `.subscribed_custom_data`
 - Renamed `MessageBusConfig.stream` to `.streams_prefix` (more accurate)
 - Renamed `ParquetDataCatalog.generic_data` to `.custom_data`
-- Renamed all version 2 data wrangler classes with a `V2` suffix for clarity
 - Renamed `TradeReport` to `FillReport` (more conventional terminology, and more clearly separates market data from user execution reports)
-- Renamed `AssetType` enum to `InstrumentClass` (more conventional terminology)
 - Renamed `asset_type` to `instrument_class` across the codebase (more conventional terminology)
+- Renamed `AssetType` enum to `InstrumentClass` (more conventional terminology)
 - Renamed `AssetClass.BOND` to `AssetClass.DEBT` (more conventional terminology)
 - Removed `AssetClass.METAL` (not strictly an asset class, more a futures category)
 - Removed `AssetClass.ENERGY` (not strictly an asset class, more a futures category)
@@ -41,6 +57,7 @@ Released on TBD (UTC).
 - Fixed handling of configuration objects to work with `StreamingFeatherWriter`
 - Fixed `BinanceSpotInstrumentProvider` fee loading key error for partial instruments load, thanks for reporting @doublier1
 - Fixed Binance API key configuration parsing for testnet (was falling through to non-testnet env vars)
+- Fixed TWAP execution algorithm scheduled size handling when first order should be for the entire size, thanks for reporting @pcgm-team
 - Added `BinanceErrorCode.SERVER_BUSY` (-1008). Also added to the retry error codes.
 - Added `BinanceOrderStatus.EXPIRED_IN_MATCH` which is when an order was canceled by the exchange due self-trade prevention (STP), thanks for reporting @doublier1
 

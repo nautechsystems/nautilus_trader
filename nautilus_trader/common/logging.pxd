@@ -25,22 +25,13 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 
 
-cpdef void init_tracing()
-cpdef void init_logging(
-    TraderId trader_id,
-    UUID4 instance_id,
-    str config_spec,
-    str directory,
-    str file_name,
-    str file_format,
-)
+cpdef bint is_logging_initialized()
 
 cpdef LogColor log_color_from_str(str value)
 cpdef str log_color_to_str(LogColor value)
 
 cpdef LogLevel log_level_from_str(str value)
 cpdef str log_level_to_str(LogLevel value)
-
 
 cdef str RECV
 cdef str SENT
@@ -89,11 +80,11 @@ cdef class LoggerAdapter:
     cdef bint _is_bypassed
 
     cpdef Logger get_logger(self)
-    cpdef void debug(self, str message, LogColor color=*, dict annotations=*)
-    cpdef void info(self, str message, LogColor color=*, dict annotations=*)
-    cpdef void warning(self, str message, LogColor color=*, dict annotations=*)
-    cpdef void error(self, str message, LogColor color=*, dict annotations=*)
-    cpdef void exception(self, str message, ex, dict annotations=*)
+    cpdef void debug(self, str message, LogColor color=*)
+    cpdef void info(self, str message, LogColor color=*)
+    cpdef void warning(self, str message, LogColor color=*)
+    cpdef void error(self, str message, LogColor color=*)
+    cpdef void exception(self, str message, ex)
 
 
 cpdef void nautilus_header(LoggerAdapter logger)

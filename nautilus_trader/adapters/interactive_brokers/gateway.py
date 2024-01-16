@@ -92,7 +92,7 @@ class InteractiveBrokersGateway:
             self.start(timeout)
 
     @classmethod
-    def from_container(cls, **kwargs):
+    def from_container(cls, **kwargs) -> "InteractiveBrokersGateway":
         """Connect to an already running container - don't stop/start"""
         self = cls(username="", password="", **kwargs)
         assert self.container, "Container does not exist"
@@ -128,7 +128,7 @@ class InteractiveBrokersGateway:
             return False
         return any(b"Forking :::" in line for line in logs.split(b"\n"))
 
-    def start(self, wait: int | None = 90):
+    def start(self, wait: int | None = 90) -> None:
         """
         Start the gateway.
 
@@ -187,16 +187,16 @@ class InteractiveBrokersGateway:
                 raise RuntimeError(f"Gateway `{self.CONTAINER_NAME}-{self.port}` not ready")
 
         self.log.info(
-            f"Gateway `{self.CONTAINER_NAME}-{self.port}` ready. VNC port is {self.port+100}",
+            f"Gateway `{self.CONTAINER_NAME}-{self.port}` ready. VNC port is {self.port + 100}",
         )
 
-    def safe_start(self, wait: int = 90):
+    def safe_start(self, wait: int = 90) -> None:
         try:
             self.start(wait=wait)
         except self._docker_module.errors.APIError as e:
             raise RuntimeError("Container already exists") from e
 
-    def stop(self):
+    def stop(self) -> None:
         if self.container:
             self.container.stop()
             self.container.remove()

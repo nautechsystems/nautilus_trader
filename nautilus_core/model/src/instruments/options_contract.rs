@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::hash::{Hash, Hasher};
+use std::{
+    any::Any,
+    hash::{Hash, Hasher},
+};
 
 use anyhow::Result;
 use nautilus_core::time::UnixNanos;
@@ -29,29 +32,49 @@ use crate::{
 };
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
+#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct OptionsContract {
+    #[pyo3(get)]
     pub id: InstrumentId,
+    #[pyo3(get)]
     pub raw_symbol: Symbol,
+    #[pyo3(get)]
     pub asset_class: AssetClass,
     pub underlying: Ustr,
+    #[pyo3(get)]
     pub option_kind: OptionKind,
+    #[pyo3(get)]
     pub activation_ns: UnixNanos,
+    #[pyo3(get)]
     pub expiration_ns: UnixNanos,
+    #[pyo3(get)]
     pub strike_price: Price,
+    #[pyo3(get)]
     pub currency: Currency,
+    #[pyo3(get)]
     pub price_precision: u8,
+    #[pyo3(get)]
     pub price_increment: Price,
-    pub lot_size: Option<Quantity>,
+    #[pyo3(get)]
+    pub multiplier: Quantity,
+    #[pyo3(get)]
+    pub lot_size: Quantity,
+    #[pyo3(get)]
     pub max_quantity: Option<Quantity>,
+    #[pyo3(get)]
     pub min_quantity: Option<Quantity>,
+    #[pyo3(get)]
     pub max_price: Option<Price>,
+    #[pyo3(get)]
     pub min_price: Option<Price>,
+    #[pyo3(get)]
     pub ts_event: UnixNanos,
+    #[pyo3(get)]
     pub ts_init: UnixNanos,
 }
 
@@ -69,7 +92,8 @@ impl OptionsContract {
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
-        lot_size: Option<Quantity>,
+        multiplier: Quantity,
+        lot_size: Quantity,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
@@ -89,6 +113,7 @@ impl OptionsContract {
             currency,
             price_precision,
             price_increment,
+            multiplier,
             lot_size,
             max_quantity,
             min_quantity,
@@ -164,11 +189,11 @@ impl Instrument for OptionsContract {
     }
 
     fn multiplier(&self) -> Quantity {
-        Quantity::from(1)
+        self.multiplier
     }
 
     fn lot_size(&self) -> Option<Quantity> {
-        self.lot_size
+        Some(self.lot_size)
     }
 
     fn max_quantity(&self) -> Option<Quantity> {
@@ -193,6 +218,10 @@ impl Instrument for OptionsContract {
 
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

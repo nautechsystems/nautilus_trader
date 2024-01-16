@@ -45,7 +45,7 @@ from nautilus_trader.model.objects import Quantity
 
 # fmt: on
 
-futures_month_to_code: dict[str, str] = {
+FUTURES_MONTH_TO_CODE: dict[str, str] = {
     "JAN": "F",
     "FEB": "G",
     "MAR": "H",
@@ -59,12 +59,12 @@ futures_month_to_code: dict[str, str] = {
     "NOV": "X",
     "DEC": "Z",
 }
-futures_code_to_month = dict(zip(futures_month_to_code.values(), futures_month_to_code.keys()))
+FUTURES_CODE_TO_MONTH = dict(zip(FUTURES_MONTH_TO_CODE.values(), FUTURES_MONTH_TO_CODE.keys()))
 
-venues_cash = ["IDEALPRO"]
-venues_crypto = ["PAXOS"]
-venues_opt = ["SMART"]
-venues_fut = [
+VENUES_CASH = ["IDEALPRO"]
+VENUES_CRYPTO = ["PAXOS"]
+VENUES_OPT = ["SMART"]
+VENUES_FUT = [
     "CBOT",  # US
     "CME",  # US
     "COMEX",  # US
@@ -75,32 +75,33 @@ venues_fut = [
     "SNFE",  # AU
 ]
 
-re_cash = re.compile(r"^(?P<symbol>[A-Z]{3})\/(?P<currency>[A-Z]{3})$")
-re_opt = re.compile(
+RE_CASH = re.compile(r"^(?P<symbol>[A-Z]{3})\/(?P<currency>[A-Z]{3})$")
+RE_OPT = re.compile(
     r"^(?P<symbol>^[A-Z]{1,6})(?P<expiry>\d{6})(?P<right>[CP])(?P<strike>\d{5})(?P<decimal>\d{3})$",
 )
-re_ind = re.compile(r"^(?P<symbol>\w{1,3})$")
-re_fut = re.compile(r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{2})$")
-re_fut_original = re.compile(r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d)$")
-re_fut2 = re.compile(
+RE_IND = re.compile(r"^(?P<symbol>\w{1,3})$")
+RE_FUT = re.compile(r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{2})$")
+RE_FUT_ORIGINAL = re.compile(r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d)$")
+RE_FUT2 = re.compile(
     r"^(?P<symbol>\w{1,4})(?P<month>(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC))(?P<year>\d{2})$",
 )
-re_fut2_original = re.compile(
+RE_FUT2_ORIGINAL = re.compile(
     r"^(?P<symbol>\w{1,4}) *(?P<month>(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)) (?P<year>\d{2})$",
 )
-re_fop = re.compile(
+RE_FOP = re.compile(
     r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{2})(?P<right>[CP])(?P<strike>.{4,5})$",
 )
-re_fop_original = re.compile(
+RE_FOP_ORIGINAL = re.compile(
     r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d) (?P<right>[CP])(?P<strike>.{4,5})$",
 )
-re_crypto = re.compile(r"^(?P<symbol>[A-Z]*)\/(?P<currency>[A-Z]{3})$")
+RE_CRYPTO = re.compile(r"^(?P<symbol>[A-Z]*)\/(?P<currency>[A-Z]{3})$")
 
 
 def _extract_isin(details: IBContractDetails) -> int:
-    for tag_value in details.secIdList:
-        if tag_value.tag == "ISIN":
-            return tag_value.value
+    if details.secIdList:
+        for tag_value in details.secIdList:
+            if tag_value.tag == "ISIN":
+                return tag_value.value
     raise ValueError("No ISIN found")
 
 
@@ -207,7 +208,7 @@ def parse_options_contract(
     timestamp = time.time_ns()
     instrument_id = ib_contract_to_instrument_id(details.contract)
     asset_class = sec_type_to_asset_class(details.underSecType)
-    kind = {
+    option_kind = {
         "C": OptionKind.CALL,
         "P": OptionKind.PUT,
     }[details.contract.right]
@@ -231,7 +232,7 @@ def parse_options_contract(
         strike_price=Price(details.contract.strike, price_precision),
         activation_ns=activation.value,
         expiration_ns=expiration.value,
-        kind=kind,
+        option_kind=option_kind,
         ts_event=timestamp,
         ts_init=timestamp,
         info=contract_details_to_dict(details),
@@ -307,7 +308,7 @@ def parse_crypto_contract(
     )
 
 
-def decade_digit(last_digit: str, contract: IBContract):
+def decade_digit(last_digit: str, contract: IBContract) -> int:
     if year := contract.lastTradeDateOrContractMonth[:4]:
         return int(year[2:3])
     elif int(last_digit) > int(repr(datetime.datetime.now().year)[-1]):
@@ -329,13 +330,13 @@ def ib_contract_to_instrument_id(contract: IBContract) -> InstrumentId:
     elif security_type == "CONTFUT":
         symbol = contract.localSymbol.replace(" ", "") or contract.symbol.replace(" ", "")
         venue = contract.exchange
-    elif security_type == "FUT" and (m := re_fut_original.match(contract.localSymbol)):
+    elif security_type == "FUT" and (m := RE_FUT_ORIGINAL.match(contract.localSymbol)):
         symbol = f"{m['symbol']}{m['month']}{decade_digit(m['year'], contract)}{m['year']}"
         venue = contract.exchange
-    elif security_type == "FUT" and (m := re_fut2_original.match(contract.localSymbol)):
-        symbol = f"{m['symbol']}{futures_month_to_code[m['month']]}{m['year']}"
+    elif security_type == "FUT" and (m := RE_FUT2_ORIGINAL.match(contract.localSymbol)):
+        symbol = f"{m['symbol']}{FUTURES_MONTH_TO_CODE[m['month']]}{m['year']}"
         venue = contract.exchange
-    elif security_type == "FOP" and (m := re_fop_original.match(contract.localSymbol)):
+    elif security_type == "FOP" and (m := RE_FOP_ORIGINAL.match(contract.localSymbol)):
         symbol = f"{m['symbol']}{m['month']}{decade_digit(m['year'], contract)}{m['year']}{m['right']}{m['strike']}"
         venue = contract.exchange
 
@@ -355,38 +356,38 @@ def ib_contract_to_instrument_id(contract: IBContract) -> InstrumentId:
 def instrument_id_to_ib_contract(instrument_id: InstrumentId) -> IBContract:
     PyCondition.type(instrument_id, InstrumentId, "InstrumentId")
 
-    if instrument_id.venue.value in venues_cash and (
-        m := re_cash.match(instrument_id.symbol.value)
+    if instrument_id.venue.value in VENUES_CASH and (
+        m := RE_CASH.match(instrument_id.symbol.value)
     ):
         return IBContract(
             secType="CASH",
             exchange=instrument_id.venue.value,
             localSymbol=f"{m['symbol']}.{m['currency']}",
         )
-    elif instrument_id.venue.value in venues_crypto and (
-        m := re_crypto.match(instrument_id.symbol.value)
+    elif instrument_id.venue.value in VENUES_CRYPTO and (
+        m := RE_CRYPTO.match(instrument_id.symbol.value)
     ):
         return IBContract(
             secType="CRYPTO",
             exchange=instrument_id.venue.value,
             localSymbol=f"{m['symbol']}.{m['currency']}",
         )
-    elif instrument_id.venue.value in venues_opt and (
-        m := re_opt.match(instrument_id.symbol.value)
+    elif instrument_id.venue.value in VENUES_OPT and (
+        m := RE_OPT.match(instrument_id.symbol.value)
     ):
         return IBContract(
             secType="OPT",
             exchange=instrument_id.venue.value,
             localSymbol=f"{m['symbol'].ljust(6)}{m['expiry']}{m['right']}{m['strike']}{m['decimal']}",
         )
-    elif instrument_id.venue.value in venues_fut:
-        if m := re_fut.match(instrument_id.symbol.value):
+    elif instrument_id.venue.value in VENUES_FUT:
+        if m := RE_FUT.match(instrument_id.symbol.value):
             if instrument_id.venue.value == "CBOT":
                 # IB still using old symbology after merger of CBOT with CME
                 return IBContract(
                     secType="FUT",
                     exchange=instrument_id.venue.value,
-                    localSymbol=f"{m['symbol'].ljust(4)} {futures_code_to_month[m['month']]} {m['year']}",
+                    localSymbol=f"{m['symbol'].ljust(4)} {FUTURES_CODE_TO_MONTH[m['month']]} {m['year']}",
                 )
             else:
                 return IBContract(
@@ -394,13 +395,13 @@ def instrument_id_to_ib_contract(instrument_id: InstrumentId) -> IBContract:
                     exchange=instrument_id.venue.value,
                     localSymbol=f"{m['symbol']}{m['month']}{m['year'][-1]}",
                 )
-        elif m := re_ind.match(instrument_id.symbol.value):
+        elif m := RE_IND.match(instrument_id.symbol.value):
             return IBContract(
                 secType="CONTFUT",
                 exchange=instrument_id.venue.value,
                 symbol=m["symbol"],
             )
-        elif m := re_fop.match(instrument_id.symbol.value):
+        elif m := RE_FOP.match(instrument_id.symbol.value):
             return IBContract(
                 secType="FOP",
                 exchange=instrument_id.venue.value,

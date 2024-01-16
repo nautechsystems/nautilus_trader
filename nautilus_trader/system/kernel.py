@@ -42,8 +42,6 @@ from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.common.logging import init_logging
-from nautilus_trader.common.logging import init_tracing
 from nautilus_trader.common.logging import nautilus_header
 from nautilus_trader.config import ActorFactory
 from nautilus_trader.config import DataEngineConfig
@@ -154,22 +152,7 @@ class NautilusKernel:
                 f"environment {self._environment} not recognized",  # pragma: no cover (design-time error)
             )
 
-        # Initialize tracing for debugging async Rust logic
-        init_tracing()
-
-        # Initialize logging for debugging Python and sync Rust logic
         logging: LoggingConfig = config.logging or LoggingConfig()
-
-        init_logging(
-            # nautilus_pyo3.TraderId(self._trader_id.value),  # TODO!: Reimplementing logging config
-            # nautilus_pyo3.UUID4(self._instance_id.value),  # TODO!: Reimplementing logging config
-            self._trader_id,
-            self._instance_id,
-            logging.spec_string(),
-            logging.log_directory,
-            logging.log_file_name,
-            logging.log_file_format,
-        )
 
         self._logger: Logger = Logger(
             trader_id=self._trader_id,

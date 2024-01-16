@@ -23,6 +23,7 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import option_kind_from_str
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import CryptoFuture
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import Equity
@@ -34,6 +35,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
 provider = TestDataProvider()
@@ -249,24 +251,24 @@ class TestInstrument:
         # Assert
         assert FuturesContract.from_dict(result) == ES_FUTURE
         assert result == {
+            "type": "FuturesContract",
+            "id": "ESZ3.GLBX",
+            "raw_symbol": "ESZ3",
             "asset_class": "INDEX",
+            "underlying": "ES",
             "currency": "USD",
             "activation_ns": 1622842200000000000,
             "expiration_ns": 1702650600000000000,
-            "id": "ESZ3.GLBX",
             "lot_size": "1",
             "margin_init": "0",
             "margin_maint": "0",
             "multiplier": "1",
-            "raw_symbol": "ESZ3",
             "price_increment": "0.25",
             "price_precision": 2,
             "size_increment": "1",
             "size_precision": 0,
             "ts_event": 1622842200000000000,
             "ts_init": 1622842200000000000,
-            "type": "FuturesContract",
-            "underlying": "ES",
         }
 
     def test_option_instrument_to_dict(self):
@@ -276,17 +278,18 @@ class TestInstrument:
         # Assert
         assert OptionsContract.from_dict(result) == AAPL_OPTION
         assert result == {
+            "type": "OptionsContract",
+            "id": "AAPL211217C00150000.OPRA",
+            "raw_symbol": "AAPL211217C00150000",
             "asset_class": "EQUITY",
             "currency": "USD",
             "activation_ns": 1631836800000000000,
             "expiration_ns": 1639699200000000000,
-            "id": "AAPL211217C00150000.OPRA",
-            "kind": "CALL",
+            "option_kind": "CALL",
             "lot_size": "1",
             "margin_init": "0",
             "margin_maint": "0",
             "multiplier": "100",
-            "raw_symbol": "AAPL211217C00150000",
             "price_increment": "0.01",
             "price_precision": 2,
             "size_increment": "1",
@@ -294,7 +297,6 @@ class TestInstrument:
             "strike_price": "149.00",
             "ts_event": 0,
             "ts_init": 0,
-            "type": "OptionsContract",
             "underlying": "AAPL",
         }
 
@@ -447,4 +449,40 @@ class TestInstrument:
 
     def test_option_attributes(self):
         assert AAPL_OPTION.underlying == "AAPL"
-        assert AAPL_OPTION.kind == option_kind_from_str("CALL")
+        assert AAPL_OPTION.option_kind == option_kind_from_str("CALL")
+
+
+def test_pyo3_equity_to_legacy_equity() -> None:
+    # Arrange
+    pyo3_instrument = TestInstrumentProviderPyo3.aapl_equity()
+
+    # Act
+    instrument = Equity.from_dict(pyo3_instrument.to_dict())
+
+    # Assert
+    assert isinstance(instrument, Equity)
+    assert instrument.id == InstrumentId.from_str("AAPL.XNAS")
+
+
+def test_pyo3_future_to_legacy_future() -> None:
+    # Arrange
+    pyo3_instrument = TestInstrumentProviderPyo3.futures_contract_es()
+
+    # Act
+    instrument = FuturesContract.from_dict(pyo3_instrument.to_dict())
+
+    # Assert
+    assert isinstance(instrument, FuturesContract)
+    assert instrument.id == InstrumentId.from_str("ESZ21.CME")
+
+
+def test_pyo3_option_to_legacy_option() -> None:
+    # Arrange
+    pyo3_instrument = TestInstrumentProviderPyo3.aapl_option()
+
+    # Act
+    instrument = OptionsContract.from_dict(pyo3_instrument.to_dict())
+
+    # Assert
+    assert isinstance(instrument, OptionsContract)
+    assert instrument.id == InstrumentId.from_str("AAPL211217C00150000.OPRA")

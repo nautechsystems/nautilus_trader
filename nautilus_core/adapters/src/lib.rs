@@ -15,6 +15,3 @@
 
 #[cfg(feature = "databento")]
 pub mod databento;
-
-#[cfg(feature = "python")]
-pub mod python;

@@ -29,7 +29,7 @@ from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
-from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 
 
 # fmt: on
@@ -42,12 +42,7 @@ def venue():
 
 @pytest.fixture()
 def instrument():
-    return IBTestProviderStubs.aapl_instrument()
-
-
-# @pytest.fixture()
-# def ibapi_client() -> InteractiveBrokersClient:
-#     return InteractiveBrokersClient()
+    return IBTestContractStubs.aapl_instrument()
 
 
 @pytest.fixture()
@@ -78,7 +73,7 @@ def exec_client_config():
 
 
 @pytest.fixture()
-def interactive_brokers_client(data_client_config, loop, msgbus, cache, clock, logger):
+def ib_client(data_client_config, loop, msgbus, cache, clock, logger):
     client = InteractiveBrokersClient(
         loop=loop,
         msgbus=msgbus,
@@ -89,25 +84,25 @@ def interactive_brokers_client(data_client_config, loop, msgbus, cache, clock, l
         port=data_client_config.ibg_port,
         client_id=data_client_config.ibg_client_id,
     )
-    client.start()
-    return client
+    yield client
+    client._stop()
 
 
 @pytest.fixture()
-def instrument_provider(interactive_brokers_client, logger):
+def instrument_provider(ib_client, logger):
     return InteractiveBrokersInstrumentProvider(
-        client=interactive_brokers_client,
+        client=ib_client,
         config=InteractiveBrokersInstrumentProviderConfig(),
         logger=logger,
     )
 
 
 @pytest.fixture()
-def data_client(mocker, data_client_config, venue, event_loop, msgbus, cache, clock, logger):
+def data_client(mocker, data_client_config, venue, loop, msgbus, cache, clock, logger):
     mocker.patch(
         "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
         return_value=InteractiveBrokersClient(
-            loop=event_loop,
+            loop=loop,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -118,7 +113,7 @@ def data_client(mocker, data_client_config, venue, event_loop, msgbus, cache, cl
         ),
     )
     client = InteractiveBrokersLiveDataClientFactory.create(
-        loop=event_loop,
+        loop=loop,
         name=venue.value,
         config=data_client_config,
         msgbus=msgbus,
@@ -131,11 +126,11 @@ def data_client(mocker, data_client_config, venue, event_loop, msgbus, cache, cl
 
 
 @pytest.fixture()
-def exec_client(mocker, exec_client_config, venue, event_loop, msgbus, cache, clock, logger):
+def exec_client(mocker, exec_client_config, venue, loop, msgbus, cache, clock, logger):
     mocker.patch(
         "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
         return_value=InteractiveBrokersClient(
-            loop=event_loop,
+            loop=loop,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -146,7 +141,7 @@ def exec_client(mocker, exec_client_config, venue, event_loop, msgbus, cache, cl
         ),
     )
     client = InteractiveBrokersLiveExecClientFactory.create(
-        loop=event_loop,
+        loop=loop,
         name=venue.value,
         config=exec_client_config,
         msgbus=msgbus,

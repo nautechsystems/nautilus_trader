@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,5 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#[cfg(feature = "databento")]
-pub mod databento;
+use rstest::fixture;
+
+use crate::{
+    accounting::margin::MarginAccount,
+    events::account::{state::AccountState, stubs::*},
+};
+
+#[fixture]
+pub fn margin_account(margin_account_state: AccountState) -> MarginAccount {
+    MarginAccount::new(margin_account_state, true).unwrap()
+}

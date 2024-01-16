@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::any::Any;
 pub mod crypto_future;
 pub mod crypto_perpetual;
 pub mod currency_pair;
@@ -35,7 +36,7 @@ use crate::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
-pub trait Instrument {
+pub trait Instrument: Any + 'static + Send {
     fn id(&self) -> &InstrumentId;
     fn symbol(&self) -> &Symbol {
         &self.id().symbol
@@ -127,4 +128,6 @@ pub trait Instrument {
         let value = quantity.as_f64() * (1.0 / last_px.as_f64());
         Quantity::new(value, self.size_precision()).unwrap() // TODO: Handle error properly
     }
+
+    fn as_any(&self) -> &dyn Any;
 }

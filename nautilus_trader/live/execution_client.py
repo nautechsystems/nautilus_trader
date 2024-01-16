@@ -471,7 +471,7 @@ class LiveExecutionClient(ExecutionClient):
         )
 
         if report is None:
-            self._log.warning("Did not received `OrderStatusReport` from request.")
+            self._log.warning("Did not receive `OrderStatusReport` from request.")
             return
 
         self._send_order_status_report(report)

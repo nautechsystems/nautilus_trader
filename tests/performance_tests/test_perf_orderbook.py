@@ -31,7 +31,7 @@ def test_orderbook_spy_xnas_itch_mbo_l3(benchmark: Any) -> None:
     loader = DatabentoDataLoader()
     path = TEST_DATA_DIR / "databento" / "temp" / "spy-xnas-itch-20231127.mbo.dbn.zst"
     instrument = TestInstrumentProvider.equity(symbol="SPY", venue="XNAS")
-    data = loader.from_dbn(path, instrument_id=instrument.id)
+    data = loader.load_from_file_pyo3(path, instrument_id=instrument.id, as_legacy_cython=True)
 
     book = TestDataStubs.make_book(
         instrument=instrument,
@@ -44,7 +44,7 @@ def test_orderbook_spy_xnas_itch_mbo_l3(benchmark: Any) -> None:
                 continue
             book.apply_delta(delta)
 
-    benchmark.run(
+    benchmark.pedantic(
         target=_apply_deltas,
         iterations=1,
         rounds=1,

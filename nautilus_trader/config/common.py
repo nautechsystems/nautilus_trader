@@ -110,6 +110,10 @@ def register_config_decoding(type_: type, decoder: Callable) -> None:
     CUSTOM_DECODINGS[type_] = decoder
 
 
+def tokenize_config(obj: NautilusConfig) -> str:
+    return hashlib.sha256(obj.json()).hexdigest()
+
+
 class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
     """
     The base class for all Nautilus configuration objects.
@@ -258,12 +262,14 @@ class CacheConfig(NautilusConfig, frozen=True):
         The buffer interval (milliseconds) between pipelined/batched transactions.
         The recommended range if using buffered pipeling is [10, 1000] milliseconds,
         with a good compromise being 100 milliseconds.
-    flush_on_start : bool, default False
-        If database should be flushed on start.
     use_trader_prefix : bool, default True
         If a 'trader-' prefix is used for keys.
     use_instance_id : bool, default False
         If the traders instance ID is used for keys.
+    flush_on_start : bool, default False
+        If database should be flushed on start.
+    drop_instruments_on_reset : bool, default True
+        If instruments data should be dropped from the caches memory on reset.
     tick_capacity : PositiveInt, default 10_000
         The maximum length for internal tick dequeues.
     bar_capacity : PositiveInt, default 10_000
@@ -275,9 +281,10 @@ class CacheConfig(NautilusConfig, frozen=True):
     encoding: str = "msgpack"
     timestamps_as_iso8601: bool = False
     buffer_interval_ms: PositiveInt | None = None
-    flush_on_start: bool = False
     use_trader_prefix: bool = True
     use_instance_id: bool = False
+    flush_on_start: bool = False
+    drop_instruments_on_reset: bool = True
     tick_capacity: PositiveInt = 10_000
     bar_capacity: PositiveInt = 10_000
 
@@ -827,30 +834,6 @@ class LoggingConfig(NautilusConfig, frozen=True):
     bypass_logging: bool = False
     print_config: bool = False
 
-    def spec_string(self) -> str:
-        """
-        Return the 'spec' string for the core logging config to parse on initialization.
-
-        Returns
-        -------
-        str
-
-        """
-        config_str = f"stdout={self.log_level.lower()}"
-        if self.log_level_file:
-            config_str += f";fileout={self.log_level_file.lower()}"
-        if self.log_component_levels:
-            for component, level in self.log_component_levels.items():
-                config_str += f";{component}={level.lower()}"
-        if self.log_colors:
-            config_str += ";is_colored"
-        if self.bypass_logging:
-            config_str += ";is_bypassed"
-        if self.print_config:
-            config_str += ";print_config"
-
-        return config_str
-
 
 class NautilusKernelConfig(NautilusConfig, frozen=True):
     """
@@ -980,7 +963,3 @@ class ImportableConfig(NautilusConfig, frozen=True):
         cls = resolve_path(self.path)
         cfg = msgspec.json.encode(self.config)
         return msgspec.json.decode(cfg, type=cls)
-
-
-def tokenize_config(obj: NautilusConfig) -> str:
-    return hashlib.sha256(obj.json()).hexdigest()

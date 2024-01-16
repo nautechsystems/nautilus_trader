@@ -414,8 +414,6 @@ class TradingNode:
         If save strategy is configured, then strategy states will be saved.
 
         """
-        self.kernel.log.info("STOPPING...")
-
         if self._task_heartbeats:
             self.kernel.log.info("Cancelling `task_heartbeats` task...")
             self._task_heartbeats.cancel()

@@ -1,12 +1,14 @@
 # Interactive Brokers
 
-Interactive Brokers (IB) is a trading platform that allows trading in a wide range of financial instruments, including stocks, options, futures, currencies, bonds, funds, and cryptocurrencies. NautilusTrader offers an adapter to integrate with IB using their [Trader Workstation (TWS) API](https://interactivebrokers.github.io/tws-api/index.html) through their Python library, [ibapi](https://github.com/nautechsystems/ibapi).
+Interactive Brokers (IB) is a trading platform that allows trading across a wide range of financial instruments, including stocks, options, futures, currencies, bonds, funds, and cryptocurrencies. NautilusTrader offers an adapter to integrate with IB using their [Trader Workstation (TWS) API](https://interactivebrokers.github.io/tws-api/index.html) through their Python library, [ibapi](https://github.com/nautechsystems/ibapi).
 
 The TWS API serves as an interface to IB's standalone trading applications: TWS and IB Gateway. Both can be downloaded from the IB website. If you haven't installed TWS or IB Gateway yet, refer to the [Initial Setup](https://interactivebrokers.github.io/tws-api/initial_setup.html) guide. In NautilusTrader, you'll establish a connection to one of these applications via the `InteractiveBrokersClient`.
 
 Alternatively, you can start with a [dockerized version](https://github.com/gnzsnz/ib-gateway-docker) of the IB Gateway, particularly useful when deploying trading strategies on a hosted cloud platform. This requires having [Docker](https://www.docker.com/) installed on your machine, along with the [docker](https://pypi.org/project/docker/) Python package, which NautilusTrader conveniently includes as an extra package.
 
-**Note**: The standalone TWS and IB Gateway applications necessitate manual input of username, password, and trading mode (live or paper) at startup. The dockerized version of the IB Gateway handles these steps programmatically.
+```{note}
+The standalone TWS and IB Gateway applications necessitate manual input of username, password, and trading mode (live or paper) at startup. The dockerized version of the IB Gateway handles these steps programmatically.
+```
 
 ## Installation
 
@@ -22,7 +24,9 @@ For installation via poetry, use:
 poetry add "nautilus_trader[ib,docker]"
 ```
 
-**Note**: Because IB does not provide wheels for `ibapi`, NautilusTrader [repackages]( https://pypi.org/project/nautilus-ibapi/) it for release on PyPI.
+```{note}
+Because IB does not provide wheels for `ibapi`, NautilusTrader [repackages]( https://pypi.org/project/nautilus-ibapi/) it for release on PyPI.
+```
 
 
 ## Getting Started
@@ -64,6 +68,22 @@ The adapter includes several major components:
 - `InteractiveBrokersInstrumentProvider`: Retrieves or queries instruments for trading.
 - `InteractiveBrokersDataClient`: Connects to the Gateway for streaming market data.
 - `InteractiveBrokersExecutionClient`: Handles account information and executes trades.
+
+## The Interactive Brokers Client
+
+The `InteractiveBrokersClient` serves as the central component of the IB adapter, overseeing a range of critical functions. These include establishing and maintaining connections, handling API errors, executing trades, and gathering various types of data such as market data, contract/instrument data, and account details.
+
+To ensure efficient management of these diverse responsibilities, the `InteractiveBrokersClient` is divided into several specialized mixin classes. This modular approach enhances manageability and clarity. The key subcomponents are:
+- `InteractiveBrokersClientConnectionMixin`: This class is dedicated to managing the connection with TWS/Gateway.
+- `InteractiveBrokersClientErrorMixin`: It focuses on addressing all encountered errors and warnings.
+- `InteractiveBrokersClientAccountMixin`: Responsible for handling requests related to account information and positions.
+- `InteractiveBrokersClientContractMixin`: Handles retrieving contracts (instruments) data
+- `InteractiveBrokersClientMarketDataMixin`: Handles market data requests, subscriptions and data processing
+- `InteractiveBrokersClientOrderMixin`: Oversees all aspects of order placement and management.
+
+```{tip}
+To troubleshoot TWS API incoming message issues, consider starting at the `InteractiveBrokersClient._process_message` method, which acts as the primary gateway for processing all messages received from the API.
+```
 
 ## Instruments & Contracts
 

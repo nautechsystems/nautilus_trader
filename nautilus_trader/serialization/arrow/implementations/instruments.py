@@ -186,7 +186,7 @@ SCHEMAS = {
             "activation_ns": pa.uint64(),
             "expiration_ns": pa.uint64(),
             "strike_price": pa.dictionary(pa.int64(), pa.string()),
-            "kind": pa.dictionary(pa.int8(), pa.string()),
+            "option_kind": pa.dictionary(pa.int8(), pa.string()),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         },

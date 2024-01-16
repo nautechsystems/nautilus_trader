@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::hash::{Hash, Hasher};
+use std::{
+    any::Any,
+    hash::{Hash, Hasher},
+};
 
 use anyhow::Result;
 use nautilus_core::time::UnixNanos;
@@ -28,31 +31,52 @@ use crate::{
 };
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
+#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct CryptoFuture {
+    #[pyo3(get)]
     pub id: InstrumentId,
+    #[pyo3(get)]
     pub raw_symbol: Symbol,
+    #[pyo3(get)]
     pub underlying: Currency,
+    #[pyo3(get)]
     pub quote_currency: Currency,
+    #[pyo3(get)]
     pub settlement_currency: Currency,
+    #[pyo3(get)]
     pub activation_ns: UnixNanos,
+    #[pyo3(get)]
     pub expiration_ns: UnixNanos,
+    #[pyo3(get)]
     pub price_precision: u8,
+    #[pyo3(get)]
     pub size_precision: u8,
+    #[pyo3(get)]
     pub price_increment: Price,
+    #[pyo3(get)]
     pub size_increment: Quantity,
+    #[pyo3(get)]
     pub lot_size: Option<Quantity>,
+    #[pyo3(get)]
     pub max_quantity: Option<Quantity>,
+    #[pyo3(get)]
     pub min_quantity: Option<Quantity>,
+    #[pyo3(get)]
     pub max_notional: Option<Money>,
+    #[pyo3(get)]
     pub min_notional: Option<Money>,
+    #[pyo3(get)]
     pub max_price: Option<Price>,
+    #[pyo3(get)]
     pub min_price: Option<Price>,
+    #[pyo3(get)]
     pub ts_event: UnixNanos,
+    #[pyo3(get)]
     pub ts_init: UnixNanos,
 }
 
@@ -199,6 +223,10 @@ impl Instrument for CryptoFuture {
 
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Final, Literal
 
 from ibapi.common import UNSET_DECIMAL
+from ibapi.tag_value import TagValue
 
 from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.model.identifiers import Venue
@@ -129,7 +130,7 @@ class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
 
     # combos
     comboLegsDescrip: str = ""
-    comboLegs: list[ComboLeg] = None
+    comboLegs: list[ComboLeg] | None = None
     deltaNeutralContract: DeltaNeutralContract | None = None
 
     # nautilus specific parameters
@@ -178,7 +179,7 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     encoding/decoding.
     """
 
-    contract: IBContract = None
+    contract: IBContract | None = None
     marketName: str = ""
     minTick: float = 0
     orderTypes: str = ""
@@ -200,7 +201,7 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     underSymbol: str = ""
     underSecType: str = ""
     marketRuleIds: str = ""
-    secIdList: list | None = None
+    secIdList: list[TagValue] | None = None
     realExpirationDate: str = ""
     lastTradeTime: str = ""
     stockType: str = ""
