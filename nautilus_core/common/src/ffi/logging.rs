@@ -13,11 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::HashMap,
-    ffi::{c_char, CStr},
-    str::FromStr,
-};
+use std::ffi::{c_char, CStr};
 
 use log::LevelFilter;
 use nautilus_core::{
@@ -28,12 +24,12 @@ use nautilus_core::{
     uuid::UUID4,
 };
 use nautilus_model::identifiers::trader_id::TraderId;
-use serde_json::Value;
-use ustr::Ustr;
 
 use crate::{
     enums::{LogColor, LogLevel},
-    logging::{self, FileWriterConfig, LoggerConfig},
+    logging::{
+        self, map_log_level_to_filter, parse_component_levels, FileWriterConfig, LoggerConfig,
+    },
 };
 
 /// Returns whether the core logger is enabled.
@@ -114,41 +110,6 @@ pub unsafe extern "C" fn logging_init(
     let file_config = FileWriterConfig::new(directory, file_name, file_format);
 
     logging::init_logging(trader_id, instance_id, config, file_config);
-}
-
-fn map_log_level_to_filter(log_level: LogLevel) -> LevelFilter {
-    match log_level {
-        LogLevel::Debug => LevelFilter::Debug,
-        LogLevel::Info => LevelFilter::Info,
-        LogLevel::Warning => LevelFilter::Warn,
-        LogLevel::Error => LevelFilter::Error,
-    }
-}
-
-fn parse_level_filter_str(s: &str) -> LevelFilter {
-    let mut log_level_str = s.to_string().to_uppercase();
-    if log_level_str == "WARNING" {
-        log_level_str = "WARN".to_string()
-    }
-    LevelFilter::from_str(&log_level_str)
-        .unwrap_or_else(|_| panic!("Invalid `LevelFilter` string, was {log_level_str}"))
-}
-
-fn parse_component_levels(
-    original_map: Option<HashMap<String, Value>>,
-) -> HashMap<Ustr, LevelFilter> {
-    match original_map {
-        Some(map) => {
-            let mut new_map = HashMap::new();
-            for (key, value) in map {
-                let ustr_key = Ustr::from(&key);
-                let value = parse_level_filter_str(&value.to_string());
-                new_map.insert(ustr_key, value);
-            }
-            new_map
-        }
-        None => HashMap::new(),
-    }
 }
 
 /// Creates a new log event.
