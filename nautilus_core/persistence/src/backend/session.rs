@@ -204,7 +204,7 @@ impl DataQueryResult {
         self.drop_chunk();
 
         let chunk: CVec = data.into();
-        self.chunk = Some(chunk.clone());
+        self.chunk = Some(chunk);
         chunk
     }
 
