@@ -34,7 +34,7 @@ pub fn common(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<LoggerConfig>()?;
     m.add_class::<FileWriterConfig>()?;
     m.add_function(wrap_pyfunction!(logging::py_init_tracing, m)?)?;
-    m.add_function(wrap_pyfunction!(logging::py_init_logging, m)?)?;
+    // m.add_function(wrap_pyfunction!(logging::py_init_logging, m)?)?;  // TODO: Will repair
     m.add_function(wrap_pyfunction!(logging::py_logger_log, m)?)?;
 
     Ok(())

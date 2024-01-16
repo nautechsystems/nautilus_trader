@@ -58,13 +58,6 @@ def resolve_path(path: str) -> type:
     return cls
 
 
-def normalize_log_level_string(level_str: str) -> str:
-    level_str = level_str.lower()
-    if level_str == "warning":
-        level_str = "warn"
-    return level_str
-
-
 def msgspec_encoding_hook(obj: Any) -> Any:
     if isinstance(obj, Decimal):
         return str(obj)
@@ -115,6 +108,10 @@ def register_config_encoding(type_: type, encoder: Callable) -> None:
 def register_config_decoding(type_: type, decoder: Callable) -> None:
     global CUSTOM_DECODINGS
     CUSTOM_DECODINGS[type_] = decoder
+
+
+def tokenize_config(obj: NautilusConfig) -> str:
+    return hashlib.sha256(obj.json()).hexdigest()
 
 
 class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
@@ -837,30 +834,6 @@ class LoggingConfig(NautilusConfig, frozen=True):
     bypass_logging: bool = False
     print_config: bool = False
 
-    def spec_string(self) -> str:
-        """
-        Return the 'spec' string for the core logging config to parse on initialization.
-
-        Returns
-        -------
-        str
-
-        """
-        config_str = f"stdout={normalize_log_level_string(self.log_level)}"
-        if self.log_level_file:
-            config_str += f";fileout={normalize_log_level_string(self.log_level_file)}"
-        if self.log_component_levels:
-            for component, level in self.log_component_levels.items():
-                config_str += f";{component}={normalize_log_level_string(level)}"
-        if self.log_colors:
-            config_str += ";is_colored"
-        if self.bypass_logging:
-            config_str += ";is_bypassed"
-        if self.print_config:
-            config_str += ";print_config"
-
-        return config_str
-
 
 class NautilusKernelConfig(NautilusConfig, frozen=True):
     """
@@ -990,7 +963,3 @@ class ImportableConfig(NautilusConfig, frozen=True):
         cls = resolve_path(self.path)
         cfg = msgspec.json.encode(self.config)
         return msgspec.json.decode(cfg, type=cls)
-
-
-def tokenize_config(obj: NautilusConfig) -> str:
-    return hashlib.sha256(obj.json()).hexdigest()
