@@ -26,33 +26,33 @@ use pyo3::{types::PyCapsule, IntoPy, Py, PyAny, Python};
 use rstest::rstest;
 
 #[rstest]
-fn test_quote_tick_python_interface() {
+fn test_quote_tick_cvec_interface() {
     let file_path = "../../tests/test_data/nautilus/quotes.parquet";
     let expected_length = 9500;
-    for i in 0..1000_00 {
-        let mut catalog = DataBackendSession::new(1000);
-        catalog
-            .add_file::<QuoteTick>("quote_005", file_path, None)
-            .unwrap();
-        let query_result: QueryResult = catalog.get_query_result();
-        let query_result = DataQueryResult::new(query_result, catalog.chunk_size);
-        let mut count = 0;
-        for chunk in query_result {
-            if chunk.is_empty() {
-                break;
-            }
-            let chunk: CVec = chunk.into();
-            let ticks: &[Data] =
-                unsafe { std::slice::from_raw_parts(chunk.ptr as *const Data, chunk.len) };
-            count += ticks.len();
-            assert!(is_monotonically_increasing_by_init(ticks));
+    let mut catalog = DataBackendSession::new(1000);
+    catalog
+        .add_file::<QuoteTick>("quote_005", file_path, None)
+        .unwrap();
+    let query_result: QueryResult = catalog.get_query_result();
+    let query_result = DataQueryResult::new(query_result, catalog.chunk_size);
+    let mut count = 0;
+    for chunk in query_result {
+        if chunk.is_empty() {
+            break;
         }
+        let chunk: CVec = chunk.into();
+        let ticks: &[Data] =
+            unsafe { std::slice::from_raw_parts(chunk.ptr as *const Data, chunk.len) };
+        count += ticks.len();
+        assert!(is_monotonically_increasing_by_init(ticks));
 
-        assert_eq!(expected_length, count);
-        if i % 1000 == 0 {
-            println!("iteration: {}", i);
-        }
+        // Cleanly drop to avoid leaking memory in test
+        let CVec { ptr, len, cap } = chunk;
+        let data: Vec<Data> = unsafe { Vec::from_raw_parts(ptr.cast::<Data>(), len, cap) };
+        drop(data);
     }
+
+    assert_eq!(expected_length, count);
 }
 
 #[rstest]
