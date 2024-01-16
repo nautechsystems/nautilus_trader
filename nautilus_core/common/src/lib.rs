@@ -34,3 +34,10 @@ pub mod python;
 
 #[cfg(feature = "redis")]
 pub mod redis;
+
+pub trait LogWriter {
+    /// Writes a log line.
+    fn write(&mut self, line: &str);
+    /// Flushes buffered logs.
+    fn flush(&mut self);
+}

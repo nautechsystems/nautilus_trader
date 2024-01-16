@@ -38,6 +38,65 @@ use tracing_subscriber::EnvFilter;
 use ustr::Ustr;
 
 use crate::enums::{LogColor, LogLevel};
+use crate::LogWriter;
+
+#[derive(Debug)]
+pub struct StdoutWriter {
+    buf: BufWriter<Stdout>,
+}
+
+impl StdoutWriter {
+    pub fn new() -> Self {
+        Self {
+            buf: BufWriter::new(io::stdout()),
+        }
+    }
+}
+
+impl LogWriter for StdoutWriter {
+    fn write(&mut self, line: &str) {
+        match self.buf.write_all(line.as_bytes()) {
+            Ok(()) => {},
+            Err(e) => eprintln!("Error writing to stdout: {e:?}"),
+        }
+    }
+
+    fn flush(&mut self) {
+        match self.buf.flush() {
+            Ok(()) => {},
+            Err(e) => eprintln!("Error flushing stdout: {e:?}"),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct StderrWriter {
+    buf: BufWriter<Stderr>,
+}
+
+impl StderrWriter {
+    pub fn new() -> Self {
+        Self {
+            buf: BufWriter::new(io::stderr()),
+        }
+    }
+}
+
+impl LogWriter for StderrWriter {
+    fn write(&mut self, line: &str) {
+        match self.buf.write_all(line.as_bytes()) {
+            Ok(()) => {},
+            Err(e) => eprintln!("Error writing to stderr: {e:?}"),
+        }
+    }
+
+    fn flush(&mut self) {
+        match self.buf.flush() {
+            Ok(()) => {},
+            Err(e) => eprintln!("Error flushing stderr: {e:?}"),
+        }
+    }
+}
 
 #[cfg_attr(
     feature = "python",
@@ -360,8 +419,8 @@ impl Logger {
         } = config;
 
         // Setup std I/O buffers
-        let mut out_buf = BufWriter::new(io::stdout());
-        let mut err_buf = BufWriter::new(io::stderr());
+        let mut stdout_writer = StdoutWriter::new();
+        let mut stderr_writer = StderrWriter::new();
 
         // Setup log file
         let is_json_format = match file_writer_config
@@ -405,8 +464,8 @@ impl Logger {
         while let Ok(event) = rx.recv() {
             match event {
                 LogEvent::Flush => {
-                    Self::flush_stderr(&mut err_buf);
-                    Self::flush_stdout(&mut out_buf);
+                    stdout_writer.flush();
+                    stderr_writer.flush();
                     file_buf.as_mut().map(Self::flush_file);
                 }
                 LogEvent::Log(line) => {
@@ -422,12 +481,12 @@ impl Logger {
 
                     if line.level == LevelFilter::Error {
                         let line = Self::format_console_log(&line, trader_id, is_colored);
-                        Self::write_stderr(&mut err_buf, &line);
-                        Self::flush_stderr(&mut err_buf);
+                        stderr_writer.write(&line);
+                        stderr_writer.flush();
                     } else if line.level <= stdout_level {
                         let line = Self::format_console_log(&line, trader_id, is_colored);
-                        Self::write_stdout(&mut out_buf, &line);
-                        Self::flush_stdout(&mut out_buf);
+                        stdout_writer.write(&line);
+                        stdout_writer.flush();
                     }
 
                     if fileout_level != LevelFilter::Off {
@@ -466,8 +525,8 @@ impl Logger {
         }
 
         // Finally ensure remaining buffers are flushed
-        Self::flush_stderr(&mut err_buf);
-        Self::flush_stdout(&mut out_buf);
+        stderr_writer.flush();
+        stdout_writer.flush();
     }
 
     fn should_rotate_file(file_path: &Path) -> bool {
@@ -555,34 +614,6 @@ impl Logger {
                 &event.component,
                 &event.message,
             )
-        }
-    }
-
-    fn write_stdout(out_buf: &mut BufWriter<Stdout>, line: &str) {
-        match out_buf.write_all(line.as_bytes()) {
-            Ok(()) => {}
-            Err(e) => eprintln!("Error writing to stdout: {e:?}"),
-        }
-    }
-
-    fn flush_stdout(out_buf: &mut BufWriter<Stdout>) {
-        match out_buf.flush() {
-            Ok(()) => {}
-            Err(e) => eprintln!("Error flushing stdout: {e:?}"),
-        }
-    }
-
-    fn write_stderr(err_buf: &mut BufWriter<Stderr>, line: &str) {
-        match err_buf.write_all(line.as_bytes()) {
-            Ok(()) => {}
-            Err(e) => eprintln!("Error writing to stderr: {e:?}"),
-        }
-    }
-
-    fn flush_stderr(err_buf: &mut BufWriter<Stderr>) {
-        match err_buf.flush() {
-            Ok(()) => {}
-            Err(e) => eprintln!("Error flushing stderr: {e:?}"),
         }
     }
 
