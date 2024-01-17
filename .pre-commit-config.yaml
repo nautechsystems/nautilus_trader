@@ -36,7 +36,7 @@ repos:
       - id: codespell
         description: Checks for common misspellings.
         types_or: [python, cython, rst, markdown]
-        args: ["-L", "ot,zar"]
+        args: ["-L", "crate,ot,zar"]
 
   ##############################################################################
   #  Rust formatting and linting
