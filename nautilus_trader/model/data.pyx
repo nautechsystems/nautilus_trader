@@ -1059,7 +1059,7 @@ cdef class Bar(Data):
         list[Bar]
 
         """
-        cdef list output = []
+        cdef list[Bar] output = []
 
         cdef BarType bar_type = None
         cdef uint8_t price_prec = 0
@@ -2012,7 +2012,7 @@ cdef class OrderBookDelta(Data):
         list[OrderBookDelta]
 
         """
-        cdef list output = []
+        cdef list[OrderBookDelta] output = []
 
         cdef InstrumentId instrument_id = None
         cdef uint8_t price_prec = 0
@@ -3278,7 +3278,7 @@ cdef class QuoteTick(Data):
         list[QuoteTick]
 
         """
-        cdef list output = []
+        cdef list[QuoteTick] output = []
 
         cdef InstrumentId instrument_id = None
         cdef uint8_t bid_prec = 0
@@ -3824,7 +3824,7 @@ cdef class TradeTick(Data):
         list[TradeTick]
 
         """
-        cdef list output = []
+        cdef list[TradeTick] output = []
 
         cdef InstrumentId instrument_id = None
         cdef uint8_t price_prec = 0
