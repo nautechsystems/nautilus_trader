@@ -451,7 +451,7 @@ class TradingNode:
                     )
                     break
 
-            self.kernel.log.info("DISPOSING...")
+            self.kernel.log.debug("DISPOSING...")
 
             self.kernel.log.debug(str(self.kernel.data_engine.get_cmd_queue_task()))
             self.kernel.log.debug(str(self.kernel.data_engine.get_req_queue_task()))
