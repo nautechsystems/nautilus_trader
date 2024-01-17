@@ -137,6 +137,7 @@ pub enum ComponentTrigger {
     Copy,
     Clone,
     Debug,
+    Display,
     Hash,
     PartialEq,
     Eq,
@@ -155,35 +156,22 @@ pub enum ComponentTrigger {
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.common.enums")
 )]
 pub enum LogLevel {
-    /// The **DBG** debug log level.
-    #[strum(serialize = "DBG", serialize = "DEBUG")]
+    /// The **DEBUG** debug log level.
+    #[strum(serialize = "DEBUG")]
     #[serde(rename = "DEBUG")]
     Debug = 10,
-    /// The **INF** info log level.
-    #[strum(serialize = "INF", serialize = "INFO")]
+    /// The **INFO** info log level.
+    #[strum(serialize = "INFO")]
     #[serde(rename = "INFO")]
     Info = 20,
-    /// The **WRN** warning log level.
-    #[strum(serialize = "WRN", serialize = "WARNING")]
+    /// The **WARNING** warning log level.
+    #[strum(serialize = "WARN", serialize = "WARNING")]
     #[serde(rename = "WARNING")]
     Warning = 30,
-    /// The **ERR** error log level.
-    #[strum(serialize = "ERR", serialize = "ERROR")]
+    /// The **ERROR** error log level.
+    #[strum(serialize = "ERROR")]
     #[serde(rename = "ERROR")]
     Error = 40,
-}
-
-// Override `strum` implementation
-impl std::fmt::Display for LogLevel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let display = match self {
-            Self::Debug => "DBG",
-            Self::Info => "INF",
-            Self::Warning => "WRN",
-            Self::Error => "ERR",
-        };
-        write!(f, "{display}")
-    }
 }
 
 /// The log color for log messages.

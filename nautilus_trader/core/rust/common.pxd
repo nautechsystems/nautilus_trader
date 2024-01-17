@@ -90,13 +90,13 @@ cdef extern from "../includes/common.h":
 
     # The log level for log messages.
     cpdef enum LogLevel:
-        # The **DBG** debug log level.
+        # The **DEBUG** debug log level.
         DEBUG # = 10,
-        # The **INF** info log level.
+        # The **INFO** info log level.
         INFO # = 20,
-        # The **WRN** warning log level.
+        # The **WARNING** warning log level.
         WARNING # = 30,
-        # The **ERR** error log level.
+        # The **ERROR** error log level.
         ERROR # = 40,
 
     cdef struct LiveClock:

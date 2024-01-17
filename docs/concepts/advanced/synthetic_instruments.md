@@ -21,8 +21,8 @@ Note that the venue for a synthetic instrument is always designated as `'SYNTH'`
 ## Formula
 A synthetic instrument is composed of a combination of two or more component instruments (which
 can include instruments from multiple venues), as well as a "derivation formula". 
-Utilizing the dynamic expression engine powered by the [evalexpr](https://github.com/ISibboI/evalexpr) 
-Rust library, the platform can evaluate the formula to calculate the latest synthetic price tick 
+Utilizing the dynamic expression engine powered by the [evalexpr](https://github.com/ISibboI/evalexpr)
+Rust crate, the platform can evaluate the formula to calculate the latest synthetic price tick
 from the incoming component instrument prices.
 
 See the `evalexpr` documentation for a full description of available features, operators and precedence.

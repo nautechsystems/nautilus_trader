@@ -115,7 +115,7 @@ We have chosen Parquet as the storage format for the following reasons:
 - It does not require any separate running components (for example a database)
 - It is quick and simple to get up and running with
 
-The Arrow schemas used for the Parquet format are either single sourced in the core `persistence` Rust library, or available
+The Arrow schemas used for the Parquet format are either single sourced in the core `persistence` Rust crate, or available
 from the `/serialization/arrow/schema.py` module.
 
 ```{note}

@@ -28,10 +28,10 @@ class TestLogLevel:
     @pytest.mark.parametrize(
         ("enum", "expected"),
         [
-            [LogLevel.DEBUG, "DBG"],
-            [LogLevel.INFO, "INF"],
-            [LogLevel.WARNING, "WRN"],
-            [LogLevel.ERROR, "ERR"],
+            [LogLevel.DEBUG, "DEBUG"],
+            [LogLevel.INFO, "INFO"],
+            [LogLevel.WARNING, "WARNING"],
+            [LogLevel.ERROR, "ERROR"],
         ],
     )
     def test_log_level_to_str(self, enum, expected):
@@ -44,13 +44,10 @@ class TestLogLevel:
     @pytest.mark.parametrize(
         ("string", "expected"),
         [
-            ["DBG", LogLevel.DEBUG],
             ["DEBUG", LogLevel.DEBUG],
-            ["INF", LogLevel.INFO],
             ["INFO", LogLevel.INFO],
-            ["WRN", LogLevel.WARNING],
+            ["WARN", LogLevel.WARNING],
             ["WARNING", LogLevel.WARNING],
-            ["ERR", LogLevel.ERROR],
             ["ERROR", LogLevel.ERROR],
         ],
     )
