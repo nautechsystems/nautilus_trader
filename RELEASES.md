@@ -10,6 +10,7 @@ None
 - Renamed `OptionsContract` Arrow schema field `kind` to `option_kind`
 
 ### Fixes
+- Fixed memory leak for catalog queries (#1430), thanks @twitu
 - Fixed `LoggingConfig` parsing of `WARNING` log level (was not being recognized), thanks for reporting @davidsblom
 
 ---
