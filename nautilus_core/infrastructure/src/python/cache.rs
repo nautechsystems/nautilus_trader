@@ -21,7 +21,7 @@ use nautilus_core::{
 };
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::{prelude::*, types::PyBytes, PyResult};
-use serde_json::Value;
+use serde_json;
 
 use crate::{cache::CacheDatabase, redis::RedisCacheDatabase};
 
@@ -29,7 +29,7 @@ use crate::{cache::CacheDatabase, redis::RedisCacheDatabase};
 impl RedisCacheDatabase {
     #[new]
     fn py_new(trader_id: TraderId, instance_id: UUID4, config_json: Vec<u8>) -> PyResult<Self> {
-        let config: HashMap<String, Value> =
+        let config: HashMap<String, serde_json::Value> =
             serde_json::from_slice(&config_json).map_err(to_pyvalue_err)?;
 
         match Self::new(trader_id, instance_id, config) {
