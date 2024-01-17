@@ -42,8 +42,6 @@ from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.common.logging import init_logging
-from nautilus_trader.common.logging import init_tracing
 from nautilus_trader.common.logging import nautilus_header
 from nautilus_trader.config import ActorFactory
 from nautilus_trader.config import DataEngineConfig
@@ -155,25 +153,6 @@ class NautilusKernel:
             )
 
         logging: LoggingConfig = config.logging or LoggingConfig()
-        setup_logging = (
-            True if self._environment == Environment.LIVE else not logging.bypass_logging
-        )
-
-        if setup_logging:
-            # Initialize tracing for async Rust
-            init_tracing()
-
-            # Initialize logging for sync Rust and Python
-            init_logging(
-                # nautilus_pyo3.TraderId(self._trader_id.value),  # TODO!: Reimplementing logging config
-                # nautilus_pyo3.UUID4(self._instance_id.value),  # TODO!: Reimplementing logging config
-                self._trader_id,
-                self._instance_id,
-                logging.spec_string(),
-                logging.log_directory,
-                logging.log_file_name,
-                logging.log_file_format,
-            )
 
         self._logger: Logger = Logger(
             trader_id=self._trader_id,
@@ -189,7 +168,7 @@ class NautilusKernel:
             file_format=logging.log_file_format,
             component_levels=logging.log_component_levels,
             colors=logging.log_colors,
-            bypass=not setup_logging,
+            bypass=False if self._environment == Environment.LIVE else logging.bypass_logging,
         )
 
         # Setup logging

@@ -35,6 +35,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.logging import log_level_from_str
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.model.data import Bar
@@ -59,11 +60,12 @@ class HistoricInteractiveBrokersClient:
         port: int = 7497,
         client_id: int = 1,
         market_data_type: MarketDataTypeEnum = MarketDataTypeEnum.REALTIME,
+        log_level: str = "INFO",
     ) -> None:
         loop = asyncio.get_event_loop()
         loop.set_debug(True)
         clock = LiveClock()
-        logger = Logger(clock)
+        logger = Logger(level_stdout=log_level_from_str(log_level))
         self.log = LoggerAdapter("HistoricInteractiveBrokersClient", logger)
         msgbus = MessageBus(
             TraderId("historic_interactive_brokers_client-001"),

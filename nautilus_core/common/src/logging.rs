@@ -132,6 +132,24 @@ impl Default for LoggerConfig {
 }
 
 impl LoggerConfig {
+    pub fn new(
+        stdout_level: LevelFilter,
+        fileout_level: LevelFilter,
+        component_level: HashMap<Ustr, LevelFilter>,
+        is_colored: bool,
+        is_bypassed: bool,
+        print_config: bool,
+    ) -> Self {
+        Self {
+            stdout_level,
+            fileout_level,
+            component_level,
+            is_colored,
+            is_bypassed,
+            print_config,
+        }
+    }
+
     pub fn from_spec(spec: &str) -> Self {
         let Self {
             mut stdout_level,
@@ -206,6 +224,41 @@ impl FileWriterConfig {
     }
 }
 
+pub fn map_log_level_to_filter(log_level: LogLevel) -> LevelFilter {
+    match log_level {
+        LogLevel::Debug => LevelFilter::Debug,
+        LogLevel::Info => LevelFilter::Info,
+        LogLevel::Warning => LevelFilter::Warn,
+        LogLevel::Error => LevelFilter::Error,
+    }
+}
+
+pub fn parse_level_filter_str(s: &str) -> LevelFilter {
+    let mut log_level_str = s.to_string().to_uppercase();
+    if log_level_str == "WARNING" {
+        log_level_str = "WARN".to_string()
+    }
+    LevelFilter::from_str(&log_level_str)
+        .unwrap_or_else(|_| panic!("Invalid `LevelFilter` string, was {log_level_str}"))
+}
+
+pub fn parse_component_levels(
+    original_map: Option<HashMap<String, serde_json::Value>>,
+) -> HashMap<Ustr, LevelFilter> {
+    match original_map {
+        Some(map) => {
+            let mut new_map = HashMap::new();
+            for (key, value) in map {
+                let ustr_key = Ustr::from(&key);
+                let value = parse_level_filter_str(value.as_str().unwrap());
+                new_map.insert(ustr_key, value);
+            }
+            new_map
+        }
+        None => HashMap::new(),
+    }
+}
+
 /// Initialize tracing.
 ///
 /// Tracing is meant to be used to trace/debug async Rust code. It can be
@@ -241,15 +294,10 @@ pub fn init_tracing() {
 pub fn init_logging(
     trader_id: TraderId,
     instance_id: UUID4,
-    config_spec: String,
-    directory: Option<String>,
-    file_name: Option<String>,
-    file_format: Option<String>,
+    config: LoggerConfig,
+    file_config: FileWriterConfig,
 ) {
-    let config = LoggerConfig::from_spec(&config_spec);
-    let file_writer_config = FileWriterConfig::new(directory, file_name, file_format);
-
-    Logger::init_with_config(trader_id, instance_id, file_writer_config, config);
+    Logger::init_with_config(trader_id, instance_id, config, file_config);
 }
 
 /// Provides a high-performance logger utilizing a MPSC channel under the hood.
@@ -342,20 +390,16 @@ impl Log for Logger {
 
 #[allow(clippy::too_many_arguments)]
 impl Logger {
-    pub fn init_with_env(
-        trader_id: TraderId,
-        instance_id: UUID4,
-        file_writer_config: FileWriterConfig,
-    ) {
+    pub fn init_with_env(trader_id: TraderId, instance_id: UUID4, file_config: FileWriterConfig) {
         let config = LoggerConfig::from_env();
-        Logger::init_with_config(trader_id, instance_id, file_writer_config, config);
+        Logger::init_with_config(trader_id, instance_id, config, file_config);
     }
 
     pub fn init_with_config(
         trader_id: TraderId,
         instance_id: UUID4,
-        file_writer_config: FileWriterConfig,
         config: LoggerConfig,
+        file_config: FileWriterConfig,
     ) {
         let (tx, rx) = channel::<LogEvent>();
 
@@ -379,8 +423,8 @@ impl Logger {
                     Self::handle_messages(
                         &trader_id_clone,
                         &instance_id_clone,
-                        file_writer_config,
                         config,
+                        file_config,
                         rx,
                     );
                 });
@@ -401,8 +445,8 @@ impl Logger {
     fn handle_messages(
         trader_id: &str,
         instance_id: &str,
-        file_writer_config: FileWriterConfig,
         config: LoggerConfig,
+        file_config: FileWriterConfig,
         rx: Receiver<LogEvent>,
     ) {
         if config.print_config {
@@ -423,11 +467,7 @@ impl Logger {
         let mut stderr_writer = StderrWriter::new();
 
         // Setup log file
-        let is_json_format = match file_writer_config
-            .file_format
-            .as_ref()
-            .map(|s| s.to_lowercase())
-        {
+        let is_json_format = match file_config.file_format.as_ref().map(|s| s.to_lowercase()) {
             Some(ref format) if format == "json" => true,
             None => false,
             Some(ref unrecognized) => {
@@ -440,12 +480,8 @@ impl Logger {
 
         let file_path = PathBuf::new();
         let file = if fileout_level > LevelFilter::Off {
-            let file_path = Self::create_log_file_path(
-                &file_writer_config,
-                trader_id,
-                instance_id,
-                is_json_format,
-            );
+            let file_path =
+                Self::create_log_file_path(&file_config, trader_id, instance_id, is_json_format);
 
             Some(
                 File::options()
@@ -497,7 +533,7 @@ impl Logger {
                             };
 
                             let file_path = Self::create_log_file_path(
-                                &file_writer_config,
+                                &file_config,
                                 trader_id,
                                 instance_id,
                                 is_json_format,
@@ -554,12 +590,12 @@ impl Logger {
     }
 
     fn create_log_file_path(
-        file_writer_config: &FileWriterConfig,
+        file_config: &FileWriterConfig,
         trader_id: &str,
         instance_id: &str,
         is_json_format: bool,
     ) -> PathBuf {
-        let basename = if let Some(file_name) = file_writer_config.file_name.as_ref() {
+        let basename = if let Some(file_name) = file_config.file_name.as_ref() {
             file_name.clone()
         } else {
             Self::default_log_file_basename(trader_id, instance_id)
@@ -568,7 +604,7 @@ impl Logger {
         let suffix = if is_json_format { "json" } else { "log" };
         let mut file_path = PathBuf::new();
 
-        if let Some(directory) = file_writer_config.directory.as_ref() {
+        if let Some(directory) = file_config.directory.as_ref() {
             file_path.push(directory);
             create_dir_all(&file_path).expect("Failed to create directories for log file");
         }
@@ -742,7 +778,7 @@ mod tests {
         };
 
         let temp_dir = tempdir().expect("Failed to create temporary directory");
-        let file_writer_config = FileWriterConfig {
+        let file_config = FileWriterConfig {
             directory: Some(temp_dir.path().to_str().unwrap().to_string()),
             ..Default::default()
         };
@@ -750,8 +786,8 @@ mod tests {
         Logger::init_with_config(
             TraderId::from("TRADER-001"),
             UUID4::new(),
-            file_writer_config,
             config,
+            file_config,
         );
 
         info!(
@@ -799,7 +835,7 @@ mod tests {
         let config = LoggerConfig::from_spec("stdout=Info;fileout=Debug;RiskEngine=Error");
 
         let temp_dir = tempdir().expect("Failed to create temporary directory");
-        let file_writer_config = FileWriterConfig {
+        let file_config = FileWriterConfig {
             directory: Some(temp_dir.path().to_str().unwrap().to_string()),
             ..Default::default()
         };
@@ -807,8 +843,8 @@ mod tests {
         Logger::init_with_config(
             TraderId::from("TRADER-001"),
             UUID4::new(),
-            file_writer_config,
             config,
+            file_config,
         );
 
         info!(
@@ -850,7 +886,7 @@ mod tests {
             LoggerConfig::from_spec("stdout=Info;is_colored;fileout=Debug;RiskEngine=Info");
 
         let temp_dir = tempdir().expect("Failed to create temporary directory");
-        let file_writer_config = FileWriterConfig {
+        let file_config = FileWriterConfig {
             directory: Some(temp_dir.path().to_str().unwrap().to_string()),
             file_format: Some("json".to_string()),
             ..Default::default()
@@ -859,8 +895,8 @@ mod tests {
         Logger::init_with_config(
             TraderId::from("TRADER-001"),
             UUID4::new(),
-            file_writer_config,
             config,
+            file_config,
         );
 
         info!(

@@ -93,23 +93,6 @@ class TestLoggerTests:
         # Assert
         assert True  # No exceptions raised
 
-    def test_log_info_with_annotation_sends_to_stdout(self):
-        # Arrange
-        logger = Logger(
-            clock=TestClock(),
-            level_stdout=LogLevel.INFO,
-            bypass=True,
-        )
-        logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
-
-        annotations = {"my_tag": "something"}
-
-        # Act
-        logger_adapter.info("This is a log message.", annotations=annotations)
-
-        # Assert
-        assert True  # No exceptions raised
-
     def test_log_info_messages_to_console_with_blue_colour(self):
         # Arrange
         logger = Logger(
