@@ -52,6 +52,7 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.common cimport ComponentState
 from nautilus_trader.core.rust.common cimport LogColor
+from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataRequest
@@ -2855,11 +2856,11 @@ cdef class Actor(Component):
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_data_cmd(self, DataCommand command):
-        if not self._log.is_bypassed:
+        if logging_is_initialized():
             self._log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="DataEngine.execute", msg=command)
 
     cdef void _send_data_req(self, DataRequest request):
-        if not self._log.is_bypassed:
+        if logging_is_initialized():
             self._log.info(f"{REQ}{SENT} {request}.")
         self._msgbus.request(endpoint="DataEngine.request", request=request)

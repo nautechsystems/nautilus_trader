@@ -15,7 +15,6 @@
 
 use std::ffi::{c_char, CStr};
 
-use log::LevelFilter;
 use nautilus_core::{
     ffi::{
         parsing::{optional_bytes_to_json, u8_as_bool},
@@ -69,7 +68,6 @@ pub unsafe extern "C" fn logging_init(
     instance_id: UUID4,
     level_stdout: LogLevel,
     level_file: LogLevel,
-    file_logging: u8,
     directory_ptr: *const c_char,
     file_name_ptr: *const c_char,
     file_format_ptr: *const c_char,
@@ -79,11 +77,7 @@ pub unsafe extern "C" fn logging_init(
     print_config: u8,
 ) {
     let level_stdout = map_log_level_to_filter(level_stdout);
-    let level_file = if u8_as_bool(file_logging) {
-        map_log_level_to_filter(level_file)
-    } else {
-        LevelFilter::Off
-    };
+    let level_file = map_log_level_to_filter(level_file);
 
     let component_levels_json = optional_bytes_to_json(component_levels_ptr);
     let component_levels = parse_component_levels(component_levels_json);

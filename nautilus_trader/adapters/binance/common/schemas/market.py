@@ -472,7 +472,7 @@ class BinanceQuoteData(msgspec.Struct, frozen=True):
     B: str  # best bid qty
     a: str  # best ask price
     A: str  # best ask qty
-    T: int | None  # event time
+    T: int | None = None  # event time
 
     def parse_to_quote_tick(
         self,

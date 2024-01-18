@@ -28,6 +28,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport TriggerType
@@ -557,7 +558,7 @@ cdef class OrderManager:
     cpdef void send_emulator_command(self, TradingCommand command):
         Condition.not_none(command, "command")
 
-        if not self._log.is_bypassed:
+        if logging_is_initialized():
             self._log.info(f"{CMD}{SENT} {command}.")  # pragma: no cover  (no logging in tests)
         self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
 
@@ -565,34 +566,34 @@ cdef class OrderManager:
         Condition.not_none(command, "command")
         Condition.not_none(exec_algorithm_id, "exec_algorithm_id")
 
-        if not self._log.is_bypassed:
+        if logging_is_initialized():
             self._log.info(f"{CMD}{SENT} {command}.")  # pragma: no cover  (no logging in tests)
         self._msgbus.send(endpoint=f"{exec_algorithm_id}.execute", msg=command)
 
     cpdef void send_risk_command(self, TradingCommand command):
         Condition.not_none(command, "command")
 
-        if not self._log.is_bypassed:
+        if logging_is_initialized():
             self._log.info(f"{CMD}{SENT} {command}.")  # pragma: no cover  (no logging in tests)
         self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
 
     cpdef void send_exec_command(self, TradingCommand command):
         Condition.not_none(command, "command")
 
-        if not self._log.is_bypassed:
+        if logging_is_initialized():
             self._log.info(f"{CMD}{SENT} {command}.")  # pragma: no cover  (no logging in tests)
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
     cpdef void send_risk_event(self, OrderEvent event):
         Condition.not_none(event, "event")
 
-        if not self._log.is_bypassed:
+        if logging_is_initialized():
             self._log.info(f"{EVT}{SENT} {event}.")  # pragma: no cover  (no logging in tests)
         self._msgbus.send(endpoint="RiskEngine.process", msg=event)
 
     cpdef void send_exec_event(self, OrderEvent event):
         Condition.not_none(event, "event")
 
-        if not self._log.is_bypassed:
+        if logging_is_initialized():
             self._log.info(f"{EVT}{SENT} {event}.")  # pragma: no cover (no logging in tests)
         self._msgbus.send(endpoint="ExecEngine.process", msg=event)

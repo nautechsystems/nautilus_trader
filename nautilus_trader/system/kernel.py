@@ -25,9 +25,6 @@ from datetime import timedelta
 
 import msgspec
 
-# from nautilus_trader.core import nautilus_pyo3
-# from nautilus_trader.core.nautilus_pyo3 import init_logging
-# from nautilus_trader.core.nautilus_pyo3 import init_tracing
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.cache.database import CacheDatabaseAdapter
@@ -42,7 +39,7 @@ from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.common.logging import nautilus_header
+from nautilus_trader.common.logging import log_nautilus_header
 from nautilus_trader.config import ActorFactory
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
@@ -161,7 +158,7 @@ class NautilusKernel:
             level_stdout=log_level_from_str(logging.log_level),
             level_file=log_level_from_str(logging.log_level_file)
             if logging.log_level_file is not None
-            else LogLevel.DEBUG,
+            else LogLevel.OFF,
             file_logging=logging.log_level_file is not None,
             directory=logging.log_directory,
             file_name=logging.log_file_name,
@@ -184,7 +181,13 @@ class NautilusKernel:
                 "This warning will be removed in a future version, and become a hard requirement.",
             )
 
-        nautilus_header(self._log)
+        log_nautilus_header(
+            self._log,
+            self._trader_id,
+            self._machine_id,
+            self._instance_id,
+            logging.log_colors,
+        )
         self.log.info("Building system kernel...")
 
         # Setup loop (if sandbox live)
@@ -207,6 +210,7 @@ class NautilusKernel:
             encoding = config.cache.encoding.lower()
             cache_db = CacheDatabaseAdapter(
                 trader_id=self._trader_id,
+                instance_id=self._instance_id,
                 logger=self._logger,
                 serializer=MsgSpecSerializer(
                     encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,

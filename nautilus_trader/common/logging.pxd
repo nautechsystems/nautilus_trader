@@ -46,11 +46,6 @@ cdef str RES
 
 
 cdef class Logger:
-    cdef TraderId _trader_id
-    cdef UUID4 _instance_id
-    cdef str _machine_id
-    cdef bint _is_colored
-    cdef bint _is_bypassed
 
     cdef void log(
         self,
@@ -67,8 +62,6 @@ cdef class LoggerAdapter:
     cdef Logger _logger
     cdef str _component
     cdef const char* _component_cstr
-    cdef bint _is_colored
-    cdef bint _is_bypassed
 
     cpdef Logger get_logger(self)
     cpdef void debug(self, str message, LogColor color=*)
@@ -78,5 +71,12 @@ cdef class LoggerAdapter:
     cpdef void exception(self, str message, ex)
 
 
-cpdef void nautilus_header(LoggerAdapter logger)
-cpdef void log_memory(LoggerAdapter logger)
+cpdef void log_nautilus_header(
+    LoggerAdapter logger,
+    TraderId trader_id,
+    str machine_id,
+    UUID4 instance_id,
+    bint is_colored,
+)
+
+cpdef void log_memory(LoggerAdapter logger, bint is_colored)

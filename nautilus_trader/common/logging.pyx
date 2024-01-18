@@ -45,6 +45,7 @@ from nautilus_trader.core.rust.common cimport logger_log
 from nautilus_trader.core.rust.common cimport logging_clock_set_realtime
 from nautilus_trader.core.rust.common cimport logging_clock_set_static
 from nautilus_trader.core.rust.common cimport logging_init
+from nautilus_trader.core.rust.common cimport logging_is_colored
 from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.common cimport tracing_init
 from nautilus_trader.core.string cimport cstr_to_pystr
@@ -108,7 +109,7 @@ cdef class Logger:
         The instance ID.
     level_stdout : LogLevel, default ``INFO``
         The minimum log level to write to stdout.
-    level_file : LogLevel, default ``DEBUG``
+    level_file : LogLevel, default ``OFF``
         The minimum log level to write to a file.
     file_logging : bool, default False
         If logging to a file is enabled.
@@ -138,7 +139,7 @@ cdef class Logger:
         str machine_id = None,
         UUID4 instance_id = None,
         LogLevel level_stdout = LogLevel.INFO,
-        LogLevel level_file = LogLevel.DEBUG,
+        LogLevel level_file = LogLevel.OFF,
         bint file_logging = False,
         str directory = None,
         str file_name = None,
@@ -155,23 +156,16 @@ cdef class Logger:
         if instance_id is None:
             instance_id = UUID4()
 
-        self._trader_id = trader_id
-        self._instance_id = instance_id
-        self._machine_id = machine_id
-        self._is_bypassed = bypass
-        self._is_colored = colors
-
-        if not self._is_bypassed and not logging_is_initialized():
+        if not bypass and not logging_is_initialized():
             # Initialize tracing for async Rust
             tracing_init()
 
             # Initialize logging for sync Rust and Python
             logging_init(
-                self._trader_id._mem,
-                self._instance_id._mem,
+                trader_id._mem,
+                instance_id._mem,
                 level_stdout,
                 level_file,
-                file_logging,
                 pystr_to_cstr(directory) if directory else NULL,
                 pystr_to_cstr(file_name) if file_name else NULL,
                 pystr_to_cstr(file_format) if file_format else NULL,
@@ -180,66 +174,6 @@ cdef class Logger:
                 bypass,
                 print_config,
             )
-
-    @property
-    def trader_id(self) -> TraderId:
-        """
-        Return the loggers trader ID.
-
-        Returns
-        -------
-        TraderId
-
-        """
-        return self._trader_id
-
-    @property
-    def machine_id(self) -> str:
-        """
-        Return the loggers machine ID.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._machine_id
-
-    @property
-    def instance_id(self) -> UUID4:
-        """
-        Return the loggers system instance ID.
-
-        Returns
-        -------
-        UUID4
-
-        """
-        return self._instance_id
-
-    @property
-    def is_colored(self) -> bool:
-        """
-        Return whether the logger is using ANSI color codes.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self._is_colored
-
-    @property
-    def is_bypassed(self) -> bool:
-        """
-        Return whether the logger is in bypass mode.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self._is_bypassed
 
     cdef void log(
         self,
@@ -285,80 +219,6 @@ cdef class LoggerAdapter:
         self._logger = logger
         self._component = component_name
         self._component_cstr = pystr_to_cstr(component_name)
-        self._is_colored = logger.is_colored
-        self._is_bypassed = logger.is_bypassed
-
-    @property
-    def trader_id(self) -> TraderId:
-        """
-        Return the loggers trader ID.
-
-        Returns
-        -------
-        TraderId
-
-        """
-        return self._logger.trader_id
-
-    @property
-    def machine_id(self) -> str:
-        """
-        Return the loggers machine ID.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._logger.machine_id
-
-    @property
-    def instance_id(self) -> UUID4:
-        """
-        Return the loggers system instance ID.
-
-        Returns
-        -------
-        UUID4
-
-        """
-        return self._logger.instance_id
-
-    @property
-    def component(self) -> str:
-        """
-        Return the loggers component name.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._component
-
-    @property
-    def is_colored(self) -> bool:
-        """
-        Return whether the logger is using ANSI color codes.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self._is_colored
-
-    @property
-    def is_bypassed(self) -> bool:
-        """
-        Return whether the logger is in bypass mode.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self._is_bypassed
 
     cpdef Logger get_logger(self):
         """
@@ -389,9 +249,6 @@ cdef class LoggerAdapter:
         """
         Condition.not_none(message, "message")
 
-        if self.is_bypassed:
-            return
-
         self._logger.log(
             LogLevel.DEBUG,
             color,
@@ -415,9 +272,6 @@ cdef class LoggerAdapter:
 
         """
         Condition.not_none(message, "message")
-
-        if self.is_bypassed:
-            return
 
         self._logger.log(
             LogLevel.INFO,
@@ -444,9 +298,6 @@ cdef class LoggerAdapter:
         """
         Condition.not_none(message, "message")
 
-        if self.is_bypassed:
-            return
-
         self._logger.log(
             LogLevel.WARNING,
             color,
@@ -471,9 +322,6 @@ cdef class LoggerAdapter:
 
         """
         Condition.not_none(message, "message")
-
-        if self.is_bypassed:
-            return
 
         self._logger.log(
             LogLevel.ERROR,
@@ -512,10 +360,16 @@ cdef class LoggerAdapter:
         self.error(f"{message}\n{ex_string}\n{stack_trace_lines}")
 
 
-cpdef void nautilus_header(LoggerAdapter logger):
+cpdef void log_nautilus_header(
+    LoggerAdapter logger,
+    TraderId trader_id,
+    str machine_id,
+    UUID4 instance_id,
+    bint is_colored,
+):
     Condition.not_none(logger, "logger")
 
-    color = "\033[36m" if logger.is_colored else ""
+    color = "\033[36m" if is_colored else ""
 
     print("")  # New line to begin
     logger.info(f"{color}=================================================================")
@@ -548,13 +402,13 @@ cpdef void nautilus_header(LoggerAdapter logger):
         cpu_freq_str = None
     logger.info(f"CPU(s): {psutil.cpu_count()} {cpu_freq_str}")
     logger.info(f"OS: {platform.platform()}")
-    log_memory(logger)
+    log_memory(logger, is_colored)
     logger.info(f"{color}=================================================================")
     logger.info(f"{color} IDENTIFIERS")
     logger.info(f"{color}=================================================================")
-    logger.info(f"trader_id: {logger.trader_id}")
-    logger.info(f"machine_id: {logger.machine_id}")
-    logger.info(f"instance_id: {logger.instance_id}")
+    logger.info(f"trader_id: {trader_id}")
+    logger.info(f"machine_id: {machine_id}")
+    logger.info(f"instance_id: {instance_id}")
     logger.info(f"{color}=================================================================")
     logger.info(f"{color} VERSIONING")
     logger.info(f"{color}=================================================================")
@@ -574,10 +428,10 @@ cpdef void nautilus_header(LoggerAdapter logger):
 
     logger.info(f"{color}=================================================================")
 
-cpdef void log_memory(LoggerAdapter logger):
+cpdef void log_memory(LoggerAdapter logger, bint is_colored):
     Condition.not_none(logger, "logger")
 
-    color = "\033[36m" if logger.is_colored else ""
+    color = "\033[36m" if is_colored else ""
 
     logger.info(f"{color}=================================================================")
     logger.info(f"{color} MEMORY USAGE")

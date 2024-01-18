@@ -48,11 +48,18 @@ use crate::enums::{LogColor, LogLevel};
 
 static LOGGING_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static LOGGING_REALTIME: AtomicBool = AtomicBool::new(true);
+static LOGGING_COLORED: AtomicBool = AtomicBool::new(true);
 
 /// Returns whether the core logger is enabled.
 #[no_mangle]
 pub extern "C" fn logging_is_initialized() -> u8 {
     LOGGING_INITIALIZED.load(Ordering::Relaxed) as u8
+}
+
+/// Returns whether the core logger is enabled.
+#[no_mangle]
+pub extern "C" fn logging_is_colored() -> u8 {
+    LOGGING_COLORED.load(Ordering::Relaxed) as u8
 }
 
 /// Sets the global logging clock to real-time mode.
@@ -269,8 +276,9 @@ pub fn init_logging(
     config: LoggerConfig,
     file_config: FileWriterConfig,
 ) {
-    Logger::init_with_config(trader_id, instance_id, config, file_config);
     LOGGING_INITIALIZED.store(true, Ordering::Relaxed);
+    LOGGING_COLORED.store(config.is_colored, Ordering::Relaxed);
+    Logger::init_with_config(trader_id, instance_id, config, file_config);
 }
 
 /// Provides a high-performance logger utilizing a MPSC channel under the hood.
@@ -463,6 +471,10 @@ impl Logger {
 
         // Continue to receive and handle log events until channel is hung up
         while let Ok(event) = rx.recv() {
+            if is_bypassed {
+                continue;
+            }
+
             let timestamp = match LOGGING_REALTIME.load(Ordering::Relaxed) {
                 true => clock_realtime.get_time_ns(),
                 false => clock_static.get_time_ns(),
@@ -687,7 +699,7 @@ pub fn log(level: LogLevel, color: LogColor, component: Ustr, message: Cow<'_, s
     let color = Value::from(color as u8);
 
     match level {
-        LogLevel::Off => {} // Do nothing
+        LogLevel::Off => {}
         LogLevel::Debug => {
             debug!(component = component.to_value(), color = color; "{}", message);
         }

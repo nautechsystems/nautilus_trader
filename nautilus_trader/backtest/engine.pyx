@@ -63,6 +63,7 @@ from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drain
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drop
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_new
 from nautilus_trader.core.rust.common cimport TimeEventHandler_t
+from nautilus_trader.core.rust.common cimport logging_is_colored
 from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport AccountType
@@ -1212,10 +1213,10 @@ cdef class BacktestEngine:
                     exchange.process(ts_event_init)
 
     def _get_log_color_code(self):
-        return "\033[36m" if self._log.is_colored else ""
+        return "\033[36m" if logging_is_colored() else ""
 
     def _log_pre_run(self):
-        log_memory(self._log)
+        log_memory(self._log, logging_is_colored())
 
         cdef str color = self._get_log_color_code()
 

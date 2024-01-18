@@ -33,6 +33,7 @@ from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport TriggerType
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.data cimport QuoteTick
@@ -102,9 +103,11 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
     Parameters
     ----------
     trader_id : TraderId
-        The trader ID for the database.
+        The trader ID for the adapter.
+    instance_id : UUID4
+        The instance ID for the adapter.
     logger : Logger
-        The logger for the database.
+        The logger for the adapter.
     serializer : Serializer
         The serializer for database operations.
     config : CacheConfig, optional
@@ -129,6 +132,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
     def __init__(
         self,
         TraderId trader_id not None,
+        UUID4 instance_id not None,
         Logger logger not None,
         Serializer serializer not None,
         config: CacheConfig | None = None,
@@ -186,7 +190,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         self._backing = nautilus_pyo3.RedisCacheDatabase(
             trader_id=nautilus_pyo3.TraderId(trader_id.value),
-            instance_id=nautilus_pyo3.UUID4(logger.instance_id.value),
+            instance_id=nautilus_pyo3.UUID4(instance_id.value),
             config_json=msgspec.json.encode(config),
         )
 

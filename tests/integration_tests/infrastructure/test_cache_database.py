@@ -31,6 +31,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config.common import CacheConfig
 from nautilus_trader.config.common import DatabaseConfig
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
@@ -140,6 +141,7 @@ class TestCacheDatabaseAdapter:
 
         self.database = CacheDatabaseAdapter(
             trader_id=self.trader_id,
+            instance_id=UUID4(),
             logger=self.logger,
             serializer=MsgSpecSerializer(encoding=msgspec.msgpack, timestamps_as_str=True),
             config=CacheConfig(database=DatabaseConfig()),
@@ -1111,6 +1113,7 @@ class TestRedisCacheDatabaseIntegrity:
 
         self.database = CacheDatabaseAdapter(
             trader_id=self.trader_id,
+            instance_id=UUID4(),
             logger=self.logger,
             serializer=MsgSpecSerializer(encoding=msgspec.msgpack, timestamps_as_str=True),
             config=CacheConfig(database=DatabaseConfig()),
