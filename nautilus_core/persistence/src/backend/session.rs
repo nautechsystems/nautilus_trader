@@ -197,7 +197,7 @@ impl DataQueryResult {
         }
     }
 
-    /// Set new CVec backed chunk from data
+    /// Set new `CVec` backed chunk from data
     ///
     /// It also drops previously allocated chunk
     pub fn set_chunk(&mut self, data: Vec<Data>) -> CVec {
