@@ -74,7 +74,6 @@ class TestExecAlgorithm:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(
-            clock=TestClock(),
             level_stdout=LogLevel.INFO,
             bypass=True,
         )
@@ -82,16 +81,6 @@ class TestExecAlgorithm:
         self.trader_id = TestIdStubs.trader_id()
         self.strategy_id = TestIdStubs.strategy_id()
         self.account_id = TestIdStubs.account_id()
-
-        # Uncomment for logging
-        # init_logging(
-        #     self.trader_id,
-        #     UUID4(),
-        #     LoggingConfig().spec_string(),
-        #     None,
-        #     None,
-        #     None,
-        # )
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,

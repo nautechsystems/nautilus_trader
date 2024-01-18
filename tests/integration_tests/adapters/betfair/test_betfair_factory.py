@@ -46,7 +46,6 @@ class TestBetfairFactory:
 
         # Setup logging
         self.logger = Logger(
-            clock=self.clock,
             level_stdout=LogLevel.DEBUG,
             bypass=True,
         )

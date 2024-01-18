@@ -32,12 +32,6 @@ use crate::{
     },
 };
 
-/// Returns whether the core logger is enabled.
-#[no_mangle]
-pub extern "C" fn logging_is_initialized() -> u8 {
-    log::log_enabled!(log::Level::Error) as u8
-}
-
 /// Initializes tracing.
 ///
 /// Tracing is meant to be used to trace/debug async Rust code. It can be
@@ -120,7 +114,6 @@ pub unsafe extern "C" fn logging_init(
 /// - Assumes `message_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn logger_log(
-    timestamp_ns: u64,
     level: LogLevel,
     color: LogColor,
     component_ptr: *const c_char,
@@ -129,7 +122,7 @@ pub unsafe extern "C" fn logger_log(
     let component = cstr_to_ustr(component_ptr);
     let message = CStr::from_ptr(message_ptr).to_string_lossy();
 
-    logging::log(timestamp_ns, level, color, component, message);
+    logging::log(level, color, component, message);
 }
 
 /// Flushes logger buffers.

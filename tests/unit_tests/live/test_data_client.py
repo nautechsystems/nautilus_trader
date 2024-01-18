@@ -46,7 +46,7 @@ class TestLiveDataClientTests:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.logger = Logger(self.clock, bypass=True)
+        self.logger = Logger(bypass=True)
 
         self.trader_id = TestIdStubs.trader_id()
 
@@ -89,7 +89,7 @@ class TestLiveMarketDataClientTests:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.logger = Logger(self.clock, bypass=True)
+        self.logger = Logger(bypass=True)
 
         self.trader_id = TestIdStubs.trader_id()
 

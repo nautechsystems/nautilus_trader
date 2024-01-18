@@ -69,7 +69,6 @@ class TestOrderEmulatorWithOrderLists:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(
-            clock=TestClock(),
             level_stdout=LogLevel.DEBUG,
             bypass=True,
         )

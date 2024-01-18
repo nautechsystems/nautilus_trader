@@ -36,8 +36,8 @@ def live_clock():
 
 
 @pytest.fixture(scope="session")
-def live_logger(live_clock):
-    return Logger(clock=live_clock)
+def live_logger():
+    return Logger()
 
 
 @pytest.fixture(scope="session")

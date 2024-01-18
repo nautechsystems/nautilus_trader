@@ -172,6 +172,10 @@ typedef enum LogColor {
  */
 typedef enum LogLevel {
     /**
+     * A level lower than all other log levels (off).
+     */
+    OFF = 0,
+    /**
      * The **DEBUG** debug log level.
      */
     DEBUG = 10,
@@ -301,6 +305,21 @@ typedef struct TimeEventHandler_t {
 } TimeEventHandler_t;
 
 struct PyCallableWrapper_t dummy_callable(struct PyCallableWrapper_t c);
+
+/**
+ * Returns whether the core logger is enabled.
+ */
+uint8_t logging_is_initialized(void);
+
+/**
+ * Sets the global logging clock to real-time mode.
+ */
+void logging_clock_set_realtime(void);
+
+/**
+ * Sets the global logging clock to static mode with the given UNIX time (nanoseconds).
+ */
+void logging_clock_set_static(uint64_t time_ns);
 
 struct TestClock_API test_clock_new(void);
 
@@ -433,11 +452,6 @@ const char *log_color_to_cstr(enum LogColor value);
 enum LogColor log_color_from_cstr(const char *ptr);
 
 /**
- * Returns whether the core logger is enabled.
- */
-uint8_t logging_is_initialized(void);
-
-/**
  * Initializes tracing.
  *
  * Tracing is meant to be used to trace/debug async Rust code. It can be
@@ -490,8 +504,7 @@ void logging_init(TraderId_t trader_id,
  * - Assumes `component_ptr` is a valid C string pointer.
  * - Assumes `message_ptr` is a valid C string pointer.
  */
-void logger_log(uint64_t timestamp_ns,
-                enum LogLevel level,
+void logger_log(enum LogLevel level,
                 enum LogColor color,
                 const char *component_ptr,
                 const char *message_ptr);

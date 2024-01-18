@@ -15,7 +15,6 @@
 
 import pytest
 
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
@@ -63,7 +62,6 @@ class TestLoggerTests:
     def test_log_debug_messages_to_console(self):
         # Arrange
         logger = Logger(
-            clock=TestClock(),
             level_stdout=LogLevel.DEBUG,
             bypass=True,
         )
@@ -78,7 +76,6 @@ class TestLoggerTests:
     def test_log_info_messages_to_console(self):
         # Arrange
         logger = Logger(
-            clock=TestClock(),
             level_stdout=LogLevel.INFO,
             bypass=True,
         )
@@ -93,7 +90,6 @@ class TestLoggerTests:
     def test_log_info_messages_to_console_with_blue_colour(self):
         # Arrange
         logger = Logger(
-            clock=TestClock(),
             level_stdout=LogLevel.INFO,
             bypass=True,
         )
@@ -108,7 +104,6 @@ class TestLoggerTests:
     def test_log_info_messages_to_console_with_green_colour(self):
         # Arrange
         logger = Logger(
-            clock=TestClock(),
             level_stdout=LogLevel.INFO,
             bypass=True,
         )
@@ -123,7 +118,6 @@ class TestLoggerTests:
     def test_log_warning_messages_to_console(self):
         # Arrange
         logger = Logger(
-            clock=TestClock(),
             level_stdout=LogLevel.WARNING,
             bypass=True,
         )
@@ -138,7 +132,6 @@ class TestLoggerTests:
     def test_log_error_messages_to_console(self):
         # Arrange
         logger = Logger(
-            clock=TestClock(),
             level_stdout=LogLevel.ERROR,
             bypass=True,
         )
@@ -153,7 +146,6 @@ class TestLoggerTests:
     def test_log_exception_messages_to_console(self):
         # Arrange
         logger = Logger(
-            clock=TestClock(),
             level_stdout=LogLevel.ERROR,
             bypass=True,
         )

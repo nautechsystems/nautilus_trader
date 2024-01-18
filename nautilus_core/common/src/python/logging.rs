@@ -16,7 +16,7 @@
 use std::{borrow::Cow, collections::HashMap};
 
 use log::LevelFilter;
-use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::prelude::*;
 use ustr::Ustr;
@@ -109,20 +109,8 @@ fn parse_component_levels(
 /// Create a new log event.
 #[pyfunction]
 #[pyo3(name = "logger_log")]
-pub fn py_logger_log(
-    timestamp_ns: UnixNanos,
-    level: LogLevel,
-    color: LogColor,
-    component: String,
-    message: String,
-) {
-    logging::log(
-        timestamp_ns,
-        level,
-        color,
-        Ustr::from(&component),
-        Cow::from(message),
-    );
+pub fn py_logger_log(level: LogLevel, color: LogColor, component: String, message: String) {
+    logging::log(level, color, Ustr::from(&component), Cow::from(message));
 }
 
 #[pymethods]

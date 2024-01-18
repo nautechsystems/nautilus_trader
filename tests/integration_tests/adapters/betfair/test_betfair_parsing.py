@@ -333,7 +333,7 @@ class TestBetfairParsing:
         # Fixture Setup
         self.loop = asyncio.new_event_loop()
         self.clock = LiveClock()
-        self.logger = Logger(clock=self.clock, bypass=True)
+        self.logger = Logger(bypass=True)
         self.instrument = betting_instrument()
         self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
         self.provider = BetfairTestStubs.instrument_provider(self.client)

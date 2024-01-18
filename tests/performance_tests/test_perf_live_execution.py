@@ -51,7 +51,7 @@ class TestLiveExecutionPerformance:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.logger = Logger(self.clock, bypass=True)
+        self.logger = Logger(bypass=True)
 
         self.trader_id = TestIdStubs.trader_id()
         self.account_id = AccountId(f"{BINANCE.value}-001")

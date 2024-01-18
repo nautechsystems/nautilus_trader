@@ -29,7 +29,7 @@ class TestMessageBus:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(self.clock, bypass=True)
+        self.logger = Logger(bypass=True)
 
         self.trader_id = TestIdStubs.trader_id()
 

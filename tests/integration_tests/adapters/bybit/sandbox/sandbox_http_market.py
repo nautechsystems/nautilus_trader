@@ -46,7 +46,7 @@ def client() -> BybitHttpClient:
 
     client = get_bybit_http_client(
         clock=clock,
-        logger=Logger(clock=clock),
+        logger=Logger(),
         is_testnet=True,
     )
     return client

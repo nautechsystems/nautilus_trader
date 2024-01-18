@@ -37,7 +37,7 @@ account_type = BinanceAccountType.USDT_FUTURE
 client = get_cached_binance_http_client(
     loop=asyncio.get_event_loop(),
     clock=clock,
-    logger=Logger(clock=clock),
+    logger=Logger(),
     account_type=account_type,
     key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
     secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
@@ -47,7 +47,7 @@ await client.connect()
 
 provider = BinanceFuturesInstrumentProvider(
     client=client,
-    logger=Logger(clock=clock),
+    logger=Logger(),
     account_type=BinanceAccountType.USDT_FUTURE,
 )
 

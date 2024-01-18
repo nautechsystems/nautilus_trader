@@ -76,7 +76,6 @@ class TestOrderEmulatorWithSingleOrders:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(
-            clock=TestClock(),
             level_stdout=LogLevel.INFO,
             bypass=True,
         )

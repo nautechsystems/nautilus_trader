@@ -47,7 +47,7 @@ async def create_provider():
     Create a provider to load all instrument data from live exchange.
     """
     clock = LiveClock()
-    log = Logger(clock=clock)
+    log = Logger()
 
     client = get_cached_binance_http_client(
         clock=clock,

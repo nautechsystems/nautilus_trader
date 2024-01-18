@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -25,9 +24,8 @@ AUDUSD = TestIdStubs.audusd_id()
 class TestInstrumentProvider:
     def setup(self):
         # Fixture Setup
-        clock = TestClock()
         self.provider = InstrumentProvider(
-            logger=Logger(clock, bypass=True),
+            logger=Logger(bypass=True),
         )
 
     def test_get_all_when_no_instruments_returns_empty_dict(self):

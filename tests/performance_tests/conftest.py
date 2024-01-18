@@ -32,5 +32,5 @@ def clock():
 
 
 @pytest.fixture()
-def logger(clock):
-    return Logger(clock, bypass=True)
+def logger():
+    return Logger(bypass=True)

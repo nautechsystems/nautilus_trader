@@ -28,7 +28,7 @@ async def test_binance_futures_account_http_client():
 
     client = get_cached_binance_http_client(
         clock=clock,
-        logger=Logger(clock=clock),
+        logger=Logger(),
         account_type=BinanceAccountType.USDT_FUTURE,
     )
 
