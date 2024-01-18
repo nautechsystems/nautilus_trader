@@ -41,7 +41,6 @@ class TestBybitFactories:
         self.loop = asyncio.get_event_loop()
         self.clock = LiveClock()
         self.logger = Logger(
-            clock=self.clock,
             level_stdout=LogLevel.DEBUG,
             bypass=True,
         )

@@ -24,7 +24,7 @@ class TestBufferingThrottler:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(self.clock, bypass=True)
+        self.logger = Logger(bypass=True)
 
         self.handler = []
         self.throttler = Throttler(
@@ -165,7 +165,7 @@ class TestDroppingThrottler:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(self.clock, bypass=True)
+        self.logger = Logger(bypass=True)
 
         self.handler = []
         self.dropped = []

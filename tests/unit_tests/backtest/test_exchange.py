@@ -84,7 +84,6 @@ class TestSimulatedExchange:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(
-            clock=self.clock,
             level_stdout=LogLevel.DEBUG,
             bypass=True,
         )
@@ -2860,7 +2859,6 @@ class TestSimulatedExchangeL2:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(
-            clock=self.clock,
             level_stdout=LogLevel.DEBUG,
             bypass=True,
         )

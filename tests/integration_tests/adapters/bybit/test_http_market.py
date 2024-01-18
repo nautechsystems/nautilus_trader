@@ -39,7 +39,7 @@ from tests.integration_tests.adapters.bybit.utils.get_mock import get_mock
 class TestBybitMarketHttpAPI:
     def setup(self):
         clock = LiveClock()
-        logger = Logger(clock=clock)
+        logger = Logger()
         self.client = BybitHttpClient(
             clock=clock,
             logger=logger,

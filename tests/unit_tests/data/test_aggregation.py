@@ -263,7 +263,7 @@ class TestTickBarAggregator:
             instrument,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         tick1 = QuoteTick(
@@ -292,7 +292,7 @@ class TestTickBarAggregator:
             instrument,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         tick1 = TradeTick(
@@ -321,7 +321,7 @@ class TestTickBarAggregator:
             instrument,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         tick1 = QuoteTick(
@@ -377,7 +377,7 @@ class TestTickBarAggregator:
             instrument,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         tick1 = TradeTick(
@@ -433,7 +433,7 @@ class TestTickBarAggregator:
             instrument,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         # Setup data
@@ -464,7 +464,7 @@ class TestTickBarAggregator:
             instrument,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BITMEX)
@@ -496,7 +496,7 @@ class TestVolumeBarAggregator:
             instrument,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         tick1 = QuoteTick(
@@ -525,7 +525,7 @@ class TestVolumeBarAggregator:
             instrument,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         tick1 = TradeTick(
@@ -554,7 +554,7 @@ class TestVolumeBarAggregator:
             instrument,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         tick1 = QuoteTick(
@@ -610,7 +610,7 @@ class TestVolumeBarAggregator:
             instrument,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         tick1 = TradeTick(
@@ -666,7 +666,7 @@ class TestVolumeBarAggregator:
             instrument,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         tick1 = QuoteTick(
@@ -732,7 +732,7 @@ class TestVolumeBarAggregator:
             instrument,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         tick1 = TradeTick(
@@ -798,7 +798,7 @@ class TestVolumeBarAggregator:
             instrument,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         # Setup data
@@ -832,7 +832,7 @@ class TestVolumeBarAggregator:
             instrument,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BITMEX)
@@ -864,7 +864,7 @@ class TestTestValueBarAggregator:
             AUDUSD_SIM,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         tick1 = QuoteTick(
@@ -894,7 +894,7 @@ class TestTestValueBarAggregator:
             AUDUSD_SIM,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         tick1 = TradeTick(
@@ -924,7 +924,7 @@ class TestTestValueBarAggregator:
             AUDUSD_SIM,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         tick1 = QuoteTick(
@@ -981,7 +981,7 @@ class TestTestValueBarAggregator:
             AUDUSD_SIM,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         tick1 = TradeTick(
@@ -1043,7 +1043,7 @@ class TestTestValueBarAggregator:
             AUDUSD_SIM,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         # Setup data
@@ -1076,7 +1076,7 @@ class TestTestValueBarAggregator:
             ETHUSDT_BITMEX,
             bar_type,
             handler.append,
-            Logger(TestClock()),
+            Logger(),
         )
 
         wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BITMEX)
@@ -1113,7 +1113,7 @@ class TestTimeBarAggregator:
                 bar_type,
                 handler.append,
                 clock,
-                Logger(clock),
+                Logger(),
             )
 
     @pytest.mark.parametrize(
@@ -1162,7 +1162,7 @@ class TestTimeBarAggregator:
             bar_type,
             handler.append,
             clock,
-            Logger(clock),
+            Logger(),
         )
 
         # Assert
@@ -1180,7 +1180,7 @@ class TestTimeBarAggregator:
             bar_type,
             handler.append,
             clock,
-            Logger(clock),
+            Logger(),
         )
 
         tick1 = QuoteTick(
@@ -1261,7 +1261,7 @@ class TestTimeBarAggregator:
             bar_type,
             handler.append,
             clock,
-            Logger(clock),
+            Logger(),
         )
 
         # Act - mini backtest loop
@@ -1303,7 +1303,7 @@ class TestTimeBarAggregator:
             bar_type,
             handler.append,
             clock,
-            Logger(clock),
+            Logger(),
             build_with_no_updates=False,  # <-- set this True and test will fail
         )
         aggregator.handle_quote_tick(ticks[0])
@@ -1335,7 +1335,7 @@ class TestTimeBarAggregator:
             bar_type,
             handler.append,
             clock,
-            Logger(clock),
+            Logger(),
             timestamp_on_close=False,  # <-- set this True and test will fail
         )
         aggregator.handle_quote_tick(ticks[0])
@@ -1386,7 +1386,7 @@ class TestTimeBarAggregator:
             bar_type,
             handler.append,
             clock,
-            Logger(clock),
+            Logger(),
             timestamp_on_close=timestamp_on_close,
             interval_type=interval_type,
         )

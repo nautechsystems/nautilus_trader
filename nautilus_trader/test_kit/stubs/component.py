@@ -52,7 +52,6 @@ class TestComponentStubs:
     @staticmethod
     def logger(level: LogLevel = LogLevel.INFO) -> Logger:
         return Logger(
-            clock=TestComponentStubs.clock(),
             level_stdout=level,
             bypass=True,
         )

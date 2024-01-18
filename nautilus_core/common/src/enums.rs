@@ -156,6 +156,10 @@ pub enum ComponentTrigger {
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.common.enums")
 )]
 pub enum LogLevel {
+    /// A level lower than all other log levels (off).
+    #[strum(serialize = "OFF")]
+    #[serde(rename = "OFF")]
+    Off = 0,
     /// The **DEBUG** debug log level.
     #[strum(serialize = "DEBUG")]
     #[serde(rename = "DEBUG")]

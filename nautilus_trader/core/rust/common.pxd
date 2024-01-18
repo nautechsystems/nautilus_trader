@@ -90,6 +90,8 @@ cdef extern from "../includes/common.h":
 
     # The log level for log messages.
     cpdef enum LogLevel:
+        # A level lower than all other log levels (off).
+        OFF # = 0,
         # The **DEBUG** debug log level.
         DEBUG # = 10,
         # The **INFO** info log level.
@@ -184,6 +186,15 @@ cdef extern from "../includes/common.h":
         PyObject *callback_ptr;
 
     PyCallableWrapper_t dummy_callable(PyCallableWrapper_t c);
+
+    # Returns whether the core logger is enabled.
+    uint8_t logging_is_initialized();
+
+    # Sets the global logging clock to real-time mode.
+    void logging_clock_set_realtime();
+
+    # Sets the global logging clock to static mode with the given UNIX time (nanoseconds).
+    void logging_clock_set_static(uint64_t time_ns);
 
     TestClock_API test_clock_new();
 
@@ -295,9 +306,6 @@ cdef extern from "../includes/common.h":
     # - Assumes `ptr` is a valid C string pointer.
     LogColor log_color_from_cstr(const char *ptr);
 
-    # Returns whether the core logger is enabled.
-    uint8_t logging_is_initialized();
-
     # Initializes tracing.
     #
     # Tracing is meant to be used to trace/debug async Rust code. It can be
@@ -345,8 +353,7 @@ cdef extern from "../includes/common.h":
     #
     # - Assumes `component_ptr` is a valid C string pointer.
     # - Assumes `message_ptr` is a valid C string pointer.
-    void logger_log(uint64_t timestamp_ns,
-                    LogLevel level,
+    void logger_log(LogLevel level,
                     LogColor color,
                     const char *component_ptr,
                     const char *message_ptr);

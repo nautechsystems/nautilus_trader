@@ -32,7 +32,7 @@ async def test_binance_futures_testnet_market_http_client():
 
     client = get_cached_binance_http_client(
         clock=clock,
-        logger=Logger(clock=clock),
+        logger=Logger(),
         account_type=account_type,
         key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
         secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
@@ -41,7 +41,7 @@ async def test_binance_futures_testnet_market_http_client():
 
     provider = BinanceFuturesInstrumentProvider(
         client=client,
-        logger=Logger(clock=clock),
+        logger=Logger(),
         clock=clock,
         account_type=BinanceAccountType.USDT_FUTURE,
     )

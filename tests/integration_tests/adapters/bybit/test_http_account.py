@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import pkgutil
 
 import msgspec
@@ -30,7 +31,7 @@ from tests.integration_tests.adapters.bybit.utils.get_mock import get_mock
 class TestBybitAccountHttpApi:
     def setup(self):
         clock = LiveClock()
-        logger = Logger(clock=clock)
+        logger = Logger()
         self.client = BybitHttpClient(
             clock=clock,
             logger=logger,

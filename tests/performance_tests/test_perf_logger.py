@@ -16,7 +16,6 @@
 import random
 from typing import Any
 
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
@@ -25,7 +24,6 @@ from nautilus_trader.common.logging import LoggerAdapter
 def test_logging(benchmark: Any) -> None:
     random.seed(45362718)
     logger = Logger(
-        clock=TestClock(),
         level_stdout=LogLevel.ERROR,
         bypass=True,
     )

@@ -52,7 +52,7 @@ class TestBinanceSpotDataClient:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.logger = Logger(clock=self.clock, bypass=True)
+        self.logger = Logger(bypass=True)
 
         self.trader_id = TestIdStubs.trader_id()
         self.venue = BINANCE_VENUE

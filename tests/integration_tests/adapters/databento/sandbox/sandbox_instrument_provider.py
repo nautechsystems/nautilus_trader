@@ -33,7 +33,6 @@ async def test_databento_instrument_provider():
         http_client=http_client,
         clock=clock,
         logger=Logger(
-            clock=clock,
             level_stdout=LogLevel.DEBUG,
         ),
     )

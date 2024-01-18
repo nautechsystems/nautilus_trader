@@ -42,6 +42,8 @@ from nautilus_trader.core.rust.common cimport log_level_from_cstr
 from nautilus_trader.core.rust.common cimport log_level_to_cstr
 from nautilus_trader.core.rust.common cimport logger_flush
 from nautilus_trader.core.rust.common cimport logger_log
+from nautilus_trader.core.rust.common cimport logging_clock_set_realtime
+from nautilus_trader.core.rust.common cimport logging_clock_set_static
 from nautilus_trader.core.rust.common cimport logging_init
 from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.common cimport tracing_init
@@ -52,13 +54,16 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 
 
-# TODO!: Reimplementing logging config
-# from nautilus_trader.core import nautilus_pyo3
-# from nautilus_trader.core.nautilus_pyo3 import logger_log
-
-
 cpdef bint is_logging_initialized():
     return <bint>logging_is_initialized()
+
+
+cpdef void set_logging_clock_realtime():
+    logging_clock_set_realtime()
+
+
+cpdef void set_logging_clock_static(uint64_t time_ns):
+    logging_clock_set_static(time_ns)
 
 
 cpdef LogColor log_color_from_str(str value):
@@ -91,11 +96,10 @@ cdef class Logger:
     """
     Provides a high-performance logger.
 
+    Acts as an interface into the logging system implemented in Rust with the `log` crate.
+
     Parameters
     ----------
-    clock : Clock, optional
-        The clock for the logger.
-        If ``None`` then will use a new `LiveClock`.
     trader_id : TraderId, optional
         The trader ID for the logger.
     machine_id : str, optional
@@ -130,7 +134,6 @@ cdef class Logger:
 
     def __init__(
         self,
-        Clock clock = None,
         TraderId trader_id = None,
         str machine_id = None,
         UUID4 instance_id = None,
@@ -145,8 +148,6 @@ cdef class Logger:
         bint bypass = False,
         bint print_config = False,
     ) -> None:
-        if clock is None:
-            clock = LiveClock()
         if trader_id is None:
             trader_id = TraderId("TRADER-000")
         if machine_id is None:
@@ -154,7 +155,6 @@ cdef class Logger:
         if instance_id is None:
             instance_id = UUID4()
 
-        self._clock = clock
         self._trader_id = trader_id
         self._instance_id = instance_id
         self._machine_id = machine_id
@@ -167,8 +167,6 @@ cdef class Logger:
 
             # Initialize logging for sync Rust and Python
             logging_init(
-                # nautilus_pyo3.TraderId(self._trader_id.value),  # TODO!: Reimplementing logging config
-                # nautilus_pyo3.UUID4(self._instance_id.value),  # TODO!: Reimplementing logging config
                 self._trader_id._mem,
                 self._instance_id._mem,
                 level_stdout,
@@ -251,40 +249,11 @@ cdef class Logger:
         str message,
     ):
         logger_log(
-            self._clock.timestamp_ns(),
             level,
             color,
             component_cstr,
             pystr_to_cstr(message),
         )
-
-    # TODO!: Reimplementing logging config
-    # cdef void log(
-    #     self,
-    #     level,
-    #     color,
-    #     str component,
-    #     str message,
-    # ):
-    #     logger_log(
-    #         self._clock.timestamp_ns(),
-    #         level,
-    #         nautilus_pyo3.LogColor.Normal,  # In development
-    #         component,
-    #         message,
-    #     )
-
-    cpdef void change_clock(self, Clock clock = None):
-        """
-        Change the loggers internal clock to the given clock or a new `LiveClock`.
-
-        Parameters
-        ----------
-        clock : Clock, optional
-            The clock to change to.
-
-        """
-        self._clock = clock or LiveClock()
 
     cpdef void flush(self):
         """
@@ -430,14 +399,6 @@ cdef class LoggerAdapter:
             message,
         )
 
-        # TODO!: Reimplementing logging config
-        # self._logger.log(
-        #     nautilus_pyo3.LogLevel.Debug,
-        #     color,
-        #     self._component,
-        #     message,
-        # )
-
     cpdef void info(
         self, str message,
         LogColor color = LogColor.NORMAL,
@@ -464,14 +425,6 @@ cdef class LoggerAdapter:
             self._component_cstr,
             message,
         )
-
-        # TODO!: Reimplementing logging config
-        # self._logger.log(
-        #     nautilus_pyo3.LogLevel.Info,
-        #     color,
-        #     self._component,
-        #     message,
-        # )
 
     cpdef void warning(
         self,
@@ -501,14 +454,6 @@ cdef class LoggerAdapter:
             message,
         )
 
-        # TODO!: Reimplementing logging config
-        # self._logger.log(
-        #     nautilus_pyo3.LogLevel.Warning,
-        #     color,
-        #     self._component,
-        #     message,
-        # )
-
     cpdef void error(
         self,
         str message,
@@ -536,14 +481,6 @@ cdef class LoggerAdapter:
             self._component_cstr,
             message,
         )
-
-        # TODO!: Reimplementing logging config
-        # self._logger.log(
-        #     nautilus_pyo3.LogLevel.Error,
-        #     color,
-        #     self._component,
-        #     message,
-        # )
 
     cpdef void exception(
         self,

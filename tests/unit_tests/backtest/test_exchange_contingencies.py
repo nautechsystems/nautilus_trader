@@ -54,7 +54,6 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(
-            clock=self.clock,
             level_stdout=LogLevel.INFO,
             bypass=True,
         )

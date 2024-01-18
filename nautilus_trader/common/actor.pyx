@@ -110,7 +110,7 @@ cdef class Actor(Component):
 
         super().__init__(
             clock=Clock(),  # Use placeholder until registered
-            logger=Logger(Clock()),  # Use placeholder until registered
+            logger=Logger(bypass=True),  # Use placeholder until registered
             component_id=component_id,
             config=config,
         )

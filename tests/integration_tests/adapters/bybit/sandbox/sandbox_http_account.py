@@ -32,7 +32,7 @@ async def test_bybit_account_http_client():
 
     client = get_bybit_http_client(
         clock=clock,
-        logger=Logger(clock=clock),
+        logger=Logger(),
         is_testnet=True,
     )
 

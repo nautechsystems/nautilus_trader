@@ -26,7 +26,7 @@ class TestBinanceSpotMarketHttpAPI:
     def setup(self):
         # Fixture Setup
         clock = LiveClock()
-        logger = Logger(clock=clock)
+        logger = Logger()
         self.client = BinanceHttpClient(
             clock=clock,
             logger=logger,

@@ -75,7 +75,6 @@ class TestRiskEngineWithCashAccount:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(
-            clock=self.clock,
             level_stdout=LogLevel.DEBUG,
             bypass=True,
         )
@@ -2004,7 +2003,6 @@ class TestRiskEngineWithBettingAccount:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(
-            clock=self.clock,
             level_stdout=LogLevel.DEBUG,
             bypass=True,
         )

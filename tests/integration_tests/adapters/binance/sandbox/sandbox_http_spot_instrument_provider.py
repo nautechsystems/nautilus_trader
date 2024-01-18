@@ -30,7 +30,7 @@ async def test_binance_spot_instrument_provider():
 
     client = get_cached_binance_http_client(
         clock=clock,
-        logger=Logger(clock=clock),
+        logger=Logger(),
         account_type=BinanceAccountType.SPOT,
         key=os.getenv("BINANCE_API_KEY"),
         secret=os.getenv("BINANCE_API_SECRET"),
@@ -39,7 +39,8 @@ async def test_binance_spot_instrument_provider():
 
     provider = BinanceSpotInstrumentProvider(
         client=client,
-        logger=Logger(clock=clock),
+        logger=Logger(),
+        clock=clock,
     )
 
     await provider.load_all_async()

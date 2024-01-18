@@ -71,7 +71,6 @@ class TestLiveExecutionReconciliation:
 
         self.clock = LiveClock()
         self.logger = Logger(
-            self.clock,
             level_stdout=10,  # DEBUG
             bypass=True,
         )
