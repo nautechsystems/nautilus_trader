@@ -312,6 +312,11 @@ struct PyCallableWrapper_t dummy_callable(struct PyCallableWrapper_t c);
 uint8_t logging_is_initialized(void);
 
 /**
+ * Returns whether the core logger is enabled.
+ */
+uint8_t logging_is_colored(void);
+
+/**
  * Sets the global logging clock to real-time mode.
  */
 void logging_clock_set_realtime(void);
@@ -487,7 +492,6 @@ void logging_init(TraderId_t trader_id,
                   UUID4_t instance_id,
                   enum LogLevel level_stdout,
                   enum LogLevel level_file,
-                  uint8_t file_logging,
                   const char *directory_ptr,
                   const char *file_name_ptr,
                   const char *file_format_ptr,

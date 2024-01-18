@@ -25,6 +25,7 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
@@ -110,7 +111,7 @@ cdef class AccountsManager:
         # *** position could still be None here ***
 
         cdef list pnls = account.calculate_pnls(instrument, fill, position)
-        if not self._log.is_bypassed:
+        if logging_is_initialized():
             self._log.debug(f"Calculated PnLs: {pnls}")
 
         # Calculate final PnL including commissions

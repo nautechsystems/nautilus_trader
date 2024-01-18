@@ -3,11 +3,13 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added `LogLevel.OFF` (matches the Rust `tracing` log levels)
 
 ### Breaking Changes
+- Removed `clock` parameter from `Logger` (no dependency on `Clock` anymore)
 - Renamed `OptionKind` `kind` parameter and property to `option_kind` (better clarity)
 - Renamed `OptionsContract` Arrow schema field `kind` to `option_kind`
+- Changed `level_file` log level to `OFF` (file logging is off by default)
 
 ### Fixes
 - Fixed memory leak for catalog queries (#1430), thanks @twitu
@@ -225,7 +227,7 @@ This will be the final release with support for Python 3.9.
 - Moved `manage_gtd_expiry` from `Strategy.submit_order(...)` and `Strategy.submit_order_list(...)` to `StrategyConfig` (simpler and allows re-activiting any GTD timers on start)
 
 ### Fixes
-- Fixed `LimitIfTouchedOrder.create` (exec_algorithm_params were not being passed in)
+- Fixed `LimitIfTouchedOrder.create` (`exec_algorithm_params` were not being passed in)
 - Fixed `OrderEmulator` start-up processing of OTO contingent orders (when position from parent is open)
 - Fixed `SandboxExecutionClientConfig` `kw_only=True` to allow importing without initializing
 - Fixed `OrderBook` pickling (did not include all attributes), thanks @limx0

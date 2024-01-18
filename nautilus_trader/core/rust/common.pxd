@@ -190,6 +190,9 @@ cdef extern from "../includes/common.h":
     # Returns whether the core logger is enabled.
     uint8_t logging_is_initialized();
 
+    # Returns whether the core logger is enabled.
+    uint8_t logging_is_colored();
+
     # Sets the global logging clock to real-time mode.
     void logging_clock_set_realtime();
 
@@ -338,7 +341,6 @@ cdef extern from "../includes/common.h":
                       UUID4_t instance_id,
                       LogLevel level_stdout,
                       LogLevel level_file,
-                      uint8_t file_logging,
                       const char *directory_ptr,
                       const char *file_name_ptr,
                       const char *file_format_ptr,
