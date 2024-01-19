@@ -66,6 +66,7 @@ XNAS = Venue("XNAS")
 AAPL_XNAS = TestInstrumentProvider.equity()
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
+BTCUSDT_PERP_BINANCE = TestInstrumentProvider.btcusdt_perp_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
@@ -1154,26 +1155,26 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
 
-        self.data_engine.process(AAPL_XNAS)  # <-- add necessary instrument for test
+        self.data_engine.process(BTCUSDT_PERP_BINANCE)  # <-- add necessary instrument for test
 
         handler1 = []
         handler2 = []
         self.msgbus.subscribe(
-            topic="data.book.depth.XNAS.AAPL",
+            topic="data.book.depth.BINANCE.BTCUSDT-PERP",
             handler=handler1.append,
         )
         self.msgbus.subscribe(
-            topic="data.book.depth.XNAS.AAPL",
+            topic="data.book.depth.BINANCE.BTCUSDT-PERP",
             handler=handler2.append,
         )
 
         subscribe1 = Subscribe(
-            client_id=ClientId("DATABENTO"),
+            client_id=ClientId("BINANCE"),
             venue=BINANCE,
             data_type=DataType(
                 OrderBook,
                 {
-                    "instrument_id": AAPL_XNAS.id,
+                    "instrument_id": BTCUSDT_PERP_BINANCE.id,
                     "book_type": BookType.L2_MBP,
                     "depth": 10,
                     "interval_ms": 1000,
@@ -1189,7 +1190,7 @@ class TestDataEngine:
             data_type=DataType(
                 OrderBook,
                 {
-                    "instrument_id": AAPL_XNAS.id,
+                    "instrument_id": BTCUSDT_PERP_BINANCE.id,
                     "book_type": BookType.L2_MBP,
                     "depth": 10,
                     "interval_ms": 1000,
@@ -1203,7 +1204,7 @@ class TestDataEngine:
         self.data_engine.execute(subscribe2)
 
         depth = TestDataStubs.order_book_depth10(
-            instrument_id=AAPL_XNAS.id,
+            instrument_id=BTCUSDT_PERP_BINANCE.id,
             ts_event=1,
         )
 
@@ -1215,9 +1216,9 @@ class TestDataEngine:
         self.data_engine.process(depth)
 
         # Assert
-        cached_book = self.cache.order_book(AAPL_XNAS.id)
+        cached_book = self.cache.order_book(BTCUSDT_PERP_BINANCE.id)
         assert isinstance(cached_book, OrderBook)
-        assert cached_book.instrument_id == AAPL_XNAS.id
+        assert cached_book.instrument_id == BTCUSDT_PERP_BINANCE.id
         assert handler1[0] == depth
         assert handler2[0] == depth
 

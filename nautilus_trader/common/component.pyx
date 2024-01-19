@@ -1406,7 +1406,7 @@ cdef class Throttler:
         self._log = LoggerAdapter(component_name=f"Throttler-{name}", logger=logger)
         self._interval_ns = secs_to_nanos(interval.total_seconds())
         self._buffer = deque()
-        self._timer_name = f"{name}-DEQUE"
+        self._timer_name = f"{name}|DEQUE"
         self._timestamps = deque(maxlen=limit)
         self._output_send = output_send
         self._output_drop = output_drop

@@ -785,7 +785,7 @@ cdef class DataEngine(Component):
         if key not in self._order_book_intervals:
             self._order_book_intervals[key] = []
 
-            timer_name = f"OrderBook-{instrument_id}-{interval_ms}"
+            timer_name = f"OrderBook|{instrument_id}|{interval_ms}"
             interval_ns = millis_to_nanos(interval_ms)
             timestamp_ns = self._clock.timestamp_ns()
             start_time_ns = timestamp_ns - (timestamp_ns % interval_ns)
@@ -1555,9 +1555,9 @@ cdef class DataEngine(Component):
         order_book.apply(data)
 
     cpdef void _snapshot_order_book(self, TimeEvent snap_event):
-        cdef tuple pieces = snap_event.name.partition('-')[2].partition('-')
-        cdef InstrumentId instrument_id = InstrumentId.from_str_c(pieces[0])
-        cdef int interval_ms = int(pieces[2])
+        cdef tuple[str] parts = snap_event.name.partition('|')[2].rpartition('|')
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(parts[0])
+        cdef int interval_ms = int(parts[2])
 
         cdef OrderBook order_book = self._cache.order_book(instrument_id)
         if order_book:
