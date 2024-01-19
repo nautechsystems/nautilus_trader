@@ -191,7 +191,7 @@ cdef class Logger:
 
     cpdef void flush(self):
         """
-        Flush all logger buiffers.
+        Flush all logger buffers.
 
         """
         logger_flush()
