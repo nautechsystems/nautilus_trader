@@ -159,7 +159,6 @@ class NautilusKernel:
             level_file=log_level_from_str(logging.log_level_file)
             if logging.log_level_file is not None
             else LogLevel.OFF,
-            file_logging=logging.log_level_file is not None,
             directory=logging.log_directory,
             file_name=logging.log_file_name,
             file_format=logging.log_file_format,

@@ -111,8 +111,6 @@ cdef class Logger:
         The minimum log level to write to stdout.
     level_file : LogLevel, default ``OFF``
         The minimum log level to write to a file.
-    file_logging : bool, default False
-        If logging to a file is enabled.
     directory : str, optional
         The path to the log file directory.
         If ``None`` then will write to the current working directory.
@@ -140,7 +138,6 @@ cdef class Logger:
         UUID4 instance_id = None,
         LogLevel level_stdout = LogLevel.INFO,
         LogLevel level_file = LogLevel.OFF,
-        bint file_logging = False,
         str directory = None,
         str file_name = None,
         str file_format = None,
