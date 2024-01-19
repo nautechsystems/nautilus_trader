@@ -72,7 +72,7 @@ class TestBufferingThrottler:
         self.throttler.send(item)
 
         # Assert: Only 5 items are sent
-        assert self.clock.timer_names == ["Buffer-DEQUE"]
+        assert self.clock.timer_names == ["Buffer|DEQUE"]
         assert self.clock.timer_count == 1
         assert self.throttler.is_limiting
         assert self.handler == ["MESSAGE"] * 5
@@ -214,7 +214,7 @@ class TestDroppingThrottler:
         self.throttler.send(item)
 
         # Assert: Only 5 items are sent
-        assert self.clock.timer_names == ["Dropper-DEQUE"]
+        assert self.clock.timer_names == ["Dropper|DEQUE"]
         assert self.clock.timer_count == 1
         assert self.throttler.is_limiting
         assert self.handler == ["MESSAGE"] * 5

@@ -15,6 +15,7 @@ Released on TBD (UTC).
 - Fixed memory leak for catalog queries (#1430), thanks @twitu
 - Fixed `LoggingConfig` parsing of `WARNING` log level (was not being recognized), thanks for reporting @davidsblom
 - Fixed Binance Futures `QuoteTick` parsing to capture event time for `ts_event`, thanks for reporting @x-zho14
+- Fixed `DataEngine` order book snapshot timer names (could not parse instrument IDs with hyphens), thanks for reporting @x-zho14 and @dimitar-petrov
 
 ---
 
