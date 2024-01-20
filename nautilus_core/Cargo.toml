@@ -40,6 +40,7 @@ serde = { version = "1.0.195", features = ["derive"] }
 serde_json = "1.0.111"
 strum = { version = "0.25.0", features = ["derive"] }
 thiserror = "1.0.56"
+thousands = "0.2.0"
 tracing = "0.1.40"
 tokio = { version = "1.35.1", features = ["full"] }
 ustr = { version = "1.0.0", features = ["serde"] }

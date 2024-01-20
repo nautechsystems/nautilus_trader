@@ -29,7 +29,6 @@ use std::{
 };
 
 use chrono::{prelude::*, Utc};
-use human_bytes::human_bytes;
 use log::{
     debug, error, info,
     kv::{ToValue, Value},
@@ -43,6 +42,7 @@ use nautilus_core::{
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde::{Deserialize, Serialize};
 use sysinfo::System;
+use thousands::Separable;
 use tracing_subscriber::EnvFilter;
 use ustr::Ustr;
 
@@ -719,11 +719,11 @@ pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, com
     sys.refresh_all();
 
     let kernel_version = match System::kernel_version() {
-        Some(v) => format!("Linux-{v} "),
+        Some(v) => format!("kernel-{v}"),
         None => "".to_string(),
     };
     let os_version = match System::long_os_version() {
-        Some(v) => v.replace("Linux ", ""),
+        Some(v) => v,
         None => "".to_string(),
     };
 
@@ -885,7 +885,7 @@ pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, com
         LogLevel::Info,
         LogColor::Normal,
         component,
-        Cow::Borrowed(&format!("OS: {}{}", kernel_version, os_version)),
+        Cow::Borrowed(&format!("OS: {} {}", kernel_version, os_version)),
     );
 
     log_sysinfo(component);
@@ -1062,53 +1062,65 @@ pub fn log_sysinfo(component: Ustr) {
         LogLevel::Info,
         LogColor::Normal,
         component,
-        Cow::Borrowed(&format!("RAM-Total: {}", human_bytes(ram_total as f64),)),
+        Cow::Borrowed(&format!("RAM-Total: {} MB", ram_total / 1_000_000).separate_with_commas()),
     );
     log(
         LogLevel::Info,
         LogColor::Normal,
         component,
-        Cow::Borrowed(&format!(
-            "RAM-Used: {} ({:.2}%)",
-            human_bytes(ram_used as f64),
-            (ram_used as f64 / ram_total as f64) * 100.0,
-        )),
+        Cow::Borrowed(
+            &format!(
+                "RAM-Used: {} MB ({:.2}%)",
+                ram_used / 1_000_000,
+                (ram_used as f64 / ram_total as f64) * 100.0,
+            )
+            .separate_with_commas(),
+        ),
     );
     log(
         LogLevel::Info,
         LogColor::Normal,
         component,
-        Cow::Borrowed(&format!(
-            "RAM-Avail: {} ({:.2}%)",
-            human_bytes(ram_avail as f64),
-            (ram_avail as f64 / ram_total as f64) * 100.0,
-        )),
+        Cow::Borrowed(
+            &format!(
+                "RAM-Avail: {} MB ({:.2}%)",
+                ram_avail / 1_000_000,
+                (ram_avail as f64 / ram_total as f64) * 100.0,
+            )
+            .separate_with_commas(),
+        ),
     );
     log(
         LogLevel::Info,
         LogColor::Normal,
         component,
-        Cow::Borrowed(&format!("Swap-Total: {}", human_bytes(swap_total as f64))),
+        Cow::Borrowed(&format!("Swap-Total: {} MB", swap_total / 1_000_000).separate_with_commas()),
     );
     log(
         LogLevel::Info,
         LogColor::Normal,
         component,
-        Cow::Borrowed(&format!(
-            "Swap-Used: {} ({:.2}%)",
-            human_bytes(swap_used as f64),
-            (swap_used as f64 / swap_total as f64) * 100.0
-        )),
+        Cow::Borrowed(
+            &format!(
+                "Swap-Used: {} MB ({:.2}%)",
+                swap_used / 1_000_000,
+                (swap_used as f64 / swap_total as f64) * 100.0
+            )
+            .separate_with_commas(),
+        ),
     );
     log(
         LogLevel::Info,
         LogColor::Normal,
         component,
-        Cow::Borrowed(&format!(
-            "Swap-Avail: {} ({:.2}%)",
-            human_bytes(swap_avail as f64),
-            (swap_avail as f64 / swap_total as f64) * 100.0
-        )),
+        Cow::Borrowed(
+            &format!(
+                "Swap-Avail: {} MB ({:.2}%)",
+                swap_avail / 1_000_000,
+                (swap_avail as f64 / swap_total as f64) * 100.0
+            )
+            .separate_with_commas(),
+        ),
     );
 }
 
