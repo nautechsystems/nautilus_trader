@@ -206,7 +206,20 @@ cdef class Logger:
     def __init__(self, str name not None) -> None:
         Condition.valid_string(name, "name")
 
-        self._name = name
+        self._name = name  # Reference to `name` needs to be kept alive
+        self._name_ptr = pystr_to_cstr(self._name)
+
+    @property
+    def name(self) -> str:
+        """
+        Return the name of the logger.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._name
 
     cpdef void flush(self):
         """
@@ -247,7 +260,7 @@ cdef class Logger:
         logger_log(
             LogLevel.DEBUG,
             color,
-            pystr_to_cstr(self._name),  # TODO: Optimize this
+            self._name_ptr,
             pystr_to_cstr(message) if message is not None else NULL,
         )
 
@@ -272,7 +285,7 @@ cdef class Logger:
         logger_log(
             LogLevel.INFO,
             color,
-            pystr_to_cstr(self._name),  # TODO: Optimize this
+            self._name_ptr,
             pystr_to_cstr(message) if message is not None else NULL,
         )
 
@@ -298,7 +311,7 @@ cdef class Logger:
         logger_log(
             LogLevel.WARNING,
             color,
-            pystr_to_cstr(self._name),  # TODO: Optimize this
+            self._name_ptr,
             pystr_to_cstr(message) if message is not None else NULL,
         )
 
@@ -324,7 +337,7 @@ cdef class Logger:
         logger_log(
             LogLevel.ERROR,
             color,
-            pystr_to_cstr(self._name),  # TODO: Optimize this
+            self._name_ptr,
             pystr_to_cstr(message) if message is not None else NULL,
         )
 
