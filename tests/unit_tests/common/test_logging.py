@@ -105,7 +105,7 @@ class TestLoggerTests:
 
     def test_log_warning_messages_to_console(self):
         # Arrange
-        init_logging(level_stdout=LogLevel.WARNING)
+        init_logging(level_stdout=LogLevel.WARNING, bypass=True)
         logger = Logger(name="TEST_LOGGER")
 
         # Act
@@ -116,7 +116,7 @@ class TestLoggerTests:
 
     def test_log_error_messages_to_console(self):
         # Arrange
-        init_logging(level_stdout=LogLevel.ERROR)
+        init_logging(level_stdout=LogLevel.ERROR, bypass=True)
         logger = Logger(name="TEST_LOGGER")
 
         # Act
