@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use logging::{LogLine, LoggerConfig};
+
 pub mod clock;
 pub mod enums;
 pub mod factories;
@@ -40,4 +42,6 @@ pub trait LogWriter {
     fn write(&mut self, line: &str);
     /// Flushes buffered logs.
     fn flush(&mut self);
+    /// Checks if a line needs to be written to the writer or not.
+    fn enabled(&mut self, line: &LogLine, config: &LoggerConfig) -> bool;
 }

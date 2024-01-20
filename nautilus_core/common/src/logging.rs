@@ -56,16 +56,20 @@ impl StdoutWriter {
 impl LogWriter for StdoutWriter {
     fn write(&mut self, line: &str) {
         match self.buf.write_all(line.as_bytes()) {
-            Ok(()) => {},
+            Ok(()) => {}
             Err(e) => eprintln!("Error writing to stdout: {e:?}"),
         }
     }
 
     fn flush(&mut self) {
         match self.buf.flush() {
-            Ok(()) => {},
+            Ok(()) => {}
             Err(e) => eprintln!("Error flushing stdout: {e:?}"),
         }
+    }
+
+    fn enabled(&mut self, line: &LogLine, config: &LoggerConfig) -> bool {
+        line.level != LevelFilter::Error && line.level <= config.stdout_level
     }
 }
 
@@ -85,16 +89,57 @@ impl StderrWriter {
 impl LogWriter for StderrWriter {
     fn write(&mut self, line: &str) {
         match self.buf.write_all(line.as_bytes()) {
-            Ok(()) => {},
+            Ok(()) => {}
             Err(e) => eprintln!("Error writing to stderr: {e:?}"),
         }
     }
 
     fn flush(&mut self) {
         match self.buf.flush() {
-            Ok(()) => {},
+            Ok(()) => {}
             Err(e) => eprintln!("Error flushing stderr: {e:?}"),
         }
+    }
+
+    fn enabled(&mut self, line: &LogLine, config: &LoggerConfig) -> bool {
+        line.level == LevelFilter::Error
+    }
+}
+
+#[derive(Debug)]
+pub struct FileWriter {
+    buf: Option<BufWriter<File>>,
+}
+
+impl FileWriter {
+    pub fn new(file: Option<File>) -> Self {
+        Self {
+            buf: file.map(BufWriter::new),
+        }
+    }
+}
+
+impl LogWriter for FileWriter {
+    fn write(&mut self, line: &str) {
+        if let Some(file_buf) = self.buf.as_mut() {
+            match file_buf.write_all(line.as_bytes()) {
+                Ok(()) => {}
+                Err(e) => eprintln!("Error writing to file: {e:?}"),
+            }
+        }
+    }
+
+    fn flush(&mut self) {
+        if let Some(file_buf) = self.buf.as_mut() {
+            match file_buf.flush() {
+                Ok(()) => {}
+                Err(e) => eprintln!("Error flushing file: {e:?}"),
+            }
+        }
+    }
+
+    fn enabled(&mut self, line: &LogLine, config: &LoggerConfig) -> bool {
+        line.level <= config.fileout_level
     }
 }
 
@@ -456,7 +501,7 @@ impl Logger {
         let LoggerConfig {
             stdout_level,
             fileout_level,
-            component_level,
+            ref component_level,
             is_colored,
             is_bypassed,
             print_config: _,
@@ -494,7 +539,7 @@ impl Logger {
             None
         };
 
-        let mut file_buf = file.map(BufWriter::new);
+        let mut file_writer = FileWriter::new(file);
 
         // Continue to receive and handle log events until channel is hung up
         while let Ok(event) = rx.recv() {
@@ -502,7 +547,7 @@ impl Logger {
                 LogEvent::Flush => {
                     stdout_writer.flush();
                     stderr_writer.flush();
-                    file_buf.as_mut().map(Self::flush_file);
+                    file_writer.flush();
                 }
                 LogEvent::Log(line) => {
                     let component_level = component_level.get(&line.component);
@@ -515,22 +560,10 @@ impl Logger {
                         }
                     }
 
-                    if line.level == LevelFilter::Error {
-                        let line = Self::format_console_log(&line, trader_id, is_colored);
-                        stderr_writer.write(&line);
-                        stderr_writer.flush();
-                    } else if line.level <= stdout_level {
-                        let line = Self::format_console_log(&line, trader_id, is_colored);
-                        stdout_writer.write(&line);
-                        stdout_writer.flush();
-                    }
-
                     if fileout_level != LevelFilter::Off {
                         if Self::should_rotate_file(&file_path) {
                             // Ensure previous file buffer flushed
-                            if let Some(file_buf) = file_buf.as_mut() {
-                                Self::flush_file(file_buf);
-                            };
+                            file_writer.flush();
 
                             let file_path = Self::create_log_file_path(
                                 &file_config,
@@ -539,21 +572,36 @@ impl Logger {
                                 is_json_format,
                             );
 
-                            let file = File::options()
-                                .create(true)
-                                .append(true)
-                                .open(file_path)
-                                .expect("Error creating log file");
+                            let file = Some(
+                                File::options()
+                                    .create(true)
+                                    .append(true)
+                                    .open(file_path)
+                                    .expect("Error creating log file"),
+                            );
 
-                            file_buf = Some(BufWriter::new(file));
+                            file_writer = FileWriter::new(file);
                         }
 
-                        if line.level <= fileout_level {
-                            if let Some(file_buf) = file_buf.as_mut() {
-                                let line = Self::format_file_log(&line, trader_id, is_json_format);
-                                Self::write_file(file_buf, &line);
-                                Self::flush_file(file_buf);
-                            }
+                        if file_writer.enabled(&line, &config) {
+                            let print_string =
+                                Self::format_file_log(&line, trader_id, is_json_format);
+                            file_writer.write(&print_string);
+                            file_writer.flush();
+                        }
+                    }
+
+                    if stderr_writer.enabled(&line, &config)
+                        || stdout_writer.enabled(&line, &config)
+                    {
+                        let print_string = Self::format_console_log(&line, trader_id, is_colored);
+
+                        if stderr_writer.enabled(&line, &config) {
+                            stderr_writer.write(&print_string);
+                            stderr_writer.flush();
+                        } else {
+                            stdout_writer.write(&print_string);
+                            stdout_writer.flush();
                         }
                     }
                 }
@@ -650,20 +698,6 @@ impl Logger {
                 &event.component,
                 &event.message,
             )
-        }
-    }
-
-    fn write_file(file_buf: &mut BufWriter<File>, line: &str) {
-        match file_buf.write_all(line.as_bytes()) {
-            Ok(()) => {}
-            Err(e) => eprintln!("Error writing to file: {e:?}"),
-        }
-    }
-
-    fn flush_file(file_buf: &mut BufWriter<File>) {
-        match file_buf.flush() {
-            Ok(()) => {}
-            Err(e) => eprintln!("Error writing to file: {e:?}"),
         }
     }
 }
