@@ -190,7 +190,13 @@ cdef extern from "../includes/common.h":
     # Returns whether the core logger is enabled.
     uint8_t logging_is_initialized();
 
-    # Returns whether the core logger is enabled.
+    # Sets the logging system to bypass mode.
+    void logging_set_bypass();
+
+    # Shuts down the logging system.
+    void logging_shutdown();
+
+    # Returns whether the core logger is using ANSI colors.
     uint8_t logging_is_colored();
 
     # Sets the global logging clock to real-time mode.

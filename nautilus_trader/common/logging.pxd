@@ -61,6 +61,8 @@ cpdef void init_logging(
     bint print_config=*,
 )
 
+cpdef void shutdown_logging()
+
 
 cdef class Logger:
     cdef str _name

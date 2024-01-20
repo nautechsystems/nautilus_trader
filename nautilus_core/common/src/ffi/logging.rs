@@ -27,7 +27,8 @@ use nautilus_model::identifiers::trader_id::TraderId;
 use crate::{
     enums::{LogColor, LogLevel},
     logging::{
-        self, map_log_level_to_filter, parse_component_levels, FileWriterConfig, LoggerConfig,
+        self, logging_set_bypass, map_log_level_to_filter, parse_component_levels,
+        FileWriterConfig, LoggerConfig,
     },
 };
 
@@ -87,15 +88,17 @@ pub unsafe extern "C" fn logging_init(
         level_file,
         component_levels,
         u8_as_bool(is_colored),
-        u8_as_bool(is_bypassed),
         u8_as_bool(print_config),
     );
 
     let directory = optional_cstr_to_string(directory_ptr);
     let file_name = optional_cstr_to_string(file_name_ptr);
     let file_format = optional_cstr_to_string(file_format_ptr);
-
     let file_config = FileWriterConfig::new(directory, file_name, file_format);
+
+    if u8_as_bool(is_bypassed) {
+        logging_set_bypass();
+    }
 
     logging::init_logging(trader_id, instance_id, config, file_config);
 }

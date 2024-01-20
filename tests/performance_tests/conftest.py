@@ -16,7 +16,6 @@
 import pytest
 
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
 
 
 @pytest.fixture(autouse=True)
@@ -29,8 +28,3 @@ def setup_benchmark(benchmark):
 @pytest.fixture()
 def clock():
     return LiveClock()
-
-
-@pytest.fixture()
-def logger():
-    return Logger(bypass=True)

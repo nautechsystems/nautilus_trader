@@ -16,6 +16,7 @@
 import platform
 import socket
 import sys
+import time
 import traceback
 from platform import python_version
 
@@ -47,6 +48,7 @@ from nautilus_trader.core.rust.common cimport logging_clock_set_static
 from nautilus_trader.core.rust.common cimport logging_init
 from nautilus_trader.core.rust.common cimport logging_is_colored
 from nautilus_trader.core.rust.common cimport logging_is_initialized
+from nautilus_trader.core.rust.common cimport logging_shutdown
 from nautilus_trader.core.rust.common cimport tracing_init
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pybytes_to_cstr
@@ -150,9 +152,10 @@ cpdef void init_logging(
     colors : bool, default True
         If ANSI codes should be used to produce colored log lines.
     bypass : bool, default False
-        If the log output is bypassed.
+        If the output for the core logging system is bypassed (useful for logging tests).
     print_config : bool, default False
         If the core logging configuration should be printed to stdout on initialization.
+
     """
     if trader_id is None:
         trader_id = TraderId("TRADER-000")
@@ -161,7 +164,7 @@ cpdef void init_logging(
     if instance_id is None:
         instance_id = UUID4()
 
-    if not bypass and not logging_is_initialized():
+    if not logging_is_initialized():
         logging_init(
             trader_id._mem,
             instance_id._mem,
@@ -175,6 +178,11 @@ cpdef void init_logging(
             bypass,
             print_config,
         )
+
+
+cpdef void shutdown_logging():
+    if logging_is_initialized():
+        logging_shutdown()
 
 
 cdef class Logger:
@@ -199,9 +207,16 @@ cdef class Logger:
 
         This could include stdout/stderr and file writer buffers.
 
+        Warning
+        -------
+        This method is intended to be called once at application shutdown.
+        It will intentionally block the main thread for 100 milliseconds, allowing all
+        buffers to be flushed prior to exiting.
+
         """
         if logging_is_initialized():
             logger_flush()
+            time.sleep(0.1)  # Temporary solution before joining logging thread
 
     cpdef void debug(
         self,

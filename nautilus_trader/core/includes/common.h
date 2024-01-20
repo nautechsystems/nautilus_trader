@@ -312,7 +312,17 @@ struct PyCallableWrapper_t dummy_callable(struct PyCallableWrapper_t c);
 uint8_t logging_is_initialized(void);
 
 /**
- * Returns whether the core logger is enabled.
+ * Sets the logging system to bypass mode.
+ */
+void logging_set_bypass(void);
+
+/**
+ * Shuts down the logging system.
+ */
+void logging_shutdown(void);
+
+/**
+ * Returns whether the core logger is using ANSI colors.
  */
 uint8_t logging_is_colored(void);
 
