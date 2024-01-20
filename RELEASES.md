@@ -4,18 +4,21 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `LogLevel.OFF` (matches the Rust `tracing` log levels)
+- Added `init_logging` function with sensible defaults to initialize the Rust implemented logging system
 
 ### Breaking Changes
 - Removed `clock` parameter from `Logger` (no dependency on `Clock` anymore)
+- Renamed `LoggerAdapter` to `Logger` (and removed old `Logger` class)
+- Renamed `Logger` `component_name` parameter to `name` (matches Python built-in `logging` API)
 - Renamed `OptionKind` `kind` parameter and property to `option_kind` (better clarity)
 - Renamed `OptionsContract` Arrow schema field `kind` to `option_kind`
 - Changed `level_file` log level to `OFF` (file logging is off by default)
 
 ### Fixes
 - Fixed memory leak for catalog queries (#1430), thanks @twitu
+- Fixed `DataEngine` order book snapshot timer names (could not parse instrument IDs with hyphens), thanks for reporting @x-zho14 and @dimitar-petrov
 - Fixed `LoggingConfig` parsing of `WARNING` log level (was not being recognized), thanks for reporting @davidsblom
 - Fixed Binance Futures `QuoteTick` parsing to capture event time for `ts_event`, thanks for reporting @x-zho14
-- Fixed `DataEngine` order book snapshot timer names (could not parse instrument IDs with hyphens), thanks for reporting @x-zho14 and @dimitar-petrov
 
 ---
 
