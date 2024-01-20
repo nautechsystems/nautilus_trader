@@ -68,6 +68,7 @@ cpdef void shutdown_logging()
 
 cdef class Logger:
     cdef str _name
+    cdef const char* _name_ptr
 
     cpdef void flush(self)
     cpdef void debug(self, str message, LogColor color=*)
