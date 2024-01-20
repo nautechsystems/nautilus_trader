@@ -1131,22 +1131,22 @@ cdef class Strategy(Actor):
         cdef str order_side_str = " " + order_side_to_str(order_side) if order_side != OrderSide.NO_ORDER_SIDE else ""
         if not open_orders and not emulated_orders:
             self.log.info(
-                f"No open or emulated{order_side_str} "
-                f"{instrument_id.value} orders to cancel.")
+                f"No {instrument_id.to_str()} open or emulated{order_side_str} "
+                f"orders to cancel.")
             return
 
         cdef int open_count = len(open_orders)
         if open_count:
             self.log.info(
                 f"Canceling {open_count} open{order_side_str} "
-                f"{instrument_id.value} order{'' if open_count == 1 else 's'}...",
+                f"{instrument_id.to_str()} order{'' if open_count == 1 else 's'}...",
             )
 
         cdef int emulated_count = len(emulated_orders)
         if emulated_count:
             self.log.info(
                 f"Canceling {emulated_count} emulated{order_side_str} "
-                f"{instrument_id.value} order{'' if emulated_count == 1 else 's'}...",
+                f"{instrument_id.to_str()} order{'' if emulated_count == 1 else 's'}...",
             )
 
         cdef:
@@ -1272,7 +1272,9 @@ cdef class Strategy(Actor):
 
         cdef str position_side_str = " " + position_side_to_str(position_side) if position_side != PositionSide.NO_POSITION_SIDE else ""
         if not positions_open:
-            self.log.info(f"No open{position_side_str} positions to close.")
+            self.log.info(
+                f"No {instrument_id.to_str()} open{position_side_str} positions to close.",
+            )
             return
 
         cdef int count = len(positions_open)
