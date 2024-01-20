@@ -77,14 +77,19 @@ pub extern "C" fn logging_is_colored() -> u8 {
 
 /// Sets the global logging clock to real-time mode.
 #[no_mangle]
-pub extern "C" fn logging_clock_set_realtime() {
+pub extern "C" fn logging_clock_set_realtime_mode() {
     LOGGING_REALTIME.store(true, Ordering::Relaxed);
 }
 
-/// Sets the global logging clock to static mode with the given UNIX time (nanoseconds).
+/// Sets the global logging clock to static mode.
 #[no_mangle]
-pub extern "C" fn logging_clock_set_static(time_ns: u64) {
+pub extern "C" fn logging_clock_set_static_mode() {
     LOGGING_REALTIME.store(false, Ordering::Relaxed);
+}
+
+/// Sets the global logging clock static time with the given UNIX time (nanoseconds).
+#[no_mangle]
+pub extern "C" fn logging_clock_set_static_time(time_ns: u64) {
     let clock = get_atomic_clock_static();
     clock.set_time(time_ns);
 }
@@ -802,7 +807,8 @@ mod tests {
             file_config,
         );
 
-        logging_clock_set_static(1_650_000_000_000_000);
+        logging_clock_set_static_mode();
+        logging_clock_set_static_time(1_650_000_000_000_000);
 
         info!(
             component = "RiskEngine";
@@ -860,7 +866,8 @@ mod tests {
             file_config,
         );
 
-        logging_clock_set_static(1_650_000_000_000_000);
+        logging_clock_set_static_mode();
+        logging_clock_set_static_time(1_650_000_000_000_000);
 
         info!(
             component = "RiskEngine";
@@ -913,7 +920,8 @@ mod tests {
             file_config,
         );
 
-        logging_clock_set_static(1_650_000_000_000_000);
+        logging_clock_set_static_mode();
+        logging_clock_set_static_time(1_650_000_000_000_000);
 
         info!(
             component = "RiskEngine";
