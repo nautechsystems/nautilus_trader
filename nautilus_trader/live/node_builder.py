@@ -222,14 +222,15 @@ class TradingNodeBuilder:
                 client_config: LiveExecClientConfig = cfg  # type: ignore
             factory = self._exec_factories[name]
 
-            factory_kws = dict(
-                loop=self._loop,
-                name=name,
-                config=client_config,
-                msgbus=self._msgbus,
-                cache=self._cache,
-                clock=self._clock,
-            )
+            factory_kws = {
+                "loop": self._loop,
+                "name": name,
+                "config": client_config,
+                "msgbus": self._msgbus,
+                "cache": self._cache,
+                "clock": self._clock,
+                "logger": self._log,
+            }
 
             if factory.__name__ == "SandboxLiveExecClientFactory":
                 factory_kws["portfolio"] = self._portfolio
