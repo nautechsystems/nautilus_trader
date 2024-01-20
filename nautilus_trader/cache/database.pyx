@@ -27,7 +27,6 @@ from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
 from nautilus_trader.cache.facade cimport CacheDatabaseFacade
 from nautilus_trader.common.actor cimport Actor
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.rust.common cimport LogColor
@@ -106,8 +105,6 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         The trader ID for the adapter.
     instance_id : UUID4
         The instance ID for the adapter.
-    logger : Logger
-        The logger for the adapter.
     serializer : Serializer
         The serializer for database operations.
     config : CacheConfig, optional
@@ -133,14 +130,13 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         self,
         TraderId trader_id not None,
         UUID4 instance_id not None,
-        Logger logger not None,
         Serializer serializer not None,
         config: CacheConfig | None = None,
     ):
         if config is None:
             config = CacheConfig()
         Condition.type(config, CacheConfig, "config")
-        super().__init__(logger, config)
+        super().__init__(config)
 
         # Validate configuration
         if config.buffer_interval_ms and config.buffer_interval_ms > 1000:

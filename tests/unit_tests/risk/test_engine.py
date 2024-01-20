@@ -20,8 +20,6 @@ import pytest
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
@@ -74,11 +72,6 @@ class TestRiskEngineWithCashAccount:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(
-            level_stdout=LogLevel.DEBUG,
-            bypass=True,
-        )
-
         self.trader_id = TestIdStubs.trader_id()
         self.account_id = TestIdStubs.account_id()
         self.venue = Venue("SIM")
@@ -86,7 +79,6 @@ class TestRiskEngineWithCashAccount:
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -95,14 +87,12 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=ExecEngineConfig(debug=True),
         )
 
@@ -111,7 +101,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=RiskEngineConfig(debug=True),
         )
 
@@ -120,7 +109,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_client = MockExecutionClient(
@@ -131,7 +119,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         self.portfolio.update_account(TestEventStubs.cash_account_state())
         self.exec_engine.register_client(self.exec_client)
@@ -157,7 +144,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=config,
         )
 
@@ -287,7 +273,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -323,7 +308,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -359,7 +343,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order1 = strategy.order_factory.market(
@@ -440,7 +423,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order1 = strategy.order_factory.market(
@@ -502,7 +484,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -539,7 +520,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -575,7 +555,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -612,7 +591,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -649,7 +627,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.stop_limit(
@@ -687,7 +664,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -724,7 +700,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -761,7 +736,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -800,7 +774,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -838,7 +811,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         self.portfolio.update_account(TestEventStubs.cash_account_state(AccountId("BITMEX-001")))
         self.exec_engine.register_client(exec_client)
@@ -860,7 +832,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -899,7 +870,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         self.portfolio.update_account(TestEventStubs.cash_account_state(AccountId("BITMEX-001")))
         self.exec_engine.register_client(exec_client)
@@ -921,7 +891,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -963,7 +932,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -1013,7 +981,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -1052,7 +1019,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -1091,7 +1057,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order1 = strategy.order_factory.market(
@@ -1141,7 +1106,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order1 = strategy.order_factory.market(
@@ -1189,7 +1153,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_engine.deregister_client(self.exec_client)
@@ -1211,7 +1174,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order1 = strategy.order_factory.market(
@@ -1264,7 +1226,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order1 = strategy.order_factory.market(
@@ -1330,7 +1291,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order1 = strategy.order_factory.market(
@@ -1390,7 +1350,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -1429,7 +1388,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -1470,7 +1428,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         entry = strategy.order_factory.market(
@@ -1529,7 +1486,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Push portfolio LONG
@@ -1610,7 +1566,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Push portfolio SHORT
@@ -1693,7 +1648,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         bracket = strategy.order_factory.bracket(
@@ -1730,7 +1684,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         bracket = strategy.order_factory.bracket(
@@ -1770,7 +1723,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         bracket = strategy.order_factory.bracket(
@@ -1807,7 +1759,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -1837,7 +1788,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         modify = ModifyOrder(
@@ -1872,7 +1822,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.stop_market(
@@ -1917,7 +1866,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.stop_market(
@@ -1970,7 +1918,6 @@ class TestRiskEngineWithCashAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.stop_market(
@@ -2002,11 +1949,6 @@ class TestRiskEngineWithBettingAccount:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(
-            level_stdout=LogLevel.DEBUG,
-            bypass=True,
-        )
-
         self.trader_id = TestIdStubs.trader_id()
         self.account_id = TestIdStubs.account_id()
         self.venue = Venue("SIM")
@@ -2015,7 +1957,6 @@ class TestRiskEngineWithBettingAccount:
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -2024,14 +1965,12 @@ class TestRiskEngineWithBettingAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=ExecEngineConfig(debug=True),
         )
 
@@ -2040,7 +1979,6 @@ class TestRiskEngineWithBettingAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=RiskEngineConfig(debug=True),
         )
 
@@ -2049,7 +1987,6 @@ class TestRiskEngineWithBettingAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_client = MockExecutionClient(
@@ -2060,7 +1997,6 @@ class TestRiskEngineWithBettingAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_engine.register_client(self.exec_client)
@@ -2091,7 +2027,6 @@ class TestRiskEngineWithBettingAccount:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_engine.start()

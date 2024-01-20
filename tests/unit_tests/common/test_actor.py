@@ -22,10 +22,7 @@ from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import ComponentState
-from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.executor import TaskId
-from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.core.data import Data
@@ -71,10 +68,6 @@ class TestActor:
     def setup(self) -> None:
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(
-            level_stdout=LogLevel.DEBUG,
-            bypass=True,
-        )
 
         self.trader_id = TestIdStubs.trader_id()
         self.account_id = TestIdStubs.account_id()
@@ -83,7 +76,6 @@ class TestActor:
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -92,21 +84,18 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_client = BacktestMarketDataClient(
@@ -114,7 +103,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine.register_client(self.data_client)
@@ -152,7 +140,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Assert
@@ -174,7 +161,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act, Assert
@@ -192,7 +178,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -209,7 +194,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.register_warning_event(OrderDenied)
@@ -228,7 +212,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         event = TestEventStubs.cash_account_state()
@@ -247,7 +230,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -264,7 +246,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -281,7 +262,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -298,7 +278,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -315,7 +294,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -332,7 +310,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -349,7 +326,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -366,7 +342,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -383,7 +358,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -400,7 +374,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -417,7 +390,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -434,7 +406,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -451,7 +422,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -468,7 +438,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         tick = TestDataStubs.quote_tick()
@@ -487,7 +456,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         tick = TestDataStubs.trade_tick()
@@ -506,7 +474,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         bar = TestDataStubs.bar_5decimal()
@@ -525,7 +492,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         bar = TestDataStubs.bar_5decimal()
@@ -544,7 +510,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         news_event = NewsEvent(
@@ -569,7 +534,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -586,7 +550,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -603,7 +566,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -620,7 +582,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -637,7 +598,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -654,7 +614,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -671,7 +630,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -688,7 +646,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act, Assert
@@ -704,7 +661,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.set_explode_on_start(False)
@@ -723,7 +679,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.set_explode_on_start(False)
@@ -744,7 +699,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act, Assert
@@ -760,7 +714,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act, Assert
@@ -776,7 +729,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.set_explode_on_start(False)
@@ -795,7 +747,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.set_explode_on_start(False)
@@ -814,7 +765,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.set_explode_on_start(False)
@@ -834,7 +784,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.set_explode_on_start(False)
@@ -854,7 +803,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.set_explode_on_start(False)
@@ -874,7 +822,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.set_explode_on_start(False)
@@ -900,7 +847,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.set_explode_on_start(False)
@@ -920,7 +866,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -938,7 +883,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -957,7 +901,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.start()
@@ -978,7 +921,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -996,7 +938,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.reset()
@@ -1016,7 +957,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.start()
@@ -1036,7 +976,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.start()
@@ -1056,7 +995,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.set_explode_on_start(False)
@@ -1074,7 +1012,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -1092,7 +1029,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.start()
@@ -1112,7 +1048,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.start()
@@ -1132,7 +1067,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -1150,7 +1084,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         tick = TestDataStubs.quote_tick()
@@ -1170,7 +1103,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         quote = TestDataStubs.quote_tick()
@@ -1190,7 +1122,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.start()
@@ -1212,7 +1143,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         tick = TestDataStubs.trade_tick()
@@ -1232,7 +1162,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.start()
@@ -1254,7 +1183,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         bar = TestDataStubs.bar_5decimal()
@@ -1274,7 +1202,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.start()
@@ -1296,7 +1223,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         result: list[Bar] = []
         actor.on_historical_data = result.append
@@ -1319,7 +1245,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         data = NewsEvent(
@@ -1345,7 +1270,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.start()
@@ -1373,7 +1297,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         synthetic = TestInstrumentProvider.synthetic_instrument()
@@ -1391,7 +1314,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         synthetic = TestInstrumentProvider.synthetic_instrument()
@@ -1410,7 +1332,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         synthetic = TestInstrumentProvider.synthetic_instrument()
@@ -1427,7 +1348,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         synthetic = TestInstrumentProvider.synthetic_instrument()
@@ -1503,7 +1423,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         unknown = TaskId.create()
@@ -1519,7 +1438,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act, Assert
@@ -1536,7 +1454,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         handler: list[str] = []
@@ -1561,7 +1478,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         handler: list[str] = []
@@ -1583,7 +1499,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         data_type = DataType(NewsEvent, {"type": "NEWS_WIRE", "topic": "Earthquake"})
@@ -1606,7 +1521,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         data_type = DataType(NewsEvent, {"type": "NEWS_WIRE", "topic": "Earthquake"})
@@ -1629,7 +1543,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         data_type = DataType(NewsEvent, {"type": "NEWS_WIRE", "topic": "Earthquake"})
@@ -1650,7 +1563,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         data_type = DataType(NewsEvent, {"type": "NEWS_WIRE", "topic": "Earthquake"})
@@ -1671,7 +1583,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -1688,7 +1599,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.subscribe_order_book_snapshots(AUDUSD_SIM.id, book_type=BookType.L2_MBP)
@@ -1707,7 +1617,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -1724,7 +1633,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.unsubscribe_order_book_deltas(AUDUSD_SIM.id)
@@ -1743,7 +1651,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -1765,7 +1672,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -1783,7 +1689,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -1802,7 +1707,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.subscribe_instrument(AUDUSD_SIM.id)
@@ -1822,7 +1726,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -1841,7 +1744,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.subscribe_quote_ticks(AUDUSD_SIM.id)
@@ -1861,7 +1763,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -1880,7 +1781,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.subscribe_trade_ticks(AUDUSD_SIM.id)
@@ -1900,7 +1800,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         handler: list[Data] = []
@@ -1927,7 +1826,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act, Assert
@@ -1942,7 +1840,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         handler: list[Data] = []
@@ -1970,17 +1867,12 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         catalog = setup_catalog(protocol="memory", path="/catalog")
 
         writer = StreamingFeatherWriter(
             path=catalog.path,
             fs_protocol=catalog.fs_protocol,
-            logger=LoggerAdapter(
-                component_name="Actor",
-                logger=self.logger,
-            ),
             replace=True,
         )
         self.msgbus.subscribe("data*", writer.write)
@@ -1999,7 +1891,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         bar_type = TestDataStubs.bartype_audusd_1min_bid()
@@ -2019,7 +1910,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         bar_type = TestDataStubs.bartype_audusd_1min_bid()
@@ -2041,7 +1931,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         actor.subscribe_venue_status(Venue("NYMEX"))
@@ -2058,7 +1947,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         data_type = DataType(NewsEvent, {"type": "NEWS_WIRE", "topic": "Earthquakes"})
@@ -2084,7 +1972,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -2105,7 +1992,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         tick = TestDataStubs.quote_tick()
@@ -2140,7 +2026,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -2161,7 +2046,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         tick = TestDataStubs.trade_tick()
@@ -2195,7 +2079,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         bar_type = TestDataStubs.bartype_audusd_1min_bid()
@@ -2218,7 +2101,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         bar_type = TestDataStubs.bartype_audusd_1min_bid()
@@ -2261,7 +2143,6 @@ class TestActor:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         bar_type = TestDataStubs.bartype_audusd_1min_bid()

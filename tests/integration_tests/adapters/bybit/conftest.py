@@ -37,14 +37,13 @@ def live_clock():
 
 @pytest.fixture(scope="session")
 def live_logger():
-    return Logger()
+    return Logger("TEST_LOGGER")
 
 
 @pytest.fixture(scope="session")
-def bybit_http_client(loop, live_clock, live_logger):
+def bybit_http_client(loop, live_clock):
     client = BybitHttpClient(
         clock=live_clock,
-        logger=live_logger,
         api_key="BYBIT_API_KEY",
         api_secret="BYBIT_API_SECRET",
         base_url="https://api-testnet.bybit.com",

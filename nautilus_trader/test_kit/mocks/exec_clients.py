@@ -52,8 +52,6 @@ class MockExecutionClient(ExecutionClient):
         The cache for the client
     clock : Clock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
 
     """
 
@@ -66,7 +64,6 @@ class MockExecutionClient(ExecutionClient):
         msgbus,
         cache,
         clock,
-        logger,
         config=None,
     ) -> None:
         super().__init__(
@@ -78,7 +75,6 @@ class MockExecutionClient(ExecutionClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             config=config,
         )
 
@@ -170,8 +166,6 @@ class MockLiveExecutionClient(LiveExecutionClient):
         The cache for the client.
     clock : Clock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
 
     """
 
@@ -186,7 +180,6 @@ class MockLiveExecutionClient(LiveExecutionClient):
         msgbus,
         cache,
         clock,
-        logger,
     ) -> None:
         super().__init__(
             loop=loop,
@@ -199,7 +192,6 @@ class MockLiveExecutionClient(LiveExecutionClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
         )
 
         self._set_account_id(AccountId(f"{client_id}-001"))

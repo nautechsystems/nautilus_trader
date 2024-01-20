@@ -55,6 +55,16 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 
 
+RECV = "<--"
+SENT = "-->"
+CMD = "[CMD]"
+EVT = "[EVT]"
+DOC = "[DOC]"
+RPT = "[RPT]"
+REQ = "[REQ]"
+RES = "[RES]"
+
+
 cpdef bint is_logging_initialized():
     return <bint>logging_is_initialized()
 
@@ -83,21 +93,35 @@ cpdef str log_level_to_str(LogLevel value):
     return cstr_to_pystr(log_level_to_cstr(value))
 
 
-RECV = "<--"
-SENT = "-->"
-CMD = "[CMD]"
-EVT = "[EVT]"
-DOC = "[DOC]"
-RPT = "[RPT]"
-REQ = "[REQ]"
-RES = "[RES]"
-
-
-cdef class Logger:
+cpdef void init_tracing():
     """
-    Provides a high-performance logger.
+    Initialize tracing for async Rust.
+
+    """
+    tracing_init()
+
+
+cpdef void init_logging(
+    TraderId trader_id = None,
+    str machine_id = None,
+    UUID4 instance_id = None,
+    LogLevel level_stdout = LogLevel.INFO,
+    LogLevel level_file = LogLevel.OFF,
+    str directory = None,
+    str file_name = None,
+    str file_format = None,
+    dict component_levels: dict[ComponentId, LogLevel] = None,
+    bint colors = True,
+    bint bypass = False,
+    bint print_config = False,
+):
+    """
+    Initialize the logging system.
 
     Acts as an interface into the logging system implemented in Rust with the `log` crate.
+
+    This function should only be called once per process, at the beginning of the application
+    run.
 
     Parameters
     ----------
@@ -130,103 +154,54 @@ cdef class Logger:
     print_config : bool, default False
         If the core logging configuration should be printed to stdout on initialization.
     """
+    if trader_id is None:
+        trader_id = TraderId("TRADER-000")
+    if machine_id is None:
+        machine_id = socket.gethostname()
+    if instance_id is None:
+        instance_id = UUID4()
 
-    def __init__(
-        self,
-        TraderId trader_id = None,
-        str machine_id = None,
-        UUID4 instance_id = None,
-        LogLevel level_stdout = LogLevel.INFO,
-        LogLevel level_file = LogLevel.OFF,
-        str directory = None,
-        str file_name = None,
-        str file_format = None,
-        dict component_levels: dict[ComponentId, LogLevel] = None,
-        bint colors = True,
-        bint bypass = False,
-        bint print_config = False,
-    ) -> None:
-        if trader_id is None:
-            trader_id = TraderId("TRADER-000")
-        if machine_id is None:
-            machine_id = socket.gethostname()
-        if instance_id is None:
-            instance_id = UUID4()
-
-        if not bypass and not logging_is_initialized():
-            # Initialize tracing for async Rust
-            tracing_init()
-
-            # Initialize logging for sync Rust and Python
-            logging_init(
-                trader_id._mem,
-                instance_id._mem,
-                level_stdout,
-                level_file,
-                pystr_to_cstr(directory) if directory else NULL,
-                pystr_to_cstr(file_name) if file_name else NULL,
-                pystr_to_cstr(file_format) if file_format else NULL,
-                pybytes_to_cstr(msgspec.json.encode(component_levels)) if component_levels else NULL,
-                colors,
-                bypass,
-                print_config,
-            )
-
-    cdef void log(
-        self,
-        LogLevel level,
-        LogColor color,
-        const char* component_cstr,
-        str message,
-    ):
-        logger_log(
-            level,
-            color,
-            component_cstr,
-            pystr_to_cstr(message),
+    if not bypass and not logging_is_initialized():
+        logging_init(
+            trader_id._mem,
+            instance_id._mem,
+            level_stdout,
+            level_file,
+            pystr_to_cstr(directory) if directory else NULL,
+            pystr_to_cstr(file_name) if file_name else NULL,
+            pystr_to_cstr(file_format) if file_format else NULL,
+            pybytes_to_cstr(msgspec.json.encode(component_levels)) if component_levels else NULL,
+            colors,
+            bypass,
+            print_config,
         )
 
-    cpdef void flush(self):
-        """
-        Flush all logger buffers.
 
-        """
-        logger_flush()
-
-
-cdef class LoggerAdapter:
+cdef class Logger:
     """
-    Provides an adapter for a components logger.
+    Provides a logger adapter into the logging system.
 
     Parameters
     ----------
-    component_name : str
-        The name of the component.
-    logger : Logger
-        The logger for the component.
+    name : str
+        The name of the logger. This will appear within each log line.
+
     """
 
-    def __init__(
-        self,
-        str component_name not None,
-        Logger logger not None,
-    ):
-        Condition.valid_string(component_name, "component_name")
+    def __init__(self, str name not None) -> None:
+        Condition.valid_string(name, "name")
 
-        self._logger = logger
-        self._component = component_name
-        self._component_cstr = pystr_to_cstr(component_name)
+        self._name = name
 
-    cpdef Logger get_logger(self):
+    cpdef void flush(self):
         """
-        Return the encapsulated logger.
+        Flush all buffers for the logging system.
 
-        Returns
-        -------
-        Logger
+        This could include stdout/stderr and file writer buffers.
 
         """
-        return self._logger
+        if logging_is_initialized():
+            logger_flush()
 
     cpdef void debug(
         self,
@@ -234,23 +209,24 @@ cdef class LoggerAdapter:
         LogColor color = LogColor.NORMAL,
     ):
         """
-        Log the given debug message with the logger.
+        Log the given debug level message.
 
         Parameters
         ----------
         message : str
-            The log message content.
+            The log message text (valid UTF-8).
         color : LogColor, optional
             The log message color.
 
         """
-        Condition.not_none(message, "message")
+        if not logging_is_initialized():
+            return
 
-        self._logger.log(
+        logger_log(
             LogLevel.DEBUG,
             color,
-            self._component_cstr,
-            message,
+            pystr_to_cstr(self._name),  # TODO: Optimize this
+            pystr_to_cstr(message) if message is not None else NULL,
         )
 
     cpdef void info(
@@ -258,23 +234,24 @@ cdef class LoggerAdapter:
         LogColor color = LogColor.NORMAL,
     ):
         """
-        Log the given information message with the logger.
+        Log the given information level message.
 
         Parameters
         ----------
         message : str
-            The log message content.
+            The log message text (valid UTF-8).
         color : LogColor, optional
             The log message color.
 
         """
-        Condition.not_none(message, "message")
+        if not logging_is_initialized():
+            return
 
-        self._logger.log(
+        logger_log(
             LogLevel.INFO,
             color,
-            self._component_cstr,
-            message,
+            pystr_to_cstr(self._name),  # TODO: Optimize this
+            pystr_to_cstr(message) if message is not None else NULL,
         )
 
     cpdef void warning(
@@ -283,23 +260,24 @@ cdef class LoggerAdapter:
         LogColor color = LogColor.YELLOW,
     ):
         """
-        Log the given warning message with the logger.
+        Log the given warning level message.
 
         Parameters
         ----------
         message : str
-            The log message content.
+            The log message text (valid UTF-8).
         color : LogColor, optional
             The log message color.
 
         """
-        Condition.not_none(message, "message")
+        if not logging_is_initialized():
+            return
 
-        self._logger.log(
+        logger_log(
             LogLevel.WARNING,
             color,
-            self._component_cstr,
-            message,
+            pystr_to_cstr(self._name),  # TODO: Optimize this
+            pystr_to_cstr(message) if message is not None else NULL,
         )
 
     cpdef void error(
@@ -308,23 +286,24 @@ cdef class LoggerAdapter:
         LogColor color = LogColor.RED,
     ):
         """
-        Log the given error message with the logger.
+        Log the given error level message.
 
         Parameters
         ----------
         message : str
-            The log message content.
+            The log message text (valid UTF-8).
         color : LogColor, optional
             The log message color.
 
         """
-        Condition.not_none(message, "message")
+        if not logging_is_initialized():
+            return
 
-        self._logger.log(
+        logger_log(
             LogLevel.ERROR,
             color,
-            self._component_cstr,
-            message,
+            pystr_to_cstr(self._name),  # TODO: Optimize this
+            pystr_to_cstr(message) if message is not None else NULL,
         )
 
     cpdef void exception(
@@ -338,7 +317,7 @@ cdef class LoggerAdapter:
         Parameters
         ----------
         message : str
-            The log message content.
+            The log message text (valid UTF-8).
         ex : Exception
             The exception to log.
 
@@ -358,7 +337,7 @@ cdef class LoggerAdapter:
 
 
 cpdef void log_nautilus_header(
-    LoggerAdapter logger,
+    Logger logger,
     TraderId trader_id,
     str machine_id,
     UUID4 instance_id,
@@ -425,7 +404,7 @@ cpdef void log_nautilus_header(
 
     logger.info(f"{color}=================================================================")
 
-cpdef void log_memory(LoggerAdapter logger, bint is_colored):
+cpdef void log_memory(Logger logger, bint is_colored):
     Condition.not_none(logger, "logger")
 
     color = "\033[36m" if is_colored else ""

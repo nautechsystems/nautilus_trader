@@ -34,7 +34,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.core.correctness import PyCondition
@@ -67,8 +66,6 @@ class LiveDataClient(DataClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     config : NautilusConfig, optional
         The configuration for the instance.
 
@@ -86,7 +83,6 @@ class LiveDataClient(DataClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         config: NautilusConfig | None = None,
     ) -> None:
         super().__init__(
@@ -95,7 +91,6 @@ class LiveDataClient(DataClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             config=config,
         )
 
@@ -281,8 +276,6 @@ class LiveMarketDataClient(MarketDataClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     instrument_provider : InstrumentProvider
         The instrument provider for the client.
     config : NautilusConfig, optional
@@ -302,7 +295,6 @@ class LiveMarketDataClient(MarketDataClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         instrument_provider: InstrumentProvider,
         config: NautilusConfig | None = None,
     ) -> None:
@@ -314,7 +306,6 @@ class LiveMarketDataClient(MarketDataClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             config=config,
         )
 

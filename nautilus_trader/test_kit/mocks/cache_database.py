@@ -15,7 +15,6 @@
 
 from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.cache.facade import CacheDatabaseFacade
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -33,16 +32,10 @@ from nautilus_trader.trading.strategy import Strategy
 class MockCacheDatabase(CacheDatabaseFacade):
     """
     Provides a mock cache database for testing.
-
-    Parameters
-    ----------
-    logger : Logger
-        The logger for the database.
-
     """
 
-    def __init__(self, logger: Logger):
-        super().__init__(logger)
+    def __init__(self) -> None:
+        super().__init__()
 
         self.general: dict[str, bytes] = {}
         self.currencies: dict[str, Currency] = {}

@@ -26,8 +26,6 @@ from nautilus_trader.backtest.modules import SimulationModule
 from nautilus_trader.backtest.modules import SimulationModuleConfig
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.core.datetime import secs_to_nanos
@@ -83,17 +81,11 @@ class TestSimulatedExchange:
     def setup(self) -> None:
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(
-            level_stdout=LogLevel.DEBUG,
-            bypass=True,
-        )
-
         self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -102,21 +94,18 @@ class TestSimulatedExchange:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             msgbus=self.msgbus,
             clock=self.clock,
             cache=self.cache,
-            logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=ExecEngineConfig(debug=True),
         )
 
@@ -125,7 +114,6 @@ class TestSimulatedExchange:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=RiskEngineConfig(debug=True),
         )
 
@@ -144,7 +132,6 @@ class TestSimulatedExchange:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             latency_model=LatencyModel(0),
         )
 
@@ -153,7 +140,6 @@ class TestSimulatedExchange:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Wire up components
@@ -170,7 +156,6 @@ class TestSimulatedExchange:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Start components
@@ -2633,7 +2618,6 @@ class TestSimulatedExchange:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             frozen_account=True,  # <-- Freezing account
         )
         exchange.register_client(self.exec_client)
@@ -2858,17 +2842,11 @@ class TestSimulatedExchangeL2:
     def setup(self) -> None:
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(
-            level_stdout=LogLevel.DEBUG,
-            bypass=True,
-        )
-
         self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -2877,21 +2855,18 @@ class TestSimulatedExchangeL2:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             msgbus=self.msgbus,
             clock=self.clock,
             cache=self.cache,
-            logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=ExecEngineConfig(debug=True),
         )
 
@@ -2900,7 +2875,6 @@ class TestSimulatedExchangeL2:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=RiskEngineConfig(debug=True),
         )
 
@@ -2942,7 +2916,6 @@ class TestSimulatedExchangeL2:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             latency_model=LatencyModel(0),
             book_type=BookType.L2_MBP,
         )
@@ -2952,7 +2925,6 @@ class TestSimulatedExchangeL2:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Wire up components
@@ -2969,7 +2941,6 @@ class TestSimulatedExchangeL2:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Start components

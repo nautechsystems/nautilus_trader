@@ -29,7 +29,6 @@ class MockLiveDataEngine(LiveDataEngine):
         msgbus,
         cache,
         clock,
-        logger,
         config=None,
     ):
         super().__init__(
@@ -37,7 +36,6 @@ class MockLiveDataEngine(LiveDataEngine):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             config=config,
         )
 
@@ -66,7 +64,6 @@ class MockLiveExecutionEngine(LiveExecutionEngine):
         msgbus,
         cache,
         clock,
-        logger,
         config=None,
     ):
         super().__init__(
@@ -74,7 +71,6 @@ class MockLiveExecutionEngine(LiveExecutionEngine):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             config=config,
         )
 
@@ -100,7 +96,6 @@ class MockLiveRiskEngine(LiveRiskEngine):
         msgbus,
         cache,
         clock,
-        logger,
         config=None,
     ):
         super().__init__(
@@ -109,7 +104,6 @@ class MockLiveRiskEngine(LiveRiskEngine):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             config=config,
         )
 

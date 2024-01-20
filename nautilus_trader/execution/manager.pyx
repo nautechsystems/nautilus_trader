@@ -25,7 +25,6 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.common cimport logging_is_initialized
@@ -64,8 +63,6 @@ cdef class OrderManager:
     ----------
     clock : Clock
         The clock for the order manager.
-    logger : Logger
-        The logger for the order manager.
     msgbus : MessageBus
         The message bus for the order manager.
     cache : Cache
@@ -96,7 +93,6 @@ cdef class OrderManager:
     def __init__(
         self,
         Clock clock not None,
-        Logger logger not None,
         MessageBus msgbus,
         Cache cache not None,
         str component_name not None,
@@ -112,7 +108,7 @@ cdef class OrderManager:
         Condition.callable_or_none(modify_order_handler, "modify_order_handler")
 
         self._clock = clock
-        self._log = LoggerAdapter(component_name=component_name, logger=logger)
+        self._log = Logger(name=component_name)
         self._msgbus = msgbus
         self._cache = cache
 

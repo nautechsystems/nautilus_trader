@@ -48,7 +48,6 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.common.clock cimport TimeEventHandler
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport log_level_from_str
 from nautilus_trader.common.logging cimport log_memory
 from nautilus_trader.common.logging cimport set_logging_clock_realtime
@@ -137,14 +136,9 @@ cdef class BacktestEngine:
 
         # Build core system kernel
         self._kernel = NautilusKernel(name=type(self).__name__, config=config)
+        self._log = Logger(type(self).__name__)
 
         self._data_engine: DataEngine = self._kernel.data_engine
-
-        # Setup engine logging
-        self._log = LoggerAdapter(
-            component_name=type(self).__name__,
-            logger=self._kernel.logger,
-        )
 
     def __del__(self) -> None:
         if self._accumulator._0 != NULL:
@@ -199,6 +193,18 @@ cdef class BacktestEngine:
 
         """
         return self._kernel
+
+    @property
+    def logger(self) -> Logger:
+        """
+        Return the internal logger for the engine.
+
+        Returns
+        -------
+        Logger
+
+        """
+        return self._log
 
     @property
     def run_config_id(self) -> str:
@@ -454,7 +460,6 @@ cdef class BacktestEngine:
             latency_model=latency_model,
             book_type=book_type,
             clock=self.kernel.clock,
-            logger=self.kernel.logger,
             frozen_account=frozen_account,
             bar_execution=bar_execution,
             reject_stop_orders=reject_stop_orders,
@@ -473,7 +478,6 @@ cdef class BacktestEngine:
             msgbus=self.kernel.msgbus,
             cache=self.kernel.cache,
             clock=self.kernel.clock,
-            logger=self.kernel.logger,
             routing=routing,
             frozen_account=frozen_account,
         )
@@ -1371,7 +1375,6 @@ cdef class BacktestEngine:
                 msgbus=self._kernel.msgbus,
                 cache=self._kernel.cache,
                 clock=self._kernel.clock,
-                logger=self._kernel.logger,
             )
             self._kernel.data_engine.register_client(client)
 
@@ -1383,6 +1386,5 @@ cdef class BacktestEngine:
                 msgbus=self._kernel.msgbus,
                 cache=self._kernel.cache,
                 clock=self._kernel.clock,
-                logger=self._kernel.logger,
             )
             self._kernel.data_engine.register_client(client)

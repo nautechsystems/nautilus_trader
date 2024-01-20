@@ -20,7 +20,7 @@ from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.backtest.modules import SimulationModule
 from nautilus_trader.backtest.modules import SimulationModuleConfig
-from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.core.data import Data
@@ -74,7 +74,7 @@ class TestSimulationModules:
             def process(self, ts_now: int) -> None:
                 assert self.exchange
 
-            def log_diagnostics(self, log: LoggerAdapter) -> None:
+            def log_diagnostics(self, log: Logger) -> None:
                 pass
 
         config = SimulationModuleConfig()
@@ -95,7 +95,7 @@ class TestSimulationModules:
             def process(self, ts_now: int) -> None:
                 assert self.exchange
 
-            def log_diagnostics(self, log: LoggerAdapter) -> None:
+            def log_diagnostics(self, log: Logger) -> None:
                 pass
 
         config = SimulationModuleConfig()

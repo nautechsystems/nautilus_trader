@@ -38,7 +38,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import nanos_to_millis
@@ -102,8 +101,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     instrument_provider : BinanceSpotInstrumentProvider
         The instrument provider.
     account_type : BinanceAccountType
@@ -130,7 +127,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType,
         base_url_ws: str,
@@ -147,7 +143,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
         )
 
         # Configuration
@@ -183,7 +178,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
             clock=clock,
-            logger=logger,
             handler=self._handle_user_ws_message,
             base_url=base_url_ws,
             loop=self._loop,

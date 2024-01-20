@@ -17,7 +17,7 @@
 The `Actor` class allows traders to implement their own customized components.
 
 A user can inherit from `Actor` and optionally override any of the
-"on" named event methods. The class is not entirely initialized in a stand-alone
+"on" named event handler methods. The class is not entirely initialized in a stand-alone
 way, the intended usage is to pass actors to a `Trader` so that they can be
 fully "wired" into the platform. Exceptions will be raised if an `Actor`
 attempts to operate without a managing `Trader` instance.
@@ -111,7 +111,6 @@ cdef class Actor(Component):
 
         super().__init__(
             clock=Clock(),  # Use placeholder until registered
-            logger=Logger(bypass=True),  # Use placeholder until registered
             component_id=component_id,
             config=config,
         )
@@ -534,7 +533,6 @@ cdef class Actor(Component):
         MessageBus msgbus,
         CacheFacade cache,
         Clock clock,
-        Logger logger,
     ):
         """
         Register with a trader.
@@ -549,8 +547,6 @@ cdef class Actor(Component):
             The read-only cache for the actor.
         clock : Clock
             The clock for the actor.
-        logger : Logger
-            The logger for the actor.
 
         Warnings
         --------
@@ -561,11 +557,9 @@ cdef class Actor(Component):
         Condition.not_none(msgbus, "msgbus")
         Condition.not_none(cache, "cache")
         Condition.not_none(clock, "clock")
-        Condition.not_none(logger, "logger")
 
         clock.register_default_handler(self.handle_event)
         self._change_clock(clock)
-        self._change_logger(logger)
         self._change_msgbus(msgbus)  # The trader ID is assigned here
 
         self.portfolio = portfolio  # Assigned as PortfolioFacade

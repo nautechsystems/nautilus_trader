@@ -22,9 +22,7 @@ from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
@@ -50,26 +48,15 @@ class TestComponentStubs:
         return LiveClock()
 
     @staticmethod
-    def logger(level: LogLevel = LogLevel.INFO) -> Logger:
-        return Logger(
-            level_stdout=level,
-            bypass=True,
-        )
-
-    @staticmethod
     def msgbus() -> MessageBus:
         return MessageBus(
             trader_id=TestIdStubs.trader_id(),
             clock=TestComponentStubs.clock(),
-            logger=TestComponentStubs.logger(),
         )
 
     @staticmethod
-    def cache(logger: Logger | None = None) -> Cache:
-        return Cache(
-            database=None,
-            logger=logger or TestComponentStubs.logger(),
-        )
+    def cache() -> Cache:
+        return Cache(database=None)
 
     @staticmethod
     def portfolio() -> Portfolio:
@@ -77,7 +64,6 @@ class TestComponentStubs:
             msgbus=TestComponentStubs.msgbus(),
             clock=TestComponentStubs.clock(),
             cache=TestComponentStubs.cache(),
-            logger=TestComponentStubs.logger(),
         )
 
     @staticmethod
@@ -88,7 +74,6 @@ class TestComponentStubs:
             portfolio=TestComponentStubs.portfolio(),
             msgbus=TestComponentStubs.msgbus(),
             cache=TestComponentStubs.cache(),
-            logger=TestComponentStubs.logger(),
             clock=TestComponentStubs.clock(),
         )
         return strategy
@@ -100,7 +85,6 @@ class TestComponentStubs:
             msgbus=TestComponentStubs.msgbus(),
             cache=TestComponentStubs.cache(),
             clock=TestComponentStubs.clock(),
-            logger=TestComponentStubs.logger(),
         )
 
     @staticmethod
@@ -110,7 +94,6 @@ class TestComponentStubs:
             msgbus=TestComponentStubs.msgbus(),
             cache=TestComponentStubs.cache(),
             clock=TestComponentStubs.clock(),
-            logger=TestComponentStubs.logger(),
         )
 
     @staticmethod
@@ -121,7 +104,6 @@ class TestComponentStubs:
             msgbus=TestComponentStubs.msgbus(),
             cache=TestComponentStubs.cache(),
             clock=TestComponentStubs.clock(),
-            logger=TestComponentStubs.logger(),
         )
 
     @staticmethod

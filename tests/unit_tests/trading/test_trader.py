@@ -25,7 +25,6 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config.common import ExecAlgorithmConfig
@@ -60,14 +59,11 @@ class TestTrader:
     def setup(self) -> None:
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(bypass=True)
-
         self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -76,14 +72,12 @@ class TestTrader:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine.process(USDJPY_SIM)
@@ -92,7 +86,6 @@ class TestTrader:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exchange = SimulatedExchange(
@@ -110,7 +103,6 @@ class TestTrader:
             modules=[],
             fill_model=FillModel(),
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_client = BacktestMarketDataClient(
@@ -118,7 +110,6 @@ class TestTrader:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_client = BacktestExecClient(
@@ -126,7 +117,6 @@ class TestTrader:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.risk_engine = RiskEngine(
@@ -134,7 +124,6 @@ class TestTrader:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Wire up components
@@ -150,7 +139,6 @@ class TestTrader:
             risk_engine=self.risk_engine,
             exec_engine=self.exec_engine,
             clock=self.clock,
-            logger=self.logger,
         )
 
     def test_initialize_trader(self) -> None:

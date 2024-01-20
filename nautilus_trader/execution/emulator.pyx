@@ -27,7 +27,6 @@ from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport LogColor
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.common cimport logging_is_initialized
@@ -91,8 +90,6 @@ cdef class OrderEmulator(Actor):
         The cache for the order emulator.
     clock : Clock
         The clock for the order emulator.
-    logger : Logger
-        The logger for the order emulator.
     config : OrderEmulatorConfig, optional
         The configuration for the order emulator.
 
@@ -104,7 +101,6 @@ cdef class OrderEmulator(Actor):
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
-        Logger logger not None,
         config: OrderEmulatorConfig | None = None,
     ):
         if config is None:
@@ -117,12 +113,10 @@ cdef class OrderEmulator(Actor):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
         )
 
         self._manager = OrderManager(
             clock=clock,
-            logger=logger,
             msgbus=msgbus,
             cache=cache,
             component_name=type(self).__name__,

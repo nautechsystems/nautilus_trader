@@ -73,13 +73,12 @@ def exec_client_config():
 
 
 @pytest.fixture()
-def ib_client(data_client_config, loop, msgbus, cache, clock, logger):
+def ib_client(data_client_config, loop, msgbus, cache, clock):
     client = InteractiveBrokersClient(
         loop=loop,
         msgbus=msgbus,
         cache=cache,
         clock=clock,
-        logger=logger,
         host=data_client_config.ibg_host,
         port=data_client_config.ibg_port,
         client_id=data_client_config.ibg_client_id,
@@ -89,16 +88,15 @@ def ib_client(data_client_config, loop, msgbus, cache, clock, logger):
 
 
 @pytest.fixture()
-def instrument_provider(ib_client, logger):
+def instrument_provider(ib_client):
     return InteractiveBrokersInstrumentProvider(
         client=ib_client,
         config=InteractiveBrokersInstrumentProviderConfig(),
-        logger=logger,
     )
 
 
 @pytest.fixture()
-def data_client(mocker, data_client_config, venue, loop, msgbus, cache, clock, logger):
+def data_client(mocker, data_client_config, venue, loop, msgbus, cache, clock):
     mocker.patch(
         "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
         return_value=InteractiveBrokersClient(
@@ -106,7 +104,6 @@ def data_client(mocker, data_client_config, venue, loop, msgbus, cache, clock, l
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             host=data_client_config.ibg_host,
             port=data_client_config.ibg_port,
             client_id=data_client_config.ibg_client_id,
@@ -119,14 +116,13 @@ def data_client(mocker, data_client_config, venue, loop, msgbus, cache, clock, l
         msgbus=msgbus,
         cache=cache,
         clock=clock,
-        logger=logger,
     )
     client._client.start()
     return client
 
 
 @pytest.fixture()
-def exec_client(mocker, exec_client_config, venue, loop, msgbus, cache, clock, logger):
+def exec_client(mocker, exec_client_config, venue, loop, msgbus, cache, clock):
     mocker.patch(
         "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
         return_value=InteractiveBrokersClient(
@@ -134,7 +130,6 @@ def exec_client(mocker, exec_client_config, venue, loop, msgbus, cache, clock, l
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             host=exec_client_config.ibg_host,
             port=exec_client_config.ibg_port,
             client_id=exec_client_config.ibg_client_id,
@@ -147,7 +142,6 @@ def exec_client(mocker, exec_client_config, venue, loop, msgbus, cache, clock, l
         msgbus=msgbus,
         cache=cache,
         clock=clock,
-        logger=logger,
     )
     client._client.start()
     client._client.managedAccounts("DU123456,")

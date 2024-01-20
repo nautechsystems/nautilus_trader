@@ -25,6 +25,15 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 
 
+cdef str RECV
+cdef str SENT
+cdef str CMD
+cdef str EVT
+cdef str DOC
+cdef str RPT
+cdef str REQ
+cdef str RES
+
 cpdef bint is_logging_initialized()
 cpdef void set_logging_clock_realtime()
 cpdef void set_logging_clock_static(uint64_t time_ns)
@@ -35,35 +44,28 @@ cpdef str log_color_to_str(LogColor value)
 cpdef LogLevel log_level_from_str(str value)
 cpdef str log_level_to_str(LogLevel value)
 
-cdef str RECV
-cdef str SENT
-cdef str CMD
-cdef str EVT
-cdef str DOC
-cdef str RPT
-cdef str REQ
-cdef str RES
+cpdef void init_tracing()
+
+cpdef void init_logging(
+    TraderId trader_id=*,
+    str machine_id=*,
+    UUID4 instance_id=*,
+    LogLevel level_stdout=*,
+    LogLevel level_file=*,
+    str directory=*,
+    str file_name=*,
+    str file_format=*,
+    dict component_levels=*,
+    bint colors=*,
+    bint bypass=*,
+    bint print_config=*,
+)
 
 
 cdef class Logger:
-
-    cdef void log(
-        self,
-        LogLevel level,
-        LogColor color,
-        const char* component_cstr,
-        str message,
-    )
+    cdef str _name
 
     cpdef void flush(self)
-
-
-cdef class LoggerAdapter:
-    cdef Logger _logger
-    cdef str _component
-    cdef const char* _component_cstr
-
-    cpdef Logger get_logger(self)
     cpdef void debug(self, str message, LogColor color=*)
     cpdef void info(self, str message, LogColor color=*)
     cpdef void warning(self, str message, LogColor color=*)
@@ -72,11 +74,11 @@ cdef class LoggerAdapter:
 
 
 cpdef void log_nautilus_header(
-    LoggerAdapter logger,
+    Logger logger,
     TraderId trader_id,
     str machine_id,
     UUID4 instance_id,
     bint is_colored,
 )
 
-cpdef void log_memory(LoggerAdapter logger, bint is_colored)
+cpdef void log_memory(Logger logger, bint is_colored)

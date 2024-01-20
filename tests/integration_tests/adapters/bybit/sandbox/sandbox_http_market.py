@@ -31,7 +31,6 @@ from nautilus_trader.adapters.bybit.endpoints.market.server_time import BybitSer
 from nautilus_trader.adapters.bybit.factories import get_bybit_http_client
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
 from tests.integration_tests.adapters.bybit.utils.save_struct_to_file import save_struct_to_file
 
 
@@ -46,7 +45,6 @@ def client() -> BybitHttpClient:
 
     client = get_bybit_http_client(
         clock=clock,
-        logger=Logger(),
         is_testnet=True,
     )
     return client

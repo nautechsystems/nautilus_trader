@@ -17,14 +17,12 @@ from datetime import timedelta
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import Throttler
-from nautilus_trader.common.logging import Logger
 
 
 class TestBufferingThrottler:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(bypass=True)
 
         self.handler = []
         self.throttler = Throttler(
@@ -34,7 +32,6 @@ class TestBufferingThrottler:
             output_send=self.handler.append,
             output_drop=None,  # <-- no dropping handler so will buffer
             clock=self.clock,
-            logger=self.logger,
         )
 
     def test_throttler_instantiation(self):
@@ -165,7 +162,6 @@ class TestDroppingThrottler:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(bypass=True)
 
         self.handler = []
         self.dropped = []
@@ -176,7 +172,6 @@ class TestDroppingThrottler:
             output_send=self.handler.append,
             output_drop=self.dropped.append,  # <-- handler for dropping messages
             clock=self.clock,
-            logger=self.logger,
         )
 
     def test_throttler_instantiation(self):

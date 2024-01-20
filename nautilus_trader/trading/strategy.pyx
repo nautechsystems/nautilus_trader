@@ -44,7 +44,6 @@ from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport LogColor
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Event
@@ -243,7 +242,6 @@ cdef class Strategy(Actor):
         MessageBus msgbus,
         CacheFacade cache,
         Clock clock,
-        Logger logger,
     ):
         """
         Register the strategy with a trader.
@@ -260,8 +258,6 @@ cdef class Strategy(Actor):
             The read-only cache for the strategy.
         clock : Clock
             The clock for the strategy.
-        logger : Logger
-            The logger for the strategy.
 
         Warnings
         --------
@@ -273,14 +269,12 @@ cdef class Strategy(Actor):
         Condition.not_none(msgbus, "msgbus")
         Condition.not_none(cache, "cache")
         Condition.not_none(clock, "clock")
-        Condition.not_none(logger, "logger")
 
         self.register_base(
             portfolio=portfolio,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
         )
 
         self.order_factory = OrderFactory(
@@ -292,7 +286,6 @@ cdef class Strategy(Actor):
 
         self._manager = OrderManager(
             clock=clock,
-            logger=logger,
             msgbus=msgbus,
             cache=cache,
             component_name=type(self).__name__,

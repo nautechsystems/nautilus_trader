@@ -38,7 +38,8 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.logging import init_logging
+from nautilus_trader.common.logging import init_tracing
 from nautilus_trader.common.logging import log_nautilus_header
 from nautilus_trader.config import ActorFactory
 from nautilus_trader.config import DataEngineConfig
@@ -151,27 +152,29 @@ class NautilusKernel:
 
         logging: LoggingConfig = config.logging or LoggingConfig()
 
-        self._logger: Logger = Logger(
-            trader_id=self._trader_id,
-            machine_id=self._machine_id,
-            instance_id=self._instance_id,
-            level_stdout=log_level_from_str(logging.log_level),
-            level_file=log_level_from_str(logging.log_level_file)
-            if logging.log_level_file is not None
-            else LogLevel.OFF,
-            directory=logging.log_directory,
-            file_name=logging.log_file_name,
-            file_format=logging.log_file_format,
-            component_levels=logging.log_component_levels,
-            colors=logging.log_colors,
-            bypass=False if self._environment == Environment.LIVE else logging.bypass_logging,
-        )
+        if self._environment == Environment.LIVE or not logging.bypass_logging:
+            # Initialize tracing for async Rust
+            init_tracing()
+
+            # Initialize logging for sync Rust and Python
+            init_logging(
+                trader_id=self._trader_id,
+                machine_id=self._machine_id,
+                instance_id=self._instance_id,
+                level_stdout=log_level_from_str(logging.log_level),
+                level_file=log_level_from_str(logging.log_level_file)
+                if logging.log_level_file is not None
+                else LogLevel.OFF,
+                directory=logging.log_directory,
+                file_name=logging.log_file_name,
+                file_format=logging.log_file_format,
+                component_levels=logging.log_component_levels,
+                colors=logging.log_colors,
+                bypass=False if self._environment == Environment.LIVE else logging.bypass_logging,
+            )
 
         # Setup logging
-        self._log: LoggerAdapter = LoggerAdapter(
-            component_name=name,
-            logger=self._logger,
-        )
+        self._log: Logger = Logger(name=name)
 
         if isinstance(config.trader_id, str):
             self._log.warning(
@@ -187,7 +190,7 @@ class NautilusKernel:
             self._instance_id,
             logging.log_colors,
         )
-        self.log.info("Building system kernel...")
+        self._log.info("Building system kernel...")
 
         # Setup loop (if sandbox live)
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -210,7 +213,6 @@ class NautilusKernel:
             cache_db = CacheDatabaseAdapter(
                 trader_id=self._trader_id,
                 instance_id=self._instance_id,
-                logger=self._logger,
                 serializer=MsgSpecSerializer(
                     encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
                     timestamps_as_str=True,  # Hardcoded for now
@@ -251,7 +253,6 @@ class NautilusKernel:
             trader_id=self._trader_id,
             instance_id=self._instance_id,
             clock=self._clock,
-            logger=self._logger,
             serializer=msgbus_serializer,
             snapshot_orders=config.snapshot_orders,
             snapshot_positions=config.snapshot_positions,
@@ -260,7 +261,6 @@ class NautilusKernel:
 
         self._cache = Cache(
             database=cache_db,
-            logger=self._logger,
             snapshot_orders=config.snapshot_orders,
             snapshot_positions=config.snapshot_positions,
             config=config.cache,
@@ -270,7 +270,6 @@ class NautilusKernel:
             msgbus=self._msgbus,
             cache=self._cache,
             clock=self._clock,
-            logger=self._logger,
         )
 
         ########################################################################
@@ -287,7 +286,6 @@ class NautilusKernel:
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
-                logger=self._logger,
                 config=config.data_engine,
             )
         elif isinstance(config.data_engine, DataEngineConfig):
@@ -300,7 +298,6 @@ class NautilusKernel:
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
-                logger=self._logger,
                 config=config.data_engine,
             )
 
@@ -319,7 +316,6 @@ class NautilusKernel:
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
-                logger=self._logger,
                 config=config.risk_engine,
             )
         elif isinstance(config.risk_engine, RiskEngineConfig):
@@ -333,7 +329,6 @@ class NautilusKernel:
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
-                logger=self._logger,
                 config=config.risk_engine,
             )
 
@@ -351,7 +346,6 @@ class NautilusKernel:
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
-                logger=self._logger,
                 config=config.exec_engine,
             )
         elif isinstance(config.exec_engine, ExecEngineConfig):
@@ -364,7 +358,6 @@ class NautilusKernel:
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
-                logger=self._logger,
                 config=config.exec_engine,
             )
 
@@ -376,7 +369,6 @@ class NautilusKernel:
             msgbus=self._msgbus,
             cache=self._cache,
             clock=self._clock,
-            logger=self._logger,
             config=config.emulator,
         )
 
@@ -392,7 +384,6 @@ class NautilusKernel:
             risk_engine=self._risk_engine,
             exec_engine=self._exec_engine,
             clock=self._clock,
-            logger=self._logger,
             has_controller=self._config.controller is not None,
             loop=self._loop,
         )
@@ -412,7 +403,6 @@ class NautilusKernel:
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
-                logger=self._logger,
             )
 
         # Setup stream writer
@@ -446,7 +436,7 @@ class NautilusKernel:
             self._trader.add_exec_algorithm(exec_algorithm)
 
         build_time_ms = nanos_to_millis(time.time_ns() - self.ts_created)
-        self.log.info(f"Initialized in {build_time_ms}ms.")
+        self._log.info(f"Initialized in {build_time_ms}ms.")
 
     def __del__(self) -> None:
         if hasattr(self, "_writer") and self._writer and not self._writer.is_closed:
@@ -457,14 +447,14 @@ class NautilusKernel:
             raise RuntimeError("No event loop available for the node")
 
         if self._loop.is_closed():
-            self.log.error("Cannot setup signal handling (event loop was closed).")
+            self._log.error("Cannot setup signal handling (event loop was closed).")
             return
 
         signal.signal(signal.SIGINT, signal.SIG_DFL)
         signals = (signal.SIGTERM, signal.SIGINT, signal.SIGABRT)
         for sig in signals:
             self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
-        self.log.debug(f"Event loop signal handling setup for {signals}.")
+        self._log.debug(f"Event loop signal handling setup for {signals}.")
 
     def _loop_sig_handler(self, sig: signal.Signals) -> None:
         if self._loop is None:
@@ -483,10 +473,9 @@ class NautilusKernel:
             fs_protocol=config.fs_protocol,
             flush_interval_ms=config.flush_interval_ms,
             include_types=config.include_types,  # type: ignore  # TODO(cs)
-            logger=self.log,
         )
         self._trader.subscribe("*", self._writer.write)
-        self.log.info(f"Writing data & events to {path}")
+        self._log.info(f"Writing data & events to {path}")
 
         # Save a copy of the config for this kernel to the streaming folder.
         full_path = f"{self._writer.path}/config.json"
@@ -638,18 +627,6 @@ class NautilusKernel:
         return self._clock
 
     @property
-    def log(self) -> LoggerAdapter:
-        """
-        Return the kernels logger adapter.
-
-        Returns
-        -------
-        LoggerAdapter
-
-        """
-        return self._log
-
-    @property
     def logger(self) -> Logger:
         """
         Return the kernels logger.
@@ -659,7 +636,7 @@ class NautilusKernel:
         Logger
 
         """
-        return self._logger
+        return self._log
 
     @property
     def msgbus(self) -> MessageBus:
@@ -836,7 +813,7 @@ class NautilusKernel:
         """
         Stop the Nautilus system kernel.
         """
-        self.log.info("STOPPING...")
+        self._log.info("STOPPING...")
 
         if self._controller:
             self._controller.stop()
@@ -872,7 +849,7 @@ class NautilusKernel:
         if self.loop is None:
             raise RuntimeError("no event loop has been assigned to the kernel")
 
-        self.log.info("STOPPING...")
+        self._log.info("STOPPING...")
 
         if self._trader.is_running:
             self._trader.stop()
@@ -916,7 +893,7 @@ class NautilusKernel:
         if self._writer:
             self._writer.close()
 
-        self._logger.flush()
+        self._log.flush()
 
     def cancel_all_tasks(self) -> None:
         """
@@ -933,21 +910,21 @@ class NautilusKernel:
 
         to_cancel = asyncio.tasks.all_tasks(self.loop)
         if not to_cancel:
-            self.log.info("All tasks canceled.")
+            self._log.info("All tasks canceled.")
             return
 
         for task in to_cancel:
-            self.log.warning(f"Canceling pending task {task}")
+            self._log.warning(f"Canceling pending task {task}")
             task.cancel()
 
         if self.loop and self.loop.is_running():
-            self.log.warning("Event loop still running during `cancel_all_tasks`.")
+            self._log.warning("Event loop still running during `cancel_all_tasks`.")
             return
 
         finish_all_tasks: asyncio.Future = asyncio.tasks.gather(*to_cancel)
         self.loop.run_until_complete(finish_all_tasks)
 
-        self.log.debug(f"{finish_all_tasks}")
+        self._log.debug(f"{finish_all_tasks}")
 
         for task in to_cancel:  # pragma: no cover
             if task.cancelled():

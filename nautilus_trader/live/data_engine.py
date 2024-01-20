@@ -20,7 +20,6 @@ from typing import Final
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
@@ -44,8 +43,6 @@ class LiveDataEngine(DataEngine):
         The cache for the engine.
     clock : LiveClock
         The clock for the engine.
-    logger : Logger
-        The logger for the engine.
     config : LiveDataEngineConfig, optional
         The configuration for the instance.
 
@@ -64,7 +61,6 @@ class LiveDataEngine(DataEngine):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         config: LiveDataEngineConfig | None = None,
     ) -> None:
         if config is None:
@@ -74,7 +70,6 @@ class LiveDataEngine(DataEngine):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             config=config,
         )
 

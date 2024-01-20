@@ -39,7 +39,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.nautilus_pyo3 import is_within_last_24_hours
 from nautilus_trader.core.nautilus_pyo3 import last_weekday_nanos
@@ -74,8 +73,6 @@ class DatabentoDataClient(LiveMarketDataClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     loader : DatabentoDataLoader, optional
         The loader for the client.
     config : DatabentoDataClientConfig, optional
@@ -94,7 +91,6 @@ class DatabentoDataClient(LiveMarketDataClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         instrument_provider: DatabentoInstrumentProvider,
         loader: DatabentoDataLoader | None = None,
         config: DatabentoDataClientConfig | None = None,
@@ -110,7 +106,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             instrument_provider=instrument_provider,
             config=config,
         )
