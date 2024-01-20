@@ -472,14 +472,11 @@ impl Logger {
 
         let mut file_buf = file.map(BufWriter::new);
 
-        let clock_realtime = get_atomic_clock_realtime();
-        let clock_static = get_atomic_clock_static();
-
         // Continue to receive and handle log events until channel is hung up
         while let Ok(event) = rx.recv() {
             let timestamp = match LOGGING_REALTIME.load(Ordering::Relaxed) {
-                true => clock_realtime.get_time_ns(),
-                false => clock_static.get_time_ns(),
+                true => get_atomic_clock_realtime().get_time_ns(),
+                false => get_atomic_clock_static().get_time_ns(),
             };
 
             match event {
