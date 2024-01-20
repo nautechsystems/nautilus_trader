@@ -15,7 +15,6 @@ nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model" }
 anyhow = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-redis = { workspace = true }
 strum = { workspace = true }
 
 [dev-dependencies]

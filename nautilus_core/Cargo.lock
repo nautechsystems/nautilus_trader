@@ -2528,7 +2528,6 @@ dependencies = [
  "nautilus-core",
  "nautilus-model",
  "pyo3",
- "redis",
  "rstest",
  "strum",
 ]
@@ -2545,9 +2544,7 @@ dependencies = [
  "redis",
  "rmp-serde",
  "rstest",
- "serde",
  "serde_json",
- "strum",
 ]
 
 [[package]]
@@ -2566,7 +2563,6 @@ dependencies = [
  "nautilus-core",
  "once_cell",
  "pyo3",
- "rmp-serde",
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",
@@ -2590,9 +2586,7 @@ dependencies = [
  "futures",
  "futures-util",
  "http 1.0.0",
- "http-body-util",
  "hyper 1.1.0",
- "hyper-tls",
  "nautilus-core",
  "nonzero_ext",
  "pyo3",
@@ -2612,7 +2606,6 @@ version = "0.15.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
- "chrono",
  "compare",
  "criterion",
  "datafusion",
