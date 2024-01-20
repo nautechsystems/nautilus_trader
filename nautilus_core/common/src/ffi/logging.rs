@@ -26,6 +26,7 @@ use nautilus_model::identifiers::trader_id::TraderId;
 
 use crate::{
     enums::{LogColor, LogLevel},
+    headers,
     logging::{
         self, logging_set_bypass, map_log_level_to_filter, parse_component_levels,
         FileWriterConfig, LoggerConfig,
@@ -155,7 +156,7 @@ pub unsafe extern "C" fn logging_log_header(
 
     let component = cstr_to_ustr(component_ptr);
     let machine_id = cstr_to_str(machine_id_ptr);
-    logging::log_header(trader_id, machine_id, instance_id, component);
+    headers::log_header(trader_id, machine_id, instance_id, component);
 }
 
 /// Logs system information.
@@ -171,7 +172,7 @@ pub unsafe extern "C" fn logging_log_sysinfo(component_ptr: *const c_char) {
     };
 
     let component = cstr_to_ustr(component_ptr);
-    logging::log_sysinfo(component)
+    headers::log_sysinfo(component)
 }
 
 /// Flushes logger buffers.
