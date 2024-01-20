@@ -48,6 +48,8 @@ from nautilus_trader.core.rust.common cimport logging_clock_set_static
 from nautilus_trader.core.rust.common cimport logging_init
 from nautilus_trader.core.rust.common cimport logging_is_colored
 from nautilus_trader.core.rust.common cimport logging_is_initialized
+from nautilus_trader.core.rust.common cimport logging_log_header
+from nautilus_trader.core.rust.common cimport logging_log_sysinfo
 from nautilus_trader.core.rust.common cimport logging_shutdown
 from nautilus_trader.core.rust.common cimport tracing_init
 from nautilus_trader.core.string cimport cstr_to_pystr
@@ -351,89 +353,26 @@ cdef class Logger:
         self.error(f"{message}\n{ex_string}\n{stack_trace_lines}")
 
 
-cpdef void log_nautilus_header(
-    Logger logger,
+cpdef void log_header(
     TraderId trader_id,
     str machine_id,
     UUID4 instance_id,
-    bint is_colored,
+    str component,
 ):
-    Condition.not_none(logger, "logger")
+    logging_log_header(
+        trader_id._mem,
+        pystr_to_cstr(machine_id),
+        instance_id._mem,
+        pystr_to_cstr(component),
+    )
 
-    color = "\033[36m" if is_colored else ""
 
-    print("")  # New line to begin
-    logger.info(f"{color}=================================================================")
-    logger.info(f"{color} NAUTILUS TRADER - Automated Algorithmic Trading Platform")
-    logger.info(f"{color} by Nautech Systems Pty Ltd.")
-    logger.info(f"{color} Copyright (C) 2015-2024. All rights reserved.")
-    logger.info(f"{color}=================================================================")
-    logger.info("")
-    logger.info("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀")
-    logger.info("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⣿⣿⣿⠀⢸⣿⣿⣿⣿⣶⣶⣤⣀⠀⠀⠀⠀⠀")
-    logger.info("⠀⠀⠀⠀⠀⠀⢀⣴⡇⢀⣾⣿⣿⣿⣿⣿⠀⣾⣿⣿⣿⣿⣿⣿⣿⠿⠓⠀⠀⠀⠀")
-    logger.info("⠀⠀⠀⠀⠀⣰⣿⣿⡀⢸⣿⣿⣿⣿⣿⣿⠀⣿⣿⣿⣿⣿⣿⠟⠁⣠⣄⠀⠀⠀⠀")
-    logger.info("⠀⠀⠀⠀⢠⣿⣿⣿⣇⠀⢿⣿⣿⣿⣿⣿⠀⢻⣿⣿⣿⡿⢃⣠⣾⣿⣿⣧⡀⠀⠀")
-    logger.info("⠀⠀⠀⠀⢸⣿⣿⣿⣿⣆⠘⢿⣿⡿⠛⢉⠀⠀⠉⠙⠛⣠⣿⣿⣿⣿⣿⣿⣷⠀⠀")
-    logger.info("⠀⠀⠀⠠⣾⣿⣿⣿⣿⣿⣧⠈⠋⢀⣴⣧⠀⣿⡏⢠⡀⢸⣿⣿⣿⣿⣿⣿⣿⡇⠀")
-    logger.info("⠀⠀⠀⣀⠙⢿⣿⣿⣿⣿⣿⠇⢠⣿⣿⣿⡄⠹⠃⠼⠃⠈⠉⠛⠛⠛⠛⠛⠻⠇⠀")
-    logger.info("⠀⠀⢸⡟⢠⣤⠉⠛⠿⢿⣿⠀⢸⣿⡿⠋⣠⣤⣄⠀⣾⣿⣿⣶⣶⣶⣦⡄⠀⠀⠀")
-    logger.info("⠀⠀⠸⠀⣾⠏⣸⣷⠂⣠⣤⠀⠘⢁⣴⣾⣿⣿⣿⡆⠘⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀")
-    logger.info("⠀⠀⠀⠀⠛⠀⣿⡟⠀⢻⣿⡄⠸⣿⣿⣿⣿⣿⣿⣿⡀⠘⣿⣿⣿⣿⠟⠀⠀⠀⠀")
-    logger.info("⠀⠀⠀⠀⠀⠀⣿⠇⠀⠀⢻⡿⠀⠈⠻⣿⣿⣿⣿⣿⡇⠀⢹⣿⠿⠋⠀⠀⠀⠀⠀")
-    logger.info("⠀⠀⠀⠀⠀⠀⠋⠀⠀⠀⡘⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀")
-    logger.info("")
-    logger.info(f"{color}=================================================================")
-    logger.info(f"{color} SYSTEM SPECIFICATION")
-    logger.info(f"{color}=================================================================")
-    logger.info(f"CPU architecture: {platform.processor()}")
-    try:
-        cpu_freq_str = f"@ {int(psutil.cpu_freq()[2])} MHz"
-    except Exception:  # noqa (historically problematic call on ARM)
-        cpu_freq_str = None
-    logger.info(f"CPU(s): {psutil.cpu_count()} {cpu_freq_str}")
-    logger.info(f"OS: {platform.platform()}")
-    log_memory(logger, is_colored)
-    logger.info(f"{color}=================================================================")
-    logger.info(f"{color} IDENTIFIERS")
-    logger.info(f"{color}=================================================================")
-    logger.info(f"trader_id: {trader_id}")
-    logger.info(f"machine_id: {machine_id}")
-    logger.info(f"instance_id: {instance_id}")
-    logger.info(f"{color}=================================================================")
-    logger.info(f"{color} VERSIONING")
-    logger.info(f"{color}=================================================================")
-    logger.info(f"nautilus-trader {__version__}")
-    logger.info(f"python {python_version()}")
-    logger.info(f"numpy {np.__version__}")
-    logger.info(f"pandas {pd.__version__}")
-    logger.info(f"msgspec {msgspec.__version__}")
-    logger.info(f"psutil {psutil.__version__}")
-    logger.info(f"pyarrow {pyarrow.__version__}")
-    logger.info(f"pytz {pytz.__version__}")  # type: ignore
-    try:
-        import uvloop
-        logger.info(f"uvloop {uvloop.__version__}")
-    except ImportError:  # pragma: no cover
-        uvloop = None
-
-    logger.info(f"{color}=================================================================")
-
-cpdef void log_memory(Logger logger, bint is_colored):
-    Condition.not_none(logger, "logger")
-
-    color = "\033[36m" if is_colored else ""
-
-    logger.info(f"{color}=================================================================")
-    logger.info(f"{color} MEMORY USAGE")
-    logger.info(f"{color}=================================================================")
-    ram_total_mb = round(psutil.virtual_memory()[0] / 1000000)
-    ram_used__mb = round(psutil.virtual_memory()[3] / 1000000)
-    ram_avail_mb = round(psutil.virtual_memory()[1] / 1000000)
-    ram_avail_pc = 100 - psutil.virtual_memory()[2]
-    logger.info(f"RAM-Total: {ram_total_mb:,} MB")
-    logger.info(f"RAM-Used:  {ram_used__mb:,} MB ({100 - ram_avail_pc:.2f}%)")
-    if ram_avail_pc <= 50:
-        logger.warning(f"RAM-Avail: {ram_avail_mb:,} MB ({ram_avail_pc:.2f}%)")
-    else:
-        logger.info(f"RAM-Avail: {ram_avail_mb:,} MB ({ram_avail_pc:.2f}%)")
+cpdef void log_sysinfo(
+    TraderId trader_id,
+    str machine_id,
+    UUID4 instance_id,
+    str component,
+):
+    logging_log_sysinfo(
+        pystr_to_cstr(component),
+    )

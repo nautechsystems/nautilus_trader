@@ -2800,4 +2800,4 @@ ib = ["async-timeout", "defusedxml", "nautilus_ibapi"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.13"
-content-hash = "c29570db369dec571b8e9bf6f4b4febb221570ec5e31bf898f6e9536de8eb3f2"
+content-hash = "5003d061505902b13d76bc663294451cacea22582276e8caca907452fdc830f7"

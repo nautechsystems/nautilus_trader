@@ -18,7 +18,7 @@ use std::ffi::{c_char, CStr};
 use nautilus_core::{
     ffi::{
         parsing::{optional_bytes_to_json, u8_as_bool},
-        string::{cstr_to_ustr, optional_cstr_to_string},
+        string::{cstr_to_str, cstr_to_ustr, optional_cstr_to_string},
     },
     uuid::UUID4,
 };
@@ -129,6 +129,49 @@ pub unsafe extern "C" fn logger_log(
     let message = CStr::from_ptr(message_ptr).to_string_lossy();
 
     logging::log(level, color, component, message);
+}
+
+/// Logs the Nautilus system header.
+///
+/// # Safety
+///
+/// - Assumes `machine_id_ptr` is a valid C string pointer.
+/// - Assumes `component_ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn logging_log_header(
+    trader_id: TraderId,
+    machine_id_ptr: *const c_char,
+    instance_id: UUID4,
+    component_ptr: *const c_char,
+) {
+    if machine_id_ptr.is_null() {
+        eprintln!("`machine_id_ptr` was NULL");
+        return;
+    };
+    if component_ptr.is_null() {
+        eprintln!("`component_ptr` was NULL");
+        return;
+    };
+
+    let component = cstr_to_ustr(component_ptr);
+    let machine_id = cstr_to_str(machine_id_ptr);
+    logging::log_header(trader_id, machine_id, instance_id, component);
+}
+
+/// Logs system information.
+///
+/// # Safety
+///
+/// - Assumes `component_ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn logging_log_sysinfo(component_ptr: *const c_char) {
+    if component_ptr.is_null() {
+        eprintln!("`component_ptr` was NULL");
+        return;
+    };
+
+    let component = cstr_to_ustr(component_ptr);
+    logging::log_sysinfo(component)
 }
 
 /// Flushes logger buffers.

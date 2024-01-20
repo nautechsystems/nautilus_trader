@@ -40,7 +40,7 @@ from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import init_logging
 from nautilus_trader.common.logging import init_tracing
-from nautilus_trader.common.logging import log_nautilus_header
+from nautilus_trader.common.logging import log_header
 from nautilus_trader.config import ActorFactory
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
@@ -183,13 +183,13 @@ class NautilusKernel:
                 "This warning will be removed in a future version, and become a hard requirement.",
             )
 
-        log_nautilus_header(
-            self._log,
-            self._trader_id,
-            self._machine_id,
-            self._instance_id,
-            logging.log_colors,
+        log_header(
+            trader_id=self._trader_id,
+            machine_id=self._machine_id,
+            instance_id=self._instance_id,
+            component=name,
         )
+
         self._log.info("Building system kernel...")
 
         # Setup loop (if sandbox live)
