@@ -1154,6 +1154,8 @@ cdef class BacktestEngine:
             return self._data[cursor]
 
     cdef CVec _advance_time(self, uint64_t ts_now, list clocks):
+        set_logging_clock_static(ts_now)
+
         cdef TestClock clock
         for clock in clocks:
             time_event_accumulator_advance_clock(
