@@ -16,7 +16,6 @@ anyhow = { workspace = true }
 indexmap = { workspace = true }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-rmp-serde = { workspace = true }
 rstest = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
