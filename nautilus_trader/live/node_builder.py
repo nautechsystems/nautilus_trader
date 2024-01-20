@@ -229,7 +229,6 @@ class TradingNodeBuilder:
                 "msgbus": self._msgbus,
                 "cache": self._cache,
                 "clock": self._clock,
-                "logger": self._log,
             }
 
             if factory.__name__ == "SandboxLiveExecClientFactory":
