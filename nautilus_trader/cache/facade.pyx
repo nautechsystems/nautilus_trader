@@ -21,7 +21,6 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
@@ -55,8 +54,6 @@ cdef class CacheDatabaseFacade:
 
     Parameters
     ----------
-    logger : Logger
-        The logger for the database.
     config : CacheConfig, optional
         The configuration for the database.
 
@@ -65,12 +62,8 @@ cdef class CacheDatabaseFacade:
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(
-        self,
-        Logger logger not None,
-        config: CacheConfig | None = None,
-    ):
-        self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
+    def __init__(self, config: CacheConfig | None = None) -> None:
+        self._log = Logger(name=type(self).__name__)
 
         self._log.info("READY.")
 

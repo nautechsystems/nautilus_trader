@@ -36,14 +36,13 @@ def live_clock():
 
 @pytest.fixture(scope="session")
 def live_logger():
-    return Logger()
+    return Logger("TEST_LOGGER")
 
 
 @pytest.fixture(scope="session")
-def binance_http_client(loop, live_clock, live_logger):
+def binance_http_client(loop, live_clock):
     client = BinanceHttpClient(
         clock=live_clock,
-        logger=live_logger,
         key="SOME_BINANCE_API_KEY",
         secret="SOME_BINANCE_API_SECRET",
         base_url="https://api.binance.com/",  # Spot/Margin

@@ -23,7 +23,7 @@ from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.accounting.accounts.margin cimport MarginAccount
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.model cimport OrderSide
@@ -45,7 +45,7 @@ cdef class AccountsManager:
     ----------
     cache : CacheFacade
         The read-only cache for the manager.
-    log : LoggerAdapter
+    logger : Logger
         The logger for the manager.
     clock : Clock
         The clock for the manager.
@@ -54,11 +54,11 @@ cdef class AccountsManager:
     def __init__(
         self,
         CacheFacade cache not None,
-        LoggerAdapter log not None,
+        Logger logger not None,
         Clock clock not None,
     ):
         self._clock = clock
-        self._log = log
+        self._log = logger
         self._cache = cache
 
     cdef AccountState update_balances(

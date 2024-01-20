@@ -33,7 +33,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
@@ -63,8 +62,6 @@ class BetfairDataClient(LiveMarketDataClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     instrument_provider : BetfairInstrumentProvider, optional
         The instrument provider.
     strict_handling : bool
@@ -79,7 +76,6 @@ class BetfairDataClient(LiveMarketDataClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         instrument_provider: BetfairInstrumentProvider,
         account_currency: Currency,
         strict_handling: bool = False,
@@ -91,7 +87,6 @@ class BetfairDataClient(LiveMarketDataClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             instrument_provider=instrument_provider,
         )
 
@@ -99,7 +94,6 @@ class BetfairDataClient(LiveMarketDataClient):
         self._client: BetfairHttpClient = client
         self._stream = BetfairMarketStreamClient(
             http_client=self._client,
-            logger=logger,
             message_handler=self.on_market_update,
         )
         self.parser = BetfairParser(currency=account_currency.code)

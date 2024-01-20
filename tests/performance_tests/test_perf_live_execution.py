@@ -19,7 +19,6 @@ import pytest
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.live.data_engine import LiveDataEngine
@@ -51,7 +50,6 @@ class TestLiveExecutionPerformance:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.logger = Logger(bypass=True)
 
         self.trader_id = TestIdStubs.trader_id()
         self.account_id = AccountId(f"{BINANCE.value}-001")
@@ -59,7 +57,6 @@ class TestLiveExecutionPerformance:
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -68,7 +65,6 @@ class TestLiveExecutionPerformance:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine = LiveDataEngine(
@@ -76,7 +72,6 @@ class TestLiveExecutionPerformance:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_engine = LiveExecutionEngine(
@@ -84,7 +79,6 @@ class TestLiveExecutionPerformance:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.risk_engine = LiveRiskEngine(
@@ -93,7 +87,6 @@ class TestLiveExecutionPerformance:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_client = MockExecutionClient(
@@ -104,7 +97,6 @@ class TestLiveExecutionPerformance:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         self.portfolio.update_account(TestEventStubs.margin_account_state())
         self.exec_engine.register_client(self.exec_client)
@@ -116,7 +108,6 @@ class TestLiveExecutionPerformance:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
     def submit_order(self):

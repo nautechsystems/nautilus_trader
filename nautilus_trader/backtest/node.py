@@ -322,26 +322,26 @@ class BacktestNode:
         # Load data
         for config in data_configs:
             t0 = pd.Timestamp.now()
-            engine._log.info(
+            engine.logger.info(
                 f"Reading {config.data_type} data for instrument={config.instrument_id}.",
             )
             result: CatalogDataResult = self.load_data_config(config)
             if config.instrument_id and result.instrument is None:
-                engine._log.warning(
+                engine.logger.warning(
                     f"Requested instrument_id={result.instrument} from data_config not found in catalog",
                 )
                 continue
             if not result.data:
-                engine._log.warning(f"No data found for {config}")
+                engine.logger.warning(f"No data found for {config}")
                 continue
 
             t1 = pd.Timestamp.now()
-            engine._log.info(
+            engine.logger.info(
                 f"Read {len(result.data):,} events from parquet in {pd.Timedelta(t1 - t0)}s.",
             )
             self._load_engine_data(engine=engine, result=result)
             t2 = pd.Timestamp.now()
-            engine._log.info(f"Engine load took {pd.Timedelta(t2 - t1)}s")
+            engine.logger.info(f"Engine load took {pd.Timedelta(t2 - t1)}s")
 
         engine.run(run_config_id=run_config_id)
         engine.dispose()

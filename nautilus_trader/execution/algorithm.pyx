@@ -31,7 +31,6 @@ from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport LogColor
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
@@ -151,7 +150,6 @@ cdef class ExecAlgorithm(Actor):
         MessageBus msgbus,
         CacheFacade cache,
         Clock clock,
-        Logger logger,
     ):
         """
         Register the execution algorithm with a trader.
@@ -168,8 +166,6 @@ cdef class ExecAlgorithm(Actor):
             The read-only cache for the execution algorithm.
         clock : Clock
             The clock for the execution algorithm.
-        logger : Logger
-            The logger for the execution algorithm.
 
         Warnings
         --------
@@ -181,14 +177,12 @@ cdef class ExecAlgorithm(Actor):
         Condition.not_none(msgbus, "msgbus")
         Condition.not_none(cache, "cache")
         Condition.not_none(clock, "clock")
-        Condition.not_none(logger, "logger")
 
         self.register_base(
             portfolio=portfolio,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
         )
 
         # Register endpoints

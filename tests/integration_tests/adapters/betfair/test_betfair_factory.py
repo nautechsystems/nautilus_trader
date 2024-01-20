@@ -26,9 +26,6 @@ from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFact
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
@@ -44,17 +41,9 @@ class TestBetfairFactory:
         self.trader_id = TestIdStubs.trader_id()
         self.venue = BETFAIR_VENUE
 
-        # Setup logging
-        self.logger = Logger(
-            level_stdout=LogLevel.DEBUG,
-            bypass=True,
-        )
-        self._log = LoggerAdapter("TestBetfairExecutionClient", self.logger)
-
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
         self.cache = TestComponentStubs.cache()
 
@@ -82,7 +71,6 @@ class TestBetfairFactory:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         exec_client = BetfairLiveExecClientFactory.create(
             loop=asyncio.get_event_loop(),
@@ -91,7 +79,6 @@ class TestBetfairFactory:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Assert

@@ -29,8 +29,6 @@ from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import ComponentState
-from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
@@ -79,17 +77,11 @@ class TestStrategy:
     def setup(self) -> None:
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(
-            level_stdout=LogLevel.DEBUG,
-            bypass=True,
-        )
-
         self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -98,21 +90,18 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.risk_engine = RiskEngine(
@@ -120,7 +109,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exchange = SimulatedExchange(
@@ -138,7 +126,6 @@ class TestStrategy:
             modules=[],
             fill_model=FillModel(),
             clock=self.clock,
-            logger=self.logger,
             latency_model=LatencyModel(0),
             support_contingent_orders=False,
             use_reduce_only=False,
@@ -149,7 +136,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_client = BacktestExecClient(
@@ -157,7 +143,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Wire up components
@@ -271,7 +256,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act, Assert
@@ -287,7 +271,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -305,7 +288,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -325,7 +307,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         strategy.save()
 
@@ -341,7 +322,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act, Assert
@@ -357,7 +337,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act, Assert
@@ -373,7 +352,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         state: dict[str, bytes] = {}
@@ -395,7 +373,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         bar = Bar(
@@ -430,7 +407,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         strategy.reset()
@@ -452,7 +428,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -473,7 +448,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         ema1 = ExponentialMovingAverage(10, price_type=PriceType.MID)
@@ -497,7 +471,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         ema1 = ExponentialMovingAverage(10)
@@ -521,7 +494,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         ema1 = ExponentialMovingAverage(10)
@@ -546,7 +518,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         ema = ExponentialMovingAverage(10)
@@ -570,7 +541,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         ema = ExponentialMovingAverage(10, price_type=PriceType.MID)
@@ -594,7 +564,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         ema = ExponentialMovingAverage(10, price_type=PriceType.MID)
@@ -615,7 +584,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         ema = ExponentialMovingAverage(10, price_type=PriceType.MID)
@@ -638,7 +606,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         ema = ExponentialMovingAverage(10)
@@ -662,7 +629,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         ema = ExponentialMovingAverage(10)
@@ -685,7 +651,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         ema = ExponentialMovingAverage(10)
@@ -707,7 +672,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         ema = ExponentialMovingAverage(10)
@@ -731,7 +695,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         ema = ExponentialMovingAverage(10)
@@ -754,7 +717,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         ema = ExponentialMovingAverage(10)
@@ -776,7 +738,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         alert_time = datetime.now(pytz.utc) + timedelta(milliseconds=200)
@@ -799,7 +760,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         start_time = datetime.now(pytz.utc) + timedelta(milliseconds=100)
@@ -827,7 +787,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order1 = strategy.order_factory.limit(
@@ -872,7 +831,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order1 = strategy.order_factory.limit(
@@ -906,7 +864,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order1 = strategy.order_factory.market(
@@ -943,7 +900,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -973,7 +929,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -1002,7 +957,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -1031,7 +985,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         bracket1 = strategy.order_factory.bracket(
@@ -1095,7 +1048,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         bracket1 = strategy.order_factory.bracket(
@@ -1152,7 +1104,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         bracket = strategy.order_factory.bracket(
@@ -1187,7 +1138,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         bracket = strategy.order_factory.bracket(
@@ -1220,7 +1170,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         bracket = strategy.order_factory.bracket(
@@ -1255,7 +1204,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -1284,7 +1232,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.stop_market(
@@ -1319,7 +1266,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.stop_market(
@@ -1353,7 +1299,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.stop_market(
@@ -1387,7 +1332,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -1421,7 +1365,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -1455,7 +1398,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -1486,7 +1428,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -1526,7 +1467,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order1 = strategy.order_factory.stop_market(
@@ -1564,7 +1504,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order1 = strategy.order_factory.stop_market(
@@ -1607,7 +1546,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order1 = strategy.order_factory.market(
@@ -1647,7 +1585,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -1682,7 +1619,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         strategy.start()
 
@@ -1739,7 +1675,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         strategy.start()
 
@@ -1789,7 +1724,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         strategy.start()
 
@@ -1830,7 +1764,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         strategy.start()
 
@@ -1881,7 +1814,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         strategy.start()
 
@@ -1935,7 +1867,6 @@ class TestStrategy:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         strategy.start()
 

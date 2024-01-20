@@ -148,7 +148,6 @@ cdef class OrderMatchingEngine:
         MessageBus msgbus not None,
         CacheFacade cache not None,
         TestClock clock not None,
-        Logger logger not None,
         bint bar_execution = True,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
@@ -159,10 +158,7 @@ cdef class OrderMatchingEngine:
         # auction_match_algo = default_auction_match
     ):
         self._clock = clock
-        self._log = LoggerAdapter(
-            component_name=f"{type(self).__name__}({instrument.id.venue})",
-            logger=logger,
-        )
+        self._log = Logger(name=f"{type(self).__name__}({instrument.id.venue})")
         self.msgbus = msgbus
         self.cache = cache
 

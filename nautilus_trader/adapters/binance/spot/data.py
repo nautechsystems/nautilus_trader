@@ -28,7 +28,6 @@ from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotTrad
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import OrderBookDelta
@@ -53,8 +52,6 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     instrument_provider : InstrumentProvider
         The instrument provider.
     base_url_ws : str
@@ -73,7 +70,6 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         instrument_provider: InstrumentProvider,
         base_url_ws: str,
         config: BinanceDataClientConfig,
@@ -98,7 +94,6 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             instrument_provider=instrument_provider,
             account_type=account_type,
             base_url_ws=base_url_ws,

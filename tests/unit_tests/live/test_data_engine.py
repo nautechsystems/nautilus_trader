@@ -19,7 +19,6 @@ import pytest
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import UUID4
@@ -56,14 +55,12 @@ class TestLiveDataEngine:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.logger = Logger(bypass=True)
 
         self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -72,7 +69,6 @@ class TestLiveDataEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.engine = LiveDataEngine(
@@ -80,7 +76,6 @@ class TestLiveDataEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
     def teardown(self):
@@ -109,7 +104,6 @@ class TestLiveDataEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=LiveDataEngineConfig(qsize=1),
         )
 
@@ -143,7 +137,6 @@ class TestLiveDataEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=LiveDataEngineConfig(qsize=1),
         )
 
@@ -187,7 +180,6 @@ class TestLiveDataEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=LiveDataEngineConfig(qsize=1),
         )
 
@@ -223,7 +215,6 @@ class TestLiveDataEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=LiveDataEngineConfig(qsize=1),
         )
 

@@ -35,7 +35,6 @@ import numpy as np
 import pandas as pd
 
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.indicators.base.indicator import Indicator
 from nautilus_trader.indicators.ta_lib.common import output_suffix_map
@@ -224,8 +223,6 @@ class TALibIndicatorManager(Indicator):
         If uniform price bars should be skipped.
     skip_zero_close_bar : bool, default True
         If zero sized bars should be skipped.
-    logger : Logger, optional
-        The logger for the manager.
 
     Raises
     ------
@@ -243,7 +240,6 @@ class TALibIndicatorManager(Indicator):
         buffer_size: int | None = None,
         skip_uniform_price_bar: bool = True,
         skip_zero_close_bar: bool = True,
-        logger: LoggerAdapter | None = None,
     ) -> None:
         super().__init__([])
 
@@ -252,7 +248,7 @@ class TALibIndicatorManager(Indicator):
         if buffer_size is not None:
             PyCondition().positive_int(buffer_size, "buffer_size")
 
-        self._log = logger
+        self._log = Logger(name=type(self).__name__)
 
         # Initialize variables
         self._bar_type = bar_type
@@ -274,10 +270,6 @@ class TALibIndicatorManager(Indicator):
 
         # Initialize with empty indicators (acts as OHLCV placeholder in case no indicators are set)
         self.set_indicators(())
-
-    def change_logger(self, logger: Logger) -> None:
-        PyCondition().type(logger, Logger, "logger")
-        self._log = LoggerAdapter(component_name=repr(self), logger=logger)
 
     def set_indicators(self, indicators: tuple[TAFunctionWrapper, ...]) -> None:
         """

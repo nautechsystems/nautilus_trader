@@ -20,7 +20,6 @@ from typing import Final
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.message import Command
@@ -45,8 +44,6 @@ class LiveRiskEngine(RiskEngine):
         The read-only cache for the engine.
     clock : LiveClock
         The clock for the engine.
-    logger : Logger
-        The logger for the engine.
     config : LiveRiskEngineConfig
         The configuration for the instance.
 
@@ -66,7 +63,6 @@ class LiveRiskEngine(RiskEngine):
         msgbus: MessageBus,
         cache: CacheFacade,
         clock: LiveClock,
-        logger: Logger,
         config: LiveRiskEngineConfig | None = None,
     ) -> None:
         if config is None:
@@ -77,7 +73,6 @@ class LiveRiskEngine(RiskEngine):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             config=config,
         )
 

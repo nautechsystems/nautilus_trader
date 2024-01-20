@@ -43,7 +43,6 @@ from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBr
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.core.uuid import UUID4
@@ -115,8 +114,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     instrument_provider : InteractiveBrokersInstrumentProvider
         The instrument provider.
     ibg_client_id : int
@@ -134,7 +131,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         instrument_provider: InteractiveBrokersInstrumentProvider,
         ibg_client_id: int,
         config: InteractiveBrokersExecClientConfig,
@@ -151,7 +147,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             config=config,
         )
         self._client: InteractiveBrokersClient = client

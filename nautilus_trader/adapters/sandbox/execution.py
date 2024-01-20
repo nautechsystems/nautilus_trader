@@ -27,7 +27,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.data import Data
 from nautilus_trader.execution.reports import FillReport
@@ -69,8 +68,6 @@ class SandboxExecutionClient(LiveExecutionClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
 
     """
 
@@ -83,7 +80,6 @@ class SandboxExecutionClient(LiveExecutionClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         venue: str,
         currency: str,
         balance: int,
@@ -103,11 +99,10 @@ class SandboxExecutionClient(LiveExecutionClient):
             oms_type=oms_type,
             account_type=account_type,
             base_currency=self._currency,
-            instrument_provider=InstrumentProvider(logger=logger),
+            instrument_provider=InstrumentProvider(),
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             config=None,
         )
         self.exchange = SimulatedExchange(
@@ -126,7 +121,6 @@ class SandboxExecutionClient(LiveExecutionClient):
             fill_model=FillModel(),
             latency_model=LatencyModel(0),
             clock=self.test_clock,
-            logger=logger,
             frozen_account=True,  # <-- Freezing account
         )
         self._client = BacktestExecClient(
@@ -134,7 +128,6 @@ class SandboxExecutionClient(LiveExecutionClient):
             msgbus=msgbus,
             cache=self._cache,
             clock=self.test_clock,
-            logger=logger,
         )
         self.exchange.register_client(self._client)
 

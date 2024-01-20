@@ -22,7 +22,6 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.spot.http.wallet import BinanceSpotWalletHttpAPI
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
 
 
 @pytest.mark.asyncio()
@@ -31,7 +30,6 @@ async def test_binance_spot_wallet_http_client():
 
     client = get_cached_binance_http_client(
         clock=clock,
-        logger=Logger(),
         account_type=BinanceAccountType.SPOT,
         key=os.getenv("BINANCE_API_KEY"),
         secret=os.getenv("BINANCE_API_SECRET"),

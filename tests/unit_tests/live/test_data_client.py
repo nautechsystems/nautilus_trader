@@ -17,7 +17,6 @@ import asyncio
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.live.data_client import LiveDataClient
 from nautilus_trader.live.data_client import LiveMarketDataClient
@@ -46,14 +45,12 @@ class TestLiveDataClientTests:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.logger = Logger(bypass=True)
 
         self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -63,7 +60,6 @@ class TestLiveDataClientTests:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.client = LiveDataClient(
@@ -73,7 +69,6 @@ class TestLiveDataClientTests:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
     def test_dummy_test(self):
@@ -89,14 +84,11 @@ class TestLiveMarketDataClientTests:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.logger = Logger(bypass=True)
-
         self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -105,7 +97,6 @@ class TestLiveMarketDataClientTests:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.engine = LiveDataEngine(
@@ -113,7 +104,6 @@ class TestLiveMarketDataClientTests:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.client = LiveMarketDataClient(
@@ -123,8 +113,7 @@ class TestLiveMarketDataClientTests:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
-            instrument_provider=InstrumentProvider(logger=self.logger),
+            instrument_provider=InstrumentProvider(),
         )
 
     def test_dummy_test(self):

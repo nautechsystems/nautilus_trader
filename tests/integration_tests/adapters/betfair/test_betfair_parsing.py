@@ -73,7 +73,6 @@ from nautilus_trader.adapters.betfair.parsing.streaming import market_definition
 from nautilus_trader.adapters.betfair.parsing.streaming import market_definition_to_instrument_closes
 from nautilus_trader.adapters.betfair.parsing.streaming import market_definition_to_instrument_status
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.book import OrderBook
@@ -333,9 +332,8 @@ class TestBetfairParsing:
         # Fixture Setup
         self.loop = asyncio.new_event_loop()
         self.clock = LiveClock()
-        self.logger = Logger(bypass=True)
         self.instrument = betting_instrument()
-        self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
+        self.client = BetfairTestStubs.betfair_client(loop=self.loop)
         self.provider = BetfairTestStubs.instrument_provider(self.client)
         self.uuid = UUID4()
         self.parser = BetfairParser(currency="GBP")

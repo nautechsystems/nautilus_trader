@@ -16,7 +16,6 @@
 import pytest
 
 from nautilus_trader.adapters._template.providers import TemplateInstrumentProvider
-from nautilus_trader.common.logging import Logger
 
 
 pytestmark = pytest.mark.skip(reason="template")
@@ -24,9 +23,7 @@ pytestmark = pytest.mark.skip(reason="template")
 
 @pytest.fixture()
 def instrument_provider():
-    return TemplateInstrumentProvider(
-        logger=Logger(),
-    )
+    return TemplateInstrumentProvider()
 
 
 def test_load_all_async(instrument_provider):

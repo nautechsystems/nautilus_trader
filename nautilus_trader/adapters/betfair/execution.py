@@ -57,7 +57,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_micros
@@ -107,8 +106,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     instrument_provider : BetfairInstrumentProvider
         The instrument provider.
 
@@ -122,7 +119,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         instrument_provider: BetfairInstrumentProvider,
     ) -> None:
         super().__init__(
@@ -136,14 +132,12 @@ class BetfairExecutionClient(LiveExecutionClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
         )
 
         self._instrument_provider: BetfairInstrumentProvider = instrument_provider
         self._client: BetfairHttpClient = client
         self.stream = BetfairOrderStreamClient(
             http_client=self._client,
-            logger=logger,
             message_handler=self.handle_order_stream_update,
         )
         self.venue_order_id_to_client_order_id: dict[VenueOrderId, ClientOrderId] = {}

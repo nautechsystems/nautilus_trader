@@ -17,7 +17,6 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport CancelAllOrders
@@ -46,7 +45,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class OrderManager:
     cdef Clock _clock
-    cdef LoggerAdapter _log
+    cdef Logger _log
     cdef MessageBus _msgbus
     cdef Cache _cache
 

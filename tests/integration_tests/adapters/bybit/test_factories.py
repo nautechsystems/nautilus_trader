@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import asyncio
 
 import pytest
@@ -30,8 +29,6 @@ from nautilus_trader.adapters.bybit.factories import _get_ws_base_url_public
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.test_kit.mocks.cache_database import MockCacheDatabase
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
@@ -40,10 +37,6 @@ class TestBybitFactories:
     def setup(self):
         self.loop = asyncio.get_event_loop()
         self.clock = LiveClock()
-        self.logger = Logger(
-            level_stdout=LogLevel.DEBUG,
-            bypass=True,
-        )
 
         self.trader_id = TestIdStubs.trader_id()
         self.strategy_id = TestIdStubs.strategy_id()
@@ -52,17 +45,10 @@ class TestBybitFactories:
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
-        self.cache_db = MockCacheDatabase(
-            logger=self.logger,
-        )
-
-        self.cache = Cache(
-            database=self.cache_db,
-            logger=self.logger,
-        )
+        self.cache_db = MockCacheDatabase()
+        self.cache = Cache(database=self.cache_db)
 
     @pytest.mark.parametrize(
         ("is_testnet", "expected"),
@@ -102,7 +88,6 @@ class TestBybitFactories:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         assert isinstance(data_client, BybitDataClient)
 
@@ -118,6 +103,5 @@ class TestBybitFactories:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         assert isinstance(data_client, BybitExecutionClient)

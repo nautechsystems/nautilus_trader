@@ -36,7 +36,6 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport OrderSide
@@ -88,8 +87,6 @@ cdef class Portfolio(PortfolioFacade):
         The read-only cache for the portfolio.
     clock : Clock
         The clock for the portfolio.
-    logger : Logger
-        The logger for the portfolio.
     """
 
     def __init__(
@@ -97,16 +94,15 @@ cdef class Portfolio(PortfolioFacade):
         MessageBus msgbus not None,
         CacheFacade cache not None,
         Clock clock not None,
-        Logger logger = None,
     ):
         self._clock = clock
-        self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
+        self._log = Logger(name=type(self).__name__)
         self._msgbus = msgbus
         self._cache = cache
         self._accounts = AccountsManager(
             cache=cache,
             clock=clock,
-            log=self._log,
+            logger=self._log,
         )
 
         self._venue = None  # Venue for specific portfolio behavior (Interactive Brokers)

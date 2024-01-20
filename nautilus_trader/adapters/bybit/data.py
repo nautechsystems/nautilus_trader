@@ -35,7 +35,6 @@ from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.message import Request
@@ -63,7 +62,6 @@ class BybitDataClient(LiveMarketDataClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         instrument_provider: InstrumentProvider,
         instrument_types: list[BybitInstrumentType],
         ws_urls: dict[BybitInstrumentType, str],
@@ -78,7 +76,6 @@ class BybitDataClient(LiveMarketDataClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             instrument_provider=instrument_provider,
         )
 
@@ -96,7 +93,6 @@ class BybitDataClient(LiveMarketDataClient):
         for instrument_type in instrument_types:
             self._ws_clients[instrument_type] = BybitWebsocketClient(
                 clock=clock,
-                logger=logger,
                 handler=lambda x: self._handle_ws_message(instrument_type, x),
                 base_url=ws_urls[instrument_type],
                 api_key=config.api_key or get_api_key(config.testnet),

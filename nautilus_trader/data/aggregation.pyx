@@ -23,7 +23,6 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.rust.core cimport millis_to_nanos
@@ -235,8 +234,6 @@ cdef class BarAggregator:
         The bar type for the aggregator.
     handler : Callable[[Bar], None]
         The bar handler for the aggregator.
-    logger : Logger
-        The logger for the aggregator.
     await_partial : bool, default False
         If the aggregator should await an initial partial bar prior to aggregating.
 
@@ -251,7 +248,6 @@ cdef class BarAggregator:
         Instrument instrument not None,
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
-        Logger logger not None,
         bint await_partial = False,
     ):
         Condition.equal(instrument.id, bar_type.instrument_id, "instrument.id", "bar_type.instrument_id")
@@ -259,10 +255,7 @@ cdef class BarAggregator:
         self.bar_type = bar_type
         self._handler = handler
         self._await_partial = await_partial
-        self._log = LoggerAdapter(
-            component_name=type(self).__name__,
-            logger=logger,
-        )
+        self._log = Logger(name=type(self).__name__)
         self._builder = BarBuilder(
             instrument=instrument,
             bar_type=self.bar_type,
@@ -350,8 +343,6 @@ cdef class TickBarAggregator(BarAggregator):
         The bar type for the aggregator.
     handler : Callable[[Bar], None]
         The bar handler for the aggregator.
-    logger : Logger
-        The logger for the aggregator.
 
     Raises
     ------
@@ -364,13 +355,11 @@ cdef class TickBarAggregator(BarAggregator):
         Instrument instrument not None,
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
-        Logger logger not None,
     ):
         super().__init__(
             instrument=instrument,
             bar_type=bar_type,
             handler=handler,
-            logger=logger,
         )
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
@@ -395,8 +384,6 @@ cdef class VolumeBarAggregator(BarAggregator):
         The bar type for the aggregator.
     handler : Callable[[Bar], None]
         The bar handler for the aggregator.
-    logger : Logger
-        The logger for the aggregator.
 
     Raises
     ------
@@ -409,13 +396,11 @@ cdef class VolumeBarAggregator(BarAggregator):
         Instrument instrument not None,
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
-        Logger logger not None,
     ):
         super().__init__(
             instrument=instrument,
             bar_type=bar_type,
             handler=handler,
-            logger=logger,
         )
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
@@ -464,8 +449,6 @@ cdef class ValueBarAggregator(BarAggregator):
         The bar type for the aggregator.
     handler : Callable[[Bar], None]
         The bar handler for the aggregator.
-    logger : Logger
-        The logger for the aggregator.
 
     Raises
     ------
@@ -478,13 +461,11 @@ cdef class ValueBarAggregator(BarAggregator):
         Instrument instrument not None,
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
-        Logger logger not None,
     ):
         super().__init__(
             instrument=instrument,
             bar_type=bar_type,
             handler=handler,
-            logger=logger,
         )
 
         self._cum_value = Decimal(0)  # Cumulative value
@@ -550,8 +531,6 @@ cdef class TimeBarAggregator(BarAggregator):
         The bar handler for the aggregator.
     clock : Clock
         The clock for the aggregator.
-    logger : Logger
-        The logger for the aggregator.
     build_with_no_updates : bool, default True
         If build and emit bars with no new market updates.
     timestamp_on_close : bool, default True
@@ -573,7 +552,6 @@ cdef class TimeBarAggregator(BarAggregator):
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
         Clock clock not None,
-        Logger logger not None,
         bint build_with_no_updates = True,
         bint timestamp_on_close = True,
         str interval_type = "left-open",
@@ -582,7 +560,6 @@ cdef class TimeBarAggregator(BarAggregator):
             instrument=instrument,
             bar_type=bar_type,
             handler=handler,
-            logger=logger,
         )
 
         self._clock = clock

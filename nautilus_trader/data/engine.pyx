@@ -104,8 +104,6 @@ cdef class DataEngine(Component):
         The cache for the engine.
     clock : Clock
         The clock for the engine.
-    logger : Logger
-        The logger for the engine.
     config : DataEngineConfig, optional
         The configuration for the instance.
     """
@@ -115,7 +113,6 @@ cdef class DataEngine(Component):
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
-        Logger logger not None,
         config: DataEngineConfig | None = None,
     ):
         if config is None:
@@ -123,7 +120,6 @@ cdef class DataEngine(Component):
         Condition.type(config, DataEngineConfig, "config")
         super().__init__(
             clock=clock,
-            logger=logger,
             component_id=ComponentId("DataEngine"),
             msgbus=msgbus,
             config=config,
@@ -1599,7 +1595,6 @@ cdef class DataEngine(Component):
                 bar_type=bar_type,
                 handler=self.process,
                 clock=self._clock,
-                logger=self._log.get_logger(),
                 build_with_no_updates=self._time_bars_build_with_no_updates,
                 timestamp_on_close=self._time_bars_timestamp_on_close,
                 interval_type=self._time_bars_interval_type,
@@ -1609,21 +1604,18 @@ cdef class DataEngine(Component):
                 instrument=instrument,
                 bar_type=bar_type,
                 handler=self.process,
-                logger=self._log.get_logger(),
             )
         elif bar_type.spec.aggregation == BarAggregation.VOLUME:
             aggregator = VolumeBarAggregator(
                 instrument=instrument,
                 bar_type=bar_type,
                 handler=self.process,
-                logger=self._log.get_logger(),
             )
         elif bar_type.spec.aggregation == BarAggregation.VALUE:
             aggregator = ValueBarAggregator(
                 instrument=instrument,
                 bar_type=bar_type,
                 handler=self.process,
-                logger=self._log.get_logger(),
             )
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)

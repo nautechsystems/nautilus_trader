@@ -34,7 +34,6 @@ from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import Component
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.algorithm import ExecAlgorithm
@@ -72,8 +71,6 @@ class Trader(Component):
         The execution engine for the trader.
     clock : Clock
         The clock for the trader.
-    logger : Logger
-        The logger for the trader.
     has_controller : bool, default False
         If the trader has a controller.
     loop : asyncio.AbstractEventLoop, optional
@@ -102,13 +99,11 @@ class Trader(Component):
         risk_engine: RiskEngine,
         exec_engine: ExecutionEngine,
         clock: Clock,
-        logger: Logger,
         has_controller: bool = False,
         loop: asyncio.AbstractEventLoop | None = None,
     ) -> None:
         super().__init__(
             clock=clock,
-            logger=logger,
             component_id=trader_id,
             msgbus=msgbus,
         )
@@ -320,7 +315,6 @@ class Trader(Component):
             msgbus=self._msgbus,
             cache=self._cache,
             clock=clock,  # Clock per component
-            logger=self._log.get_logger(),
         )
 
         self._actors[actor.id] = actor
@@ -406,7 +400,6 @@ class Trader(Component):
             msgbus=self._msgbus,
             cache=self._cache,
             clock=clock,  # Clock per strategy
-            logger=self._log.get_logger(),
         )
 
         self._exec_engine.register_oms_type(strategy)
@@ -478,7 +471,6 @@ class Trader(Component):
             msgbus=self._msgbus,
             cache=self._cache,
             clock=clock,  # Clock per algorithm
-            logger=self._log.get_logger(),
         )
 
         self._exec_algorithms[exec_algorithm.id] = exec_algorithm

@@ -113,6 +113,15 @@ pub unsafe extern "C" fn logger_log(
     component_ptr: *const c_char,
     message_ptr: *const c_char,
 ) {
+    if component_ptr.is_null() {
+        eprintln!("`component_ptr` was NULL");
+        return;
+    };
+    if message_ptr.is_null() {
+        eprintln!("`message_ptr` was NULL");
+        return;
+    };
+
     let component = cstr_to_ustr(component_ptr);
     let message = CStr::from_ptr(message_ptr).to_string_lossy();
 

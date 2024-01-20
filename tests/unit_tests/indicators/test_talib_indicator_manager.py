@@ -23,9 +23,6 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 
-from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.objects import Price
@@ -57,15 +54,9 @@ def bar_type() -> BarType:
 
 @pytest.fixture()
 def indicator_manager(bar_type: BarType) -> TALibIndicatorManager:
-    logger = Logger(
-        level_stdout=LogLevel.INFO,
-        bypass=True,
-    )
-    log = LoggerAdapter("TALibIndicatorManager", logger=logger)
     return TALibIndicatorManager(
         bar_type=bar_type,
         period=10,
-        logger=log,
     )
 
 
@@ -129,17 +120,11 @@ def test_setup():
     # Arrange
     bar_type = BarType.from_str("EUR/USD.IDEALPRO-1-HOUR-MID-EXTERNAL")
     period = 10
-    logger = Logger(
-        level_stdout=LogLevel.INFO,
-        bypass=True,
-    )
-    log = LoggerAdapter("TALibIndicatorManager", logger=logger)
 
     # Act
     indicator_manager = TALibIndicatorManager(
         bar_type=bar_type,
         period=period,
-        logger=log,
     )
 
     # Assert

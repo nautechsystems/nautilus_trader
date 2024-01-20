@@ -26,8 +26,6 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.cache.database import CacheDatabaseAdapter
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config.common import CacheConfig
 from nautilus_trader.config.common import DatabaseConfig
@@ -85,17 +83,11 @@ class TestCacheDatabaseAdapter:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(
-            level_stdout=LogLevel.DEBUG,
-            bypass=True,
-        )
-
         self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -104,21 +96,18 @@ class TestCacheDatabaseAdapter:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.risk_engine = RiskEngine(
@@ -126,7 +115,6 @@ class TestCacheDatabaseAdapter:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.strategy = Strategy()
@@ -136,13 +124,11 @@ class TestCacheDatabaseAdapter:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.database = CacheDatabaseAdapter(
             trader_id=self.trader_id,
             instance_id=UUID4(),
-            logger=self.logger,
             serializer=MsgSpecSerializer(encoding=msgspec.msgpack, timestamps_as_str=True),
             config=CacheConfig(database=DatabaseConfig()),
         )
@@ -492,7 +478,6 @@ class TestCacheDatabaseAdapter:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -516,7 +501,6 @@ class TestCacheDatabaseAdapter:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Act
@@ -1024,7 +1008,6 @@ class TestCacheDatabaseAdapter:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.database.update_actor(actor)
@@ -1053,7 +1036,6 @@ class TestCacheDatabaseAdapter:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.database.update_strategy(strategy)
@@ -1077,11 +1059,6 @@ class TestRedisCacheDatabaseIntegrity:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(
-            level_stdout=LogLevel.DEBUG,
-            bypass=True,
-        )
-
         self.trader_id = TestIdStubs.trader_id()
 
         config = BacktestEngineConfig(
@@ -1114,7 +1091,6 @@ class TestRedisCacheDatabaseIntegrity:
         self.database = CacheDatabaseAdapter(
             trader_id=self.trader_id,
             instance_id=UUID4(),
-            logger=self.logger,
             serializer=MsgSpecSerializer(encoding=msgspec.msgpack, timestamps_as_str=True),
             config=CacheConfig(database=DatabaseConfig()),
         )
