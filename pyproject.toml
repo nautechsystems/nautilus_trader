@@ -58,7 +58,6 @@ click = "^8.1.7"
 fsspec = "==2023.6.0"  # Pinned for stability
 msgspec = "^0.18.5"
 pandas = "^2.2.0"
-psutil = "^5.9.8"
 pyarrow = ">=14.0.2"
 pytz = "^2023.3.0"
 tqdm = "^4.66.1"

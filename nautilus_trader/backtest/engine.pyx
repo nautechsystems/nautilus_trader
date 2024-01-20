@@ -49,7 +49,7 @@ from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.common.clock cimport TimeEventHandler
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport log_level_from_str
-from nautilus_trader.common.logging cimport log_memory
+from nautilus_trader.common.logging cimport log_sysinfo
 from nautilus_trader.common.logging cimport set_logging_clock_realtime
 from nautilus_trader.common.logging cimport set_logging_clock_static
 from nautilus_trader.core.correctness cimport Condition
@@ -1220,7 +1220,12 @@ cdef class BacktestEngine:
         return "\033[36m" if logging_is_colored() else ""
 
     def _log_pre_run(self):
-        log_memory(self._log, logging_is_colored())
+        log_sysinfo(
+            trader_id=self._kernel.trader_id,
+            machine_id=self._kernel.machine_id,
+            instance_id=self._kernel.instance_id,
+            component=type(self).__name__,
+        )
 
         cdef str color = self._get_log_color_code()
 

@@ -366,6 +366,24 @@ cdef extern from "../includes/common.h":
                     const char *component_ptr,
                     const char *message_ptr);
 
+    # Logs the Nautilus system header.
+    #
+    # # Safety
+    #
+    # - Assumes `machine_id_ptr` is a valid C string pointer.
+    # - Assumes `component_ptr` is a valid C string pointer.
+    void logging_log_header(TraderId_t trader_id,
+                            const char *machine_id_ptr,
+                            UUID4_t instance_id,
+                            const char *component_ptr);
+
+    # Logs system information.
+    #
+    # # Safety
+    #
+    # - Assumes `component_ptr` is a valid C string pointer.
+    void logging_log_sysinfo(const char *component_ptr);
+
     # Flushes logger buffers.
     void logger_flush();
 

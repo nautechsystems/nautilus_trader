@@ -75,12 +75,17 @@ cdef class Logger:
     cpdef void exception(self, str message, ex)
 
 
-cpdef void log_nautilus_header(
-    Logger logger,
+cpdef void log_header(
     TraderId trader_id,
     str machine_id,
     UUID4 instance_id,
-    bint is_colored,
+    str component,
 )
 
-cpdef void log_memory(Logger logger, bint is_colored)
+
+cpdef void log_sysinfo(
+    TraderId trader_id,
+    str machine_id,
+    UUID4 instance_id,
+    str component,
+)
