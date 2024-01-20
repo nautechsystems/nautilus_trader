@@ -23,7 +23,6 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.model cimport BookType
@@ -66,8 +65,8 @@ cdef class Actor(Component):
     """The actors configuration.\n\n:returns: `NautilusConfig`"""
     cdef readonly Clock clock
     """The actors clock.\n\n:returns: `Clock`"""
-    cdef readonly LoggerAdapter log
-    """The actors logger.\n\n:returns: `LoggerAdapter`"""
+    cdef readonly Logger log
+    """The actors logger.\n\n:returns: `Logger`"""
     cdef readonly MessageBus msgbus
     """The message bus for the actor (if registered).\n\n:returns: `MessageBus` or ``None``"""
     cdef readonly CacheFacade cache
@@ -107,7 +106,6 @@ cdef class Actor(Component):
         MessageBus msgbus,
         CacheFacade cache,
         Clock clock,
-        Logger logger,
     )
 
     cpdef void register_executor(self, loop, executor)

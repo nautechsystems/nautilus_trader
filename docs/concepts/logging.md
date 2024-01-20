@@ -1,6 +1,7 @@
 # Logging
 
-The platform provides logging for both backtesting and live trading using a high-performance logger implemented in Rust.
+The platform provides logging for both backtesting and live trading using a high-performance logger implemented in Rust
+using the `log` crate.
 The logger operates in a separate thread and uses a multi-producer single consumer (MPSC) channel to receive log messages.
 This design ensures that the main thread is not blocked by log string formatting or file I/O operations.
 
@@ -20,10 +21,10 @@ Logging can be configured by importing the `LoggingConfig` object.
 By default, log events with an 'INFO' `LogLevel` and higher are written to stdout/stderr.
 
 Log level (`LogLevel`) values include:
-- 'DEBUG' or 'DBG'
-- 'INFO' or 'INF'
-- 'WARNING' or 'WRN'
-- 'ERROR' or 'ERR'
+- 'DEBUG'
+- 'INFO'
+- 'WARNING' or 'WARN'
+- 'ERROR'
 
 ```{note}
 See the `LoggingConfig` [API Reference](../api_reference/config.md#LoggingConfig) for further details.
@@ -33,8 +34,16 @@ Logging can be configured in the following ways:
 - Minimum `LogLevel` for stdout/stderr
 - Minimum `LogLevel` for log files
 - Automatic log file naming and daily rotation, or custom log file name
+- Directory for writing log files
 - Plain text or JSON log file formatting
+- Filtering of individual components by log level
+- ANSI colors in log lines
 - Bypass logging completely
+- Print Rust config to stdout at initialization
+
+```{warning}
+Only one logger (with Rust backed logging system) can be initialized per process.
+```
 
 ### Standard output logging
 Log messages are written to the console via stdout/stderr writers. The minimum log level can be configured using the `log_level` parameter.

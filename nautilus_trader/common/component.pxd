@@ -23,7 +23,6 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.message cimport Request
 from nautilus_trader.core.message cimport Response
@@ -51,7 +50,7 @@ cdef class ComponentFSMFactory:
 
 cdef class Component:
     cdef readonly Clock _clock
-    cdef readonly LoggerAdapter _log
+    cdef readonly Logger _log
     cdef readonly MessageBus _msgbus
     cdef FiniteStateMachine _fsm
     cdef dict _config
@@ -64,7 +63,6 @@ cdef class Component:
     """The components type.\n\n:returns: `type`"""
 
     cdef void _change_clock(self, Clock clock)
-    cdef void _change_logger(self, Logger logger)
     cdef void _change_msgbus(self, MessageBus msgbus)
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
@@ -101,7 +99,7 @@ cdef class Component:
 cdef class MessageBus:
     cdef MessageBus_API _mem
     cdef Clock _clock
-    cdef LoggerAdapter _log
+    cdef Logger _log
     cdef dict[Subscription, list[str]] _subscriptions
     cdef dict[str, Subscription[:]] _patterns
     cdef dict[str, object] _endpoints
@@ -161,7 +159,7 @@ cdef class Subscription:
 
 cdef class Throttler:
     cdef Clock _clock
-    cdef LoggerAdapter _log
+    cdef Logger _log
     cdef uint64_t _interval_ns
     cdef object _buffer
     cdef str _timer_name

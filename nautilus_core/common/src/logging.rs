@@ -21,24 +21,79 @@ use std::{
     io::{self, BufWriter, Stderr, Stdout, Write},
     path::{Path, PathBuf},
     str::FromStr,
-    sync::mpsc::{channel, Receiver, SendError, Sender},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::{channel, Receiver, SendError, Sender},
+    },
     thread,
 };
 
 use chrono::{prelude::*, Utc};
 use log::{
     debug, error, info,
-    kv::{Key, ToValue, Value},
+    kv::{ToValue, Value},
     set_boxed_logger, set_max_level, warn, Level, LevelFilter, Log, STATIC_MAX_LEVEL,
 };
-use nautilus_core::{datetime::unix_nanos_to_iso8601, time::UnixNanos, uuid::UUID4};
+use nautilus_core::{
+    datetime::unix_nanos_to_iso8601,
+    time::{get_atomic_clock_realtime, get_atomic_clock_static, UnixNanos},
+    uuid::UUID4,
+};
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde::{Deserialize, Serialize};
+use sysinfo::System;
+use thousands::Separable;
 use tracing_subscriber::EnvFilter;
 use ustr::Ustr;
 
-use crate::enums::{LogColor, LogLevel};
+use crate::{
+    enums::{LogColor, LogLevel},
+    python::versioning::{get_python_package_version, get_python_version},
+};
 use crate::LogWriter;
+
+static LOGGING_INITIALIZED: AtomicBool = AtomicBool::new(false);
+static LOGGING_BYPASSED: AtomicBool = AtomicBool::new(false);
+static LOGGING_REALTIME: AtomicBool = AtomicBool::new(true);
+static LOGGING_COLORED: AtomicBool = AtomicBool::new(true);
+
+/// Returns whether the core logger is enabled.
+#[no_mangle]
+pub extern "C" fn logging_is_initialized() -> u8 {
+    LOGGING_INITIALIZED.load(Ordering::Relaxed) as u8
+}
+
+/// Sets the logging system to bypass mode.
+#[no_mangle]
+pub extern "C" fn logging_set_bypass() {
+    LOGGING_BYPASSED.store(true, Ordering::Relaxed)
+}
+
+/// Shuts down the logging system.
+#[no_mangle]
+pub extern "C" fn logging_shutdown() {
+    todo!()
+}
+
+/// Returns whether the core logger is using ANSI colors.
+#[no_mangle]
+pub extern "C" fn logging_is_colored() -> u8 {
+    LOGGING_COLORED.load(Ordering::Relaxed) as u8
+}
+
+/// Sets the global logging clock to real-time mode.
+#[no_mangle]
+pub extern "C" fn logging_clock_set_realtime() {
+    LOGGING_REALTIME.store(true, Ordering::Relaxed);
+}
+
+/// Sets the global logging clock to static mode with the given UNIX time (nanoseconds).
+#[no_mangle]
+pub extern "C" fn logging_clock_set_static(time_ns: u64) {
+    LOGGING_REALTIME.store(false, Ordering::Relaxed);
+    let clock = get_atomic_clock_static();
+    clock.set_time(time_ns);
+}
 
 #[derive(Debug)]
 pub struct StdoutWriter {
@@ -157,8 +212,6 @@ pub struct LoggerConfig {
     component_level: HashMap<Ustr, LevelFilter>,
     /// If logger is using ANSI color codes.
     pub is_colored: bool,
-    /// If logging is bypassed.
-    pub is_bypassed: bool,
     /// If the configuration should be printed to stdout at initialization.
     pub print_config: bool,
 }
@@ -170,7 +223,6 @@ impl Default for LoggerConfig {
             fileout_level: LevelFilter::Off,
             component_level: HashMap::new(),
             is_colored: false,
-            is_bypassed: false,
             print_config: false,
         }
     }
@@ -182,7 +234,6 @@ impl LoggerConfig {
         fileout_level: LevelFilter,
         component_level: HashMap<Ustr, LevelFilter>,
         is_colored: bool,
-        is_bypassed: bool,
         print_config: bool,
     ) -> Self {
         Self {
@@ -190,7 +241,6 @@ impl LoggerConfig {
             fileout_level,
             component_level,
             is_colored,
-            is_bypassed,
             print_config,
         }
     }
@@ -201,14 +251,11 @@ impl LoggerConfig {
             mut fileout_level,
             mut component_level,
             mut is_colored,
-            mut is_bypassed,
             mut print_config,
         } = Self::default();
         spec.split(';').for_each(|kv| {
             if kv == "is_colored" {
                 is_colored = true;
-            } else if kv == "is_bypassed" {
-                is_bypassed = true;
             } else if kv == "print_config" {
                 print_config = true;
             } else {
@@ -231,7 +278,6 @@ impl LoggerConfig {
             fileout_level,
             component_level,
             is_colored,
-            is_bypassed,
             print_config,
         }
     }
@@ -271,6 +317,7 @@ impl FileWriterConfig {
 
 pub fn map_log_level_to_filter(log_level: LogLevel) -> LevelFilter {
     match log_level {
+        LogLevel::Off => LevelFilter::Off,
         LogLevel::Debug => LevelFilter::Debug,
         LogLevel::Info => LevelFilter::Info,
         LogLevel::Warning => LevelFilter::Warn,
@@ -342,6 +389,8 @@ pub fn init_logging(
     config: LoggerConfig,
     file_config: FileWriterConfig,
 ) {
+    LOGGING_INITIALIZED.store(true, Ordering::Relaxed);
+    LOGGING_COLORED.store(config.is_colored, Ordering::Relaxed);
     Logger::init_with_config(trader_id, instance_id, config, file_config);
 }
 
@@ -368,8 +417,6 @@ pub enum LogEvent {
 /// Represents a log event which includes a message.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LogLine {
-    /// The UNIX nanoseconds timestamp when the log event occurred.
-    timestamp: UnixNanos,
     /// The log level for the event.
     level: Level,
     /// The color for the log message content.
@@ -382,19 +429,14 @@ pub struct LogLine {
 
 impl fmt::Display for LogLine {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} [{}] {}: {}",
-            self.timestamp, self.level, self.component, self.message
-        )
+        write!(f, "[{}] {}: {}", self.level, self.component, self.message)
     }
 }
 
 impl Log for Logger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        !self.config.is_bypassed
-            && (metadata.level() == Level::Error
-                || metadata.level() >= self.config.stdout_level
+        !LOGGING_BYPASSED.load(Ordering::Relaxed)
+            && (metadata.level() >= self.config.stdout_level
                 || metadata.level() >= self.config.fileout_level)
     }
 
@@ -402,10 +444,6 @@ impl Log for Logger {
         // TODO remove unwraps
         if self.enabled(record.metadata()) {
             let key_values = record.key_values();
-            let timestamp = key_values
-                .get(Key::from_str("timestamp"))
-                .and_then(|v| v.to_u64())
-                .expect("No timestamp included in log `Record`");
             let color = key_values
                 .get("color".into())
                 .and_then(|v| v.to_u64().map(|v| (v as u8).into()))
@@ -416,7 +454,6 @@ impl Log for Logger {
                 .unwrap_or_else(|| Ustr::from(record.metadata().target()));
 
             let line = LogLine {
-                timestamp,
                 level: record.level(),
                 color,
                 component,
@@ -486,7 +523,6 @@ impl Logger {
         }
     }
 
-    #[allow(unused_variables)] // `is_bypassed` is unused
     fn handle_messages(
         trader_id: &str,
         instance_id: &str,
@@ -503,7 +539,6 @@ impl Logger {
             fileout_level,
             ref component_level,
             is_colored,
-            is_bypassed,
             print_config: _,
         } = config;
 
@@ -543,6 +578,11 @@ impl Logger {
 
         // Continue to receive and handle log events until channel is hung up
         while let Ok(event) = rx.recv() {
+            let timestamp = match LOGGING_REALTIME.load(Ordering::Relaxed) {
+                true => get_atomic_clock_realtime().get_time_ns(),
+                false => get_atomic_clock_static().get_time_ns(),
+            };
+
             match event {
                 LogEvent::Flush => {
                     stdout_writer.flush();
@@ -585,7 +625,7 @@ impl Logger {
 
                         if file_writer.enabled(&line, &config) {
                             let print_string =
-                                Self::format_file_log(&line, trader_id, is_json_format);
+                                Self::format_file_log(timestamp, &line, trader_id, is_json_format);
                             file_writer.write(&print_string);
                             file_writer.flush();
                         }
@@ -594,7 +634,7 @@ impl Logger {
                     if stderr_writer.enabled(&line, &config)
                         || stdout_writer.enabled(&line, &config)
                     {
-                        let print_string = Self::format_console_log(&line, trader_id, is_colored);
+                        let print_string = Self::format_console_log(timestamp, &line, trader_id, is_colored);
 
                         if stderr_writer.enabled(&line, &config) {
                             stderr_writer.write(&print_string);
@@ -662,11 +702,16 @@ impl Logger {
         file_path
     }
 
-    fn format_console_log(event: &LogLine, trader_id: &str, is_colored: bool) -> String {
+    fn format_console_log(
+        timestamp: UnixNanos,
+        event: &LogLine,
+        trader_id: &str,
+        is_colored: bool,
+    ) -> String {
         match is_colored {
             true => format!(
                 "\x1b[1m{}\x1b[0m {}[{}] {}.{}: {}\x1b[0m\n",
-                unix_nanos_to_iso8601(event.timestamp),
+                unix_nanos_to_iso8601(timestamp),
                 &event.color.to_string(),
                 event.level,
                 &trader_id,
@@ -675,7 +720,7 @@ impl Logger {
             ),
             false => format!(
                 "{} [{}] {}.{}: {}\n",
-                unix_nanos_to_iso8601(event.timestamp),
+                unix_nanos_to_iso8601(timestamp),
                 event.level,
                 &trader_id,
                 &event.component,
@@ -684,7 +729,12 @@ impl Logger {
         }
     }
 
-    fn format_file_log(event: &LogLine, trader_id: &str, is_json_format: bool) -> String {
+    fn format_file_log(
+        timestamp: UnixNanos,
+        event: &LogLine,
+        trader_id: &str,
+        is_json_format: bool,
+    ) -> String {
         if is_json_format {
             let json_string =
                 serde_json::to_string(event).expect("Error serializing log event to string");
@@ -692,7 +742,7 @@ impl Logger {
         } else {
             format!(
                 "{} [{}] {}.{}: {}\n",
-                &unix_nanos_to_iso8601(event.timestamp),
+                &unix_nanos_to_iso8601(timestamp),
                 event.level,
                 trader_id,
                 &event.component,
@@ -702,29 +752,434 @@ impl Logger {
     }
 }
 
-pub fn log(
-    timestamp_ns: UnixNanos,
-    level: LogLevel,
-    color: LogColor,
-    component: Ustr,
-    message: Cow<'_, str>,
-) {
+pub fn log(level: LogLevel, color: LogColor, component: Ustr, message: Cow<'_, str>) {
     let color = Value::from(color as u8);
 
     match level {
+        LogLevel::Off => {}
         LogLevel::Debug => {
-            debug!(timestamp = timestamp_ns, component = component.to_value(), color = color; "{}", message);
+            debug!(component = component.to_value(), color = color; "{}", message);
         }
         LogLevel::Info => {
-            info!(timestamp = timestamp_ns, component = component.to_value(), color = color; "{}", message);
+            info!(component = component.to_value(), color = color; "{}", message);
         }
         LogLevel::Warning => {
-            warn!(timestamp = timestamp_ns, component = component.to_value(), color = color; "{}", message);
+            warn!(component = component.to_value(), color = color; "{}", message);
         }
         LogLevel::Error => {
-            error!(timestamp = timestamp_ns, component = component.to_value(), color = color; "{}", message);
+            error!(component = component.to_value(), color = color; "{}", message);
         }
     }
+}
+
+pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, component: Ustr) {
+    let mut sys = System::new_all();
+    sys.refresh_all();
+
+    let kernel_version = match System::kernel_version() {
+        Some(v) => format!("kernel-{v}"),
+        None => "".to_string(),
+    };
+    let os_version = match System::long_os_version() {
+        Some(v) => v,
+        None => "".to_string(),
+    };
+
+    log(
+        LogLevel::Info,
+        LogColor::Cyan,
+        component,
+        Cow::Borrowed("================================================================="),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Cyan,
+        component,
+        Cow::Borrowed(" NAUTILUS TRADER - Automated Algorithmic Trading Platform"),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Cyan,
+        component,
+        Cow::Borrowed(" by Nautech Systems Pty Ltd."),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Cyan,
+        component,
+        Cow::Borrowed(" Copyright (C) 2015-2024. All rights reserved."),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Cyan,
+        component,
+        Cow::Borrowed("================================================================="),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(""),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⣿⣿⣿⠀⢸⣿⣿⣿⣿⣶⣶⣤⣀⠀⠀⠀⠀⠀"),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed("⠀⠀⠀⠀⠀⠀⢀⣴⡇⢀⣾⣿⣿⣿⣿⣿⠀⣾⣿⣿⣿⣿⣿⣿⣿⠿⠓⠀⠀⠀⠀"),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed("⠀⠀⠀⠀⠀⣰⣿⣿⡀⢸⣿⣿⣿⣿⣿⣿⠀⣿⣿⣿⣿⣿⣿⠟⠁⣠⣄⠀⠀⠀⠀"),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed("⠀⠀⠀⠀⢠⣿⣿⣿⣇⠀⢿⣿⣿⣿⣿⣿⠀⢻⣿⣿⣿⡿⢃⣠⣾⣿⣿⣧⡀⠀⠀"),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed("⠀⠀⠀⠀⢸⣿⣿⣿⣿⣆⠘⢿⣿⡿⠛⢉⠀⠀⠉⠙⠛⣠⣿⣿⣿⣿⣿⣿⣷⠀⠀"),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed("⠀⠀⠀⠠⣾⣿⣿⣿⣿⣿⣧⠈⠋⢀⣴⣧⠀⣿⡏⢠⡀⢸⣿⣿⣿⣿⣿⣿⣿⡇⠀"),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed("⠀⠀⠀⣀⠙⢿⣿⣿⣿⣿⣿⠇⢠⣿⣿⣿⡄⠹⠃⠼⠃⠈⠉⠛⠛⠛⠛⠛⠻⠇⠀"),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed("⠀⠀⢸⡟⢠⣤⠉⠛⠿⢿⣿⠀⢸⣿⡿⠋⣠⣤⣄⠀⣾⣿⣿⣶⣶⣶⣦⡄⠀⠀⠀"),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed("⠀⠀⠸⠀⣾⠏⣸⣷⠂⣠⣤⠀⠘⢁⣴⣾⣿⣿⣿⡆⠘⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀"),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed("⠀⠀⠀⠀⠛⠀⣿⡟⠀⢻⣿⡄⠸⣿⣿⣿⣿⣿⣿⣿⡀⠘⣿⣿⣿⣿⠟⠀⠀⠀⠀"),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed("⠀⠀⠀⠀⠀⠀⣿⠇⠀⠀⢻⡿⠀⠈⠻⣿⣿⣿⣿⣿⡇⠀⢹⣿⠿⠋⠀⠀⠀⠀⠀"),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed("⠀⠀⠀⠀⠀⠀⠋⠀⠀⠀⡘⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀"),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(""),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Cyan,
+        component,
+        Cow::Borrowed("================================================================="),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Cyan,
+        component,
+        Cow::Borrowed(" SYSTEM SPECIFICATION"),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Cyan,
+        component,
+        Cow::Borrowed("================================================================="),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(&format!("CPU architecture: {}", sys.cpus()[0].brand())),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(&format!(
+            "CPU(s): {} @ {} Mhz",
+            sys.cpus().len(),
+            sys.cpus()[0].frequency()
+        )),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(&format!("OS: {} {}", kernel_version, os_version)),
+    );
+
+    log_sysinfo(component);
+
+    log(
+        LogLevel::Info,
+        LogColor::Cyan,
+        component,
+        Cow::Borrowed("================================================================="),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Cyan,
+        component,
+        Cow::Borrowed(" IDENTIFIERS"),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Cyan,
+        component,
+        Cow::Borrowed("================================================================="),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(&format!("trader_id: {trader_id}")),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(&format!("machine_id: {machine_id}")),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(&format!("instance_id: {instance_id}")),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Cyan,
+        component,
+        Cow::Borrowed("================================================================="),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Cyan,
+        component,
+        Cow::Borrowed(" VERSIONING"),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Cyan,
+        component,
+        Cow::Borrowed("================================================================="),
+    );
+    let package = "nautilus_trader";
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(&format!(
+            "{package}: {}",
+            get_python_package_version(package)
+        )),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(&format!("python: {}", get_python_version())),
+    );
+    let package = "numpy";
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(&format!(
+            "{package}: {}",
+            get_python_package_version(package)
+        )),
+    );
+    let package = "pandas";
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(&format!(
+            "{package}: {}",
+            get_python_package_version(package)
+        )),
+    );
+    let package = "msgspec";
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(&format!(
+            "{package}: {}",
+            get_python_package_version(package)
+        )),
+    );
+    let package = "pyarrow";
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(&format!(
+            "{package}: {}",
+            get_python_package_version(package)
+        )),
+    );
+    let package = "pytz";
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(&format!(
+            "{package}: {}",
+            get_python_package_version(package)
+        )),
+    );
+    let package = "uvloop";
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(&format!(
+            "{package}: {}",
+            get_python_package_version(package)
+        )),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Cyan,
+        component,
+        Cow::Borrowed("================================================================="),
+    );
+}
+
+pub fn log_sysinfo(component: Ustr) {
+    let mut sys = System::new_all();
+    sys.refresh_all();
+
+    let ram_total = sys.total_memory();
+    let ram_used = sys.used_memory();
+    let ram_avail = ram_total - ram_used;
+
+    let swap_total = sys.total_swap();
+    let swap_used = sys.used_swap();
+    let swap_avail = swap_total - swap_used;
+
+    log(
+        LogLevel::Info,
+        LogColor::Cyan,
+        component,
+        Cow::Borrowed("================================================================="),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Cyan,
+        component,
+        Cow::Borrowed(" MEMORY USAGE"),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Cyan,
+        component,
+        Cow::Borrowed("================================================================="),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(&format!("RAM-Total: {} MB", ram_total / 1_000_000).separate_with_commas()),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(
+            &format!(
+                "RAM-Used: {} MB ({:.2}%)",
+                ram_used / 1_000_000,
+                (ram_used as f64 / ram_total as f64) * 100.0,
+            )
+            .separate_with_commas(),
+        ),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(
+            &format!(
+                "RAM-Avail: {} MB ({:.2}%)",
+                ram_avail / 1_000_000,
+                (ram_avail as f64 / ram_total as f64) * 100.0,
+            )
+            .separate_with_commas(),
+        ),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(&format!("Swap-Total: {} MB", swap_total / 1_000_000).separate_with_commas()),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(
+            &format!(
+                "Swap-Used: {} MB ({:.2}%)",
+                swap_used / 1_000_000,
+                (swap_used as f64 / swap_total as f64) * 100.0
+            )
+            .separate_with_commas(),
+        ),
+    );
+    log(
+        LogLevel::Info,
+        LogColor::Normal,
+        component,
+        Cow::Borrowed(
+            &format!(
+                "Swap-Avail: {} MB ({:.2}%)",
+                swap_avail / 1_000_000,
+                (swap_avail as f64 / swap_total as f64) * 100.0
+            )
+            .separate_with_commas(),
+        ),
+    );
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -734,7 +1189,7 @@ pub fn log(
 mod tests {
     use std::{collections::HashMap, time::Duration};
 
-    use log::{info, kv::ToValue, LevelFilter};
+    use log::{info, LevelFilter};
     use nautilus_core::uuid::UUID4;
     use nautilus_model::identifiers::trader_id::TraderId;
     use rstest::*;
@@ -742,7 +1197,7 @@ mod tests {
     use tempfile::tempdir;
     use ustr::Ustr;
 
-    use super::FileWriterConfig;
+    use super::*;
     use crate::{
         enums::LogColor,
         logging::{LogLine, Logger, LoggerConfig},
@@ -752,7 +1207,6 @@ mod tests {
     #[rstest]
     fn log_message_serialization() {
         let log_message = LogLine {
-            timestamp: 1_000_000_000,
             level: log::Level::Info,
             color: LogColor::Normal,
             component: Ustr::from("Portfolio"),
@@ -762,7 +1216,6 @@ mod tests {
         let serialized_json = serde_json::to_string(&log_message).unwrap();
         let deserialized_value: Value = serde_json::from_str(&serialized_json).unwrap();
 
-        assert_eq!(deserialized_value["timestamp"], 1_000_000_000);
         assert_eq!(deserialized_value["level"], "INFO");
         assert_eq!(deserialized_value["component"], "Portfolio");
         assert_eq!(deserialized_value["message"], "This is a log message");
@@ -782,7 +1235,6 @@ mod tests {
                     LevelFilter::Error
                 )]),
                 is_colored: true,
-                is_bypassed: false,
                 print_config: false,
             }
         )
@@ -798,7 +1250,6 @@ mod tests {
                 fileout_level: LevelFilter::Error,
                 component_level: HashMap::new(),
                 is_colored: false,
-                is_bypassed: false,
                 print_config: true,
             }
         )
@@ -824,8 +1275,9 @@ mod tests {
             file_config,
         );
 
+        logging_clock_set_static(1_650_000_000_000_000);
+
         info!(
-            timestamp = 1_650_000_000_000_000i64.to_value(),
             component = "RiskEngine";
             "This is a test."
         );
@@ -881,8 +1333,9 @@ mod tests {
             file_config,
         );
 
+        logging_clock_set_static(1_650_000_000_000_000);
+
         info!(
-            timestamp = 1_650_000_000_000_000i64.to_value(),
             component = "RiskEngine";
             "This is a test."
         );
@@ -933,8 +1386,9 @@ mod tests {
             file_config,
         );
 
+        logging_clock_set_static(1_650_000_000_000_000);
+
         info!(
-            timestamp = 1_650_000_000_000_000i64.to_value(),
             component = "RiskEngine";
             "This is a test."
         );
@@ -961,7 +1415,7 @@ mod tests {
 
         assert_eq!(
         log_contents,
-        "{\"timestamp\":1650000000000000,\"level\":\"INFO\",\"color\":\"Normal\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
+        "{\"level\":\"INFO\",\"color\":\"Normal\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
     );
     }
 }

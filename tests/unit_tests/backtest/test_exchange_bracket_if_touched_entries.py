@@ -23,8 +23,6 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -57,18 +55,11 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(
-            clock=self.clock,
-            level_stdout=LogLevel.DEBUG,
-            bypass=True,
-        )
-
         self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -77,21 +68,18 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             msgbus=self.msgbus,
             clock=self.clock,
             cache=self.cache,
-            logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.risk_engine = RiskEngine(
@@ -99,7 +87,6 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.emulator = OrderEmulator(
@@ -107,7 +94,6 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exchange = SimulatedExchange(
@@ -125,7 +111,6 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             latency_model=LatencyModel(0),
             reject_stop_orders=False,
         )
@@ -135,7 +120,6 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Wire up components
@@ -152,7 +136,6 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Start components

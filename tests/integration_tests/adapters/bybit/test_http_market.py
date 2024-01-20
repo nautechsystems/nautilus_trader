@@ -31,7 +31,6 @@ from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickersLin
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickersOptionResponse
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickersSpotResponse
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from tests.integration_tests.adapters.bybit.utils.get_mock import get_mock
 
@@ -39,10 +38,8 @@ from tests.integration_tests.adapters.bybit.utils.get_mock import get_mock
 class TestBybitMarketHttpAPI:
     def setup(self):
         clock = LiveClock()
-        logger = Logger(clock=clock)
         self.client = BybitHttpClient(
             clock=clock,
-            logger=logger,
             api_key="SOME_BYBIT_API_KEY",
             api_secret="SOME_BYBIT_API_SECRET",
             base_url="https://api-testnet.bybit.com",

@@ -48,9 +48,10 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.common.clock cimport TimeEventHandler
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport log_level_from_str
-from nautilus_trader.common.logging cimport log_memory
+from nautilus_trader.common.logging cimport log_sysinfo
+from nautilus_trader.common.logging cimport set_logging_clock_realtime
+from nautilus_trader.common.logging cimport set_logging_clock_static
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
@@ -61,6 +62,7 @@ from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drain
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drop
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_new
 from nautilus_trader.core.rust.common cimport TimeEventHandler_t
+from nautilus_trader.core.rust.common cimport logging_is_colored
 from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport AccountType
@@ -134,14 +136,9 @@ cdef class BacktestEngine:
 
         # Build core system kernel
         self._kernel = NautilusKernel(name=type(self).__name__, config=config)
+        self._log = Logger(type(self).__name__)
 
         self._data_engine: DataEngine = self._kernel.data_engine
-
-        # Setup engine logging
-        self._log = LoggerAdapter(
-            component_name=type(self).__name__,
-            logger=self._kernel.logger,
-        )
 
     def __del__(self) -> None:
         if self._accumulator._0 != NULL:
@@ -196,6 +193,18 @@ cdef class BacktestEngine:
 
         """
         return self._kernel
+
+    @property
+    def logger(self) -> Logger:
+        """
+        Return the internal logger for the engine.
+
+        Returns
+        -------
+        Logger
+
+        """
+        return self._log
 
     @property
     def run_config_id(self) -> str:
@@ -451,7 +460,6 @@ cdef class BacktestEngine:
             latency_model=latency_model,
             book_type=book_type,
             clock=self.kernel.clock,
-            logger=self.kernel.logger,
             frozen_account=frozen_account,
             bar_execution=bar_execution,
             reject_stop_orders=reject_stop_orders,
@@ -470,7 +478,6 @@ cdef class BacktestEngine:
             msgbus=self.kernel.msgbus,
             cache=self.kernel.cache,
             clock=self.kernel.clock,
-            logger=self.kernel.logger,
             routing=routing,
             frozen_account=frozen_account,
         )
@@ -937,8 +944,8 @@ cdef class BacktestEngine:
         self._run_finished = pd.Timestamp.utcnow()
         self._backtest_end = self.kernel.clock.utc_now()
 
-        # Change logger clock back to live clock for consistent time stamping
-        self._kernel.logger.change_clock()
+        # Change logger clock back to real-time for consistent time stamping
+        set_logging_clock_realtime()
 
         self._log_post_run()
 
@@ -1041,7 +1048,7 @@ cdef class BacktestEngine:
 
             # Change logger clock for the run
             self._kernel.clock.set_time(start_ns)
-            self._kernel.logger.change_clock(self._kernel.clock)
+            set_logging_clock_static(start_ns)
             self._log_pre_run()
 
         self._log_run(start, end)
@@ -1147,6 +1154,8 @@ cdef class BacktestEngine:
             return self._data[cursor]
 
     cdef CVec _advance_time(self, uint64_t ts_now, list clocks):
+        set_logging_clock_static(ts_now)
+
         cdef TestClock clock
         for clock in clocks:
             time_event_accumulator_advance_clock(
@@ -1210,10 +1219,15 @@ cdef class BacktestEngine:
                     exchange.process(ts_event_init)
 
     def _get_log_color_code(self):
-        return "\033[36m" if self._log.is_colored else ""
+        return "\033[36m" if logging_is_colored() else ""
 
     def _log_pre_run(self):
-        log_memory(self._log)
+        log_sysinfo(
+            trader_id=self._kernel.trader_id,
+            machine_id=self._kernel.machine_id,
+            instance_id=self._kernel.instance_id,
+            component=type(self).__name__,
+        )
 
         cdef str color = self._get_log_color_code()
 
@@ -1368,7 +1382,6 @@ cdef class BacktestEngine:
                 msgbus=self._kernel.msgbus,
                 cache=self._kernel.cache,
                 clock=self._kernel.clock,
-                logger=self._kernel.logger,
             )
             self._kernel.data_engine.register_client(client)
 
@@ -1380,6 +1393,5 @@ cdef class BacktestEngine:
                 msgbus=self._kernel.msgbus,
                 cache=self._kernel.cache,
                 clock=self._kernel.clock,
-                logger=self._kernel.logger,
             )
             self._kernel.data_engine.register_client(client)

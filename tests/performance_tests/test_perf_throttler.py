@@ -20,7 +20,7 @@ from nautilus_trader.common.component import Throttler
 
 
 @pytest.fixture(name="buffering_throttler")
-def fixture_buffering_throttler(clock, logger):
+def fixture_buffering_throttler(clock):
     handler = []
     return Throttler(
         name="Throttler-1",
@@ -29,7 +29,6 @@ def fixture_buffering_throttler(clock, logger):
         output_send=handler.append,
         output_drop=None,
         clock=clock,
-        logger=logger,
     )
 
 

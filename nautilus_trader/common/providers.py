@@ -16,7 +16,6 @@
 import asyncio
 
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
@@ -30,8 +29,6 @@ class InstrumentProvider:
 
     Parameters
     ----------
-    logger : Logger
-        The logger for the provider.
     config :InstrumentProviderConfig, optional
         The instrument provider config.
 
@@ -41,16 +38,10 @@ class InstrumentProvider:
 
     """
 
-    def __init__(
-        self,
-        logger: Logger,
-        config: InstrumentProviderConfig | None = None,
-    ) -> None:
-        PyCondition.not_none(logger, "logger")
-
+    def __init__(self, config: InstrumentProviderConfig | None = None) -> None:
         if config is None:
             config = InstrumentProviderConfig()
-        self._log = LoggerAdapter(type(self).__name__, logger)
+        self._log = Logger(name=type(self).__name__)
 
         self._instruments: dict[InstrumentId, Instrument] = {}
         self._currencies: dict[str, Currency] = {}

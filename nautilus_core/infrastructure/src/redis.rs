@@ -26,7 +26,7 @@ use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::prelude::*;
 use redis::{Commands, Connection, Pipeline};
-use serde_json::{json, Value};
+use serde_json::json;
 
 use crate::cache::{CacheDatabase, DatabaseCommand, DatabaseOperation};
 
@@ -81,7 +81,7 @@ impl CacheDatabase for RedisCacheDatabase {
     fn new(
         trader_id: TraderId,
         instance_id: UUID4,
-        config: HashMap<String, Value>,
+        config: HashMap<String, serde_json::Value>,
     ) -> Result<RedisCacheDatabase> {
         let redis_url = get_redis_url(&config);
         let client = redis::Client::open(redis_url)?;
@@ -163,7 +163,7 @@ impl CacheDatabase for RedisCacheDatabase {
     fn handle_messages(
         rx: Receiver<DatabaseCommand>,
         trader_key: String,
-        config: HashMap<String, Value>,
+        config: HashMap<String, serde_json::Value>,
     ) {
         let redis_url = get_redis_url(&config);
         let client = redis::Client::open(redis_url).unwrap();
@@ -523,7 +523,7 @@ fn delete_string(pipe: &mut Pipeline, key: &str) {
 fn get_trader_key(
     trader_id: TraderId,
     instance_id: UUID4,
-    config: &HashMap<String, Value>,
+    config: &HashMap<String, serde_json::Value>,
 ) -> String {
     let mut key = String::new();
 
@@ -555,7 +555,7 @@ fn get_index_key(key: &str) -> Result<&str> {
 
 // This function can be used when we handle cache serialization in Rust
 #[allow(dead_code)]
-fn get_encoding(config: &HashMap<String, Value>) -> String {
+fn get_encoding(config: &HashMap<String, serde_json::Value>) -> String {
     config
         .get("encoding")
         .and_then(|v| v.as_str())
@@ -565,7 +565,10 @@ fn get_encoding(config: &HashMap<String, Value>) -> String {
 
 // This function can be used when we handle cache serialization in Rust
 #[allow(dead_code)]
-fn deserialize_payload(encoding: &str, payload: &[u8]) -> Result<HashMap<String, Value>> {
+fn deserialize_payload(
+    encoding: &str,
+    payload: &[u8],
+) -> Result<HashMap<String, serde_json::Value>> {
     match encoding {
         "msgpack" => rmp_serde::from_slice(payload)
             .map_err(|e| anyhow!("Failed to deserialize msgpack `payload`: {e}")),

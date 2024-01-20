@@ -21,7 +21,7 @@ from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport MessageBus
-from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport LiquiditySide
@@ -69,7 +69,7 @@ from nautilus_trader.model.position cimport Position
 
 cdef class OrderMatchingEngine:
     cdef Clock _clock
-    cdef LoggerAdapter _log
+    cdef Logger _log
     cdef MessageBus _msgbus
     cdef OrderBook _book
     cdef OrderBook _opening_auction_book

@@ -16,6 +16,7 @@
 import platform
 import socket
 import sys
+import time
 import traceback
 from platform import python_version
 
@@ -42,8 +43,14 @@ from nautilus_trader.core.rust.common cimport log_level_from_cstr
 from nautilus_trader.core.rust.common cimport log_level_to_cstr
 from nautilus_trader.core.rust.common cimport logger_flush
 from nautilus_trader.core.rust.common cimport logger_log
+from nautilus_trader.core.rust.common cimport logging_clock_set_realtime
+from nautilus_trader.core.rust.common cimport logging_clock_set_static
 from nautilus_trader.core.rust.common cimport logging_init
+from nautilus_trader.core.rust.common cimport logging_is_colored
 from nautilus_trader.core.rust.common cimport logging_is_initialized
+from nautilus_trader.core.rust.common cimport logging_log_header
+from nautilus_trader.core.rust.common cimport logging_log_sysinfo
+from nautilus_trader.core.rust.common cimport logging_shutdown
 from nautilus_trader.core.rust.common cimport tracing_init
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pybytes_to_cstr
@@ -52,13 +59,26 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 
 
-# TODO!: Reimplementing logging config
-# from nautilus_trader.core import nautilus_pyo3
-# from nautilus_trader.core.nautilus_pyo3 import logger_log
+RECV = "<--"
+SENT = "-->"
+CMD = "[CMD]"
+EVT = "[EVT]"
+DOC = "[DOC]"
+RPT = "[RPT]"
+REQ = "[REQ]"
+RES = "[RES]"
 
 
 cpdef bint is_logging_initialized():
     return <bint>logging_is_initialized()
+
+
+cpdef void set_logging_clock_realtime():
+    logging_clock_set_realtime()
+
+
+cpdef void set_logging_clock_static(uint64_t time_ns):
+    logging_clock_set_static(time_ns)
 
 
 cpdef LogColor log_color_from_str(str value):
@@ -77,25 +97,38 @@ cpdef str log_level_to_str(LogLevel value):
     return cstr_to_pystr(log_level_to_cstr(value))
 
 
-RECV = "<--"
-SENT = "-->"
-CMD = "[CMD]"
-EVT = "[EVT]"
-DOC = "[DOC]"
-RPT = "[RPT]"
-REQ = "[REQ]"
-RES = "[RES]"
-
-
-cdef class Logger:
+cpdef void init_tracing():
     """
-    Provides a high-performance logger.
+    Initialize tracing for async Rust.
+
+    """
+    tracing_init()
+
+
+cpdef void init_logging(
+    TraderId trader_id = None,
+    str machine_id = None,
+    UUID4 instance_id = None,
+    LogLevel level_stdout = LogLevel.INFO,
+    LogLevel level_file = LogLevel.OFF,
+    str directory = None,
+    str file_name = None,
+    str file_format = None,
+    dict component_levels: dict[ComponentId, LogLevel] = None,
+    bint colors = True,
+    bint bypass = False,
+    bint print_config = False,
+):
+    """
+    Initialize the logging system.
+
+    Acts as an interface into the logging system implemented in Rust with the `log` crate.
+
+    This function should only be called once per process, at the beginning of the application
+    run.
 
     Parameters
     ----------
-    clock : Clock, optional
-        The clock for the logger.
-        If ``None`` then will use a new `LiveClock`.
     trader_id : TraderId, optional
         The trader ID for the logger.
     machine_id : str, optional
@@ -104,10 +137,8 @@ cdef class Logger:
         The instance ID.
     level_stdout : LogLevel, default ``INFO``
         The minimum log level to write to stdout.
-    level_file : LogLevel, default ``DEBUG``
+    level_file : LogLevel, default ``OFF``
         The minimum log level to write to a file.
-    file_logging : bool, default False
-        If logging to a file is enabled.
     directory : str, optional
         The path to the log file directory.
         If ``None`` then will write to the current working directory.
@@ -123,284 +154,71 @@ cdef class Logger:
     colors : bool, default True
         If ANSI codes should be used to produce colored log lines.
     bypass : bool, default False
-        If the log output is bypassed.
+        If the output for the core logging system is bypassed (useful for logging tests).
     print_config : bool, default False
         If the core logging configuration should be printed to stdout on initialization.
+
     """
+    if trader_id is None:
+        trader_id = TraderId("TRADER-000")
+    if machine_id is None:
+        machine_id = socket.gethostname()
+    if instance_id is None:
+        instance_id = UUID4()
 
-    def __init__(
-        self,
-        Clock clock = None,
-        TraderId trader_id = None,
-        str machine_id = None,
-        UUID4 instance_id = None,
-        LogLevel level_stdout = LogLevel.INFO,
-        LogLevel level_file = LogLevel.DEBUG,
-        bint file_logging = False,
-        str directory = None,
-        str file_name = None,
-        str file_format = None,
-        dict component_levels: dict[ComponentId, LogLevel] = None,
-        bint colors = True,
-        bint bypass = False,
-        bint print_config = False,
-    ) -> None:
-        if clock is None:
-            clock = LiveClock()
-        if trader_id is None:
-            trader_id = TraderId("TRADER-000")
-        if machine_id is None:
-            machine_id = socket.gethostname()
-        if instance_id is None:
-            instance_id = UUID4()
-
-        self._clock = clock
-        self._trader_id = trader_id
-        self._instance_id = instance_id
-        self._machine_id = machine_id
-        self._is_bypassed = bypass
-        self._is_colored = colors
-
-        if not self._is_bypassed and not logging_is_initialized():
-            # Initialize tracing for async Rust
-            tracing_init()
-
-            # Initialize logging for sync Rust and Python
-            logging_init(
-                # nautilus_pyo3.TraderId(self._trader_id.value),  # TODO!: Reimplementing logging config
-                # nautilus_pyo3.UUID4(self._instance_id.value),  # TODO!: Reimplementing logging config
-                self._trader_id._mem,
-                self._instance_id._mem,
-                level_stdout,
-                level_file,
-                file_logging,
-                pystr_to_cstr(directory) if directory else NULL,
-                pystr_to_cstr(file_name) if file_name else NULL,
-                pystr_to_cstr(file_format) if file_format else NULL,
-                pybytes_to_cstr(msgspec.json.encode(component_levels)) if component_levels else NULL,
-                colors,
-                bypass,
-                print_config,
-            )
-
-    @property
-    def trader_id(self) -> TraderId:
-        """
-        Return the loggers trader ID.
-
-        Returns
-        -------
-        TraderId
-
-        """
-        return self._trader_id
-
-    @property
-    def machine_id(self) -> str:
-        """
-        Return the loggers machine ID.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._machine_id
-
-    @property
-    def instance_id(self) -> UUID4:
-        """
-        Return the loggers system instance ID.
-
-        Returns
-        -------
-        UUID4
-
-        """
-        return self._instance_id
-
-    @property
-    def is_colored(self) -> bool:
-        """
-        Return whether the logger is using ANSI color codes.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self._is_colored
-
-    @property
-    def is_bypassed(self) -> bool:
-        """
-        Return whether the logger is in bypass mode.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self._is_bypassed
-
-    cdef void log(
-        self,
-        LogLevel level,
-        LogColor color,
-        const char* component_cstr,
-        str message,
-    ):
-        logger_log(
-            self._clock.timestamp_ns(),
-            level,
-            color,
-            component_cstr,
-            pystr_to_cstr(message),
+    if not logging_is_initialized():
+        logging_init(
+            trader_id._mem,
+            instance_id._mem,
+            level_stdout,
+            level_file,
+            pystr_to_cstr(directory) if directory else NULL,
+            pystr_to_cstr(file_name) if file_name else NULL,
+            pystr_to_cstr(file_format) if file_format else NULL,
+            pybytes_to_cstr(msgspec.json.encode(component_levels)) if component_levels else NULL,
+            colors,
+            bypass,
+            print_config,
         )
 
-    # TODO!: Reimplementing logging config
-    # cdef void log(
-    #     self,
-    #     level,
-    #     color,
-    #     str component,
-    #     str message,
-    # ):
-    #     logger_log(
-    #         self._clock.timestamp_ns(),
-    #         level,
-    #         nautilus_pyo3.LogColor.Normal,  # In development
-    #         component,
-    #         message,
-    #     )
 
-    cpdef void change_clock(self, Clock clock = None):
-        """
-        Change the loggers internal clock to the given clock or a new `LiveClock`.
-
-        Parameters
-        ----------
-        clock : Clock, optional
-            The clock to change to.
-
-        """
-        self._clock = clock or LiveClock()
-
-    cpdef void flush(self):
-        """
-        Flush all logger buiffers.
-
-        """
-        logger_flush()
+cpdef void shutdown_logging():
+    if logging_is_initialized():
+        logging_shutdown()
 
 
-cdef class LoggerAdapter:
+cdef class Logger:
     """
-    Provides an adapter for a components logger.
+    Provides a logger adapter into the logging system.
 
     Parameters
     ----------
-    component_name : str
-        The name of the component.
-    logger : Logger
-        The logger for the component.
+    name : str
+        The name of the logger. This will appear within each log line.
+
     """
 
-    def __init__(
-        self,
-        str component_name not None,
-        Logger logger not None,
-    ):
-        Condition.valid_string(component_name, "component_name")
+    def __init__(self, str name not None) -> None:
+        Condition.valid_string(name, "name")
 
-        self._logger = logger
-        self._component = component_name
-        self._component_cstr = pystr_to_cstr(component_name)
-        self._is_colored = logger.is_colored
-        self._is_bypassed = logger.is_bypassed
+        self._name = name
 
-    @property
-    def trader_id(self) -> TraderId:
+    cpdef void flush(self):
         """
-        Return the loggers trader ID.
+        Flush all buffers for the logging system.
 
-        Returns
+        This could include stdout/stderr and file writer buffers.
+
+        Warning
         -------
-        TraderId
+        This method is intended to be called once at application shutdown.
+        It will intentionally block the main thread for 100 milliseconds, allowing all
+        buffers to be flushed prior to exiting.
 
         """
-        return self._logger.trader_id
-
-    @property
-    def machine_id(self) -> str:
-        """
-        Return the loggers machine ID.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._logger.machine_id
-
-    @property
-    def instance_id(self) -> UUID4:
-        """
-        Return the loggers system instance ID.
-
-        Returns
-        -------
-        UUID4
-
-        """
-        return self._logger.instance_id
-
-    @property
-    def component(self) -> str:
-        """
-        Return the loggers component name.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._component
-
-    @property
-    def is_colored(self) -> bool:
-        """
-        Return whether the logger is using ANSI color codes.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self._is_colored
-
-    @property
-    def is_bypassed(self) -> bool:
-        """
-        Return whether the logger is in bypass mode.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self._is_bypassed
-
-    cpdef Logger get_logger(self):
-        """
-        Return the encapsulated logger.
-
-        Returns
-        -------
-        Logger
-
-        """
-        return self._logger
+        if logging_is_initialized():
+            logger_flush()
+            time.sleep(0.1)  # Temporary solution before joining logging thread
 
     cpdef void debug(
         self,
@@ -408,70 +226,50 @@ cdef class LoggerAdapter:
         LogColor color = LogColor.NORMAL,
     ):
         """
-        Log the given debug message with the logger.
+        Log the given debug level message.
 
         Parameters
         ----------
         message : str
-            The log message content.
+            The log message text (valid UTF-8).
         color : LogColor, optional
             The log message color.
 
         """
-        Condition.not_none(message, "message")
-
-        if self.is_bypassed:
+        if not logging_is_initialized():
             return
 
-        self._logger.log(
+        logger_log(
             LogLevel.DEBUG,
             color,
-            self._component_cstr,
-            message,
+            pystr_to_cstr(self._name),  # TODO: Optimize this
+            pystr_to_cstr(message) if message is not None else NULL,
         )
-
-        # TODO!: Reimplementing logging config
-        # self._logger.log(
-        #     nautilus_pyo3.LogLevel.Debug,
-        #     color,
-        #     self._component,
-        #     message,
-        # )
 
     cpdef void info(
         self, str message,
         LogColor color = LogColor.NORMAL,
     ):
         """
-        Log the given information message with the logger.
+        Log the given information level message.
 
         Parameters
         ----------
         message : str
-            The log message content.
+            The log message text (valid UTF-8).
         color : LogColor, optional
             The log message color.
 
         """
-        Condition.not_none(message, "message")
-
-        if self.is_bypassed:
+        if not logging_is_initialized():
             return
 
-        self._logger.log(
+        logger_log(
             LogLevel.INFO,
             color,
-            self._component_cstr,
-            message,
+            pystr_to_cstr(self._name),  # TODO: Optimize this
+            pystr_to_cstr(message) if message is not None else NULL,
         )
-
-        # TODO!: Reimplementing logging config
-        # self._logger.log(
-        #     nautilus_pyo3.LogLevel.Info,
-        #     color,
-        #     self._component,
-        #     message,
-        # )
 
     cpdef void warning(
         self,
@@ -479,35 +277,25 @@ cdef class LoggerAdapter:
         LogColor color = LogColor.YELLOW,
     ):
         """
-        Log the given warning message with the logger.
+        Log the given warning level message.
 
         Parameters
         ----------
         message : str
-            The log message content.
+            The log message text (valid UTF-8).
         color : LogColor, optional
             The log message color.
 
         """
-        Condition.not_none(message, "message")
-
-        if self.is_bypassed:
+        if not logging_is_initialized():
             return
 
-        self._logger.log(
+        logger_log(
             LogLevel.WARNING,
             color,
-            self._component_cstr,
-            message,
+            pystr_to_cstr(self._name),  # TODO: Optimize this
+            pystr_to_cstr(message) if message is not None else NULL,
         )
-
-        # TODO!: Reimplementing logging config
-        # self._logger.log(
-        #     nautilus_pyo3.LogLevel.Warning,
-        #     color,
-        #     self._component,
-        #     message,
-        # )
 
     cpdef void error(
         self,
@@ -515,35 +303,25 @@ cdef class LoggerAdapter:
         LogColor color = LogColor.RED,
     ):
         """
-        Log the given error message with the logger.
+        Log the given error level message.
 
         Parameters
         ----------
         message : str
-            The log message content.
+            The log message text (valid UTF-8).
         color : LogColor, optional
             The log message color.
 
         """
-        Condition.not_none(message, "message")
-
-        if self.is_bypassed:
+        if not logging_is_initialized():
             return
 
-        self._logger.log(
+        logger_log(
             LogLevel.ERROR,
             color,
-            self._component_cstr,
-            message,
+            pystr_to_cstr(self._name),  # TODO: Optimize this
+            pystr_to_cstr(message) if message is not None else NULL,
         )
-
-        # TODO!: Reimplementing logging config
-        # self._logger.log(
-        #     nautilus_pyo3.LogLevel.Error,
-        #     color,
-        #     self._component,
-        #     message,
-        # )
 
     cpdef void exception(
         self,
@@ -556,7 +334,7 @@ cdef class LoggerAdapter:
         Parameters
         ----------
         message : str
-            The log message content.
+            The log message text (valid UTF-8).
         ex : Exception
             The exception to log.
 
@@ -575,83 +353,26 @@ cdef class LoggerAdapter:
         self.error(f"{message}\n{ex_string}\n{stack_trace_lines}")
 
 
-cpdef void nautilus_header(LoggerAdapter logger):
-    Condition.not_none(logger, "logger")
+cpdef void log_header(
+    TraderId trader_id,
+    str machine_id,
+    UUID4 instance_id,
+    str component,
+):
+    logging_log_header(
+        trader_id._mem,
+        pystr_to_cstr(machine_id),
+        instance_id._mem,
+        pystr_to_cstr(component),
+    )
 
-    color = "\033[36m" if logger.is_colored else ""
 
-    print("")  # New line to begin
-    logger.info(f"{color}=================================================================")
-    logger.info(f"{color} NAUTILUS TRADER - Automated Algorithmic Trading Platform")
-    logger.info(f"{color} by Nautech Systems Pty Ltd.")
-    logger.info(f"{color} Copyright (C) 2015-2024. All rights reserved.")
-    logger.info(f"{color}=================================================================")
-    logger.info("")
-    logger.info("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀")
-    logger.info("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⣿⣿⣿⠀⢸⣿⣿⣿⣿⣶⣶⣤⣀⠀⠀⠀⠀⠀")
-    logger.info("⠀⠀⠀⠀⠀⠀⢀⣴⡇⢀⣾⣿⣿⣿⣿⣿⠀⣾⣿⣿⣿⣿⣿⣿⣿⠿⠓⠀⠀⠀⠀")
-    logger.info("⠀⠀⠀⠀⠀⣰⣿⣿⡀⢸⣿⣿⣿⣿⣿⣿⠀⣿⣿⣿⣿⣿⣿⠟⠁⣠⣄⠀⠀⠀⠀")
-    logger.info("⠀⠀⠀⠀⢠⣿⣿⣿⣇⠀⢿⣿⣿⣿⣿⣿⠀⢻⣿⣿⣿⡿⢃⣠⣾⣿⣿⣧⡀⠀⠀")
-    logger.info("⠀⠀⠀⠀⢸⣿⣿⣿⣿⣆⠘⢿⣿⡿⠛⢉⠀⠀⠉⠙⠛⣠⣿⣿⣿⣿⣿⣿⣷⠀⠀")
-    logger.info("⠀⠀⠀⠠⣾⣿⣿⣿⣿⣿⣧⠈⠋⢀⣴⣧⠀⣿⡏⢠⡀⢸⣿⣿⣿⣿⣿⣿⣿⡇⠀")
-    logger.info("⠀⠀⠀⣀⠙⢿⣿⣿⣿⣿⣿⠇⢠⣿⣿⣿⡄⠹⠃⠼⠃⠈⠉⠛⠛⠛⠛⠛⠻⠇⠀")
-    logger.info("⠀⠀⢸⡟⢠⣤⠉⠛⠿⢿⣿⠀⢸⣿⡿⠋⣠⣤⣄⠀⣾⣿⣿⣶⣶⣶⣦⡄⠀⠀⠀")
-    logger.info("⠀⠀⠸⠀⣾⠏⣸⣷⠂⣠⣤⠀⠘⢁⣴⣾⣿⣿⣿⡆⠘⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀")
-    logger.info("⠀⠀⠀⠀⠛⠀⣿⡟⠀⢻⣿⡄⠸⣿⣿⣿⣿⣿⣿⣿⡀⠘⣿⣿⣿⣿⠟⠀⠀⠀⠀")
-    logger.info("⠀⠀⠀⠀⠀⠀⣿⠇⠀⠀⢻⡿⠀⠈⠻⣿⣿⣿⣿⣿⡇⠀⢹⣿⠿⠋⠀⠀⠀⠀⠀")
-    logger.info("⠀⠀⠀⠀⠀⠀⠋⠀⠀⠀⡘⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀")
-    logger.info("")
-    logger.info(f"{color}=================================================================")
-    logger.info(f"{color} SYSTEM SPECIFICATION")
-    logger.info(f"{color}=================================================================")
-    logger.info(f"CPU architecture: {platform.processor()}")
-    try:
-        cpu_freq_str = f"@ {int(psutil.cpu_freq()[2])} MHz"
-    except Exception:  # noqa (historically problematic call on ARM)
-        cpu_freq_str = None
-    logger.info(f"CPU(s): {psutil.cpu_count()} {cpu_freq_str}")
-    logger.info(f"OS: {platform.platform()}")
-    log_memory(logger)
-    logger.info(f"{color}=================================================================")
-    logger.info(f"{color} IDENTIFIERS")
-    logger.info(f"{color}=================================================================")
-    logger.info(f"trader_id: {logger.trader_id}")
-    logger.info(f"machine_id: {logger.machine_id}")
-    logger.info(f"instance_id: {logger.instance_id}")
-    logger.info(f"{color}=================================================================")
-    logger.info(f"{color} VERSIONING")
-    logger.info(f"{color}=================================================================")
-    logger.info(f"nautilus-trader {__version__}")
-    logger.info(f"python {python_version()}")
-    logger.info(f"numpy {np.__version__}")
-    logger.info(f"pandas {pd.__version__}")
-    logger.info(f"msgspec {msgspec.__version__}")
-    logger.info(f"psutil {psutil.__version__}")
-    logger.info(f"pyarrow {pyarrow.__version__}")
-    logger.info(f"pytz {pytz.__version__}")  # type: ignore
-    try:
-        import uvloop
-        logger.info(f"uvloop {uvloop.__version__}")
-    except ImportError:  # pragma: no cover
-        uvloop = None
-
-    logger.info(f"{color}=================================================================")
-
-cpdef void log_memory(LoggerAdapter logger):
-    Condition.not_none(logger, "logger")
-
-    color = "\033[36m" if logger.is_colored else ""
-
-    logger.info(f"{color}=================================================================")
-    logger.info(f"{color} MEMORY USAGE")
-    logger.info(f"{color}=================================================================")
-    ram_total_mb = round(psutil.virtual_memory()[0] / 1000000)
-    ram_used__mb = round(psutil.virtual_memory()[3] / 1000000)
-    ram_avail_mb = round(psutil.virtual_memory()[1] / 1000000)
-    ram_avail_pc = 100 - psutil.virtual_memory()[2]
-    logger.info(f"RAM-Total: {ram_total_mb:,} MB")
-    logger.info(f"RAM-Used:  {ram_used__mb:,} MB ({100 - ram_avail_pc:.2f}%)")
-    if ram_avail_pc <= 50:
-        logger.warning(f"RAM-Avail: {ram_avail_mb:,} MB ({ram_avail_pc:.2f}%)")
-    else:
-        logger.info(f"RAM-Avail: {ram_avail_mb:,} MB ({ram_avail_pc:.2f}%)")
+cpdef void log_sysinfo(
+    TraderId trader_id,
+    str machine_id,
+    UUID4 instance_id,
+    str component,
+):
+    logging_log_sysinfo(
+        pystr_to_cstr(component),
+    )

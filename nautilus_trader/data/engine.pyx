@@ -104,8 +104,6 @@ cdef class DataEngine(Component):
         The cache for the engine.
     clock : Clock
         The clock for the engine.
-    logger : Logger
-        The logger for the engine.
     config : DataEngineConfig, optional
         The configuration for the instance.
     """
@@ -115,7 +113,6 @@ cdef class DataEngine(Component):
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
-        Logger logger not None,
         config: DataEngineConfig | None = None,
     ):
         if config is None:
@@ -123,7 +120,6 @@ cdef class DataEngine(Component):
         Condition.type(config, DataEngineConfig, "config")
         super().__init__(
             clock=clock,
-            logger=logger,
             component_id=ComponentId("DataEngine"),
             msgbus=msgbus,
             config=config,
@@ -785,7 +781,7 @@ cdef class DataEngine(Component):
         if key not in self._order_book_intervals:
             self._order_book_intervals[key] = []
 
-            timer_name = f"OrderBook-{instrument_id}-{interval_ms}"
+            timer_name = f"OrderBook|{instrument_id}|{interval_ms}"
             interval_ns = millis_to_nanos(interval_ms)
             timestamp_ns = self._clock.timestamp_ns()
             start_time_ns = timestamp_ns - (timestamp_ns % interval_ns)
@@ -1555,9 +1551,9 @@ cdef class DataEngine(Component):
         order_book.apply(data)
 
     cpdef void _snapshot_order_book(self, TimeEvent snap_event):
-        cdef tuple pieces = snap_event.name.partition('-')[2].partition('-')
-        cdef InstrumentId instrument_id = InstrumentId.from_str_c(pieces[0])
-        cdef int interval_ms = int(pieces[2])
+        cdef tuple[str] parts = snap_event.name.partition('|')[2].rpartition('|')
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(parts[0])
+        cdef int interval_ms = int(parts[2])
 
         cdef OrderBook order_book = self._cache.order_book(instrument_id)
         if order_book:
@@ -1599,7 +1595,6 @@ cdef class DataEngine(Component):
                 bar_type=bar_type,
                 handler=self.process,
                 clock=self._clock,
-                logger=self._log.get_logger(),
                 build_with_no_updates=self._time_bars_build_with_no_updates,
                 timestamp_on_close=self._time_bars_timestamp_on_close,
                 interval_type=self._time_bars_interval_type,
@@ -1609,21 +1604,18 @@ cdef class DataEngine(Component):
                 instrument=instrument,
                 bar_type=bar_type,
                 handler=self.process,
-                logger=self._log.get_logger(),
             )
         elif bar_type.spec.aggregation == BarAggregation.VOLUME:
             aggregator = VolumeBarAggregator(
                 instrument=instrument,
                 bar_type=bar_type,
                 handler=self.process,
-                logger=self._log.get_logger(),
             )
         elif bar_type.spec.aggregation == BarAggregation.VALUE:
             aggregator = ValueBarAggregator(
                 instrument=instrument,
                 bar_type=bar_type,
                 handler=self.process,
-                logger=self._log.get_logger(),
             )
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)

@@ -31,7 +31,6 @@ from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBr
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.model.identifiers import AccountId
@@ -48,7 +47,6 @@ def get_cached_ib_client(
     msgbus: MessageBus,
     cache: Cache,
     clock: LiveClock,
-    logger: Logger,
     host: str = "127.0.0.1",
     port: int | None = None,
     client_id: int = 1,
@@ -70,8 +68,6 @@ def get_cached_ib_client(
         cache
     clock: LiveClock,
         clock
-    logger: Logger,
-        logger
     host : str, optional
         The IB host to connect to
     port : int, optional
@@ -103,7 +99,6 @@ def get_cached_ib_client(
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             host=host,
             port=port,
             client_id=client_id,
@@ -116,7 +111,6 @@ def get_cached_ib_client(
 def get_cached_interactive_brokers_instrument_provider(
     client: InteractiveBrokersClient,
     config: InteractiveBrokersInstrumentProviderConfig,
-    logger: Logger,
 ) -> InteractiveBrokersInstrumentProvider:
     """
     Cache and return a InteractiveBrokersInstrumentProvider.
@@ -129,15 +123,13 @@ def get_cached_interactive_brokers_instrument_provider(
         The client for the instrument provider.
     config: InteractiveBrokersInstrumentProviderConfig
         The instrument provider config
-    logger : Logger
-        The logger for the instrument provider.
 
     Returns
     -------
     InteractiveBrokersInstrumentProvider
 
     """
-    return InteractiveBrokersInstrumentProvider(client=client, config=config, logger=logger)
+    return InteractiveBrokersInstrumentProvider(client=client, config=config)
 
 
 class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
@@ -153,7 +145,6 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
     ) -> InteractiveBrokersDataClient:
         """
         Create a new InteractiveBrokers data client.
@@ -172,8 +163,6 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : Logger
-            The logger for the client.
 
         Returns
         -------
@@ -185,7 +174,6 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             host=config.ibg_host,
             port=config.ibg_port,
             client_id=config.ibg_client_id,
@@ -196,7 +184,6 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
         provider = get_cached_interactive_brokers_instrument_provider(
             client=client,
             config=config.instrument_provider,
-            logger=logger,
         )
 
         # Create client
@@ -206,7 +193,6 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             instrument_provider=provider,
             ibg_client_id=config.ibg_client_id,
             config=config,
@@ -227,7 +213,6 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
     ) -> InteractiveBrokersExecutionClient:
         """
         Create a new InteractiveBrokers execution client.
@@ -246,8 +231,6 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : Logger
-            The logger for the client.
 
         Returns
         -------
@@ -259,7 +242,6 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             host=config.ibg_host,
             port=config.ibg_port,
             client_id=config.ibg_client_id,
@@ -270,7 +252,6 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
         provider = get_cached_interactive_brokers_instrument_provider(
             client=client,
             config=config.instrument_provider,
-            logger=logger,
         )
 
         # Set account ID
@@ -289,7 +270,6 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             instrument_provider=provider,
             ibg_client_id=config.ibg_client_id,
             config=config,

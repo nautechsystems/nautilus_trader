@@ -16,7 +16,7 @@
 use std::{borrow::Cow, collections::HashMap};
 
 use log::LevelFilter;
-use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::prelude::*;
 use ustr::Ustr;
@@ -24,7 +24,8 @@ use ustr::Ustr;
 use crate::{
     enums::{LogColor, LogLevel},
     logging::{
-        self, map_log_level_to_filter, parse_level_filter_str, FileWriterConfig, LoggerConfig,
+        self, logging_set_bypass, map_log_level_to_filter, parse_level_filter_str,
+        FileWriterConfig, LoggerConfig,
     },
 };
 
@@ -80,11 +81,14 @@ pub fn py_init_logging(
         level_file,
         parse_component_levels(component_levels),
         is_colored.unwrap_or(true),
-        is_bypassed.unwrap_or(false),
         print_config.unwrap_or(false),
     );
 
     let file_config = FileWriterConfig::new(directory, file_name, file_format);
+
+    if is_bypassed.unwrap_or(false) {
+        logging_set_bypass();
+    }
 
     logging::init_logging(trader_id, instance_id, config, file_config);
 }
@@ -109,20 +113,8 @@ fn parse_component_levels(
 /// Create a new log event.
 #[pyfunction]
 #[pyo3(name = "logger_log")]
-pub fn py_logger_log(
-    timestamp_ns: UnixNanos,
-    level: LogLevel,
-    color: LogColor,
-    component: String,
-    message: String,
-) {
-    logging::log(
-        timestamp_ns,
-        level,
-        color,
-        Ustr::from(&component),
-        Cow::from(message),
-    );
+pub fn py_logger_log(level: LogLevel, color: LogColor, component: String, message: String) {
+    logging::log(level, color, Ustr::from(&component), Cow::from(message));
 }
 
 #[pymethods]

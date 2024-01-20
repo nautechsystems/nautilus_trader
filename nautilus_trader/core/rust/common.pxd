@@ -90,13 +90,15 @@ cdef extern from "../includes/common.h":
 
     # The log level for log messages.
     cpdef enum LogLevel:
-        # The **DBG** debug log level.
+        # A level lower than all other log levels (off).
+        OFF # = 0,
+        # The **DEBUG** debug log level.
         DEBUG # = 10,
-        # The **INF** info log level.
+        # The **INFO** info log level.
         INFO # = 20,
-        # The **WRN** warning log level.
+        # The **WARNING** warning log level.
         WARNING # = 30,
-        # The **ERR** error log level.
+        # The **ERROR** error log level.
         ERROR # = 40,
 
     cdef struct LiveClock:
@@ -184,6 +186,24 @@ cdef extern from "../includes/common.h":
         PyObject *callback_ptr;
 
     PyCallableWrapper_t dummy_callable(PyCallableWrapper_t c);
+
+    # Returns whether the core logger is enabled.
+    uint8_t logging_is_initialized();
+
+    # Sets the logging system to bypass mode.
+    void logging_set_bypass();
+
+    # Shuts down the logging system.
+    void logging_shutdown();
+
+    # Returns whether the core logger is using ANSI colors.
+    uint8_t logging_is_colored();
+
+    # Sets the global logging clock to real-time mode.
+    void logging_clock_set_realtime();
+
+    # Sets the global logging clock to static mode with the given UNIX time (nanoseconds).
+    void logging_clock_set_static(uint64_t time_ns);
 
     TestClock_API test_clock_new();
 
@@ -295,9 +315,6 @@ cdef extern from "../includes/common.h":
     # - Assumes `ptr` is a valid C string pointer.
     LogColor log_color_from_cstr(const char *ptr);
 
-    # Returns whether the core logger is enabled.
-    uint8_t logging_is_initialized();
-
     # Initializes tracing.
     #
     # Tracing is meant to be used to trace/debug async Rust code. It can be
@@ -330,7 +347,6 @@ cdef extern from "../includes/common.h":
                       UUID4_t instance_id,
                       LogLevel level_stdout,
                       LogLevel level_file,
-                      uint8_t file_logging,
                       const char *directory_ptr,
                       const char *file_name_ptr,
                       const char *file_format_ptr,
@@ -345,11 +361,28 @@ cdef extern from "../includes/common.h":
     #
     # - Assumes `component_ptr` is a valid C string pointer.
     # - Assumes `message_ptr` is a valid C string pointer.
-    void logger_log(uint64_t timestamp_ns,
-                    LogLevel level,
+    void logger_log(LogLevel level,
                     LogColor color,
                     const char *component_ptr,
                     const char *message_ptr);
+
+    # Logs the Nautilus system header.
+    #
+    # # Safety
+    #
+    # - Assumes `machine_id_ptr` is a valid C string pointer.
+    # - Assumes `component_ptr` is a valid C string pointer.
+    void logging_log_header(TraderId_t trader_id,
+                            const char *machine_id_ptr,
+                            UUID4_t instance_id,
+                            const char *component_ptr);
+
+    # Logs system information.
+    #
+    # # Safety
+    #
+    # - Assumes `component_ptr` is a valid C string pointer.
+    void logging_log_sysinfo(const char *component_ptr);
 
     # Flushes logger buffers.
     void logger_flush();

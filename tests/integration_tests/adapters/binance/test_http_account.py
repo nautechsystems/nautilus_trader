@@ -23,7 +23,6 @@ from nautilus_trader.adapters.binance.http.account import BinanceOrderHttp
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccountHttpAPI
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
 
 
 @pytest.mark.skip(reason="WIP")
@@ -31,10 +30,8 @@ class TestBinanceSpotAccountHttpAPI:
     def setup(self):
         # Fixture Setup
         self.clock = LiveClock()
-        logger = Logger(clock=self.clock)
         self.client = BinanceHttpClient(
             clock=self.clock,
-            logger=logger,
             key="SOME_BINANCE_API_KEY",
             secret="SOME_BINANCE_API_SECRET",
             base_url="https://api.binance.com/",  # Spot/Margin

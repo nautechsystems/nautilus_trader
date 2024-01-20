@@ -27,12 +27,12 @@ from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
 from nautilus_trader.cache.facade cimport CacheDatabaseFacade
 from nautilus_trader.common.actor cimport Actor
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport TriggerType
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.data cimport QuoteTick
@@ -102,9 +102,9 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
     Parameters
     ----------
     trader_id : TraderId
-        The trader ID for the database.
-    logger : Logger
-        The logger for the database.
+        The trader ID for the adapter.
+    instance_id : UUID4
+        The instance ID for the adapter.
     serializer : Serializer
         The serializer for database operations.
     config : CacheConfig, optional
@@ -129,14 +129,14 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
     def __init__(
         self,
         TraderId trader_id not None,
-        Logger logger not None,
+        UUID4 instance_id not None,
         Serializer serializer not None,
         config: CacheConfig | None = None,
     ):
         if config is None:
             config = CacheConfig()
         Condition.type(config, CacheConfig, "config")
-        super().__init__(logger, config)
+        super().__init__(config)
 
         # Validate configuration
         if config.buffer_interval_ms and config.buffer_interval_ms > 1000:
@@ -186,7 +186,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         self._backing = nautilus_pyo3.RedisCacheDatabase(
             trader_id=nautilus_pyo3.TraderId(trader_id.value),
-            instance_id=nautilus_pyo3.UUID4(logger.instance_id.value),
+            instance_id=nautilus_pyo3.UUID4(instance_id.value),
             config_json=msgspec.json.encode(config),
         )
 

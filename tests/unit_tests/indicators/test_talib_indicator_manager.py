@@ -23,9 +23,6 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 
-from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.objects import Price
@@ -57,22 +54,14 @@ def bar_type() -> BarType:
 
 @pytest.fixture()
 def indicator_manager(bar_type: BarType) -> TALibIndicatorManager:
-    clock = TestClock()
-    logger = Logger(
-        clock=TestClock(),
-        level_stdout=LogLevel.INFO,
-        bypass=True,
-    )
     return TALibIndicatorManager(
         bar_type=bar_type,
         period=10,
-        clock=clock,
-        logger=logger,
     )
 
 
 @pytest.fixture()
-def sample_bar_1(bar_type):
+def sample_bar_1(bar_type: BarType) -> Bar:
     return Bar(
         bar_type=bar_type,
         open=Price.from_str("1.57593"),
@@ -86,7 +75,7 @@ def sample_bar_1(bar_type):
 
 
 @pytest.fixture()
-def sample_bar_1_update(bar_type):
+def sample_bar_1_update(bar_type: BarType) -> Bar:
     return Bar(
         bar_type=bar_type,
         open=Price.from_str("1.57593"),
@@ -100,7 +89,7 @@ def sample_bar_1_update(bar_type):
 
 
 @pytest.fixture()
-def sample_bar_2(bar_type):
+def sample_bar_2(bar_type: BarType) -> Bar:
     return Bar(
         bar_type=bar_type,
         open=Price.from_str("1.57610"),
@@ -114,7 +103,7 @@ def sample_bar_2(bar_type):
 
 
 @pytest.fixture()
-def sample_data(bar_type) -> list[Bar]:
+def sample_data(bar_type: BarType) -> list[Bar]:
     provider = TestDataProvider()
     instrument = TestInstrumentProvider.default_fx_ccy(
         symbol=bar_type.instrument_id.symbol.value,
@@ -131,19 +120,11 @@ def test_setup():
     # Arrange
     bar_type = BarType.from_str("EUR/USD.IDEALPRO-1-HOUR-MID-EXTERNAL")
     period = 10
-    clock = TestClock()
-    logger = Logger(
-        clock=TestClock(),
-        level_stdout=LogLevel.INFO,
-        bypass=True,
-    )
 
     # Act
     indicator_manager = TALibIndicatorManager(
         bar_type=bar_type,
         period=period,
-        clock=clock,
-        logger=logger,
     )
 
     # Assert

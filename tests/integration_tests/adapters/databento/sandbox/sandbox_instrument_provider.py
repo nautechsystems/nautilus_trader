@@ -20,8 +20,6 @@ import pandas as pd
 from nautilus_trader.adapters.databento.factories import get_cached_databento_http_client
 from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.identifiers import InstrumentId
 
 
@@ -32,10 +30,6 @@ async def test_databento_instrument_provider():
     provider = DatabentoInstrumentProvider(
         http_client=http_client,
         clock=clock,
-        logger=Logger(
-            clock=clock,
-            level_stdout=LogLevel.DEBUG,
-        ),
     )
 
     await provider.load_async(InstrumentId.from_str("ESH4.GLBX"))

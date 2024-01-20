@@ -24,7 +24,6 @@ from cpython.datetime cimport datetime
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport MessageBus
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.uuid cimport UUID4
@@ -52,8 +51,6 @@ cdef class BacktestDataClient(DataClient):
         The cache for the client.
     clock : Clock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     config : NautilusConfig, optional
         The configuration for the instance.
     """
@@ -64,7 +61,6 @@ cdef class BacktestDataClient(DataClient):
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
-        Logger logger not None,
         config: NautilusConfig | None = None,
     ):
         super().__init__(
@@ -73,7 +69,6 @@ cdef class BacktestDataClient(DataClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             config=config,
         )
 
@@ -124,8 +119,6 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         The cache for the client.
     clock : Clock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     """
 
     def __init__(
@@ -134,7 +127,6 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
-        Logger logger not None,
     ):
         super().__init__(
             client_id=client_id,
@@ -142,7 +134,6 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
         )
 
         self.is_connected = False

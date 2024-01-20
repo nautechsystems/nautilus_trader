@@ -32,9 +32,6 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.providers import parse_market_catalog
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.rust.model import OrderSide
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import BookOrder
@@ -74,11 +71,10 @@ def instrument_list(mock_load_markets_metadata):
 
     # Setup
     loop = asyncio.get_event_loop()
-    logger = Logger(clock=LiveClock(), level_stdout=LogLevel.ERROR)
-    client = BetfairTestStubs.betfair_client(loop=loop, logger=logger)
+    client = BetfairTestStubs.betfair_client(loop=loop)
     market_ids = BetfairDataProvider.market_ids()
     config = BetfairInstrumentProviderConfig(market_ids=market_ids, account_currency="GBP")
-    instrument_provider = BetfairInstrumentProvider(client=client, logger=logger, config=config)
+    instrument_provider = BetfairInstrumentProvider(client=client, config=config)
 
     # Load instruments
     catalog = parse_market_catalog(BetfairResponses.betting_list_market_catalogue()["result"])

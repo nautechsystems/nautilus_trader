@@ -50,7 +50,6 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import Component
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 
@@ -84,14 +83,12 @@ class InteractiveBrokersClient(
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         host: str = "127.0.0.1",
         port: int = 7497,
         client_id: int = 1,
     ) -> None:
         super().__init__(
             clock=clock,
-            logger=logger,
             component_id=ClientId(f"{IB_VENUE.value}-{client_id:03d}"),
             component_name=f"{type(self).__name__}-{client_id:03d}",
             msgbus=msgbus,

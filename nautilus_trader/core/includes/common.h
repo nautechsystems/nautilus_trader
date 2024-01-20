@@ -172,19 +172,23 @@ typedef enum LogColor {
  */
 typedef enum LogLevel {
     /**
-     * The **DBG** debug log level.
+     * A level lower than all other log levels (off).
+     */
+    OFF = 0,
+    /**
+     * The **DEBUG** debug log level.
      */
     DEBUG = 10,
     /**
-     * The **INF** info log level.
+     * The **INFO** info log level.
      */
     INFO = 20,
     /**
-     * The **WRN** warning log level.
+     * The **WARNING** warning log level.
      */
     WARNING = 30,
     /**
-     * The **ERR** error log level.
+     * The **ERROR** error log level.
      */
     ERROR = 40,
 } LogLevel;
@@ -301,6 +305,36 @@ typedef struct TimeEventHandler_t {
 } TimeEventHandler_t;
 
 struct PyCallableWrapper_t dummy_callable(struct PyCallableWrapper_t c);
+
+/**
+ * Returns whether the core logger is enabled.
+ */
+uint8_t logging_is_initialized(void);
+
+/**
+ * Sets the logging system to bypass mode.
+ */
+void logging_set_bypass(void);
+
+/**
+ * Shuts down the logging system.
+ */
+void logging_shutdown(void);
+
+/**
+ * Returns whether the core logger is using ANSI colors.
+ */
+uint8_t logging_is_colored(void);
+
+/**
+ * Sets the global logging clock to real-time mode.
+ */
+void logging_clock_set_realtime(void);
+
+/**
+ * Sets the global logging clock to static mode with the given UNIX time (nanoseconds).
+ */
+void logging_clock_set_static(uint64_t time_ns);
 
 struct TestClock_API test_clock_new(void);
 
@@ -433,11 +467,6 @@ const char *log_color_to_cstr(enum LogColor value);
 enum LogColor log_color_from_cstr(const char *ptr);
 
 /**
- * Returns whether the core logger is enabled.
- */
-uint8_t logging_is_initialized(void);
-
-/**
  * Initializes tracing.
  *
  * Tracing is meant to be used to trace/debug async Rust code. It can be
@@ -473,7 +502,6 @@ void logging_init(TraderId_t trader_id,
                   UUID4_t instance_id,
                   enum LogLevel level_stdout,
                   enum LogLevel level_file,
-                  uint8_t file_logging,
                   const char *directory_ptr,
                   const char *file_name_ptr,
                   const char *file_format_ptr,
@@ -490,11 +518,32 @@ void logging_init(TraderId_t trader_id,
  * - Assumes `component_ptr` is a valid C string pointer.
  * - Assumes `message_ptr` is a valid C string pointer.
  */
-void logger_log(uint64_t timestamp_ns,
-                enum LogLevel level,
+void logger_log(enum LogLevel level,
                 enum LogColor color,
                 const char *component_ptr,
                 const char *message_ptr);
+
+/**
+ * Logs the Nautilus system header.
+ *
+ * # Safety
+ *
+ * - Assumes `machine_id_ptr` is a valid C string pointer.
+ * - Assumes `component_ptr` is a valid C string pointer.
+ */
+void logging_log_header(TraderId_t trader_id,
+                        const char *machine_id_ptr,
+                        UUID4_t instance_id,
+                        const char *component_ptr);
+
+/**
+ * Logs system information.
+ *
+ * # Safety
+ *
+ * - Assumes `component_ptr` is a valid C string pointer.
+ */
+void logging_log_sysinfo(const char *component_ptr);
 
 /**
  * Flushes logger buffers.

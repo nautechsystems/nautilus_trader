@@ -15,11 +15,10 @@
 
 use std::ffi::{c_char, CStr};
 
-use log::LevelFilter;
 use nautilus_core::{
     ffi::{
         parsing::{optional_bytes_to_json, u8_as_bool},
-        string::{cstr_to_ustr, optional_cstr_to_string},
+        string::{cstr_to_str, cstr_to_ustr, optional_cstr_to_string},
     },
     uuid::UUID4,
 };
@@ -28,15 +27,10 @@ use nautilus_model::identifiers::trader_id::TraderId;
 use crate::{
     enums::{LogColor, LogLevel},
     logging::{
-        self, map_log_level_to_filter, parse_component_levels, FileWriterConfig, LoggerConfig,
+        self, logging_set_bypass, map_log_level_to_filter, parse_component_levels,
+        FileWriterConfig, LoggerConfig,
     },
 };
-
-/// Returns whether the core logger is enabled.
-#[no_mangle]
-pub extern "C" fn logging_is_initialized() -> u8 {
-    log::log_enabled!(log::Level::Error) as u8
-}
 
 /// Initializes tracing.
 ///
@@ -75,7 +69,6 @@ pub unsafe extern "C" fn logging_init(
     instance_id: UUID4,
     level_stdout: LogLevel,
     level_file: LogLevel,
-    file_logging: u8,
     directory_ptr: *const c_char,
     file_name_ptr: *const c_char,
     file_format_ptr: *const c_char,
@@ -85,11 +78,7 @@ pub unsafe extern "C" fn logging_init(
     print_config: u8,
 ) {
     let level_stdout = map_log_level_to_filter(level_stdout);
-    let level_file = if u8_as_bool(file_logging) {
-        map_log_level_to_filter(level_file)
-    } else {
-        LevelFilter::Off
-    };
+    let level_file = map_log_level_to_filter(level_file);
 
     let component_levels_json = optional_bytes_to_json(component_levels_ptr);
     let component_levels = parse_component_levels(component_levels_json);
@@ -99,15 +88,17 @@ pub unsafe extern "C" fn logging_init(
         level_file,
         component_levels,
         u8_as_bool(is_colored),
-        u8_as_bool(is_bypassed),
         u8_as_bool(print_config),
     );
 
     let directory = optional_cstr_to_string(directory_ptr);
     let file_name = optional_cstr_to_string(file_name_ptr);
     let file_format = optional_cstr_to_string(file_format_ptr);
-
     let file_config = FileWriterConfig::new(directory, file_name, file_format);
+
+    if u8_as_bool(is_bypassed) {
+        logging_set_bypass();
+    }
 
     logging::init_logging(trader_id, instance_id, config, file_config);
 }
@@ -120,16 +111,67 @@ pub unsafe extern "C" fn logging_init(
 /// - Assumes `message_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn logger_log(
-    timestamp_ns: u64,
     level: LogLevel,
     color: LogColor,
     component_ptr: *const c_char,
     message_ptr: *const c_char,
 ) {
+    if component_ptr.is_null() {
+        eprintln!("`component_ptr` was NULL");
+        return;
+    };
+    if message_ptr.is_null() {
+        eprintln!("`message_ptr` was NULL");
+        return;
+    };
+
     let component = cstr_to_ustr(component_ptr);
     let message = CStr::from_ptr(message_ptr).to_string_lossy();
 
-    logging::log(timestamp_ns, level, color, component, message);
+    logging::log(level, color, component, message);
+}
+
+/// Logs the Nautilus system header.
+///
+/// # Safety
+///
+/// - Assumes `machine_id_ptr` is a valid C string pointer.
+/// - Assumes `component_ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn logging_log_header(
+    trader_id: TraderId,
+    machine_id_ptr: *const c_char,
+    instance_id: UUID4,
+    component_ptr: *const c_char,
+) {
+    if machine_id_ptr.is_null() {
+        eprintln!("`machine_id_ptr` was NULL");
+        return;
+    };
+    if component_ptr.is_null() {
+        eprintln!("`component_ptr` was NULL");
+        return;
+    };
+
+    let component = cstr_to_ustr(component_ptr);
+    let machine_id = cstr_to_str(machine_id_ptr);
+    logging::log_header(trader_id, machine_id, instance_id, component);
+}
+
+/// Logs system information.
+///
+/// # Safety
+///
+/// - Assumes `component_ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn logging_log_sysinfo(component_ptr: *const c_char) {
+    if component_ptr.is_null() {
+        eprintln!("`component_ptr` was NULL");
+        return;
+    };
+
+    let component = cstr_to_ustr(component_ptr);
+    logging::log_sysinfo(component)
 }
 
 /// Flushes logger buffers.

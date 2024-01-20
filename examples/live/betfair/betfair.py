@@ -25,7 +25,7 @@ from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFact
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_instrument_provider
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import init_logging
 from nautilus_trader.common.logging import log_level_from_str
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
@@ -43,19 +43,17 @@ async def main(
     log_level: str = "INFO",
 ) -> TradingNode:
     # Connect to Betfair client early to load instruments and account currency
-    logger = Logger(level_stdout=log_level_from_str(log_level))
+    init_logging(level_stdout=log_level_from_str(log_level))
     client = get_cached_betfair_client(
         username=None,  # Pass here or will source from the `BETFAIR_USERNAME` env var
         password=None,  # Pass here or will source from the `BETFAIR_PASSWORD` env var
         app_key=None,  # Pass here or will source from the `BETFAIR_APP_KEY` env var
-        logger=logger,
     )
     await client.connect()
 
     # Find instruments for a particular market_id
     provider = get_cached_betfair_instrument_provider(
         client=client,
-        logger=logger,
         config=instrument_config,
     )
     await provider.load_all_async()

@@ -104,8 +104,6 @@ cdef class ExecutionEngine(Component):
         The cache for the engine.
     clock : Clock
         The clock for the engine.
-    logger : Logger
-        The logger for the engine.
     config : ExecEngineConfig, optional
         The configuration for the instance.
 
@@ -120,7 +118,6 @@ cdef class ExecutionEngine(Component):
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
-        Logger logger not None,
         config: ExecEngineConfig | None = None,
     ) -> None:
         if config is None:
@@ -128,7 +125,6 @@ cdef class ExecutionEngine(Component):
         Condition.type(config, ExecEngineConfig, "config")
         super().__init__(
             clock=clock,
-            logger=logger,
             component_id=ComponentId("ExecEngine"),
             msgbus=msgbus,
             config=config,

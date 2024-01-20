@@ -20,7 +20,6 @@ from nautilus_trader.adapters.sandbox.execution import SandboxExecutionClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.portfolio import PortfolioFacade
 
@@ -39,7 +38,6 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
     ) -> SandboxExecutionClient:
         """
         Create a new Sandbox execution client.
@@ -60,8 +58,6 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : Logger
-            The logger for the client.
 
         Returns
         -------
@@ -74,7 +70,6 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
             portfolio=portfolio,
             msgbus=msgbus,
             cache=cache,
-            logger=logger,
             venue=config.venue,
             balance=config.balance,
             currency=config.currency,

@@ -22,10 +22,12 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
 ustr = { workspace = true }
+thousands = { workspace = true }
 tracing = { workspace = true }
+log = { version = "0.4.20", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
+sysinfo = "0.30.5"
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
-log = { version = "0.4.20", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -41,7 +43,6 @@ ffi = ["cbindgen"]
 python = ["pyo3"]
 redis = ["dep:redis"]
 default = ["ffi", "python", "redis"]
-
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
