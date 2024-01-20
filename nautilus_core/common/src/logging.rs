@@ -47,6 +47,7 @@ use ustr::Ustr;
 use crate::enums::{LogColor, LogLevel};
 
 static LOGGING_INITIALIZED: AtomicBool = AtomicBool::new(false);
+static LOGGING_BYPASSED: AtomicBool = AtomicBool::new(false);
 static LOGGING_REALTIME: AtomicBool = AtomicBool::new(true);
 static LOGGING_COLORED: AtomicBool = AtomicBool::new(true);
 
@@ -56,7 +57,19 @@ pub extern "C" fn logging_is_initialized() -> u8 {
     LOGGING_INITIALIZED.load(Ordering::Relaxed) as u8
 }
 
-/// Returns whether the core logger is enabled.
+/// Sets the logging system to bypass mode.
+#[no_mangle]
+pub extern "C" fn logging_set_bypass() {
+    LOGGING_BYPASSED.store(true, Ordering::Relaxed)
+}
+
+/// Shuts down the logging system.
+#[no_mangle]
+pub extern "C" fn logging_shutdown() {
+    todo!()
+}
+
+/// Returns whether the core logger is using ANSI colors.
 #[no_mangle]
 pub extern "C" fn logging_is_colored() -> u8 {
     LOGGING_COLORED.load(Ordering::Relaxed) as u8
@@ -90,8 +103,6 @@ pub struct LoggerConfig {
     component_level: HashMap<Ustr, LevelFilter>,
     /// If logger is using ANSI color codes.
     pub is_colored: bool,
-    /// If logging is bypassed.
-    pub is_bypassed: bool,
     /// If the configuration should be printed to stdout at initialization.
     pub print_config: bool,
 }
@@ -103,7 +114,6 @@ impl Default for LoggerConfig {
             fileout_level: LevelFilter::Off,
             component_level: HashMap::new(),
             is_colored: false,
-            is_bypassed: false,
             print_config: false,
         }
     }
@@ -115,7 +125,6 @@ impl LoggerConfig {
         fileout_level: LevelFilter,
         component_level: HashMap<Ustr, LevelFilter>,
         is_colored: bool,
-        is_bypassed: bool,
         print_config: bool,
     ) -> Self {
         Self {
@@ -123,7 +132,6 @@ impl LoggerConfig {
             fileout_level,
             component_level,
             is_colored,
-            is_bypassed,
             print_config,
         }
     }
@@ -134,14 +142,11 @@ impl LoggerConfig {
             mut fileout_level,
             mut component_level,
             mut is_colored,
-            mut is_bypassed,
             mut print_config,
         } = Self::default();
         spec.split(';').for_each(|kv| {
             if kv == "is_colored" {
                 is_colored = true;
-            } else if kv == "is_bypassed" {
-                is_bypassed = true;
             } else if kv == "print_config" {
                 print_config = true;
             } else {
@@ -164,7 +169,6 @@ impl LoggerConfig {
             fileout_level,
             component_level,
             is_colored,
-            is_bypassed,
             print_config,
         }
     }
@@ -322,9 +326,8 @@ impl fmt::Display for LogLine {
 
 impl Log for Logger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        !self.config.is_bypassed
-            && (metadata.level() == Level::Error
-                || metadata.level() >= self.config.stdout_level
+        !LOGGING_BYPASSED.load(Ordering::Relaxed)
+            && (metadata.level() >= self.config.stdout_level
                 || metadata.level() >= self.config.fileout_level)
     }
 
@@ -411,7 +414,6 @@ impl Logger {
         }
     }
 
-    #[allow(unused_variables)] // `is_bypassed` is unused
     fn handle_messages(
         trader_id: &str,
         instance_id: &str,
@@ -428,7 +430,6 @@ impl Logger {
             fileout_level,
             component_level,
             is_colored,
-            is_bypassed,
             print_config: _,
         } = config;
 
@@ -471,10 +472,6 @@ impl Logger {
 
         // Continue to receive and handle log events until channel is hung up
         while let Ok(event) = rx.recv() {
-            if is_bypassed {
-                continue;
-            }
-
             let timestamp = match LOGGING_REALTIME.load(Ordering::Relaxed) {
                 true => clock_realtime.get_time_ns(),
                 false => clock_static.get_time_ns(),
@@ -768,7 +765,6 @@ mod tests {
                     LevelFilter::Error
                 )]),
                 is_colored: true,
-                is_bypassed: false,
                 print_config: false,
             }
         )
@@ -784,7 +780,6 @@ mod tests {
                 fileout_level: LevelFilter::Error,
                 component_level: HashMap::new(),
                 is_colored: false,
-                is_bypassed: false,
                 print_config: true,
             }
         )

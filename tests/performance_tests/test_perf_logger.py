@@ -23,10 +23,7 @@ from nautilus_trader.common.logging import init_logging
 
 def test_logging(benchmark: Any) -> None:
     random.seed(45362718)
-    init_logging(
-        level_stdout=LogLevel.ERROR,
-        bypass=True,
-    )
+    init_logging(level_stdout=LogLevel.ERROR, bypass=True)
 
     logger = Logger(name="TEST_LOGGER")
 
@@ -68,6 +65,6 @@ def test_logging(benchmark: Any) -> None:
         for i in range(100_000):
             message = random.choice(messages)
             # unique log messages to prevent caching during string conversion
-            logger.error(f"{i}: {message}")
+            logger.info(f"{i}: {message}")
 
     benchmark.pedantic(run, rounds=10, iterations=2, warmup_rounds=1)
