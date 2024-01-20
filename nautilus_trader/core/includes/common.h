@@ -546,7 +546,7 @@ void logging_log_header(TraderId_t trader_id,
 void logging_log_sysinfo(const char *component_ptr);
 
 /**
- * Flushes logger buffers.
+ * Flushes global logger buffers.
  */
 void logger_flush(void);
 

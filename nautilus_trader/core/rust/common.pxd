@@ -384,7 +384,7 @@ cdef extern from "../includes/common.h":
     # - Assumes `component_ptr` is a valid C string pointer.
     void logging_log_sysinfo(const char *component_ptr);
 
-    # Flushes logger buffers.
+    # Flushes global logger buffers.
     void logger_flush();
 
     # # Safety
