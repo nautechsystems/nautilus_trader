@@ -48,6 +48,7 @@ criterion = { workspace = true }
 rstest = { workspace = true }
 quickcheck = "1"
 quickcheck_macros = "1"
+procfs = "0.16.0"
 
 [[bench]]
 name = "bench_persistence"

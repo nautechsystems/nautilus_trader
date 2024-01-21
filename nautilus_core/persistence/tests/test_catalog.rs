@@ -22,8 +22,77 @@ use nautilus_persistence::{
     backend::session::{DataBackendSession, DataQueryResult, QueryResult},
     python::backend::session::NautilusDataType,
 };
+use procfs::{self, process::Process};
 use pyo3::{types::PyCapsule, IntoPy, Py, PyAny, Python};
 use rstest::rstest;
+
+fn mem_leak_test<T>(setup: impl FnOnce() -> T, run: impl Fn(&T), threshold: f64, iter: usize) {
+    let args = setup();
+    // measure mem after setup
+    let page_size = procfs::page_size();
+    let me = Process::myself().unwrap();
+    let setup_mem = me.stat().unwrap().rss * page_size / 1024;
+
+    {
+        run(&args);
+    }
+
+    let before = me.stat().unwrap().rss * page_size / 1024 - setup_mem;
+
+    for _ in 0..iter {
+        run(&args);
+    }
+
+    let after = me.stat().unwrap().rss * page_size / 1024 - setup_mem;
+
+    if !(after.abs_diff(before) as f64 / (before as f64) < threshold) {
+        println!("Memory leak detected after {} iterations", iter);
+        println!("Memory before runs (in KB): {}", before);
+        println!("Memory after runs (in KB): {}", after);
+        assert!(false);
+    }
+}
+
+#[rstest]
+fn catalog_query_mem_leak_test() {
+    mem_leak_test(
+        || pyo3::prepare_freethreaded_python(),
+        |_args| {
+            let file_path = "../../tests/test_data/nautilus/quotes.parquet";
+            let expected_length = 9500;
+            let catalog = DataBackendSession::new(1_000_000);
+            Python::with_gil(|py| {
+                let pycatalog: Py<PyAny> = catalog.into_py(py);
+                pycatalog
+                    .call_method1(
+                        py,
+                        "add_file",
+                        (NautilusDataType::QuoteTick, "order_book_deltas", file_path),
+                    )
+                    .unwrap();
+                let result = pycatalog.call_method0(py, "to_query_result").unwrap();
+                let mut count = 0;
+                while let Ok(chunk) = result.call_method0(py, "__next__") {
+                    let capsule: &PyCapsule = chunk.downcast(py).unwrap();
+                    let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
+                    if cvec.len == 0 {
+                        break;
+                    } else {
+                        let slice: &[Data] = unsafe {
+                            std::slice::from_raw_parts(cvec.ptr as *const Data, cvec.len)
+                        };
+                        count += slice.len();
+                        assert!(is_monotonically_increasing_by_init(slice));
+                    }
+                }
+
+                assert_eq!(expected_length, count);
+            });
+        },
+        1.0,
+        5,
+    );
+}
 
 #[rstest]
 fn test_quote_tick_cvec_interface() {
