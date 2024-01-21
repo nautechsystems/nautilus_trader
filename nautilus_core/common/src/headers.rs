@@ -77,8 +77,6 @@ pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, com
     let package = "nautilus_trader";
     header_line(c, &format!("{package}: {}", get_python_package_version(package)));
     header_line(c, &format!("python: {}", get_python_version()));
-    let package = "nautilus_trader";
-    header_line(c, &format!("{package}: {}", get_python_package_version(package)));
     let package = "numpy";
     header_line(c, &format!("{package}: {}", get_python_package_version(package)));
     let package = "pandas";
