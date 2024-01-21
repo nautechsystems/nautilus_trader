@@ -24,7 +24,6 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport MessageBus
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport LiquiditySide
@@ -85,8 +84,6 @@ cdef class ExecutionClient(Component):
         The cache for the client.
     clock : Clock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     config : NautilusConfig, optional
         The configuration for the instance.
 
@@ -112,14 +109,12 @@ cdef class ExecutionClient(Component):
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
-        Logger logger not None,
         config: NautilusConfig | None = None,
     ):
         Condition.not_equal(oms_type, OmsType.UNSPECIFIED, "oms_type", "UNSPECIFIED")
 
         super().__init__(
             clock=clock,
-            logger=logger,
             component_id=client_id,
             component_name=f"ExecClient-{client_id}",
             msgbus=msgbus,

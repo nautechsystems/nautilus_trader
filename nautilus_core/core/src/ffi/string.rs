@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
+    borrow::Cow,
     ffi::{c_char, CStr, CString},
     str,
 };
@@ -51,7 +52,7 @@ pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
     Ustr::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
-/// Convert a C string pointer into an owned `String`.
+/// Convert a C string pointer into bytes.
 ///
 /// # Safety
 ///
@@ -61,7 +62,7 @@ pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
 ///
 /// - If `ptr` is null.
 #[must_use]
-pub unsafe fn cstr_to_vec(ptr: *const c_char) -> Vec<u8> {
+pub unsafe fn cstr_to_bytes(ptr: *const c_char) -> Vec<u8> {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     CStr::from_ptr(ptr).to_bytes().to_vec()
 }
@@ -84,7 +85,7 @@ pub unsafe fn optional_cstr_to_ustr(ptr: *const c_char) -> Option<Ustr> {
     }
 }
 
-/// Convert a C string pointer into a string slice.
+/// Convert a C string pointer into a static string slice.
 ///
 /// # Safety
 ///
@@ -99,7 +100,22 @@ pub unsafe fn cstr_to_str(ptr: *const c_char) -> &'static str {
     CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")
 }
 
-/// Convert a C string pointer into an owned `String`.
+/// Convert a C string pointer into an owned `Option<String>`.
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer or NULL.
+#[must_use]
+pub unsafe fn optional_cstr_to_str(ptr: *const c_char) -> Option<&'static str> {
+    if ptr.is_null() {
+        None
+    } else {
+        Some(cstr_to_str(ptr))
+    }
+}
+
+/// Convert a C string pointer into a static <code>[Cow]<[str]></code>.
+/// Invalid UTF-8 sequences will be replaced with a replacement character.
 ///
 /// # Safety
 ///
@@ -109,22 +125,9 @@ pub unsafe fn cstr_to_str(ptr: *const c_char) -> &'static str {
 ///
 /// - If `ptr` is null.
 #[must_use]
-pub unsafe fn cstr_to_string(ptr: *const c_char) -> String {
-    cstr_to_str(ptr).to_string()
-}
-
-/// Convert a C string pointer into an owned `Option<String>`.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer or NULL.
-#[must_use]
-pub unsafe fn optional_cstr_to_string(ptr: *const c_char) -> Option<String> {
-    if ptr.is_null() {
-        None
-    } else {
-        Some(cstr_to_string(ptr))
-    }
+pub unsafe fn cstr_to_lossy_cow(ptr: *const c_char) -> Cow<'static, str> {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
+    CStr::from_ptr(ptr).to_string_lossy()
 }
 
 /// Create a C string pointer to newly allocated memory from a [&str].
@@ -188,30 +191,11 @@ mod tests {
     }
 
     #[rstest]
-    fn test_cstr_to_string() {
-        // Create a valid C string pointer
-        let c_string = CString::new("test string2").expect("CString::new failed");
-        let ptr = c_string.as_ptr();
-        let result = unsafe { cstr_to_string(ptr) };
-        assert_eq!(result, "test string2");
-    }
-
-    #[rstest]
-    #[should_panic]
-    fn test_cstr_to_string_with_null_ptr() {
-        // Create a null C string pointer
-        let ptr: *const c_char = std::ptr::null();
-        unsafe {
-            let _ = cstr_to_string(ptr);
-        };
-    }
-
-    #[rstest]
     fn test_cstr_to_vec() {
         // Create a valid C string pointer
         let sample_c_string = CString::new("Hello, world!").expect("CString::new failed");
         let cstr_ptr = sample_c_string.as_ptr();
-        let result = unsafe { cstr_to_vec(cstr_ptr) };
+        let result = unsafe { cstr_to_bytes(cstr_ptr) };
         assert_eq!(result, b"Hello, world!");
         assert_eq!(result.len(), 13);
     }
@@ -222,24 +206,24 @@ mod tests {
         // Create a null C string pointer
         let ptr: *const c_char = std::ptr::null();
         unsafe {
-            let _ = cstr_to_vec(ptr);
+            let _ = cstr_to_bytes(ptr);
         };
     }
 
     #[rstest]
-    fn test_optional_cstr_to_string_with_null_ptr() {
-        // Call optional_cstr_to_string with null pointer
+    fn test_optional_cstr_to_str_with_null_ptr() {
+        // Call optional_cstr_to_str with null pointer
         let ptr = std::ptr::null();
-        let result = unsafe { optional_cstr_to_string(ptr) };
+        let result = unsafe { optional_cstr_to_str(ptr) };
         assert!(result.is_none());
     }
 
     #[rstest]
-    fn test_optional_cstr_to_string_with_valid_ptr() {
+    fn test_optional_cstr_to_str_with_valid_ptr() {
         // Create a valid C string
         let input_str = "hello world";
         let c_str = CString::new(input_str).expect("CString::new failed");
-        let result = unsafe { optional_cstr_to_string(c_str.as_ptr()) };
+        let result = unsafe { optional_cstr_to_str(c_str.as_ptr()) };
         assert!(result.is_some());
         assert_eq!(result.unwrap(), input_str);
     }

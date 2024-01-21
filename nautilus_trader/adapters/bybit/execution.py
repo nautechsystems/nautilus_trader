@@ -38,7 +38,6 @@ from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -78,7 +77,6 @@ class BybitExecutionClient(LiveExecutionClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         instrument_provider: InstrumentProvider,
         instrument_types: list[BybitInstrumentType],
         base_url_ws: str,
@@ -95,7 +93,6 @@ class BybitExecutionClient(LiveExecutionClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
         )
         # Configuration
         self._use_position_ids = config.use_position_ids
@@ -114,7 +111,6 @@ class BybitExecutionClient(LiveExecutionClient):
         # WebSocket API
         self._ws_client = BybitWebsocketClient(
             clock=clock,
-            logger=logger,
             handler=self._handle_ws_message,
             base_url=base_url_ws,
             is_private=True,

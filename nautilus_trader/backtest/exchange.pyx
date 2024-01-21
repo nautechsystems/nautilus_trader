@@ -92,8 +92,6 @@ cdef class SimulatedExchange:
         The latency model for the exchange.
     clock : TestClock
         The clock for the exchange.
-    logger : Logger
-        The logger for the exchange.
     book_type : BookType
         The order book type for the exchange.
     frozen_account : bool, default False
@@ -145,7 +143,6 @@ cdef class SimulatedExchange:
         MessageBus msgbus not None,
         CacheFacade cache not None,
         TestClock clock not None,
-        Logger logger not None,
         FillModel fill_model not None,
         LatencyModel latency_model = None,
         BookType book_type = BookType.L1_MBP,
@@ -168,10 +165,7 @@ cdef class SimulatedExchange:
             Condition.true(account_type == AccountType.MARGIN, "leverages defined when account type is not `MARGIN`")
 
         self._clock = clock
-        self._log = LoggerAdapter(
-            component_name=f"{type(self).__name__}({venue})",
-            logger=logger,
-        )
+        self._log = Logger(name=f"{type(self).__name__}({venue})")
 
         self.id = venue
         self.oms_type = oms_type
@@ -211,7 +205,6 @@ cdef class SimulatedExchange:
                 msgbus=msgbus,
                 cache=cache,
                 clock=clock,
-                logger=logger,
             )
             self.modules.append(module)
             self._log.info(f"Loaded {module}.")
@@ -340,7 +333,6 @@ cdef class SimulatedExchange:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self._clock,
-            logger=self._log.get_logger(),
             bar_execution=self.bar_execution,
             reject_stop_orders=self.reject_stop_orders,
             support_gtd_orders=self.support_gtd_orders,

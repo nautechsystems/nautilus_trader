@@ -22,7 +22,6 @@ from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.provider import BybitInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
@@ -34,10 +33,8 @@ from nautilus_trader.model.identifiers import Venue
 class TestBybitInstrumentProvider:
     def setup(self):
         self.clock = LiveClock()
-        self.live_logger = Logger(clock=self.clock)
         self.http_client: BybitHttpClient = BybitHttpClient(
             clock=self.clock,
-            logger=self.live_logger,
             api_key="BYBIT_API_KEY",
             api_secret="BYBIT_API_SECRET",
             base_url="https://api-testnet.bybit.com",
@@ -56,7 +53,6 @@ class TestBybitInstrumentProvider:
     ) -> BybitInstrumentProvider:
         return BybitInstrumentProvider(
             client=self.http_client,
-            logger=self.live_logger,
             clock=self.clock,
             instrument_types=instrument_types,
             config=InstrumentProviderConfig(load_all=True),

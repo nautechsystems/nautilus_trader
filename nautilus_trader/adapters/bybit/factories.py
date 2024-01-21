@@ -26,7 +26,6 @@ from nautilus_trader.adapters.env import get_env_key
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.nautilus_pyo3 import Quota
 from nautilus_trader.live.factories import LiveDataClientFactory
@@ -38,7 +37,6 @@ HTTP_CLIENTS: dict[str, BybitHttpClient] = {}
 
 def get_bybit_http_client(
     clock: LiveClock,
-    logger: Logger,
     key: str | None = None,
     secret: str | None = None,
     base_url: str | None = None,
@@ -54,8 +52,6 @@ def get_bybit_http_client(
     ----------
     clock : LiveClock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     key : str, optional
         The API key for the client.
     secret : str, optional
@@ -86,7 +82,6 @@ def get_bybit_http_client(
     if client_key not in HTTP_CLIENTS:
         client = BybitHttpClient(
             clock=clock,
-            logger=logger,
             api_key=key,
             api_secret=secret,
             base_url=http_base_url,
@@ -99,7 +94,6 @@ def get_bybit_http_client(
 
 def get_bybit_instrument_provider(
     client: BybitHttpClient,
-    logger: Logger,
     clock: LiveClock,
     instrument_types: list[BybitInstrumentType],
     config: InstrumentProviderConfig,
@@ -114,8 +108,6 @@ def get_bybit_instrument_provider(
     ----------
     client : BybitHttpClient
         The client for the instrument provider.
-    logger : Logger
-        The logger for the instrument provider.
     clock : LiveClock
         The clock for the instrument provider.
     instrument_types : list[BybitInstrumentType]
@@ -132,7 +124,6 @@ def get_bybit_instrument_provider(
     """
     return BybitInstrumentProvider(
         client=client,
-        logger=logger,
         config=config,
         clock=clock,
         instrument_types=instrument_types,
@@ -152,7 +143,6 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
     ) -> BybitDataClient:
         """
         Create a new Bybit data client.
@@ -171,8 +161,6 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             The cache for the client.
         clock: LiveClock
             The clock for the instrument provider.
-        logger : Logger
-            The logger for the instrument provider.
 
         Returns
         -------
@@ -181,7 +169,6 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
         """
         client: BybitHttpClient = get_bybit_http_client(
             clock=clock,
-            logger=logger,
             key=config.api_key,
             secret=config.api_secret,
             base_url=config.base_url_http,
@@ -189,7 +176,6 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
         )
         provider = get_bybit_instrument_provider(
             client=client,
-            logger=logger,
             clock=clock,
             instrument_types=config.instrument_types,
             config=config.instrument_provider,
@@ -206,7 +192,6 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             instrument_provider=provider,
             instrument_types=config.instrument_types,
             ws_urls=ws_base_urls,
@@ -227,7 +212,6 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
     ) -> BybitExecutionClient:
         """
         Create a new Bybit execution client.
@@ -246,8 +230,6 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : Logger
-            The logger for the client.
 
         Returns
         -------
@@ -256,7 +238,6 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
         """
         client: BybitHttpClient = get_bybit_http_client(
             clock=clock,
-            logger=logger,
             key=config.api_key,
             secret=config.api_secret,
             base_url=config.base_url_http,
@@ -264,7 +245,6 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
         )
         provider = get_bybit_instrument_provider(
             client=client,
-            logger=logger,
             clock=clock,
             instrument_types=config.instrument_types,
             config=config.instrument_provider,
@@ -276,7 +256,6 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             instrument_provider=provider,
             instrument_types=config.instrument_types,
             base_url_ws=config.base_url_ws or default_base_url_ws,

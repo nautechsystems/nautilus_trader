@@ -21,7 +21,6 @@ from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import BTC
@@ -68,8 +67,6 @@ class TestPortfolio:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(self.clock, bypass=True)
-
         self.trader_id = TestIdStubs.trader_id()
 
         self.order_factory = OrderFactory(
@@ -81,7 +78,6 @@ class TestPortfolio:
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -90,14 +86,12 @@ class TestPortfolio:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Prepare components

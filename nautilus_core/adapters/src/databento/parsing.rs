@@ -277,7 +277,7 @@ pub fn parse_mbo_msg(
         let trade = TradeTick::new(
             instrument_id,
             Price::from_raw(record.price, price_precision)?,
-            Quantity::from_raw(record.size as u64 * FIXED_SCALAR as u64, 0)?,
+            Quantity::from_raw(u64::from(record.size) * FIXED_SCALAR as u64, 0)?,
             parse_aggressor_side(record.side),
             TradeId::new(itoa::Buffer::new().format(record.sequence))?,
             record.ts_recv,
@@ -289,7 +289,7 @@ pub fn parse_mbo_msg(
     let order = BookOrder::new(
         side,
         Price::from_raw(record.price, price_precision)?,
-        Quantity::from_raw(record.size as u64 * FIXED_SCALAR as u64, 0)?,
+        Quantity::from_raw(u64::from(record.size) * FIXED_SCALAR as u64, 0)?,
         record.order_id,
     );
 
@@ -315,7 +315,7 @@ pub fn parse_trade_msg(
     let trade = TradeTick::new(
         instrument_id,
         Price::from_raw(record.price, price_precision)?,
-        Quantity::from_raw(record.size as u64 * FIXED_SCALAR as u64, 0)?,
+        Quantity::from_raw(u64::from(record.size) * FIXED_SCALAR as u64, 0)?,
         parse_aggressor_side(record.side),
         TradeId::new(itoa::Buffer::new().format(record.sequence))?,
         record.ts_recv,
@@ -336,8 +336,8 @@ pub fn parse_mbp1_msg(
         instrument_id,
         Price::from_raw(top_level.bid_px, price_precision)?,
         Price::from_raw(top_level.ask_px, price_precision)?,
-        Quantity::from_raw(top_level.bid_sz as u64 * FIXED_SCALAR as u64, 0)?,
-        Quantity::from_raw(top_level.ask_sz as u64 * FIXED_SCALAR as u64, 0)?,
+        Quantity::from_raw(u64::from(top_level.bid_sz) * FIXED_SCALAR as u64, 0)?,
+        Quantity::from_raw(u64::from(top_level.ask_sz) * FIXED_SCALAR as u64, 0)?,
         record.ts_recv,
         ts_init,
     )?;
@@ -346,7 +346,7 @@ pub fn parse_mbp1_msg(
         'T' => Some(TradeTick::new(
             instrument_id,
             Price::from_raw(record.price, price_precision)?,
-            Quantity::from_raw(record.size as u64 * FIXED_SCALAR as u64, 0)?,
+            Quantity::from_raw(u64::from(record.size) * FIXED_SCALAR as u64, 0)?,
             parse_aggressor_side(record.side),
             TradeId::new(itoa::Buffer::new().format(record.sequence))?,
             record.ts_recv,
@@ -373,14 +373,14 @@ pub fn parse_mbp10_msg(
         let bid_order = BookOrder::new(
             OrderSide::Buy,
             Price::from_raw(level.bid_px, price_precision)?,
-            Quantity::from_raw(level.bid_sz as u64 * FIXED_SCALAR as u64, 0)?,
+            Quantity::from_raw(u64::from(level.bid_sz) * FIXED_SCALAR as u64, 0)?,
             0,
         );
 
         let ask_order = BookOrder::new(
             OrderSide::Sell,
             Price::from_raw(level.ask_px, price_precision)?,
-            Quantity::from_raw(level.ask_sz as u64 * FIXED_SCALAR as u64, 0)?,
+            Quantity::from_raw(u64::from(level.ask_sz) * FIXED_SCALAR as u64, 0)?,
             0,
         );
 

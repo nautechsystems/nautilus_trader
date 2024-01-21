@@ -29,7 +29,6 @@ from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBr
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
@@ -60,7 +59,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         instrument_provider: InteractiveBrokersInstrumentProvider,
         ibg_client_id: int,
         config: InteractiveBrokersDataClientConfig,
@@ -80,8 +78,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : Logger
-            The logger for the client.
         instrument_provider : InteractiveBrokersInstrumentProvider
             The instrument provider.
         ibg_client_id : int
@@ -97,7 +93,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             instrument_provider=instrument_provider,
             config=config,  # TODO: Config needs to be fully formed earlier than this
             # config={

@@ -44,7 +44,6 @@ from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport LogColor
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Event
@@ -243,7 +242,6 @@ cdef class Strategy(Actor):
         MessageBus msgbus,
         CacheFacade cache,
         Clock clock,
-        Logger logger,
     ):
         """
         Register the strategy with a trader.
@@ -260,8 +258,6 @@ cdef class Strategy(Actor):
             The read-only cache for the strategy.
         clock : Clock
             The clock for the strategy.
-        logger : Logger
-            The logger for the strategy.
 
         Warnings
         --------
@@ -273,14 +269,12 @@ cdef class Strategy(Actor):
         Condition.not_none(msgbus, "msgbus")
         Condition.not_none(cache, "cache")
         Condition.not_none(clock, "clock")
-        Condition.not_none(logger, "logger")
 
         self.register_base(
             portfolio=portfolio,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
         )
 
         self.order_factory = OrderFactory(
@@ -292,7 +286,6 @@ cdef class Strategy(Actor):
 
         self._manager = OrderManager(
             clock=clock,
-            logger=logger,
             msgbus=msgbus,
             cache=cache,
             component_name=type(self).__name__,
@@ -1138,22 +1131,22 @@ cdef class Strategy(Actor):
         cdef str order_side_str = " " + order_side_to_str(order_side) if order_side != OrderSide.NO_ORDER_SIDE else ""
         if not open_orders and not emulated_orders:
             self.log.info(
-                f"No open or emulated{order_side_str} "
-                f"{instrument_id.value} orders to cancel.")
+                f"No {instrument_id.to_str()} open or emulated{order_side_str} "
+                f"orders to cancel.")
             return
 
         cdef int open_count = len(open_orders)
         if open_count:
             self.log.info(
                 f"Canceling {open_count} open{order_side_str} "
-                f"{instrument_id.value} order{'' if open_count == 1 else 's'}...",
+                f"{instrument_id.to_str()} order{'' if open_count == 1 else 's'}...",
             )
 
         cdef int emulated_count = len(emulated_orders)
         if emulated_count:
             self.log.info(
                 f"Canceling {emulated_count} emulated{order_side_str} "
-                f"{instrument_id.value} order{'' if emulated_count == 1 else 's'}...",
+                f"{instrument_id.to_str()} order{'' if emulated_count == 1 else 's'}...",
             )
 
         cdef:
@@ -1279,7 +1272,9 @@ cdef class Strategy(Actor):
 
         cdef str position_side_str = " " + position_side_to_str(position_side) if position_side != PositionSide.NO_POSITION_SIDE else ""
         if not positions_open:
-            self.log.info(f"No open{position_side_str} positions to close.")
+            self.log.info(
+                f"No {instrument_id.to_str()} open{position_side_str} positions to close.",
+            )
             return
 
         cdef int count = len(positions_open)

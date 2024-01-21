@@ -16,15 +16,13 @@
 import asyncio
 import platform
 import sys
+from collections.abc import Callable
 
 import pytest
 
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.adapters.betfair.sockets import BetfairStreamClient
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
@@ -36,14 +34,16 @@ class TestBetfairSockets:
     def setup(self):
         # Fixture Setup
         self.loop = asyncio.get_event_loop()
-        self.clock = LiveClock()
-        self.logger = Logger(clock=self.clock, bypass=True)
-        self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
+        self.client = BetfairTestStubs.betfair_client(loop=self.loop)
 
-    def _build_stream_client(self, host: str, port: int, handler) -> BetfairStreamClient:
+    def _build_stream_client(
+        self,
+        host: str,
+        port: int,
+        handler: Callable[[bytes], None],
+    ) -> BetfairStreamClient:
         client = BetfairStreamClient(
             http_client=self.client,
-            logger_adapter=LoggerAdapter("bf", self.logger),
             message_handler=handler,
             host=host,
             port=port,
@@ -55,17 +55,14 @@ class TestBetfairSockets:
         clients = [
             BetfairMarketStreamClient(
                 http_client=self.client,
-                logger=self.logger,
                 message_handler=len,
             ),
             BetfairOrderStreamClient(
                 http_client=self.client,
-                logger=self.logger,
                 message_handler=len,
             ),
             BetfairMarketStreamClient(
                 http_client=self.client,
-                logger=self.logger,
                 message_handler=len,
             ),
         ]

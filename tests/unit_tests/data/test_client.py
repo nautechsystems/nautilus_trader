@@ -15,7 +15,6 @@
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.client import DataClient
@@ -44,14 +43,11 @@ class TestDataClient:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(self.clock, bypass=True)
-
         self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -60,14 +56,12 @@ class TestDataClient:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.venue = Venue("SIM")
@@ -78,7 +72,6 @@ class TestDataClient:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
     def test_subscribe_when_not_implemented_logs_error(self):
@@ -151,14 +144,11 @@ class TestMarketDataClient:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(self.clock, bypass=True)
-
         self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -167,14 +157,12 @@ class TestMarketDataClient:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.venue = Venue("SIM")
@@ -185,7 +173,6 @@ class TestMarketDataClient:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
     def test_handle_instrument_sends_to_data_engine(self):

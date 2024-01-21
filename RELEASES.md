@@ -3,14 +3,23 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added `LogLevel.OFF` (matches the Rust `tracing` log levels)
+- Added `init_logging` function with sensible defaults to initialize the Rust implemented logging system
+- Updated Binance Futures enum members for `BinanceFuturesContractType` and `BinanceFuturesPositionUpdateReason`
 
 ### Breaking Changes
+- Removed `clock` parameter from `Logger` (no dependency on `Clock` anymore)
+- Renamed `LoggerAdapter` to `Logger` (and removed old `Logger` class)
+- Renamed `Logger` `component_name` parameter to `name` (matches Python built-in `logging` API)
 - Renamed `OptionKind` `kind` parameter and property to `option_kind` (better clarity)
 - Renamed `OptionsContract` Arrow schema field `kind` to `option_kind`
+- Changed `level_file` log level to `OFF` (file logging is off by default)
 
 ### Fixes
+- Fixed memory leak for catalog queries (#1430), thanks @twitu
+- Fixed `DataEngine` order book snapshot timer names (could not parse instrument IDs with hyphens), thanks for reporting @x-zho14 and @dimitar-petrov
 - Fixed `LoggingConfig` parsing of `WARNING` log level (was not being recognized), thanks for reporting @davidsblom
+- Fixed Binance Futures `QuoteTick` parsing to capture event time for `ts_event`, thanks for reporting @x-zho14
 
 ---
 
@@ -23,7 +32,7 @@ Released on 12th January 2024 (UTC).
 - Added `InstrumentClass.BOND`
 - Added `MessageBusConfig` `use_trader_prefix` and `use_trader_id` options (provides more control over stream names)
 - Added `CacheConfig.drop_instruments_on_reset` (default true to retain current behavior)
-- Implemented core logging interface via the `log` library, thanks @twitu
+- Implemented core logging interface via the `log` crate, thanks @twitu
 - Implemented global atomic clock in Rust (improves performance and ensures properly monotonic timestamps in real-time), thanks @twitu
 - Improved Interactive Brokers adapter raising docker `RuntimeError` only when needed (not when using TWS), thanks @rsmb7z
 - Upgraded core HTTP client to latest `hyper` and `reqwest`, thanks @ayush-sb
@@ -58,7 +67,7 @@ Released on 12th January 2024 (UTC).
 - Fixed `BinanceSpotInstrumentProvider` fee loading key error for partial instruments load, thanks for reporting @doublier1
 - Fixed Binance API key configuration parsing for testnet (was falling through to non-testnet env vars)
 - Fixed TWAP execution algorithm scheduled size handling when first order should be for the entire size, thanks for reporting @pcgm-team
-- Added `BinanceErrorCode.SERVER_BUSY` (-1008). Also added to the retry error codes.
+- Added `BinanceErrorCode.SERVER_BUSY` (-1008), also added to the retry error codes
 - Added `BinanceOrderStatus.EXPIRED_IN_MATCH` which is when an order was canceled by the exchange due self-trade prevention (STP), thanks for reporting @doublier1
 
 ---
@@ -223,7 +232,7 @@ This will be the final release with support for Python 3.9.
 - Moved `manage_gtd_expiry` from `Strategy.submit_order(...)` and `Strategy.submit_order_list(...)` to `StrategyConfig` (simpler and allows re-activiting any GTD timers on start)
 
 ### Fixes
-- Fixed `LimitIfTouchedOrder.create` (exec_algorithm_params were not being passed in)
+- Fixed `LimitIfTouchedOrder.create` (`exec_algorithm_params` were not being passed in)
 - Fixed `OrderEmulator` start-up processing of OTO contingent orders (when position from parent is open)
 - Fixed `SandboxExecutionClientConfig` `kw_only=True` to allow importing without initializing
 - Fixed `OrderBook` pickling (did not include all attributes), thanks @limx0
@@ -298,7 +307,7 @@ this change.
 Released on 31st July 2023 (UTC).
 
 ### Enhancements
-- Implemented string interning with the [ustr](https://github.com/anderslanglands/ustr) library, thanks @twitu
+- Implemented string interning with the [ustr](https://github.com/anderslanglands/ustr) crate, thanks @twitu
 - Added `SyntheticInstrument` capability, including dynamic derivation formulas
 - Added `Order.commissions()` convenience method (also added to state snapshot dictionaries)
 - Added `Cache` position and order state snapshots (configure via `CacheConfig`)

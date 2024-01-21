@@ -20,9 +20,7 @@ import pytest
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.core.uuid import UUID4
@@ -82,12 +80,6 @@ class TestLiveExecutionEngine:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.logger = Logger(
-            clock=self.clock,
-            level_stdout=LogLevel.DEBUG,
-            bypass=True,
-        )
-
         self.trader_id = TestIdStubs.trader_id()
 
         self.order_factory = OrderFactory(
@@ -105,7 +97,6 @@ class TestLiveExecutionEngine:
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -114,7 +105,6 @@ class TestLiveExecutionEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine = LiveDataEngine(
@@ -122,7 +112,6 @@ class TestLiveExecutionEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_engine = LiveExecutionEngine(
@@ -130,7 +119,6 @@ class TestLiveExecutionEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=LiveExecEngineConfig(debug=True),
         )
 
@@ -140,7 +128,6 @@ class TestLiveExecutionEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.emulator = OrderEmulator(
@@ -148,10 +135,9 @@ class TestLiveExecutionEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
-        self.instrument_provider = InstrumentProvider(logger=self.logger)
+        self.instrument_provider = InstrumentProvider()
         self.instrument_provider.add(AUDUSD_SIM)
         self.instrument_provider.add(GBPUSD_SIM)
         self.cache.add_instrument(AUDUSD_SIM)
@@ -167,7 +153,6 @@ class TestLiveExecutionEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         self.portfolio.update_account(TestEventStubs.cash_account_state())
         self.exec_engine.register_client(self.client)
@@ -181,7 +166,6 @@ class TestLiveExecutionEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine.start()
@@ -238,7 +222,6 @@ class TestLiveExecutionEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=LiveExecEngineConfig(
                 debug=True,
                 inflight_check_threshold_ms=0,
@@ -252,7 +235,6 @@ class TestLiveExecutionEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -305,7 +287,6 @@ class TestLiveExecutionEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=LiveExecEngineConfig(
                 debug=True,
                 inflight_check_threshold_ms=0,
@@ -319,7 +300,6 @@ class TestLiveExecutionEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -390,7 +370,6 @@ class TestLiveExecutionEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(

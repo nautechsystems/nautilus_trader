@@ -26,7 +26,6 @@ from nautilus_trader.adapters.bybit.common.error import raise_bybit_error
 from nautilus_trader.adapters.bybit.http.errors import BybitError
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
@@ -52,7 +51,6 @@ class BybitHttpClient:
     def __init__(
         self,
         clock: LiveClock,
-        logger: Logger,
         api_key: str,
         api_secret: str,
         base_url: str,
@@ -60,7 +58,7 @@ class BybitHttpClient:
         ratelimiter_default_quota: Quota | None = None,
     ) -> None:
         self._clock: LiveClock = clock
-        self._log: LoggerAdapter = LoggerAdapter(type(self).__name__, logger=logger)
+        self._log: Logger = Logger(name=type(self).__name__)
         self._api_key: str = api_key
         self._api_secret: str = api_secret
         self._recv_window: int = 8000

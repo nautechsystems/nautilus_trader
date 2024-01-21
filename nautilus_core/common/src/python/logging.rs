@@ -13,16 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::HashMap};
 
-use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use log::LevelFilter;
+use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
 use crate::{
     enums::{LogColor, LogLevel},
-    logging::{self, FileWriterConfig, LoggerConfig},
+    logging::{
+        self, logging_set_bypass, map_log_level_to_filter, parse_level_filter_str,
+        FileWriterConfig, LoggerConfig,
+    },
 };
 
 /// Initialize tracing.
@@ -54,41 +58,63 @@ pub fn py_init_tracing() {
 /// beginning of the run.
 #[pyfunction]
 #[pyo3(name = "init_logging")]
+#[allow(clippy::too_many_arguments)]
 pub fn py_init_logging(
     trader_id: TraderId,
     instance_id: UUID4,
-    config_spec: String,
+    level_stdout: LogLevel,
+    level_file: Option<LogLevel>,
+    component_levels: Option<HashMap<String, String>>,
     directory: Option<String>,
     file_name: Option<String>,
     file_format: Option<String>,
+    is_colored: Option<bool>,
+    is_bypassed: Option<bool>,
+    print_config: Option<bool>,
 ) {
-    logging::init_logging(
-        trader_id,
-        instance_id,
-        config_spec,
-        directory,
-        file_name,
-        file_format,
+    let level_file = level_file
+        .map(map_log_level_to_filter)
+        .unwrap_or(LevelFilter::Off);
+
+    let config = LoggerConfig::new(
+        map_log_level_to_filter(level_stdout),
+        level_file,
+        parse_component_levels(component_levels),
+        is_colored.unwrap_or(true),
+        print_config.unwrap_or(false),
     );
+
+    let file_config = FileWriterConfig::new(directory, file_name, file_format);
+
+    if is_bypassed.unwrap_or(false) {
+        logging_set_bypass();
+    }
+
+    logging::init_logging(trader_id, instance_id, config, file_config);
+}
+
+fn parse_component_levels(
+    original_map: Option<HashMap<String, String>>,
+) -> HashMap<Ustr, LevelFilter> {
+    match original_map {
+        Some(map) => {
+            let mut new_map = HashMap::new();
+            for (key, value) in map {
+                let ustr_key = Ustr::from(&key);
+                let value = parse_level_filter_str(&value);
+                new_map.insert(ustr_key, value);
+            }
+            new_map
+        }
+        None => HashMap::new(),
+    }
 }
 
 /// Create a new log event.
 #[pyfunction]
 #[pyo3(name = "logger_log")]
-pub fn py_logger_log(
-    timestamp_ns: UnixNanos,
-    level: LogLevel,
-    color: LogColor,
-    component: String,
-    message: String,
-) {
-    logging::log(
-        timestamp_ns,
-        level,
-        color,
-        Ustr::from(&component),
-        Cow::from(message),
-    );
+pub fn py_logger_log(level: LogLevel, color: LogColor, component: String, message: String) {
+    logging::log(level, color, Ustr::from(&component), Cow::from(message));
 }
 
 #[pymethods]

@@ -28,7 +28,6 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
 
 
 clock = LiveClock()
@@ -37,7 +36,6 @@ account_type = BinanceAccountType.USDT_FUTURE
 client = get_cached_binance_http_client(
     loop=asyncio.get_event_loop(),
     clock=clock,
-    logger=Logger(clock=clock),
     account_type=account_type,
     key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
     secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
@@ -47,7 +45,6 @@ await client.connect()
 
 provider = BinanceFuturesInstrumentProvider(
     client=client,
-    logger=Logger(clock=clock),
     account_type=BinanceAccountType.USDT_FUTURE,
 )
 

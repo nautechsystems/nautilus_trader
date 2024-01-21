@@ -26,7 +26,6 @@ from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesIns
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.examples.strategies.ema_cross_trailing_stop import EMACrossTrailingStop
@@ -47,11 +46,9 @@ async def create_provider():
     Create a provider to load all instrument data from live exchange.
     """
     clock = LiveClock()
-    log = Logger(clock=clock)
 
     client = get_cached_binance_http_client(
         clock=clock,
-        logger=log,
         account_type=BinanceAccountType.USDT_FUTURE,
         is_testnet=True,
     )
@@ -59,7 +56,6 @@ async def create_provider():
     binance_provider = BinanceFuturesInstrumentProvider(
         client=client,
         clock=clock,
-        logger=log,
         config=InstrumentProviderConfig(load_all=True, log_warnings=False),
     )
 

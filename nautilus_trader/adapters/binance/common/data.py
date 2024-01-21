@@ -44,7 +44,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import secs_to_millis
@@ -96,8 +95,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     instrument_provider : InstrumentProvider
         The instrument provider.
     account_type : BinanceAccountType
@@ -122,7 +119,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType,
         base_url_ws: str,
@@ -135,7 +131,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             instrument_provider=instrument_provider,
         )
 
@@ -161,7 +156,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
             clock=clock,
-            logger=logger,
             handler=self._handle_ws_message,
             base_url=base_url_ws,
             loop=self._loop,
@@ -443,7 +437,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         resolution = self._enum_parser.parse_nautilus_bar_aggregation(bar_type.spec.aggregation)
         if self._binance_account_type.is_futures and resolution == "s":
             self._log.error(
-                f"Cannot subscribe to {bar_type}. ",
+                f"Cannot subscribe to {bar_type}. "
                 "Second interval bars are not aggregated by Binance Futures.",
             )
         try:
@@ -487,7 +481,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         resolution = self._enum_parser.parse_nautilus_bar_aggregation(bar_type.spec.aggregation)
         if self._binance_account_type.is_futures and resolution == "s":
             self._log.error(
-                f"Cannot unsubscribe from {bar_type}. ",
+                f"Cannot unsubscribe from {bar_type}. "
                 "Second interval bars are not aggregated by Binance Futures.",
             )
         try:
@@ -624,7 +618,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             resolution = self._enum_parser.parse_nautilus_bar_aggregation(bar_type.spec.aggregation)
             if not self._binance_account_type.is_spot_or_margin and resolution == "s":
                 self._log.error(
-                    f"Cannot request {bar_type}: ",
+                    f"Cannot request {bar_type}: "
                     "second interval bars are not aggregated by Binance Futures.",
                 )
             try:
@@ -706,21 +700,18 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 instrument=instrument,
                 bar_type=bar_type,
                 handler=bars.append,
-                logger=self._log.get_logger(),
             )
         elif bar_type.spec.aggregation == BarAggregation.VOLUME:
             aggregator = VolumeBarAggregator(
                 instrument=instrument,
                 bar_type=bar_type,
                 handler=bars.append,
-                logger=self._log.get_logger(),
             )
         elif bar_type.spec.aggregation == BarAggregation.VALUE:
             aggregator = ValueBarAggregator(
                 instrument=instrument,
                 bar_type=bar_type,
                 handler=bars.append,
-                logger=self._log.get_logger(),
             )
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
@@ -844,21 +835,18 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 instrument=instrument,
                 bar_type=bar_type,
                 handler=bars.append,
-                logger=self._log.get_logger(),
             )
         elif bar_type.spec.aggregation == BarAggregation.VOLUME:
             aggregator = VolumeBarAggregator(
                 instrument=instrument,
                 bar_type=bar_type,
                 handler=bars.append,
-                logger=self._log.get_logger(),
             )
         elif bar_type.spec.aggregation == BarAggregation.VALUE:
             aggregator = ValueBarAggregator(
                 instrument=instrument,
                 bar_type=bar_type,
                 handler=bars.append,
-                logger=self._log.get_logger(),
             )
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)

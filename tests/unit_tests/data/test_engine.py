@@ -20,8 +20,6 @@ import pytest
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
@@ -66,6 +64,7 @@ XNAS = Venue("XNAS")
 AAPL_XNAS = TestInstrumentProvider.equity()
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
+BTCUSDT_PERP_BINANCE = TestInstrumentProvider.btcusdt_perp_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
@@ -73,18 +72,11 @@ class TestDataEngine:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(
-            clock=self.clock,
-            level_stdout=LogLevel.DEBUG,
-            bypass=True,
-        )
-
         self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -93,7 +85,6 @@ class TestDataEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         config = DataEngineConfig(
@@ -104,7 +95,6 @@ class TestDataEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=config,
         )
 
@@ -113,7 +103,6 @@ class TestDataEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.bitmex_client = BacktestMarketDataClient(
@@ -121,7 +110,6 @@ class TestDataEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.quandl = BacktestMarketDataClient(
@@ -129,7 +117,6 @@ class TestDataEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.betfair = BacktestMarketDataClient(
@@ -137,7 +124,6 @@ class TestDataEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine.process(BTCUSDT_BINANCE)
@@ -1155,26 +1141,26 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
 
-        self.data_engine.process(AAPL_XNAS)  # <-- add necessary instrument for test
+        self.data_engine.process(BTCUSDT_PERP_BINANCE)  # <-- add necessary instrument for test
 
         handler1 = []
         handler2 = []
         self.msgbus.subscribe(
-            topic="data.book.depth.XNAS.AAPL",
+            topic="data.book.depth.BINANCE.BTCUSDT-PERP",
             handler=handler1.append,
         )
         self.msgbus.subscribe(
-            topic="data.book.depth.XNAS.AAPL",
+            topic="data.book.depth.BINANCE.BTCUSDT-PERP",
             handler=handler2.append,
         )
 
         subscribe1 = Subscribe(
-            client_id=ClientId("DATABENTO"),
+            client_id=ClientId("BINANCE"),
             venue=BINANCE,
             data_type=DataType(
                 OrderBook,
                 {
-                    "instrument_id": AAPL_XNAS.id,
+                    "instrument_id": BTCUSDT_PERP_BINANCE.id,
                     "book_type": BookType.L2_MBP,
                     "depth": 10,
                     "interval_ms": 1000,
@@ -1190,7 +1176,7 @@ class TestDataEngine:
             data_type=DataType(
                 OrderBook,
                 {
-                    "instrument_id": AAPL_XNAS.id,
+                    "instrument_id": BTCUSDT_PERP_BINANCE.id,
                     "book_type": BookType.L2_MBP,
                     "depth": 10,
                     "interval_ms": 1000,
@@ -1204,7 +1190,7 @@ class TestDataEngine:
         self.data_engine.execute(subscribe2)
 
         depth = TestDataStubs.order_book_depth10(
-            instrument_id=AAPL_XNAS.id,
+            instrument_id=BTCUSDT_PERP_BINANCE.id,
             ts_event=1,
         )
 
@@ -1216,9 +1202,9 @@ class TestDataEngine:
         self.data_engine.process(depth)
 
         # Assert
-        cached_book = self.cache.order_book(AAPL_XNAS.id)
+        cached_book = self.cache.order_book(BTCUSDT_PERP_BINANCE.id)
         assert isinstance(cached_book, OrderBook)
-        assert cached_book.instrument_id == AAPL_XNAS.id
+        assert cached_book.instrument_id == BTCUSDT_PERP_BINANCE.id
         assert handler1[0] == depth
         assert handler2[0] == depth
 

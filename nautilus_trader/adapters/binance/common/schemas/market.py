@@ -472,6 +472,7 @@ class BinanceQuoteData(msgspec.Struct, frozen=True):
     B: str  # best bid qty
     a: str  # best ask price
     A: str  # best ask qty
+    T: int | None = None  # event time
 
     def parse_to_quote_tick(
         self,
@@ -484,7 +485,7 @@ class BinanceQuoteData(msgspec.Struct, frozen=True):
             ask_price=Price.from_str(self.a),
             bid_size=Quantity.from_str(self.B),
             ask_size=Quantity.from_str(self.A),
-            ts_event=ts_init,
+            ts_event=millis_to_nanos(self.T) if self.T else ts_init,
             ts_init=ts_init,
         )
 

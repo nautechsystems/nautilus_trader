@@ -31,7 +31,6 @@ from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport LogColor
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.messages cimport TradingStateChanged
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
@@ -93,8 +92,6 @@ cdef class RiskEngine(Component):
         The cache for the engine.
     clock : Clock
         The clock for the engine.
-    logger : Logger
-        The logger for the engine.
     config : RiskEngineConfig, optional
         The configuration for the instance.
 
@@ -110,7 +107,6 @@ cdef class RiskEngine(Component):
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
-        Logger logger not None,
         config: RiskEngineConfig | None = None,
     ):
         if config is None:
@@ -118,7 +114,6 @@ cdef class RiskEngine(Component):
         Condition.type(config, RiskEngineConfig, "config")
         super().__init__(
             clock=clock,
-            logger=logger,
             component_id=ComponentId("RiskEngine"),
             msgbus=msgbus,
             config=config,
@@ -148,7 +143,6 @@ cdef class RiskEngine(Component):
             output_send=self._send_to_execution,
             output_drop=self._deny_new_order,
             clock=clock,
-            logger=logger,
         )
 
         self._log.info(
@@ -167,7 +161,6 @@ cdef class RiskEngine(Component):
             output_send=self._send_to_execution,
             output_drop=self._deny_modify_order,
             clock=clock,
-            logger=logger,
         )
 
         self._log.info(

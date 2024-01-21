@@ -290,10 +290,10 @@ cdef class InstrumentId(Identifier):
     def from_str(value: str) -> InstrumentId:
         """
         Return an instrument ID parsed from the given string value.
-        Must be correctly formatted including characters either side of a single
+        Must be correctly formatted including symbol and venue components either side of a single
         period.
 
-        Examples: "AUD/USD.IDEALPRO", "BTCUSDT.BINANCE"
+        Examples: 'AUD/USD.IDEALPRO', 'BTCUSDT.BINANCE'
 
         Parameters
         ----------
@@ -303,6 +303,11 @@ cdef class InstrumentId(Identifier):
         Returns
         -------
         InstrumentId
+
+        Raises
+        ------
+        ValueError
+            If `value` is not a valid instrument ID string.
 
         """
         return InstrumentId.from_str_c(value)

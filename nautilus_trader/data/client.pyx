@@ -20,7 +20,6 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport MessageBus
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport BookType
@@ -46,8 +45,6 @@ cdef class DataClient(Component):
         The message bus for the client.
     clock : Clock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     venue : Venue, optional
         The client venue. If multi-venue then can be ``None``.
     config : NautilusConfig, optional
@@ -64,13 +61,11 @@ cdef class DataClient(Component):
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
-        Logger logger not None,
         Venue venue: Venue | None = None,
         config: NautilusConfig | None = None,
     ):
         super().__init__(
             clock=clock,
-            logger=logger,
             component_id=client_id,
             component_name=f"DataClient-{client_id}",
             msgbus=msgbus,
@@ -214,8 +209,6 @@ cdef class MarketDataClient(DataClient):
         The cache for the client.
     clock : Clock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     venue : Venue, optional
         The client venue. If multi-venue then can be ``None``.
     config : NautilusConfig, optional
@@ -232,7 +225,6 @@ cdef class MarketDataClient(DataClient):
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
-        Logger logger not None,
         Venue venue: Venue | None = None,
         config: NautilusConfig | None = None,
     ):
@@ -242,7 +234,6 @@ cdef class MarketDataClient(DataClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             config=config,
         )
 

@@ -13,20 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::{c_char, CStr};
+use std::ffi::c_char;
 
 use nautilus_core::{
-    ffi::string::{cstr_to_string, cstr_to_ustr, optional_cstr_to_string},
+    ffi::{
+        parsing::{optional_bytes_to_json, u8_as_bool},
+        string::{cstr_to_lossy_cow, cstr_to_str, cstr_to_ustr, optional_cstr_to_str},
+    },
     uuid::UUID4,
 };
 use nautilus_model::identifiers::trader_id::TraderId;
 
 use crate::{
     enums::{LogColor, LogLevel},
-    logging::{self},
+    headers,
+    logging::{
+        self, logging_set_bypass, map_log_level_to_filter, parse_component_levels,
+        FileWriterConfig, LoggerConfig,
+    },
 };
 
-/// Initialize tracing.
+/// Initializes tracing.
 ///
 /// Tracing is meant to be used to trace/debug async Rust code. It can be
 /// configured to filter modules and write up to a specific level only using
@@ -41,7 +48,7 @@ pub extern "C" fn tracing_init() {
     logging::init_tracing();
 }
 
-/// Initialize logging.
+/// Initializes logging.
 ///
 /// Logging should be used for Python and sync Rust logic which is most of
 /// the components in the main `nautilus_trader` package.
@@ -53,36 +60,51 @@ pub extern "C" fn tracing_init() {
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
 ///
-/// - Assume `config_spec_ptr` is a valid C string pointer.
 /// - Assume `directory_ptr` is either NULL or a valid C string pointer.
 /// - Assume `file_name_ptr` is either NULL or a valid C string pointer.
 /// - Assume `file_format_ptr` is either NULL or a valid C string pointer.
+/// - Assume `component_level_ptr` is either NULL or a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn logging_init(
     trader_id: TraderId,
     instance_id: UUID4,
-    config_spec_ptr: *const c_char,
+    level_stdout: LogLevel,
+    level_file: LogLevel,
     directory_ptr: *const c_char,
     file_name_ptr: *const c_char,
     file_format_ptr: *const c_char,
+    component_levels_ptr: *const c_char,
+    is_colored: u8,
+    is_bypassed: u8,
+    print_config: u8,
 ) {
-    let config_spec = cstr_to_string(config_spec_ptr);
+    let level_stdout = map_log_level_to_filter(level_stdout);
+    let level_file = map_log_level_to_filter(level_file);
 
-    let directory = optional_cstr_to_string(directory_ptr);
-    let file_name = optional_cstr_to_string(file_name_ptr);
-    let file_format = optional_cstr_to_string(file_format_ptr);
+    let component_levels_json = optional_bytes_to_json(component_levels_ptr);
+    let component_levels = parse_component_levels(component_levels_json);
 
-    logging::init_logging(
-        trader_id,
-        instance_id,
-        config_spec,
-        directory,
-        file_name,
-        file_format,
+    let config = LoggerConfig::new(
+        level_stdout,
+        level_file,
+        component_levels,
+        u8_as_bool(is_colored),
+        u8_as_bool(print_config),
     );
+
+    let directory = optional_cstr_to_str(directory_ptr).map(|s| s.to_string());
+    let file_name = optional_cstr_to_str(file_name_ptr).map(|s| s.to_string());
+    let file_format = optional_cstr_to_str(file_format_ptr).map(|s| s.to_string());
+    let file_config = FileWriterConfig::new(directory, file_name, file_format);
+
+    if u8_as_bool(is_bypassed) {
+        logging_set_bypass();
+    }
+
+    logging::init_logging(trader_id, instance_id, config, file_config);
 }
 
-/// Create a new log event.
+/// Creates a new log event.
 ///
 /// # Safety
 ///
@@ -90,19 +112,47 @@ pub unsafe extern "C" fn logging_init(
 /// - Assumes `message_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn logger_log(
-    timestamp_ns: u64,
     level: LogLevel,
     color: LogColor,
     component_ptr: *const c_char,
     message_ptr: *const c_char,
 ) {
     let component = cstr_to_ustr(component_ptr);
-    let message = CStr::from_ptr(message_ptr).to_string_lossy();
+    let message = cstr_to_lossy_cow(message_ptr);
 
-    logging::log(timestamp_ns, level, color, component, message);
+    logging::log(level, color, component, message);
 }
 
-/// Flush logger buffers.
+/// Logs the Nautilus system header.
+///
+/// # Safety
+///
+/// - Assumes `machine_id_ptr` is a valid C string pointer.
+/// - Assumes `component_ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn logging_log_header(
+    trader_id: TraderId,
+    machine_id_ptr: *const c_char,
+    instance_id: UUID4,
+    component_ptr: *const c_char,
+) {
+    let component = cstr_to_ustr(component_ptr);
+    let machine_id = cstr_to_str(machine_id_ptr);
+    headers::log_header(trader_id, machine_id, instance_id, component);
+}
+
+/// Logs system information.
+///
+/// # Safety
+///
+/// - Assumes `component_ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn logging_log_sysinfo(component_ptr: *const c_char) {
+    let component = cstr_to_ustr(component_ptr);
+    headers::log_sysinfo(component)
+}
+
+/// Flushes global logger buffers.
 #[no_mangle]
 pub extern "C" fn logger_flush() {
     log::logger().flush()

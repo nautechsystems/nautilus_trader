@@ -34,7 +34,8 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.logging import init_logging
+from nautilus_trader.common.logging import log_level_from_str
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.model.data import Bar
@@ -59,25 +60,26 @@ class HistoricInteractiveBrokersClient:
         port: int = 7497,
         client_id: int = 1,
         market_data_type: MarketDataTypeEnum = MarketDataTypeEnum.REALTIME,
+        log_level: str = "INFO",
     ) -> None:
         loop = asyncio.get_event_loop()
         loop.set_debug(True)
         clock = LiveClock()
-        logger = Logger(clock)
-        self.log = LoggerAdapter("HistoricInteractiveBrokersClient", logger)
+
+        init_logging(level_stdout=log_level_from_str(log_level))
+
+        self.log = Logger(name="HistoricInteractiveBrokersClient")
         msgbus = MessageBus(
             TraderId("historic_interactive_brokers_client-001"),
             clock,
-            logger,
         )
-        cache = Cache(logger)
+        cache = Cache()
         self.market_data_type = market_data_type
         self._client = InteractiveBrokersClient(
             loop=loop,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             host=host,
             port=port,
             client_id=client_id,
@@ -127,7 +129,6 @@ class HistoricInteractiveBrokersClient:
         provider = InteractiveBrokersInstrumentProvider(
             self._client,
             instrument_provider_config,
-            Logger(),
         )
         await provider.load_all_async()
         return list(provider._instruments.values())

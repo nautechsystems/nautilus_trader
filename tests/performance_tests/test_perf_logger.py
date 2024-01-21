@@ -16,20 +16,17 @@
 import random
 from typing import Any
 
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.logging import init_logging
 
 
 def test_logging(benchmark: Any) -> None:
     random.seed(45362718)
-    logger = Logger(
-        clock=TestClock(),
-        level_stdout=LogLevel.ERROR,
-        bypass=True,
-    )
-    logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
+    init_logging(level_stdout=LogLevel.ERROR, bypass=True)
+
+    logger = Logger(name="TEST_LOGGER")
+
     # messages of varying lengths
     messages = [
         "Initializing positronic matrix",
@@ -68,6 +65,6 @@ def test_logging(benchmark: Any) -> None:
         for i in range(100_000):
             message = random.choice(messages)
             # unique log messages to prevent caching during string conversion
-            logger_adapter.error(f"{i}: {message}")
+            logger.info(f"{i}: {message}")
 
     benchmark.pedantic(run, rounds=10, iterations=2, warmup_rounds=1)
