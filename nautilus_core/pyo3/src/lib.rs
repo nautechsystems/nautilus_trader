@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_adapters::databento::{loader, python::parsing};
+use nautilus_adapters::databento::{loader, python::historical, python::parsing};
 use pyo3::{
     prelude::*,
     types::{PyDict, PyString},
@@ -26,6 +26,7 @@ use pyo3::{
 #[pymodule]
 pub fn databento(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<loader::DatabentoDataLoader>()?;
+    m.add_class::<historical::DatabentoHistoricalClient>()?;
     m.add_function(wrap_pyfunction!(parsing::py_parse_equity, m)?)?;
     m.add_function(wrap_pyfunction!(parsing::py_parse_futures_contract, m)?)?;
     m.add_function(wrap_pyfunction!(parsing::py_parse_options_contract, m)?)?;
