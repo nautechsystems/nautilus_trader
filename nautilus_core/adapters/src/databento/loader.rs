@@ -19,7 +19,7 @@ use anyhow::{bail, Result};
 use databento::dbn;
 use dbn::{
     compat::InstrumentDefMsgV1,
-    decode::{dbn::Decoder, DecodeDbn},
+    decode::{dbn::Decoder, DbnMetadata, DecodeStream},
     Record,
 };
 use indexmap::IndexMap;
