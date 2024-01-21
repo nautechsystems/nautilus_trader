@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added `LogLevel.OFF` (matches the Rust `tracing` log levels)
 - Added `init_logging` function with sensible defaults to initialize the Rust implemented logging system
+- Updated Binance Futures enum members for `BinanceFuturesContractType` and `BinanceFuturesPositionUpdateReason`
 
 ### Breaking Changes
 - Removed `clock` parameter from `Logger` (no dependency on `Clock` anymore)
