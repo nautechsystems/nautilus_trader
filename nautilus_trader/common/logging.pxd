@@ -34,9 +34,10 @@ cdef str RPT
 cdef str REQ
 cdef str RES
 
-cpdef bint is_logging_initialized()
-cpdef void set_logging_clock_realtime()
-cpdef void set_logging_clock_static(uint64_t time_ns)
+
+cdef void set_logging_clock_realtime_mode()
+cdef void set_logging_clock_static_mode()
+cdef void set_logging_clock_static_time(uint64_t time_ns)
 
 cpdef LogColor log_color_from_str(str value)
 cpdef str log_color_to_str(LogColor value)
@@ -61,11 +62,13 @@ cpdef void init_logging(
     bint print_config=*,
 )
 
+cpdef bint is_logging_initialized()
 cpdef void shutdown_logging()
 
 
 cdef class Logger:
     cdef str _name
+    cdef const char* _name_ptr
 
     cpdef void flush(self)
     cpdef void debug(self, str message, LogColor color=*)

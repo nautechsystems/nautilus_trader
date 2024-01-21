@@ -1,8 +1,8 @@
 # Logging
 
-The platform provides logging for both backtesting and live trading using a high-performance logger implemented in Rust
-using the `log` crate.
-The logger operates in a separate thread and uses a multi-producer single consumer (MPSC) channel to receive log messages.
+The platform provides logging for both backtesting and live trading using a high-performance logging system implemented in Rust
+with a standardized facade from the `log` crate.
+The core logger operates in a separate thread and uses a multi-producer single consumer (MPSC) channel to receive log messages.
 This design ensures that the main thread is not blocked by log string formatting or file I/O operations.
 
 ```{note}
@@ -20,7 +20,8 @@ Infrastructure such as [vector](https://github.com/vectordotdev/vector) can be c
 Logging can be configured by importing the `LoggingConfig` object.
 By default, log events with an 'INFO' `LogLevel` and higher are written to stdout/stderr.
 
-Log level (`LogLevel`) values include:
+Log level (`LogLevel`) values include (and generally match Rusts `tracing` level filters):
+- 'OFF'
 - 'DEBUG'
 - 'INFO'
 - 'WARNING' or 'WARN'
@@ -41,9 +42,6 @@ Logging can be configured in the following ways:
 - Bypass logging completely
 - Print Rust config to stdout at initialization
 
-```{warning}
-Only one logger (with Rust backed logging system) can be initialized per process.
-```
 
 ### Standard output logging
 Log messages are written to the console via stdout/stderr writers. The minimum log level can be configured using the `log_level` parameter.
@@ -104,3 +102,23 @@ these color codes may not be appropriate as they can appear as raw text.
 To accommodate for such scenarios, the `LoggingConfig.log_colors` option can be set to `false`.
 Disabling `log_colors` will prevent the addition of ANSI color codes to the log messages, ensuring
 compatibility across different environments where color rendering is not supported.
+
+### Using a Logger directly
+
+It's possible to use `Logger` objects directly, and these can be initialized anywhere (very similar to the Python built-in `logging` API).
+
+If you ***aren't*** using an object which already initializes a `NautilusKernel` (and logging) such as `BacktestEngine` or `TradingNode`, 
+then you can initialize a logging in the following way:
+```python
+from nautilus_trader.common.logging import init_logging
+from nautilus_trader.common.logging import Logger
+
+init_logging()
+logger = Logger("MyLogger")
+```
+
+There are many configuration options for the `init_logging` call, please see its docstring for further details.
+
+```{warning}
+Only one logging system can be initialized per process with an `init_logging` call.
+```

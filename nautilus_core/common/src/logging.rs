@@ -41,16 +41,11 @@ use nautilus_core::{
 };
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde::{Deserialize, Serialize};
-use sysinfo::System;
-use thousands::Separable;
 use tracing_subscriber::EnvFilter;
 use ustr::Ustr;
 
-use crate::{
-    enums::{LogColor, LogLevel},
-    python::versioning::{get_python_package_version, get_python_version},
-};
 use crate::LogWriter;
+use crate::enums::{LogColor, LogLevel};
 
 static LOGGING_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static LOGGING_BYPASSED: AtomicBool = AtomicBool::new(false);
@@ -83,14 +78,19 @@ pub extern "C" fn logging_is_colored() -> u8 {
 
 /// Sets the global logging clock to real-time mode.
 #[no_mangle]
-pub extern "C" fn logging_clock_set_realtime() {
+pub extern "C" fn logging_clock_set_realtime_mode() {
     LOGGING_REALTIME.store(true, Ordering::Relaxed);
 }
 
-/// Sets the global logging clock to static mode with the given UNIX time (nanoseconds).
+/// Sets the global logging clock to static mode.
 #[no_mangle]
-pub extern "C" fn logging_clock_set_static(time_ns: u64) {
+pub extern "C" fn logging_clock_set_static_mode() {
     LOGGING_REALTIME.store(false, Ordering::Relaxed);
+}
+
+/// Sets the global logging clock static time with the given UNIX time (nanoseconds).
+#[no_mangle]
+pub extern "C" fn logging_clock_set_static_time(time_ns: u64) {
     let clock = get_atomic_clock_static();
     clock.set_time(time_ns);
 }
@@ -772,416 +772,6 @@ pub fn log(level: LogLevel, color: LogColor, component: Ustr, message: Cow<'_, s
     }
 }
 
-pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, component: Ustr) {
-    let mut sys = System::new_all();
-    sys.refresh_all();
-
-    let kernel_version = match System::kernel_version() {
-        Some(v) => format!("kernel-{v}"),
-        None => "".to_string(),
-    };
-    let os_version = match System::long_os_version() {
-        Some(v) => v,
-        None => "".to_string(),
-    };
-
-    log(
-        LogLevel::Info,
-        LogColor::Cyan,
-        component,
-        Cow::Borrowed("================================================================="),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Cyan,
-        component,
-        Cow::Borrowed(" NAUTILUS TRADER - Automated Algorithmic Trading Platform"),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Cyan,
-        component,
-        Cow::Borrowed(" by Nautech Systems Pty Ltd."),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Cyan,
-        component,
-        Cow::Borrowed(" Copyright (C) 2015-2024. All rights reserved."),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Cyan,
-        component,
-        Cow::Borrowed("================================================================="),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(""),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⣿⣿⣿⠀⢸⣿⣿⣿⣿⣶⣶⣤⣀⠀⠀⠀⠀⠀"),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed("⠀⠀⠀⠀⠀⠀⢀⣴⡇⢀⣾⣿⣿⣿⣿⣿⠀⣾⣿⣿⣿⣿⣿⣿⣿⠿⠓⠀⠀⠀⠀"),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed("⠀⠀⠀⠀⠀⣰⣿⣿⡀⢸⣿⣿⣿⣿⣿⣿⠀⣿⣿⣿⣿⣿⣿⠟⠁⣠⣄⠀⠀⠀⠀"),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed("⠀⠀⠀⠀⢠⣿⣿⣿⣇⠀⢿⣿⣿⣿⣿⣿⠀⢻⣿⣿⣿⡿⢃⣠⣾⣿⣿⣧⡀⠀⠀"),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed("⠀⠀⠀⠀⢸⣿⣿⣿⣿⣆⠘⢿⣿⡿⠛⢉⠀⠀⠉⠙⠛⣠⣿⣿⣿⣿⣿⣿⣷⠀⠀"),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed("⠀⠀⠀⠠⣾⣿⣿⣿⣿⣿⣧⠈⠋⢀⣴⣧⠀⣿⡏⢠⡀⢸⣿⣿⣿⣿⣿⣿⣿⡇⠀"),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed("⠀⠀⠀⣀⠙⢿⣿⣿⣿⣿⣿⠇⢠⣿⣿⣿⡄⠹⠃⠼⠃⠈⠉⠛⠛⠛⠛⠛⠻⠇⠀"),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed("⠀⠀⢸⡟⢠⣤⠉⠛⠿⢿⣿⠀⢸⣿⡿⠋⣠⣤⣄⠀⣾⣿⣿⣶⣶⣶⣦⡄⠀⠀⠀"),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed("⠀⠀⠸⠀⣾⠏⣸⣷⠂⣠⣤⠀⠘⢁⣴⣾⣿⣿⣿⡆⠘⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀"),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed("⠀⠀⠀⠀⠛⠀⣿⡟⠀⢻⣿⡄⠸⣿⣿⣿⣿⣿⣿⣿⡀⠘⣿⣿⣿⣿⠟⠀⠀⠀⠀"),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed("⠀⠀⠀⠀⠀⠀⣿⠇⠀⠀⢻⡿⠀⠈⠻⣿⣿⣿⣿⣿⡇⠀⢹⣿⠿⠋⠀⠀⠀⠀⠀"),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed("⠀⠀⠀⠀⠀⠀⠋⠀⠀⠀⡘⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀"),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(""),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Cyan,
-        component,
-        Cow::Borrowed("================================================================="),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Cyan,
-        component,
-        Cow::Borrowed(" SYSTEM SPECIFICATION"),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Cyan,
-        component,
-        Cow::Borrowed("================================================================="),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(&format!("CPU architecture: {}", sys.cpus()[0].brand())),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(&format!(
-            "CPU(s): {} @ {} Mhz",
-            sys.cpus().len(),
-            sys.cpus()[0].frequency()
-        )),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(&format!("OS: {} {}", kernel_version, os_version)),
-    );
-
-    log_sysinfo(component);
-
-    log(
-        LogLevel::Info,
-        LogColor::Cyan,
-        component,
-        Cow::Borrowed("================================================================="),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Cyan,
-        component,
-        Cow::Borrowed(" IDENTIFIERS"),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Cyan,
-        component,
-        Cow::Borrowed("================================================================="),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(&format!("trader_id: {trader_id}")),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(&format!("machine_id: {machine_id}")),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(&format!("instance_id: {instance_id}")),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Cyan,
-        component,
-        Cow::Borrowed("================================================================="),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Cyan,
-        component,
-        Cow::Borrowed(" VERSIONING"),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Cyan,
-        component,
-        Cow::Borrowed("================================================================="),
-    );
-    let package = "nautilus_trader";
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(&format!(
-            "{package}: {}",
-            get_python_package_version(package)
-        )),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(&format!("python: {}", get_python_version())),
-    );
-    let package = "numpy";
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(&format!(
-            "{package}: {}",
-            get_python_package_version(package)
-        )),
-    );
-    let package = "pandas";
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(&format!(
-            "{package}: {}",
-            get_python_package_version(package)
-        )),
-    );
-    let package = "msgspec";
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(&format!(
-            "{package}: {}",
-            get_python_package_version(package)
-        )),
-    );
-    let package = "pyarrow";
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(&format!(
-            "{package}: {}",
-            get_python_package_version(package)
-        )),
-    );
-    let package = "pytz";
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(&format!(
-            "{package}: {}",
-            get_python_package_version(package)
-        )),
-    );
-    let package = "uvloop";
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(&format!(
-            "{package}: {}",
-            get_python_package_version(package)
-        )),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Cyan,
-        component,
-        Cow::Borrowed("================================================================="),
-    );
-}
-
-pub fn log_sysinfo(component: Ustr) {
-    let mut sys = System::new_all();
-    sys.refresh_all();
-
-    let ram_total = sys.total_memory();
-    let ram_used = sys.used_memory();
-    let ram_avail = ram_total - ram_used;
-
-    let swap_total = sys.total_swap();
-    let swap_used = sys.used_swap();
-    let swap_avail = swap_total - swap_used;
-
-    log(
-        LogLevel::Info,
-        LogColor::Cyan,
-        component,
-        Cow::Borrowed("================================================================="),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Cyan,
-        component,
-        Cow::Borrowed(" MEMORY USAGE"),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Cyan,
-        component,
-        Cow::Borrowed("================================================================="),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(&format!("RAM-Total: {} MB", ram_total / 1_000_000).separate_with_commas()),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(
-            &format!(
-                "RAM-Used: {} MB ({:.2}%)",
-                ram_used / 1_000_000,
-                (ram_used as f64 / ram_total as f64) * 100.0,
-            )
-            .separate_with_commas(),
-        ),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(
-            &format!(
-                "RAM-Avail: {} MB ({:.2}%)",
-                ram_avail / 1_000_000,
-                (ram_avail as f64 / ram_total as f64) * 100.0,
-            )
-            .separate_with_commas(),
-        ),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(&format!("Swap-Total: {} MB", swap_total / 1_000_000).separate_with_commas()),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(
-            &format!(
-                "Swap-Used: {} MB ({:.2}%)",
-                swap_used / 1_000_000,
-                (swap_used as f64 / swap_total as f64) * 100.0
-            )
-            .separate_with_commas(),
-        ),
-    );
-    log(
-        LogLevel::Info,
-        LogColor::Normal,
-        component,
-        Cow::Borrowed(
-            &format!(
-                "Swap-Avail: {} MB ({:.2}%)",
-                swap_avail / 1_000_000,
-                (swap_avail as f64 / swap_total as f64) * 100.0
-            )
-            .separate_with_commas(),
-        ),
-    );
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -1275,7 +865,8 @@ mod tests {
             file_config,
         );
 
-        logging_clock_set_static(1_650_000_000_000_000);
+        logging_clock_set_static_mode();
+        logging_clock_set_static_time(1_650_000_000_000_000);
 
         info!(
             component = "RiskEngine";
@@ -1333,7 +924,8 @@ mod tests {
             file_config,
         );
 
-        logging_clock_set_static(1_650_000_000_000_000);
+        logging_clock_set_static_mode();
+        logging_clock_set_static_time(1_650_000_000_000_000);
 
         info!(
             component = "RiskEngine";
@@ -1386,7 +978,8 @@ mod tests {
             file_config,
         );
 
-        logging_clock_set_static(1_650_000_000_000_000);
+        logging_clock_set_static_mode();
+        logging_clock_set_static_time(1_650_000_000_000_000);
 
         info!(
             component = "RiskEngine";

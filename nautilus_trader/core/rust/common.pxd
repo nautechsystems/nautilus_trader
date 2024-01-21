@@ -200,10 +200,13 @@ cdef extern from "../includes/common.h":
     uint8_t logging_is_colored();
 
     # Sets the global logging clock to real-time mode.
-    void logging_clock_set_realtime();
+    void logging_clock_set_realtime_mode();
 
-    # Sets the global logging clock to static mode with the given UNIX time (nanoseconds).
-    void logging_clock_set_static(uint64_t time_ns);
+    # Sets the global logging clock to static mode.
+    void logging_clock_set_static_mode();
+
+    # Sets the global logging clock static time with the given UNIX time (nanoseconds).
+    void logging_clock_set_static_time(uint64_t time_ns);
 
     TestClock_API test_clock_new();
 
@@ -384,7 +387,7 @@ cdef extern from "../includes/common.h":
     # - Assumes `component_ptr` is a valid C string pointer.
     void logging_log_sysinfo(const char *component_ptr);
 
-    # Flushes logger buffers.
+    # Flushes global logger buffers.
     void logger_flush();
 
     # # Safety

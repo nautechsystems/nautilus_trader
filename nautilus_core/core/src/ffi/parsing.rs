@@ -21,7 +21,7 @@ use std::{
 use serde_json::{Result, Value};
 use ustr::Ustr;
 
-use crate::{ffi::string::cstr_to_string, parsing::precision_from_str};
+use crate::{ffi::string::cstr_to_str, parsing::precision_from_str};
 
 /// Convert a C bytes pointer into an owned `Vec<String>`.
 ///
@@ -140,7 +140,7 @@ pub unsafe fn optional_bytes_to_str_vec(ptr: *const c_char) -> Option<Vec<String
 #[no_mangle]
 pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    precision_from_str(&cstr_to_string(ptr))
+    precision_from_str(cstr_to_str(ptr))
 }
 
 /// Return a `bool` value from the given `u8`.

@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::{c_char, CStr};
+use std::ffi::c_char;
 
 use nautilus_core::{
     ffi::{
         parsing::{optional_bytes_to_json, u8_as_bool},
-        string::{cstr_to_str, cstr_to_ustr, optional_cstr_to_string},
+        string::{cstr_to_lossy_cow, cstr_to_str, cstr_to_ustr, optional_cstr_to_str},
     },
     uuid::UUID4,
 };
@@ -26,6 +26,7 @@ use nautilus_model::identifiers::trader_id::TraderId;
 
 use crate::{
     enums::{LogColor, LogLevel},
+    headers,
     logging::{
         self, logging_set_bypass, map_log_level_to_filter, parse_component_levels,
         FileWriterConfig, LoggerConfig,
@@ -91,9 +92,9 @@ pub unsafe extern "C" fn logging_init(
         u8_as_bool(print_config),
     );
 
-    let directory = optional_cstr_to_string(directory_ptr);
-    let file_name = optional_cstr_to_string(file_name_ptr);
-    let file_format = optional_cstr_to_string(file_format_ptr);
+    let directory = optional_cstr_to_str(directory_ptr).map(|s| s.to_string());
+    let file_name = optional_cstr_to_str(file_name_ptr).map(|s| s.to_string());
+    let file_format = optional_cstr_to_str(file_format_ptr).map(|s| s.to_string());
     let file_config = FileWriterConfig::new(directory, file_name, file_format);
 
     if u8_as_bool(is_bypassed) {
@@ -116,17 +117,8 @@ pub unsafe extern "C" fn logger_log(
     component_ptr: *const c_char,
     message_ptr: *const c_char,
 ) {
-    if component_ptr.is_null() {
-        eprintln!("`component_ptr` was NULL");
-        return;
-    };
-    if message_ptr.is_null() {
-        eprintln!("`message_ptr` was NULL");
-        return;
-    };
-
     let component = cstr_to_ustr(component_ptr);
-    let message = CStr::from_ptr(message_ptr).to_string_lossy();
+    let message = cstr_to_lossy_cow(message_ptr);
 
     logging::log(level, color, component, message);
 }
@@ -144,18 +136,9 @@ pub unsafe extern "C" fn logging_log_header(
     instance_id: UUID4,
     component_ptr: *const c_char,
 ) {
-    if machine_id_ptr.is_null() {
-        eprintln!("`machine_id_ptr` was NULL");
-        return;
-    };
-    if component_ptr.is_null() {
-        eprintln!("`component_ptr` was NULL");
-        return;
-    };
-
     let component = cstr_to_ustr(component_ptr);
     let machine_id = cstr_to_str(machine_id_ptr);
-    logging::log_header(trader_id, machine_id, instance_id, component);
+    headers::log_header(trader_id, machine_id, instance_id, component);
 }
 
 /// Logs system information.
@@ -165,16 +148,11 @@ pub unsafe extern "C" fn logging_log_header(
 /// - Assumes `component_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn logging_log_sysinfo(component_ptr: *const c_char) {
-    if component_ptr.is_null() {
-        eprintln!("`component_ptr` was NULL");
-        return;
-    };
-
     let component = cstr_to_ustr(component_ptr);
-    logging::log_sysinfo(component)
+    headers::log_sysinfo(component)
 }
 
-/// Flushes logger buffers.
+/// Flushes global logger buffers.
 #[no_mangle]
 pub extern "C" fn logger_flush() {
     log::logger().flush()

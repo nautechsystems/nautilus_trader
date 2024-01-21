@@ -437,7 +437,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         resolution = self._enum_parser.parse_nautilus_bar_aggregation(bar_type.spec.aggregation)
         if self._binance_account_type.is_futures and resolution == "s":
             self._log.error(
-                f"Cannot subscribe to {bar_type}. ",
+                f"Cannot subscribe to {bar_type}. "
                 "Second interval bars are not aggregated by Binance Futures.",
             )
         try:
@@ -481,7 +481,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         resolution = self._enum_parser.parse_nautilus_bar_aggregation(bar_type.spec.aggregation)
         if self._binance_account_type.is_futures and resolution == "s":
             self._log.error(
-                f"Cannot unsubscribe from {bar_type}. ",
+                f"Cannot unsubscribe from {bar_type}. "
                 "Second interval bars are not aggregated by Binance Futures.",
             )
         try:
@@ -618,7 +618,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             resolution = self._enum_parser.parse_nautilus_bar_aggregation(bar_type.spec.aggregation)
             if not self._binance_account_type.is_spot_or_margin and resolution == "s":
                 self._log.error(
-                    f"Cannot request {bar_type}: ",
+                    f"Cannot request {bar_type}: "
                     "second interval bars are not aggregated by Binance Futures.",
                 )
             try:
