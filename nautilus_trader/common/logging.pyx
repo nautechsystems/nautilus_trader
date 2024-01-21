@@ -43,8 +43,9 @@ from nautilus_trader.core.rust.common cimport log_level_from_cstr
 from nautilus_trader.core.rust.common cimport log_level_to_cstr
 from nautilus_trader.core.rust.common cimport logger_flush
 from nautilus_trader.core.rust.common cimport logger_log
-from nautilus_trader.core.rust.common cimport logging_clock_set_realtime
-from nautilus_trader.core.rust.common cimport logging_clock_set_static
+from nautilus_trader.core.rust.common cimport logging_clock_set_realtime_mode
+from nautilus_trader.core.rust.common cimport logging_clock_set_static_mode
+from nautilus_trader.core.rust.common cimport logging_clock_set_static_time
 from nautilus_trader.core.rust.common cimport logging_init
 from nautilus_trader.core.rust.common cimport logging_is_colored
 from nautilus_trader.core.rust.common cimport logging_is_initialized
@@ -69,16 +70,16 @@ REQ = "[REQ]"
 RES = "[RES]"
 
 
-cpdef bint is_logging_initialized():
-    return <bint>logging_is_initialized()
+cdef void set_logging_clock_realtime_mode():
+    logging_clock_set_realtime_mode()
 
 
-cpdef void set_logging_clock_realtime():
-    logging_clock_set_realtime()
+cdef void set_logging_clock_static_mode():
+    logging_clock_set_static_mode()
 
 
-cpdef void set_logging_clock_static(uint64_t time_ns):
-    logging_clock_set_static(time_ns)
+cdef void set_logging_clock_static_time(uint64_t time_ns):
+    logging_clock_set_static_time(time_ns)
 
 
 cpdef LogColor log_color_from_str(str value):
@@ -182,6 +183,10 @@ cpdef void init_logging(
         )
 
 
+cpdef bint is_logging_initialized():
+    return <bint>logging_is_initialized()
+
+
 cpdef void shutdown_logging():
     if logging_is_initialized():
         logging_shutdown()
@@ -201,7 +206,20 @@ cdef class Logger:
     def __init__(self, str name not None) -> None:
         Condition.valid_string(name, "name")
 
-        self._name = name
+        self._name = name  # Reference to `name` needs to be kept alive
+        self._name_ptr = pystr_to_cstr(self._name)
+
+    @property
+    def name(self) -> str:
+        """
+        Return the name of the logger.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._name
 
     cpdef void flush(self):
         """
@@ -242,7 +260,7 @@ cdef class Logger:
         logger_log(
             LogLevel.DEBUG,
             color,
-            pystr_to_cstr(self._name),  # TODO: Optimize this
+            self._name_ptr,
             pystr_to_cstr(message) if message is not None else NULL,
         )
 
@@ -267,7 +285,7 @@ cdef class Logger:
         logger_log(
             LogLevel.INFO,
             color,
-            pystr_to_cstr(self._name),  # TODO: Optimize this
+            self._name_ptr,
             pystr_to_cstr(message) if message is not None else NULL,
         )
 
@@ -293,7 +311,7 @@ cdef class Logger:
         logger_log(
             LogLevel.WARNING,
             color,
-            pystr_to_cstr(self._name),  # TODO: Optimize this
+            self._name_ptr,
             pystr_to_cstr(message) if message is not None else NULL,
         )
 
@@ -319,7 +337,7 @@ cdef class Logger:
         logger_log(
             LogLevel.ERROR,
             color,
-            pystr_to_cstr(self._name),  # TODO: Optimize this
+            self._name_ptr,
             pystr_to_cstr(message) if message is not None else NULL,
         )
 

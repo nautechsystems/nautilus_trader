@@ -1626,3 +1626,12 @@ class DatabentoDataLoader:
         self,
         path: PathLike[str] | str,
     ) -> None: ...
+
+
+class DatabentoHistoricalClient:
+    def __init__(
+        self,
+        key: str,
+    ) -> None: ...
+
+    async def get_dataset_range(self, dataset: str) -> dict[str, str]: ...

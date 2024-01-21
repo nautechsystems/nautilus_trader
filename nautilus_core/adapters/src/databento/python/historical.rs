@@ -13,39 +13,45 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use databento::{self};
+use std::{num::NonZeroU64, sync::Arc};
+
+use databento::{self, historical::timeseries::GetRangeParams};
+use dbn;
 use nautilus_core::python::to_pyvalue_err;
 use pyo3::{exceptions::PyException, prelude::*, types::PyDict};
+use time::macros::datetime;
+use tokio::sync::Mutex;
 
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
 )]
 pub struct DatabentoHistoricalClient {
-    key: String,
+    inner: Arc<Mutex<databento::HistoricalClient>>,
 }
 
 #[pymethods]
 impl DatabentoHistoricalClient {
     #[new]
     pub fn py_new(key: String) -> PyResult<Self> {
-        Ok(Self { key })
-    }
-
-    #[pyo3(name = "get_dataset_range")]
-    fn py_get_dataset_range<'py>(&self, py: Python<'py>, dataset: &str) -> PyResult<&'py PyAny> {
-        let dataset_clone = dataset.to_string();
-
-        // TODO: Cheaper way of accessing client as mutable `Send` (Arc<Mutex alone doesn't work)
-        let mut client = databento::HistoricalClient::builder()
-            .key(self.key.clone())
+        let client = databento::HistoricalClient::builder()
+            .key(key)
             .map_err(to_pyvalue_err)?
             .build()
             .map_err(to_pyvalue_err)?;
 
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            let response = client.metadata().get_dataset_range(&dataset_clone).await;
+        Ok(Self {
+            inner: Arc::new(Mutex::new(client)),
+        })
+    }
 
+    #[pyo3(name = "get_dataset_range")]
+    fn py_get_dataset_range<'py>(&self, py: Python<'py>, dataset: String) -> PyResult<&'py PyAny> {
+        let client = self.inner.clone();
+
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut client = client.lock().await;
+            let response = client.metadata().get_dataset_range(&dataset).await;
             match response {
                 Ok(res) => Python::with_gil(|py| {
                     let dict = PyDict::new(py);
@@ -58,5 +64,53 @@ impl DatabentoHistoricalClient {
                 ))),
             }
         })
+    }
+
+    #[pyo3(name = "get_range")]
+    fn py_get_range(
+        &self,
+        _py: Python<'_>,
+        dataset: String,
+        symbols: String,
+        schema: dbn::Schema,
+        _limit: Option<usize>,
+        // ) -> PyResult<&'py PyAny> {
+    ) {
+        let _client = self.inner.clone();
+
+        let _params = GetRangeParams::builder()
+            .dataset(dataset)
+            .date_time_range((
+                datetime!(2022-06-06 00:00 UTC),
+                datetime!(2022-06-10 12:10 UTC),
+            ))
+            .symbols(symbols)
+            .schema(schema)
+            .limit(NonZeroU64::new(1))
+            .build();
+
+        // WIP
+        // pyo3_asyncio::tokio::future_into_py(py, async move {
+        //     let mut client = client.lock().await;
+        //     let decoder = client
+        //         .timeseries()
+        //         .get_range(&params)
+        //         .await
+        //         .map_err(to_pyvalue_err)?;
+        //
+        //     let mut result: Vec<&dbn::TradeMsg> = Vec::new();
+        //     for rec in decoder
+        //         .decode_record::<dbn::TradeMsg>()
+        //         .await
+        //         .map_err(to_pyvalue_err)?
+        //     {
+        //         // TODO: Parse event record to a Nautilus data object
+        //         result.push(rec);
+        //     }
+        //
+        //     let output = Vec::new();
+        //     let py_list = output.into_py(py);
+        //     Ok(py_list)
+        // });
     }
 }

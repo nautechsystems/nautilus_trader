@@ -329,12 +329,17 @@ uint8_t logging_is_colored(void);
 /**
  * Sets the global logging clock to real-time mode.
  */
-void logging_clock_set_realtime(void);
+void logging_clock_set_realtime_mode(void);
 
 /**
- * Sets the global logging clock to static mode with the given UNIX time (nanoseconds).
+ * Sets the global logging clock to static mode.
  */
-void logging_clock_set_static(uint64_t time_ns);
+void logging_clock_set_static_mode(void);
+
+/**
+ * Sets the global logging clock static time with the given UNIX time (nanoseconds).
+ */
+void logging_clock_set_static_time(uint64_t time_ns);
 
 struct TestClock_API test_clock_new(void);
 
@@ -546,7 +551,7 @@ void logging_log_header(TraderId_t trader_id,
 void logging_log_sysinfo(const char *component_ptr);
 
 /**
- * Flushes logger buffers.
+ * Flushes global logger buffers.
  */
 void logger_flush(void);
 

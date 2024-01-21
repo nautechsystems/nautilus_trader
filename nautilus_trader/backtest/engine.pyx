@@ -50,8 +50,9 @@ from nautilus_trader.common.clock cimport TimeEventHandler
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport log_level_from_str
 from nautilus_trader.common.logging cimport log_sysinfo
-from nautilus_trader.common.logging cimport set_logging_clock_realtime
-from nautilus_trader.common.logging cimport set_logging_clock_static
+from nautilus_trader.common.logging cimport set_logging_clock_realtime_mode
+from nautilus_trader.common.logging cimport set_logging_clock_static_mode
+from nautilus_trader.common.logging cimport set_logging_clock_static_time
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
@@ -945,7 +946,7 @@ cdef class BacktestEngine:
         self._backtest_end = self.kernel.clock.utc_now()
 
         # Change logger clock back to real-time for consistent time stamping
-        set_logging_clock_realtime()
+        set_logging_clock_realtime_mode()
 
         self._log_post_run()
 
@@ -1048,7 +1049,8 @@ cdef class BacktestEngine:
 
             # Change logger clock for the run
             self._kernel.clock.set_time(start_ns)
-            set_logging_clock_static(start_ns)
+            set_logging_clock_static_mode()
+            set_logging_clock_static_time(start_ns)
             self._log_pre_run()
 
         self._log_run(start, end)
@@ -1154,6 +1156,8 @@ cdef class BacktestEngine:
             return self._data[cursor]
 
     cdef CVec _advance_time(self, uint64_t ts_now, list clocks):
+        set_logging_clock_static_time(ts_now)
+
         cdef TestClock clock
         for clock in clocks:
             time_event_accumulator_advance_clock(

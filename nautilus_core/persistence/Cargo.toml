@@ -22,7 +22,6 @@ path = "src/bin/drop_db.rs"
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"]}
 anyhow = { workspace = true }
-chrono = { workspace = true }
 futures = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }

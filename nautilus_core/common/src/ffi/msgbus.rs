@@ -23,7 +23,7 @@ use nautilus_core::{
     ffi::{
         cvec::CVec,
         parsing::optional_bytes_to_json,
-        string::{cstr_to_string, cstr_to_ustr, cstr_to_vec, optional_cstr_to_string},
+        string::{cstr_to_bytes, cstr_to_str, cstr_to_ustr, optional_cstr_to_str},
     },
     uuid::UUID4,
 };
@@ -77,9 +77,9 @@ pub unsafe extern "C" fn msgbus_new(
     instance_id_ptr: *const c_char,
     config_ptr: *const c_char,
 ) -> MessageBus_API {
-    let trader_id = TraderId::from_str(&cstr_to_string(trader_id_ptr)).unwrap();
-    let name = optional_cstr_to_string(name_ptr);
-    let instance_id = UUID4::from(cstr_to_string(instance_id_ptr).as_str());
+    let trader_id = TraderId::from_str(cstr_to_str(trader_id_ptr)).unwrap();
+    let name = optional_cstr_to_str(name_ptr).map(|s| s.to_string());
+    let instance_id = UUID4::from(cstr_to_str(instance_id_ptr));
     let config = optional_bytes_to_json(config_ptr);
     MessageBus_API(Box::new(MessageBus::new(
         trader_id,
@@ -184,8 +184,8 @@ pub unsafe extern "C" fn msgbus_is_registered(
     bus: &MessageBus_API,
     endpoint_ptr: *const c_char,
 ) -> u8 {
-    let endpoint = cstr_to_string(endpoint_ptr);
-    u8::from(bus.is_registered(&endpoint))
+    let endpoint = cstr_to_str(endpoint_ptr);
+    u8::from(bus.is_registered(endpoint))
 }
 
 /// # Safety
@@ -247,10 +247,10 @@ pub unsafe extern "C" fn msgbus_register(
     endpoint_ptr: *const c_char,
     handler_id_ptr: *const c_char,
 ) -> *const c_char {
-    let endpoint = cstr_to_string(endpoint_ptr);
+    let endpoint = cstr_to_str(endpoint_ptr);
     let handler_id = cstr_to_ustr(handler_id_ptr);
     let handler = MessageHandler::new(handler_id, None);
-    bus.register(&endpoint, handler);
+    bus.register(endpoint, handler);
     handler_id.as_ptr().cast::<c_char>()
 }
 
@@ -259,8 +259,8 @@ pub unsafe extern "C" fn msgbus_register(
 /// - Assumes `endpoint_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn msgbus_deregister(mut bus: MessageBus_API, endpoint_ptr: *const c_char) {
-    let endpoint = cstr_to_string(endpoint_ptr);
-    bus.deregister(&endpoint);
+    let endpoint = cstr_to_str(endpoint_ptr);
+    bus.deregister(endpoint);
 }
 
 /// # Safety
@@ -413,7 +413,7 @@ pub unsafe extern "C" fn msgbus_publish_external(
     topic_ptr: *const c_char,
     payload_ptr: *const c_char,
 ) {
-    let topic = cstr_to_string(topic_ptr);
-    let payload = cstr_to_vec(payload_ptr);
-    bus.publish_external(topic, payload);
+    let topic = cstr_to_str(topic_ptr);
+    let payload = cstr_to_bytes(payload_ptr);
+    bus.publish_external(topic.to_string(), payload);
 }

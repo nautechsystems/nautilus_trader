@@ -59,6 +59,14 @@ class TestLogLevel:
 
 
 class TestLoggerTests:
+    def test_name(self):
+        # Arrange
+        name = "TEST_LOGGER"
+        logger = Logger(name=name)
+
+        # Act, Assert
+        assert logger.name == name
+
     def test_log_debug_messages_to_console(self):
         # Arrange
         init_logging(level_stdout=LogLevel.DEBUG, bypass=True)

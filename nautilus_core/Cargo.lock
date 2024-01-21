@@ -558,9 +558,9 @@ dependencies = [
 
 [[package]]
 name = "borsh"
-version = "1.3.0"
+version = "1.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26d4d6dafc1a3bb54687538972158f07b2c948bc57d5890df22c0739098b3028"
+checksum = "f58b559fd6448c6e2fd0adb5720cd98a2506594cafa4737ff98c396f3e82f667"
 dependencies = [
  "borsh-derive",
  "cfg_aliases",
@@ -568,9 +568,9 @@ dependencies = [
 
 [[package]]
 name = "borsh-derive"
-version = "1.3.0"
+version = "1.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf4918709cc4dd777ad2b6303ed03cb37f3ca0ccede8c1b0d28ac6db8f4710e0"
+checksum = "7aadb5b6ccbd078890f6d7003694e33816e6b784358f18e15e7e6d9f065a57cd"
 dependencies = [
  "once_cell",
  "proc-macro-crate",
@@ -1102,9 +1102,9 @@ checksum = "7e962a19be5cfc3f3bf6dd8f61eb50107f356ad6270fbb3ed41476571db78be5"
 
 [[package]]
 name = "databento"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44df3e4813197c18d8bc3340e08b98bc7ba3231fc638660881dc7db8d5ad4204"
+checksum = "0910be81a369b8c08c1f2e034ad999f2d300a872831d2992ad69357f3293da96"
 dependencies = [
  "dbn",
  "futures",
@@ -1325,9 +1325,9 @@ dependencies = [
 
 [[package]]
 name = "dbn"
-version = "0.14.2"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d100eedbab53177dcc235c8521837443915ba5492244923a049e652b91660734"
+checksum = "a2d5fa0d17ac6d8bc12b6b3002a5848f585712f066226c5f341b620d7bbfea5c"
 dependencies = [
  "async-compression",
  "csv",
@@ -1347,9 +1347,9 @@ dependencies = [
 
 [[package]]
 name = "dbn-macros"
-version = "0.14.2"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c974de15f28d5f0c7abc01570e03adf940228e998c88a96ce0b0c90c37ac68f6"
+checksum = "a11920424bd05a5fc8411b10233c965f791847c8618261e33ea0994b5de4e221"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -1961,12 +1961,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
-name = "human_bytes"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91f255a4535024abf7640cb288260811fc14794f62b063652ed349f9a6c2348e"
-
-[[package]]
 name = "humantime"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2483,7 +2477,6 @@ dependencies = [
  "anyhow",
  "cbindgen",
  "chrono",
- "human_bytes",
  "indexmap 2.1.0",
  "log",
  "nautilus-core",
@@ -2496,6 +2489,7 @@ dependencies = [
  "strum",
  "sysinfo",
  "tempfile",
+ "thousands",
  "tracing",
  "tracing-subscriber",
  "ustr",
@@ -2528,7 +2522,6 @@ dependencies = [
  "nautilus-core",
  "nautilus-model",
  "pyo3",
- "redis",
  "rstest",
  "strum",
 ]
@@ -2545,9 +2538,7 @@ dependencies = [
  "redis",
  "rmp-serde",
  "rstest",
- "serde",
  "serde_json",
- "strum",
 ]
 
 [[package]]
@@ -2566,7 +2557,6 @@ dependencies = [
  "nautilus-core",
  "once_cell",
  "pyo3",
- "rmp-serde",
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",
@@ -2590,9 +2580,7 @@ dependencies = [
  "futures",
  "futures-util",
  "http 1.0.0",
- "http-body-util",
  "hyper 1.1.0",
- "hyper-tls",
  "nautilus-core",
  "nonzero_ext",
  "pyo3",
@@ -2612,7 +2600,6 @@ version = "0.15.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
- "chrono",
  "compare",
  "criterion",
  "datafusion",
@@ -3181,11 +3168,10 @@ checksum = "5b40af805b3121feab8a3c29f04d8ad262fa8e0561883e7653e024ae4479e6de"
 
 [[package]]
 name = "proc-macro-crate"
-version = "2.0.1"
+version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97dc5fea232fc28d2f597b37c4876b348a40e33f3b02cc975c8d006d78d94b1a"
+checksum = "6d37c51ca738a55da99dc0c4a34860fd675453b8b36209178c2249bb13651284"
 dependencies = [
- "toml_datetime",
  "toml_edit",
 ]
 
@@ -3215,9 +3201,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.76"
+version = "1.0.78"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95fc56cda0b5c3325f5fbbd7ff9fda9e02bb00bb3dac51252d2f1bfa1cb8cc8c"
+checksum = "e2422ad645d89c99f8f3e6b88a9fdeca7fabeac836b1002371c4367c8f984aae"
 dependencies = [
  "unicode-ident",
 ]
@@ -4795,15 +4781,15 @@ dependencies = [
 
 [[package]]
 name = "toml_datetime"
-version = "0.6.3"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cda73e2f1397b1262d6dfdcef8aafae14d1de7748d66822d3bfeeb6d03e5e4b"
+checksum = "3550f4e9685620ac18a50ed434eb3aec30db8ba93b0287467bca5826ea25baf1"
 
 [[package]]
 name = "toml_edit"
-version = "0.20.2"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "396e4d48bbb2b7554c944bde63101b5ae446cff6ec4a24227428f15eb72ef338"
+checksum = "d34d383cd00a163b4a5b85053df514d45bc330f6de7737edfe0a93311d1eaa03"
 dependencies = [
  "indexmap 2.1.0",
  "toml_datetime",
@@ -4962,13 +4948,22 @@ dependencies = [
 
 [[package]]
 name = "typed-builder"
-version = "0.14.0"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64cba322cb9b7bc6ca048de49e83918223f35e7a86311267013afff257004870"
+checksum = "444d8748011b93cb168770e8092458cb0f8854f931ff82fdf6ddfbd72a9c933e"
+dependencies = [
+ "typed-builder-macro",
+]
+
+[[package]]
+name = "typed-builder-macro"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "563b3b88238ec95680aef36bdece66896eaa7ce3c0f1b4f39d38fb2435261352"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.48",
 ]
 
 [[package]]
