@@ -35,6 +35,7 @@ from nautilus_trader.adapters.betfair.providers import parse_market_catalog
 from nautilus_trader.core.rust.model import OrderSide
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
@@ -228,14 +229,17 @@ def test_market_bsp(data_client, mock_data_engine_process):
         "TradeTick": 95,
         "OrderBookDeltas": 11,
         "InstrumentStatus": 9,
-        "BSPOrderBookDelta": 30,
-        "BetfairTicker": 8,
+        "CustomData": 38,
         "InstrumentClose": 1,
     }
     assert dict(result) == expected
 
     # Assert - Count of custom data messages
-    sp_deltas = [deltas for deltas in mock_call_args if isinstance(deltas, BSPOrderBookDelta)]
+    sp_deltas = [
+        data
+        for data in mock_call_args
+        if isinstance(data, CustomData) and isinstance(data.data, BSPOrderBookDelta)
+    ]
     assert len(sp_deltas) == 30
 
 
@@ -380,7 +384,7 @@ def test_betfair_ticker(data_client, mock_data_engine_process) -> None:
 
     # Assert
     mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
-    ticker: BetfairTicker = mock_call_args[1]
+    ticker: BetfairTicker = mock_call_args[1].data
     assert ticker.last_traded_price == 3.15
     assert ticker.traded_volume == 364.45
     assert (
@@ -400,11 +404,12 @@ def test_betfair_ticker_sp(data_client, mock_data_engine_process):
 
     # Assert
     mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
+    custom_data = [data.data for data in mock_call_args if isinstance(data, CustomData)]
     starting_prices_near = [
-        t for t in mock_call_args if isinstance(t, BetfairTicker) if t.starting_price_near
+        data for data in custom_data if isinstance(data, BetfairTicker) if data.starting_price_near
     ]
     starting_prices_far = [
-        t for t in mock_call_args if isinstance(t, BetfairTicker) if t.starting_price_far
+        data for data in custom_data if isinstance(data, BetfairTicker) and data.starting_price_far
     ]
     assert len(starting_prices_near) == 1739
     assert len(starting_prices_far) == 1182
@@ -421,8 +426,8 @@ def test_betfair_starting_price(data_client, mock_data_engine_process):
 
     # Assert
     mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
-
-    starting_prices = [t for t in mock_call_args if isinstance(t, BetfairStartingPrice)]
+    custom_data = [data.data for data in mock_call_args if isinstance(data, CustomData)]
+    starting_prices = [data for data in custom_data if isinstance(data, BetfairStartingPrice)]
     assert len(starting_prices) == 36
 
 
