@@ -2,12 +2,9 @@
 
 The platform provides logging for both backtesting and live trading using a high-performance logging system implemented in Rust
 with a standardized facade from the `log` crate.
+
 The core logger operates in a separate thread and uses a multi-producer single consumer (MPSC) channel to receive log messages.
 This design ensures that the main thread is not blocked by log string formatting or file I/O operations.
-
-```{note}
-The latest stable Rust MPSC channel is used, which is now based on the `crossbeam` implementation.
-```
 
 There are two configurable writers for logging:
 - stdout/stderr writer
@@ -21,11 +18,11 @@ Logging can be configured by importing the `LoggingConfig` object.
 By default, log events with an 'INFO' `LogLevel` and higher are written to stdout/stderr.
 
 Log level (`LogLevel`) values include (and generally match Rusts `tracing` level filters):
-- 'OFF'
-- 'DEBUG'
-- 'INFO'
-- 'WARNING' or 'WARN'
-- 'ERROR'
+- `OFF`
+- `DEBUG`
+- `INFO`
+- `WARNING` or `WARN`
+- `ERROR`
 
 ```{note}
 See the `LoggingConfig` [API Reference](../api_reference/config.md#LoggingConfig) for further details.
@@ -41,7 +38,6 @@ Logging can be configured in the following ways:
 - ANSI colors in log lines
 - Bypass logging completely
 - Print Rust config to stdout at initialization
-
 
 ### Standard output logging
 Log messages are written to the console via stdout/stderr writers. The minimum log level can be configured using the `log_level` parameter.
@@ -117,7 +113,9 @@ init_logging()
 logger = Logger("MyLogger")
 ```
 
-There are many configuration options for the `init_logging` call, please see its docstring for further details.
+```{note}
+See the `init_logging` [API Reference](../api_reference/common.md#init_logging) for further details.
+```
 
 ```{warning}
 Only one logging system can be initialized per process with an `init_logging` call.
