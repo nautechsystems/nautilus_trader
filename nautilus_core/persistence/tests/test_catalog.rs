@@ -22,6 +22,7 @@ use nautilus_persistence::{
     backend::session::{DataBackendSession, DataQueryResult, QueryResult},
     python::backend::session::NautilusDataType,
 };
+#[cfg(target_os = "linux")]
 use procfs::{self, process::Process};
 use pyo3::{types::PyCapsule, IntoPy, Py, PyAny, Python};
 use rstest::rstest;
@@ -31,6 +32,7 @@ use rstest::rstest;
 /// Uses arguments from setup to run function for given number of iterations.
 /// Checks that the difference between memory after 1 and iter + 1 runs is
 /// less than threshold.
+#[cfg(target_os = "linux")]
 fn mem_leak_test<T>(setup: impl FnOnce() -> T, run: impl Fn(&T), threshold: f64, iter: usize) {
     let args = setup();
     // measure mem after setup
@@ -58,6 +60,7 @@ fn mem_leak_test<T>(setup: impl FnOnce() -> T, run: impl Fn(&T), threshold: f64,
     }
 }
 
+#[cfg(target_os = "linux")]
 #[rstest]
 fn catalog_query_mem_leak_test() {
     mem_leak_test(

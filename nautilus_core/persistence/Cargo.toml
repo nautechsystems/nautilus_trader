@@ -47,6 +47,7 @@ criterion = { workspace = true }
 rstest = { workspace = true }
 quickcheck = "1"
 quickcheck_macros = "1"
+[target.'cfg(target_os = "linux")'.dependencies]
 procfs = "0.16.0"
 
 [[bench]]
