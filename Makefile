@@ -52,6 +52,10 @@ pre-commit:
 ruff:
 	ruff check . --fix
 
+.PHONY: outdated
+outdated:
+	(cd nautilus_core && cargo outdated && poetry show --outdated)
+
 .PHONY: update cargo-update
 update: cargo-update
 	poetry update
