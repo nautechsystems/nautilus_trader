@@ -61,7 +61,6 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.betting import null_handicap
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
-from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from tests import TEST_DATA_DIR
 
 
@@ -98,17 +97,15 @@ class BetfairTestStubs:
     ) -> BetfairInstrumentProvider:
         return BetfairInstrumentProvider(
             client=betfair_client,
-            logger=TestComponentStubs.logger(),
             config=config or BetfairInstrumentProviderConfig(account_currency="GBP"),
         )
 
     @staticmethod
-    def betfair_client(loop, logger) -> BetfairHttpClient:
+    def betfair_client(loop) -> BetfairHttpClient:
         client = BetfairHttpClient(
             username="",
             password="",
             app_key="",
-            logger=logger,
         )
 
         async def request(method, request: Request, **kwargs):

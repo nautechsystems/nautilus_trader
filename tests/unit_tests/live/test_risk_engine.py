@@ -20,7 +20,6 @@ import pytest
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import SubmitOrder
@@ -58,8 +57,6 @@ class TestLiveRiskEngine:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.logger = Logger(self.clock, bypass=True)
-
         self.trader_id = TestIdStubs.trader_id()
         self.account_id = TestIdStubs.account_id()
 
@@ -78,7 +75,6 @@ class TestLiveRiskEngine:
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -87,7 +83,6 @@ class TestLiveRiskEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine = LiveDataEngine(
@@ -95,7 +90,6 @@ class TestLiveRiskEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_engine = LiveExecutionEngine(
@@ -103,7 +97,6 @@ class TestLiveRiskEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.risk_engine = LiveRiskEngine(
@@ -112,7 +105,6 @@ class TestLiveRiskEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_client = MockExecutionClient(
@@ -123,7 +115,6 @@ class TestLiveRiskEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Wire up components
@@ -158,7 +149,6 @@ class TestLiveRiskEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=LiveRiskEngineConfig(qsize=1),
         )
 
@@ -169,7 +159,6 @@ class TestLiveRiskEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -208,7 +197,6 @@ class TestLiveRiskEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=LiveRiskEngineConfig(qsize=1),
         )
 
@@ -219,7 +207,6 @@ class TestLiveRiskEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -288,7 +275,6 @@ class TestLiveRiskEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -326,7 +312,6 @@ class TestLiveRiskEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         order = strategy.order_factory.market(

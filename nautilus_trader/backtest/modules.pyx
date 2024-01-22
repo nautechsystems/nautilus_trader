@@ -78,7 +78,7 @@ cdef class SimulationModule(Actor):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `process` must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void log_diagnostics(self, LoggerAdapter log):
+    cpdef void log_diagnostics(self, Logger logger):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `log_diagnostics` must be implemented in the subclass")  # pragma: no cover
 
@@ -209,20 +209,20 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
             self.exchange.adjust_account(Money(-rollover, currency))
 
-    cpdef void log_diagnostics(self, LoggerAdapter log):
+    cpdef void log_diagnostics(self, Logger logger):
         """
         Log diagnostics out to the `BacktestEngine` logger.
 
         Parameters
         ----------
-        log : LoggerAdapter
+        logger : Logger
             The logger to log to.
 
         """
         account_balances_starting = ', '.join([b.to_str() for b in self.exchange.starting_balances])
         account_starting_length = len(account_balances_starting)
         rollover_totals = ', '.join([b.to_str() for b in self._rollover_totals.values()])
-        log.info(f"Rollover interest (totals): {rollover_totals}")
+        logger.info(f"Rollover interest (totals): {rollover_totals}")
 
     cpdef void reset(self):
         self._rollover_time = None  # Initialized at first rollover

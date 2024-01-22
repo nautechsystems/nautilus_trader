@@ -19,7 +19,6 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.factories cimport OrderFactory
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PositionSide
@@ -92,7 +91,6 @@ cdef class Strategy(Actor):
         MessageBus msgbus,
         CacheFacade cache,
         Clock clock,
-        Logger logger,
     )
     cpdef void change_id(self, StrategyId strategy_id)
     cpdef void change_order_id_tag(self, str order_id_tag)

@@ -31,8 +31,6 @@ from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecution
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.test_kit.mocks.cache_database import MockCacheDatabase
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
@@ -42,12 +40,6 @@ class TestBinanceFactories:
         # Fixture Setup
         self.loop = asyncio.get_event_loop()
         self.clock = LiveClock()
-        self.logger = Logger(
-            clock=self.clock,
-            level_stdout=LogLevel.DEBUG,
-            bypass=True,
-        )
-
         self.trader_id = TestIdStubs.trader_id()
         self.strategy_id = TestIdStubs.strategy_id()
         self.account_id = TestIdStubs.account_id()
@@ -55,16 +47,12 @@ class TestBinanceFactories:
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
-        self.cache_db = MockCacheDatabase(
-            logger=self.logger,
-        )
+        self.cache_db = MockCacheDatabase()
 
         self.cache = Cache(
             database=self.cache_db,
-            logger=self.logger,
         )
 
     @pytest.mark.parametrize(
@@ -272,7 +260,6 @@ class TestBinanceFactories:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         assert isinstance(data_client, BinanceSpotDataClient)
@@ -290,7 +277,6 @@ class TestBinanceFactories:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         assert isinstance(data_client, BinanceFuturesDataClient)
@@ -308,7 +294,6 @@ class TestBinanceFactories:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         assert isinstance(exec_client, BinanceSpotExecutionClient)
@@ -326,7 +311,6 @@ class TestBinanceFactories:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         assert isinstance(exec_client, BinanceFuturesExecutionClient)

@@ -21,23 +21,78 @@ use std::{
     io::{self, BufWriter, Stderr, Stdout, Write},
     path::{Path, PathBuf},
     str::FromStr,
-    sync::mpsc::{channel, Receiver, SendError, Sender},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::{channel, Receiver, SendError, Sender},
+    },
     thread,
 };
 
 use chrono::{prelude::*, Utc};
 use log::{
     debug, error, info,
-    kv::{Key, ToValue, Value},
+    kv::{ToValue, Value},
     set_boxed_logger, set_max_level, warn, Level, LevelFilter, Log, STATIC_MAX_LEVEL,
 };
-use nautilus_core::{datetime::unix_nanos_to_iso8601, time::UnixNanos, uuid::UUID4};
+use nautilus_core::{
+    datetime::unix_nanos_to_iso8601,
+    time::{get_atomic_clock_realtime, get_atomic_clock_static, UnixNanos},
+    uuid::UUID4,
+};
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::EnvFilter;
 use ustr::Ustr;
 
 use crate::enums::{LogColor, LogLevel};
+
+static LOGGING_INITIALIZED: AtomicBool = AtomicBool::new(false);
+static LOGGING_BYPASSED: AtomicBool = AtomicBool::new(false);
+static LOGGING_REALTIME: AtomicBool = AtomicBool::new(true);
+static LOGGING_COLORED: AtomicBool = AtomicBool::new(true);
+
+/// Returns whether the core logger is enabled.
+#[no_mangle]
+pub extern "C" fn logging_is_initialized() -> u8 {
+    LOGGING_INITIALIZED.load(Ordering::Relaxed) as u8
+}
+
+/// Sets the logging system to bypass mode.
+#[no_mangle]
+pub extern "C" fn logging_set_bypass() {
+    LOGGING_BYPASSED.store(true, Ordering::Relaxed)
+}
+
+/// Shuts down the logging system.
+#[no_mangle]
+pub extern "C" fn logging_shutdown() {
+    todo!()
+}
+
+/// Returns whether the core logger is using ANSI colors.
+#[no_mangle]
+pub extern "C" fn logging_is_colored() -> u8 {
+    LOGGING_COLORED.load(Ordering::Relaxed) as u8
+}
+
+/// Sets the global logging clock to real-time mode.
+#[no_mangle]
+pub extern "C" fn logging_clock_set_realtime_mode() {
+    LOGGING_REALTIME.store(true, Ordering::Relaxed);
+}
+
+/// Sets the global logging clock to static mode.
+#[no_mangle]
+pub extern "C" fn logging_clock_set_static_mode() {
+    LOGGING_REALTIME.store(false, Ordering::Relaxed);
+}
+
+/// Sets the global logging clock static time with the given UNIX time (nanoseconds).
+#[no_mangle]
+pub extern "C" fn logging_clock_set_static_time(time_ns: u64) {
+    let clock = get_atomic_clock_static();
+    clock.set_time(time_ns);
+}
 
 #[cfg_attr(
     feature = "python",
@@ -53,8 +108,6 @@ pub struct LoggerConfig {
     component_level: HashMap<Ustr, LevelFilter>,
     /// If logger is using ANSI color codes.
     pub is_colored: bool,
-    /// If logging is bypassed.
-    pub is_bypassed: bool,
     /// If the configuration should be printed to stdout at initialization.
     pub print_config: bool,
 }
@@ -66,27 +119,39 @@ impl Default for LoggerConfig {
             fileout_level: LevelFilter::Off,
             component_level: HashMap::new(),
             is_colored: false,
-            is_bypassed: false,
             print_config: false,
         }
     }
 }
 
 impl LoggerConfig {
+    pub fn new(
+        stdout_level: LevelFilter,
+        fileout_level: LevelFilter,
+        component_level: HashMap<Ustr, LevelFilter>,
+        is_colored: bool,
+        print_config: bool,
+    ) -> Self {
+        Self {
+            stdout_level,
+            fileout_level,
+            component_level,
+            is_colored,
+            print_config,
+        }
+    }
+
     pub fn from_spec(spec: &str) -> Self {
         let Self {
             mut stdout_level,
             mut fileout_level,
             mut component_level,
             mut is_colored,
-            mut is_bypassed,
             mut print_config,
         } = Self::default();
         spec.split(';').for_each(|kv| {
             if kv == "is_colored" {
                 is_colored = true;
-            } else if kv == "is_bypassed" {
-                is_bypassed = true;
             } else if kv == "print_config" {
                 print_config = true;
             } else {
@@ -109,7 +174,6 @@ impl LoggerConfig {
             fileout_level,
             component_level,
             is_colored,
-            is_bypassed,
             print_config,
         }
     }
@@ -144,6 +208,42 @@ impl FileWriterConfig {
             file_name,
             file_format,
         }
+    }
+}
+
+pub fn map_log_level_to_filter(log_level: LogLevel) -> LevelFilter {
+    match log_level {
+        LogLevel::Off => LevelFilter::Off,
+        LogLevel::Debug => LevelFilter::Debug,
+        LogLevel::Info => LevelFilter::Info,
+        LogLevel::Warning => LevelFilter::Warn,
+        LogLevel::Error => LevelFilter::Error,
+    }
+}
+
+pub fn parse_level_filter_str(s: &str) -> LevelFilter {
+    let mut log_level_str = s.to_string().to_uppercase();
+    if log_level_str == "WARNING" {
+        log_level_str = "WARN".to_string()
+    }
+    LevelFilter::from_str(&log_level_str)
+        .unwrap_or_else(|_| panic!("Invalid `LevelFilter` string, was {log_level_str}"))
+}
+
+pub fn parse_component_levels(
+    original_map: Option<HashMap<String, serde_json::Value>>,
+) -> HashMap<Ustr, LevelFilter> {
+    match original_map {
+        Some(map) => {
+            let mut new_map = HashMap::new();
+            for (key, value) in map {
+                let ustr_key = Ustr::from(&key);
+                let value = parse_level_filter_str(value.as_str().unwrap());
+                new_map.insert(ustr_key, value);
+            }
+            new_map
+        }
+        None => HashMap::new(),
     }
 }
 
@@ -182,15 +282,12 @@ pub fn init_tracing() {
 pub fn init_logging(
     trader_id: TraderId,
     instance_id: UUID4,
-    config_spec: String,
-    directory: Option<String>,
-    file_name: Option<String>,
-    file_format: Option<String>,
+    config: LoggerConfig,
+    file_config: FileWriterConfig,
 ) {
-    let config = LoggerConfig::from_spec(&config_spec);
-    let file_writer_config = FileWriterConfig::new(directory, file_name, file_format);
-
-    Logger::init_with_config(trader_id, instance_id, file_writer_config, config);
+    LOGGING_INITIALIZED.store(true, Ordering::Relaxed);
+    LOGGING_COLORED.store(config.is_colored, Ordering::Relaxed);
+    Logger::init_with_config(trader_id, instance_id, config, file_config);
 }
 
 /// Provides a high-performance logger utilizing a MPSC channel under the hood.
@@ -216,8 +313,6 @@ pub enum LogEvent {
 /// Represents a log event which includes a message.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LogLine {
-    /// The UNIX nanoseconds timestamp when the log event occurred.
-    timestamp: UnixNanos,
     /// The log level for the event.
     level: Level,
     /// The color for the log message content.
@@ -230,19 +325,14 @@ pub struct LogLine {
 
 impl fmt::Display for LogLine {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} [{}] {}: {}",
-            self.timestamp, self.level, self.component, self.message
-        )
+        write!(f, "[{}] {}: {}", self.level, self.component, self.message)
     }
 }
 
 impl Log for Logger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        !self.config.is_bypassed
-            && (metadata.level() == Level::Error
-                || metadata.level() >= self.config.stdout_level
+        !LOGGING_BYPASSED.load(Ordering::Relaxed)
+            && (metadata.level() >= self.config.stdout_level
                 || metadata.level() >= self.config.fileout_level)
     }
 
@@ -250,10 +340,6 @@ impl Log for Logger {
         // TODO remove unwraps
         if self.enabled(record.metadata()) {
             let key_values = record.key_values();
-            let timestamp = key_values
-                .get(Key::from_str("timestamp"))
-                .and_then(|v| v.to_u64())
-                .expect("No timestamp included in log `Record`");
             let color = key_values
                 .get("color".into())
                 .and_then(|v| v.to_u64().map(|v| (v as u8).into()))
@@ -264,7 +350,6 @@ impl Log for Logger {
                 .unwrap_or_else(|| Ustr::from(record.metadata().target()));
 
             let line = LogLine {
-                timestamp,
                 level: record.level(),
                 color,
                 component,
@@ -283,20 +368,16 @@ impl Log for Logger {
 
 #[allow(clippy::too_many_arguments)]
 impl Logger {
-    pub fn init_with_env(
-        trader_id: TraderId,
-        instance_id: UUID4,
-        file_writer_config: FileWriterConfig,
-    ) {
+    pub fn init_with_env(trader_id: TraderId, instance_id: UUID4, file_config: FileWriterConfig) {
         let config = LoggerConfig::from_env();
-        Logger::init_with_config(trader_id, instance_id, file_writer_config, config);
+        Logger::init_with_config(trader_id, instance_id, config, file_config);
     }
 
     pub fn init_with_config(
         trader_id: TraderId,
         instance_id: UUID4,
-        file_writer_config: FileWriterConfig,
         config: LoggerConfig,
+        file_config: FileWriterConfig,
     ) {
         let (tx, rx) = channel::<LogEvent>();
 
@@ -320,8 +401,8 @@ impl Logger {
                     Self::handle_messages(
                         &trader_id_clone,
                         &instance_id_clone,
-                        file_writer_config,
                         config,
+                        file_config,
                         rx,
                     );
                 });
@@ -338,12 +419,11 @@ impl Logger {
         }
     }
 
-    #[allow(unused_variables)] // `is_bypassed` is unused
     fn handle_messages(
         trader_id: &str,
         instance_id: &str,
-        file_writer_config: FileWriterConfig,
         config: LoggerConfig,
+        file_config: FileWriterConfig,
         rx: Receiver<LogEvent>,
     ) {
         if config.print_config {
@@ -355,7 +435,6 @@ impl Logger {
             fileout_level,
             component_level,
             is_colored,
-            is_bypassed,
             print_config: _,
         } = config;
 
@@ -364,11 +443,7 @@ impl Logger {
         let mut err_buf = BufWriter::new(io::stderr());
 
         // Setup log file
-        let is_json_format = match file_writer_config
-            .file_format
-            .as_ref()
-            .map(|s| s.to_lowercase())
-        {
+        let is_json_format = match file_config.file_format.as_ref().map(|s| s.to_lowercase()) {
             Some(ref format) if format == "json" => true,
             None => false,
             Some(ref unrecognized) => {
@@ -381,12 +456,8 @@ impl Logger {
 
         let file_path = PathBuf::new();
         let file = if fileout_level > LevelFilter::Off {
-            let file_path = Self::create_log_file_path(
-                &file_writer_config,
-                trader_id,
-                instance_id,
-                is_json_format,
-            );
+            let file_path =
+                Self::create_log_file_path(&file_config, trader_id, instance_id, is_json_format);
 
             Some(
                 File::options()
@@ -403,6 +474,11 @@ impl Logger {
 
         // Continue to receive and handle log events until channel is hung up
         while let Ok(event) = rx.recv() {
+            let timestamp = match LOGGING_REALTIME.load(Ordering::Relaxed) {
+                true => get_atomic_clock_realtime().get_time_ns(),
+                false => get_atomic_clock_static().get_time_ns(),
+            };
+
             match event {
                 LogEvent::Flush => {
                     Self::flush_stderr(&mut err_buf);
@@ -421,11 +497,13 @@ impl Logger {
                     }
 
                     if line.level == LevelFilter::Error {
-                        let line = Self::format_console_log(&line, trader_id, is_colored);
+                        let line =
+                            Self::format_console_log(timestamp, &line, trader_id, is_colored);
                         Self::write_stderr(&mut err_buf, &line);
                         Self::flush_stderr(&mut err_buf);
                     } else if line.level <= stdout_level {
-                        let line = Self::format_console_log(&line, trader_id, is_colored);
+                        let line =
+                            Self::format_console_log(timestamp, &line, trader_id, is_colored);
                         Self::write_stdout(&mut out_buf, &line);
                         Self::flush_stdout(&mut out_buf);
                     }
@@ -438,7 +516,7 @@ impl Logger {
                             };
 
                             let file_path = Self::create_log_file_path(
-                                &file_writer_config,
+                                &file_config,
                                 trader_id,
                                 instance_id,
                                 is_json_format,
@@ -455,7 +533,12 @@ impl Logger {
 
                         if line.level <= fileout_level {
                             if let Some(file_buf) = file_buf.as_mut() {
-                                let line = Self::format_file_log(&line, trader_id, is_json_format);
+                                let line = Self::format_file_log(
+                                    timestamp,
+                                    &line,
+                                    trader_id,
+                                    is_json_format,
+                                );
                                 Self::write_file(file_buf, &line);
                                 Self::flush_file(file_buf);
                             }
@@ -495,12 +578,12 @@ impl Logger {
     }
 
     fn create_log_file_path(
-        file_writer_config: &FileWriterConfig,
+        file_config: &FileWriterConfig,
         trader_id: &str,
         instance_id: &str,
         is_json_format: bool,
     ) -> PathBuf {
-        let basename = if let Some(file_name) = file_writer_config.file_name.as_ref() {
+        let basename = if let Some(file_name) = file_config.file_name.as_ref() {
             file_name.clone()
         } else {
             Self::default_log_file_basename(trader_id, instance_id)
@@ -509,7 +592,7 @@ impl Logger {
         let suffix = if is_json_format { "json" } else { "log" };
         let mut file_path = PathBuf::new();
 
-        if let Some(directory) = file_writer_config.directory.as_ref() {
+        if let Some(directory) = file_config.directory.as_ref() {
             file_path.push(directory);
             create_dir_all(&file_path).expect("Failed to create directories for log file");
         }
@@ -519,11 +602,16 @@ impl Logger {
         file_path
     }
 
-    fn format_console_log(event: &LogLine, trader_id: &str, is_colored: bool) -> String {
+    fn format_console_log(
+        timestamp: UnixNanos,
+        event: &LogLine,
+        trader_id: &str,
+        is_colored: bool,
+    ) -> String {
         match is_colored {
             true => format!(
                 "\x1b[1m{}\x1b[0m {}[{}] {}.{}: {}\x1b[0m\n",
-                unix_nanos_to_iso8601(event.timestamp),
+                unix_nanos_to_iso8601(timestamp),
                 &event.color.to_string(),
                 event.level,
                 &trader_id,
@@ -532,7 +620,7 @@ impl Logger {
             ),
             false => format!(
                 "{} [{}] {}.{}: {}\n",
-                unix_nanos_to_iso8601(event.timestamp),
+                unix_nanos_to_iso8601(timestamp),
                 event.level,
                 &trader_id,
                 &event.component,
@@ -541,7 +629,12 @@ impl Logger {
         }
     }
 
-    fn format_file_log(event: &LogLine, trader_id: &str, is_json_format: bool) -> String {
+    fn format_file_log(
+        timestamp: UnixNanos,
+        event: &LogLine,
+        trader_id: &str,
+        is_json_format: bool,
+    ) -> String {
         if is_json_format {
             let json_string =
                 serde_json::to_string(event).expect("Error serializing log event to string");
@@ -549,7 +642,7 @@ impl Logger {
         } else {
             format!(
                 "{} [{}] {}.{}: {}\n",
-                &unix_nanos_to_iso8601(event.timestamp),
+                &unix_nanos_to_iso8601(timestamp),
                 event.level,
                 trader_id,
                 &event.component,
@@ -601,27 +694,22 @@ impl Logger {
     }
 }
 
-pub fn log(
-    timestamp_ns: UnixNanos,
-    level: LogLevel,
-    color: LogColor,
-    component: Ustr,
-    message: Cow<'_, str>,
-) {
+pub fn log(level: LogLevel, color: LogColor, component: Ustr, message: Cow<'_, str>) {
     let color = Value::from(color as u8);
 
     match level {
+        LogLevel::Off => {}
         LogLevel::Debug => {
-            debug!(timestamp = timestamp_ns, component = component.to_value(), color = color; "{}", message);
+            debug!(component = component.to_value(), color = color; "{}", message);
         }
         LogLevel::Info => {
-            info!(timestamp = timestamp_ns, component = component.to_value(), color = color; "{}", message);
+            info!(component = component.to_value(), color = color; "{}", message);
         }
         LogLevel::Warning => {
-            warn!(timestamp = timestamp_ns, component = component.to_value(), color = color; "{}", message);
+            warn!(component = component.to_value(), color = color; "{}", message);
         }
         LogLevel::Error => {
-            error!(timestamp = timestamp_ns, component = component.to_value(), color = color; "{}", message);
+            error!(component = component.to_value(), color = color; "{}", message);
         }
     }
 }
@@ -633,7 +721,7 @@ pub fn log(
 mod tests {
     use std::{collections::HashMap, time::Duration};
 
-    use log::{info, kv::ToValue, LevelFilter};
+    use log::{info, LevelFilter};
     use nautilus_core::uuid::UUID4;
     use nautilus_model::identifiers::trader_id::TraderId;
     use rstest::*;
@@ -641,7 +729,7 @@ mod tests {
     use tempfile::tempdir;
     use ustr::Ustr;
 
-    use super::FileWriterConfig;
+    use super::*;
     use crate::{
         enums::LogColor,
         logging::{LogLine, Logger, LoggerConfig},
@@ -651,7 +739,6 @@ mod tests {
     #[rstest]
     fn log_message_serialization() {
         let log_message = LogLine {
-            timestamp: 1_000_000_000,
             level: log::Level::Info,
             color: LogColor::Normal,
             component: Ustr::from("Portfolio"),
@@ -661,7 +748,6 @@ mod tests {
         let serialized_json = serde_json::to_string(&log_message).unwrap();
         let deserialized_value: Value = serde_json::from_str(&serialized_json).unwrap();
 
-        assert_eq!(deserialized_value["timestamp"], 1_000_000_000);
         assert_eq!(deserialized_value["level"], "INFO");
         assert_eq!(deserialized_value["component"], "Portfolio");
         assert_eq!(deserialized_value["message"], "This is a log message");
@@ -681,8 +767,22 @@ mod tests {
                     LevelFilter::Error
                 )]),
                 is_colored: true,
-                is_bypassed: false,
                 print_config: false,
+            }
+        )
+    }
+
+    #[rstest]
+    fn log_config_parsing2() {
+        let config = LoggerConfig::from_spec("stdout=Warn;print_config;fileout=Error;");
+        assert_eq!(
+            config,
+            LoggerConfig {
+                stdout_level: LevelFilter::Warn,
+                fileout_level: LevelFilter::Error,
+                component_level: HashMap::new(),
+                is_colored: false,
+                print_config: true,
             }
         )
     }
@@ -695,7 +795,7 @@ mod tests {
         };
 
         let temp_dir = tempdir().expect("Failed to create temporary directory");
-        let file_writer_config = FileWriterConfig {
+        let file_config = FileWriterConfig {
             directory: Some(temp_dir.path().to_str().unwrap().to_string()),
             ..Default::default()
         };
@@ -703,12 +803,14 @@ mod tests {
         Logger::init_with_config(
             TraderId::from("TRADER-001"),
             UUID4::new(),
-            file_writer_config,
             config,
+            file_config,
         );
 
+        logging_clock_set_static_mode();
+        logging_clock_set_static_time(1_650_000_000_000_000);
+
         info!(
-            timestamp = 1_650_000_000_000_000i64.to_value(),
             component = "RiskEngine";
             "This is a test."
         );
@@ -752,7 +854,7 @@ mod tests {
         let config = LoggerConfig::from_spec("stdout=Info;fileout=Debug;RiskEngine=Error");
 
         let temp_dir = tempdir().expect("Failed to create temporary directory");
-        let file_writer_config = FileWriterConfig {
+        let file_config = FileWriterConfig {
             directory: Some(temp_dir.path().to_str().unwrap().to_string()),
             ..Default::default()
         };
@@ -760,12 +862,14 @@ mod tests {
         Logger::init_with_config(
             TraderId::from("TRADER-001"),
             UUID4::new(),
-            file_writer_config,
             config,
+            file_config,
         );
 
+        logging_clock_set_static_mode();
+        logging_clock_set_static_time(1_650_000_000_000_000);
+
         info!(
-            timestamp = 1_650_000_000_000_000i64.to_value(),
             component = "RiskEngine";
             "This is a test."
         );
@@ -803,7 +907,7 @@ mod tests {
             LoggerConfig::from_spec("stdout=Info;is_colored;fileout=Debug;RiskEngine=Info");
 
         let temp_dir = tempdir().expect("Failed to create temporary directory");
-        let file_writer_config = FileWriterConfig {
+        let file_config = FileWriterConfig {
             directory: Some(temp_dir.path().to_str().unwrap().to_string()),
             file_format: Some("json".to_string()),
             ..Default::default()
@@ -812,12 +916,14 @@ mod tests {
         Logger::init_with_config(
             TraderId::from("TRADER-001"),
             UUID4::new(),
-            file_writer_config,
             config,
+            file_config,
         );
 
+        logging_clock_set_static_mode();
+        logging_clock_set_static_time(1_650_000_000_000_000);
+
         info!(
-            timestamp = 1_650_000_000_000_000i64.to_value(),
             component = "RiskEngine";
             "This is a test."
         );
@@ -844,7 +950,7 @@ mod tests {
 
         assert_eq!(
         log_contents,
-        "{\"timestamp\":1650000000000000,\"level\":\"INFO\",\"color\":\"Normal\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
+        "{\"level\":\"INFO\",\"color\":\"Normal\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
     );
     }
 }

@@ -110,6 +110,10 @@ def register_config_decoding(type_: type, decoder: Callable) -> None:
     CUSTOM_DECODINGS[type_] = decoder
 
 
+def tokenize_config(obj: NautilusConfig) -> str:
+    return hashlib.sha256(obj.json()).hexdigest()
+
+
 class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
     """
     The base class for all Nautilus configuration objects.
@@ -830,30 +834,6 @@ class LoggingConfig(NautilusConfig, frozen=True):
     bypass_logging: bool = False
     print_config: bool = False
 
-    def spec_string(self) -> str:
-        """
-        Return the 'spec' string for the core logging config to parse on initialization.
-
-        Returns
-        -------
-        str
-
-        """
-        config_str = f"stdout={self.log_level.lower()}"
-        if self.log_level_file:
-            config_str += f";fileout={self.log_level_file.lower()}"
-        if self.log_component_levels:
-            for component, level in self.log_component_levels.items():
-                config_str += f";{component}={level.lower()}"
-        if self.log_colors:
-            config_str += ";is_colored"
-        if self.bypass_logging:
-            config_str += ";is_bypassed"
-        if self.print_config:
-            config_str += ";print_config"
-
-        return config_str
-
 
 class NautilusKernelConfig(NautilusConfig, frozen=True):
     """
@@ -983,7 +963,3 @@ class ImportableConfig(NautilusConfig, frozen=True):
         cls = resolve_path(self.path)
         cfg = msgspec.json.encode(self.config)
         return msgspec.json.decode(cfg, type=cls)
-
-
-def tokenize_config(obj: NautilusConfig) -> str:
-    return hashlib.sha256(obj.json()).hexdigest()

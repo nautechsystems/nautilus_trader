@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from typing import Literal
 
 from ibapi.common import MarketDataTypeEnum as IBMarketDataTypeEnum
@@ -86,7 +88,9 @@ class InteractiveBrokersInstrumentProviderConfig(InstrumentProviderConfig, froze
 
     """
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, InteractiveBrokersInstrumentProviderConfig):
+            return False
         return (
             self.load_ids == other.load_ids
             and self.load_contracts == other.load_contracts
@@ -96,7 +100,7 @@ class InteractiveBrokersInstrumentProviderConfig(InstrumentProviderConfig, froze
             and self.build_futures_chain == other.build_futures_chain
         )
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(
             (
                 self.load_ids,

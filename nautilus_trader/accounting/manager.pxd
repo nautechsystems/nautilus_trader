@@ -20,7 +20,7 @@ from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.accounting.accounts.margin cimport MarginAccount
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderFilled
@@ -30,7 +30,7 @@ from nautilus_trader.model.objects cimport Money
 
 cdef class AccountsManager:
     cdef Clock _clock
-    cdef LoggerAdapter _log
+    cdef Logger _log
     cdef CacheFacade _cache
 
     cdef AccountState update_balances(self, Account account, Instrument instrument, OrderFilled fill)

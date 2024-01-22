@@ -531,7 +531,7 @@ class TestInstrumentProvider:
             multiplier=Quantity.from_int(100),
             lot_size=Quantity.from_int(1),
             underlying="AAPL",
-            kind=OptionKind.CALL,
+            option_kind=OptionKind.CALL,
             strike_price=Price.from_str("149.00"),
             activation_ns=pd.Timestamp("2021-9-17", tz=pytz.utc).value,
             expiration_ns=pd.Timestamp("2021-12-17", tz=pytz.utc).value,

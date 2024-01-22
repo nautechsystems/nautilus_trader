@@ -25,7 +25,6 @@ from nautilus_trader.adapters.interactive_brokers.common import IBContractDetail
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config.common import resolve_path
 from nautilus_trader.model.identifiers import InstrumentId
@@ -44,8 +43,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self,
         client: InteractiveBrokersClient,
         config: InteractiveBrokersInstrumentProviderConfig,
-        logger: Logger,
-    ):
+    ) -> None:
         """
         Initialize a new instance of the ``InteractiveBrokersInstrumentProvider`` class.
 
@@ -55,14 +53,9 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             The Interactive Brokers client.
         config : InteractiveBrokersInstrumentProviderConfig
             The instrument provider config
-        logger : Logger
-            The logger for the instrument provider.
 
         """
-        super().__init__(
-            logger=logger,
-            config=config,
-        )
+        super().__init__(config=config)
 
         # Settings
         self._load_contracts_on_start = (
@@ -235,7 +228,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self,
         instrument_id: InstrumentId | IBContract,
         filters: dict | None = None,
-    ):
+    ) -> None:
         """
         Search and load the instrument for the given IBContract. It is important that
         the Contract shall have enough parameters so only one match is returned.

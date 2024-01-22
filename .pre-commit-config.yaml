@@ -36,7 +36,7 @@ repos:
       - id: codespell
         description: Checks for common misspellings.
         types_or: [python, cython, rst, markdown]
-        args: ["-L", "ot,zar"]
+        args: ["-L", "crate,ot,zar"]
 
   ##############################################################################
   #  Rust formatting and linting
@@ -82,7 +82,7 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.12
+    rev: v0.1.14
     hooks:
       - id: ruff
         args: ["--fix"]

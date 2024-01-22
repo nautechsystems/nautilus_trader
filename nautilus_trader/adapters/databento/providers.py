@@ -21,7 +21,6 @@ import pandas as pd
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.parsing import parse_record_with_metadata
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
@@ -37,8 +36,6 @@ class DatabentoInstrumentProvider(InstrumentProvider):
     ----------
     http_client : databento.Historical
         The Databento historical HTTP client for the provider.
-    logger : Logger
-        The logger for the provider.
     clock : LiveClock
         The clock for the provider.
     live_api_key : str, optional
@@ -56,17 +53,13 @@ class DatabentoInstrumentProvider(InstrumentProvider):
     def __init__(
         self,
         http_client: databento.Historical,
-        logger: Logger,
         clock: LiveClock,
         live_api_key: str | None = None,
         live_gateway: str | None = None,
         loader: DatabentoDataLoader | None = None,
         config: InstrumentProviderConfig | None = None,
     ):
-        super().__init__(
-            logger=logger,
-            config=config,
-        )
+        super().__init__(config=config)
 
         self._clock = clock
         self._config = config

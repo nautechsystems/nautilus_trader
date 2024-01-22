@@ -28,7 +28,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.model.objects import Currency
@@ -40,7 +39,6 @@ INSTRUMENT_PROVIDER = None
 
 @lru_cache(1)
 def get_cached_betfair_client(
-    logger: Logger,
     username: str | None = None,
     password: str | None = None,
     app_key: str | None = None,
@@ -53,8 +51,6 @@ def get_cached_betfair_client(
 
     Parameters
     ----------
-    logger : Logger
-        The logger for the client.
     username : str, optional
         The API username for the client.
         If None then will source from the `BETFAIR_USERNAME` env var.
@@ -78,14 +74,12 @@ def get_cached_betfair_client(
 
     key: str = "|".join((username, password, app_key))
     if key not in CLIENTS:
-        LoggerAdapter("BetfairFactory", logger).warning(
-            "Creating new instance of BetfairHttpClient",
-        )
+        Logger("BetfairFactory").warning("Creating new instance of BetfairHttpClient")
+
         client = BetfairHttpClient(
             username=username,
             password=password,
             app_key=app_key,
-            logger=logger,
         )
         CLIENTS[key] = client
     return CLIENTS[key]
@@ -94,7 +88,6 @@ def get_cached_betfair_client(
 @lru_cache(1)
 def get_cached_betfair_instrument_provider(
     client: BetfairHttpClient,
-    logger: Logger,
     config: BetfairInstrumentProviderConfig,
 ) -> BetfairInstrumentProvider:
     """
@@ -106,8 +99,6 @@ def get_cached_betfair_instrument_provider(
     ----------
     client : BinanceHttpClient
         The client for the instrument provider.
-    logger : Logger
-        The logger for the instrument provider.
     config : BetfairInstrumentProviderConfig
         The config for the instrument provider.
 
@@ -118,12 +109,10 @@ def get_cached_betfair_instrument_provider(
     """
     global INSTRUMENT_PROVIDER
     if INSTRUMENT_PROVIDER is None:
-        LoggerAdapter("BetfairFactory", logger).warning(
-            "Creating new instance of BetfairInstrumentProvider",
-        )
+        Logger("BetfairFactory").warning("Creating new instance of BetfairInstrumentProvider")
+
         INSTRUMENT_PROVIDER = BetfairInstrumentProvider(
             client=client,
-            logger=logger,
             config=config,
         )
     return INSTRUMENT_PROVIDER
@@ -142,7 +131,6 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
     ):
         """
         Create a new Betfair data client.
@@ -161,8 +149,6 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : Logger
-            The logger for the client.
 
         Returns
         -------
@@ -174,12 +160,10 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             username=config.username,
             password=config.password,
             app_key=config.app_key,
-            logger=logger,
         )
 
         provider = get_cached_betfair_instrument_provider(
             client=client,
-            logger=logger,
             config=config.instrument_config,
         )
 
@@ -189,7 +173,6 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             instrument_provider=provider,
             account_currency=Currency.from_str(config.account_currency),
         )
@@ -209,7 +192,6 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
     ):
         """
         Create a new Betfair execution client.
@@ -228,8 +210,6 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : Logger
-            The logger for the client.
 
         Returns
         -------
@@ -240,11 +220,9 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
             username=config.username,
             password=config.password,
             app_key=config.app_key,
-            logger=logger,
         )
         provider = get_cached_betfair_instrument_provider(
             client=client,
-            logger=logger,
             config=config.instrument_config,
         )
 
@@ -256,7 +234,6 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             instrument_provider=provider,
         )
         return exec_client

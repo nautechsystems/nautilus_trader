@@ -22,7 +22,6 @@ import pytest
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import FillReport
@@ -70,12 +69,6 @@ class TestLiveExecutionReconciliation:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.logger = Logger(
-            self.clock,
-            level_stdout=10,  # DEBUG
-            bypass=True,
-        )
-
         self.account_id = TestIdStubs.account_id()
         self.trader_id = TestIdStubs.trader_id()
 
@@ -88,7 +81,6 @@ class TestLiveExecutionReconciliation:
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.cache = TestComponentStubs.cache()
@@ -97,7 +89,6 @@ class TestLiveExecutionReconciliation:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine = LiveDataEngine(
@@ -105,7 +96,6 @@ class TestLiveExecutionReconciliation:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_engine = LiveExecutionEngine(
@@ -113,7 +103,6 @@ class TestLiveExecutionReconciliation:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.risk_engine = LiveRiskEngine(
@@ -122,7 +111,6 @@ class TestLiveExecutionReconciliation:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.client = MockLiveExecutionClient(
@@ -131,11 +119,10 @@ class TestLiveExecutionReconciliation:
             venue=SIM,
             account_type=AccountType.CASH,
             base_currency=USD,
-            instrument_provider=InstrumentProvider(logger=self.logger),
+            instrument_provider=InstrumentProvider(),
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         self.portfolio.update_account(TestEventStubs.cash_account_state())
         self.exec_engine.register_client(self.client)

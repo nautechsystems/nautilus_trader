@@ -17,7 +17,7 @@ use std::{
     cmp::Ordering,
     fmt::{Display, Formatter, Result as FmtResult},
     hash::{Hash, Hasher},
-    ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign},
+    ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign},
     str::FromStr,
 };
 
@@ -243,6 +243,14 @@ impl Mul<f64> for Money {
     type Output = f64;
     fn mul(self, rhs: f64) -> Self::Output {
         self.as_f64() * rhs
+    }
+}
+
+// DIVIDE
+impl Div<f64> for Money {
+    type Output = f64;
+    fn div(self, rhs: f64) -> Self::Output {
+        self.as_f64() / rhs
     }
 }
 

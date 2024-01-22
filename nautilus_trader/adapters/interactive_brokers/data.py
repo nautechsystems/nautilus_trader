@@ -29,7 +29,6 @@ from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBr
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
@@ -60,11 +59,10 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         instrument_provider: InteractiveBrokersInstrumentProvider,
         ibg_client_id: int,
         config: InteractiveBrokersDataClientConfig,
-    ):
+    ) -> None:
         """
         Initialize a new instance of the ``InteractiveBrokersDataClient`` class.
 
@@ -80,8 +78,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : Logger
-            The logger for the client.
         instrument_provider : InteractiveBrokersInstrumentProvider
             The instrument provider.
         ibg_client_id : int
@@ -97,7 +93,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             instrument_provider=instrument_provider,
             config=config,  # TODO: Config needs to be fully formed earlier than this
             # config={
@@ -116,7 +111,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
     async def _connect(self):
         # Connect client
-        await self._client.is_running_async()
+        await self._client.wait_until_ready()
         self._client.registered_nautilus_clients.add(self.id)
 
         # Set Market Data Type
@@ -201,7 +196,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             tick_type="AllLast",
         )
 
-    async def _subscribe_bars(self, bar_type: BarType):
+    async def _subscribe_bars(self, bar_type: BarType) -> None:
         if not (instrument := self._cache.instrument(bar_type.instrument_id)):
             self._log.error(f"Cannot subscribe to {bar_type}, Instrument not found.")
             return
@@ -280,7 +275,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-    ):
+    ) -> None:
         if start is not None:
             self._log.warning(
                 f"Requesting instrument {instrument_id} with specified `start` which has no effect.",
@@ -305,7 +300,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-    ):
+    ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_instruments` coroutine",  # pragma: no cover
         )
@@ -377,7 +372,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         limit: int,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-    ):
+    ) -> list[QuoteTick | TradeTick]:
         if not start:
             limit = self._cache.tick_capacity
 
@@ -386,7 +381,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
         ticks: list[QuoteTick | TradeTick] = []
         while (start and end > start) or (len(ticks) < limit > 0):
-            await self._client.is_running_async()
+            await self._client.wait_until_ready()
             ticks_part = await self._client.get_historical_ticks(
                 contract,
                 tick_type,
@@ -435,7 +430,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
         bars: list[Bar] = []
         while (start and end > start) or (len(bars) < limit > 0):
-            bars_part = await self._client.get_historical_bars(
+            bars_part: list[Bar] = await self._client.get_historical_bars(
                 bar_type=bar_type,
                 contract=IBContract(**instrument.info["contract"]),
                 use_rth=self._use_regular_trading_hours,

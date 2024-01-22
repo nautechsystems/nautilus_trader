@@ -1059,7 +1059,7 @@ cdef class Bar(Data):
         list[Bar]
 
         """
-        cdef list output = []
+        cdef list[Bar] output = []
 
         cdef BarType bar_type = None
         cdef uint8_t price_prec = 0
@@ -2012,7 +2012,7 @@ cdef class OrderBookDelta(Data):
         list[OrderBookDelta]
 
         """
-        cdef list output = []
+        cdef list[OrderBookDelta] output = []
 
         cdef InstrumentId instrument_id = None
         cdef uint8_t price_prec = 0
@@ -2027,21 +2027,19 @@ cdef class OrderBookDelta(Data):
                 price_prec = pyo3_delta.order.price.precision
                 size_prec = pyo3_delta.order.size.precision
 
-            book_order = BookOrder(
-               pyo3_delta.order.side.value,
-               Price.from_raw_c(pyo3_delta.order.price.raw, price_prec),
-               Quantity.from_raw_c(pyo3_delta.order.size.raw, size_prec),
-               pyo3_delta.order.order_id,
-            )
-
-            delta = OrderBookDelta(
+            delta = OrderBookDelta.from_raw_c(
                 instrument_id,
                 pyo3_delta.action.value,
-                book_order,
-                pyo3_delta.ts_event,
-                pyo3_delta.ts_init,
+                pyo3_delta.order.side.value,
+                pyo3_delta.order.price.raw,
+                price_prec,
+                pyo3_delta.order.size.raw,
+                size_prec,
+                pyo3_delta.order.order_id,
                 pyo3_delta.flags,
                 pyo3_delta.sequence,
+                pyo3_delta.ts_event,
+                pyo3_delta.ts_init,
             )
             output.append(delta)
 
@@ -3280,7 +3278,7 @@ cdef class QuoteTick(Data):
         list[QuoteTick]
 
         """
-        cdef list output = []
+        cdef list[QuoteTick] output = []
 
         cdef InstrumentId instrument_id = None
         cdef uint8_t bid_prec = 0
@@ -3826,7 +3824,7 @@ cdef class TradeTick(Data):
         list[TradeTick]
 
         """
-        cdef list output = []
+        cdef list[TradeTick] output = []
 
         cdef InstrumentId instrument_id = None
         cdef uint8_t price_prec = 0

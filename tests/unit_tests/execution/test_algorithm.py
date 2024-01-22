@@ -25,8 +25,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.clock import TimeEventHandler
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
@@ -73,40 +71,17 @@ class TestExecAlgorithm:
     def setup(self) -> None:
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(
-            clock=TestClock(),
-            level_stdout=LogLevel.INFO,
-            bypass=True,
-        )
-
         self.trader_id = TestIdStubs.trader_id()
         self.strategy_id = TestIdStubs.strategy_id()
         self.account_id = TestIdStubs.account_id()
 
-        # Uncomment for logging
-        # init_logging(
-        #     self.trader_id,
-        #     UUID4(),
-        #     LoggingConfig().spec_string(),
-        #     None,
-        #     None,
-        #     None,
-        # )
-
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
-        self.cache_db = MockCacheDatabase(
-            logger=self.logger,
-        )
-
-        self.cache = Cache(
-            database=self.cache_db,
-            logger=self.logger,
-        )
+        self.cache_db = MockCacheDatabase()
+        self.cache = Cache(database=self.cache_db)
         self.cache.add_instrument(ETHUSDT_PERP_BINANCE)
         self.cache.add_instrument(FAUX_AAPL_BINANCE)
 
@@ -114,14 +89,12 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=DataEngineConfig(debug=True),
         )
 
@@ -129,7 +102,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=ExecEngineConfig(debug=True),
         )
 
@@ -138,7 +110,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
             config=RiskEngineConfig(debug=True),
         )
 
@@ -147,7 +118,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.venue = Venue("BINANCE")
@@ -166,7 +136,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.exec_client = BacktestExecClient(
@@ -174,7 +143,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         # Wire up components
@@ -194,7 +162,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
 
         self.data_engine.start()
@@ -212,7 +179,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         exec_algorithm.start()
         exec_algorithm.stop()
@@ -248,7 +214,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         exec_algorithm.start()
 
@@ -283,7 +248,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         exec_algorithm.start()
 
@@ -329,7 +293,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         exec_algorithm.start()
 
@@ -381,7 +344,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         exec_algorithm.start()
 
@@ -429,7 +391,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         exec_algorithm.start()
 
@@ -472,7 +433,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         exec_algorithm.start()
 
@@ -516,7 +476,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         exec_algorithm.start()
 
@@ -546,7 +505,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         exec_algorithm.start()
 
@@ -589,7 +547,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         exec_algorithm.start()
 
@@ -624,7 +581,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         exec_algorithm.start()
 
@@ -718,7 +674,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         exec_algorithm.start()
 
@@ -833,7 +788,6 @@ class TestExecAlgorithm:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
         )
         exec_algorithm.start()
 

@@ -36,14 +36,21 @@ use crate::{
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct SyntheticInstrument {
+    #[pyo3(get)]
     pub id: InstrumentId,
+    #[pyo3(get)]
     pub price_precision: u8,
+    #[pyo3(get)]
     pub price_increment: Price,
+    #[pyo3(get)]
     pub components: Vec<InstrumentId>,
+    #[pyo3(get)]
     pub formula: String,
-    pub context: HashMapContext,
+    #[pyo3(get)]
     pub ts_event: UnixNanos,
+    #[pyo3(get)]
     pub ts_init: UnixNanos,
+    context: HashMapContext,
     variables: Vec<String>,
     operator_tree: Node,
 }

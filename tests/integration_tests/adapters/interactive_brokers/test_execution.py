@@ -31,9 +31,9 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
-from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
 # fmt: on
@@ -43,17 +43,17 @@ pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
 
 @pytest.fixture()
 def contract_details():
-    return IBTestProviderStubs.aapl_equity_contract_details()
+    return IBTestContractStubs.aapl_equity_ib_contract_details()
 
 
 @pytest.fixture()
 def contract(contract_details):
-    return contract_details.contract
+    return IBTestContractStubs.aapl_equity_ib_contract()
 
 
 def instrument_setup(exec_client, cache, instrument=None, contract_details=None):
-    instrument = instrument or IBTestProviderStubs.aapl_instrument()
-    contract_details = contract_details or IBTestProviderStubs.aapl_equity_contract_details()
+    instrument = instrument or IBTestContractStubs.aapl_instrument()
+    contract_details = contract_details or IBTestContractStubs.aapl_equity_contract_details()
     exec_client._instrument_provider.contract_details[instrument.id.value] = contract_details
     exec_client._instrument_provider.contract_id_to_instrument_id[
         contract_details.contract.conId
@@ -123,16 +123,15 @@ def on_cancel_order_setup(client, status, order_id, manual_cancel_order_time):
 
 
 @pytest.mark.asyncio()
-async def test_factory(exec_client_config, venue, event_loop, msgbus, cache, clock, logger):
+async def test_factory(exec_client_config, venue, loop, msgbus, cache, clock):
     # Act
     exec_client = InteractiveBrokersLiveExecClientFactory.create(
-        loop=event_loop,
+        loop=loop,
         name=venue.value,
         config=exec_client_config,
         msgbus=msgbus,
         cache=cache,
         clock=clock,
-        logger=logger,
     )
 
     # Assert
@@ -143,7 +142,7 @@ async def test_factory(exec_client_config, venue, event_loop, msgbus, cache, clo
 async def test_connect(mocker, exec_client):
     # Arrange
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "reqAccountSummary",
         side_effect=partial(account_summary_setup, exec_client._client),
     )
@@ -160,7 +159,7 @@ async def test_connect(mocker, exec_client):
 async def test_disconnect(mocker, exec_client):
     # Arrange
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "reqAccountSummary",
         side_effect=partial(account_summary_setup, exec_client._client),
     )
@@ -195,7 +194,7 @@ async def test_submit_order(
     exec_client.connect()
     await asyncio.sleep(0)
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "placeOrder",
         side_effect=partial(on_open_order_setup, exec_client._client, "Submitted"),
     )
@@ -241,7 +240,7 @@ async def test_submit_order_what_if(
     exec_client.connect()
     await asyncio.sleep(0)
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "placeOrder",
         side_effect=partial(on_open_order_setup, exec_client._client, "PreSubmitted"),
     )
@@ -293,7 +292,7 @@ async def test_submit_order_list(
     exec_client.connect()
     await asyncio.sleep(0)
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "placeOrder",
         side_effect=partial(on_open_order_setup, exec_client._client, "Submitted"),
     )
@@ -344,7 +343,7 @@ async def test_modify_order(
     exec_client.connect()
     await asyncio.sleep(0)
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "placeOrder",
         side_effect=partial(on_open_order_setup, exec_client._client, "Submitted"),
     )
@@ -393,7 +392,7 @@ async def test_modify_order_quantity(
     exec_client.connect()
     await asyncio.sleep(0)
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "placeOrder",
         side_effect=partial(on_open_order_setup, exec_client._client, "Submitted"),
     )
@@ -440,7 +439,7 @@ async def test_modify_order_price(
     exec_client.connect()
     await asyncio.sleep(0)
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "placeOrder",
         side_effect=partial(on_open_order_setup, exec_client._client, "Submitted"),
     )
@@ -486,12 +485,12 @@ async def test_cancel_order(
     exec_client.connect()
     await asyncio.sleep(0)
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "placeOrder",
         side_effect=partial(on_open_order_setup, exec_client._client, "Submitted"),
     )
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "cancelOrder",
         side_effect=partial(on_cancel_order_setup, exec_client._client, "Cancelled"),
     )
@@ -533,7 +532,7 @@ async def test_on_exec_details(
     exec_client.connect()
     await asyncio.sleep(0)
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "placeOrder",
         side_effect=partial(on_open_order_setup, exec_client._client, "Submitted"),
     )

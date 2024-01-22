@@ -36,7 +36,6 @@ def exec_client(
     msgbus,
     cache,
     clock,
-    logger,
     venue,
 ):
     SandboxExecutionClient.INSTRUMENTS = [instrument]
@@ -46,7 +45,6 @@ def exec_client(
         msgbus=msgbus,
         cache=cache,
         clock=clock,
-        logger=logger,
         venue=venue.value,
         currency="USD",
         balance=100_000,

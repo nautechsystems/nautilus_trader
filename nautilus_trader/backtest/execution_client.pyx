@@ -20,7 +20,6 @@ from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.component cimport MessageBus
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.messages cimport BatchCancelOrders
@@ -49,8 +48,6 @@ cdef class BacktestExecClient(ExecutionClient):
         The cache for the client.
     clock : TestClock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     routing : bool
         If multi-venue routing is enabled for the client.
     frozen_account : bool
@@ -63,7 +60,6 @@ cdef class BacktestExecClient(ExecutionClient):
         MessageBus msgbus not None,
         Cache cache not None,
         TestClock clock not None,
-        Logger logger not None,
         bint routing=False,
         bint frozen_account=False,
     ):
@@ -76,7 +72,6 @@ cdef class BacktestExecClient(ExecutionClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
         )
 
         self._set_account_id(AccountId(f"{exchange.id.value}-001"))

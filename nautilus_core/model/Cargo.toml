@@ -16,7 +16,6 @@ anyhow = { workspace = true }
 indexmap = { workspace = true }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-rmp-serde = { workspace = true }
 rstest = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
@@ -24,12 +23,12 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
+thousands = { workspace = true }
 ustr = { workspace = true }
 chrono = { workspace = true }
 derive_builder = "0.12.0"
 evalexpr = "11.3.0"
-tabled = "0.12.2"
-thousands = "0.2.0"
+tabled = "0.15.0"
 
 [features]
 extension-module = [

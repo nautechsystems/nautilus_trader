@@ -56,8 +56,8 @@ def account_state() -> AccountState:
 
 
 @pytest.fixture()
-def betfair_client(event_loop, logger):
-    return BetfairTestStubs.betfair_client(event_loop, logger)
+def betfair_client(event_loop):
+    return BetfairTestStubs.betfair_client(event_loop)
 
 
 @pytest.fixture()
@@ -76,7 +76,6 @@ def data_client(
     msgbus,
     cache,
     clock,
-    logger,
 ) -> BetfairDataClient:
     mocker.patch(
         "nautilus_trader.adapters.betfair.factories.get_cached_betfair_client",
@@ -100,7 +99,6 @@ def data_client(
         msgbus=msgbus,
         cache=cache,
         clock=clock,
-        logger=logger,
     )
     data_client._client._headers.update(
         {
@@ -133,7 +131,6 @@ def exec_client(
     msgbus,
     cache,
     clock,
-    logger,
 ) -> BetfairExecutionClient:
     mocker.patch(
         "nautilus_trader.adapters.betfair.factories.get_cached_betfair_client",
@@ -157,7 +154,6 @@ def exec_client(
         msgbus=msgbus,
         cache=cache,
         clock=clock,
-        logger=logger,
     )
     exec_client._client._headers.update(
         {

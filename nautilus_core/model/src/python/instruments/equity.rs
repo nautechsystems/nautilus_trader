@@ -68,6 +68,11 @@ impl Equity {
         .map_err(to_pyvalue_err)
     }
 
+    #[getter]
+    fn instrument_type(&self) -> &str {
+        "Equity"
+    }
+
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
             CompareOp::Eq => self.eq(other).into_py(py),
@@ -79,6 +84,14 @@ impl Equity {
         let mut hasher = DefaultHasher::new();
         self.hash(&mut hasher);
         hasher.finish() as isize
+    }
+
+    #[getter]
+    fn isin(&self) -> Option<&str> {
+        match self.isin {
+            Some(isin) => Some(isin.as_str()),
+            None => None,
+        }
     }
 
     #[staticmethod]

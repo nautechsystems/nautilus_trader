@@ -19,7 +19,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.config import ImportableConfig
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
@@ -54,7 +53,7 @@ class TradingNodeBuilder:
         The clock for building clients.
     logger : Logger
         The logger for building clients.
-    log : LoggerAdapter
+    log : Logger
         The trading nodes logger.
 
     """
@@ -69,13 +68,11 @@ class TradingNodeBuilder:
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        log: LoggerAdapter,
     ) -> None:
         self._msgbus = msgbus
         self._cache = cache
         self._clock = clock
-        self._logger = logger
-        self._log = log
+        self._log = logger
 
         self._loop = loop
         self._data_engine = data_engine
@@ -178,7 +175,6 @@ class TradingNodeBuilder:
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
-                logger=self._logger,
             )
 
             self._data_engine.register_client(client)
@@ -226,15 +222,19 @@ class TradingNodeBuilder:
                 client_config: LiveExecClientConfig = cfg  # type: ignore
             factory = self._exec_factories[name]
 
-            client = factory.create(
-                loop=self._loop,
-                name=name,
-                config=client_config,
-                msgbus=self._msgbus,
-                cache=self._cache,
-                clock=self._clock,
-                logger=self._logger,
-            )
+            factory_kws = {
+                "loop": self._loop,
+                "name": name,
+                "config": client_config,
+                "msgbus": self._msgbus,
+                "cache": self._cache,
+                "clock": self._clock,
+            }
+
+            if factory.__name__ == "SandboxLiveExecClientFactory":
+                factory_kws["portfolio"] = self._portfolio
+
+            client = factory.create(**factory_kws)
 
             self._exec_engine.register_client(client)
 

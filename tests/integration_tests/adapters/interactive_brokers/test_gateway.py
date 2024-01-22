@@ -23,7 +23,7 @@ pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
 
 
 def test_gateway_start_no_container(mocker):
-    # Arrange,
+    # Arrange
     mock_docker = mocker.patch.object(ContainerCollection, "run")
     gateway = InteractiveBrokersGateway(username="test", password="test")
 

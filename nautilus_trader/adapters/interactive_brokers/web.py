@@ -14,10 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import enum
+from collections.abc import Generator
 from typing import Any, NamedTuple
 
 import requests
-from defusedxml.cElementTree import fromstring
+from lxml.etree import _Element
+from lxml.html import fromstring
 
 
 class ProductClass(enum.Enum):
@@ -132,7 +134,7 @@ class Product(NamedTuple):
     currency: Any  # TODO: More specific type
 
 
-def _parse_products(table):
+def _parse_products(table: _Element) -> Generator:
     for row in table.xpath(".//tr")[1:]:
         ib_symbol, desc, symbol, currency = list(
             filter(None, map(str.strip, row.xpath(".//text()"))),
@@ -150,7 +152,7 @@ def load_product_list(
     product_class: ProductClass,
     limit: int = 500,
     debug: bool = False,
-):
+) -> Generator:
     """
     Load all instruments for a given `exchange` and `product_class` via the Interactive
     Brokers web interface.
@@ -171,7 +173,7 @@ def load_product_list(
         params.update({"page": str(page)})
         if debug:
             print(f"Requesting instruments using {params=}")
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=30)
         tree = fromstring(response.content)
         tables = tree.xpath('//table[@class="table table-striped table-bordered"]')
         if not tables:

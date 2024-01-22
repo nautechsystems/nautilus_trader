@@ -66,7 +66,7 @@ impl AccountBalance {
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(AccountBalance))?;
         dict.set_item("total", self.total.to_string())?;
@@ -118,7 +118,7 @@ impl MarginBalance {
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(MarginBalance))?;
         dict.set_item("initial", self.initial.to_string())?;

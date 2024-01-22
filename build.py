@@ -154,15 +154,23 @@ def _build_extensions() -> list[Extension]:
         extra_link_args += [
             "AdvAPI32.Lib",
             "bcrypt.lib",
+            "Crypt32.lib",
+            "Iphlpapi.lib",
             "Kernel32.lib",
+            "ncrypt.lib",
+            "Netapi32.lib",
             "ntdll.lib",
+            "Ole32.lib",
+            "OleAut32.lib",
+            "Pdh.lib",
+            "PowrProf.lib",
+            "Psapi.lib",
+            "schannel.lib",
+            "secur32.lib",
+            "Shell32.lib",
             "User32.Lib",
             "UserEnv.Lib",
             "WS2_32.Lib",
-            "Crypt32.lib",
-            "secur32.lib",
-            "schannel.lib",
-            "ncrypt.lib",
         ]
 
     print("Creating C extension modules...")

@@ -36,7 +36,6 @@ from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.messages cimport ComponentStateChanged
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport FiniteStateMachine
@@ -159,8 +158,6 @@ cdef class Component:
     ----------
     clock : Clock
         The clock for the component.
-    logger : Logger
-        The logger for the component.
     trader_id : TraderId, optional
         The trader ID associated with the component.
     component_id : Identifier, optional
@@ -188,7 +185,6 @@ cdef class Component:
     def __init__(
         self,
         Clock clock not None,
-        Logger logger not None,
         TraderId trader_id = None,
         Identifier component_id = None,
         str component_name = None,
@@ -208,7 +204,7 @@ cdef class Component:
 
         self._msgbus = msgbus
         self._clock = clock
-        self._log = LoggerAdapter(component_name=component_name, logger=logger)
+        self._log = Logger(name=component_name)
         self._fsm = ComponentFSMFactory.create()
         self._config = config.json_primitives() if config is not None else {}
 
@@ -331,11 +327,6 @@ cdef class Component:
         Condition.not_none(clock, "clock")
 
         self._clock = clock
-
-    cdef void _change_logger(self, Logger logger):
-        Condition.not_none(logger, "logger")
-
-        self._log = LoggerAdapter(component_name=self.id.value, logger=logger)
 
     cdef void _change_msgbus(self, MessageBus msgbus):
         # As an additional system wiring check: if a message bus is being added
@@ -628,7 +619,10 @@ cdef class Component:
             self._log.error(f"{repr(e)} state {self._fsm.state_string_c()}.")
             return  # Guards against invalid state
 
-        self._log.info(f"{self._fsm.state_string_c()}.{'..' if is_transitory else ''}")
+        if is_transitory:
+            self._log.debug(f"{self._fsm.state_string_c()}...")
+        else:
+            self._log.info(f"{self._fsm.state_string_c()}.")
 
         if action is not None:
             action()
@@ -683,8 +677,6 @@ cdef class MessageBus:
         The trader ID associated with the message bus.
     clock : Clock
         The clock for the message bus.
-    logger : Logger
-        The logger for the message bus.
     name : str, optional
         The custom name for the message bus.
     serializer : Serializer, optional
@@ -711,7 +703,6 @@ cdef class MessageBus:
         self,
         TraderId trader_id not None,
         Clock clock,
-        Logger logger,
         UUID4 instance_id = None,
         str name = None,
         Serializer serializer = None,
@@ -738,7 +729,7 @@ cdef class MessageBus:
         self.snapshot_positions = snapshot_positions
 
         self._clock = clock
-        self._log = LoggerAdapter(component_name=name, logger=logger)
+        self._log = Logger(name)
 
         # Validate configuration
         if config.buffer_interval_ms and config.buffer_interval_ms > 1000:
@@ -1356,8 +1347,6 @@ cdef class Throttler:
         The interval setting for the throttling.
     clock : Clock
         The clock for the throttler.
-    logger : Logger
-        The logger for the throttler.
     output_send : Callable[[Any], None]
         The output handler to send messages from the throttler.
     output_drop : Callable[[Any], None], optional
@@ -1392,7 +1381,6 @@ cdef class Throttler:
         int limit,
         timedelta interval not None,
         Clock clock not None,
-        Logger logger not None,
         output_send not None: Callable[[Any], None],
         output_drop: Callable[[Any], None] | None = None,
     ):
@@ -1403,10 +1391,10 @@ cdef class Throttler:
         Condition.callable_or_none(output_drop, "output_drop")
 
         self._clock = clock
-        self._log = LoggerAdapter(component_name=f"Throttler-{name}", logger=logger)
+        self._log = Logger(name=f"Throttler-{name}")
         self._interval_ns = secs_to_nanos(interval.total_seconds())
         self._buffer = deque()
-        self._timer_name = f"{name}-DEQUE"
+        self._timer_name = f"{name}|DEQUE"
         self._timestamps = deque(maxlen=limit)
         self._output_send = output_send
         self._output_drop = output_drop

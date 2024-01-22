@@ -15,6 +15,7 @@
 
 pub mod logging;
 pub mod timer;
+pub mod versioning;
 
 use pyo3::prelude::*;
 

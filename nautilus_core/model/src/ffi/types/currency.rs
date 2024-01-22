@@ -15,7 +15,7 @@
 
 use std::{ffi::c_char, str::FromStr};
 
-use nautilus_core::ffi::string::{cstr_to_str, cstr_to_string, str_to_cstr};
+use nautilus_core::ffi::string::{cstr_to_str, str_to_cstr};
 
 use crate::{currencies::CURRENCY_MAP, enums::CurrencyType, types::currency::Currency};
 
@@ -76,8 +76,8 @@ pub extern "C" fn currency_register(currency: Currency) {
 /// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn currency_exists(code_ptr: *const c_char) -> u8 {
-    let code = cstr_to_string(code_ptr);
-    u8::from(CURRENCY_MAP.lock().unwrap().contains_key(&code))
+    let code = cstr_to_str(code_ptr);
+    u8::from(CURRENCY_MAP.lock().unwrap().contains_key(code))
 }
 
 /// # Safety
@@ -85,8 +85,8 @@ pub unsafe extern "C" fn currency_exists(code_ptr: *const c_char) -> u8 {
 /// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn currency_from_cstr(code_ptr: *const c_char) -> Currency {
-    let code = cstr_to_string(code_ptr);
-    Currency::from_str(&code).unwrap()
+    let code = cstr_to_str(code_ptr);
+    Currency::from_str(code).unwrap()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

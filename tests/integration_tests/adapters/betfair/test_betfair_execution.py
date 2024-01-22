@@ -1029,3 +1029,19 @@ async def test_generate_fill_reports(exec_client):
     assert reports[1].order_side == OrderSide.BUY
     assert reports[1].last_px == Price(1.92, BETFAIR_PRICE_PRECISION)
     assert reports[1].last_qty == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
+
+
+@pytest.mark.asyncio
+@pytest.mark.live_components
+async def test_reconcile_mass_status(exec_client, exec_engine):
+    # Arrange
+    mock_betfair_request(
+        exec_client._client,
+        BetfairResponses.list_current_orders_execution_complete(),
+    )
+
+    # Act
+    mass_status = await exec_client.generate_mass_status()
+    exec_engine._reconcile_mass_status(mass_status)
+
+    # Assert

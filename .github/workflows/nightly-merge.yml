@@ -13,19 +13,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch all history for all branches and tags
+          token: ${{ secrets.NIGHTLY_TOKEN }}
+          fetch-depth: 0  # Fetch all history for all tags and branches
 
-      # Temporary config before nautilus-bot account
-      - name: Configure Git
-        run: |
-          git config --local user.email "chris@cjdsellers.io"
-          git config --local user.name "Chris Sellers"
-
-      - name: Merge develop into nightly
-        run: |
-          git checkout nightly
-          git merge --no-ff origin/develop -m "Automated merge of develop into nightly"
-
-      - name: Push changes
-        run: |
-          git push origin nightly
+      - name: Nightly merge
+        uses: robotology/gh-action-nightly-merge@v1.4.0
+        with:
+          stable_branch: 'develop'  # Branch to merge from
+          development_branch: 'nightly'  # Branch to merge to
+          allow_ff: false
+          user_name: 'Chris Sellers'
+          user_email: 'chris@cjdsellers.io'
+          push_token: 'NIGHTLY_TOKEN'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NIGHTLY_TOKEN: ${{ secrets.NIGHTLY_TOKEN }}

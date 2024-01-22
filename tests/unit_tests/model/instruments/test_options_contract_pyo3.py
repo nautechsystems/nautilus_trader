@@ -17,12 +17,12 @@ from nautilus_trader.core.nautilus_pyo3 import OptionsContract
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
-_AAPL_OPTION = TestInstrumentProviderPyo3.appl_option()
+_AAPL_OPTION = TestInstrumentProviderPyo3.aapl_option()
 
 
 def test_equality():
-    item_1 = TestInstrumentProviderPyo3.appl_option()
-    item_2 = TestInstrumentProviderPyo3.appl_option()
+    item_1 = TestInstrumentProviderPyo3.aapl_option()
+    item_2 = TestInstrumentProviderPyo3.aapl_option()
     assert item_1 == item_2
 
 
@@ -46,7 +46,8 @@ def test_to_dict():
         "currency": "USDT",
         "price_precision": 2,
         "price_increment": "0.01",
-        "lot_size": "1.0",
+        "multiplier": "1",
+        "lot_size": "1",
         "max_quantity": None,
         "min_quantity": None,
         "max_price": None,

@@ -18,7 +18,6 @@ import pytest
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import is_matching_py
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.message import Request
 from nautilus_trader.core.message import Response
 from nautilus_trader.core.uuid import UUID4
@@ -29,15 +28,12 @@ class TestMessageBus:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(self.clock, bypass=True)
-
         self.trader_id = TestIdStubs.trader_id()
 
         self.handler = []
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
-            logger=self.logger,
         )
 
     def test_instantiate_message_bus(self):

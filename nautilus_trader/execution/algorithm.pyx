@@ -31,11 +31,11 @@ from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport LogColor
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.rust.common cimport ComponentState
+from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport TimeInForce
@@ -150,7 +150,6 @@ cdef class ExecAlgorithm(Actor):
         MessageBus msgbus,
         CacheFacade cache,
         Clock clock,
-        Logger logger,
     ):
         """
         Register the execution algorithm with a trader.
@@ -167,8 +166,6 @@ cdef class ExecAlgorithm(Actor):
             The read-only cache for the execution algorithm.
         clock : Clock
             The clock for the execution algorithm.
-        logger : Logger
-            The logger for the execution algorithm.
 
         Warnings
         --------
@@ -180,14 +177,12 @@ cdef class ExecAlgorithm(Actor):
         Condition.not_none(msgbus, "msgbus")
         Condition.not_none(cache, "cache")
         Condition.not_none(clock, "clock")
-        Condition.not_none(logger, "logger")
 
         self.register_base(
             portfolio=portfolio,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
         )
 
         # Register endpoints
@@ -1468,16 +1463,16 @@ cdef class ExecAlgorithm(Actor):
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_emulator_command(self, TradingCommand command):
-        if not self.log.is_bypassed:
+        if logging_is_initialized():
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
 
     cdef void _send_risk_command(self, TradingCommand command):
-        if not self.log.is_bypassed:
+        if logging_is_initialized():
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
 
     cdef void _send_exec_command(self, TradingCommand command):
-        if not self.log.is_bypassed:
+        if logging_is_initialized():
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)

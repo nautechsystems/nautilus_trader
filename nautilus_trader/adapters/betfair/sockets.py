@@ -21,7 +21,6 @@ import msgspec
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.nautilus_pyo3 import SocketClient
 from nautilus_trader.core.nautilus_pyo3 import SocketConfig
 
@@ -43,7 +42,6 @@ class BetfairStreamClient:
     def __init__(
         self,
         http_client: BetfairHttpClient,
-        logger_adapter: LoggerAdapter,
         message_handler: Callable[[bytes], None],
         host: str | None = HOST,
         port: int | None = None,
@@ -51,7 +49,7 @@ class BetfairStreamClient:
         encoding: str | None = None,
     ) -> None:
         self._http_client = http_client
-        self._log = logger_adapter
+        self._log = Logger(type(self).__name__)
         self.handler = message_handler
         self.host = host or HOST
         self.port = port or PORT
@@ -145,16 +143,14 @@ class BetfairOrderStreamClient(BetfairStreamClient):
     def __init__(
         self,
         http_client: BetfairHttpClient,
-        logger: Logger,
-        message_handler,
+        message_handler: Callable[[bytes], None],
         partition_matched_by_strategy_ref: bool = True,
         include_overall_position: str | None = None,
         customer_strategy_refs: str | None = None,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(
             http_client=http_client,
-            logger_adapter=LoggerAdapter("BetfairOrderStreamClient", logger),
             message_handler=message_handler,
             **kwargs,
         )
@@ -189,13 +185,11 @@ class BetfairMarketStreamClient(BetfairStreamClient):
     def __init__(
         self,
         http_client: BetfairHttpClient,
-        logger: Logger,
         message_handler: Callable,
         **kwargs,
     ):
         super().__init__(
             http_client=http_client,
-            logger_adapter=LoggerAdapter("BetfairMarketStreamClient", logger),
             message_handler=message_handler,
             **kwargs,
         )

@@ -25,7 +25,7 @@ use indexmap::IndexMap;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json;
 use ustr::Ustr;
 
 use crate::{handlers::MessageHandler, redis::handle_messages_with_redis};
@@ -171,10 +171,12 @@ impl MessageBus {
         trader_id: TraderId,
         instance_id: UUID4,
         name: Option<String>,
-        config: Option<HashMap<String, Value>>,
+        config: Option<HashMap<String, serde_json::Value>>,
     ) -> Self {
         let config = config.unwrap_or_default();
-        let has_backing = config.get("database").map_or(false, |v| v != &Value::Null);
+        let has_backing = config
+            .get("database")
+            .map_or(false, |v| v != &serde_json::Value::Null);
         let tx = if has_backing {
             let (tx, rx) = channel::<BusMessage>();
             thread::spawn(move || {
@@ -404,7 +406,7 @@ impl MessageBus {
         rx: Receiver<BusMessage>,
         trader_id: TraderId,
         instance_id: UUID4,
-        config: HashMap<String, Value>,
+        config: HashMap<String, serde_json::Value>,
     ) {
         let database_config = config
             .get("database")

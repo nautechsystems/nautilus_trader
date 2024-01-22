@@ -26,7 +26,6 @@ from nautilus_trader.adapters.env import get_env_key
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.config.common import InstrumentProviderConfig
 from nautilus_trader.live.factories import LiveDataClientFactory
 
@@ -71,7 +70,6 @@ def get_cached_databento_http_client(
 @lru_cache(1)
 def get_cached_databento_instrument_provider(
     http_client: databento.Historical,
-    logger: Logger,
     clock: LiveClock,
     live_api_key: str | None = None,
     live_gateway: str | None = None,
@@ -87,8 +85,6 @@ def get_cached_databento_instrument_provider(
     ----------
     http_client : databento.Historical
         The client for the instrument provider.
-    logger : Logger
-        The logger for the instrument provider.
     clock : LiveClock
         The clock for the instrument provider.
     live_api_key : str, optional
@@ -108,7 +104,6 @@ def get_cached_databento_instrument_provider(
     """
     return DatabentoInstrumentProvider(
         http_client=http_client,
-        logger=logger,
         clock=clock,
         live_api_key=live_api_key,
         live_gateway=live_gateway,
@@ -130,7 +125,6 @@ class DatabentoLiveDataClientFactory(LiveDataClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
     ) -> DatabentoDataClient:
         """
         Create a new Databento data client.
@@ -149,8 +143,6 @@ class DatabentoLiveDataClientFactory(LiveDataClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : Logger
-            The logger for the client.
 
         Returns
         -------
@@ -166,7 +158,6 @@ class DatabentoLiveDataClientFactory(LiveDataClientFactory):
         loader = DatabentoDataLoader()
         provider = get_cached_databento_instrument_provider(
             http_client=http_client,
-            logger=logger,
             clock=clock,
             live_api_key=config.api_key,
             live_gateway=config.live_gateway,
@@ -180,7 +171,6 @@ class DatabentoLiveDataClientFactory(LiveDataClientFactory):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             instrument_provider=provider,
             loader=loader,
             config=config,

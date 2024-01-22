@@ -59,7 +59,6 @@ from betfair_parser.spec.navigation import Navigation
 
 import nautilus_trader
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
@@ -76,7 +75,6 @@ class BetfairHttpClient:
         username: str,
         password: str,
         app_key: str,
-        logger: Logger,
     ):
         # Config
         self.username = username
@@ -86,7 +84,7 @@ class BetfairHttpClient:
         # Client
         self._client = HttpClient()
         self._headers: dict[str, str] = {}
-        self._log = LoggerAdapter(type(self).__name__, logger)
+        self._log = Logger(name=type(self).__name__)
         self.reset_headers()
 
     async def _request(self, method: HttpMethod, request: Request) -> HttpResponse:
@@ -118,7 +116,7 @@ class BetfairHttpClient:
     def session_token(self) -> str | None:
         return self._headers.get("X-Authentication")
 
-    def update_headers(self, login_resp: LoginResponse):
+    def update_headers(self, login_resp: LoginResponse) -> None:
         self._headers.update(
             {
                 "X-Authentication": login_resp.token,

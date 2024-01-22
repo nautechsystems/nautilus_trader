@@ -31,7 +31,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.core.correctness import PyCondition
@@ -82,8 +81,6 @@ class LiveExecutionClient(ExecutionClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     config : NautilusConfig, optional
         The configuration for the instance.
 
@@ -110,7 +107,6 @@ class LiveExecutionClient(ExecutionClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         config: NautilusConfig | None = None,
     ) -> None:
         PyCondition.type(instrument_provider, InstrumentProvider, "instrument_provider")
@@ -124,7 +120,6 @@ class LiveExecutionClient(ExecutionClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             config=config,
         )
 
@@ -471,7 +466,7 @@ class LiveExecutionClient(ExecutionClient):
         )
 
         if report is None:
-            self._log.warning("Did not received `OrderStatusReport` from request.")
+            self._log.warning("Did not receive `OrderStatusReport` from request.")
             return
 
         self._send_order_status_report(report)

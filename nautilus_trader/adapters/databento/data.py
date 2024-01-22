@@ -39,7 +39,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.nautilus_pyo3 import is_within_last_24_hours
 from nautilus_trader.core.nautilus_pyo3 import last_weekday_nanos
@@ -74,8 +74,6 @@ class DatabentoDataClient(LiveMarketDataClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    logger : Logger
-        The logger for the client.
     loader : DatabentoDataLoader, optional
         The loader for the client.
     config : DatabentoDataClientConfig, optional
@@ -94,7 +92,6 @@ class DatabentoDataClient(LiveMarketDataClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         instrument_provider: DatabentoInstrumentProvider,
         loader: DatabentoDataLoader | None = None,
         config: DatabentoDataClientConfig | None = None,
@@ -110,7 +107,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             instrument_provider=instrument_provider,
             config=config,
         )
@@ -123,6 +119,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._mbo_subscriptions_delay: float | None = config.mbo_subscriptions_delay
 
         # Clients
+        self._http_client_pyo3 = nautilus_pyo3.DatabentoHistoricalClient(http_client.key)
         self._http_client: databento.Historical = http_client
         self._live_clients: dict[Dataset, databento.Live] = {}
         self._live_clients_mbo: dict[Dataset, databento.Live] = {}
@@ -249,11 +246,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         await self._subscribe_instrument(instrument_id)
 
     async def _get_dataset_range(self, dataset: Dataset) -> tuple[pd.Timestamp, pd.Timestamp]:
-        response = await self._loop.run_in_executor(
-            None,
-            self._http_client.metadata.get_dataset_range,
-            dataset,
-        )
+        response = await self._http_client_pyo3.get_dataset_range(dataset)
 
         start = pd.Timestamp(response["start_date"], tz=pytz.utc)
         end = pd.Timestamp(response["end_date"], tz=pytz.utc)

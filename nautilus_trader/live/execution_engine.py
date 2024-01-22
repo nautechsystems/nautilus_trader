@@ -23,7 +23,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
@@ -81,8 +80,6 @@ class LiveExecutionEngine(ExecutionEngine):
         The cache for the engine.
     clock : LiveClock
         The clock for the engine.
-    logger : Logger
-        The logger for the engine.
     config : LiveExecEngineConfig, optional
         The configuration for the instance.
 
@@ -101,7 +98,6 @@ class LiveExecutionEngine(ExecutionEngine):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: Logger,
         config: LiveExecEngineConfig | None = None,
     ) -> None:
         if config is None:
@@ -111,7 +107,6 @@ class LiveExecutionEngine(ExecutionEngine):
             msgbus=msgbus,
             cache=cache,
             clock=clock,
-            logger=logger,
             config=config,
         )
 

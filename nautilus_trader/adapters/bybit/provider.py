@@ -27,7 +27,6 @@ from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentLis
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentOption
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentSpot
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
@@ -42,8 +41,6 @@ class BybitInstrumentProvider(InstrumentProvider):
     ----------
     client : BybitHttpClient
         The Bybit HTTP client.
-    logger : Logger
-        The logger instance.
     clock : LiveClock
         The clock instance.
     instrument_types : list[BybitInstrumentType]
@@ -56,15 +53,11 @@ class BybitInstrumentProvider(InstrumentProvider):
     def __init__(
         self,
         client: BybitHttpClient,
-        logger: Logger,
         clock: LiveClock,
         instrument_types: list[BybitInstrumentType],
         config: InstrumentProviderConfig | None = None,
     ) -> None:
-        super().__init__(
-            logger=logger,
-            config=config,
-        )
+        super().__init__(config=config)
         self._clock = clock
         self._client = client
         self._instrument_types = instrument_types

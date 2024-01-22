@@ -19,13 +19,13 @@ import pytest
 from pytest_mock import MockerFixture
 
 from nautilus_trader.accounting.factory import AccountFactory
+from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.message import Event
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderFilled
@@ -45,21 +45,25 @@ def account_id(venue):
     return AccountId(f"{venue.value}-001")
 
 
+def has_live_components_marker(request) -> bool:
+    marker_names = [mark.name for mark in request.node.iter_markers()]
+    return "live_components" in marker_names
+
+
 @pytest.fixture()
-def clock():
-    clock = TestClock()
-    clock.set_time(0)
+def clock(request):
+    if has_live_components_marker(request):
+        clock = LiveClock()
+    else:
+        clock = TestClock()
+        clock.set_time(0)
     return clock
 
 
 @pytest.fixture()
-def logger(clock):
-    return Logger(clock, bypass=True)  # Bypass for normal testing
-
-
-@pytest.fixture()
-def log(logger):
-    return LoggerAdapter("test", logger)
+def live_clock():
+    clock = LiveClock()
+    return clock
 
 
 @pytest.fixture()
@@ -68,29 +72,27 @@ def trader_id():
 
 
 @pytest.fixture()
-def msgbus(trader_id, clock, logger):
+def msgbus(trader_id, clock):
     return MessageBus(
         trader_id,
         clock,
-        logger,
     )
 
 
 @pytest.fixture()
-def cache(logger, instrument):
-    cache = TestComponentStubs.cache(logger)
+def cache(instrument):
+    cache = TestComponentStubs.cache()
     if instrument is not None:
         cache.add_instrument(instrument)
     return cache
 
 
 @pytest.fixture()
-def portfolio(clock, logger, cache, msgbus, account_state):
+def portfolio(clock, cache, msgbus, account_state):
     portfolio = Portfolio(
         msgbus,
         cache,
         clock,
-        logger,
     )
     if account_state is not None:
         portfolio.update_account(account_state)
@@ -98,12 +100,11 @@ def portfolio(clock, logger, cache, msgbus, account_state):
 
 
 @pytest.fixture()
-def data_engine(msgbus, cache, clock, logger, data_client):
+def data_engine(msgbus, cache, clock, data_client):
     engine = DataEngine(
         msgbus,
         cache,
         clock,
-        logger,
     )
     if data_client is not None:
         engine.register_client(data_client)
@@ -111,26 +112,32 @@ def data_engine(msgbus, cache, clock, logger, data_client):
 
 
 @pytest.fixture()
-def exec_engine(msgbus, cache, clock, logger, exec_client):
-    engine = ExecutionEngine(
-        msgbus,
-        cache,
-        clock,
-        logger,
-    )
+def exec_engine(request, loop, msgbus, cache, clock, exec_client):
+    if has_live_components_marker(request):
+        engine = LiveExecutionEngine(
+            loop,
+            msgbus,
+            cache,
+            clock,
+        )
+    else:
+        engine = ExecutionEngine(
+            msgbus,
+            cache,
+            clock,
+        )
     if exec_client is not None:
         engine.register_client(exec_client)
     return engine
 
 
 @pytest.fixture()
-def risk_engine(portfolio, msgbus, cache, clock, logger):
+def risk_engine(portfolio, msgbus, cache, clock):
     risk_engine = RiskEngine(
         portfolio,
         msgbus,
         cache,
         clock,
-        logger,
     )
     return risk_engine
 
@@ -145,7 +152,6 @@ def trader(
     risk_engine,
     exec_engine,
     clock,
-    logger,
     event_loop,
 ):
     return Trader(
@@ -157,7 +163,6 @@ def trader(
         risk_engine=risk_engine,
         exec_engine=exec_engine,
         clock=clock,
-        logger=logger,
         loop=event_loop,
     )
 
@@ -185,7 +190,7 @@ def mock_exec_engine_process(mocker: MockerFixture, msgbus, exec_engine):
 
 
 @pytest.fixture()
-def strategy(trader_id, portfolio, msgbus, cache, clock, logger):
+def strategy(trader_id, portfolio, msgbus, cache, clock):
     strategy = Strategy(config=StrategyConfig(strategy_id="S", order_id_tag="001"))
     strategy.register(
         trader_id,
@@ -193,7 +198,6 @@ def strategy(trader_id, portfolio, msgbus, cache, clock, logger):
         msgbus,
         cache,
         clock,
-        logger,
     )
     return strategy
 
