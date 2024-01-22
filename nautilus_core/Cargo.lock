@@ -2489,7 +2489,6 @@ dependencies = [
  "strum",
  "sysinfo",
  "tempfile",
- "thousands",
  "tracing",
  "tracing-subscriber",
  "ustr",
