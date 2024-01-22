@@ -187,11 +187,6 @@ cpdef bint is_logging_initialized():
     return <bint>logging_is_initialized()
 
 
-cpdef void shutdown_logging():
-    if logging_is_initialized():
-        logging_shutdown()
-
-
 cdef class Logger:
     """
     Provides a logger adapter into the logging system.

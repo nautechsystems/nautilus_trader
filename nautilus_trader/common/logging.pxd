@@ -63,7 +63,6 @@ cpdef void init_logging(
 )
 
 cpdef bint is_logging_initialized()
-cpdef void shutdown_logging()
 
 
 cdef class Logger:
