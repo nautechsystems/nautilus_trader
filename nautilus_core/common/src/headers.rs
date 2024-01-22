@@ -18,7 +18,6 @@ use std::borrow::Cow;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use sysinfo::System;
-use thousands::Separable;
 use ustr::Ustr;
 
 use crate::{
@@ -34,8 +33,9 @@ pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, com
 
     let c = component;
 
-    let kernel_version = System::kernel_version().map_or("".to_string(), |v| format!("kernel-{v}"));
+    let kernel_version = System::kernel_version().map_or("".to_string(), |v| format!("kernel-{v} "));
     let os_version = System::long_os_version().unwrap_or("".to_string());
+    let pid = std::process::id();
 
     header_sepr(c, "=================================================================");
     header_sepr(c, " NAUTILUS TRADER - Automated Algorithmic Trading Platform");
@@ -61,7 +61,7 @@ pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, com
     header_sepr(c, "=================================================================");
     header_line(c, &format!("CPU architecture: {}", sys.cpus()[0].brand()));
     header_line(c, &format!("CPU(s): {} @ {} Mhz", sys.cpus().len(), sys.cpus()[0].frequency()));
-    header_line(c, &format!("OS: {} {}", kernel_version, os_version));
+    header_line(c, &format!("OS: {}{}", kernel_version, os_version));
 
     log_sysinfo(component);
 
@@ -71,6 +71,7 @@ pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, com
     header_line(c, &format!("trader_id: {trader_id}"));
     header_line(c, &format!("machine_id: {machine_id}"));
     header_line(c, &format!("instance_id: {instance_id}"));
+    header_line(c, &format!("PID: {pid}"));
     header_sepr(c, "=================================================================");
     header_sepr(c, " VERSIONING");
     header_sepr(c, "=================================================================");
@@ -114,12 +115,12 @@ pub fn log_sysinfo(component: Ustr) {
     header_sepr(c, "=================================================================");
     header_sepr(c, " MEMORY USAGE");
     header_sepr(c, "=================================================================");
-    header_line(c, &format!("RAM-Total: {} MB", bytes_to_mb_str(ram_total)));
-    header_line(c, &format!("RAM-Used: {} MB ({:.2}%)", bytes_to_mb_str(ram_used), ram_used_p));
-    header_line(c, &format!("RAM-Avail: {} MB ({:.2}%)", bytes_to_mb_str(ram_avail), ram_avail_p));
-    header_line(c, &format!("Swap-Total: {} MB", bytes_to_mb_str(swap_total)));
-    header_line(c, &format!("Swap-Used: {} MB ({:.2}%)", bytes_to_mb_str(swap_used), swap_used_p));
-    header_line(c, &format!("Swap-Avail: {} MB ({:.2}%)", bytes_to_mb_str(swap_avail), swap_avail_p));
+    header_line(c, &format!("RAM-Total: {:.2} GiB", bytes_to_gib(ram_total)));
+    header_line(c, &format!("RAM-Used: {:.2} GiB ({:.2}%)", bytes_to_gib(ram_used), ram_used_p));
+    header_line(c, &format!("RAM-Avail: {:.2} GiB ({:.2}%)", bytes_to_gib(ram_avail), ram_avail_p));
+    header_line(c, &format!("Swap-Total: {:.2} GiB", bytes_to_gib(swap_total)));
+    header_line(c, &format!("Swap-Used: {:.2} GiB ({:.2}%)", bytes_to_gib(swap_used), swap_used_p));
+    header_line(c, &format!("Swap-Avail: {:.2} GiB ({:.2}%)", bytes_to_gib(swap_avail), swap_avail_p));
 }
 
 fn header_sepr(c: Ustr, s: &str) {
@@ -130,6 +131,6 @@ fn header_line(c: Ustr, s: &str) {
     log(LogLevel::Info, LogColor::Normal, c, Cow::Borrowed(s));
 }
 
-fn bytes_to_mb_str(b: u64) -> String {
-    format!("{}", b / 1_000_000).separate_with_commas()
+fn bytes_to_gib(b: u64) -> f64 {
+    b as f64 / (2u64.pow(30) as f64)
 }
