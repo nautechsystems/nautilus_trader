@@ -1,11 +1,13 @@
 # NautilusTrader 1.184.0 Beta
 
-Released on TBD (UTC).
+Released on 22nd January 2024 (UTC).
 
 ### Enhancements
 - Added `LogLevel.OFF` (matches the Rust `tracing` log levels)
 - Added `init_logging` function with sensible defaults to initialize the Rust implemented logging system
 - Updated Binance Futures enum members for `BinanceFuturesContractType` and `BinanceFuturesPositionUpdateReason`
+- Improved log header using the `sysinfo` crate (adds swap space metrics and a PID identifier)
+- Removed Python dependency on `psutil`
 
 ### Breaking Changes
 - Removed `clock` parameter from `Logger` (no dependency on `Clock` anymore)
