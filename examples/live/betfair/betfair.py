@@ -129,7 +129,7 @@ if __name__ == "__main__":
     # https://www.betfair.com.au/exchange/plus/
     # The market ID will appear in the browser query string.
     config = BetfairInstrumentProviderConfig(
-        account_currency="AUD",
+        account_currency="GBP",
         market_ids=["1.223041451"],
     )
     node = asyncio.run(main(instrument_config=config, log_level="DEBUG"))

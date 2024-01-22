@@ -23,6 +23,9 @@ from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
+from nautilus_trader.adapters.betfair.data_types import BetfairTicker
+from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -34,6 +37,8 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -59,10 +64,10 @@ class BetfairDataClient(LiveMarketDataClient):
         The clock for the client.
     instrument_provider : BetfairInstrumentProvider, optional
         The instrument provider.
-    strict_handling : bool
-        If strict handling mode is enabled.
 
     """
+
+    custom_data_types = (BetfairTicker, BSPOrderBookDelta, BetfairStartingPrice)
 
     def __init__(
         self,
@@ -113,7 +118,7 @@ class BetfairDataClient(LiveMarketDataClient):
         if self._instrument_provider.count == 0:
             await self._instrument_provider.load_all_async()
         instruments = self._instrument_provider.list_all()
-        self._log.debug(f"Loading {len(instruments)} instruments from provider into cache, ")
+        self._log.debug(f"Loading {len(instruments)} instruments from provider into cache.")
         for instrument in instruments:
             self._handle_data(instrument)
 
@@ -247,8 +252,16 @@ class BetfairDataClient(LiveMarketDataClient):
         updates = self.parser.parse(mcm=mcm)
         for data in updates:
             self._log.debug(f"{data=}")
-            assert isinstance(data, Data)
-            self._handle_data(data)
+            PyCondition.type(data, Data, "data")
+            if isinstance(data, self.custom_data_types):
+                # Not a regular data type
+                custom_data = CustomData(
+                    DataType(data.__class__, {"instrument_id": data.instrument_id}),
+                    data,
+                )
+                self._handle_data(custom_data)
+            else:
+                self._handle_data(data)
 
     def _check_stream_unhealthy(self, update: MCM) -> None:
         if update.stream_unreliable:
