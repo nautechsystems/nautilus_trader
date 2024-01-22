@@ -19,11 +19,13 @@ import pytest
 from pytest_mock import MockerFixture
 
 from nautilus_trader.accounting.factory import AccountFactory
+from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.core.message import Event
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderFilled
@@ -43,10 +45,24 @@ def account_id(venue):
     return AccountId(f"{venue.value}-001")
 
 
+def has_live_components_marker(request) -> bool:
+    marker_names = [mark.name for mark in request.node.iter_markers()]
+    return "live_components" in marker_names
+
+
 @pytest.fixture()
-def clock():
-    clock = TestClock()
-    clock.set_time(0)
+def clock(request):
+    if has_live_components_marker(request):
+        clock = LiveClock()
+    else:
+        clock = TestClock()
+        clock.set_time(0)
+    return clock
+
+
+@pytest.fixture()
+def live_clock():
+    clock = LiveClock()
     return clock
 
 
@@ -96,12 +112,20 @@ def data_engine(msgbus, cache, clock, data_client):
 
 
 @pytest.fixture()
-def exec_engine(msgbus, cache, clock, exec_client):
-    engine = ExecutionEngine(
-        msgbus,
-        cache,
-        clock,
-    )
+def exec_engine(request, loop, msgbus, cache, clock, exec_client):
+    if has_live_components_marker(request):
+        engine = LiveExecutionEngine(
+            loop,
+            msgbus,
+            cache,
+            clock,
+        )
+    else:
+        engine = ExecutionEngine(
+            msgbus,
+            cache,
+            clock,
+        )
     if exec_client is not None:
         engine.register_client(exec_client)
     return engine
