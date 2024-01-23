@@ -20,7 +20,7 @@ import pandas as pd
 
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.parsing import parse_record_with_metadata
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition

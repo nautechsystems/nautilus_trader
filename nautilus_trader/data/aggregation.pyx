@@ -20,9 +20,9 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.clock cimport TimeEvent
+from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
+from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.rust.core cimport millis_to_nanos

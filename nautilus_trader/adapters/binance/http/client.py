@@ -23,7 +23,7 @@ import msgspec
 import nautilus_trader
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.http.error import BinanceServerError
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod

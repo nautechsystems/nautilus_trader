@@ -27,7 +27,7 @@ from nautilus_trader.adapters.interactive_brokers.config import InteractiveBroke
 from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
 from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient

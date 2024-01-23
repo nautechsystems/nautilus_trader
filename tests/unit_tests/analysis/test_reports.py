@@ -17,7 +17,7 @@ import pandas as pd
 
 from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.analysis.reporter import ReportProvider
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import BTC

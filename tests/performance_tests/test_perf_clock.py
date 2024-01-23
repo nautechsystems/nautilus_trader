@@ -16,9 +16,9 @@
 from datetime import timedelta
 from typing import Any
 
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.clock import TimeEvent
+from nautilus_trader.common.component import LiveClock
+from nautilus_trader.common.component import TestClock
+from nautilus_trader.common.component import TimeEvent
 
 
 _LIVE_CLOCK = LiveClock()

@@ -22,7 +22,7 @@ from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFee
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 

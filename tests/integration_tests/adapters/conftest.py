@@ -19,9 +19,9 @@ import pytest
 from pytest_mock import MockerFixture
 
 from nautilus_trader.accounting.factory import AccountFactory
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.core.message import Event
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine

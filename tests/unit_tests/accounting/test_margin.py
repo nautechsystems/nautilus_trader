@@ -17,7 +17,7 @@ from decimal import Decimal
 
 import pytest
 
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD

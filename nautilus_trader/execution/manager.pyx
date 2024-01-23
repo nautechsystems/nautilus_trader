@@ -17,11 +17,11 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.cache.cache cimport Cache
-from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport CMD
 from nautilus_trader.common.component cimport EVT
 from nautilus_trader.common.component cimport RECV
 from nautilus_trader.common.component cimport SENT
+from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport LogColor
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus

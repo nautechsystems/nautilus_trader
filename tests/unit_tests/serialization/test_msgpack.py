@@ -18,7 +18,7 @@ from decimal import Decimal
 
 import msgspec
 
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.messages import ComponentStateChanged

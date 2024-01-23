@@ -30,11 +30,11 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.cache.database import CacheDatabaseAdapter
 from nautilus_trader.common import Environment
 from nautilus_trader.common.actor import Actor
-from nautilus_trader.common.clock import Clock
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import Clock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.component import init_tracing
 from nautilus_trader.common.component import log_header

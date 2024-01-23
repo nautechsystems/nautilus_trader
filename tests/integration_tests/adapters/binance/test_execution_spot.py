@@ -26,7 +26,7 @@ from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecutionClient
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod

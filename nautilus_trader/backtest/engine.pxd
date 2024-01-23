@@ -16,7 +16,7 @@
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.backtest cimport TimeEventAccumulatorAPI
