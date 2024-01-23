@@ -17,7 +17,7 @@ from decimal import Decimal
 
 from nautilus_trader.config import StrategyConfig
 
-from nautilus_trader.common.logging cimport LogColor
+from nautilus_trader.common.component cimport LogColor
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event

@@ -60,16 +60,6 @@
    :member-order: bysource
 ```
 
-## Logging
-
-```{eval-rst}
-.. automodule:: nautilus_trader.common.logging
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.common.providers
    :show-inheritance:

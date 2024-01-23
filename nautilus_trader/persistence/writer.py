@@ -22,7 +22,7 @@ import pyarrow as pa
 from fsspec.compression import AbstractBufferedFile
 from pyarrow import RecordBatchStreamWriter
 
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.component import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
