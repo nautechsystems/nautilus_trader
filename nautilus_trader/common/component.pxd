@@ -15,25 +15,224 @@
 
 from typing import Callable
 
+from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
+from cpython.datetime cimport tzinfo
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.clock cimport TimeEvent
-from nautilus_trader.common.component cimport MessageBus
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.fsm cimport FiniteStateMachine
+from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.message cimport Request
 from nautilus_trader.core.message cimport Response
 from nautilus_trader.core.rust.common cimport ComponentState
 from nautilus_trader.core.rust.common cimport ComponentTrigger
+from nautilus_trader.core.rust.common cimport LiveClock_API
+from nautilus_trader.core.rust.common cimport LogColor
+from nautilus_trader.core.rust.common cimport LogLevel
 from nautilus_trader.core.rust.common cimport MessageBus_API
+from nautilus_trader.core.rust.common cimport TestClock_API
+from nautilus_trader.core.rust.common cimport TimeEvent_t
+from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport Identifier
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.serialization.base cimport Serializer
 
+
+cdef class Clock:
+    cpdef double timestamp(self)
+    cpdef uint64_t timestamp_ms(self)
+    cpdef uint64_t timestamp_ns(self)
+    cpdef datetime utc_now(self)
+    cpdef datetime local_now(self, tzinfo tz=*)
+    cpdef uint64_t next_time_ns(self, str name)
+    cpdef void register_default_handler(self, handler: Callable[[TimeEvent], None])
+    cpdef void set_time_alert(
+        self,
+        str name,
+        datetime alert_time,
+        callback: Callable[[TimeEvent], None]=*,
+    )
+    cpdef void set_time_alert_ns(
+        self,
+        str name,
+        uint64_t alert_time_ns,
+        callback: Callable[[TimeEvent], None]=*,
+    )
+    cpdef void set_timer(
+        self,
+        str name,
+        timedelta interval,
+        datetime start_time=*,
+        datetime stop_time=*,
+        callback: Callable[[TimeEvent], None]=*,
+    )
+    cpdef void set_timer_ns(
+        self,
+        str name,
+        uint64_t interval_ns,
+        uint64_t start_time_ns,
+        uint64_t stop_time_ns,
+        callback: Callable[[TimeEvent], None]=*,
+    )
+    cpdef void cancel_timer(self, str name)
+    cpdef void cancel_timers(self)
+
+
+cdef class TestClock(Clock):
+    cdef TestClock_API _mem
+
+    cpdef void set_time(self, uint64_t to_time_ns)
+    cdef CVec advance_time_c(self, uint64_t to_time_ns, bint set_time=*)
+    cpdef list advance_time(self, uint64_t to_time_ns, bint set_time=*)
+
+
+cdef class LiveClock(Clock):
+    cdef LiveClock_API _mem
+    cdef object _default_handler
+    cdef dict _handlers
+
+    cdef object _loop
+    cdef int _timer_count
+    cdef dict _timers
+    cdef LiveTimer[:] _stack
+    cdef tzinfo _utc
+    cdef uint64_t _next_event_time_ns
+
+    cpdef void _raise_time_event(self, LiveTimer timer)
+
+    cdef void _handle_time_event(self, TimeEvent event)
+    cdef void _add_timer(self, LiveTimer timer, handler: Callable[[TimeEvent], None])
+    cdef void _remove_timer(self, LiveTimer timer)
+    cdef void _update_stack(self)
+    cdef void _update_timing(self)
+    cdef LiveTimer _create_timer(
+        self,
+        str name,
+        callback: Callable[[TimeEvent], None],
+        uint64_t interval_ns,
+        uint64_t start_time_ns,
+        uint64_t stop_time_ns,
+    )
+
+
+cdef class TimeEvent(Event):
+    cdef TimeEvent_t _mem
+
+    cdef str to_str(self)
+
+    @staticmethod
+    cdef TimeEvent from_mem_c(TimeEvent_t raw)
+
+
+cdef class TimeEventHandler:
+    cdef object _handler
+    cdef readonly TimeEvent event
+    """The handlers event.\n\n:returns: `TimeEvent`"""
+
+    cpdef void handle(self)
+
+
+cdef class LiveTimer:
+    cdef object _internal
+
+    cdef readonly str name
+    """The timers name using for hashing.\n\n:returns: `str`"""
+    cdef readonly object callback
+    """The timers callback function.\n\n:returns: `object`"""
+    cdef readonly uint64_t interval_ns
+    """The timers set interval.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t start_time_ns
+    """The timers set start time.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t next_time_ns
+    """The timers next alert timestamp.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t stop_time_ns
+    """The timers set stop time (if set).\n\n:returns: `uint64_t`"""
+    cdef readonly bint is_expired
+    """If the timer is expired.\n\n:returns: `bool`"""
+
+    cpdef TimeEvent pop_event(self, UUID4 event_id, uint64_t ts_init)
+    cpdef void iterate_next_time(self, uint64_t to_time_ns)
+    cpdef void cancel(self)
+    cpdef void repeat(self, uint64_t ts_now)
+    cdef object _start_timer(self, uint64_t ts_now)
+
+
+cdef class ThreadTimer(LiveTimer):
+    pass
+
+
+cdef class LoopTimer(LiveTimer):
+    cdef object _loop
+
+
+cdef str RECV
+cdef str SENT
+cdef str CMD
+cdef str EVT
+cdef str DOC
+cdef str RPT
+cdef str REQ
+cdef str RES
+
+
+cdef void set_logging_clock_realtime_mode()
+cdef void set_logging_clock_static_mode()
+cdef void set_logging_clock_static_time(uint64_t time_ns)
+
+cpdef LogColor log_color_from_str(str value)
+cpdef str log_color_to_str(LogColor value)
+
+cpdef LogLevel log_level_from_str(str value)
+cpdef str log_level_to_str(LogLevel value)
+
+cpdef void init_tracing()
+
+cpdef void init_logging(
+    TraderId trader_id=*,
+    str machine_id=*,
+    UUID4 instance_id=*,
+    LogLevel level_stdout=*,
+    LogLevel level_file=*,
+    str directory=*,
+    str file_name=*,
+    str file_format=*,
+    dict component_levels=*,
+    bint colors=*,
+    bint bypass=*,
+    bint print_config=*,
+)
+
+cpdef bint is_logging_initialized()
+
+
+cdef class Logger:
+    cdef str _name
+    cdef const char* _name_ptr
+
+    cpdef void flush(self)
+    cpdef void debug(self, str message, LogColor color=*)
+    cpdef void info(self, str message, LogColor color=*)
+    cpdef void warning(self, str message, LogColor color=*)
+    cpdef void error(self, str message, LogColor color=*)
+    cpdef void exception(self, str message, ex)
+
+
+cpdef void log_header(
+    TraderId trader_id,
+    str machine_id,
+    UUID4 instance_id,
+    str component,
+)
+
+
+cpdef void log_sysinfo(
+    TraderId trader_id,
+    str machine_id,
+    UUID4 instance_id,
+    str component,
+)
 
 cpdef ComponentState component_state_from_str(str value)
 cpdef str component_state_to_str(ComponentState value)

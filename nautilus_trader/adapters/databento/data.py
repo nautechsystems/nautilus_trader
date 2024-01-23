@@ -36,7 +36,7 @@ from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProv
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.adapters.databento.types import Dataset
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3

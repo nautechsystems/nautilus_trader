@@ -17,7 +17,7 @@ from datetime import datetime
 
 from nautilus_trader.analysis.analyzer import PortfolioAnalyzer
 from nautilus_trader.analysis.statistics.sharpe_ratio import SharpeRatio
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import USD

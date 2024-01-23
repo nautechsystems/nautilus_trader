@@ -16,9 +16,9 @@
 import random
 from typing import Any
 
+from nautilus_trader.common.component import Logger
+from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import init_logging
 
 
 def test_logging(benchmark: Any) -> None:

@@ -25,8 +25,8 @@ from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFact
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_instrument_provider
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
-from nautilus_trader.common.logging import init_logging
-from nautilus_trader.common.logging import log_level_from_str
+from nautilus_trader.common.component import init_logging
+from nautilus_trader.common.component import log_level_from_str
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
@@ -129,7 +129,7 @@ if __name__ == "__main__":
     # https://www.betfair.com.au/exchange/plus/
     # The market ID will appear in the browser query string.
     config = BetfairInstrumentProviderConfig(
-        account_currency="AUD",
+        account_currency="GBP",
         market_ids=["1.223041451"],
     )
     node = asyncio.run(main(instrument_config=config, log_level="DEBUG"))

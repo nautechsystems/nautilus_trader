@@ -18,7 +18,7 @@ import pytest
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 
 
 @pytest.mark.asyncio()

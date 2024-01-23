@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 
-from nautilus_trader.common.logging import LogColor
+from nautilus_trader.common.component import LogColor
 from nautilus_trader.config.common import ExecAlgorithmConfig
 from nautilus_trader.execution.algorithm import ExecAlgorithm
 from nautilus_trader.model.identifiers import ExecAlgorithmId

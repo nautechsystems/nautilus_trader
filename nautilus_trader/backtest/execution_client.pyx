@@ -18,8 +18,8 @@ from nautilus_trader.config.common import NautilusConfig
 
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.cache.cache cimport Cache
-from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.component cimport MessageBus
+from nautilus_trader.common.component cimport TestClock
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.messages cimport BatchCancelOrders

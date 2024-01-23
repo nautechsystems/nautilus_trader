@@ -717,16 +717,16 @@ checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
 
 [[package]]
 name = "chrono"
-version = "0.4.31"
+version = "0.4.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f2c685bad3eb3d45a01354cedb7d5faa66194d1d58ba6e267a8de788f79db38"
+checksum = "41daef31d7a747c5c847246f36de49ced6f7403b4cdabc807a97b5cc184cda7a"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
  "js-sys",
  "num-traits",
  "wasm-bindgen",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.0",
 ]
 
 [[package]]
@@ -2429,7 +2429,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-adapters"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2458,7 +2458,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "cbindgen",
  "nautilus-common",
@@ -2472,7 +2472,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2489,7 +2489,6 @@ dependencies = [
  "strum",
  "sysinfo",
  "tempfile",
- "thousands",
  "tracing",
  "tracing-subscriber",
  "ustr",
@@ -2497,7 +2496,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2516,7 +2515,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "nautilus-core",
@@ -2528,7 +2527,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "nautilus-common",
@@ -2543,7 +2542,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2571,7 +2570,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2596,7 +2595,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -2607,6 +2606,7 @@ dependencies = [
  "futures",
  "nautilus-core",
  "nautilus-model",
+ "procfs",
  "pyo3",
  "quickcheck",
  "quickcheck_macros",
@@ -2619,7 +2619,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "nautilus-adapters",
  "nautilus-common",
@@ -2922,9 +2922,9 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 
 [[package]]
 name = "papergrid"
-version = "0.9.1"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae7891b22598926e4398790c8fe6447930c72a67d36d983a49d6ce682ce83290"
+checksum = "9ad43c07024ef767f9160710b3a6773976194758c7919b17e63b863db0bdf7fb"
 dependencies = [
  "bytecount",
  "fnv",
@@ -3208,6 +3208,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "procfs"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "731e0d9356b0c25f16f33b5be79b1c57b562f141ebfcdb0ad8ac2c13a24293b4"
+dependencies = [
+ "bitflags 2.4.2",
+ "chrono",
+ "flate2",
+ "hex",
+ "lazy_static",
+ "procfs-core",
+ "rustix",
+]
+
+[[package]]
+name = "procfs-core"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d3554923a69f4ce04c4a754260c338f505ce22642d3830e049a399fc2059a29"
+dependencies = [
+ "bitflags 2.4.2",
+ "chrono",
+ "hex",
+]
+
+[[package]]
 name = "ptr_meta"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3441,13 +3467,13 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.10.2"
+version = "1.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "380b951a9c5e80ddfd6136919eef32310721aa4aacd4889a8d39124b026ab343"
+checksum = "b62dbe01f0b06f9d8dc7d49e05a0785f153b00b2c227856282f671e0318c9b15"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-automata 0.4.3",
+ "regex-automata 0.4.4",
  "regex-syntax 0.8.2",
 ]
 
@@ -3462,9 +3488,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.3"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f804c7828047e88b2d32e2d7fe5a105da8ee3264f01902f796c8e067dc2483f"
+checksum = "3b7fa1134405e2ec9353fd416b17f8dacd46c473d7d3fd1cf202706a14eb792a"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -4465,9 +4491,9 @@ dependencies = [
 
 [[package]]
 name = "tabled"
-version = "0.12.2"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ce69a5028cd9576063ec1f48edb2c75339fd835e6094ef3e05b3a079bf594a6"
+checksum = "4c998b0c8b921495196a48aabaf1901ff28be0760136e31604f7967b0792050e"
 dependencies = [
  "papergrid",
  "tabled_derive",
@@ -4476,9 +4502,9 @@ dependencies = [
 
 [[package]]
 name = "tabled_derive"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99f688a08b54f4f02f0a3c382aefdb7884d3d69609f785bd253dc033243e3fe4"
+checksum = "4c138f99377e5d653a371cdad263615634cfc8467685dfe8e73e2b8e98f44b17"
 dependencies = [
  "heck",
  "proc-macro-error",

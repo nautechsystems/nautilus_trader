@@ -19,7 +19,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.accounting.calculators cimport RolloverInterestCalculator
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.common.actor cimport Actor
-from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.component cimport Logger
 from nautilus_trader.core.data cimport Data
 
 

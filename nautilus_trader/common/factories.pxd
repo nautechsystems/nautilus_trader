@@ -18,7 +18,7 @@ from decimal import Decimal
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.base cimport CacheFacade
-from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.generators cimport ClientOrderIdGenerator
 from nautilus_trader.common.generators cimport OrderListIdGenerator
 from nautilus_trader.core.rust.model cimport ContingencyType

@@ -1,11 +1,29 @@
-# NautilusTrader 1.184.0 Beta
+# NautilusTrader 1.185.0 Beta
 
 Released on TBD (UTC).
+
+### Enhancements
+None
+
+### Breaking Changes
+- Consolidated `clock` module into `component` module (reduce binary wheel size)
+- Consolidated `logging` module into `component` module (reduce binary wheel size)
+
+### Fixes
+None
+
+---
+
+# NautilusTrader 1.184.0 Beta
+
+Released on 22nd January 2024 (UTC).
 
 ### Enhancements
 - Added `LogLevel.OFF` (matches the Rust `tracing` log levels)
 - Added `init_logging` function with sensible defaults to initialize the Rust implemented logging system
 - Updated Binance Futures enum members for `BinanceFuturesContractType` and `BinanceFuturesPositionUpdateReason`
+- Improved log header using the `sysinfo` crate (adds swap space metrics and a PID identifier)
+- Removed Python dependency on `psutil`
 
 ### Breaking Changes
 - Removed `clock` parameter from `Logger` (no dependency on `Clock` anymore)
@@ -476,7 +494,7 @@ Released on 30th April 2023 (UTC).
 - Defined public API for instruments, can now import directly from `nautilus_trader.model.instruments` (denest namespace)
 - Defined public API for orders, can now import directly from `nautilus_trader.model.orders` (denest namespace)
 - Defined public API for order book, can now import directly from `nautilus_trader.model.orderbook` (denest namespace)
-- Now stripping debug symbols after build (reduced binary sizes)
+- Now stripping debug symbols after build (reduced binary wheel size)
 - Refined build and added additional `debug` Makefile convenience targets
 
 ### Fixes

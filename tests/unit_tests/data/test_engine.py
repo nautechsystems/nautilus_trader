@@ -18,8 +18,8 @@ import sys
 import pytest
 
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine

@@ -30,9 +30,9 @@ import pandas as pd
 from nautilus_trader.analysis.reporter import ReportProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.actor import Actor
-from nautilus_trader.common.clock import Clock
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import Clock
 from nautilus_trader.common.component import Component
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.data.engine import DataEngine
