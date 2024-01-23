@@ -717,16 +717,16 @@ checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
 
 [[package]]
 name = "chrono"
-version = "0.4.31"
+version = "0.4.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f2c685bad3eb3d45a01354cedb7d5faa66194d1d58ba6e267a8de788f79db38"
+checksum = "41daef31d7a747c5c847246f36de49ced6f7403b4cdabc807a97b5cc184cda7a"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
  "js-sys",
  "num-traits",
  "wasm-bindgen",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.0",
 ]
 
 [[package]]
@@ -2429,7 +2429,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-adapters"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2458,7 +2458,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "cbindgen",
  "nautilus-common",
@@ -2472,7 +2472,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2496,7 +2496,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2515,7 +2515,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "nautilus-core",
@@ -2527,7 +2527,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "nautilus-common",
@@ -2542,7 +2542,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2570,7 +2570,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2595,7 +2595,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -2619,7 +2619,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "nautilus-adapters",
  "nautilus-common",
