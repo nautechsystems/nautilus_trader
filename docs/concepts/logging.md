@@ -106,8 +106,8 @@ It's possible to use `Logger` objects directly, and these can be initialized any
 If you ***aren't*** using an object which already initializes a `NautilusKernel` (and logging) such as `BacktestEngine` or `TradingNode`, 
 then you can initialize a logging in the following way:
 ```python
-from nautilus_trader.common.logging import init_logging
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.component import init_logging
+from nautilus_trader.common.component import Logger
 
 init_logging()
 logger = Logger("MyLogger")

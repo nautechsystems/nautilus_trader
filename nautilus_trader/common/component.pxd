@@ -21,19 +21,88 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport TimeEvent
+from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.message cimport Request
 from nautilus_trader.core.message cimport Response
 from nautilus_trader.core.rust.common cimport ComponentState
 from nautilus_trader.core.rust.common cimport ComponentTrigger
+from nautilus_trader.core.rust.common cimport LogColor
+from nautilus_trader.core.rust.common cimport LogLevel
 from nautilus_trader.core.rust.common cimport MessageBus_API
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport Identifier
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.serialization.base cimport Serializer
 
+
+cdef str RECV
+cdef str SENT
+cdef str CMD
+cdef str EVT
+cdef str DOC
+cdef str RPT
+cdef str REQ
+cdef str RES
+
+
+cdef void set_logging_clock_realtime_mode()
+cdef void set_logging_clock_static_mode()
+cdef void set_logging_clock_static_time(uint64_t time_ns)
+
+cpdef LogColor log_color_from_str(str value)
+cpdef str log_color_to_str(LogColor value)
+
+cpdef LogLevel log_level_from_str(str value)
+cpdef str log_level_to_str(LogLevel value)
+
+cpdef void init_tracing()
+
+cpdef void init_logging(
+    TraderId trader_id=*,
+    str machine_id=*,
+    UUID4 instance_id=*,
+    LogLevel level_stdout=*,
+    LogLevel level_file=*,
+    str directory=*,
+    str file_name=*,
+    str file_format=*,
+    dict component_levels=*,
+    bint colors=*,
+    bint bypass=*,
+    bint print_config=*,
+)
+
+cpdef bint is_logging_initialized()
+
+
+cdef class Logger:
+    cdef str _name
+    cdef const char* _name_ptr
+
+    cpdef void flush(self)
+    cpdef void debug(self, str message, LogColor color=*)
+    cpdef void info(self, str message, LogColor color=*)
+    cpdef void warning(self, str message, LogColor color=*)
+    cpdef void error(self, str message, LogColor color=*)
+    cpdef void exception(self, str message, ex)
+
+
+cpdef void log_header(
+    TraderId trader_id,
+    str machine_id,
+    UUID4 instance_id,
+    str component,
+)
+
+
+cpdef void log_sysinfo(
+    TraderId trader_id,
+    str machine_id,
+    UUID4 instance_id,
+    str component,
+)
 
 cpdef ComponentState component_state_from_str(str value)
 cpdef str component_state_to_str(ComponentState value)

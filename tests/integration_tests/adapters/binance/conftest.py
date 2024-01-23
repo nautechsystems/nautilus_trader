@@ -20,7 +20,7 @@ import pytest
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.component import Logger
 from nautilus_trader.model.identifiers import Venue
 
 

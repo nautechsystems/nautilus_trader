@@ -6,7 +6,7 @@ Released on TBD (UTC).
 None
 
 ### Breaking Changes
-None
+- Consolidated `logging` module into one `components` module (reduce binary wheel size)
 
 ### Fixes
 None
@@ -493,7 +493,7 @@ Released on 30th April 2023 (UTC).
 - Defined public API for instruments, can now import directly from `nautilus_trader.model.instruments` (denest namespace)
 - Defined public API for orders, can now import directly from `nautilus_trader.model.orders` (denest namespace)
 - Defined public API for order book, can now import directly from `nautilus_trader.model.orderbook` (denest namespace)
-- Now stripping debug symbols after build (reduced binary sizes)
+- Now stripping debug symbols after build (reduced binary wheel size)
 - Refined build and added additional `debug` Makefile convenience targets
 
 ### Fixes

@@ -23,7 +23,7 @@ from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.accounting.accounts.margin cimport MarginAccount
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.component cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.model cimport OrderSide

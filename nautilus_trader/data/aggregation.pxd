@@ -20,7 +20,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport TimeEvent
-from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.component cimport Logger
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
