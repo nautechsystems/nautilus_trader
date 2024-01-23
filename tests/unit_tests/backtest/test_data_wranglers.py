@@ -16,7 +16,7 @@
 
 import pandas as pd
 
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price

@@ -17,7 +17,7 @@ import pickle
 
 import pytest
 
-from nautilus_trader.common.clock import TimeEvent
+from nautilus_trader.common.component import TimeEvent
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import TradingStateChanged

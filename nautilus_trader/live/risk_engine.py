@@ -18,7 +18,7 @@ from asyncio import Queue
 from typing import Final
 
 from nautilus_trader.cache.base import CacheFacade
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.core.correctness import PyCondition

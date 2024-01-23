@@ -22,10 +22,10 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.cache.base cimport CacheFacade
-from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.component cimport LogColor
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
+from nautilus_trader.common.component cimport TestClock
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.common cimport logging_is_initialized

@@ -15,7 +15,7 @@
 
 import pytest
 
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 
 
 @pytest.fixture(autouse=True)

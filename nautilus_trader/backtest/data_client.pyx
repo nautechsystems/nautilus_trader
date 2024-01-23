@@ -22,7 +22,7 @@ from nautilus_trader.config.common import NautilusConfig
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
-from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport BookType

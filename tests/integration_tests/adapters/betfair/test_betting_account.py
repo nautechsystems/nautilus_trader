@@ -16,7 +16,7 @@
 import pytest
 
 from nautilus_trader.accounting.accounts.betting import BettingAccount
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import GBP

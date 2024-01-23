@@ -30,7 +30,7 @@ from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesGe
 from nautilus_trader.adapters.bybit.endpoints.market.server_time import BybitServerTimeEndpoint
 from nautilus_trader.adapters.bybit.factories import get_bybit_http_client
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from tests.integration_tests.adapters.bybit.utils.save_struct_to_file import save_struct_to_file
 
 

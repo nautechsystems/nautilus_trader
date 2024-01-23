@@ -12,16 +12,6 @@
    :member-order: bysource
 ```
 
-## Clock
-
-```{eval-rst}
-.. automodule:: nautilus_trader.common.clock
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
 ## Component
 
 ```{eval-rst}

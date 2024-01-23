@@ -22,7 +22,7 @@ import pytest
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.factories import get_bybit_http_client
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 
 
 @pytest.mark.asyncio()

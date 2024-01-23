@@ -6,7 +6,8 @@ Released on TBD (UTC).
 None
 
 ### Breaking Changes
-- Consolidated `logging` module into one `components` module (reduce binary wheel size)
+- Consolidated `clock` module into `components` module (reduce binary wheel size)
+- Consolidated `logging` module into `components` module (reduce binary wheel size)
 
 ### Fixes
 None

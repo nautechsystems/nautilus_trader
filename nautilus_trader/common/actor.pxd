@@ -19,7 +19,7 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.cache.base cimport CacheFacade
-from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus

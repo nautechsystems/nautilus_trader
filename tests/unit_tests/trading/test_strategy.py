@@ -26,8 +26,8 @@ from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import StrategyConfig

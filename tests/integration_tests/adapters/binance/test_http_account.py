@@ -22,7 +22,7 @@ from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.http.account import BinanceOrderHttp
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccountHttpAPI
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 
 
 @pytest.mark.skip(reason="WIP")

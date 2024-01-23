@@ -28,7 +28,7 @@ from datetime import timedelta
 import pandas as pd
 
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.providers import InstrumentProvider

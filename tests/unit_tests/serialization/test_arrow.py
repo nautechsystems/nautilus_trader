@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import TradingStateChanged

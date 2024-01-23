@@ -43,11 +43,11 @@ from nautilus_trader.backtest.models cimport LatencyModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
-from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.clock cimport TestClock
-from nautilus_trader.common.clock cimport TimeEvent
-from nautilus_trader.common.clock cimport TimeEventHandler
+from nautilus_trader.common.component cimport LiveClock
 from nautilus_trader.common.component cimport Logger
+from nautilus_trader.common.component cimport TestClock
+from nautilus_trader.common.component cimport TimeEvent
+from nautilus_trader.common.component cimport TimeEventHandler
 from nautilus_trader.common.component cimport log_level_from_str
 from nautilus_trader.common.component cimport log_sysinfo
 from nautilus_trader.common.component cimport set_logging_clock_realtime_mode

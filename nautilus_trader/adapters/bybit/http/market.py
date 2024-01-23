@@ -34,7 +34,7 @@ from nautilus_trader.adapters.bybit.schemas.market.server_time import BybitServe
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerList
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.utils import get_category_from_instrument_type
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType

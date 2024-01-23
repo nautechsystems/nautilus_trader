@@ -18,9 +18,9 @@ from cpython.datetime cimport timedelta
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.clock cimport TimeEvent
+from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
+from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick

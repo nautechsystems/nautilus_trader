@@ -19,8 +19,8 @@ from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import ETH

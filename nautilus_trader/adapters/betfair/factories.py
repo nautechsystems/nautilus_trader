@@ -25,7 +25,7 @@ from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.live.factories import LiveDataClientFactory

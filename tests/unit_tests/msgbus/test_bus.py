@@ -15,8 +15,8 @@
 
 import pytest
 
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.component import is_matching_py
 from nautilus_trader.core.message import Request
 from nautilus_trader.core.message import Response

@@ -41,7 +41,7 @@ from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrder
 from nautilus_trader.adapters.bybit.schemas.position import BybitPositionStruct
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.utils import get_category_from_instrument_type
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.correctness import PyCondition
 
 

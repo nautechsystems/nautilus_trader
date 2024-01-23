@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.generators import ClientOrderIdGenerator
 from nautilus_trader.common.generators import OrderListIdGenerator
 from nautilus_trader.common.generators import PositionIdGenerator

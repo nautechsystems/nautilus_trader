@@ -28,7 +28,7 @@ from ibapi.execution import Execution
 
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.model.data import BarType
