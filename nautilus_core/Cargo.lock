@@ -157,7 +157,7 @@ dependencies = [
  "arrow-data",
  "arrow-schema",
  "chrono",
- "half 2.3.1",
+ "half",
  "num",
 ]
 
@@ -173,7 +173,7 @@ dependencies = [
  "arrow-schema",
  "chrono",
  "chrono-tz",
- "half 2.3.1",
+ "half",
  "hashbrown 0.14.3",
  "num",
 ]
@@ -185,7 +185,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "01a0fc21915b00fc6c2667b069c1b64bdd920982f426079bc4a7cab86822886c"
 dependencies = [
  "bytes",
- "half 2.3.1",
+ "half",
  "num",
 ]
 
@@ -203,7 +203,7 @@ dependencies = [
  "base64",
  "chrono",
  "comfy-table",
- "half 2.3.1",
+ "half",
  "lexical-core",
  "num",
 ]
@@ -235,7 +235,7 @@ checksum = "907fafe280a3874474678c1858b9ca4cb7fd83fb8034ff5b6d6376205a08c634"
 dependencies = [
  "arrow-buffer",
  "arrow-schema",
- "half 2.3.1",
+ "half",
  "num",
 ]
 
@@ -265,7 +265,7 @@ dependencies = [
  "arrow-data",
  "arrow-schema",
  "chrono",
- "half 2.3.1",
+ "half",
  "indexmap 2.1.0",
  "lexical-core",
  "num",
@@ -284,7 +284,7 @@ dependencies = [
  "arrow-data",
  "arrow-schema",
  "arrow-select",
- "half 2.3.1",
+ "half",
  "num",
 ]
 
@@ -299,7 +299,7 @@ dependencies = [
  "arrow-buffer",
  "arrow-data",
  "arrow-schema",
- "half 2.3.1",
+ "half",
  "hashbrown 0.14.3",
 ]
 
@@ -753,9 +753,9 @@ dependencies = [
 
 [[package]]
 name = "ciborium"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "effd91f6c78e5a4ace8a5d3c0b6bfaec9e2baaef55f3efc00e45fb2e477ee926"
+checksum = "42e69ffd6f0917f5c029256a24d0161db17cea3997d185db0d35926308770f0e"
 dependencies = [
  "ciborium-io",
  "ciborium-ll",
@@ -764,18 +764,18 @@ dependencies = [
 
 [[package]]
 name = "ciborium-io"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdf919175532b369853f5d5e20b26b43112613fd6fe7aee757e35f7a44642656"
+checksum = "05afea1e0a06c9be33d539b876f1ce3692f4afea2cb41f740e7743225ed1c757"
 
 [[package]]
 name = "ciborium-ll"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "defaa24ecc093c77630e6c15e17c51f5e187bf35ee514f4e2d67baaa96dae22b"
+checksum = "57663b653d948a338bfb3eeba9bb2fd5fcfaecb9e199e87e1eda4d9e8b240fd9"
 dependencies = [
  "ciborium-io",
- "half 1.8.2",
+ "half",
 ]
 
 [[package]]
@@ -1147,7 +1147,7 @@ dependencies = [
  "flate2",
  "futures",
  "glob",
- "half 2.3.1",
+ "half",
  "hashbrown 0.14.3",
  "indexmap 2.1.0",
  "itertools 0.12.0",
@@ -1180,7 +1180,7 @@ dependencies = [
  "arrow-buffer",
  "arrow-schema",
  "chrono",
- "half 2.3.1",
+ "half",
  "libc",
  "num_cpus",
  "object_store",
@@ -1262,7 +1262,7 @@ dependencies = [
  "chrono",
  "datafusion-common",
  "datafusion-expr",
- "half 2.3.1",
+ "half",
  "hashbrown 0.14.3",
  "hex",
  "indexmap 2.1.0",
@@ -1296,7 +1296,7 @@ dependencies = [
  "datafusion-expr",
  "datafusion-physical-expr",
  "futures",
- "half 2.3.1",
+ "half",
  "hashbrown 0.14.3",
  "indexmap 2.1.0",
  "itertools 0.12.0",
@@ -1325,9 +1325,9 @@ dependencies = [
 
 [[package]]
 name = "dbn"
-version = "0.15.0"
+version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2d5fa0d17ac6d8bc12b6b3002a5848f585712f066226c5f341b620d7bbfea5c"
+checksum = "227bb0e0d861f52b57ee1ec19b757059297211f65f113cefae1ebf3ddcae664d"
 dependencies = [
  "async-compression",
  "csv",
@@ -1347,9 +1347,9 @@ dependencies = [
 
 [[package]]
 name = "dbn-macros"
-version = "0.15.0"
+version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a11920424bd05a5fc8411b10233c965f791847c8618261e33ea0994b5de4e221"
+checksum = "c0f28d710e01139881fca833572859ca46ea871ba44dc822d67cf9e807c0330d"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -1789,12 +1789,6 @@ dependencies = [
  "tokio-util",
  "tracing",
 ]
-
-[[package]]
-name = "half"
-version = "1.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 
 [[package]]
 name = "half"
