@@ -130,8 +130,12 @@ class NautilusKernel:
         self._save_state: bool = config.save_state
 
         # Identifiers
+        trader_id = config.trader_id
+        if isinstance(trader_id, str):
+            trader_id = TraderId(trader_id)
+
         self._name: str = name
-        self._trader_id: TraderId = config.trader_id
+        self._trader_id: TraderId = trader_id
         self._machine_id: str = socket.gethostname()
         self._instance_id: UUID4 = config.instance_id or UUID4()
         self._ts_created: int = time.time_ns()
@@ -150,7 +154,7 @@ class NautilusKernel:
         logging: LoggingConfig = config.logging or LoggingConfig()
 
         bypass = logging.bypass_logging
-        if bypass and self._environment == Environment.LIVE:
+        if self._environment == Environment.LIVE:
             # It shouldn't be possible to bypass logging in a `LIVE` context (this is unsafe),
             # resetting bypass and will log a warning after logger is initialized.
             bypass = False
