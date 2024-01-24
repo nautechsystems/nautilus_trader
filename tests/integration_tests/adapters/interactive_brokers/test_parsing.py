@@ -16,6 +16,7 @@
 import datetime
 from decimal import Decimal
 
+import pandas as pd
 import pytest
 
 # fmt: off
@@ -35,6 +36,7 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VEN
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_FUT
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_OPT
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import _tick_size_to_precision
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import expiry_timestring_to_datetime
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
 from nautilus_trader.model.data import BarSpecification
@@ -317,5 +319,19 @@ def test_tick_size_to_precision(tick_size: float | Decimal, expected: int):
     # Arrange, Act
     result = _tick_size_to_precision(tick_size)
 
+    # Act, Assert
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("expiry", "expected"),
+    [
+        ("20240411", pd.Timestamp("2024-04-11 00:00:00", tz="UTC")),
+        ("20250420 18:35:00 GB", pd.Timestamp("2025-04-20 17:35:00", tz="UTC")),
+    ],
+)
+def test_expiry_timestring_to_datetime(expiry: str, expected: pd.Timestamp):
+    # Arrange, Act
+    result = expiry_timestring_to_datetime(expiry=expiry)
     # Act, Assert
     assert result == expected
