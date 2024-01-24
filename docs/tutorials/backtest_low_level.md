@@ -135,8 +135,8 @@ Firstly, initialize a strategy configuration, then use this to initialize a stra
 
 # Configure your strategy
 strategy_config = EMACrossTWAPConfig(
-    instrument_id=str(ETHUSDT_BINANCE.id),
-    bar_type="ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL",
+    instrument_id=ETHUSDT_BINANCE.id,
+    bar_type=BarType.from_str("ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL"),
     trade_size=Decimal("0.10"),
     fast_ema_period=10,
     slow_ema_period=20,
