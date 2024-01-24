@@ -301,15 +301,6 @@ def parse_crypto_contract(
     )
 
 
-def decade_digit(last_digit: str, contract: IBContract) -> int:
-    if year := contract.lastTradeDateOrContractMonth[:4]:
-        return int(year[2:3])
-    elif int(last_digit) > int(repr(datetime.datetime.now().year)[-1]):
-        return int(repr(datetime.datetime.now().year)[-2]) - 1
-    else:
-        return int(repr(datetime.datetime.now().year)[-2])
-
-
 def ib_contract_to_instrument_id(contract: IBContract) -> InstrumentId:
     PyCondition.type(contract, IBContract, "IBContract")
 
