@@ -25,9 +25,7 @@ from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_CASH
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_CRYPTO
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FOP
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FOP_ORIGINAL
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FUT
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FUT_ORIGINAL
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_IND
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_OPT
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_CASH
@@ -54,47 +52,44 @@ from nautilus_trader.model.identifiers import InstrumentId
         (IBContract(secType="CONTFUT", exchange="CME", symbol="M6E"), "M6E.CME"),
         (IBContract(secType="CONTFUT", exchange="NYMEX", symbol="MCL"), "MCL.NYMEX"),
         (IBContract(secType="CONTFUT", exchange="SNFE", symbol="SPI"), "SPI.SNFE"),
-        (IBContract(secType="FUT", exchange="CME", localSymbol="ESH3"), "ESH23.CME"),
-        (IBContract(secType="FUT", exchange="CME", localSymbol="M6EH3"), "M6EH23.CME"),
-        (IBContract(secType="FUT", exchange="CBOT", localSymbol="MYM  JUN 23"), "MYMM23.CBOT"),
-        (IBContract(secType="FUT", exchange="NYMEX", localSymbol="MCLV3"), "MCLV23.NYMEX"),
-        (IBContract(secType="FUT", exchange="SNFE", localSymbol="APH3"), "APH23.SNFE"),
-        (IBContract(secType="FOP", exchange="NYBOT", localSymbol="EX2G3 P4080"), "EX2G23P4080.NYBOT"),
-        (IBContract(secType="FOP", exchange="NYBOT", localSymbol="DXH3 P103.5"), "DXH23P103.5.NYBOT"),
+        (IBContract(secType="FUT", exchange="CME", localSymbol="ESH3"), "ESH3.CME"),
+        (IBContract(secType="FUT", exchange="CME", localSymbol="M6EH3"), "M6EH3.CME"),
+        (IBContract(secType="FUT", exchange="CBOT", localSymbol="MYM  JUN 23"), "MYM  JUN 23.CBOT"),
+        (IBContract(secType="FUT", exchange="NYMEX", localSymbol="MCLV3"), "MCLV3.NYMEX"),
+        (IBContract(secType="FUT", exchange="SNFE", localSymbol="APH3"), "APH3.SNFE"),
+        (IBContract(secType="FOP", exchange="NYBOT", localSymbol="EX2G3 P4080"), "EX2G3 P4080.NYBOT"),
+        (IBContract(secType="FOP", exchange="NYBOT", localSymbol="DXH3 P103.5"), "DXH3 P103.5.NYBOT"),
         (IBContract(secType="STK", exchange="SMART", primaryExchange="ARCA", localSymbol="SPY"), "SPY.ARCA"),
         (IBContract(secType="STK", exchange="SMART", primaryExchange="NASDAQ", localSymbol="AAPL"), "AAPL.NASDAQ"),
         (IBContract(secType="STK", exchange="SMART", primaryExchange="NYSE", localSymbol="BF B"), "BF-B.NYSE"),
         (IBContract(secType="STK", exchange="SMART", primaryExchange="ASX", localSymbol="29M"), "29M.ASX"),
 
-        (IBContract(secType="FUT", exchange="EUREX", localSymbol="SCOI 20251219 M"), ""),
-        (IBContract(secType="FUT", exchange="LMEOTC", localSymbol="AH_20240221"), ""),
-        (IBContract(secType="FUT", exchange="NSE", localSymbol="INFY24FEBFUT"), ""),
-        (IBContract(secType="FUT", exchange="OMS", localSymbol="4TLSN4L"), ""),
-        (IBContract(secType="FUT", exchange="OMS", localSymbol="3TLSN4N"), ""),
-        (IBContract(secType="FUT", exchange="MEFFRV", localSymbol="M3FIDRM4P"), ""),
-        (IBContract(secType="FUT", exchange="MEXDER", localSymbol="DVCE91MR24"), ""),
-        (IBContract(secType="FUT", exchange="MEXDER", localSymbol="DVCXC MR24"), ""),
-        (IBContract(secType="FUT", exchange="MEXDER", localSymbol="DVM3  JN24"), ""),
-        (IBContract(secType="FUT", exchange="CDE", localSymbol="SXAH24"), ""),
-        (IBContract(secType="FUT", exchange="IPE", localSymbol="HOILN7"), ""),
-        (IBContract(secType="FUT", exchange="CFE", localSymbol="IBHYH4"), ""),
-        (IBContract(secType="FUT", exchange="IDEM", localSymbol="ISP   24L20"), ""),
-        (IBContract(secType="FOP", exchange="NYBOT", localSymbol="EX2G3 P4080"), ""),
-        (IBContract(secType="FOP", exchange="NYBOT", localSymbol="DXH3 P103.5"), ""),
-        (IBContract(secType="FOP", exchange="CME", localSymbol="6NZ4 P0655"), ""),
-        (IBContract(secType="FOP", exchange="EUREX", localSymbol="C OEXD 20261218 50 M"), ""),
-        (IBContract(secType="FOP", exchange="IPE", localSymbol="WTIF5 C80"), ""),
-        (IBContract(secType="FOP", exchange="MEXDER", localSymbol="DVIP40000L"), ""),
-        (IBContract(secType="FOP", exchange="NYBOT", localSymbol="OJF6 C1.3"), ""),
-        (IBContract(secType="FOP", exchange="SGX", localSymbol="FCHZ24_C7000"), ""),
-        # tests for daily contracts
-        (IBContract(secType="FUT", exchange="EUREX", localSymbol="FMEU 20240125 D"), ""),
-        (IBContract(secType="FUT", exchange="EUREX", localSymbol="FMEU 20240126 D"), ""),
-        (IBContract(secType="FUT", exchange="EUREX", localSymbol="FMEU 20240129 D"), ""),
-        # contracts with expiration in 2030, with localSymbol formats containing year as a single digit, get parsed as year 2020
-        (IBContract(secType="FOP", exchange="ENDEX", localSymbol="TFMG0"), ""),
-        # contracts with . in Venue
-        (IBContract(secType="FUT", exchange="OSE.JPN", localSymbol="1690200A1"), ""),
+        (IBContract(secType="FUT", exchange="EUREX", localSymbol="SCOI 20251219 M"), "SCOI 20251219 M.EUREX"),
+        (IBContract(secType="FUT", exchange="LMEOTC", localSymbol="AH_20240221"), "AH_20240221.LMEOTC"),
+        (IBContract(secType="FUT", exchange="NSE", localSymbol="INFY24FEBFUT"), "INFY24FEBFUT.NSE"),
+        (IBContract(secType="FUT", exchange="OMS", localSymbol="4TLSN4L"), "4TLSN4L.OMS"),
+        (IBContract(secType="FUT", exchange="OMS", localSymbol="3TLSN4N"), "3TLSN4N.OMS"),
+        (IBContract(secType="FUT", exchange="MEFFRV", localSymbol="M3FIDRM4P"), "M3FIDRM4P.MEFFRV"),
+        (IBContract(secType="FUT", exchange="MEXDER", localSymbol="DVCE91MR24"), "DVCE91MR24.MEXDER"),
+        (IBContract(secType="FUT", exchange="MEXDER", localSymbol="DVCXC MR24"), "DVCXC MR24.MEXDER"),
+        (IBContract(secType="FUT", exchange="MEXDER", localSymbol="DVM3  JN24"), "DVM3  JN24.MEXDER"),
+        (IBContract(secType="FUT", exchange="CDE", localSymbol="SXAH24"), "SXAH24.CDE"),
+        (IBContract(secType="FUT", exchange="IPE", localSymbol="HOILN7"), "HOILN7.IPE"),
+        (IBContract(secType="FUT", exchange="CFE", localSymbol="IBHYH4"), "IBHYH4.CFE"),
+        (IBContract(secType="FUT", exchange="IDEM", localSymbol="ISP   24L20"), "ISP   24L20.IDEM"),
+        (IBContract(secType="FOP", exchange="NYBOT", localSymbol="EX2G3 P4080"), "EX2G3 P4080.NYBOT"),
+        (IBContract(secType="FOP", exchange="NYBOT", localSymbol="DXH3 P103.5"), "DXH3 P103.5.NYBOT"),
+        (IBContract(secType="FOP", exchange="CME", localSymbol="6NZ4 P0655"), "6NZ4 P0655.CME"),
+        (IBContract(secType="FOP", exchange="EUREX", localSymbol="C OEXD 20261218 50 M"), "C OEXD 20261218 50 M.EUREX"),
+        (IBContract(secType="FOP", exchange="IPE", localSymbol="WTIF5 C80"), "WTIF5 C80.IPE"),
+        (IBContract(secType="FOP", exchange="MEXDER", localSymbol="DVIP40000L"), "DVIP40000L.MEXDER"),
+        (IBContract(secType="FOP", exchange="NYBOT", localSymbol="OJF6 C1.3"), "OJF6 C1.3.NYBOT"),
+        (IBContract(secType="FOP", exchange="SGX", localSymbol="FCHZ24_C7000"), "FCHZ24_C7000.SGX"),
+        (IBContract(secType="FUT", exchange="EUREX", localSymbol="FMEU 20240125 D"), "FMEU 20240125 D.EUREX"),
+        (IBContract(secType="FUT", exchange="EUREX", localSymbol="FMEU 20240126 D"), "FMEU 20240126 D.EUREX"),
+        (IBContract(secType="FUT", exchange="EUREX", localSymbol="FMEU 20240129 D"), "FMEU 20240129 D.EUREX"),
+        (IBContract(secType="FOP", exchange="ENDEX", localSymbol="TFMG0"), "TFMG0.ENDEX"),
+        (IBContract(secType="FUT", exchange="OSE.JPN", localSymbol="1690200A1"), "1690200A1.OSE.JPN"),
         # fmt: on
     ],
 )
@@ -229,21 +224,6 @@ def test_regular_expression_future(symbol, expected):
 @pytest.mark.parametrize(
     ("symbol", "expected"),
     [
-        ("ESH3", {"symbol": "ES", "month": "H", "year": "3"}),
-        ("M6EH3", {"symbol": "M6E", "month": "H", "year": "3"}),
-    ],
-)
-def test_regular_expression_future_original(symbol, expected):
-    # Arrange, Act
-    result = RE_FUT_ORIGINAL.match(symbol).groupdict()
-
-    # Act, Assert
-    assert result == expected
-
-
-@pytest.mark.parametrize(
-    ("symbol", "expected"),
-    [
         # fmt: off
         ("EX2G23P4080", {"symbol": "EX2", "month": "G", "year": "23", "right": "P", "strike": "4080"}),
         ("DXH23P103.5", {"symbol": "DX", "month": "H", "year": "23", "right": "P", "strike": "103.5"}),
@@ -253,23 +233,6 @@ def test_regular_expression_future_original(symbol, expected):
 def test_regular_expression_future_options(symbol, expected):
     # Arrange, Act
     result = RE_FOP.match(symbol).groupdict()
-
-    # Assert
-    assert result == expected
-
-
-@pytest.mark.parametrize(
-    ("symbol", "expected"),
-    [
-        # fmt: off
-        ("EX2G3 P4080", {"symbol": "EX2", "month": "G", "year": "3", "right": "P", "strike": "4080"}),
-        ("DXH3 P103.5", {"symbol": "DX", "month": "H", "year": "3", "right": "P", "strike": "103.5"}),
-        # fmt: on
-    ],
-)
-def test_regular_expression_future_options_original(symbol, expected):
-    # Arrange, Act
-    result = RE_FOP_ORIGINAL.match(symbol).groupdict()
 
     # Assert
     assert result == expected
