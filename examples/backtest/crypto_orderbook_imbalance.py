@@ -30,6 +30,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import book_type_to_str
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.loaders import BinanceOrderBookDeltaDataLoader
@@ -40,7 +41,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 if __name__ == "__main__":
     # Configure backtest engine
     config = BacktestEngineConfig(
-        trader_id="BACKTESTER-001",
+        trader_id=TraderId("BACKTESTER-001"),
         # logging=LoggingConfig(log_level="DEBUG"),
     )
 

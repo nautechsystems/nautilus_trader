@@ -29,6 +29,7 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
@@ -72,7 +73,7 @@ to show the general configuration pattern:
 
 ```python
 # Configure backtest engine
-config = BacktestEngineConfig(trader_id="BACKTESTER-001")
+config = BacktestEngineConfig(trader_id=TraderId("BACKTESTER-001"))
 
 # Build the backtest engine
 engine = BacktestEngine(config=config)
