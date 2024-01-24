@@ -130,12 +130,8 @@ class NautilusKernel:
         self._save_state: bool = config.save_state
 
         # Identifiers
-        trader_id = config.trader_id
-        if isinstance(trader_id, str):
-            trader_id = TraderId(trader_id)
-
         self._name: str = name
-        self._trader_id: TraderId = trader_id
+        self._trader_id: TraderId = config.trader_id
         self._machine_id: str = socket.gethostname()
         self._instance_id: UUID4 = config.instance_id or UUID4()
         self._ts_created: int = time.time_ns()
@@ -150,9 +146,16 @@ class NautilusKernel:
                 f"environment {self._environment} not recognized",  # pragma: no cover (design-time error)
             )
 
+        # Setup logging
         logging: LoggingConfig = config.logging or LoggingConfig()
 
-        if self._environment == Environment.LIVE or not logging.bypass_logging:
+        bypass = logging.bypass_logging
+        if bypass and self._environment == Environment.LIVE:
+            # It shouldn't be possible to bypass logging in a `LIVE` context (this is unsafe),
+            # resetting bypass and will log a warning after logger is initialized.
+            bypass = False
+
+        if not bypass:
             # Initialize tracing for async Rust
             init_tracing()
 
@@ -170,17 +173,15 @@ class NautilusKernel:
                 file_format=logging.log_file_format,
                 component_levels=logging.log_component_levels,
                 colors=logging.log_colors,
-                bypass=False if self._environment == Environment.LIVE else logging.bypass_logging,
+                bypass=bypass,
             )
 
-        # Setup logging
         self._log: Logger = Logger(name=name)
 
-        if isinstance(config.trader_id, str):
+        if logging.bypass_logging and self._environment == Environment.LIVE:
             self._log.warning(
-                "The configurations 'trader_id' must be of type `TraderId`. "
-                "You can import `TraderId` from `nautilus_trader.model.identifiers`. "
-                "This warning will be removed in a future version, and become a hard requirement.",
+                "LoggingConfig.bypass_logging was set `True` "
+                "when not safe to bypass logging in a LIVE context.",
             )
 
         log_header(

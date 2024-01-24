@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Add warning log when `bypass_logging` is set true for a `LIVE` context
 
 ### Breaking Changes
 - Consolidated `clock` module into `component` module (reduce binary wheel size)
