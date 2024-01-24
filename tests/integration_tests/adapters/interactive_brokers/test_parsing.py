@@ -65,6 +65,36 @@ from nautilus_trader.model.identifiers import InstrumentId
         (IBContract(secType="STK", exchange="SMART", primaryExchange="NASDAQ", localSymbol="AAPL"), "AAPL.NASDAQ"),
         (IBContract(secType="STK", exchange="SMART", primaryExchange="NYSE", localSymbol="BF B"), "BF-B.NYSE"),
         (IBContract(secType="STK", exchange="SMART", primaryExchange="ASX", localSymbol="29M"), "29M.ASX"),
+
+        (IBContract(secType="FUT", exchange="EUREX", localSymbol="SCOI 20251219 M"), ""),
+        (IBContract(secType="FUT", exchange="LMEOTC", localSymbol="AH_20240221"), ""),
+        (IBContract(secType="FUT", exchange="NSE", localSymbol="INFY24FEBFUT"), ""),
+        (IBContract(secType="FUT", exchange="OMS", localSymbol="4TLSN4L"), ""),
+        (IBContract(secType="FUT", exchange="OMS", localSymbol="3TLSN4N"), ""),
+        (IBContract(secType="FUT", exchange="MEFFRV", localSymbol="M3FIDRM4P"), ""),
+        (IBContract(secType="FUT", exchange="MEXDER", localSymbol="DVCE91MR24"), ""),
+        (IBContract(secType="FUT", exchange="MEXDER", localSymbol="DVCXC MR24"), ""),
+        (IBContract(secType="FUT", exchange="MEXDER", localSymbol="DVM3  JN24"), ""),
+        (IBContract(secType="FUT", exchange="CDE", localSymbol="SXAH24"), ""),
+        (IBContract(secType="FUT", exchange="IPE", localSymbol="HOILN7"), ""),
+        (IBContract(secType="FUT", exchange="CFE", localSymbol="IBHYH4"), ""),
+        (IBContract(secType="FUT", exchange="IDEM", localSymbol="ISP   24L20"), ""),
+        (IBContract(secType="FOP", exchange="NYBOT", localSymbol="EX2G3 P4080"), ""),
+        (IBContract(secType="FOP", exchange="NYBOT", localSymbol="DXH3 P103.5"), ""),
+        (IBContract(secType="FOP", exchange="CME", localSymbol="6NZ4 P0655"), ""),
+        (IBContract(secType="FOP", exchange="EUREX", localSymbol="C OEXD 20261218 50 M"), ""),
+        (IBContract(secType="FOP", exchange="IPE", localSymbol="WTIF5 C80"), ""),
+        (IBContract(secType="FOP", exchange="MEXDER", localSymbol="DVIP40000L"), ""),
+        (IBContract(secType="FOP", exchange="NYBOT", localSymbol="OJF6 C1.3"), ""),
+        (IBContract(secType="FOP", exchange="SGX", localSymbol="FCHZ24_C7000"), ""),
+        # tests for daily contracts
+        (IBContract(secType="FUT", exchange="EUREX", localSymbol="FMEU 20240125 D"), ""),
+        (IBContract(secType="FUT", exchange="EUREX", localSymbol="FMEU 20240126 D"), ""),
+        (IBContract(secType="FUT", exchange="EUREX", localSymbol="FMEU 20240129 D"), ""),
+        # contracts with expiration in 2030, with localSymbol formats containing year as a single digit, get parsed as year 2020
+        (IBContract(secType="FOP", exchange="ENDEX", localSymbol="TFMG0"), ""),
+        # contracts with . in Venue
+        (IBContract(secType="FUT", exchange="OSE.JPN", localSymbol="1690200A1"), ""),
         # fmt: on
     ],
 )
