@@ -111,6 +111,8 @@ class NautilusKernel:
     InvalidConfiguration
         If any configuration object is mismatched with the environment context,
         (live configurations for 'backtest', or backtest configurations for 'live').
+    InvalidConfiguration
+        If `LoggingConfig.bypass_logging` is set true in a LIVE context.
 
     """
 
@@ -152,14 +154,13 @@ class NautilusKernel:
 
         # Setup logging
         logging: LoggingConfig = config.logging or LoggingConfig()
+        if logging.bypass_logging and self._environment == Environment.LIVE:
+            raise InvalidConfiguration(
+                "`LoggingConfig.bypass_logging` was set `True` "
+                "when not safe to bypass logging in a LIVE context",
+            )
 
-        bypass = logging.bypass_logging
-        if self._environment == Environment.LIVE:
-            # It shouldn't be possible to bypass logging in a `LIVE` context (this is unsafe),
-            # resetting bypass and will log a warning after logger is initialized.
-            bypass = False
-
-        if not bypass:
+        if not logging.bypass_logging:
             # Initialize tracing for async Rust
             init_tracing()
 
@@ -177,16 +178,10 @@ class NautilusKernel:
                 file_format=logging.log_file_format,
                 component_levels=logging.log_component_levels,
                 colors=logging.log_colors,
-                bypass=bypass,
+                bypass=logging.bypass_logging,
             )
 
         self._log: Logger = Logger(name=name)
-
-        if logging.bypass_logging and self._environment == Environment.LIVE:
-            self._log.warning(
-                "LoggingConfig.bypass_logging was set `True` "
-                "when not safe to bypass logging in a LIVE context.",
-            )
 
         log_header(
             trader_id=self._trader_id,
@@ -229,7 +224,7 @@ class NautilusKernel:
             raise ValueError(
                 f"Unrecognized `config.cache.database.type`, was '{config.cache.database.type}'. "
                 "The only database type currently supported is 'redis', if you don't want a cache database backing "
-                "then you can pass `None` for the `cache.database` ('in-memory' is no longer valid).",
+                "then you can pass `None` for the `cache.database` ('in-memory' is no longer valid)",
             )
 
         ########################################################################
@@ -243,7 +238,7 @@ class NautilusKernel:
             raise ValueError(
                 f"Unrecognized `config.message_bus.type`, was '{config.message_bus.database.type}'. "
                 "The only database type currently supported is 'redis', if you don't want a message bus database backing "
-                "then you can pass `None` for the `message_bus.database`.",
+                "then you can pass `None` for the `message_bus.database`",
             )
 
         msgbus_serializer = None
@@ -344,7 +339,7 @@ class NautilusKernel:
             if config.environment == Environment.BACKTEST:
                 raise InvalidConfiguration(
                     f"Cannot use `LiveExecEngineConfig` in a '{config.environment.value}' environment. "
-                    "Try using a `ExecEngineConfig`.",
+                    "Try using an `ExecEngineConfig`.",
                 )
             self._exec_engine = LiveExecutionEngine(
                 loop=self.loop,
@@ -357,7 +352,7 @@ class NautilusKernel:
             if config.environment != Environment.BACKTEST:
                 raise InvalidConfiguration(
                     f"Cannot use `ExecEngineConfig` in a '{config.environment.value}' environment. "
-                    "Try using a `LiveExecEngineConfig`.",
+                    "Try using an `LiveExecEngineConfig`.",
                 )
             self._exec_engine = ExecutionEngine(
                 msgbus=self._msgbus,
