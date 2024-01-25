@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import datetime
 import re
 import time
 from decimal import Decimal

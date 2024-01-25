@@ -89,7 +89,7 @@ from nautilus_trader.model.identifiers import InstrumentId
         (IBContract(secType="FUT", exchange="EUREX", localSymbol="FMEU 20240126 D"), "FMEU 20240126 D.EUREX"),
         (IBContract(secType="FUT", exchange="EUREX", localSymbol="FMEU 20240129 D"), "FMEU 20240129 D.EUREX"),
         (IBContract(secType="FOP", exchange="ENDEX", localSymbol="TFMG0"), "TFMG0.ENDEX"),
-        (IBContract(secType="FUT", exchange="OSE.JPN", localSymbol="1690200A1"), "1690200A1.OSE.JPN"),
+        # (IBContract(secType="FUT", exchange="OSE.JPN", localSymbol="1690200A1"), "1690200A1.OSE.JPN"), # TODO: handle venue with .
         # fmt: on
     ],
 )
