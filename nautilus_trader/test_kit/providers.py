@@ -24,7 +24,6 @@ import numpy as np
 import pandas as pd
 import pytz
 from fsspec.implementations.local import LocalFileSystem
-from pandas.io.parsers.readers import TextFileReader
 
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
@@ -692,7 +691,7 @@ class TestDataProvider:
         with fsspec.open(uri) as f:
             return f.read()
 
-    def read_csv(self, path: str, **kwargs: Any) -> TextFileReader:
+    def read_csv(self, path: str, **kwargs: Any) -> pd.DataFrame:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
             return pd.read_csv(f, **kwargs)
