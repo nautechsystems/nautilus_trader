@@ -304,7 +304,7 @@ cdef class MessageBus:
     cdef dict[str, object] _endpoints
     cdef dict[UUID4, object] _correlation_index
     cdef bint _has_backing
-    cdef tuple[type] _publishable_types
+    cdef set[type] _publishable_types
 
     cdef readonly TraderId trader_id
     """The trader ID associated with the bus.\n\n:returns: `TraderId`"""

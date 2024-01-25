@@ -121,7 +121,7 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport Identifier
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.serialization.base cimport EXTERNAL_PUBLISHING_TYPES
+from nautilus_trader.serialization.base cimport _EXTERNAL_PUBLISHABLE_TYPES
 from nautilus_trader.serialization.base cimport Serializer
 
 
@@ -2321,9 +2321,9 @@ cdef class MessageBus:
         self._subscriptions: dict[Subscription, list[str]] = {}
         self._correlation_index: dict[UUID4, Callable[[Any], None]] = {}
         self._has_backing = config.database is not None
-        self._publishable_types = EXTERNAL_PUBLISHING_TYPES
+        self._publishable_types = _EXTERNAL_PUBLISHABLE_TYPES
         if types_filter is not None:
-            self._publishable_types = tuple(o for o in EXTERNAL_PUBLISHING_TYPES if o not in types_filter)
+            self._publishable_types = tuple(o for o in _EXTERNAL_PUBLISHABLE_TYPES if o not in types_filter)
 
         # Counters
         self.sent_count = 0
