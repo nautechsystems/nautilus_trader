@@ -37,6 +37,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.component import init_tracing
+from nautilus_trader.common.component import is_logging_initialized
 from nautilus_trader.common.component import log_header
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
@@ -154,32 +155,33 @@ class NautilusKernel:
 
         # Setup logging
         logging: LoggingConfig = config.logging or LoggingConfig()
-        if logging.bypass_logging and self._environment == Environment.LIVE:
-            raise InvalidConfiguration(
-                "`LoggingConfig.bypass_logging` was set `True` "
-                "when not safe to bypass logging in a LIVE context",
-            )
 
-        if not logging.bypass_logging:
-            # Initialize tracing for async Rust
-            init_tracing()
+        if not is_logging_initialized():
+            if not logging.bypass_logging:
+                # Initialize tracing for async Rust
+                init_tracing()
 
-            # Initialize logging for sync Rust and Python
-            init_logging(
-                trader_id=self._trader_id,
-                machine_id=self._machine_id,
-                instance_id=self._instance_id,
-                level_stdout=log_level_from_str(logging.log_level),
-                level_file=log_level_from_str(logging.log_level_file)
-                if logging.log_level_file is not None
-                else LogLevel.OFF,
-                directory=logging.log_directory,
-                file_name=logging.log_file_name,
-                file_format=logging.log_file_format,
-                component_levels=logging.log_component_levels,
-                colors=logging.log_colors,
-                bypass=logging.bypass_logging,
-            )
+                # Initialize logging for sync Rust and Python
+                init_logging(
+                    trader_id=self._trader_id,
+                    machine_id=self._machine_id,
+                    instance_id=self._instance_id,
+                    level_stdout=log_level_from_str(logging.log_level),
+                    level_file=log_level_from_str(logging.log_level_file)
+                    if logging.log_level_file is not None
+                    else LogLevel.OFF,
+                    directory=logging.log_directory,
+                    file_name=logging.log_file_name,
+                    file_format=logging.log_file_format,
+                    component_levels=logging.log_component_levels,
+                    colors=logging.log_colors,
+                    bypass=logging.bypass_logging,
+                )
+            elif self._environment == Environment.LIVE:
+                raise InvalidConfiguration(
+                    "`LoggingConfig.bypass_logging` was set `True` "
+                    "when not safe to bypass logging in a LIVE context",
+                )
 
         self._log: Logger = Logger(name=name)
 
