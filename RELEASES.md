@@ -4,13 +4,14 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Add warning log when `bypass_logging` is set true for a `LIVE` context
+- Improved `register_serializable object` to also add type to internal `_EXTERNAL_PUBLIHSABLE_TYPES`
 
 ### Breaking Changes
 - Consolidated `clock` module into `component` module (reduce binary wheel size)
 - Consolidated `logging` module into `component` module (reduce binary wheel size)
 
 ### Fixes
-None
+- Fixed Arrow serialization of `OrderUpdated` (`trigger_price` type was incorrect), thanks @benjaminsingleton
 
 ---
 
