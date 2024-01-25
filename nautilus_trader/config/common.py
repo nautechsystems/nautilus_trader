@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import json
 from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
@@ -677,7 +678,8 @@ class StrategyFactory:
         PyCondition.type(config, ImportableStrategyConfig, "config")
         strategy_cls = resolve_path(config.strategy_path)
         config_cls = resolve_path(config.config_path)
-        return strategy_cls(config=config_cls(**config.config))
+        strategy_config = config_cls.parse(json.dumps(config.config))  # type: ignore
+        return strategy_cls(config=strategy_config)
 
 
 class ImportableControllerConfig(NautilusConfig, frozen=True):
