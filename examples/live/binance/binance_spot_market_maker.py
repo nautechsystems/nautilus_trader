@@ -69,6 +69,7 @@ config_node = TradingNodeConfig(
     # snapshot_orders=True,
     # snapshot_positions=True,
     # snapshot_positions_interval=5.0,
+    # streaming=StreamingConfig(catalog_path="catalog"),
     data_clients={
         "BINANCE": BinanceDataClientConfig(
             api_key=None,  # 'BINANCE_API_KEY' env var

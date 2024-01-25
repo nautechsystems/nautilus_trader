@@ -7,11 +7,13 @@ Released on TBD (UTC).
 - Improved `register_serializable object` to also add type to internal `_EXTERNAL_PUBLIHSABLE_TYPES`
 
 ### Breaking Changes
+- Changed `StreamingConfig.include_types` from `tuple[str]` to `list[type]` (better alignment with other type filters)
 - Consolidated `clock` module into `component` module (reduce binary wheel size)
 - Consolidated `logging` module into `component` module (reduce binary wheel size)
 
 ### Fixes
 - Fixed Arrow serialization of `OrderUpdated` (`trigger_price` type was incorrect), thanks @benjaminsingleton
+- Fixed `StreamingConfig.include_types` behavior (was not being honored for instrument writers), thanks for reporting @doublier1
 
 ---
 
