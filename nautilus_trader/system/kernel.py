@@ -474,7 +474,7 @@ class NautilusKernel:
             path=path,
             fs_protocol=config.fs_protocol,
             flush_interval_ms=config.flush_interval_ms,
-            include_types=config.include_types,  # type: ignore  # TODO(cs)
+            include_types=config.include_types,
         )
         self._trader.subscribe("*", self._writer.write)
         self._log.info(f"Writing data & events to {path}")

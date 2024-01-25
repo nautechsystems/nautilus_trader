@@ -482,6 +482,9 @@ class StreamingConfig(NautilusConfig, frozen=True):
         The flush interval (milliseconds) for writing chunks.
     replace_existing: bool, default False
         If any existing feather files should be replaced.
+    include_types : list[type], optional
+        A list of Arrow serializable types to write.
+        If this is specified then *only* the included types will be written.
 
     """
 
@@ -490,7 +493,7 @@ class StreamingConfig(NautilusConfig, frozen=True):
     fs_storage_options: dict | None = None
     flush_interval_ms: int | None = None
     replace_existing: bool = False
-    include_types: list[str] | None = None
+    include_types: list[type] | None = None
 
     @property
     def fs(self):
