@@ -54,10 +54,6 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments import Equity
-from nautilus_trader.model.instruments import FuturesContract
-from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
@@ -132,7 +128,8 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._live_clients_mbo: dict[Dataset, databento.Live] = {}
         self._has_subscribed: dict[Dataset, bool] = {}
         self._loader = loader or DatabentoDataLoader()
-        self._available_ends: dict[Dataset, pd.Timestamp] = {}
+        self._dataset_ranges: dict[Dataset, tuple[pd.Timestamp, pd.Timestamp]] = {}
+        self._dataset_ranges_requested: set[Dataset] = set()
 
         # Cache instrument index
         for instrument_id in config.instrument_ids or []:
@@ -144,6 +141,10 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._is_buffering_mbo_subscriptions: bool = bool(config.mbo_subscriptions_delay)
         self._buffered_mbo_subscriptions: dict[Dataset, list[InstrumentId]] = defaultdict(list)
         self._buffered_deltas: dict[InstrumentId, list[OrderBookDelta]] = defaultdict(list)
+
+        # Tasks
+        self._update_dataset_ranges_interval_seconds: int = 60 * 60  # Once per hour (hard coded)
+        self._update_dataset_ranges_task: asyncio.Task | None = None
 
     async def _connect(self) -> None:
         if not self._instrument_ids:
@@ -169,6 +170,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._log.warning("Timeout waiting for instruments...")
 
         self._send_all_instruments_to_data_engine()
+        self._update_dataset_ranges_task = self.create_task(self._update_dataset_ranges())
 
     async def _disconnect(self) -> None:
         coros: list[Coroutine] = []
@@ -187,7 +189,34 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._buffer_mbo_subscriptions_task.cancel()
             self._buffer_mbo_subscriptions_task = None
 
+        # Cancel update dataset ranges task
+        if self._update_dataset_ranges_task:
+            self._log.debug("Canceling `update_dataset_ranges` task...")
+            self._update_dataset_ranges_task.cancel()
+            self._update_dataset_ranges_task = None
+
         await asyncio.gather(*coros)
+
+    async def _update_dataset_ranges(self) -> None:
+        while True:
+            try:
+                self._log.debug(
+                    f"Scheduled `update_instruments` to run in "
+                    f"{self._update_dataset_ranges_interval_seconds}s.",
+                )
+
+                await asyncio.sleep(self._update_dataset_ranges_interval_seconds)
+
+                tasks = []
+                for dataset in self._dataset_ranges:
+                    tasks.append(self._get_dataset_range(dataset))
+
+                await asyncio.gather(*tasks)
+            except Exception as e:  # Create specific exception type
+                self._log.error(f"Error updating dataset range: {e}")
+            except asyncio.CancelledError:
+                self._log.debug("Canceled `update_dataset_ranges` task.")
+                break
 
     async def _buffer_mbo_subscriptions(self) -> None:
         try:
@@ -253,15 +282,40 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._instrument_ids[dataset].add(instrument_id)
         await self._subscribe_instrument(instrument_id)
 
-    async def _get_dataset_range(self, dataset: Dataset) -> tuple[pd.Timestamp, pd.Timestamp]:
-        response = await self._http_client.get_dataset_range(dataset)
+    async def _get_dataset_range(
+        self,
+        dataset: Dataset,
+    ) -> tuple[pd.Timestamp | None, pd.Timestamp]:
+        # Check and cache dataset available range
+        while dataset in self._dataset_ranges_requested:
+            await asyncio.sleep(0.1)
 
-        start = pd.Timestamp(response["start_date"], tz=pytz.utc)
-        end = pd.Timestamp(response["end_date"], tz=pytz.utc)
+        available_range = self._dataset_ranges.get(dataset)
+        if available_range:
+            return available_range
 
-        self._log.info(f"Dataset {dataset} available end {end}.", LogColor.BLUE)
+        self._dataset_ranges_requested.add(dataset)
 
-        return start, end
+        try:
+            self._log.info(f"Requesting dataset range for {dataset}...", LogColor.BLUE)
+            response = await self._http_client.get_dataset_range(dataset)
+
+            available_start = pd.Timestamp(response["start_date"], tz=pytz.utc)
+            available_end = pd.Timestamp(response["end_date"], tz=pytz.utc)
+
+            self._dataset_ranges[dataset] = (available_start, available_end)
+
+            self._log.info(
+                f"Dataset {dataset} available end {available_end.date()}.",
+                LogColor.BLUE,
+            )
+
+            return available_start, available_end
+        except Exception as e:  # More specific exception
+            self._log.error(f"Error requesting dataset range: {e}")
+            return (None, pd.Timestamp.utcnow())
+        finally:
+            self._dataset_ranges_requested.discard(dataset)
 
     # -- OVERRIDES ----------------------------------------------------------------------------
 
@@ -517,27 +571,22 @@ class DatabentoDataClient(LiveMarketDataClient):
         end: pd.Timestamp | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
-
-        # Check and cache dataset available end
-        available_end = self._available_ends.get(dataset)
-        if available_end is None:
-            _, available_end = await self._get_dataset_range(dataset)
-            self._available_ends[dataset] = available_end
+        _, available_end = await self._get_dataset_range(dataset)
 
         start = start or available_end - ONE_DAY * 2
         end = end or available_end
 
         self._log.info(
             f"Requesting {instrument_id} instrument definitions: "
-            f"dataset={dataset}, start={start}, end={end} ...",
+            f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
 
         pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
             symbols=ALL_SYMBOLS,
-            start=(start or available_end - ONE_DAY * 2).value,
-            end=(end or available_end).value,
+            start=start.value,
+            end=end.value,
         )
 
         instruments = instruments_from_pyo3(pyo3_instruments)
@@ -555,19 +604,14 @@ class DatabentoDataClient(LiveMarketDataClient):
         end: pd.Timestamp | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(venue)
-
-        # Check and cache dataset available end
-        available_end = self._available_ends.get(dataset)
-        if available_end is None:
-            _, available_end = await self._get_dataset_range(dataset)
-            self._available_ends[dataset] = available_end
+        _, available_end = await self._get_dataset_range(dataset)
 
         start = start or available_end - ONE_DAY * 2
         end = end or available_end
 
         self._log.info(
             f"Requesting {venue} instrument definitions: "
-            f"dataset={dataset}, start={start}, end={end} ...",
+            f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
 
@@ -578,17 +622,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             end=end.value,
         )
 
-        instruments: list[Instrument] = []
-
-        for pyo3_instrument in pyo3_instruments:
-            if isinstance(pyo3_instrument, nautilus_pyo3.Equity):
-                instruments.append(Equity.from_dict(pyo3_instrument.to_dict()))
-            elif isinstance(pyo3_instrument, nautilus_pyo3.FuturesContract):
-                instruments.append(FuturesContract.from_dict(pyo3_instrument.to_dict()))
-            elif isinstance(pyo3_instrument, nautilus_pyo3.OptionsContract):
-                instruments.append(OptionsContract.from_dict(pyo3_instrument.to_dict()))
-            else:
-                self._log.warning(f"Instrument {pyo3_instrument} not supported")
+        instruments = instruments_from_pyo3(pyo3_instruments)
 
         self._handle_instruments(
             instruments=instruments,
@@ -605,19 +639,19 @@ class DatabentoDataClient(LiveMarketDataClient):
         end: pd.Timestamp | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
-
-        # Check and cache dataset available end
-        available_end = self._available_ends.get(dataset)
-        if available_end is None:
-            _, available_end = await self._get_dataset_range(dataset)
-            self._available_ends[dataset] = available_end
+        _, available_end = await self._get_dataset_range(dataset)
 
         start = start or available_end - ONE_DAY
         end = end or available_end
 
+        if limit > 0:
+            self._log.warning(
+                f"Ignoring limit {limit} because its applied from the start (instead of the end).",
+            )
+
         self._log.info(
             f"Requesting {instrument_id} quote ticks: "
-            f"dataset={dataset}, start={start}, end={end}, limit={limit} ...",
+            f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
 
@@ -626,7 +660,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             symbols=instrument_id.symbol.value,
             start=start.value,
             end=end.value,
-            limit=limit,
         )
 
         quotes = QuoteTick.from_pyo3_list(pyo3_quotes)
@@ -646,19 +679,19 @@ class DatabentoDataClient(LiveMarketDataClient):
         end: pd.Timestamp | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
-
-        # Check and cache dataset available end
-        available_end = self._available_ends.get(dataset)
-        if available_end is None:
-            _, available_end = await self._get_dataset_range(dataset)
-            self._available_ends[dataset] = available_end
+        _, available_end = await self._get_dataset_range(dataset)
 
         start = start or available_end - ONE_DAY
         end = end or available_end
 
+        if limit > 0:
+            self._log.warning(
+                f"Ignoring limit {limit} because its applied from the start (instead of the end).",
+            )
+
         self._log.info(
             f"Requesting {instrument_id} trade ticks: "
-            f"dataset={dataset}, start={start}, end={end}, limit={limit} ...",
+            f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
 
@@ -667,7 +700,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             symbols=instrument_id.symbol.value,
             start=(start or available_end - ONE_DAY).value,
             end=(end or available_end).value,
-            limit=limit,
         )
 
         trades = TradeTick.from_pyo3_list(pyo3_trades)
@@ -687,18 +719,19 @@ class DatabentoDataClient(LiveMarketDataClient):
         end: pd.Timestamp | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
+        _, available_end = await self._get_dataset_range(dataset)
 
-        # Check and cache dataset available end
-        available_end = self._available_ends.get(dataset)
-        if available_end is None:
-            _, available_end = await self._get_dataset_range(dataset)
-            self._available_ends[dataset] = available_end
         start = start or available_end - ONE_DAY
         end = end or available_end
 
+        if limit > 0:
+            self._log.warning(
+                f"Ignoring limit {limit} because its applied from the start (instead of the end).",
+            )
+
         self._log.info(
             f"Requesting {bar_type.instrument_id} 1 {bar_aggregation_to_str(bar_type.spec.aggregation)} bars: "
-            f"dataset={dataset}, start={start}, end={end}, limit={limit} ...",
+            f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
 
@@ -710,7 +743,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             ),
             start=(start or available_end - ONE_DAY).value,
             end=(end or available_end).value,
-            limit=limit,
         )
 
         bars = Bar.from_pyo3_list(pyo3_bars)
