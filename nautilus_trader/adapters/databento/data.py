@@ -662,33 +662,34 @@ class DatabentoDataClient(LiveMarketDataClient):
         end: pd.Timestamp | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+        _, available_end = await self._get_dataset_range(dataset)
 
-        date_now_utc = self._clock.utc_now().date()
-        default_start = pd.Timestamp(
-            last_weekday_nanos(
-                year=date_now_utc.year,
-                month=date_now_utc.month,
-                day=date_now_utc.day,
-            ),
-            tz=pytz.utc,
-        )
+        # date_now_utc = self._clock.utc_now().date()
+        # default_start = pd.Timestamp(
+        #     last_weekday_nanos(
+        #         year=date_now_utc.year,
+        #         month=date_now_utc.month,
+        #         day=date_now_utc.day,
+        #     ),
+        #     tz=pytz.utc,
+        # )
+        #
+        # if is_within_last_24_hours(default_start.value):
+        #     default_start -= min(default_start, available_end - ONE_DAY)
 
-        if is_within_last_24_hours(default_start.value):
-            default_start -= ONE_DAY
-
-        pyo3_data = await self._http_client_pyo3.get_range_trades(
+        pyo3_trades = await self._http_client_pyo3.get_range_trades(
             dataset=dataset,
-            # start=start or default_start.date().isoformat(),
-            # end=end,
             symbols=instrument_id.symbol.value,
-            # limit=limit,
+            start=(start or available_end - ONE_DAY).value,
+            end=(end or available_end).value,
+            limit=limit,
         )
 
-        ticks = TradeTick.from_pyo3_list(pyo3_data)
+        trades = TradeTick.from_pyo3_list(pyo3_trades)
 
         self._handle_trade_ticks(
             instrument_id=instrument_id,
-            ticks=ticks,
+            ticks=trades,
             correlation_id=correlation_id,
         )
 
