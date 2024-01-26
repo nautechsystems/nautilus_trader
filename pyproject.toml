@@ -94,7 +94,7 @@ types-toml = "^0.10.2"
 optional = true
 
 [tool.poetry.group.test.dependencies]
-coverage = "^7.4.0"
+coverage = "^7.4.1"
 pytest = "^7.4.4"
 pytest-aiohttp = "^1.0.5"
 pytest-asyncio = "==0.21.1"  # Pinned due Cython: cannot set '__pytest_asyncio_scoped_event_loop' attribute of immutable type
