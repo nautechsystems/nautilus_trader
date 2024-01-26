@@ -20,14 +20,14 @@ use dbn::{self, Record};
 use indexmap::IndexMap;
 use nautilus_core::{
     python::to_pyvalue_err,
-    time::{get_atomic_clock_realtime, AtomicTime},
+    time::{get_atomic_clock_realtime, AtomicTime, UnixNanos},
 };
 use nautilus_model::data::{trade::TradeTick, Data};
 use pyo3::{exceptions::PyException, prelude::*, types::PyDict};
-use time::macros::datetime;
 use tokio::sync::Mutex;
 
 use crate::databento::{
+    common::get_date_time_range,
     parsing::parse_record,
     symbology::parse_nautilus_instrument_id,
     types::{DatabentoPublisher, PublisherId},
@@ -96,19 +96,19 @@ impl DatabentoHistoricalClient {
         py: Python<'py>,
         dataset: String,
         symbols: String,
-        _limit: Option<usize>,
+        start: UnixNanos,
+        end: Option<UnixNanos>,
+        limit: Option<u64>,
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
 
+        let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
-            .date_time_range((
-                datetime!(2023-01-06 00:00 UTC),
-                datetime!(2023-02-10 12:10 UTC),
-            ))
+            .date_time_range(time_range)
             .symbols(symbols)
             .schema(dbn::Schema::Trades)
-            .limit(NonZeroU64::new(1))
+            .limit(limit.and_then(NonZeroU64::new))
             .build();
 
         let price_precision = 2; // TODO: Hard coded for now
