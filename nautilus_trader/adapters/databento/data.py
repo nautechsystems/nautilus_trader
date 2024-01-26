@@ -58,6 +58,7 @@ from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionsContract
+from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
 class DatabentoDataClient(LiveMarketDataClient):
@@ -539,17 +540,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             end=(end or available_end).value,
         )
 
-        instruments: list[Instrument] = []
-
-        for pyo3_instrument in pyo3_instruments:
-            if isinstance(pyo3_instrument, nautilus_pyo3.Equity):
-                instruments.append(Equity.from_dict(pyo3_instrument.to_dict()))
-            elif isinstance(pyo3_instrument, nautilus_pyo3.FuturesContract):
-                instruments.append(FuturesContract.from_dict(pyo3_instrument.to_dict()))
-            elif isinstance(pyo3_instrument, nautilus_pyo3.OptionsContract):
-                instruments.append(OptionsContract.from_dict(pyo3_instrument.to_dict()))
-            else:
-                self._log.warning(f"Instrument {pyo3_instrument} not supported")
+        instruments = instruments_from_pyo3(pyo3_instruments)
 
         self._handle_instruments(
             instruments=instruments,

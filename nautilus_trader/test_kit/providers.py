@@ -498,7 +498,7 @@ class TestInstrumentProvider:
 
     @staticmethod
     def future(
-        symbol: str = "ESZ21",
+        symbol: str = "ESZ1",
         underlying: str = "ES",
         venue: str = "GLBX",
     ) -> FuturesContract:

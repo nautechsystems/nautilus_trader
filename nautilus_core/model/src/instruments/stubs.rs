@@ -225,8 +225,8 @@ pub fn futures_contract_es() -> FuturesContract {
     let activation = Utc.with_ymd_and_hms(2021, 4, 8, 0, 0, 0).unwrap();
     let expiration = Utc.with_ymd_and_hms(2021, 7, 8, 0, 0, 0).unwrap();
     FuturesContract::new(
-        InstrumentId::new(Symbol::from("ESZ21"), Venue::from("CME")),
-        Symbol::from("ESZ21"),
+        InstrumentId::new(Symbol::from("ESZ1"), Venue::from("GLBX")),
+        Symbol::from("ESZ1"),
         AssetClass::Index,
         Ustr::from("ES"),
         activation.timestamp_nanos_opt().unwrap() as UnixNanos,
