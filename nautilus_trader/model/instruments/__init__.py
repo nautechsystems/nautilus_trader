@@ -18,6 +18,7 @@ asset class and instrument class.
 """
 
 from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments.base import instruments_from_pyo3
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.crypto_future import CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
@@ -38,4 +39,5 @@ __all__ = [
     "FuturesContract",
     "OptionsContract",
     "SyntheticInstrument",
+    "instruments_from_pyo3",
 ]

@@ -18,6 +18,8 @@ from decimal import Decimal
 from libc.math cimport pow
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.core import nautilus_pyo3
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AssetClass
 from nautilus_trader.core.rust.model cimport InstrumentClass
@@ -26,6 +28,9 @@ from nautilus_trader.model.functions cimport asset_class_to_str
 from nautilus_trader.model.functions cimport instrument_class_from_str
 from nautilus_trader.model.functions cimport instrument_class_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.instruments.equity cimport Equity
+from nautilus_trader.model.instruments.futures_contract cimport FuturesContract
+from nautilus_trader.model.instruments.options_contract cimport OptionsContract
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick_scheme.base cimport TICK_SCHEMES
@@ -548,3 +553,19 @@ cdef class Instrument(Data):
         Condition.not_none(quantity, "quantity")
 
         return Quantity(quantity.as_f64_c() * (1.0 / last_px.as_f64_c()), self.size_precision)
+
+
+cpdef list[Instrument] instruments_from_pyo3(list pyo3_instruments):
+    cdef list[Instrument] instruments = []
+
+    for pyo3_instrument in pyo3_instruments:
+        if isinstance(pyo3_instrument, nautilus_pyo3.Equity):
+            instruments.append(Equity.from_pyo3_c(pyo3_instrument))
+        elif isinstance(pyo3_instrument, nautilus_pyo3.FuturesContract):
+            instruments.append(FuturesContract.from_pyo3_c(pyo3_instrument))
+        elif isinstance(pyo3_instrument, nautilus_pyo3.OptionsContract):
+            instruments.append(OptionsContract.from_pyo3_c(pyo3_instrument))
+        else:
+            RuntimeError(f"Instrument {pyo3_instrument} not supported")
+
+    return instruments
