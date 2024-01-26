@@ -16,7 +16,7 @@
 use std::{fs, num::NonZeroU64, sync::Arc};
 
 use databento::{self, historical::timeseries::GetRangeParams};
-use dbn::{self, Record};
+use dbn::{self, Record, VersionUpgradePolicy};
 use indexmap::IndexMap;
 use nautilus_core::{
     python::to_pyvalue_err,
@@ -26,15 +26,21 @@ use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick, Data},
     enums::BarAggregation,
 };
-use pyo3::{exceptions::PyException, prelude::*, types::PyDict};
+use pyo3::{
+    exceptions::PyException,
+    prelude::*,
+    types::{PyDict, PyList},
+};
 use tokio::sync::Mutex;
 
 use crate::databento::{
     common::get_date_time_range,
-    parsing::parse_record,
+    parsing::{parse_instrument_def_msg, parse_record},
     symbology::parse_nautilus_instrument_id,
     types::{DatabentoPublisher, PublisherId},
 };
+
+use super::loader::convert_instrument_to_pyobject;
 
 #[cfg_attr(
     feature = "python",
@@ -90,6 +96,63 @@ impl DatabentoHistoricalClient {
                     "Error handling response: {e}"
                 ))),
             }
+        })
+    }
+
+    #[pyo3(name = "get_range_instruments")]
+    fn py_get_range_instruments<'py>(
+        &self,
+        py: Python<'py>,
+        dataset: String,
+        symbols: String,
+        start: UnixNanos,
+        end: Option<UnixNanos>,
+        limit: Option<u64>,
+    ) -> PyResult<&'py PyAny> {
+        let client = self.inner.clone();
+
+        let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
+        let params = GetRangeParams::builder()
+            .dataset(dataset)
+            .date_time_range(time_range)
+            .symbols(symbols)
+            .schema(dbn::Schema::Definition)
+            .limit(limit.and_then(NonZeroU64::new))
+            .build();
+
+        let publishers = self.publishers.clone();
+        let ts_init = self.clock.get_time_ns();
+
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut client = client.lock().await; // TODO: Use a client pool
+            let mut decoder = client
+                .timeseries()
+                .get_range(&params)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            decoder.set_upgrade_policy(VersionUpgradePolicy::Upgrade);
+
+            let mut instruments = Vec::new();
+
+            while let Ok(Some(rec)) = decoder.decode_record::<dbn::InstrumentDefMsg>().await {
+                let publisher_id = rec.publisher().unwrap() as PublisherId;
+                let publisher = publishers.get(&publisher_id).unwrap();
+                let result = parse_instrument_def_msg(rec, publisher, ts_init);
+                match result {
+                    Ok(instrument) => instruments.push(instrument),
+                    Err(e) => eprintln!("{:?}", e),
+                };
+            }
+
+            Python::with_gil(|py| {
+                let py_results: PyResult<Vec<PyObject>> = instruments
+                    .into_iter()
+                    .map(|result| convert_instrument_to_pyobject(py, result))
+                    .collect();
+
+                py_results.map(|objs| PyList::new(py, &objs).to_object(py))
+            })
         })
     }
 

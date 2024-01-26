@@ -25,8 +25,8 @@ use nautilus_model::{
 use pyo3::{exceptions::PyRuntimeError, prelude::*, types::PyTuple};
 
 use crate::databento::parsing::{
-    parse_equity, parse_futures_contract, parse_mbo_msg, parse_mbp10_msg, parse_mbp1_msg,
-    parse_options_contract, parse_trade_msg,
+    parse_equity_v1, parse_futures_contract_v1, parse_mbo_msg, parse_mbp10_msg, parse_mbp1_msg,
+    parse_options_contract_v1, parse_trade_msg,
 };
 
 #[pyfunction]
@@ -36,7 +36,7 @@ pub fn py_parse_equity(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> PyResult<Equity> {
-    parse_equity(record, instrument_id, ts_init).map_err(to_pyvalue_err)
+    parse_equity_v1(record, instrument_id, ts_init).map_err(to_pyvalue_err)
 }
 
 #[pyfunction]
@@ -46,7 +46,7 @@ pub fn py_parse_futures_contract(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> PyResult<FuturesContract> {
-    parse_futures_contract(record, instrument_id, ts_init).map_err(to_pyvalue_err)
+    parse_futures_contract_v1(record, instrument_id, ts_init).map_err(to_pyvalue_err)
 }
 
 #[pyfunction]
@@ -56,7 +56,7 @@ pub fn py_parse_options_contract(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> PyResult<OptionsContract> {
-    parse_options_contract(record, instrument_id, ts_init).map_err(to_pyvalue_err)
+    parse_options_contract_v1(record, instrument_id, ts_init).map_err(to_pyvalue_err)
 }
 
 #[pyfunction]
