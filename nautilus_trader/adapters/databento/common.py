@@ -15,10 +15,8 @@
 
 from pathlib import Path
 
-import databento
 import databento_dbn
 
-import nautilus_trader
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import BarType
@@ -27,11 +25,6 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-
-
-# Update Databento user-agent constant value with NautilusTrader version
-if nautilus_trader.USER_AGENT not in databento.common.system.USER_AGENT:
-    databento.common.system.USER_AGENT += f" {nautilus_trader.USER_AGENT}"
 
 
 def check_file_path(path: Path) -> None:
@@ -126,13 +119,13 @@ def databento_schema_from_nautilus_bar_type(bar_type: BarType) -> databento_dbn.
 
     match bar_type.spec.aggregation:
         case BarAggregation.SECOND:
-            return databento.Schema.OHLCV_1S
+            return databento_dbn.Schema.OHLCV_1S
         case BarAggregation.MINUTE:
-            return databento.Schema.OHLCV_1M
+            return databento_dbn.Schema.OHLCV_1M
         case BarAggregation.HOUR:
-            return databento.Schema.OHLCV_1H
+            return databento_dbn.Schema.OHLCV_1H
         case BarAggregation.DAY:
-            return databento.Schema.OHLCV_1D
+            return databento_dbn.Schema.OHLCV_1D
         case _:
             raise ValueError(
                 f"Invalid bar type '{bar_type}'. "

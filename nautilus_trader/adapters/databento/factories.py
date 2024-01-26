@@ -15,8 +15,7 @@
 
 import asyncio
 from functools import lru_cache
-
-import databento
+from pathlib import Path
 
 from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento.data import DatabentoDataClient
@@ -27,17 +26,18 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.config.common import InstrumentProviderConfig
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.live.factories import LiveDataClientFactory
 
 
-DATABENTO_HTTP_CLIENTS: dict[str, databento.Historical] = {}
+DATABENTO_HTTP_CLIENTS: dict[str, nautilus_pyo3.DatabentoHistoricalClient] = {}
 
 
 @lru_cache(1)
 def get_cached_databento_http_client(
     key: str | None = None,
     gateway: str | None = None,
-) -> databento.Historical:
+) -> nautilus_pyo3.DatabentoHistoricalClient:
     """
     Cache and return a Databento historical HTTP client with the given key and gateway.
 
@@ -53,23 +53,25 @@ def get_cached_databento_http_client(
 
     Returns
     -------
-    databento.Historical
+    nautilus_pyo3.DatabentoHistoricalClient
 
     """
     global BINANCE_HTTP_CLIENTS
 
     key = key or get_env_key("DATABENTO_API_KEY")
 
+    publishers_path = str((Path(__file__).resolve().parent / "publishers.json").resolve())
+
     client_key: str = "|".join((key, gateway or ""))
     if client_key not in DATABENTO_HTTP_CLIENTS:
-        client = databento.Historical(key=key, gateway=gateway or databento.HistoricalGateway.BO1)
+        client = nautilus_pyo3.DatabentoHistoricalClient(key=key, publishers_path=publishers_path)
         DATABENTO_HTTP_CLIENTS[client_key] = client
     return DATABENTO_HTTP_CLIENTS[client_key]
 
 
 @lru_cache(1)
 def get_cached_databento_instrument_provider(
-    http_client: databento.Historical,
+    http_client: nautilus_pyo3.DatabentoHistoricalClient,
     clock: LiveClock,
     live_api_key: str | None = None,
     live_gateway: str | None = None,
@@ -83,7 +85,7 @@ def get_cached_databento_instrument_provider(
 
     Parameters
     ----------
-    http_client : databento.Historical
+    http_client : nautilus_pyo3.DatabentoHistoricalClient
         The client for the instrument provider.
     clock : LiveClock
         The clock for the instrument provider.
@@ -150,7 +152,7 @@ class DatabentoLiveDataClientFactory(LiveDataClientFactory):
 
         """
         # Get HTTP client singleton
-        http_client: databento.Historical = get_cached_databento_http_client(
+        http_client = get_cached_databento_http_client(
             key=config.api_key,
             gateway=config.http_gateway,
         )

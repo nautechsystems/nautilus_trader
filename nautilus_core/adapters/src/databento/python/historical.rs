@@ -50,6 +50,8 @@ pub struct DatabentoHistoricalClient {
     clock: &'static AtomicTime,
     inner: Arc<Mutex<databento::HistoricalClient>>,
     publishers: Arc<IndexMap<PublisherId, DatabentoPublisher>>,
+    #[pyo3(get)]
+    pub key: String,
 }
 
 #[pymethods]
@@ -57,7 +59,7 @@ impl DatabentoHistoricalClient {
     #[new]
     pub fn py_new(key: String, publishers_path: &str) -> PyResult<Self> {
         let client = databento::HistoricalClient::builder()
-            .key(key)
+            .key(key.clone())
             .map_err(to_pyvalue_err)?
             .build()
             .map_err(to_pyvalue_err)?;
@@ -75,6 +77,7 @@ impl DatabentoHistoricalClient {
             clock: get_atomic_clock_realtime(),
             inner: Arc::new(Mutex::new(client)),
             publishers: Arc::new(publishers),
+            key,
         })
     }
 
