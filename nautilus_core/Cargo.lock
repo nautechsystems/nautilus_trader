@@ -2415,7 +2415,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-adapters"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2444,7 +2444,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "cbindgen",
  "nautilus-common",
@@ -2458,7 +2458,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2482,7 +2482,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2501,7 +2501,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "nautilus-core",
@@ -2513,7 +2513,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "nautilus-common",
@@ -2528,7 +2528,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2556,7 +2556,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2581,7 +2581,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -2605,7 +2605,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "nautilus-adapters",
  "nautilus-common",
