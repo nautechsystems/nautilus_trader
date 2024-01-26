@@ -1636,6 +1636,14 @@ class DatabentoHistoricalClient:
     ) -> None: ...
 
     async def get_dataset_range(self, dataset: str) -> dict[str, str]: ...
+    async def get_range_quotes(
+        self,
+        dataset: str,
+        symbols: str,
+        start: int,
+        end: int | None = None,
+        limit: int | None = None,
+    ) -> list[QuoteTick]: ...
     async def get_range_trades(
         self,
         dataset: str,
@@ -1644,3 +1652,12 @@ class DatabentoHistoricalClient:
         end: int | None = None,
         limit: int | None = None,
     ) -> list[TradeTick]: ...
+    async def get_range_bars(
+        self,
+        dataset: str,
+        symbols: str,
+        aggregation: BarAggregation,
+        start: int,
+        end: int | None = None,
+        limit: int | None = None,
+    ) -> list[Bar]: ...
