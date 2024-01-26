@@ -17,6 +17,7 @@ import asyncio
 from collections import defaultdict
 from collections.abc import Coroutine
 from functools import partial
+from pathlib import Path
 from typing import Any
 
 import databento
@@ -31,18 +32,15 @@ from nautilus_trader.adapters.databento.constants import DATABENTO_CLIENT_ID
 from nautilus_trader.adapters.databento.constants import ONE_DAY
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.parsing import parse_record
-from nautilus_trader.adapters.databento.parsing import parse_record_with_metadata
 from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.adapters.databento.types import Dataset
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.core.nautilus_pyo3 import is_within_last_24_hours
-from nautilus_trader.core.nautilus_pyo3 import last_weekday_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
@@ -53,9 +51,13 @@ from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments import Equity
+from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.instruments import OptionsContract
 
 
 class DatabentoDataClient(LiveMarketDataClient):
@@ -118,13 +120,18 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._timeout_initial_load: float | None = config.timeout_initial_load
         self._mbo_subscriptions_delay: float | None = config.mbo_subscriptions_delay
 
+        publishers_path = Path(__file__).resolve().parent / "publishers.json"
+
         # Clients
-        self._http_client_pyo3 = nautilus_pyo3.DatabentoHistoricalClient(http_client.key)
-        self._http_client: databento.Historical = http_client
+        self._http_client = nautilus_pyo3.DatabentoHistoricalClient(
+            key=http_client.key,
+            publishers_path=str(publishers_path.resolve()),
+        )
         self._live_clients: dict[Dataset, databento.Live] = {}
         self._live_clients_mbo: dict[Dataset, databento.Live] = {}
         self._has_subscribed: dict[Dataset, bool] = {}
         self._loader = loader or DatabentoDataLoader()
+        self._available_ends: dict[Dataset, pd.Timestamp] = {}
 
         # Cache instrument index
         for instrument_id in config.instrument_ids or []:
@@ -246,10 +253,12 @@ class DatabentoDataClient(LiveMarketDataClient):
         await self._subscribe_instrument(instrument_id)
 
     async def _get_dataset_range(self, dataset: Dataset) -> tuple[pd.Timestamp, pd.Timestamp]:
-        response = await self._http_client_pyo3.get_dataset_range(dataset)
+        response = await self._http_client.get_dataset_range(dataset)
 
         start = pd.Timestamp(response["start_date"], tz=pytz.utc)
         end = pd.Timestamp(response["end_date"], tz=pytz.utc)
+
+        self._log.info(f"Dataset {dataset} available end {end}.", LogColor.BLUE)
 
         return start, end
 
@@ -508,39 +517,44 @@ class DatabentoDataClient(LiveMarketDataClient):
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
 
-        _, available_end = await self._get_dataset_range(dataset)
+        # Check and cache dataset available end
+        available_end = self._available_ends.get(dataset)
+        if available_end is None:
+            _, available_end = await self._get_dataset_range(dataset)
+            self._available_ends[dataset] = available_end
 
-        date_now_utc = self._clock.utc_now().date()
-        default_start = pd.Timestamp(
-            last_weekday_nanos(
-                year=date_now_utc.year,
-                month=date_now_utc.month,
-                day=date_now_utc.day,
-            ),
-            tz=pytz.utc,
+        start = start or available_end - ONE_DAY * 2
+        end = end or available_end
+
+        self._log.info(
+            f"Requesting {instrument_id} instrument definitions: "
+            f"dataset={dataset}, start={start}, end={end} ...",
+            LogColor.BLUE,
         )
 
-        default_start = min(default_start, available_end - ONE_DAY)
-
-        data = await self._http_client.timeseries.get_range_async(
+        pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
-            start=start or default_start.date().isoformat(),
-            end=end,
-            symbols=instrument_id.symbol.value,
-            schema=databento.Schema.DEFINITION,
+            symbols=ALL_SYMBOLS,
+            start=(start or available_end - ONE_DAY * 2).value,
+            end=(end or available_end).value,
         )
 
-        for record in data:
-            instrument = parse_record(
-                record=record,
-                instrument_id=instrument_id,
-                ts_init=self._clock.timestamp_ns(),
-            )
+        instruments: list[Instrument] = []
 
-            self._handle_instrument(
-                instrument=instrument,
-                correlation_id=correlation_id,
-            )
+        for pyo3_instrument in pyo3_instruments:
+            if isinstance(pyo3_instrument, nautilus_pyo3.Equity):
+                instruments.append(Equity.from_dict(pyo3_instrument.to_dict()))
+            elif isinstance(pyo3_instrument, nautilus_pyo3.FuturesContract):
+                instruments.append(FuturesContract.from_dict(pyo3_instrument.to_dict()))
+            elif isinstance(pyo3_instrument, nautilus_pyo3.OptionsContract):
+                instruments.append(OptionsContract.from_dict(pyo3_instrument.to_dict()))
+            else:
+                self._log.warning(f"Instrument {pyo3_instrument} not supported")
+
+        self._handle_instruments(
+            instruments=instruments,
+            correlation_id=correlation_id,
+        )
 
     async def _request_instruments(
         self,
@@ -551,42 +565,39 @@ class DatabentoDataClient(LiveMarketDataClient):
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(venue)
 
-        _, available_end = await self._get_dataset_range(dataset)
+        # Check and cache dataset available end
+        available_end = self._available_ends.get(dataset)
+        if available_end is None:
+            _, available_end = await self._get_dataset_range(dataset)
+            self._available_ends[dataset] = available_end
 
-        date_now_utc = self._clock.utc_now().date()
-        default_start = pd.Timestamp(
-            last_weekday_nanos(
-                year=date_now_utc.year,
-                month=date_now_utc.month,
-                day=date_now_utc.day,
-            ),
-            tz=pytz.utc,
+        start = start or available_end - ONE_DAY * 2
+        end = end or available_end
+
+        self._log.info(
+            f"Requesting {venue} instrument definitions: "
+            f"dataset={dataset}, start={start}, end={end} ...",
+            LogColor.BLUE,
         )
 
-        default_start = min(default_start, available_end - ONE_DAY * 2)
-
-        data = await self._http_client.timeseries.get_range_async(
+        pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
-            start=start or default_start.date().isoformat(),
-            end=end,
             symbols=ALL_SYMBOLS,
-            schema=databento.Schema.DEFINITION,
+            start=start.value,
+            end=end.value,
         )
 
         instruments: list[Instrument] = []
 
-        for record in data:
-            try:
-                instrument = parse_record_with_metadata(
-                    record=record,
-                    publishers=self._loader.publishers,
-                    ts_init=self._clock.timestamp_ns(),
-                )
-            except ValueError as e:
-                self._log.error(repr(e))
-                continue
-
-            instruments.append(instrument)
+        for pyo3_instrument in pyo3_instruments:
+            if isinstance(pyo3_instrument, nautilus_pyo3.Equity):
+                instruments.append(Equity.from_dict(pyo3_instrument.to_dict()))
+            elif isinstance(pyo3_instrument, nautilus_pyo3.FuturesContract):
+                instruments.append(FuturesContract.from_dict(pyo3_instrument.to_dict()))
+            elif isinstance(pyo3_instrument, nautilus_pyo3.OptionsContract):
+                instruments.append(OptionsContract.from_dict(pyo3_instrument.to_dict()))
+            else:
+                self._log.warning(f"Instrument {pyo3_instrument} not supported")
 
         self._handle_instruments(
             instruments=instruments,
@@ -604,46 +615,34 @@ class DatabentoDataClient(LiveMarketDataClient):
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
 
-        date_now_utc = self._clock.utc_now().date()
-        default_start = pd.Timestamp(
-            last_weekday_nanos(
-                year=date_now_utc.year,
-                month=date_now_utc.month,
-                day=date_now_utc.day,
-            ),
-            tz=pytz.utc,
+        # Check and cache dataset available end
+        available_end = self._available_ends.get(dataset)
+        if available_end is None:
+            _, available_end = await self._get_dataset_range(dataset)
+            self._available_ends[dataset] = available_end
+
+        start = start or available_end - ONE_DAY
+        end = end or available_end
+
+        self._log.info(
+            f"Requesting {instrument_id} quote ticks: "
+            f"dataset={dataset}, start={start}, end={end}, limit={limit} ...",
+            LogColor.BLUE,
         )
 
-        if is_within_last_24_hours(default_start.value):
-            default_start -= ONE_DAY
-
-        data = await self._http_client.timeseries.get_range_async(
+        pyo3_quotes = await self._http_client.get_range_quotes(
             dataset=dataset,
-            start=start or default_start.date().isoformat(),
-            end=end,
             symbols=instrument_id.symbol.value,
-            schema=databento.Schema.MBP_1,
+            start=start.value,
+            end=end.value,
             limit=limit,
         )
 
-        ticks: list[QuoteTick] = []
-
-        for record in data:
-            tick = parse_record(
-                record=record,
-                instrument_id=instrument_id,
-                ts_init=self._clock.timestamp_ns(),
-            )
-
-            if not isinstance(tick, QuoteTick):
-                # Might be `TradeTick`
-                continue
-
-            ticks.append(tick)
+        quotes = QuoteTick.from_pyo3_list(pyo3_quotes)
 
         self._handle_quote_ticks(
             instrument_id=instrument_id,
-            ticks=ticks,
+            ticks=quotes,
             correlation_id=correlation_id,
         )
 
@@ -657,42 +656,34 @@ class DatabentoDataClient(LiveMarketDataClient):
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
 
-        date_now_utc = self._clock.utc_now().date()
-        default_start = pd.Timestamp(
-            last_weekday_nanos(
-                year=date_now_utc.year,
-                month=date_now_utc.month,
-                day=date_now_utc.day,
-            ),
-            tz=pytz.utc,
+        # Check and cache dataset available end
+        available_end = self._available_ends.get(dataset)
+        if available_end is None:
+            _, available_end = await self._get_dataset_range(dataset)
+            self._available_ends[dataset] = available_end
+
+        start = start or available_end - ONE_DAY
+        end = end or available_end
+
+        self._log.info(
+            f"Requesting {instrument_id} trade ticks: "
+            f"dataset={dataset}, start={start}, end={end}, limit={limit} ...",
+            LogColor.BLUE,
         )
 
-        if is_within_last_24_hours(default_start.value):
-            default_start -= ONE_DAY
-
-        data = await self._http_client.timeseries.get_range_async(
+        pyo3_trades = await self._http_client.get_range_trades(
             dataset=dataset,
-            start=start or default_start.date().isoformat(),
-            end=end,
             symbols=instrument_id.symbol.value,
-            schema=databento.Schema.TRADES,
+            start=(start or available_end - ONE_DAY).value,
+            end=(end or available_end).value,
             limit=limit,
         )
 
-        ticks: list[TradeTick] = []
-
-        for record in data:
-            tick = parse_record(
-                record=record,
-                instrument_id=instrument_id,
-                ts_init=self._clock.timestamp_ns(),
-            )
-
-            ticks.append(tick)
+        trades = TradeTick.from_pyo3_list(pyo3_trades)
 
         self._handle_trade_ticks(
             instrument_id=instrument_id,
-            ticks=ticks,
+            ticks=trades,
             correlation_id=correlation_id,
         )
 
@@ -704,46 +695,34 @@ class DatabentoDataClient(LiveMarketDataClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> None:
-        try:
-            schema = databento_schema_from_nautilus_bar_type(bar_type)
-        except ValueError as e:
-            self._log.error(f"Cannot request: {e}")
-            return
-
         dataset: Dataset = self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
 
-        date_now_utc = self._clock.utc_now().date()
-        default_start = pd.Timestamp(
-            last_weekday_nanos(
-                year=date_now_utc.year,
-                month=date_now_utc.month,
-                day=date_now_utc.day,
-            ),
-            tz=pytz.utc,
+        # Check and cache dataset available end
+        available_end = self._available_ends.get(dataset)
+        if available_end is None:
+            _, available_end = await self._get_dataset_range(dataset)
+            self._available_ends[dataset] = available_end
+        start = start or available_end - ONE_DAY
+        end = end or available_end
+
+        self._log.info(
+            f"Requesting {bar_type.instrument_id} 1 {bar_aggregation_to_str(bar_type.spec.aggregation)} bars: "
+            f"dataset={dataset}, start={start}, end={end}, limit={limit} ...",
+            LogColor.BLUE,
         )
 
-        if is_within_last_24_hours(default_start.value):
-            default_start -= ONE_DAY
-
-        data = await self._http_client.timeseries.get_range_async(
+        pyo3_bars = await self._http_client.get_range_bars(
             dataset=dataset,
-            start=start or default_start.date().isoformat(),
-            end=end,
             symbols=bar_type.instrument_id.symbol.value,
-            schema=schema,
+            aggregation=nautilus_pyo3.BarAggregation(
+                bar_aggregation_to_str(bar_type.spec.aggregation),
+            ),
+            start=(start or available_end - ONE_DAY).value,
+            end=(end or available_end).value,
             limit=limit,
         )
 
-        bars: list[Bar] = []
-
-        for record in data:
-            bar = parse_record(
-                record=record,
-                instrument_id=bar_type.instrument_id,
-                ts_init=self._clock.timestamp_ns(),
-            )
-
-            bars.append(bar)
+        bars = Bar.from_pyo3_list(pyo3_bars)
 
         self._handle_bars(
             bar_type=bar_type,

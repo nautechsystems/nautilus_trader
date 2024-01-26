@@ -12,16 +12,6 @@
    :member-order: bysource
 ```
 
-## Clock
-
-```{eval-rst}
-.. automodule:: nautilus_trader.common.clock
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
 ## Component
 
 ```{eval-rst}
@@ -54,16 +44,6 @@
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.common.generators
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-## Logging
-
-```{eval-rst}
-.. automodule:: nautilus_trader.common.logging
    :show-inheritance:
    :inherited-members:
    :members:

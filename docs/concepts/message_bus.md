@@ -77,11 +77,14 @@ your `TradingNodeConfig`. Each of these config options will be described below.
 message_bus=MessageBusConfig(
     database=DatabaseConfig(),
     encoding="json",
-    stream="streams",
-    use_instance_id=False,
     timestamps_as_iso8601=True,
-    types_filter=[QuoteTick, TradeTick],
+    buffer_interval_ms=100,
     autotrim_mins=30,
+    use_trader_prefix=True,
+    use_trader_id=True,
+    use_instance_id=False,
+    streams_prefix="streams",
+    types_filter=[QuoteTick, TradeTick],
 )
 ...
 ```
@@ -89,27 +92,6 @@ message_bus=MessageBusConfig(
 ### Database config
 A `DatabaseConfig` must be provided, for a default Redis setup on the local
 loopback you can pass a `DatabaseConfig()`, which will use defaults to match.
-
-### Trader keys
-
-Trader keys are essential for identifying individual trader nodes and organizing messages within streams.
-They can be tailored to meet your specific requirements and use cases. In the context of message bus streams, a trader key is typically structured as follows:
-
-```
-{stream}:{trader_id}:{instance_id}
-```
-
-The following options are available for configuring trader keys:
-
-#### Stream
-The `stream` string allows you to group all streams for a single trader instance, or organize messages related to a group of trader instances.
-By configuring this grouping behavior, pass a string to the `stream` configuration option.
-
-#### Instance ID
-
-Each trader node is assigned a unique 'instance ID,' which is a UUIDv4. This instance ID helps distinguish individual traders when messages 
-are distributed across multiple streams. You can include the instance ID in the trader key by setting the `use_instance_id` configuration option to `True`.
-This is particularly useful when you need to track and identify traders across various streams in a multi-node trading system.
 
 ### Encoding
 
@@ -128,6 +110,36 @@ It's recommended to use `json` encoding for human readability when performance i
 
 By default timestamps are formatted as UNIX epoch nanosecond integers. Alternatively you can
 configure ISO 8601 string formatting by setting the `timestamps_as_iso8601` to `True`.
+
+### Message stream keys
+
+Message stream keys are essential for identifying individual trader nodes and organizing messages within streams.
+They can be tailored to meet your specific requirements and use cases. In the context of message bus streams, a trader key is typically structured as follows:
+
+```
+trader:{trader_id}:{instance_id}:{streams_prefix}
+```
+
+The following options are available for configuring message stream keys:
+
+#### Trader prefix
+
+If the key should begin with the `trader` string.
+
+#### Trader ID
+
+If the key should include the trader ID for the node.
+
+#### Instance ID
+
+Each trader node is assigned a unique 'instance ID,' which is a UUIDv4. This instance ID helps distinguish individual traders when messages 
+are distributed across multiple streams. You can include the instance ID in the trader key by setting the `use_instance_id` configuration option to `True`.
+This is particularly useful when you need to track and identify traders across various streams in a multi-node trading system.
+
+#### Streams prefix
+
+The `streams_prefix` string allows you to group all streams for a single trader instance, or organize messages related to a group of trader instances.
+By configuring this grouping behavior, pass a string to the `streams_prefix` configuration option (with other prefixes false).
 
 ### Types filtering
 

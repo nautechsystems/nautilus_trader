@@ -60,7 +60,7 @@ config_node = TradingNodeConfig(
     #     encoding="json",
     #     timestamps_as_iso8601=True,
     #     buffer_interval_ms=100,
-    #     stream="quoters",
+    #     streams_prefix="quoters",
     #     use_instance_id=False,
     #     # types_filter=[QuoteTick],
     #     autotrim_mins=30,
@@ -69,6 +69,7 @@ config_node = TradingNodeConfig(
     # snapshot_orders=True,
     # snapshot_positions=True,
     # snapshot_positions_interval=5.0,
+    # streaming=StreamingConfig(catalog_path="catalog"),
     data_clients={
         "BINANCE": BinanceDataClientConfig(
             api_key=None,  # 'BINANCE_API_KEY' env var

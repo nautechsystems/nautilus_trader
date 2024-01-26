@@ -23,7 +23,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.futures.execution import BinanceFuturesExecutionClient
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.uuid import UUID4

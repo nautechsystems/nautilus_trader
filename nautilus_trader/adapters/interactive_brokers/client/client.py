@@ -46,8 +46,8 @@ from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import Component
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.model.identifiers import ClientId

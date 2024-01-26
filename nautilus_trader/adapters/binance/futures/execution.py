@@ -37,7 +37,7 @@ from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFutures
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.correctness import PyCondition

@@ -35,12 +35,11 @@ use time;
 use ustr::Ustr;
 
 use super::{
-    parsing::{parse_instrument_def_msg, parse_record},
+    parsing::{parse_instrument_def_msg_v1, parse_record},
     types::DatabentoPublisher,
+    types::Dataset,
+    types::PublisherId,
 };
-
-pub type PublisherId = u16;
-pub type Dataset = Ustr;
 
 /// Provides a Nautilus data loader for Databento Binary Encoding (DBN) format data.
 ///
@@ -254,7 +253,7 @@ impl DatabentoDataLoader {
 
                     let publisher = self.publishers.get(&msg.hd.publisher_id).unwrap();
 
-                    match parse_instrument_def_msg(record, publisher, msg.ts_recv) {
+                    match parse_instrument_def_msg_v1(record, publisher, msg.ts_recv) {
                         Ok(data) => Some(Ok(data)),
                         Err(e) => Some(Err(e)),
                     }

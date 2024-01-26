@@ -29,6 +29,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
@@ -41,7 +42,7 @@ from tests.mem_leak_tests.conftest import snapshot_memory
 def run():
     # Configure backtest engine
     config = BacktestEngineConfig(
-        trader_id="BACKTESTER-001",
+        trader_id=TraderId("BACKTESTER-001"),
         logging=LoggingConfig(log_level="INFO", bypass_logging=True),
     )
 

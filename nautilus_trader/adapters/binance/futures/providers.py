@@ -33,7 +33,7 @@ from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFutu
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
 from nautilus_trader.adapters.binance.futures.schemas.wallet import BinanceFuturesCommissionRate
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition

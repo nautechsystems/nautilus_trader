@@ -23,8 +23,8 @@ from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.actor import Actor
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config.common import ExecAlgorithmConfig

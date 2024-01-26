@@ -17,7 +17,7 @@ import asyncio
 
 import pytest
 
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.config import LiveRiskEngineConfig

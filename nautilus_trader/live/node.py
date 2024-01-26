@@ -19,8 +19,8 @@ import time
 from datetime import timedelta
 
 from nautilus_trader.cache.base import CacheFacade
+from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4

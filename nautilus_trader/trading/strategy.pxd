@@ -15,9 +15,9 @@
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
-from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.clock cimport TimeEvent
+from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport MessageBus
+from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport OrderSide

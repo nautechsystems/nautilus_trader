@@ -165,7 +165,7 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
 }
 
 
-EXTERNAL_PUBLISHING_TYPES = (
+_EXTERNAL_PUBLISHABLE_TYPES = {
     str,
     int,
     float,
@@ -215,7 +215,7 @@ EXTERNAL_PUBLISHING_TYPES = (
     InstrumentClose,
     BinanceBar,
     BinanceTicker,
-)
+}
 
 
 cpdef void register_serializable_object(
@@ -225,6 +225,10 @@ cpdef void register_serializable_object(
 ):
     """
     Register the given object with the global serialization object maps.
+
+    The `type` will also be registered as an external publishable type and
+    will be published externally on the message bus unless also added to
+    the `MessageBusConfig.types_filter`.
 
     Parameters
     ----------
@@ -250,6 +254,7 @@ cpdef void register_serializable_object(
 
     _OBJECT_TO_DICT_MAP[obj.__name__] = to_dict
     _OBJECT_FROM_DICT_MAP[obj.__name__] = from_dict
+    _EXTERNAL_PUBLISHABLE_TYPES.add(obj)
 
 
 cdef class Serializer:

@@ -26,7 +26,7 @@ thiserror = { workspace = true }
 thousands = { workspace = true }
 ustr = { workspace = true }
 chrono = { workspace = true }
-derive_builder = "0.12.0"
+derive_builder = "0.13.0"
 evalexpr = "11.3.0"
 tabled = "0.15.0"
 

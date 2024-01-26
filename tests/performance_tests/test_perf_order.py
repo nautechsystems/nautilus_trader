@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import LiveClock
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.generators import ClientOrderIdGenerator
 from nautilus_trader.model.enums import OrderSide

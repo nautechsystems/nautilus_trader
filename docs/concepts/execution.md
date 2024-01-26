@@ -109,8 +109,8 @@ determine how a primary order is split into a series of spawned orders.
 ```python
 # Configure your strategy
 config = EMACrossTWAPConfig(
-    instrument_id=str(ETHUSDT_BINANCE.id),
-    bar_type="ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL",
+    instrument_id=ETHUSDT_BINANCE.id,
+    bar_type=BarType.from_str("ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL"),
     trade_size=Decimal("0.05"),
     fast_ema_period=10,
     slow_ema_period=20,

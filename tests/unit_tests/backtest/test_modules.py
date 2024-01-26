@@ -20,7 +20,7 @@ from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.backtest.modules import SimulationModule
 from nautilus_trader.backtest.modules import SimulationModuleConfig
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.component import Logger
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.core.data import Data

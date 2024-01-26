@@ -15,7 +15,7 @@
 
 import asyncio
 
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.live.data_client import LiveDataClient

@@ -15,12 +15,12 @@
 
 import pytest
 
+from nautilus_trader.common.component import Logger
+from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.enums import log_level_to_str
-from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import init_logging
 
 
 class TestLogLevel:

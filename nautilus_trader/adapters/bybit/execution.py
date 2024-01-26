@@ -36,7 +36,7 @@ from nautilus_trader.adapters.bybit.utils import get_api_key
 from nautilus_trader.adapters.bybit.utils import get_api_secret
 from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition

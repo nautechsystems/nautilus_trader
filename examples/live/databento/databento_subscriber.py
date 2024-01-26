@@ -42,10 +42,8 @@ from nautilus_trader.trading.strategy import Strategy
 # subscribed for as part of the data client configuration
 instrument_ids = [
     # InstrumentId.from_str("AAPL.XCHI"),
-    # InstrumentId.from_str("ESF4.GLBX"),
-    # InstrumentId.from_str("ESG4.GLBX"),
-    InstrumentId.from_str("ESH4.GLBX"),
-    # InstrumentId.from_str("ESM4.GLBX"),
+    # InstrumentId.from_str("ESH4.GLBX"),
+    InstrumentId.from_str("ESM4.GLBX"),
 ]
 
 # Configure the trading node
@@ -67,7 +65,7 @@ config_node = TradingNodeConfig(
     #     encoding="json",
     #     timestamps_as_iso8601=True,
     #     buffer_interval_ms=100,
-    #     stream="quoters",
+    #     streams_prefix="quoters",
     #     use_instance_id=False,
     #     # types_filter=[QuoteTick],
     #     autotrim_mins=30,
@@ -179,7 +177,7 @@ class DataSubscriber(Strategy):
         """
         Actions to be performed when an order book update is received.
         """
-        self.log.info("\n" + order_book.pprint(10), LogColor.CYAN)
+        # self.log.info("\n" + order_book.pprint(10), LogColor.CYAN)
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """

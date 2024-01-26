@@ -20,7 +20,7 @@ from collections.abc import Callable
 import msgspec
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.component import Logger
 from nautilus_trader.core.nautilus_pyo3 import SocketClient
 from nautilus_trader.core.nautilus_pyo3 import SocketConfig
 

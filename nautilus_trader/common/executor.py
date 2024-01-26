@@ -24,7 +24,7 @@ from concurrent.futures import Executor
 from dataclasses import dataclass
 from typing import Any
 
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.component import Logger
 from nautilus_trader.core.uuid import UUID4
 
 

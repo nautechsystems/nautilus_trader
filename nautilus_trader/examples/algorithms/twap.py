@@ -18,7 +18,7 @@ from datetime import timedelta
 from decimal import ROUND_DOWN
 from decimal import Decimal
 
-from nautilus_trader.common.clock import TimeEvent
+from nautilus_trader.common.component import TimeEvent
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config.common import ExecAlgorithmConfig
 from nautilus_trader.core.correctness import PyCondition

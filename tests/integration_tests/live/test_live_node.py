@@ -23,6 +23,7 @@ from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
+from nautilus_trader.common.component import init_logging
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.config.common import InstrumentProviderConfig
@@ -88,6 +89,10 @@ RAW_CONFIG = msgspec.json.encode(
 
 
 class TestTradingNodeConfiguration:
+    def setup(self):
+        # Pre-initialize logging and bypass to avoid the `InvalidConfiguration` exception
+        init_logging(bypass=True)
+
     def teardown(self):
         ensure_all_tasks_completed()
 
@@ -206,6 +211,10 @@ class TestTradingNodeConfiguration:
 
 
 class TestTradingNodeOperation:
+    def setup(self):
+        # Pre-initialize logging and bypass to avoid the `InvalidConfiguration` exception
+        init_logging(bypass=True)
+
     def teardown(self):
         ensure_all_tasks_completed()
 

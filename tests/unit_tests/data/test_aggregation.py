@@ -19,7 +19,7 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.data.aggregation import BarBuilder
 from nautilus_trader.data.aggregation import TickBarAggregator

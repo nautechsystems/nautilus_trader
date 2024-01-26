@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.component cimport Clock
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId

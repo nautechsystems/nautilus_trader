@@ -343,7 +343,7 @@ NAUTILUS_ARROW_SCHEMA = {
             "venue_order_id": pa.string(),
             "price": pa.string(),
             "quantity": pa.string(),
-            "trigger_price": pa.float64(),
+            "trigger_price": pa.string(),
             "event_id": pa.string(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),

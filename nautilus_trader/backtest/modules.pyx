@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import msgspec
 import pandas as pd
 import pytz
 
@@ -114,6 +115,10 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
     def __init__(self, config: FXRolloverInterestConfig):
         super().__init__(config)
+
+        rate_data = config.rate_data
+        if not isinstance(rate_data, pd.DataFrame):
+            rate_data = pd.read_json(msgspec.json.decode(rate_data))
 
         self._calculator = RolloverInterestCalculator(data=config.rate_data)
         self._rollover_time = None  # Initialized at first rollover

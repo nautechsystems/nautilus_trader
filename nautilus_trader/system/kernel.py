@@ -30,17 +30,18 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.cache.database import CacheDatabaseAdapter
 from nautilus_trader.common import Environment
 from nautilus_trader.common.actor import Actor
-from nautilus_trader.common.clock import Clock
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import Clock
+from nautilus_trader.common.component import LiveClock
+from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.component import TestClock
+from nautilus_trader.common.component import init_logging
+from nautilus_trader.common.component import init_tracing
+from nautilus_trader.common.component import is_logging_initialized
+from nautilus_trader.common.component import log_header
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
-from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import init_logging
-from nautilus_trader.common.logging import init_tracing
-from nautilus_trader.common.logging import log_header
 from nautilus_trader.config import ActorFactory
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
@@ -111,6 +112,8 @@ class NautilusKernel:
     InvalidConfiguration
         If any configuration object is mismatched with the environment context,
         (live configurations for 'backtest', or backtest configurations for 'live').
+    InvalidConfiguration
+        If `LoggingConfig.bypass_logging` is set true in a LIVE context.
 
     """
 
@@ -150,38 +153,37 @@ class NautilusKernel:
                 f"environment {self._environment} not recognized",  # pragma: no cover (design-time error)
             )
 
+        # Setup logging
         logging: LoggingConfig = config.logging or LoggingConfig()
 
-        if self._environment == Environment.LIVE or not logging.bypass_logging:
-            # Initialize tracing for async Rust
-            init_tracing()
+        if not is_logging_initialized():
+            if not logging.bypass_logging:
+                # Initialize tracing for async Rust
+                init_tracing()
 
-            # Initialize logging for sync Rust and Python
-            init_logging(
-                trader_id=self._trader_id,
-                machine_id=self._machine_id,
-                instance_id=self._instance_id,
-                level_stdout=log_level_from_str(logging.log_level),
-                level_file=log_level_from_str(logging.log_level_file)
-                if logging.log_level_file is not None
-                else LogLevel.OFF,
-                directory=logging.log_directory,
-                file_name=logging.log_file_name,
-                file_format=logging.log_file_format,
-                component_levels=logging.log_component_levels,
-                colors=logging.log_colors,
-                bypass=False if self._environment == Environment.LIVE else logging.bypass_logging,
-            )
+                # Initialize logging for sync Rust and Python
+                init_logging(
+                    trader_id=self._trader_id,
+                    machine_id=self._machine_id,
+                    instance_id=self._instance_id,
+                    level_stdout=log_level_from_str(logging.log_level),
+                    level_file=log_level_from_str(logging.log_level_file)
+                    if logging.log_level_file is not None
+                    else LogLevel.OFF,
+                    directory=logging.log_directory,
+                    file_name=logging.log_file_name,
+                    file_format=logging.log_file_format,
+                    component_levels=logging.log_component_levels,
+                    colors=logging.log_colors,
+                    bypass=logging.bypass_logging,
+                )
+            elif self._environment == Environment.LIVE:
+                raise InvalidConfiguration(
+                    "`LoggingConfig.bypass_logging` was set `True` "
+                    "when not safe to bypass logging in a LIVE context",
+                )
 
-        # Setup logging
         self._log: Logger = Logger(name=name)
-
-        if isinstance(config.trader_id, str):
-            self._log.warning(
-                "The configurations 'trader_id' must be of type `TraderId`. "
-                "You can import `TraderId` from `nautilus_trader.model.identifiers`. "
-                "This warning will be removed in a future version, and become a hard requirement.",
-            )
 
         log_header(
             trader_id=self._trader_id,
@@ -224,7 +226,7 @@ class NautilusKernel:
             raise ValueError(
                 f"Unrecognized `config.cache.database.type`, was '{config.cache.database.type}'. "
                 "The only database type currently supported is 'redis', if you don't want a cache database backing "
-                "then you can pass `None` for the `cache.database` ('in-memory' is no longer valid).",
+                "then you can pass `None` for the `cache.database` ('in-memory' is no longer valid)",
             )
 
         ########################################################################
@@ -238,7 +240,7 @@ class NautilusKernel:
             raise ValueError(
                 f"Unrecognized `config.message_bus.type`, was '{config.message_bus.database.type}'. "
                 "The only database type currently supported is 'redis', if you don't want a message bus database backing "
-                "then you can pass `None` for the `message_bus.database`.",
+                "then you can pass `None` for the `message_bus.database`",
             )
 
         msgbus_serializer = None
@@ -339,7 +341,7 @@ class NautilusKernel:
             if config.environment == Environment.BACKTEST:
                 raise InvalidConfiguration(
                     f"Cannot use `LiveExecEngineConfig` in a '{config.environment.value}' environment. "
-                    "Try using a `ExecEngineConfig`.",
+                    "Try using an `ExecEngineConfig`.",
                 )
             self._exec_engine = LiveExecutionEngine(
                 loop=self.loop,
@@ -352,7 +354,7 @@ class NautilusKernel:
             if config.environment != Environment.BACKTEST:
                 raise InvalidConfiguration(
                     f"Cannot use `ExecEngineConfig` in a '{config.environment.value}' environment. "
-                    "Try using a `LiveExecEngineConfig`.",
+                    "Try using an `LiveExecEngineConfig`.",
                 )
             self._exec_engine = ExecutionEngine(
                 msgbus=self._msgbus,
@@ -472,7 +474,7 @@ class NautilusKernel:
             path=path,
             fs_protocol=config.fs_protocol,
             flush_interval_ms=config.flush_interval_ms,
-            include_types=config.include_types,  # type: ignore  # TODO(cs)
+            include_types=config.include_types,
         )
         self._trader.subscribe("*", self._writer.write)
         self._log.info(f"Writing data & events to {path}")

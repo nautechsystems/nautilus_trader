@@ -15,7 +15,7 @@
 
 from datetime import timedelta
 
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.component import Throttler
 
 

@@ -58,6 +58,13 @@ def resolve_path(path: str) -> type:
     return cls
 
 
+def resolve_config_path(path: str) -> type[NautilusConfig]:
+    config = resolve_path(path)
+    if not issubclass(config, NautilusConfig):
+        raise TypeError(f"expected a subclass of `NautilusConfig`, was `{type(config)}`")
+    return config
+
+
 def msgspec_encoding_hook(obj: Any) -> Any:
     if isinstance(obj, Decimal):
         return str(obj)
@@ -148,7 +155,7 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
         return cls.__module__ + ":" + cls.__qualname__
 
     @classmethod
-    def parse(cls, raw: bytes) -> Any:
+    def parse(cls, raw: bytes | str) -> Any:
         """
         Return a decoded object of the given `cls`.
 
@@ -156,8 +163,8 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
         ----------
         cls : type
             The type to decode to.
-        raw : bytes
-            The raw bytes to decode.
+        raw : bytes or str
+            The raw bytes or JSON string to decode.
 
         Returns
         -------
@@ -482,6 +489,9 @@ class StreamingConfig(NautilusConfig, frozen=True):
         The flush interval (milliseconds) for writing chunks.
     replace_existing: bool, default False
         If any existing feather files should be replaced.
+    include_types : list[type], optional
+        A list of Arrow serializable types to write.
+        If this is specified then *only* the included types will be written.
 
     """
 
@@ -490,7 +500,7 @@ class StreamingConfig(NautilusConfig, frozen=True):
     fs_storage_options: dict | None = None
     flush_interval_ms: int | None = None
     replace_existing: bool = False
-    include_types: list[str] | None = None
+    include_types: list[type] | None = None
 
     @property
     def fs(self):
@@ -588,8 +598,9 @@ class ActorFactory:
         """
         PyCondition.type(config, ImportableActorConfig, "config")
         actor_cls = resolve_path(config.actor_path)
-        config_cls = resolve_path(config.config_path)
-        return actor_cls(config=config_cls(**config.config))
+        config_cls = resolve_config_path(config.config_path)
+        config = config_cls.parse(msgspec.json.encode(config.config))
+        return actor_cls(config)
 
 
 class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
@@ -673,8 +684,9 @@ class StrategyFactory:
         """
         PyCondition.type(config, ImportableStrategyConfig, "config")
         strategy_cls = resolve_path(config.strategy_path)
-        config_cls = resolve_path(config.config_path)
-        return strategy_cls(config=config_cls(**config.config))
+        config_cls = resolve_config_path(config.config_path)
+        config = config_cls.parse(msgspec.json.encode(config.config))
+        return strategy_cls(config=config)
 
 
 class ImportableControllerConfig(NautilusConfig, frozen=True):
@@ -717,12 +729,9 @@ class ControllerFactory:
 
         PyCondition.type(trader, Trader, "trader")
         controller_cls = resolve_path(config.controller_path)
-        config_cls = resolve_path(config.config_path)
-        config = config_cls(**config.config)
-        return controller_cls(
-            config=config,
-            trader=trader,
-        )
+        config_cls = resolve_config_path(config.config_path)
+        config = config_cls.parse(msgspec.json.encode(config.config))
+        return controller_cls(config=config, trader=trader)
 
 
 class ExecAlgorithmConfig(NautilusConfig, kw_only=True, frozen=True):
@@ -787,8 +796,9 @@ class ExecAlgorithmFactory:
         """
         PyCondition.type(config, ImportableExecAlgorithmConfig, "config")
         exec_algorithm_cls = resolve_path(config.exec_algorithm_path)
-        config_cls = resolve_path(config.config_path)
-        return exec_algorithm_cls(config=config_cls(**config.config))
+        config_cls = resolve_config_path(config.config_path)
+        config = config_cls.parse(msgspec.json.encode(config.config))
+        return exec_algorithm_cls(config=config)
 
 
 class LoggingConfig(NautilusConfig, frozen=True):

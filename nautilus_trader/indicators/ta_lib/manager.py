@@ -34,7 +34,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.component import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.indicators.base.indicator import Indicator
 from nautilus_trader.indicators.ta_lib.common import output_suffix_map
