@@ -13,35 +13,59 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{num::NonZeroU64, sync::Arc};
+use std::{fs, num::NonZeroU64, sync::Arc};
 
 use databento::{self, historical::timeseries::GetRangeParams};
-use dbn;
-use nautilus_core::python::to_pyvalue_err;
+use dbn::{self, Record};
+use indexmap::IndexMap;
+use nautilus_core::{
+    python::to_pyvalue_err,
+    time::{get_atomic_clock_realtime, AtomicTime},
+};
+use nautilus_model::data::{trade::TradeTick, Data};
 use pyo3::{exceptions::PyException, prelude::*, types::PyDict};
 use time::macros::datetime;
 use tokio::sync::Mutex;
+
+use crate::databento::{
+    parsing::parse_record,
+    symbology::parse_nautilus_instrument_id,
+    types::{DatabentoPublisher, PublisherId},
+};
 
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
 )]
 pub struct DatabentoHistoricalClient {
+    clock: &'static AtomicTime,
     inner: Arc<Mutex<databento::HistoricalClient>>,
+    publishers: Arc<IndexMap<PublisherId, DatabentoPublisher>>,
 }
 
 #[pymethods]
 impl DatabentoHistoricalClient {
     #[new]
-    pub fn py_new(key: String) -> PyResult<Self> {
+    pub fn py_new(key: String, publishers_path: &str) -> PyResult<Self> {
         let client = databento::HistoricalClient::builder()
             .key(key)
             .map_err(to_pyvalue_err)?
             .build()
             .map_err(to_pyvalue_err)?;
 
+        let file_content = fs::read_to_string(publishers_path)?;
+        let publishers_vec: Vec<DatabentoPublisher> =
+            serde_json::from_str(&file_content).map_err(to_pyvalue_err)?;
+        let publishers = publishers_vec
+            .clone()
+            .into_iter()
+            .map(|p| (p.publisher_id, p))
+            .collect::<IndexMap<u16, DatabentoPublisher>>();
+
         Ok(Self {
+            clock: get_atomic_clock_realtime(),
             inner: Arc::new(Mutex::new(client)),
+            publishers: Arc::new(publishers),
         })
     }
 
@@ -50,7 +74,7 @@ impl DatabentoHistoricalClient {
         let client = self.inner.clone();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            let mut client = client.lock().await;
+            let mut client = client.lock().await; // TODO: Use a client pool
             let response = client.metadata().get_dataset_range(&dataset).await;
             match response {
                 Ok(res) => Python::with_gil(|py| {
@@ -66,51 +90,66 @@ impl DatabentoHistoricalClient {
         })
     }
 
-    #[pyo3(name = "get_range")]
-    fn py_get_range(
+    #[pyo3(name = "get_range_trades")]
+    fn py_get_range_trades<'py>(
         &self,
-        _py: Python<'_>,
+        py: Python<'py>,
         dataset: String,
         symbols: String,
-        schema: dbn::Schema,
         _limit: Option<usize>,
-        // ) -> PyResult<&'py PyAny> {
-    ) {
-        let _client = self.inner.clone();
+    ) -> PyResult<&'py PyAny> {
+        let client = self.inner.clone();
 
-        let _params = GetRangeParams::builder()
+        let params = GetRangeParams::builder()
             .dataset(dataset)
             .date_time_range((
-                datetime!(2022-06-06 00:00 UTC),
-                datetime!(2022-06-10 12:10 UTC),
+                datetime!(2023-01-06 00:00 UTC),
+                datetime!(2023-02-10 12:10 UTC),
             ))
             .symbols(symbols)
-            .schema(schema)
+            .schema(dbn::Schema::Trades)
             .limit(NonZeroU64::new(1))
             .build();
 
-        // WIP
-        // pyo3_asyncio::tokio::future_into_py(py, async move {
-        //     let mut client = client.lock().await;
-        //     let decoder = client
-        //         .timeseries()
-        //         .get_range(&params)
-        //         .await
-        //         .map_err(to_pyvalue_err)?;
-        //
-        //     let mut result: Vec<&dbn::TradeMsg> = Vec::new();
-        //     for rec in decoder
-        //         .decode_record::<dbn::TradeMsg>()
-        //         .await
-        //         .map_err(to_pyvalue_err)?
-        //     {
-        //         // TODO: Parse event record to a Nautilus data object
-        //         result.push(rec);
-        //     }
-        //
-        //     let output = Vec::new();
-        //     let py_list = output.into_py(py);
-        //     Ok(py_list)
-        // });
+        let price_precision = 2; // TODO: Hard coded for now
+        let publishers = self.publishers.clone();
+        let ts_init = self.clock.get_time_ns();
+
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut client = client.lock().await; // TODO: Use a client pool
+            let mut decoder = client
+                .timeseries()
+                .get_range(&params)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            let metadata = decoder.metadata().clone();
+            let mut result: Vec<TradeTick> = Vec::new();
+
+            while let Ok(Some(rec)) = decoder.decode_record::<dbn::TradeMsg>().await {
+                let rec_ref = dbn::RecordRef::from(rec);
+                let rtype = rec_ref.rtype().expect("Invalid `rtype` for data loading");
+                let instrument_id = parse_nautilus_instrument_id(&rec_ref, &metadata, &publishers)
+                    .map_err(to_pyvalue_err)?;
+
+                let (data, _) = parse_record(
+                    &rec_ref,
+                    rtype,
+                    instrument_id,
+                    price_precision,
+                    Some(ts_init),
+                )
+                .map_err(to_pyvalue_err)?;
+
+                match data {
+                    Data::Trade(trade) => {
+                        result.push(trade);
+                    }
+                    _ => panic!("Invalid data element not `TradeTick`, was {:?}", data),
+                }
+            }
+
+            Python::with_gil(|py| Ok(result.into_py(py)))
+        })
     }
 }

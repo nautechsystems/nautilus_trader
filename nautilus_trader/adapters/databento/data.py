@@ -17,6 +17,7 @@ import asyncio
 from collections import defaultdict
 from collections.abc import Coroutine
 from functools import partial
+from pathlib import Path
 from typing import Any
 
 import databento
@@ -118,8 +119,13 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._timeout_initial_load: float | None = config.timeout_initial_load
         self._mbo_subscriptions_delay: float | None = config.mbo_subscriptions_delay
 
+        publishers_path = Path(__file__).resolve().parent / "publishers.json"
+
         # Clients
-        self._http_client_pyo3 = nautilus_pyo3.DatabentoHistoricalClient(http_client.key)
+        self._http_client_pyo3 = nautilus_pyo3.DatabentoHistoricalClient(
+            key=http_client.key,
+            publishers_path=str(publishers_path.resolve()),
+        )
         self._http_client: databento.Historical = http_client
         self._live_clients: dict[Dataset, databento.Live] = {}
         self._live_clients_mbo: dict[Dataset, databento.Live] = {}
@@ -670,25 +676,15 @@ class DatabentoDataClient(LiveMarketDataClient):
         if is_within_last_24_hours(default_start.value):
             default_start -= ONE_DAY
 
-        data = await self._http_client.timeseries.get_range_async(
+        pyo3_data = await self._http_client_pyo3.get_range_trades(
             dataset=dataset,
-            start=start or default_start.date().isoformat(),
-            end=end,
+            # start=start or default_start.date().isoformat(),
+            # end=end,
             symbols=instrument_id.symbol.value,
-            schema=databento.Schema.TRADES,
-            limit=limit,
+            # limit=limit,
         )
 
-        ticks: list[TradeTick] = []
-
-        for record in data:
-            tick = parse_record(
-                record=record,
-                instrument_id=instrument_id,
-                ts_init=self._clock.timestamp_ns(),
-            )
-
-            ticks.append(tick)
+        ticks = TradeTick.from_pyo3_list(pyo3_data)
 
         self._handle_trade_ticks(
             instrument_id=instrument_id,
