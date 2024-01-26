@@ -3099,8 +3099,8 @@ cdef class QuoteTick(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        cdef QuoteTick tick = QuoteTick.__new__(QuoteTick)
-        tick._mem = quote_tick_new(
+        cdef QuoteTick quote = QuoteTick.__new__(QuoteTick)
+        quote._mem = quote_tick_new(
             instrument_id._mem,
             bid_price_raw,
             ask_price_raw,
@@ -3113,13 +3113,13 @@ cdef class QuoteTick(Data):
             ts_event,
             ts_init,
         )
-        return tick
+        return quote
 
     @staticmethod
     cdef QuoteTick from_mem_c(QuoteTick_t mem):
-        cdef QuoteTick quote_tick = QuoteTick.__new__(QuoteTick)
-        quote_tick._mem = mem
-        return quote_tick
+        cdef QuoteTick quote = QuoteTick.__new__(QuoteTick)
+        quote._mem = mem
+        return quote
 
     # SAFETY: Do NOT deallocate the capsule here
     # It is supposed to be deallocated by the creator
@@ -3127,13 +3127,13 @@ cdef class QuoteTick(Data):
     cdef inline list capsule_to_list_c(object capsule):
         cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
         cdef QuoteTick_t* ptr = <QuoteTick_t*>data.ptr
-        cdef list ticks = []
+        cdef list quotes = []
 
         cdef uint64_t i
         for i in range(0, data.len):
-            ticks.append(QuoteTick.from_mem_c(ptr[i]))
+            quotes.append(QuoteTick.from_mem_c(ptr[i]))
 
-        return ticks
+        return quotes
 
     @staticmethod
     cdef inline list_to_capsule_c(list items):
@@ -3264,13 +3264,13 @@ cdef class QuoteTick(Data):
         return QuoteTick.to_dict_c(obj)
 
     @staticmethod
-    def from_pyo3_list(list pyo3_ticks) -> list[QuoteTick]:
+    def from_pyo3_list(list pyo3_quotes) -> list[QuoteTick]:
         """
         Return legacy Cython quote ticks converted from the given pyo3 Rust objects.
 
         Parameters
         ----------
-        pyo3_ticks : list[nautilus_pyo3.QuoteTick]
+        pyo3_quotes : list[nautilus_pyo3.QuoteTick]
             The pyo3 Rust quote ticks to convert from.
 
         Returns
@@ -3287,29 +3287,29 @@ cdef class QuoteTick(Data):
         cdef uint8_t ask_size_prec = 0
 
         cdef:
-            QuoteTick tick
-        for pyo3_tick in pyo3_ticks:
+            QuoteTick quote
+        for pyo3_quote in pyo3_quotes:
             if instrument_id is None:
-                instrument_id = InstrumentId.from_str_c(pyo3_tick.instrument_id.value)
-                bid_prec = pyo3_tick.bid_price.precision
-                ask_prec = pyo3_tick.ask_price.precision
-                bid_size_prec = pyo3_tick.bid_size.precision
-                ask_size_prec = pyo3_tick.ask_size.precision
+                instrument_id = InstrumentId.from_str_c(pyo3_quote.instrument_id.value)
+                bid_prec = pyo3_quote.bid_price.precision
+                ask_prec = pyo3_quote.ask_price.precision
+                bid_size_prec = pyo3_quote.bid_size.precision
+                ask_size_prec = pyo3_quote.ask_size.precision
 
-            tick = QuoteTick.from_raw_c(
+            quote = QuoteTick.from_raw_c(
                 instrument_id,
-                pyo3_tick.bid_price.raw,
-                pyo3_tick.ask_price.raw,
+                pyo3_quote.bid_price.raw,
+                pyo3_quote.ask_price.raw,
                 bid_prec,
                 ask_prec,
-                pyo3_tick.bid_size.raw,
-                pyo3_tick.ask_size.raw,
+                pyo3_quote.bid_size.raw,
+                pyo3_quote.ask_size.raw,
                 bid_size_prec,
                 ask_size_prec,
-                pyo3_tick.ts_event,
-                pyo3_tick.ts_init,
+                pyo3_quote.ts_event,
+                pyo3_quote.ts_init,
             )
-            output.append(tick)
+            output.append(quote)
 
         return output
 
@@ -3596,8 +3596,8 @@ cdef class TradeTick(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        cdef TradeTick tick = TradeTick.__new__(TradeTick)
-        tick._mem = trade_tick_new(
+        cdef TradeTick trade = TradeTick.__new__(TradeTick)
+        trade._mem = trade_tick_new(
             instrument_id._mem,
             price_raw,
             price_prec,
@@ -3608,13 +3608,13 @@ cdef class TradeTick(Data):
             ts_event,
             ts_init,
         )
-        return tick
+        return trade
 
     @staticmethod
     cdef TradeTick from_mem_c(TradeTick_t mem):
-        cdef TradeTick trade_tick = TradeTick.__new__(TradeTick)
-        trade_tick._mem = mem
-        return trade_tick
+        cdef TradeTick trade = TradeTick.__new__(TradeTick)
+        trade._mem = mem
+        return trade
 
     # SAFETY: Do NOT deallocate the capsule here
     # It is supposed to be deallocated by the creator
@@ -3622,13 +3622,13 @@ cdef class TradeTick(Data):
     cdef inline list capsule_to_list_c(capsule):
         cdef CVec* data = <CVec *>PyCapsule_GetPointer(capsule, NULL)
         cdef TradeTick_t* ptr = <TradeTick_t *>data.ptr
-        cdef list ticks = []
+        cdef list trades = []
 
         cdef uint64_t i
         for i in range(0, data.len):
-            ticks.append(TradeTick.from_mem_c(ptr[i]))
+            trades.append(TradeTick.from_mem_c(ptr[i]))
 
-        return ticks
+        return trades
 
     @staticmethod
     cdef inline list_to_capsule_c(list items):
@@ -3810,13 +3810,13 @@ cdef class TradeTick(Data):
         return output
 
     @staticmethod
-    def from_pyo3_list(list pyo3_ticks) -> list[TradeTick]:
+    def from_pyo3_list(list pyo3_trades) -> list[TradeTick]:
         """
         Return legacy Cython trade ticks converted from the given pyo3 Rust objects.
 
         Parameters
         ----------
-        pyo3_ticks : list[nautilus_pyo3.TradeTick]
+        pyo3_trades : list[nautilus_pyo3.TradeTick]
             The pyo3 Rust trade ticks to convert from.
 
         Returns
@@ -3831,24 +3831,24 @@ cdef class TradeTick(Data):
         cdef uint8_t size_prec = 0
 
         cdef:
-            TradeTick tick
-        for pyo3_tick in pyo3_ticks:
+            TradeTick trade
+        for pyo3_trade in pyo3_trades:
             if instrument_id is None:
-                instrument_id = InstrumentId.from_str_c(pyo3_tick.instrument_id.value)
-                price_prec = pyo3_tick.price.precision
-                size_prec = pyo3_tick.price.precision
+                instrument_id = InstrumentId.from_str_c(pyo3_trade.instrument_id.value)
+                price_prec = pyo3_trade.price.precision
+                size_prec = pyo3_trade.price.precision
 
-            tick = TradeTick.from_raw_c(
+            trade = TradeTick.from_raw_c(
                 instrument_id,
-                pyo3_tick.price.raw,
+                pyo3_trade.price.raw,
                 price_prec,
-                pyo3_tick.size.raw,
+                pyo3_trade.size.raw,
                 size_prec,
-                pyo3_tick.aggressor_side.value,
-                TradeId(pyo3_tick.trade_id.value),
-                pyo3_tick.ts_event,
-                pyo3_tick.ts_init,
+                pyo3_trade.aggressor_side.value,
+                TradeId(pyo3_trade.trade_id.value),
+                pyo3_trade.ts_event,
+                pyo3_trade.ts_init,
             )
-            output.append(tick)
+            output.append(trade)
 
         return output
