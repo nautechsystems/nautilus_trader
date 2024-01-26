@@ -172,7 +172,7 @@ pub unsafe fn parse_raw_ptr_to_ustr(ptr: *const c_char) -> Result<Ustr> {
     Ok(Ustr::from(str_slice))
 }
 
-pub fn parse_equity(
+pub fn parse_equity_v1(
     record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
@@ -196,7 +196,7 @@ pub fn parse_equity(
     )
 }
 
-pub fn parse_futures_contract(
+pub fn parse_futures_contract_v1(
     record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
@@ -227,7 +227,7 @@ pub fn parse_futures_contract(
     )
 }
 
-pub fn parse_options_contract(
+pub fn parse_options_contract_v1(
     record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
@@ -561,8 +561,40 @@ pub fn parse_record(
     Ok(result)
 }
 
-pub fn parse_instrument_def_msg(
+pub fn parse_instrument_def_msg_v1(
     record: &dbn::compat::InstrumentDefMsgV1,
+    publisher: &DatabentoPublisher,
+    ts_init: UnixNanos,
+) -> Result<Box<dyn Instrument>> {
+    let raw_symbol = unsafe { parse_raw_ptr_to_ustr(record.raw_symbol.as_ptr())? };
+    let instrument_id = nautilus_instrument_id_from_databento(raw_symbol, publisher);
+
+    match record.instrument_class as u8 as char {
+        'K' => Ok(Box::new(parse_equity_v1(record, instrument_id, ts_init)?)),
+        'F' => Ok(Box::new(parse_futures_contract_v1(
+            record,
+            instrument_id,
+            ts_init,
+        )?)),
+        'C' | 'P' => Ok(Box::new(parse_options_contract_v1(
+            record,
+            instrument_id,
+            ts_init,
+        )?)),
+        'B' => bail!("Unsupported `instrument_class` 'B' (BOND)"),
+        'M' => bail!("Unsupported `instrument_class` 'M' (MIXEDSPREAD)"),
+        'S' => bail!("Unsupported `instrument_class` 'S' (FUTURESPREAD)"),
+        'T' => bail!("Unsupported `instrument_class` 'T' (OPTIONSPREAD)"),
+        'X' => bail!("Unsupported `instrument_class` 'X' (FX_SPOT)"),
+        _ => bail!(
+            "Unsupported `instrument_class` '{}'",
+            record.instrument_class as u8 as char
+        ),
+    }
+}
+
+pub fn parse_instrument_def_msg(
+    record: &dbn::InstrumentDefMsg,
     publisher: &DatabentoPublisher,
     ts_init: UnixNanos,
 ) -> Result<Box<dyn Instrument>> {
@@ -591,4 +623,93 @@ pub fn parse_instrument_def_msg(
             record.instrument_class as u8 as char
         ),
     }
+}
+
+pub fn parse_equity(
+    record: &dbn::InstrumentDefMsg,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> Result<Equity> {
+    let currency = Currency::USD(); // TODO: Temporary hard coding of US equities for now
+
+    Equity::new(
+        instrument_id,
+        instrument_id.symbol,
+        None, // No ISIN available yet
+        currency,
+        currency.precision,
+        parse_min_price_increment(record.min_price_increment, currency)?,
+        Some(Quantity::new(record.min_lot_size_round_lot.into(), 0)?),
+        None,           // TBD
+        None,           // TBD
+        None,           // TBD
+        None,           // TBD
+        record.ts_recv, // More accurate and reliable timestamp
+        ts_init,
+    )
+}
+
+pub fn parse_futures_contract(
+    record: &dbn::InstrumentDefMsg,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> Result<FuturesContract> {
+    let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
+    let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
+    let asset = unsafe { parse_raw_ptr_to_ustr(record.asset.as_ptr())? };
+    let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+
+    FuturesContract::new(
+        instrument_id,
+        instrument_id.symbol,
+        asset_class.unwrap_or(AssetClass::Commodity),
+        asset,
+        record.activation,
+        record.expiration,
+        currency,
+        currency.precision,
+        parse_min_price_increment(record.min_price_increment, currency)?,
+        Quantity::new(record.contract_multiplier.into(), 0)?,
+        Quantity::new(1.0, 0)?, // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        record.ts_recv,         // More accurate and reliable timestamp
+        ts_init,
+    )
+}
+
+pub fn parse_options_contract(
+    record: &dbn::InstrumentDefMsg,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> Result<OptionsContract> {
+    let currency_str = unsafe { parse_raw_ptr_to_string(record.currency.as_ptr())? };
+    let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
+    let currency = Currency::from_str(&currency_str)?;
+    let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+    let lot_size = Quantity::new(1.0, 0)?; // TBD
+
+    OptionsContract::new(
+        instrument_id,
+        instrument_id.symbol,
+        asset_class.unwrap_or(AssetClass::Commodity),
+        unsafe { parse_raw_ptr_to_ustr(record.asset.as_ptr())? },
+        parse_option_kind(record.instrument_class)?,
+        record.activation,
+        record.expiration,
+        Price::from_raw(record.strike_price, currency.precision)?,
+        currency,
+        currency.precision,
+        parse_min_price_increment(record.min_price_increment, currency)?,
+        Quantity::new(record.contract_multiplier.into(), 0)?,
+        lot_size,
+        None,           // TBD
+        None,           // TBD
+        None,           // TBD
+        None,           // TBD
+        record.ts_recv, // More accurate and reliable timestamp
+        ts_init,
+    )
 }

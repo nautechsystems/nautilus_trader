@@ -224,7 +224,7 @@ impl DatabentoDataLoader {
     }
 }
 
-fn convert_instrument_to_pyobject(
+pub fn convert_instrument_to_pyobject(
     py: Python,
     instrument: Box<dyn Instrument + 'static>,
 ) -> PyResult<PyObject> {

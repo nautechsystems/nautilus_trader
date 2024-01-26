@@ -1636,6 +1636,14 @@ class DatabentoHistoricalClient:
     ) -> None: ...
 
     async def get_dataset_range(self, dataset: str) -> dict[str, str]: ...
+    async def get_range_instruments(
+        self,
+        dataset: str,
+        symbols: str,
+        start: int,
+        end: int | None = None,
+        limit: int | None = None,
+    ) -> list[Instrument]: ...
     async def get_range_quotes(
         self,
         dataset: str,
