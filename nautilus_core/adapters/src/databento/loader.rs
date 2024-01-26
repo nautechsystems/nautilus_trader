@@ -37,10 +37,9 @@ use ustr::Ustr;
 use super::{
     parsing::{parse_instrument_def_msg, parse_record},
     types::DatabentoPublisher,
+    types::Dataset,
+    types::PublisherId,
 };
-
-pub type PublisherId = u16;
-pub type Dataset = Ustr;
 
 /// Provides a Nautilus data loader for Databento Binary Encoding (DBN) format data.
 ///

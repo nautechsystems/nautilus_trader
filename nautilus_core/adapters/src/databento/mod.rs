@@ -16,6 +16,7 @@
 pub mod common;
 pub mod loader;
 pub mod parsing;
+pub mod symbology;
 pub mod types;
 
 #[cfg(feature = "python")]
