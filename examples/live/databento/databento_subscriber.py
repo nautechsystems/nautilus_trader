@@ -80,6 +80,7 @@ config_node = TradingNodeConfig(
             http_gateway=None,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_ids=instrument_ids,
+            parent_symbols={"GLBX.MDP3": {"ES.FUT", "ES.OPT"}},
         ),
     },
     timeout_connection=10.0,
