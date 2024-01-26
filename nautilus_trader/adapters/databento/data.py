@@ -113,6 +113,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         # Configuration
         self._live_api_key: str = config.api_key or http_client.key
         self._live_gateway: str | None = config.live_gateway
+        self._parent_symbols: dict[Dataset, set[str]] = defaultdict(set)
         self._instrument_ids: dict[Dataset, set[InstrumentId]] = defaultdict(set)
         self._timeout_initial_load: float | None = config.timeout_initial_load
         self._mbo_subscriptions_delay: float | None = config.mbo_subscriptions_delay
@@ -131,9 +132,13 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._dataset_ranges: dict[Dataset, tuple[pd.Timestamp, pd.Timestamp]] = {}
         self._dataset_ranges_requested: set[Dataset] = set()
 
+        # Cache parent symbol index
+        for dataset, parent_symbols in (config.parent_symbols or {}).items():
+            self._parent_symbols[dataset].update(set(parent_symbols))
+
         # Cache instrument index
         for instrument_id in config.instrument_ids or []:
-            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+            dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             self._instrument_ids[dataset].add(instrument_id)
 
         # MBO/L3 subscription buffering
@@ -357,6 +362,20 @@ class DatabentoDataClient(LiveMarketDataClient):
             dataset=dataset,
             schema=databento.Schema.DEFINITION,
             symbols=[instrument_id.symbol.value],
+        )
+        self._check_live_client_started(dataset, live_client)
+
+    async def _subscribe_parent_symbols(
+        self,
+        dataset: Dataset,
+        parent_symbols: set[str],
+    ) -> None:
+        live_client = self._get_live_client(dataset)
+        live_client.subscribe(
+            dataset=dataset,
+            stype_in=databento.SType.PARENT,
+            schema=databento.Schema.DEFINITION,
+            symbols=parent_symbols,
         )
         self._check_live_client_started(dataset, live_client)
 
