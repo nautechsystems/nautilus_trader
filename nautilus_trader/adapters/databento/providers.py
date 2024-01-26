@@ -17,15 +17,19 @@ import datetime as dt
 
 import databento
 import pandas as pd
+import pytz
 
+from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.parsing import parse_record_with_metadata
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
 class DatabentoInstrumentProvider(InstrumentProvider):
@@ -34,7 +38,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
     Parameters
     ----------
-    http_client : databento.Historical
+    http_client : nautilus_pyo3.DatabentoHistoricalClient
         The Databento historical HTTP client for the provider.
     clock : LiveClock
         The clock for the provider.
@@ -52,7 +56,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
     def __init__(
         self,
-        http_client: databento.Historical,
+        http_client: nautilus_pyo3.DatabentoHistoricalClient,
         clock: LiveClock,
         live_api_key: str | None = None,
         live_gateway: str | None = None,
@@ -202,24 +206,15 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         """
         dataset = self._check_all_datasets_equal(instrument_ids)
-        data = await self._http_client.timeseries.get_range_async(
+
+        pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
-            schema=databento.Schema.DEFINITION,
-            start=start,
-            end=end,
-            symbols=[i.symbol.value for i in instrument_ids],
-            stype_in=databento.SType.RAW_SYMBOL,
+            symbols=ALL_SYMBOLS,
+            start=pd.Timestamp(start, tz=pytz.utc).value,
+            end=pd.Timestamp(end, tz=pytz.utc).value if end is not None else None,
         )
 
-        instruments: list[Instrument] = []
-
-        for record in data:
-            instrument = parse_record_with_metadata(
-                record,
-                publishers=self._loader.publishers,
-                ts_init=self._clock.timestamp_ns(),
-            )
-            instruments.append(instrument)
+        instruments = instruments_from_pyo3(pyo3_instruments)
 
         instruments = sorted(instruments, key=lambda x: x.ts_init)
         return instruments

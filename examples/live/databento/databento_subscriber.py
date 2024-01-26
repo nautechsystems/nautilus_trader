@@ -26,6 +26,8 @@ from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.config.common import StrategyConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.book import OrderBook
+
+# from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick

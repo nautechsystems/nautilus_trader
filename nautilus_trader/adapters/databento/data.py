@@ -17,7 +17,6 @@ import asyncio
 from collections import defaultdict
 from collections.abc import Coroutine
 from functools import partial
-from pathlib import Path
 from typing import Any
 
 import databento
@@ -118,13 +117,8 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._timeout_initial_load: float | None = config.timeout_initial_load
         self._mbo_subscriptions_delay: float | None = config.mbo_subscriptions_delay
 
-        publishers_path = Path(__file__).resolve().parent / "publishers.json"
-
         # Clients
-        self._http_client = nautilus_pyo3.DatabentoHistoricalClient(
-            key=http_client.key,
-            publishers_path=str(publishers_path.resolve()),
-        )
+        self._http_client = http_client
         self._live_clients: dict[Dataset, databento.Live] = {}
         self._live_clients_mbo: dict[Dataset, databento.Live] = {}
         self._has_subscribed: dict[Dataset, bool] = {}
