@@ -22,7 +22,10 @@ use nautilus_core::{
     python::to_pyvalue_err,
     time::{get_atomic_clock_realtime, AtomicTime, UnixNanos},
 };
-use nautilus_model::data::{trade::TradeTick, Data};
+use nautilus_model::{
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick, Data},
+    enums::BarAggregation,
+};
 use pyo3::{exceptions::PyException, prelude::*, types::PyDict};
 use tokio::sync::Mutex;
 
@@ -90,6 +93,69 @@ impl DatabentoHistoricalClient {
         })
     }
 
+    #[pyo3(name = "get_range_quotes")]
+    fn py_get_range_quotes<'py>(
+        &self,
+        py: Python<'py>,
+        dataset: String,
+        symbols: String,
+        start: UnixNanos,
+        end: Option<UnixNanos>,
+        limit: Option<u64>,
+    ) -> PyResult<&'py PyAny> {
+        let client = self.inner.clone();
+
+        let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
+        let params = GetRangeParams::builder()
+            .dataset(dataset)
+            .date_time_range(time_range)
+            .symbols(symbols)
+            .schema(dbn::Schema::Mbp1)
+            .limit(limit.and_then(NonZeroU64::new))
+            .build();
+
+        let price_precision = 2; // TODO: Hard coded for now
+        let publishers = self.publishers.clone();
+        let ts_init = self.clock.get_time_ns();
+
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut client = client.lock().await; // TODO: Use a client pool
+            let mut decoder = client
+                .timeseries()
+                .get_range(&params)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            let metadata = decoder.metadata().clone();
+            let mut result: Vec<QuoteTick> = Vec::new();
+
+            while let Ok(Some(rec)) = decoder.decode_record::<dbn::Mbp1Msg>().await {
+                let rec_ref = dbn::RecordRef::from(rec);
+                let rtype = rec_ref.rtype().expect("Invalid `rtype` for data loading");
+                let instrument_id = parse_nautilus_instrument_id(&rec_ref, &metadata, &publishers)
+                    .map_err(to_pyvalue_err)?;
+
+                let (data, _) = parse_record(
+                    &rec_ref,
+                    rtype,
+                    instrument_id,
+                    price_precision,
+                    Some(ts_init),
+                )
+                .map_err(to_pyvalue_err)?;
+
+                match data {
+                    Data::Quote(quote) => {
+                        result.push(quote);
+                    }
+                    _ => panic!("Invalid data element not `QuoteTick`, was {:?}", data),
+                }
+            }
+
+            Python::with_gil(|py| Ok(result.into_py(py)))
+        })
+    }
+
     #[pyo3(name = "get_range_trades")]
     fn py_get_range_trades<'py>(
         &self,
@@ -146,6 +212,78 @@ impl DatabentoHistoricalClient {
                         result.push(trade);
                     }
                     _ => panic!("Invalid data element not `TradeTick`, was {:?}", data),
+                }
+            }
+
+            Python::with_gil(|py| Ok(result.into_py(py)))
+        })
+    }
+
+    #[pyo3(name = "get_range_bars")]
+    #[allow(clippy::too_many_arguments)]
+    fn py_get_range_bars<'py>(
+        &self,
+        py: Python<'py>,
+        dataset: String,
+        symbols: String,
+        aggregation: BarAggregation,
+        start: UnixNanos,
+        end: Option<UnixNanos>,
+        limit: Option<u64>,
+    ) -> PyResult<&'py PyAny> {
+        let client = self.inner.clone();
+
+        let schema = match aggregation {
+            BarAggregation::Second => dbn::Schema::Ohlcv1S,
+            BarAggregation::Minute => dbn::Schema::Ohlcv1M,
+            BarAggregation::Hour => dbn::Schema::Ohlcv1H,
+            BarAggregation::Day => dbn::Schema::Ohlcv1D,
+            _ => panic!("Invalid `BarAggregation` for request, was {aggregation}"),
+        };
+        let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
+        let params = GetRangeParams::builder()
+            .dataset(dataset)
+            .date_time_range(time_range)
+            .symbols(symbols)
+            .schema(schema)
+            .limit(limit.and_then(NonZeroU64::new))
+            .build();
+
+        let price_precision = 2; // TODO: Hard coded for now
+        let publishers = self.publishers.clone();
+        let ts_init = self.clock.get_time_ns();
+
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut client = client.lock().await; // TODO: Use a client pool
+            let mut decoder = client
+                .timeseries()
+                .get_range(&params)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            let metadata = decoder.metadata().clone();
+            let mut result: Vec<Bar> = Vec::new();
+
+            while let Ok(Some(rec)) = decoder.decode_record::<dbn::OhlcvMsg>().await {
+                let rec_ref = dbn::RecordRef::from(rec);
+                let rtype = rec_ref.rtype().expect("Invalid `rtype` for data loading");
+                let instrument_id = parse_nautilus_instrument_id(&rec_ref, &metadata, &publishers)
+                    .map_err(to_pyvalue_err)?;
+
+                let (data, _) = parse_record(
+                    &rec_ref,
+                    rtype,
+                    instrument_id,
+                    price_precision,
+                    Some(ts_init),
+                )
+                .map_err(to_pyvalue_err)?;
+
+                match data {
+                    Data::Bar(bar) => {
+                        result.push(bar);
+                    }
+                    _ => panic!("Invalid data element not `Bar`, was {:?}", data),
                 }
             }
 

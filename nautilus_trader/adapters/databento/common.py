@@ -16,6 +16,7 @@
 from pathlib import Path
 
 import databento
+import databento_dbn
 
 import nautilus_trader
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
@@ -87,7 +88,7 @@ def nautilus_instrument_id_from_databento(
     return InstrumentId(Symbol(raw_symbol), Venue(publisher.venue))
 
 
-def databento_schema_from_nautilus_bar_type(bar_type: BarType) -> databento.Schema:
+def databento_schema_from_nautilus_bar_type(bar_type: BarType) -> databento_dbn.Schema:
     """
     Return the Databento bar aggregate schema for the given Nautilus `bar_type`.
 
