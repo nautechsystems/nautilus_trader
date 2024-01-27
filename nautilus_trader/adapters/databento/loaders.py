@@ -20,6 +20,7 @@ import databento_dbn
 import msgspec
 
 from nautilus_trader.adapters.databento.common import check_file_path
+from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.data import Data
@@ -74,12 +75,10 @@ class DatabentoDataLoader:
         self._publishers: dict[int, DatabentoPublisher] = {}
         self._instruments: dict[InstrumentId, Instrument] = {}
 
-        publishers_path = Path(__file__).resolve().parent / "publishers.json"
-
         self._pyo3_loader: nautilus_pyo3.DatabentoDataLoader = nautilus_pyo3.DatabentoDataLoader(
-            str(publishers_path.resolve()),
+            str(PUBLISHERS_PATH),
         )
-        self.load_publishers(path=publishers_path)
+        self.load_publishers(path=PUBLISHERS_PATH)
 
     @property
     def publishers(self) -> dict[int, DatabentoPublisher]:

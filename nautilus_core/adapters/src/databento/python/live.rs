@@ -22,6 +22,7 @@ use databento::live::Subscription;
 use dbn::{PitSymbolMap, RType, Record, SymbolIndex};
 use indexmap::IndexMap;
 use log::error;
+use nautilus_core::python::to_pyruntime_err;
 use nautilus_core::{
     python::to_pyvalue_err,
     time::{get_atomic_clock_realtime, UnixNanos},
@@ -31,8 +32,8 @@ use nautilus_model::identifiers::instrument_id::InstrumentId;
 use nautilus_model::identifiers::symbol::Symbol;
 use nautilus_model::identifiers::venue::Venue;
 use pyo3::prelude::*;
+use time::OffsetDateTime;
 use tokio::sync::Mutex;
-use ustr::Ustr;
 
 use crate::databento::parsing::parse_record;
 use crate::databento::types::{DatabentoPublisher, PublisherId};
@@ -47,6 +48,7 @@ pub struct DatabentoLiveClient {
     #[pyo3(get)]
     pub dataset: String,
     inner: OnceLock<Arc<Mutex<databento::LiveClient>>>,
+    runtime: tokio::runtime::Runtime,
     publishers: Arc<IndexMap<PublisherId, DatabentoPublisher>>,
 }
 
@@ -63,15 +65,8 @@ impl DatabentoLiveClient {
         if let Some(client) = self.inner.get() {
             Ok(client.clone())
         } else {
-            // TODO: Improve the efficiency of this (shouldn't need a whole new runtime)
-            let runtime = tokio::runtime::Runtime::new().unwrap();
-            let client = runtime.block_on(self.initialize_client())?;
+            let client = self.runtime.block_on(self.initialize_client())?;
             let arc_client = Arc::new(Mutex::new(client));
-
-            // Ignore the result: In the current logic flow, the OnceLock should not be already set.
-            // However, this assumption might not hold in all contexts, especially in concurrent
-            // scenarios.
-            // TODO: Review and ensure thread safety and correct initialization logic.
             let _ = self.inner.set(arc_client.clone());
             Ok(arc_client)
         }
@@ -95,6 +90,7 @@ impl DatabentoLiveClient {
             key,
             dataset,
             inner: OnceLock::new(),
+            runtime: tokio::runtime::Runtime::new()?,
             publishers: Arc::new(publishers),
         })
     }
@@ -108,26 +104,30 @@ impl DatabentoLiveClient {
         stype_in: Option<String>,
         start: Option<UnixNanos>,
     ) -> PyResult<&'py PyAny> {
-        println!("{:?}", start); // TODO: Debugging placeholder
-                                 // TODO: Properly map `start`
-                                 // let start = match start {
-                                 //     Some(start) => Some(
-                                 //         OffsetDateTime::from_unix_timestamp_nanos(start as i128).map_err(to_pyvalue_err)?,
-                                 //     ),
-                                 //     None => None,
-                                 // };
-
         let stype_in = stype_in.unwrap_or("raw_symbol".to_string());
-        let arc_client = self.get_inner_client().map_err(to_pyvalue_err)?;
+        let arc_client = self.get_inner_client().map_err(to_pyruntime_err)?;
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
             let mut client = arc_client.lock().await;
-            let subscription = Subscription::builder()
-                .symbols(symbols)
-                .schema(dbn::Schema::from_str(&schema).map_err(to_pyvalue_err)?)
-                .stype_in(dbn::SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
-                // .start(start.expect(&format!("Invalid `start` was {:?}", start)))
-                .build();
+
+            // TODO: This can be tidied up, conditionally calling `if let Some(start)` on
+            // the builder was proving troublesome.
+            let subscription = match start {
+                Some(start) => Subscription::builder()
+                    .symbols(symbols)
+                    .schema(dbn::Schema::from_str(&schema).map_err(to_pyvalue_err)?)
+                    .stype_in(dbn::SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
+                    .start(
+                        OffsetDateTime::from_unix_timestamp_nanos(start as i128)
+                            .map_err(to_pyvalue_err)?,
+                    )
+                    .build(),
+                None => Subscription::builder()
+                    .symbols(symbols)
+                    .schema(dbn::Schema::from_str(&schema).map_err(to_pyvalue_err)?)
+                    .stype_in(dbn::SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
+                    .build(),
+            };
 
             client
                 .subscribe(&subscription)
@@ -139,14 +139,14 @@ impl DatabentoLiveClient {
 
     #[pyo3(name = "start")]
     fn py_start<'py>(&self, py: Python<'py>, callback: PyObject) -> PyResult<&'py PyAny> {
-        let arc_client = self.get_inner_client().map_err(to_pyvalue_err)?;
+        let arc_client = self.get_inner_client().map_err(to_pyruntime_err)?;
         let publishers = self.publishers.clone();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            let mut client = arc_client.lock().await;
             let clock = get_atomic_clock_realtime();
-
+            let mut client = arc_client.lock().await;
             let mut symbol_map = PitSymbolMap::new();
+
             while let Some(record) = client.next_record().await.map_err(to_pyvalue_err)? {
                 let rtype = record.rtype().expect("Invalid `rtype`");
                 match rtype {
@@ -173,16 +173,10 @@ impl DatabentoLiveClient {
                     .get_for_rec(&record)
                     .expect("Cannot resolve raw_symbol from `symbol_map`");
 
-                let symbol = Symbol {
-                    value: Ustr::from(raw_symbol),
-                };
-
+                let symbol = Symbol::from_str_unchecked(raw_symbol);
                 let publisher_id = record.publisher().unwrap() as PublisherId;
                 let venue_str = publishers.get(&publisher_id).unwrap().venue.as_str();
-
-                let venue = Venue {
-                    value: Ustr::from(venue_str),
-                };
+                let venue = Venue::from_str_unchecked(venue_str);
 
                 let instrument_id = InstrumentId::new(symbol, venue);
                 let ts_init = clock.get_time_ns();
@@ -202,7 +196,7 @@ impl DatabentoLiveClient {
 
                     match callback.call1(py, (data,)) {
                         Ok(_) => {}
-                        Err(e) => eprintln!("{:?}", e), // Just print error for now
+                        Err(e) => eprintln!("Error on callback, {:?}", e), // Just print error for now
                     };
                 })
             }
@@ -216,7 +210,7 @@ impl DatabentoLiveClient {
         // let arc_client = self.get_inner_client().map_err(to_pyvalue_err)?;
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            // let client = arc_client.lock().await;
+            // let client = arc_client.lock_owned().await;
             // client.close().await.map_err(to_pyvalue_err)?;
             Ok(())
         })

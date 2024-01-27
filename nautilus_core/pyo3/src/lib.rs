@@ -14,7 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_adapters::databento::{
-    loader, python::historical, python::live, python::parsing, types,
+    common::{ALL_SYMBOLS, DATABENTO},
+    loader,
+    python::historical,
+    python::live,
+    python::parsing,
+    types,
 };
 use pyo3::{
     prelude::*,
@@ -27,6 +32,8 @@ use pyo3::{
 /// Loaded as nautilus_pyo3.databento
 #[pymodule]
 pub fn databento(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add(stringify!(DATABENTO), DATABENTO)?;
+    m.add(stringify!(ALL_SYMBOLS), ALL_SYMBOLS)?;
     m.add_class::<types::DatabentoPublisher>()?;
     m.add_class::<loader::DatabentoDataLoader>()?;
     m.add_class::<live::DatabentoLiveClient>()?;

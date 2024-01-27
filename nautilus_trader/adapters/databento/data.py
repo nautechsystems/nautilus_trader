@@ -16,7 +16,6 @@
 import asyncio
 from collections import defaultdict
 from collections.abc import Coroutine
-from pathlib import Path
 from typing import Any
 
 import databento_dbn
@@ -27,7 +26,7 @@ from nautilus_trader.adapters.databento.common import databento_schema_from_naut
 from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
 from nautilus_trader.adapters.databento.constants import DATABENTO_CLIENT_ID
-from nautilus_trader.adapters.databento.constants import ONE_DAY
+from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
 from nautilus_trader.adapters.databento.types import Dataset
@@ -107,9 +106,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             config=config,
         )
 
-        # TODO: Single source this
-        self._publishers_path = str((Path(__file__).resolve().parent / "publishers.json").resolve())
-
         # Configuration
         self._live_api_key: str = config.api_key or http_client.key
         self._live_gateway: str | None = config.live_gateway
@@ -143,7 +139,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._buffered_deltas: dict[InstrumentId, list[OrderBookDelta]] = defaultdict(list)
 
         # Tasks
-        self._live_client_tasks: set[asyncio.Task] = set()
+        self._live_client_futures: set[asyncio.Future] = set()
         self._update_dataset_ranges_interval_seconds: int = 60 * 60  # Once per hour (hard coded)
         self._update_dataset_ranges_task: asyncio.Task | None = None
 
@@ -174,18 +170,6 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._update_dataset_ranges_task = self.create_task(self._update_dataset_ranges())
 
     async def _disconnect(self) -> None:
-        coros: list[Coroutine] = []
-        # TODO: When closing live clients sorted
-        # for dataset, client in self._live_clients.items():
-        #     self._log.info(f"Stopping {dataset} live feed...", LogColor.BLUE)
-        # coro = client.wait_for_close(timeout=2.0)
-        # coros.append(coro)
-
-        # for dataset, client in self._live_clients_mbo.items():
-        #     self._log.info(f"Stopping {dataset} MBO/L3 live feed...", LogColor.BLUE)
-        # coro = client.wait_for_close(timeout=2.0)
-        # coros.append(coro)
-
         if self._buffer_mbo_subscriptions_task:
             self._log.debug("Canceling `buffer_mbo_subscriptions` task...")
             self._buffer_mbo_subscriptions_task.cancel()
@@ -197,7 +181,19 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._update_dataset_ranges_task.cancel()
             self._update_dataset_ranges_task = None
 
-        await asyncio.gather(*coros)
+        # Close all live clients
+        futures: list[asyncio.Future] = []
+        for dataset, live_client in self._live_clients.items():
+            self._log.info(f"Stopping {dataset} live feed...", LogColor.BLUE)
+            future = asyncio.ensure_future(live_client.close())
+            futures.append(future)
+
+        for dataset, live_client in self._live_clients_mbo.items():
+            self._log.info(f"Stopping {dataset} MBO/L3 live feed...", LogColor.BLUE)
+            future = asyncio.ensure_future(live_client.close())
+            futures.append(future)
+
+        await asyncio.gather(*futures)
 
     async def _update_dataset_ranges(self) -> None:
         while True:
@@ -243,12 +239,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             live_client = nautilus_pyo3.DatabentoLiveClient(
                 key=self._live_api_key,
                 dataset=dataset,
-                publishers_path=self._publishers_path,
+                publishers_path=str(PUBLISHERS_PATH),
             )
-
-            # Wrap the callback with partial to include the dataset
-            # callback_with_dataset = partial(self._handle_record, live_client.symbology_map)
-            # live_client.add_callback(callback_with_dataset)
             self._live_clients[dataset] = live_client
 
         return live_client
@@ -261,12 +253,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             live_client = nautilus_pyo3.DatabentoLiveClient(
                 key=self._live_api_key,
                 dataset=dataset,
-                publishers_path=self._publishers_path,
+                publishers_path=str(PUBLISHERS_PATH),
             )
-
-            # Wrap the callback with partial to include the dataset
-            # callback_with_dataset = partial(self._handle_record, live_client.symbology_map)
-            # live_client.add_callback(callback_with_dataset)
             self._live_clients_mbo[dataset] = live_client
 
         return live_client
@@ -278,8 +266,8 @@ class DatabentoDataClient(LiveMarketDataClient):
     ) -> None:
         if not self._has_subscribed.get(dataset):
             self._log.debug(f"Starting {dataset} live client...", LogColor.MAGENTA)
-            task = self._loop.create_task(live_client.start(callback=self._handle_record))
-            self._live_client_tasks.add(task)
+            future = asyncio.ensure_future(live_client.start(callback=self._handle_record))
+            self._live_client_futures.add(future)
             self._has_subscribed[dataset] = True
             self._log.info(f"Started {dataset} live feed.", LogColor.BLUE)
 
@@ -462,8 +450,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
             start=0,  # Must subscribe from start of week to get 'Sunday snapshot' for now
         )
-        task = self._loop.create_task(live_client.start(self._handle_record))
-        self._live_client_tasks.add(task)
+        future = asyncio.ensure_future(live_client.start(self._handle_record))
+        self._live_client_futures.add(future)
 
     async def _subscribe_order_book_snapshots(
         self,
@@ -595,7 +583,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
-        start = start or available_end - ONE_DAY * 2
+        start = start or available_end - pd.Timedelta(days=2)
         end = end or available_end
 
         self._log.info(
@@ -628,7 +616,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         dataset: Dataset = self._loader.get_dataset_for_venue(venue)
         _, available_end = await self._get_dataset_range(dataset)
 
-        start = start or available_end - ONE_DAY * 2
+        start = start or available_end - pd.Timedelta(days=2)
         end = end or available_end
 
         self._log.info(
@@ -663,7 +651,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
-        start = start or available_end - ONE_DAY
+        start = start or available_end - pd.Timedelta(days=1)
         end = end or available_end
 
         if limit > 0:
@@ -703,7 +691,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
-        start = start or available_end - ONE_DAY
+        start = start or available_end - pd.Timedelta(days=1)
         end = end or available_end
 
         if limit > 0:
@@ -720,7 +708,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         pyo3_trades = await self._http_client.get_range_trades(
             dataset=dataset,
             symbols=instrument_id.symbol.value,
-            start=(start or available_end - ONE_DAY).value,
+            start=(start or available_end - pd.Timedelta(days=1)).value,
             end=(end or available_end).value,
         )
 
@@ -743,7 +731,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         dataset: Dataset = self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
-        start = start or available_end - ONE_DAY
+        start = start or available_end - pd.Timedelta(days=1)
         end = end or available_end
 
         if limit > 0:
@@ -763,7 +751,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             aggregation=nautilus_pyo3.BarAggregation(
                 bar_aggregation_to_str(bar_type.spec.aggregation),
             ),
-            start=(start or available_end - ONE_DAY).value,
+            start=(start or available_end - pd.Timedelta(days=1)).value,
             end=(end or available_end).value,
         )
 

@@ -15,9 +15,9 @@
 
 import asyncio
 from functools import lru_cache
-from pathlib import Path
 
 from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
+from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
 from nautilus_trader.adapters.databento.data import DatabentoDataClient
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
@@ -60,11 +60,12 @@ def get_cached_databento_http_client(
 
     key = key or get_env_key("DATABENTO_API_KEY")
 
-    publishers_path = str((Path(__file__).resolve().parent / "publishers.json").resolve())
-
     client_key: str = "|".join((key, gateway or ""))
     if client_key not in DATABENTO_HTTP_CLIENTS:
-        client = nautilus_pyo3.DatabentoHistoricalClient(key=key, publishers_path=publishers_path)
+        client = nautilus_pyo3.DatabentoHistoricalClient(
+            key=key,
+            publishers_path=str(PUBLISHERS_PATH),
+        )
         DATABENTO_HTTP_CLIENTS[client_key] = client
     return DATABENTO_HTTP_CLIENTS[client_key]
 
