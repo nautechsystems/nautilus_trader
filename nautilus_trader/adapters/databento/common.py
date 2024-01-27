@@ -15,8 +15,6 @@
 
 from pathlib import Path
 
-import databento_dbn
-
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import BarType
@@ -81,9 +79,9 @@ def nautilus_instrument_id_from_databento(
     return InstrumentId(Symbol(raw_symbol), Venue(publisher.venue))
 
 
-def databento_schema_from_nautilus_bar_type(bar_type: BarType) -> databento_dbn.Schema:
+def databento_schema_from_nautilus_bar_type(bar_type: BarType) -> str:
     """
-    Return the Databento bar aggregate schema for the given Nautilus `bar_type`.
+    Return the Databento bar aggregate schema string for the given Nautilus `bar_type`.
 
     Parameters
     ----------
@@ -92,7 +90,7 @@ def databento_schema_from_nautilus_bar_type(bar_type: BarType) -> databento_dbn.
 
     Returns
     -------
-    databento.Schema
+    str
 
     Raises
     ------
@@ -119,13 +117,13 @@ def databento_schema_from_nautilus_bar_type(bar_type: BarType) -> databento_dbn.
 
     match bar_type.spec.aggregation:
         case BarAggregation.SECOND:
-            return databento_dbn.Schema.OHLCV_1S
+            return "ohlcv-1s"
         case BarAggregation.MINUTE:
-            return databento_dbn.Schema.OHLCV_1M
+            return "ohlcv-1m"
         case BarAggregation.HOUR:
-            return databento_dbn.Schema.OHLCV_1H
+            return "ohlcv-1h"
         case BarAggregation.DAY:
-            return databento_dbn.Schema.OHLCV_1D
+            return "ohlcv-1d"
         case _:
             raise ValueError(
                 f"Invalid bar type '{bar_type}'. "
