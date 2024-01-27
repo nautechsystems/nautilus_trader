@@ -1627,7 +1627,6 @@ class DatabentoDataLoader:
         path: PathLike[str] | str,
     ) -> None: ...
 
-
 class DatabentoHistoricalClient:
     def __init__(
         self,
@@ -1671,3 +1670,28 @@ class DatabentoHistoricalClient:
         end: int | None = None,
         limit: int | None = None,
     ) -> list[Bar]: ...
+
+class DatabentoLiveClient:
+    def __init__(
+        self,
+        key: str,
+        dataset: str,
+        publishers_path: str,
+    ) -> None: ...
+
+    @property
+    def key(self) -> str: ...
+    @property
+    def dataset(self) -> str: ...
+    async def subscribe(
+        self,
+        schema: str,
+        symbols: str,
+        stype_in: str | None = None,
+        start: int | None = None,
+    ) -> dict[str, str]: ...
+    async def start(
+        self,
+        callback: Callable,
+    ) -> dict[str, str]: ...
+    async def close(self) -> None: ...

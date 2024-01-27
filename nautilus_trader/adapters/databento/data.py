@@ -16,23 +16,20 @@
 import asyncio
 from collections import defaultdict
 from collections.abc import Coroutine
-from functools import partial
+from pathlib import Path
 from typing import Any
 
-import databento
+import databento_dbn
 import pandas as pd
 import pytz
 
 from nautilus_trader.adapters.databento.common import databento_schema_from_nautilus_bar_type
-from nautilus_trader.adapters.databento.common import nautilus_instrument_id_from_databento
 from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
 from nautilus_trader.adapters.databento.constants import DATABENTO_CLIENT_ID
 from nautilus_trader.adapters.databento.constants import ONE_DAY
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
-from nautilus_trader.adapters.databento.parsing import parse_record
 from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
-from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.adapters.databento.types import Dataset
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
@@ -47,6 +44,7 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import BookType
@@ -64,7 +62,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     ----------
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
-    http_client : databento.Historical
+    http_client : nautilus_pyo3.DatabentoHistoricalClient
         The Databento historical HTTP client.
     msgbus : MessageBus
         The message bus for the client.
@@ -86,7 +84,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
-        http_client: databento.Historical,
+        http_client: nautilus_pyo3.DatabentoHistoricalClient,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -109,6 +107,9 @@ class DatabentoDataClient(LiveMarketDataClient):
             config=config,
         )
 
+        # TODO: Single source this
+        self._publishers_path = str((Path(__file__).resolve().parent / "publishers.json").resolve())
+
         # Configuration
         self._live_api_key: str = config.api_key or http_client.key
         self._live_gateway: str | None = config.live_gateway
@@ -119,8 +120,8 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         # Clients
         self._http_client = http_client
-        self._live_clients: dict[Dataset, databento.Live] = {}
-        self._live_clients_mbo: dict[Dataset, databento.Live] = {}
+        self._live_clients: dict[Dataset, nautilus_pyo3.DatabentoLiveClient] = {}
+        self._live_clients_mbo: dict[Dataset, nautilus_pyo3.DatabentoLiveClient] = {}
         self._has_subscribed: dict[Dataset, bool] = {}
         self._loader = loader or DatabentoDataLoader()
         self._dataset_ranges: dict[Dataset, tuple[pd.Timestamp, pd.Timestamp]] = {}
@@ -142,6 +143,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._buffered_deltas: dict[InstrumentId, list[OrderBookDelta]] = defaultdict(list)
 
         # Tasks
+        self._live_client_tasks: set[asyncio.Task] = set()
         self._update_dataset_ranges_interval_seconds: int = 60 * 60  # Once per hour (hard coded)
         self._update_dataset_ranges_task: asyncio.Task | None = None
 
@@ -173,15 +175,16 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _disconnect(self) -> None:
         coros: list[Coroutine] = []
-        for dataset, client in self._live_clients.items():
-            self._log.info(f"Stopping {dataset} live feed...", LogColor.BLUE)
-            coro = client.wait_for_close(timeout=2.0)
-            coros.append(coro)
+        # TODO: When closing live clients sorted
+        # for dataset, client in self._live_clients.items():
+        #     self._log.info(f"Stopping {dataset} live feed...", LogColor.BLUE)
+        # coro = client.wait_for_close(timeout=2.0)
+        # coros.append(coro)
 
-        for dataset, client in self._live_clients_mbo.items():
-            self._log.info(f"Stopping {dataset} MBO/L3 live feed...", LogColor.BLUE)
-            coro = client.wait_for_close(timeout=2.0)
-            coros.append(coro)
+        # for dataset, client in self._live_clients_mbo.items():
+        #     self._log.info(f"Stopping {dataset} MBO/L3 live feed...", LogColor.BLUE)
+        # coro = client.wait_for_close(timeout=2.0)
+        # coros.append(coro)
 
         if self._buffer_mbo_subscriptions_task:
             self._log.debug("Canceling `buffer_mbo_subscriptions` task...")
@@ -232,38 +235,51 @@ class DatabentoDataClient(LiveMarketDataClient):
         except asyncio.CancelledError:
             self._log.debug("Canceled `buffer_mbo_subscriptions` task.")
 
-    def _get_live_client(self, dataset: Dataset) -> databento.Live:
+    def _get_live_client(self, dataset: Dataset) -> nautilus_pyo3.DatabentoLiveClient:
         # Retrieve or initialize the 'general' live client for the specified dataset
         live_client = self._live_clients.get(dataset)
 
         if live_client is None:
-            live_client = databento.Live(key=self._live_api_key, gateway=self._live_gateway)
+            live_client = nautilus_pyo3.DatabentoLiveClient(
+                key=self._live_api_key,
+                dataset=dataset,
+                publishers_path=self._publishers_path,
+            )
 
             # Wrap the callback with partial to include the dataset
-            callback_with_dataset = partial(self._handle_record, live_client.symbology_map)
-            live_client.add_callback(callback_with_dataset)
+            # callback_with_dataset = partial(self._handle_record, live_client.symbology_map)
+            # live_client.add_callback(callback_with_dataset)
             self._live_clients[dataset] = live_client
 
         return live_client
 
-    def _get_live_client_mbo(self, dataset: Dataset) -> databento.Live:
+    def _get_live_client_mbo(self, dataset: Dataset) -> nautilus_pyo3.DatabentoLiveClient:
         # Retrieve or initialize the 'MBO/L3' live client for the specified dataset
         live_client = self._live_clients_mbo.get(dataset)
 
         if live_client is None:
-            live_client = databento.Live(key=self._live_api_key, gateway=self._live_gateway)
+            live_client = nautilus_pyo3.DatabentoLiveClient(
+                key=self._live_api_key,
+                dataset=dataset,
+                publishers_path=self._publishers_path,
+            )
 
             # Wrap the callback with partial to include the dataset
-            callback_with_dataset = partial(self._handle_record, live_client.symbology_map)
-            live_client.add_callback(callback_with_dataset)
+            # callback_with_dataset = partial(self._handle_record, live_client.symbology_map)
+            # live_client.add_callback(callback_with_dataset)
             self._live_clients_mbo[dataset] = live_client
 
         return live_client
 
-    def _check_live_client_started(self, dataset: Dataset, live_client: databento.Live) -> None:
+    def _check_live_client_started(
+        self,
+        dataset: Dataset,
+        live_client: nautilus_pyo3.DatabentoLiveClient,
+    ) -> None:
         if not self._has_subscribed.get(dataset):
             self._log.debug(f"Starting {dataset} live client...", LogColor.MAGENTA)
-            live_client.start()
+            task = self._loop.create_task(live_client.start(callback=self._handle_record))
+            self._live_client_tasks.add(task)
             self._has_subscribed[dataset] = True
             self._log.info(f"Started {dataset} live feed.", LogColor.BLUE)
 
@@ -352,10 +368,9 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         live_client = self._get_live_client(dataset)
-        live_client.subscribe(
-            dataset=dataset,
-            schema=databento.Schema.DEFINITION,
-            symbols=[instrument_id.symbol.value],
+        await live_client.subscribe(
+            schema="definition",
+            symbols=instrument_id.symbol.value,
         )
         self._check_live_client_started(dataset, live_client)
 
@@ -365,11 +380,10 @@ class DatabentoDataClient(LiveMarketDataClient):
         parent_symbols: set[str],
     ) -> None:
         live_client = self._get_live_client(dataset)
-        live_client.subscribe(
-            dataset=dataset,
-            stype_in=databento.SType.PARENT,
-            schema=databento.Schema.DEFINITION,
-            symbols=parent_symbols,
+        await live_client.subscribe(
+            schema="definition",
+            symbols=",".join(sorted(parent_symbols)),
+            stype_in="parent",
         )
         self._check_live_client_started(dataset, live_client)
 
@@ -379,10 +393,9 @@ class DatabentoDataClient(LiveMarketDataClient):
         instrument_ids: list[InstrumentId],
     ) -> None:
         live_client = self._get_live_client(dataset)
-        live_client.subscribe(
-            dataset=dataset,
-            schema=databento.Schema.DEFINITION,
-            symbols=[i.symbol.value for i in instrument_ids],
+        await live_client.subscribe(
+            schema="definition",
+            symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
         )
         self._check_live_client_started(dataset, live_client)
 
@@ -444,13 +457,13 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_ids[0].venue)
         live_client = self._get_live_client_mbo(dataset)
-        live_client.subscribe(
-            dataset=dataset,
-            schema=databento.Schema.MBO,
-            symbols=[i.symbol.value for i in instrument_ids],
+        await live_client.subscribe(
+            schema="mbo",
+            symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
             start=0,  # Must subscribe from start of week to get 'Sunday snapshot' for now
         )
-        live_client.start()
+        task = self._loop.create_task(live_client.start(self._handle_record))
+        self._live_client_tasks.add(task)
 
     async def _subscribe_order_book_snapshots(
         self,
@@ -463,9 +476,9 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         match depth:
             case 1:
-                schema = databento.Schema.MBP_1
+                schema = "mbp-1"
             case 10:
-                schema = databento.Schema.MBP_10
+                schema = "mbp-10"
             case _:
                 self._log.error(
                     f"Cannot subscribe for order book snapshots of depth {depth}, use either 1 or 10.",
@@ -474,10 +487,9 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         live_client = self._get_live_client(dataset)
-        live_client.subscribe(
-            dataset=dataset,
+        await live_client.subscribe(
             schema=schema,
-            symbols=[instrument_id.symbol.value],
+            symbols=",".join(sorted([instrument_id.symbol.value])),
         )
         self._check_live_client_started(dataset, live_client)
 
@@ -486,10 +498,9 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         live_client = self._get_live_client(dataset)
-        live_client.subscribe(
-            dataset=dataset,
-            schema=databento.Schema.MBP_1,
-            symbols=[instrument_id.symbol.value],
+        await live_client.subscribe(
+            schema="mbp-1",
+            symbols=",".join(sorted([instrument_id.symbol.value])),
         )
         self._check_live_client_started(dataset, live_client)
 
@@ -501,10 +512,9 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         live_client = self._get_live_client(dataset)
-        live_client.subscribe(
-            dataset=dataset,
-            schema=databento.Schema.TRADES,
-            symbols=[instrument_id.symbol.value],
+        await live_client.subscribe(
+            schema="trades",
+            symbols=instrument_id.symbol.value,
         )
         self._check_live_client_started(dataset, live_client)
 
@@ -518,10 +528,9 @@ class DatabentoDataClient(LiveMarketDataClient):
             return
 
         live_client = self._get_live_client(dataset)
-        live_client.subscribe(
-            dataset=dataset,
+        await live_client.subscribe(
             schema=schema,
-            symbols=[bar_type.instrument_id.symbol.value],
+            symbols=bar_type.instrument_id.symbol.value,
         )
         self._check_live_client_started(dataset, live_client)
 
@@ -769,48 +778,45 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     def _handle_record(
         self,
-        instrument_map: dict[int, str | int],
-        record: databento.DBNRecord,
+        pyo3_data: Any,  # TODO: Define `Data` base class
     ) -> None:
         # self._log.debug(f"Received {record}", LogColor.MAGENTA)
-        if isinstance(record, databento.ErrorMsg):
-            self._log.error(f"ErrorMsg: {record.err}")
-            return
-        elif isinstance(record, databento.SystemMsg):
-            self._log.info(f"SystemMsg: {record.msg}")
-            return
-        elif isinstance(record, databento.SymbolMappingMsg):
-            self._log.debug(f"SymbolMappingMsg: {record}")
-            return
 
-        try:
-            raw_symbol = instrument_map.get(record.instrument_id)
-            if raw_symbol is None:
-                raise ValueError(f"Cannot resolve instrument_id {record.instrument_id}")
+        # TODO: Handle inside client
 
-            publisher: DatabentoPublisher = self._loader.publishers[record.publisher_id]
-            instrument_id: InstrumentId = nautilus_instrument_id_from_databento(
-                raw_symbol=str(raw_symbol),
-                publisher=publisher,
-            )
-            data = parse_record(record, instrument_id, ts_init=self._clock.timestamp_ns())
-        except ValueError as e:
-            self._log.error(f"{e!r}")
-            return
+        # if isinstance(record, databento.ErrorMsg):
+        #     self._log.error(f"ErrorMsg: {record.err}")
+        #     return
+        # elif isinstance(record, databento.SystemMsg):
+        #     self._log.info(f"SystemMsg: {record.msg}")
+        #     return
+        # elif isinstance(record, databento.SymbolMappingMsg):
+        #     self._log.debug(f"SymbolMappingMsg: {record}")
+        #     return
 
-        if isinstance(data, OrderBookDelta):
-            if databento.RecordFlags.F_LAST not in databento.RecordFlags(data.flags):
-                buffer = self._buffered_deltas[data.instrument_id]
+        instrument_id = InstrumentId.from_str(pyo3_data.instrument_id.value)
+
+        if isinstance(pyo3_data, nautilus_pyo3.OrderBookDelta):
+            data = OrderBookDelta.from_pyo3_list([pyo3_data])  # TODO: Implement single function
+            if databento_dbn.RecordFlags.F_LAST not in databento_dbn.RecordFlags(data.flags):
+                buffer = self._buffered_deltas[instrument_id]
                 buffer.append(data)
                 return  # We can rely on the F_LAST flag for an MBO feed
             else:
-                buffer = self._buffered_deltas[data.instrument_id]
+                buffer = self._buffered_deltas[instrument_id]
                 buffer.append(data)
                 data = OrderBookDeltas(instrument_id, deltas=buffer.copy())
                 buffer.clear()
-
-        if isinstance(data, tuple):
-            self._handle_data(data[0])
-            self._handle_data(data[1])
+        elif isinstance(pyo3_data, nautilus_pyo3.OrderBookDepth10):
+            data = OrderBookDepth10.from_pyo3_list([pyo3_data])
+        elif isinstance(pyo3_data, nautilus_pyo3.QuoteTick):
+            data = QuoteTick.from_pyo3_list([pyo3_data])
+        elif isinstance(pyo3_data, nautilus_pyo3.TradeTick):
+            data = TradeTick.from_pyo3_list([pyo3_data])
+        elif isinstance(pyo3_data, nautilus_pyo3.Bar):
+            data = Bar.from_pyo3_list([pyo3_data])
         else:
-            self._handle_data(data)
+            self._log.error(f"Unimplemented data type in handler: {pyo3_data}.")
+            return
+
+        self._handle_data(data)
