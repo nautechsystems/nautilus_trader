@@ -22,6 +22,9 @@ use ustr::Ustr;
 
 use super::types::DatabentoPublisher;
 
+pub const DATABENTO: &str = "DATABENTO";
+pub const ALL_SYMBOLS: &str = "ALL_SYMBOLS";
+
 #[must_use]
 pub fn nautilus_instrument_id_from_databento(
     raw_symbol: Ustr,
