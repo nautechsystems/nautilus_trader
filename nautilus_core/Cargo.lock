@@ -2424,6 +2424,7 @@ dependencies = [
  "dbn",
  "indexmap 2.1.0",
  "itoa",
+ "log",
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",
