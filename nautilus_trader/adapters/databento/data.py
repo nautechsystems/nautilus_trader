@@ -276,14 +276,19 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._handle_data(instrument)
 
     async def _ensure_subscribed_for_instrument(self, instrument_id: InstrumentId) -> None:
-        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
-        subscribed_instruments = self._instrument_ids[dataset]
+        try:
+            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+            subscribed_instruments = self._instrument_ids[dataset]
 
-        if instrument_id in subscribed_instruments:
-            return
+            if instrument_id in subscribed_instruments:
+                return
 
-        self._instrument_ids[dataset].add(instrument_id)
-        await self._subscribe_instrument(instrument_id)
+            self._instrument_ids[dataset].add(instrument_id)
+            await self._subscribe_instrument(instrument_id)
+        except asyncio.CancelledError:
+            self._log.warning(
+                "`_ensure_subscribed_for_instrument` was canceled while still pending.",
+            )
 
     async def _get_dataset_range(
         self,
@@ -314,6 +319,9 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
 
             return available_start, available_end
+        except asyncio.CancelledError:
+            self._log.warning("`_get_dataset_range` was canceled while still pending.")
+            return (None, pd.Timestamp.utcnow())
         except Exception as e:  # More specific exception
             self._log.error(f"Error requesting dataset range: {e}")
             return (None, pd.Timestamp.utcnow())
@@ -354,38 +362,47 @@ class DatabentoDataClient(LiveMarketDataClient):
         raise NotImplementedError("Cannot subscribe to all instruments (not currently supported).")
 
     async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
-        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
-        live_client = self._get_live_client(dataset)
-        await live_client.subscribe(
-            schema="definition",
-            symbols=instrument_id.symbol.value,
-        )
-        self._check_live_client_started(dataset, live_client)
+        try:
+            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+            live_client = self._get_live_client(dataset)
+            await live_client.subscribe(
+                schema="definition",
+                symbols=instrument_id.symbol.value,
+            )
+            self._check_live_client_started(dataset, live_client)
+        except asyncio.CancelledError:
+            self._log.warning("`_subscribe_instrument` was canceled while still pending.")
 
     async def _subscribe_parent_symbols(
         self,
         dataset: Dataset,
         parent_symbols: set[str],
     ) -> None:
-        live_client = self._get_live_client(dataset)
-        await live_client.subscribe(
-            schema="definition",
-            symbols=",".join(sorted(parent_symbols)),
-            stype_in="parent",
-        )
-        self._check_live_client_started(dataset, live_client)
+        try:
+            live_client = self._get_live_client(dataset)
+            await live_client.subscribe(
+                schema="definition",
+                symbols=",".join(sorted(parent_symbols)),
+                stype_in="parent",
+            )
+            self._check_live_client_started(dataset, live_client)
+        except asyncio.CancelledError:
+            self._log.warning("`_subscribe_parent_symbols` was canceled while still pending.")
 
     async def _subscribe_instrument_ids(
         self,
         dataset: Dataset,
         instrument_ids: list[InstrumentId],
     ) -> None:
-        live_client = self._get_live_client(dataset)
-        await live_client.subscribe(
-            schema="definition",
-            symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
-        )
-        self._check_live_client_started(dataset, live_client)
+        try:
+            live_client = self._get_live_client(dataset)
+            await live_client.subscribe(
+                schema="definition",
+                symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
+            )
+            self._check_live_client_started(dataset, live_client)
+        except asyncio.CancelledError:
+            self._log.warning("`_subscribe_instrument_ids` was canceled while still pending.")
 
     async def _subscribe_order_book_deltas(
         self,
@@ -394,64 +411,75 @@ class DatabentoDataClient(LiveMarketDataClient):
         depth: int | None = None,
         kwargs: dict | None = None,
     ) -> None:
-        if book_type != BookType.L3_MBO:
-            raise NotImplementedError
+        try:
+            if book_type != BookType.L3_MBO:
+                raise NotImplementedError
 
-        if depth:  # Can be None or 0 (full depth)
-            self._log.error(
-                f"Cannot subscribe to order book deltas with specific depth of {depth} "
-                "(do not specify depth when subscribing, must be full depth).",
-            )
-            return
+            if depth:  # Can be None or 0 (full depth)
+                self._log.error(
+                    f"Cannot subscribe to order book deltas with specific depth of {depth} "
+                    "(do not specify depth when subscribing, must be full depth).",
+                )
+                return
 
-        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
 
-        if self._is_buffering_mbo_subscriptions:
-            self._log.debug(f"Buffering MBO/L3 subscription for {instrument_id}.", LogColor.MAGENTA)
-            self._buffered_mbo_subscriptions[dataset].append(instrument_id)
-            return
+            if self._is_buffering_mbo_subscriptions:
+                self._log.debug(
+                    f"Buffering MBO/L3 subscription for {instrument_id}.",
+                    LogColor.MAGENTA,
+                )
+                self._buffered_mbo_subscriptions[dataset].append(instrument_id)
+                return
 
-        if self._get_live_client_mbo(dataset) is not None:
-            self._log.error(
-                f"Cannot subscribe to order book deltas for {instrument_id}, "
-                "MBO/L3 feed already started.",
-            )
-            return
+            if self._get_live_client_mbo(dataset) is not None:
+                self._log.error(
+                    f"Cannot subscribe to order book deltas for {instrument_id}, "
+                    "MBO/L3 feed already started.",
+                )
+                return
 
-        await self._subscribe_order_book_deltas_batch([instrument_id])
+            await self._subscribe_order_book_deltas_batch([instrument_id])
+        except asyncio.CancelledError:
+            self._log.warning("`_subscribe_order_book_deltas` was canceled while still pending.")
 
     async def _subscribe_order_book_deltas_batch(
         self,
         instrument_ids: list[InstrumentId],
     ) -> None:
-        if not instrument_ids:
-            self._log.warning(
-                "No subscriptions for order book deltas (`instrument_ids` was empty).",
-            )
-            return
-
-        for instrument_id in instrument_ids:
-            if not self._cache.instrument(instrument_id):
-                self._log.error(
-                    f"Cannot subscribe to order book deltas for {instrument_id}, "
-                    "instrument must be pre-loaded via the `DatabentoDataClientConfig` "
-                    "or a specific subscription on start.",
+        try:
+            if not instrument_ids:
+                self._log.warning(
+                    "No subscriptions for order book deltas (`instrument_ids` was empty).",
                 )
-                instrument_ids.remove(instrument_id)
-                continue
+                return
 
-        if not instrument_ids:
-            return  # No subscribing instrument IDs were loaded in the cache
+            for instrument_id in instrument_ids:
+                if not self._cache.instrument(instrument_id):
+                    self._log.error(
+                        f"Cannot subscribe to order book deltas for {instrument_id}, "
+                        "instrument must be pre-loaded via the `DatabentoDataClientConfig` "
+                        "or a specific subscription on start.",
+                    )
+                    instrument_ids.remove(instrument_id)
+                    continue
 
-        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_ids[0].venue)
-        live_client = self._get_live_client_mbo(dataset)
-        await live_client.subscribe(
-            schema="mbo",
-            symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
-            start=0,  # Must subscribe from start of week to get 'Sunday snapshot' for now
-        )
-        future = asyncio.ensure_future(live_client.start(self._handle_record))
-        self._live_client_futures.add(future)
+            if not instrument_ids:
+                return  # No subscribing instrument IDs were loaded in the cache
+
+            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_ids[0].venue)
+            live_client = self._get_live_client_mbo(dataset)
+            await live_client.subscribe(
+                schema="mbo",
+                symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
+                start=0,  # Must subscribe from start of week to get 'Sunday snapshot' for now
+            )
+            future = asyncio.ensure_future(live_client.start(self._handle_record))
+            self._live_client_futures.add(future)
+        except asyncio.CancelledError:
+            self._log.warning(
+                "`_subscribe_order_book_deltas_batch` was canceled while still pending.",
+            )
 
     async def _subscribe_order_book_snapshots(
         self,
@@ -460,67 +488,79 @@ class DatabentoDataClient(LiveMarketDataClient):
         depth: int | None = None,
         kwargs: dict | None = None,
     ) -> None:
-        await self._ensure_subscribed_for_instrument(instrument_id)
+        try:
+            await self._ensure_subscribed_for_instrument(instrument_id)
 
-        match depth:
-            case 1:
-                schema = "mbp-1"
-            case 10:
-                schema = "mbp-10"
-            case _:
-                self._log.error(
-                    f"Cannot subscribe for order book snapshots of depth {depth}, use either 1 or 10.",
-                )
-                return
+            match depth:
+                case 1:
+                    schema = "mbp-1"
+                case 10:
+                    schema = "mbp-10"
+                case _:
+                    self._log.error(
+                        f"Cannot subscribe for order book snapshots of depth {depth}, use either 1 or 10.",
+                    )
+                    return
 
-        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
-        live_client = self._get_live_client(dataset)
-        await live_client.subscribe(
-            schema=schema,
-            symbols=",".join(sorted([instrument_id.symbol.value])),
-        )
-        self._check_live_client_started(dataset, live_client)
+            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+            live_client = self._get_live_client(dataset)
+            await live_client.subscribe(
+                schema=schema,
+                symbols=",".join(sorted([instrument_id.symbol.value])),
+            )
+            self._check_live_client_started(dataset, live_client)
+        except asyncio.CancelledError:
+            self._log.warning("`_subscribe_order_book_snapshots` was canceled while still pending.")
 
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
-        await self._ensure_subscribed_for_instrument(instrument_id)
+        try:
+            await self._ensure_subscribed_for_instrument(instrument_id)
 
-        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
-        live_client = self._get_live_client(dataset)
-        await live_client.subscribe(
-            schema="mbp-1",
-            symbols=",".join(sorted([instrument_id.symbol.value])),
-        )
-        self._check_live_client_started(dataset, live_client)
+            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+            live_client = self._get_live_client(dataset)
+            await live_client.subscribe(
+                schema="mbp-1",
+                symbols=",".join(sorted([instrument_id.symbol.value])),
+            )
+            self._check_live_client_started(dataset, live_client)
+        except asyncio.CancelledError:
+            self._log.warning("`_subscribe_quote_ticks` was canceled while still pending.")
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        if instrument_id in self.subscribed_quote_ticks():
-            return  # Already subscribed for trades
+        try:
+            if instrument_id in self.subscribed_quote_ticks():
+                return  # Already subscribed for trades
 
-        await self._ensure_subscribed_for_instrument(instrument_id)
+            await self._ensure_subscribed_for_instrument(instrument_id)
 
-        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
-        live_client = self._get_live_client(dataset)
-        await live_client.subscribe(
-            schema="trades",
-            symbols=instrument_id.symbol.value,
-        )
-        self._check_live_client_started(dataset, live_client)
+            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+            live_client = self._get_live_client(dataset)
+            await live_client.subscribe(
+                schema="trades",
+                symbols=instrument_id.symbol.value,
+            )
+            self._check_live_client_started(dataset, live_client)
+        except asyncio.CancelledError:
+            self._log.warning("`_subscribe_trade_ticks` was canceled while still pending.")
 
     async def _subscribe_bars(self, bar_type: BarType) -> None:
-        dataset: Dataset = self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
-
         try:
-            schema = databento_schema_from_nautilus_bar_type(bar_type)
-        except ValueError as e:
-            self._log.error(f"Cannot subscribe: {e}")
-            return
+            dataset: Dataset = self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
 
-        live_client = self._get_live_client(dataset)
-        await live_client.subscribe(
-            schema=schema,
-            symbols=bar_type.instrument_id.symbol.value,
-        )
-        self._check_live_client_started(dataset, live_client)
+            try:
+                schema = databento_schema_from_nautilus_bar_type(bar_type)
+            except ValueError as e:
+                self._log.error(f"Cannot subscribe: {e}")
+                return
+
+            live_client = self._get_live_client(dataset)
+            await live_client.subscribe(
+                schema=schema,
+                symbols=bar_type.instrument_id.symbol.value,
+            )
+            self._check_live_client_started(dataset, live_client)
+        except asyncio.CancelledError:
+            self._log.warning("`_subscribe_bars` was canceled while still pending.")
 
     async def _unsubscribe(self, data_type: DataType) -> None:
         raise NotImplementedError(
