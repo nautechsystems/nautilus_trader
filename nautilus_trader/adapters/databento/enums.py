@@ -14,11 +14,60 @@
 # -------------------------------------------------------------------------------------------------
 
 from enum import Enum
+from enum import IntFlag
 from enum import unique
+
+
+class DatabentoSchema(Enum):
+    """
+    Represents a Databento schema.
+    """
+
+    MBO = "mbo"
+    MBP_1 = "mbp-1"
+    MBP_10 = "mbp-10"
+    TBBO = "tbbo"
+    TRADES = "trades"
+    OHLCV_1S = "ohlcv-1s"
+    OHLCV_1M = "ohlcv-1m"
+    OHLCV_1H = "ohlcv-1h"
+    OHLCV_1D = "ohlcv-1d"
+    OHLCV_EOD = "ohlcv-eod"
+    DEFINITION = "definition"
+    STATISTICS = "statistics"
+    STATUS = "status"
+    IMBALANCE = "imbalance"
+
+
+class DatabentoRecordFlags(IntFlag):
+    """
+    Represents Databento record flags.
+
+    F_LAST
+        Last message in the packet from the venue for a given Databento `instrument_id`.
+    F_SNAPSHOT
+        Message sourced from a replay, such as a snapshot server.
+    F_MBP
+        Aggregated price level message, not an individual order.
+    F_BAD_TS_RECV
+        The `ts_recv` value is inaccurate (clock issues or reordering).
+
+    Other bits are reserved and have no current meaning.
+
+    """
+
+    F_LAST = 128
+    F_SNAPSHOT = 32
+    F_MBP = 16
+    F_BAD_TS_RECV = 8
 
 
 @unique
 class DatabentoInstrumentClass(Enum):
+    """
+    Represents a Databento instrument class.
+    """
+
     BOND = "B"
     CALL = "C"
     FUTURE = "F"
@@ -32,6 +81,10 @@ class DatabentoInstrumentClass(Enum):
 
 @unique
 class DatabentoStatisticType(Enum):
+    """
+    Represents a Databento statistic type.
+    """
+
     OPENING_PRICE = 1
     INDICATIVE_OPENING_PRICE = 2
     SETTLEMENT_PRICE = 3
@@ -48,5 +101,9 @@ class DatabentoStatisticType(Enum):
 
 @unique
 class DatabentoStatisticUpdateAction(Enum):
+    """
+    Represents a Databento statistic update action.
+    """
+
     ADDED = 1
     DELETED = 2

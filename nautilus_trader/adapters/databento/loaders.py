@@ -16,11 +16,11 @@
 from os import PathLike
 from pathlib import Path
 
-import databento_dbn
 import msgspec
 
 from nautilus_trader.adapters.databento.common import check_file_path
 from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
+from nautilus_trader.adapters.databento.enums import DatabentoSchema
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.data import Data
@@ -183,42 +183,42 @@ class DatabentoDataLoader:
             else None
         )
 
-        schema = self._pyo3_loader.schema_for_file(path)  # type: ignore
+        schema = self._pyo3_loader.schema_for_file(str(path))
         if schema is None:
             raise RuntimeError("Loading files with mixed schemas not currently supported")
 
         match schema:
-            case databento_dbn.Schema.DEFINITION:
+            case DatabentoSchema.DEFINITION.value:
                 data = self._pyo3_loader.load_instruments(path)  # type: ignore
                 if as_legacy_cython:
                     data = instruments_from_pyo3(data)
                 return data
-            case databento_dbn.Schema.MBO:
+            case DatabentoSchema.MBO.value:
                 data = self._pyo3_loader.load_order_book_deltas(path, pyo3_instrument_id)  # type: ignore
                 if as_legacy_cython:
                     data = OrderBookDelta.from_pyo3_list(data)
                 return data
-            case databento_dbn.Schema.MBP_1 | databento_dbn.Schema.TBBO:
+            case DatabentoSchema.MBP_1.value | DatabentoSchema.TBBO.value:
                 data = self._pyo3_loader.load_quote_ticks(path, pyo3_instrument_id)  # type: ignore
                 if as_legacy_cython:
                     data = QuoteTick.from_pyo3_list(data)
                 return data
-            case databento_dbn.Schema.MBP_10:
+            case DatabentoSchema.MBP_10.value:
                 data = self._pyo3_loader.load_order_book_depth10(path)  # type: ignore
                 if as_legacy_cython:
                     data = OrderBookDepth10.from_pyo3_list(data)
                 return data
-            case databento_dbn.Schema.TRADES:
+            case DatabentoSchema.TRADES.value:
                 data = self._pyo3_loader.load_trade_ticks(path, pyo3_instrument_id)  # type: ignore
                 if as_legacy_cython:
                     data = TradeTick.from_pyo3_list(data)
                 return data
             case (
-                databento_dbn.Schema.OHLCV_1S
-                | databento_dbn.Schema.OHLCV_1M
-                | databento_dbn.Schema.OHLCV_1H
-                | databento_dbn.Schema.OHLCV_1D
-                | databento_dbn.Schema.OHLCV_EOD
+                DatabentoSchema.OHLCV_1S.value
+                | DatabentoSchema.OHLCV_1M.value
+                | DatabentoSchema.OHLCV_1H.value
+                | DatabentoSchema.OHLCV_1D.value
+                | DatabentoSchema.OHLCV_EOD
             ):
                 data = self._pyo3_loader.load_bars(path, pyo3_instrument_id)  # type: ignore
                 if as_legacy_cython:

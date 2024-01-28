@@ -35,8 +35,10 @@ use pyo3::prelude::*;
 use time::OffsetDateTime;
 use tokio::sync::Mutex;
 
-use crate::databento::parsing::parse_record;
+use crate::databento::parsing::{parse_instrument_def_msg, parse_record};
 use crate::databento::types::{DatabentoPublisher, PublisherId};
+
+use super::loader::convert_instrument_to_pyobject;
 
 #[cfg_attr(
     feature = "python",
@@ -166,6 +168,31 @@ impl DatabentoLiveClient {
                         error!("{:?}", record);
                         continue;
                     }
+                    RType::InstrumentDef => {
+                        let msg = record
+                            .get::<dbn::InstrumentDefMsg>()
+                            .expect("Error converting record to `InstrumentDefMsg`");
+                        let publisher_id = record.publisher().unwrap() as PublisherId;
+                        let publisher = publishers.get(&publisher_id).unwrap();
+                        let ts_init = clock.get_time_ns();
+                        let result = parse_instrument_def_msg(msg, publisher, ts_init);
+
+                        match result {
+                            Ok(instrument) => {
+                                // TODO: Improve the efficiency of this constant GIL aquisition
+                                Python::with_gil(|py| {
+                                    let py_obj =
+                                        convert_instrument_to_pyobject(py, instrument).unwrap();
+                                    match callback.call1(py, (py_obj,)) {
+                                        Ok(_) => {}
+                                        Err(e) => eprintln!("Error on callback, {:?}", e), // Just print error for now
+                                    };
+                                });
+                            }
+                            Err(e) => eprintln!("{:?}", e),
+                        }
+                        continue;
+                    }
                     _ => {} // Fall through
                 }
 
@@ -186,7 +213,7 @@ impl DatabentoLiveClient {
 
                 // TODO: Improve the efficiency of this constant GIL aquisition
                 Python::with_gil(|py| {
-                    let data = match data {
+                    let py_obj = match data {
                         Data::Delta(delta) => delta.into_py(py),
                         Data::Depth10(depth) => depth.into_py(py),
                         Data::Quote(quote) => quote.into_py(py),
@@ -194,7 +221,7 @@ impl DatabentoLiveClient {
                         _ => panic!("Invalid data element, was {:?}", data),
                     };
 
-                    match callback.call1(py, (data,)) {
+                    match callback.call1(py, (py_obj,)) {
                         Ok(_) => {}
                         Err(e) => eprintln!("Error on callback, {:?}", e), // Just print error for now
                     };
