@@ -26,6 +26,7 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.test_kit.rust.data_pyo3 import TestDataProviderPyo3
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
@@ -553,6 +554,29 @@ def test_deltas_from_dict_returns_expected_dict() -> None:
 
     # Assert
     assert result == deltas
+
+
+def test_deltas_from_pyo3():
+    # Arrange
+    pyo3_delta = TestDataProviderPyo3.order_book_delta()
+
+    # Act
+    delta = OrderBookDelta.from_pyo3(pyo3_delta)
+
+    # Assert
+    assert isinstance(delta, OrderBookDelta)
+
+
+def test_deltas_from_pyo3_list():
+    # Arrange
+    pyo3_deltas = [TestDataProviderPyo3.order_book_delta()] * 1024
+
+    # Act
+    deltas = OrderBookDelta.from_pyo3_list(pyo3_deltas)
+
+    # Assert
+    assert len(deltas) == 1024
+    assert isinstance(deltas[0], OrderBookDelta)
 
 
 def test_depth10_fully_qualified_name() -> None:

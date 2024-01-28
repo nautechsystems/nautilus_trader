@@ -26,6 +26,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.rust.data_pyo3 import TestDataProviderPyo3
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -175,6 +176,27 @@ class TestQuoteTick:
         assert tick.ts_event == 1
         assert tick.ts_init == 2
 
+    def test_from_pyo3(self):
+        # Arrange
+        pyo3_quote = TestDataProviderPyo3.quote_tick()
+
+        # Act
+        quote = QuoteTick.from_pyo3(pyo3_quote)
+
+        # Assert
+        assert isinstance(quote, QuoteTick)
+
+    def test_from_pyo3_list(self):
+        # Arrange
+        pyo3_quotes = [TestDataProviderPyo3.quote_tick()] * 1024
+
+        # Act
+        quotes = QuoteTick.from_pyo3_list(pyo3_quotes)
+
+        # Assert
+        assert len(quotes) == 1024
+        assert isinstance(quotes[0], QuoteTick)
+
     def test_pickling_round_trip_results_in_expected_tick(self):
         # Arrange
         tick = QuoteTick(
@@ -261,6 +283,27 @@ class TestTradeTick:
 
         # Assert
         assert result == tick
+
+    def test_from_pyo3(self):
+        # Arrange
+        pyo3_trade = TestDataProviderPyo3.trade_tick()
+
+        # Act
+        trade = TradeTick.from_pyo3(pyo3_trade)
+
+        # Assert
+        assert isinstance(trade, TradeTick)
+
+    def test_from_pyo3_list(self):
+        # Arrange
+        pyo3_trades = [TestDataProviderPyo3.trade_tick()] * 1024
+
+        # Act
+        trades = TradeTick.from_pyo3_list(pyo3_trades)
+
+        # Assert
+        assert len(trades) == 1024
+        assert isinstance(trades[0], TradeTick)
 
     def test_pickling_round_trip_results_in_expected_tick(self):
         # Arrange
