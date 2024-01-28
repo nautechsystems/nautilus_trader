@@ -276,7 +276,7 @@ impl MessageBus {
     /// Deregisters the given `handler` for the `endpoint` address.
     pub fn deregister(&mut self, endpoint: &str) {
         // Removes entry if it exists for endpoint
-        self.endpoints.remove(&Ustr::from(endpoint));
+        self.endpoints.shift_remove(&Ustr::from(endpoint));
     }
 
     /// Subscribes the given `handler` to the `topic`.
@@ -309,7 +309,7 @@ impl MessageBus {
     /// Unsubscribes the given `handler` from the `topic`.
     pub fn unsubscribe(&mut self, topic: &str, handler: MessageHandler) {
         let sub = Subscription::new(Ustr::from(topic), handler, self.subscriptions.len(), None);
-        self.subscriptions.remove(&sub);
+        self.subscriptions.shift_remove(&sub);
     }
 
     /// Returns the handler for the given `endpoint`.
@@ -345,7 +345,7 @@ impl MessageBus {
     /// index.
     #[must_use]
     pub fn response_handler(&mut self, correlation_id: &UUID4) -> Option<MessageHandler> {
-        self.correlation_index.remove(correlation_id)
+        self.correlation_index.shift_remove(correlation_id)
     }
 
     #[must_use]
