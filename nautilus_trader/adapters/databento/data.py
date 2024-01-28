@@ -811,9 +811,8 @@ class DatabentoDataClient(LiveMarketDataClient):
         # self._log.debug(f"Received {record}", LogColor.MAGENTA)
 
         if isinstance(pyo3_data, nautilus_pyo3.OrderBookDelta):
-            instrument_id = InstrumentId.from_str(pyo3_data.instrument_id.value)
-
-            data = OrderBookDelta.from_pyo3_list([pyo3_data])  # TODO: Implement single function
+            data = OrderBookDelta.from_pyo3(pyo3_data)
+            instrument_id = data.instrument_id
             if DatabentoRecordFlags.F_LAST not in DatabentoRecordFlags(data.flags):
                 buffer = self._buffered_deltas[instrument_id]
                 buffer.append(data)
@@ -824,13 +823,14 @@ class DatabentoDataClient(LiveMarketDataClient):
                 data = OrderBookDeltas(instrument_id, deltas=buffer.copy())
                 buffer.clear()
         elif isinstance(pyo3_data, nautilus_pyo3.OrderBookDepth10):
-            data = OrderBookDepth10.from_pyo3_list([pyo3_data])  # TODO: Implement single function
+            raise RuntimeError("MBP-10 not currently supported: pyo3 conversion function needed")
+            data = OrderBookDepth10.from_pyo3(pyo3_data)
         elif isinstance(pyo3_data, nautilus_pyo3.QuoteTick):
-            data = QuoteTick.from_pyo3_list([pyo3_data])  # TODO: Implement single function
+            data = QuoteTick.from_pyo3(pyo3_data)
         elif isinstance(pyo3_data, nautilus_pyo3.TradeTick):
-            data = TradeTick.from_pyo3_list([pyo3_data])  # TODO: Implement single function
+            data = TradeTick.from_pyo3(pyo3_data)
         elif isinstance(pyo3_data, nautilus_pyo3.Bar):
-            data = Bar.from_pyo3_list([pyo3_data])  # TODO: Implement single function
+            data = Bar.from_pyo3(pyo3_data)
         else:
             self._log.error(f"Unimplemented data type in handler: {pyo3_data}.")
             return

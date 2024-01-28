@@ -153,6 +153,9 @@ cdef class Bar(Data):
     cdef Bar from_dict_c(dict values)
 
     @staticmethod
+    cdef Bar from_pyo3_c(pyo3_bar)
+
+    @staticmethod
     cdef dict to_dict_c(Bar obj)
 
     cpdef bint is_single_price(self)
@@ -208,6 +211,9 @@ cdef class OrderBookDelta(Data):
 
     @staticmethod
     cdef OrderBookDelta from_dict_c(dict values)
+
+    @staticmethod
+    cdef OrderBookDelta from_pyo3_c(pyo3_delta)
 
     @staticmethod
     cdef dict to_dict_c(OrderBookDelta obj)
@@ -357,6 +363,9 @@ cdef class QuoteTick(Data):
     cdef QuoteTick from_dict_c(dict values)
 
     @staticmethod
+    cdef QuoteTick from_pyo3_c(pyo3_quote)
+
+    @staticmethod
     cdef dict to_dict_c(QuoteTick obj)
 
     cpdef Price extract_price(self, PriceType price_type)
@@ -392,6 +401,9 @@ cdef class TradeTick(Data):
 
     @staticmethod
     cdef TradeTick from_dict_c(dict values)
+
+    @staticmethod
+    cdef TradeTick from_pyo3_c(pyo3_trade)
 
     @staticmethod
     cdef dict to_dict_c(TradeTick obj)

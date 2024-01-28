@@ -874,6 +874,22 @@ cdef class Bar(Data):
             "ts_init": obj._mem.ts_init,
         }
 
+    @staticmethod
+    cdef Bar from_pyo3_c(pyo3_bar):
+        cdef uint8_t price_prec = pyo3_bar.open.precision
+        cdef uint8_t volume_prec = pyo3_bar.volume.precision
+
+        return Bar(
+            BarType.from_str_c(str(pyo3_bar.bar_type)),
+            Price.from_raw_c(pyo3_bar.open.raw, price_prec),
+            Price.from_raw_c(pyo3_bar.high.raw, price_prec),
+            Price.from_raw_c(pyo3_bar.low.raw, price_prec),
+            Price.from_raw_c(pyo3_bar.close.raw, price_prec),
+            Quantity.from_raw_c(pyo3_bar.volume.raw, volume_prec),
+            pyo3_bar.ts_event,
+            pyo3_bar.ts_init,
+        )
+
     @property
     def bar_type(self) -> BarType:
         """
@@ -1086,6 +1102,23 @@ cdef class Bar(Data):
             output.append(bar)
 
         return output
+
+    @staticmethod
+    def from_pyo3(pyo3_bar) -> Bar:
+        """
+        Return a legacy Cython bar converted from the given pyo3 Rust object.
+
+        Parameters
+        ----------
+        pyo3_bar : nautilus_pyo3.Bar
+            The pyo3 Rust bar to convert from.
+
+        Returns
+        -------
+        Bar
+
+        """
+        return Bar.from_pyo3_c(pyo3_bar)
 
     cpdef bint is_single_price(self):
         """
@@ -1784,6 +1817,23 @@ cdef class OrderBookDelta(Data):
         }
 
     @staticmethod
+    cdef OrderBookDelta from_pyo3_c(pyo3_delta):
+        return OrderBookDelta.from_raw_c(
+            InstrumentId.from_str_c(pyo3_delta.instrument_id.value),
+            pyo3_delta.action.value,
+            pyo3_delta.order.side.value,
+            pyo3_delta.order.price.raw,
+            pyo3_delta.order.price.precision,
+            pyo3_delta.order.size.raw,
+            pyo3_delta.order.size.precision,
+            pyo3_delta.order.order_id,
+            pyo3_delta.flags,
+            pyo3_delta.sequence,
+            pyo3_delta.ts_event,
+            pyo3_delta.ts_init,
+        )
+
+    @staticmethod
     cdef OrderBookDelta clear_c(
         InstrumentId instrument_id,
         uint64_t ts_event,
@@ -1996,6 +2046,23 @@ cdef class OrderBookDelta(Data):
             output.append(pyo3_delta)
 
         return output
+
+    @staticmethod
+    def from_pyo3(pyo3_delta) -> OrderBookDelta:
+        """
+        Return a legacy Cython order book delta converted from the given pyo3 Rust object.
+
+        Parameters
+        ----------
+        pyo3_delta : nautilus_pyo3.OrderBookDelta
+            The pyo3 Rust order book delta to convert from.
+
+        Returns
+        -------
+        OrderBookDelta
+
+        """
+        return OrderBookDelta.from_pyo3_c(pyo3_delta)
 
     @staticmethod
     def from_pyo3_list(list pyo3_deltas) -> list[OrderBookDelta]:
@@ -3121,6 +3188,22 @@ cdef class QuoteTick(Data):
         quote._mem = mem
         return quote
 
+    @staticmethod
+    cdef QuoteTick from_pyo3_c(pyo3_quote):
+        return QuoteTick.from_raw_c(
+            InstrumentId.from_str_c(pyo3_quote.instrument_id.value),
+            pyo3_quote.bid_price.raw,
+            pyo3_quote.ask_price.raw,
+            pyo3_quote.bid_price.precision,
+            pyo3_quote.ask_price.precision,
+            pyo3_quote.bid_size.raw,
+            pyo3_quote.ask_size.raw,
+            pyo3_quote.bid_size.precision,
+            pyo3_quote.ask_size.precision,
+            pyo3_quote.ts_event,
+            pyo3_quote.ts_init,
+        )
+
     # SAFETY: Do NOT deallocate the capsule here
     # It is supposed to be deallocated by the creator
     @staticmethod
@@ -3358,6 +3441,23 @@ cdef class QuoteTick(Data):
             output.append(pyo3_quote)
 
         return output
+
+    @staticmethod
+    def from_pyo3(pyo3_quote) -> QuoteTick:
+        """
+        Return a legacy Cython quote tick converted from the given pyo3 Rust object.
+
+        Parameters
+        ----------
+        pyo3_quote : nautilus_pyo3.QuoteTick
+            The pyo3 Rust quote tick to convert from.
+
+        Returns
+        -------
+        QuoteTick
+
+        """
+        return QuoteTick.from_pyo3_c(pyo3_quote)
 
     cpdef Price extract_price(self, PriceType price_type):
         """
@@ -3686,6 +3786,20 @@ cdef class TradeTick(Data):
         }
 
     @staticmethod
+    cdef TradeTick from_pyo3_c(pyo3_trade):
+        return TradeTick.from_raw_c(
+            InstrumentId.from_str_c(pyo3_trade.instrument_id.value),
+            pyo3_trade.price.raw,
+            pyo3_trade.price.precision,
+            pyo3_trade.size.raw,
+            pyo3_trade.size.precision,
+            pyo3_trade.aggressor_side.value,
+            TradeId(pyo3_trade.trade_id.value),
+            pyo3_trade.ts_event,
+            pyo3_trade.ts_init,
+        )
+
+    @staticmethod
     def from_raw(
         InstrumentId instrument_id,
         int64_t price_raw,
@@ -3836,7 +3950,7 @@ cdef class TradeTick(Data):
             if instrument_id is None:
                 instrument_id = InstrumentId.from_str_c(pyo3_trade.instrument_id.value)
                 price_prec = pyo3_trade.price.precision
-                size_prec = pyo3_trade.price.precision
+                size_prec = pyo3_trade.size.precision
 
             trade = TradeTick.from_raw_c(
                 instrument_id,
@@ -3852,3 +3966,20 @@ cdef class TradeTick(Data):
             output.append(trade)
 
         return output
+
+    @staticmethod
+    def from_pyo3(pyo3_trade) -> TradeTick:
+        """
+        Return a legacy Cython trade tick converted from the given pyo3 Rust object.
+
+        Parameters
+        ----------
+        pyo3_trade : nautilus_pyo3.TradeTick
+            The pyo3 Rust trade tick to convert from.
+
+        Returns
+        -------
+        TradeTick
+
+        """
+        return TradeTick.from_pyo3_c(pyo3_trade)

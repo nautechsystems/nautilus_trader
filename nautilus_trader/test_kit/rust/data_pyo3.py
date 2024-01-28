@@ -18,7 +18,11 @@ from nautilus_trader.core.nautilus_pyo3 import Bar
 from nautilus_trader.core.nautilus_pyo3 import BarAggregation
 from nautilus_trader.core.nautilus_pyo3 import BarSpecification
 from nautilus_trader.core.nautilus_pyo3 import BarType
+from nautilus_trader.core.nautilus_pyo3 import BookAction
+from nautilus_trader.core.nautilus_pyo3 import BookOrder
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
+from nautilus_trader.core.nautilus_pyo3 import OrderBookDelta
+from nautilus_trader.core.nautilus_pyo3 import OrderSide
 from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import PriceType
 from nautilus_trader.core.nautilus_pyo3 import Quantity
@@ -29,6 +33,29 @@ from nautilus_trader.test_kit.rust.identifiers_pyo3 import TestIdProviderPyo3
 
 class TestDataProviderPyo3:
     @staticmethod
+    def order_book_delta(
+        instrument_id: InstrumentId | None = None,
+        price: float = 10000.0,
+        size: float = 0.1,
+        ts_event: int = 0,
+        ts_init: int = 0,
+    ) -> OrderBookDelta:
+        return OrderBookDelta(
+            instrument_id=instrument_id or TestIdProviderPyo3.ethusdt_binance_id(),
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.BUY,
+                price=Price.from_str(str(price)),
+                size=Quantity.from_str(str(size)),
+                order_id=0,
+            ),
+            flags=0,
+            sequence=0,
+            ts_init=ts_init,
+            ts_event=ts_event,
+        )
+
+    @staticmethod
     def trade_tick(
         instrument_id: InstrumentId | None = None,
         price: float = 1987.0,
@@ -36,9 +63,8 @@ class TestDataProviderPyo3:
         ts_event: int = 0,
         ts_init: int = 0,
     ) -> TradeTick:
-        inst = instrument_id or TestIdProviderPyo3.ethusdt_binance_id()
         return TradeTick(
-            instrument_id=inst,
+            instrument_id=instrument_id or TestIdProviderPyo3.ethusdt_binance_id(),
             price=Price.from_str(str(price)),
             size=Quantity.from_str(str(size)),
             aggressor_side=AggressorSide.BUYER,
@@ -57,9 +83,8 @@ class TestDataProviderPyo3:
         ts_event: int = 0,
         ts_init: int = 0,
     ) -> QuoteTick:
-        inst = instrument_id or TestIdProviderPyo3.ethusdt_binance_id()
         return QuoteTick(
-            instrument_id=inst,
+            instrument_id=instrument_id or TestIdProviderPyo3.ethusdt_binance_id(),
             bid_price=Price.from_str(str(bid_price)),
             ask_price=Price.from_str(str(ask_price)),
             bid_size=Quantity.from_str(str(bid_size)),
