@@ -43,18 +43,25 @@ use crate::{
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct OrderBookDelta {
     /// The instrument ID for the book.
+    #[pyo3(get)]
     pub instrument_id: InstrumentId,
     /// The order book delta action.
+    #[pyo3(get)]
     pub action: BookAction,
     /// The order to apply.
+    #[pyo3(get)]
     pub order: BookOrder,
     /// A combination of packet end with matching engine status.
+    #[pyo3(get)]
     pub flags: u8,
     /// The message sequence number assigned at the venue.
+    #[pyo3(get)]
     pub sequence: u64,
     /// The UNIX timestamp (nanoseconds) when the data event occurred.
+    #[pyo3(get)]
     pub ts_event: UnixNanos,
     /// The UNIX timestamp (nanoseconds) when the data object was initialized.
+    #[pyo3(get)]
     pub ts_init: UnixNanos,
 }
 

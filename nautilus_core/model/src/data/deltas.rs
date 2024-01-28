@@ -30,16 +30,22 @@ use crate::identifiers::instrument_id::InstrumentId;
 )]
 pub struct OrderBookDeltas {
     /// The instrument ID for the book.
+    #[pyo3(get)]
     pub instrument_id: InstrumentId,
     /// The order book deltas.
+    #[pyo3(get)]
     pub deltas: Vec<OrderBookDelta>,
     /// A combination of packet end with matching engine status.
+    #[pyo3(get)]
     pub flags: u8,
     /// The message sequence number assigned at the venue.
+    #[pyo3(get)]
     pub sequence: u64,
     /// The UNIX timestamp (nanoseconds) when the data event occurred.
+    #[pyo3(get)]
     pub ts_event: UnixNanos,
     /// The UNIX timestamp (nanoseconds) when the data object was initialized.
+    #[pyo3(get)]
     pub ts_init: UnixNanos,
 }
 
