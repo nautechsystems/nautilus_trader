@@ -41,11 +41,11 @@ pub fn nautilus_instrument_id_from_databento(
 pub fn get_date_time_range(start: UnixNanos, end: Option<UnixNanos>) -> Result<DateTimeRange> {
     match end {
         Some(end) => Ok(DateTimeRange::from((
-            OffsetDateTime::from_unix_timestamp_nanos(start as i128)?,
-            OffsetDateTime::from_unix_timestamp_nanos(end as i128)?,
+            OffsetDateTime::from_unix_timestamp_nanos(i128::from(start))?,
+            OffsetDateTime::from_unix_timestamp_nanos(i128::from(end))?,
         ))),
         None => Ok(DateTimeRange::from(
-            OffsetDateTime::from_unix_timestamp_nanos(start as i128)?,
+            OffsetDateTime::from_unix_timestamp_nanos(i128::from(start))?,
         )),
     }
 }

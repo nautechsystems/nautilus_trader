@@ -68,7 +68,6 @@ impl DatabentoHistoricalClient {
         let publishers_vec: Vec<DatabentoPublisher> =
             serde_json::from_str(&file_content).map_err(to_pyvalue_err)?;
         let publishers = publishers_vec
-            .clone()
             .into_iter()
             .map(|p| (p.publisher_id, p))
             .collect::<IndexMap<u16, DatabentoPublisher>>();
@@ -144,7 +143,7 @@ impl DatabentoHistoricalClient {
                 let result = parse_instrument_def_msg(rec, publisher, ts_init);
                 match result {
                     Ok(instrument) => instruments.push(instrument),
-                    Err(e) => eprintln!("{:?}", e),
+                    Err(e) => eprintln!("{e:?}"),
                 };
             }
 
@@ -214,7 +213,7 @@ impl DatabentoHistoricalClient {
                     Data::Quote(quote) => {
                         result.push(quote);
                     }
-                    _ => panic!("Invalid data element not `QuoteTick`, was {:?}", data),
+                    _ => panic!("Invalid data element not `QuoteTick`, was {data:?}"),
                 }
             }
 
@@ -277,7 +276,7 @@ impl DatabentoHistoricalClient {
                     Data::Trade(trade) => {
                         result.push(trade);
                     }
-                    _ => panic!("Invalid data element not `TradeTick`, was {:?}", data),
+                    _ => panic!("Invalid data element not `TradeTick`, was {data:?}"),
                 }
             }
 
@@ -349,7 +348,7 @@ impl DatabentoHistoricalClient {
                     Data::Bar(bar) => {
                         result.push(bar);
                     }
-                    _ => panic!("Invalid data element not `Bar`, was {:?}", data),
+                    _ => panic!("Invalid data element not `Bar`, was {data:?}"),
                 }
             }
 
