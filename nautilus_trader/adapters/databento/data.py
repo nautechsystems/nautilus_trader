@@ -18,7 +18,6 @@ from collections import defaultdict
 from collections.abc import Coroutine
 from typing import Any
 
-import databento_dbn
 import pandas as pd
 import pytz
 
@@ -27,6 +26,7 @@ from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
 from nautilus_trader.adapters.databento.constants import DATABENTO_CLIENT_ID
 from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
+from nautilus_trader.adapters.databento.enums import DatabentoRecordFlags
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
 from nautilus_trader.adapters.databento.types import Dataset
@@ -810,23 +810,11 @@ class DatabentoDataClient(LiveMarketDataClient):
     ) -> None:
         # self._log.debug(f"Received {record}", LogColor.MAGENTA)
 
-        # TODO: Handle inside client
-
-        # if isinstance(record, databento.ErrorMsg):
-        #     self._log.error(f"ErrorMsg: {record.err}")
-        #     return
-        # elif isinstance(record, databento.SystemMsg):
-        #     self._log.info(f"SystemMsg: {record.msg}")
-        #     return
-        # elif isinstance(record, databento.SymbolMappingMsg):
-        #     self._log.debug(f"SymbolMappingMsg: {record}")
-        #     return
-
-        instrument_id = InstrumentId.from_str(pyo3_data.instrument_id.value)
-
         if isinstance(pyo3_data, nautilus_pyo3.OrderBookDelta):
+            instrument_id = InstrumentId.from_str(pyo3_data.instrument_id.value)
+
             data = OrderBookDelta.from_pyo3_list([pyo3_data])  # TODO: Implement single function
-            if databento_dbn.RecordFlags.F_LAST not in databento_dbn.RecordFlags(data.flags):
+            if DatabentoRecordFlags.F_LAST not in DatabentoRecordFlags(data.flags):
                 buffer = self._buffered_deltas[instrument_id]
                 buffer.append(data)
                 return  # We can rely on the F_LAST flag for an MBO feed
@@ -836,13 +824,13 @@ class DatabentoDataClient(LiveMarketDataClient):
                 data = OrderBookDeltas(instrument_id, deltas=buffer.copy())
                 buffer.clear()
         elif isinstance(pyo3_data, nautilus_pyo3.OrderBookDepth10):
-            data = OrderBookDepth10.from_pyo3_list([pyo3_data])
+            data = OrderBookDepth10.from_pyo3_list([pyo3_data])  # TODO: Implement single function
         elif isinstance(pyo3_data, nautilus_pyo3.QuoteTick):
-            data = QuoteTick.from_pyo3_list([pyo3_data])
+            data = QuoteTick.from_pyo3_list([pyo3_data])  # TODO: Implement single function
         elif isinstance(pyo3_data, nautilus_pyo3.TradeTick):
-            data = TradeTick.from_pyo3_list([pyo3_data])
+            data = TradeTick.from_pyo3_list([pyo3_data])  # TODO: Implement single function
         elif isinstance(pyo3_data, nautilus_pyo3.Bar):
-            data = Bar.from_pyo3_list([pyo3_data])
+            data = Bar.from_pyo3_list([pyo3_data])  # TODO: Implement single function
         else:
             self._log.error(f"Unimplemented data type in handler: {pyo3_data}.")
             return
