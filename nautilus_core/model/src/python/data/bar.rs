@@ -164,46 +164,6 @@ impl Bar {
         format!("{self:?}")
     }
 
-    #[getter]
-    fn bar_type(&self) -> BarType {
-        self.bar_type
-    }
-
-    #[getter]
-    fn open(&self) -> Price {
-        self.open
-    }
-
-    #[getter]
-    fn high(&self) -> Price {
-        self.high
-    }
-
-    #[getter]
-    fn low(&self) -> Price {
-        self.low
-    }
-
-    #[getter]
-    fn close(&self) -> Price {
-        self.close
-    }
-
-    #[getter]
-    fn volume(&self) -> Quantity {
-        self.volume
-    }
-
-    #[getter]
-    fn ts_event(&self) -> UnixNanos {
-        self.ts_event
-    }
-
-    #[getter]
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-
     #[staticmethod]
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {

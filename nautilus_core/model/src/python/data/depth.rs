@@ -84,51 +84,6 @@ impl OrderBookDepth10 {
         format!("{self:?}")
     }
 
-    #[getter]
-    fn instrument_id(&self) -> InstrumentId {
-        self.instrument_id
-    }
-
-    #[getter]
-    fn bids(&self) -> [BookOrder; DEPTH10_LEN] {
-        self.bids
-    }
-
-    #[getter]
-    fn asks(&self) -> [BookOrder; DEPTH10_LEN] {
-        self.asks
-    }
-
-    #[getter]
-    fn bid_counts(&self) -> [u32; DEPTH10_LEN] {
-        self.bid_counts
-    }
-
-    #[getter]
-    fn ask_counts(&self) -> [u32; DEPTH10_LEN] {
-        self.ask_counts
-    }
-
-    #[getter]
-    fn flags(&self) -> u8 {
-        self.flags
-    }
-
-    #[getter]
-    fn sequence(&self) -> u64 {
-        self.sequence
-    }
-
-    #[getter]
-    fn ts_event(&self) -> UnixNanos {
-        self.ts_event
-    }
-
-    #[getter]
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-
     #[staticmethod]
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {
