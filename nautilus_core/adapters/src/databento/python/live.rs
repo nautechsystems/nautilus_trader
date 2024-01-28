@@ -83,7 +83,6 @@ impl DatabentoLiveClient {
         let publishers_vec: Vec<DatabentoPublisher> =
             serde_json::from_str(&file_content).map_err(to_pyvalue_err)?;
         let publishers = publishers_vec
-            .clone()
             .into_iter()
             .map(|p| (p.publisher_id, p))
             .collect::<IndexMap<u16, DatabentoPublisher>>();
@@ -120,7 +119,7 @@ impl DatabentoLiveClient {
                     .schema(dbn::Schema::from_str(&schema).map_err(to_pyvalue_err)?)
                     .stype_in(dbn::SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
                     .start(
-                        OffsetDateTime::from_unix_timestamp_nanos(start as i128)
+                        OffsetDateTime::from_unix_timestamp_nanos(i128::from(start))
                             .map_err(to_pyvalue_err)?,
                     )
                     .build(),
@@ -154,17 +153,17 @@ impl DatabentoLiveClient {
                 match rtype {
                     RType::SymbolMapping => {
                         symbol_map.on_record(record).unwrap_or_else(|_| {
-                            panic!("Error updating `symbol_map` with {:?}", record)
+                            panic!("Error updating `symbol_map` with {record:?}")
                         });
                         continue;
                     }
                     RType::Error => {
-                        eprintln!("{:?}", record); // TODO: Just print stderr for now
+                        eprintln!("{record:?}"); // TODO: Just print stderr for now
                         error!("{:?}", record);
                         continue;
                     }
                     RType::System => {
-                        println!("{:?}", record); // TODO: Just print stderr for now
+                        println!("{record:?}"); // TODO: Just print stderr for now
                         info!("{:?}", record);
                         continue;
                     }
@@ -185,11 +184,11 @@ impl DatabentoLiveClient {
                                         convert_instrument_to_pyobject(py, instrument).unwrap();
                                     match callback.call1(py, (py_obj,)) {
                                         Ok(_) => {}
-                                        Err(e) => eprintln!("Error on callback, {:?}", e), // Just print error for now
+                                        Err(e) => eprintln!("Error on callback, {e:?}"), // Just print error for now
                                     };
                                 });
                             }
-                            Err(e) => eprintln!("{:?}", e),
+                            Err(e) => eprintln!("{e:?}"),
                         }
                         continue;
                     }
@@ -217,14 +216,14 @@ impl DatabentoLiveClient {
                                 Data::Depth10(depth) => depth.into_py(py),
                                 Data::Quote(quote) => quote.into_py(py),
                                 Data::Trade(trade) => trade.into_py(py),
-                                _ => panic!("Invalid data element, was {:?}", data),
+                                _ => panic!("Invalid data element, was {data:?}"),
                             };
 
                             match callback.call1(py, (py_obj,)) {
                                 Ok(_) => {}
-                                Err(e) => eprintln!("Error on callback, {:?}", e), // Just print error for now
+                                Err(e) => eprintln!("Error on callback, {e:?}"), // Just print error for now
                             };
-                        })
+                        });
                     }
                 }
             }
