@@ -15,9 +15,6 @@
 
 from pathlib import Path
 
-import databento
-
-import nautilus_trader
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import BarType
@@ -26,11 +23,6 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-
-
-# Update Databento user-agent constant value with NautilusTrader version
-if nautilus_trader.USER_AGENT not in databento.common.system.USER_AGENT:
-    databento.common.system.USER_AGENT += f" {nautilus_trader.USER_AGENT}"
 
 
 def check_file_path(path: Path) -> None:
@@ -87,9 +79,9 @@ def nautilus_instrument_id_from_databento(
     return InstrumentId(Symbol(raw_symbol), Venue(publisher.venue))
 
 
-def databento_schema_from_nautilus_bar_type(bar_type: BarType) -> databento.Schema:
+def databento_schema_from_nautilus_bar_type(bar_type: BarType) -> str:
     """
-    Return the Databento bar aggregate schema for the given Nautilus `bar_type`.
+    Return the Databento bar aggregate schema string for the given Nautilus `bar_type`.
 
     Parameters
     ----------
@@ -98,7 +90,7 @@ def databento_schema_from_nautilus_bar_type(bar_type: BarType) -> databento.Sche
 
     Returns
     -------
-    databento.Schema
+    str
 
     Raises
     ------
@@ -125,13 +117,13 @@ def databento_schema_from_nautilus_bar_type(bar_type: BarType) -> databento.Sche
 
     match bar_type.spec.aggregation:
         case BarAggregation.SECOND:
-            return databento.Schema.OHLCV_1S
+            return "ohlcv-1s"
         case BarAggregation.MINUTE:
-            return databento.Schema.OHLCV_1M
+            return "ohlcv-1m"
         case BarAggregation.HOUR:
-            return databento.Schema.OHLCV_1H
+            return "ohlcv-1h"
         case BarAggregation.DAY:
-            return databento.Schema.OHLCV_1D
+            return "ohlcv-1d"
         case _:
             raise ValueError(
                 f"Invalid bar type '{bar_type}'. "

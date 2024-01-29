@@ -13,19 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import datetime as dt
 
-import databento
 import pandas as pd
+import pytz
 
+from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
+from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
-from nautilus_trader.adapters.databento.parsing import parse_record_with_metadata
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
 class DatabentoInstrumentProvider(InstrumentProvider):
@@ -34,7 +38,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
     Parameters
     ----------
-    http_client : databento.Historical
+    http_client : nautilus_pyo3.DatabentoHistoricalClient
         The Databento historical HTTP client for the provider.
     clock : LiveClock
         The clock for the provider.
@@ -52,7 +56,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
     def __init__(
         self,
-        http_client: databento.Historical,
+        http_client: nautilus_pyo3.DatabentoHistoricalClient,
         clock: LiveClock,
         live_api_key: str | None = None,
         live_gateway: str | None = None,
@@ -67,7 +71,6 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         self._live_gateway = live_gateway
 
         self._http_client = http_client
-        self._live_clients: dict[str, databento.Live] = {}
         self._loader = loader or DatabentoDataLoader()
 
     async def load_all_async(self, filters: dict | None = None) -> None:
@@ -109,38 +112,37 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         """
         PyCondition.not_empty(instrument_ids, "instrument_ids")
 
-        instrument_ids_to_decode = set(instrument_ids)
+        instrument_ids_to_decode: set[str] = {i.value for i in instrument_ids}
 
         dataset = self._check_all_datasets_equal(instrument_ids)
-        live_client = databento.Live(key=self._live_api_key, gateway=self._live_gateway)
+        live_client = nautilus_pyo3.DatabentoLiveClient(
+            key=self._live_api_key,
+            dataset=dataset,
+            publishers_path=str(PUBLISHERS_PATH),
+        )
 
-        try:
-            live_client.subscribe(
-                dataset=dataset,
-                schema=databento.Schema.DEFINITION,
-                symbols=[i.symbol.value for i in instrument_ids],
-                stype_in=databento.SType.RAW_SYMBOL,
-                start=0,  # From start of current session (latest definition)
-            )
-            for record in live_client:
-                if isinstance(record, databento.SystemMsg) and record.is_heartbeat:
-                    break
+        pyo3_instruments = []
 
-                if isinstance(record, databento.InstrumentDefMsg):
-                    instrument = parse_record_with_metadata(
-                        record,
-                        publishers=self._loader.publishers,
-                        ts_init=self._clock.timestamp_ns(),
-                    )
-                    self.add(instrument=instrument)
-                    self._log.debug(f"Added instrument {instrument.id}.")
+        async def receive_instruments(pyo3_instrument) -> None:
+            print(f"Received {pyo3_instrument}")
+            pyo3_instruments.append(pyo3_instrument)
+            instrument_ids_to_decode.discard(instrument.id.value)
+            if not instrument_ids_to_decode:
+                raise asyncio.CancelledError("All instruments decoded")
 
-                    instrument_ids_to_decode.discard(instrument.id)
-                    if not instrument_ids_to_decode:
-                        break  # All requested instrument IDs now decoded
-        finally:
-            # Close the connection (we will still process all received data)
-            live_client.stop()
+        await live_client.subscribe(
+            schema="definition",
+            symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
+            start=0,  # From start of current session (latest definition)
+        )
+
+        await asyncio.wait_for(live_client.start(callback=receive_instruments), timeout=5.0)
+
+        instruments = instruments_from_pyo3(pyo3_instruments)
+
+        for instrument in instruments:
+            self.add(instrument=instrument)
+            self._log.debug(f"Added instrument {instrument.id}.")
 
     async def load_async(
         self,
@@ -202,24 +204,15 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         """
         dataset = self._check_all_datasets_equal(instrument_ids)
-        data = await self._http_client.timeseries.get_range_async(
+
+        pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
-            schema=databento.Schema.DEFINITION,
-            start=start,
-            end=end,
-            symbols=[i.symbol.value for i in instrument_ids],
-            stype_in=databento.SType.RAW_SYMBOL,
+            symbols=ALL_SYMBOLS,
+            start=pd.Timestamp(start, tz=pytz.utc).value,
+            end=pd.Timestamp(end, tz=pytz.utc).value if end is not None else None,
         )
 
-        instruments: list[Instrument] = []
-
-        for record in data:
-            instrument = parse_record_with_metadata(
-                record,
-                publishers=self._loader.publishers,
-                ts_init=self._clock.timestamp_ns(),
-            )
-            instruments.append(instrument)
+        instruments = instruments_from_pyo3(pyo3_instruments)
 
         instruments = sorted(instruments, key=lambda x: x.ts_init)
         return instruments

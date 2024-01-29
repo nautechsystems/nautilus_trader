@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
+import datetime
 import itertools
 import os
 import platform
 import shutil
 import subprocess
 import sysconfig
-from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -350,7 +350,7 @@ if __name__ == "__main__":
     print(f"PYO3_ONLY={PYO3_ONLY}\n")
 
     print("Starting build...")
-    ts_start = datetime.utcnow()
+    ts_start = datetime.datetime.now(datetime.timezone.utc)
     build()
-    print(f"Build time: {datetime.utcnow() - ts_start}")
+    print(f"Build time: {datetime.datetime.now(datetime.timezone.utc) - ts_start}")
     print("\033[32m" + "Build completed" + "\033[0m")

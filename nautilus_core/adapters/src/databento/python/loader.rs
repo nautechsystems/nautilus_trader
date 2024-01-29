@@ -39,7 +39,7 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "schema_for_file")]
-    pub fn py_schema_for_file(&self, path: String) -> PyResult<Option<dbn::Schema>> {
+    pub fn py_schema_for_file(&self, path: String) -> PyResult<Option<String>> {
         self.schema_from_file(PathBuf::from(path))
             .map_err(to_pyvalue_err)
     }
@@ -224,7 +224,7 @@ impl DatabentoDataLoader {
     }
 }
 
-fn convert_instrument_to_pyobject(
+pub fn convert_instrument_to_pyobject(
     py: Python,
     instrument: Box<dyn Instrument + 'static>,
 ) -> PyResult<PyObject> {

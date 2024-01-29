@@ -45,7 +45,7 @@ repos:
     hooks:
       - id: fmt
         name: cargo fmt
-        description: Format files with cargo fmt (nightly toolchain).
+        description: Format files with cargo fmt.
         entry: cargo fmt
         language: system
         types: [rust]

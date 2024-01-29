@@ -29,6 +29,7 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
@@ -72,7 +73,7 @@ to show the general configuration pattern:
 
 ```python
 # Configure backtest engine
-config = BacktestEngineConfig(trader_id="BACKTESTER-001")
+config = BacktestEngineConfig(trader_id=TraderId("BACKTESTER-001"))
 
 # Build the backtest engine
 engine = BacktestEngine(config=config)
@@ -135,8 +136,8 @@ Firstly, initialize a strategy configuration, then use this to initialize a stra
 
 # Configure your strategy
 strategy_config = EMACrossTWAPConfig(
-    instrument_id=str(ETHUSDT_BINANCE.id),
-    bar_type="ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL",
+    instrument_id=ETHUSDT_BINANCE.id,
+    bar_type=BarType.from_str("ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL"),
     trade_size=Decimal("0.10"),
     fast_ema_period=10,
     slow_ema_period=20,

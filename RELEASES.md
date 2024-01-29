@@ -1,4 +1,4 @@
-# NautilusTrader 1.185.0 Beta
+# NautilusTrader 1.186.0 Beta
 
 Released on TBD (UTC).
 
@@ -6,11 +6,31 @@ Released on TBD (UTC).
 None
 
 ### Breaking Changes
+None
+
+### Fixes
+- Fixed Interactive Brokers get account positions bug (#1475), thanks @benjaminsingleton
+
+---
+
+# NautilusTrader 1.185.0 Beta
+
+Released on 26th January 2024 (UTC).
+
+### Enhancements
+- Add warning log when `bypass_logging` is set true for a `LIVE` context
+- Improved `register_serializable object` to also add type to internal `_EXTERNAL_PUBLIHSABLE_TYPES`
+- Improved Interactive Brokers expiration contract parsing, thanks @fhill2
+
+### Breaking Changes
+- Changed `StreamingConfig.include_types` type from `tuple[str]` to `list[type]` (better alignment with other type filters)
 - Consolidated `clock` module into `component` module (reduce binary wheel size)
 - Consolidated `logging` module into `component` module (reduce binary wheel size)
 
 ### Fixes
-None
+- Fixed Arrow serialization of `OrderUpdated` (`trigger_price` type was incorrect), thanks @benjaminsingleton
+- Fixed `StreamingConfig.include_types` behavior (was not being honored for instrument writers), thanks for reporting @doublier1
+- Fixed `ImportableStrategyConfig` type assignment in `StrategyFactory` (#1470), thanks @rsmb7z
 
 ---
 

@@ -26,6 +26,8 @@ from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.config.common import StrategyConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.book import OrderBook
+
+# from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -42,10 +44,8 @@ from nautilus_trader.trading.strategy import Strategy
 # subscribed for as part of the data client configuration
 instrument_ids = [
     # InstrumentId.from_str("AAPL.XCHI"),
-    # InstrumentId.from_str("ESF4.GLBX"),
-    # InstrumentId.from_str("ESG4.GLBX"),
-    InstrumentId.from_str("ESH4.GLBX"),
-    # InstrumentId.from_str("ESM4.GLBX"),
+    # InstrumentId.from_str("ESH4.GLBX"),
+    InstrumentId.from_str("ESM4.GLBX"),
 ]
 
 # Configure the trading node
@@ -67,7 +67,7 @@ config_node = TradingNodeConfig(
     #     encoding="json",
     #     timestamps_as_iso8601=True,
     #     buffer_interval_ms=100,
-    #     stream="quoters",
+    #     streams_prefix="quoters",
     #     use_instance_id=False,
     #     # types_filter=[QuoteTick],
     #     autotrim_mins=30,
@@ -82,6 +82,7 @@ config_node = TradingNodeConfig(
             http_gateway=None,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_ids=instrument_ids,
+            parent_symbols={"GLBX.MDP3": {"ES.FUT", "ES.OPT"}},
         ),
     },
     timeout_connection=10.0,
@@ -179,7 +180,7 @@ class DataSubscriber(Strategy):
         """
         Actions to be performed when an order book update is received.
         """
-        self.log.info("\n" + order_book.pprint(10), LogColor.CYAN)
+        # self.log.info("\n" + order_book.pprint(10), LogColor.CYAN)
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """

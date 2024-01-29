@@ -148,41 +148,6 @@ impl TradeTick {
         format!("{}({})", stringify!(TradeTick), self)
     }
 
-    #[getter]
-    fn instrument_id(&self) -> InstrumentId {
-        self.instrument_id
-    }
-
-    #[getter]
-    fn price(&self) -> Price {
-        self.price
-    }
-
-    #[getter]
-    fn size(&self) -> Quantity {
-        self.size
-    }
-
-    #[getter]
-    fn aggressor_side(&self) -> AggressorSide {
-        self.aggressor_side
-    }
-
-    #[getter]
-    fn trade_id(&self) -> TradeId {
-        self.trade_id
-    }
-
-    #[getter]
-    fn ts_event(&self) -> UnixNanos {
-        self.ts_event
-    }
-
-    #[getter]
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-
     #[staticmethod]
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {

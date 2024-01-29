@@ -32,6 +32,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.wranglers import BarDataWrangler
@@ -42,7 +43,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 if __name__ == "__main__":
     # Configure backtest engine
     config = BacktestEngineConfig(
-        trader_id="BACKTESTER-001",
+        trader_id=TraderId("BACKTESTER-001"),
         logging=LoggingConfig(log_level="INFO"),
         risk_engine=RiskEngineConfig(
             bypass=True,  # Example of bypassing pre-trade risk checks for backtests

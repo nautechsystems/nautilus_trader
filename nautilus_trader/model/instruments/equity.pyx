@@ -159,6 +159,24 @@ cdef class Equity(Instrument):
         }
 
     @staticmethod
+    cdef Equity from_pyo3_c(pyo3_instrument):
+        return Equity(
+            instrument_id=InstrumentId.from_str_c(pyo3_instrument.id.value),
+            raw_symbol=Symbol(pyo3_instrument.id.symbol.value),
+            currency=Currency.from_str_c(pyo3_instrument.currency.code),
+            price_precision=pyo3_instrument.price_precision,
+            price_increment=Price.from_raw_c(pyo3_instrument.price_increment.raw, pyo3_instrument.price_precision),
+            lot_size=Quantity.from_raw_c(pyo3_instrument.lot_size.raw, pyo3_instrument.lot_size.precision),
+            isin=pyo3_instrument.isin,
+            margin_init=None,  # None for now
+            margin_maint=None,  # None for now
+            maker_fee=None,  # None for now
+            taker_fee=None,  # None for now
+            ts_event=pyo3_instrument.ts_event,
+            ts_init=pyo3_instrument.ts_init,
+        )
+
+    @staticmethod
     def from_dict(dict values) -> Instrument:
         """
         Return an instrument from the given initialization values.
@@ -186,3 +204,20 @@ cdef class Equity(Instrument):
 
         """
         return Equity.to_dict_c(obj)
+
+    @staticmethod
+    def from_pyo3(pyo3_instrument) -> Equity:
+        """
+        Return legacy Cython equity instrument converted from the given pyo3 Rust object.
+
+        Parameters
+        ----------
+        pyo3_instrument : nautilus_pyo3.Equity
+            The pyo3 Rust equity instrument to convert from.
+
+        Returns
+        -------
+        Equity
+
+        """
+        return Equity.from_pyo3_c(pyo3_instrument)

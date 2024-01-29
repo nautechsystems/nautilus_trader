@@ -170,17 +170,26 @@ def parse_equity_contract(details: IBContractDetails) -> Equity:
     )
 
 
+def expiry_timestring_to_datetime(expiry: str) -> pd.Timestamp:
+    """
+    Most contract expirations are %Y%m%d format some exchanges have expirations in
+    %Y%m%d %H:%M:%S %Z.
+    """
+    if len(expiry) == 8:
+        return pd.Timestamp(expiry, tz="UTC")
+    else:
+        dt, tz = expiry.rsplit(" ", 1)
+        ts = pd.Timestamp(dt, tz=tz)
+        return ts.tz_convert("UTC")
+
+
 def parse_futures_contract(
     details: IBContractDetails,
 ) -> FuturesContract:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
     instrument_id = ib_contract_to_instrument_id(details.contract)
-    expiration = pd.to_datetime(  # TODO: Check correctness
-        details.contract.lastTradeDateOrContractMonth,
-        format="%Y%m%d",
-        utc=True,
-    )
+    expiration = expiry_timestring_to_datetime(details.contract.lastTradeDateOrContractMonth)
     activation = expiration - pd.Timedelta(days=90)  # TODO: Make this more accurate
 
     return FuturesContract(
@@ -212,11 +221,7 @@ def parse_options_contract(
         "C": OptionKind.CALL,
         "P": OptionKind.PUT,
     }[details.contract.right]
-    expiration = pd.to_datetime(  # TODO: Check correctness
-        details.contract.lastTradeDateOrContractMonth,
-        format="%Y%m%d",
-        utc=True,
-    )
+    expiration = expiry_timestring_to_datetime(details.contract.lastTradeDateOrContractMonth)
     activation = expiration - pd.Timedelta(days=90)  # TODO: Make this more accurate
 
     return OptionsContract(

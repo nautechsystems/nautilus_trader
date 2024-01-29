@@ -17,6 +17,7 @@ import pickle
 import sys
 
 import msgspec
+import pandas as pd
 import pytest
 from click.testing import CliRunner
 
@@ -353,7 +354,7 @@ class TestBacktestConfigParsing:
 
     def test_simulation_modules(self) -> None:
         # Arrange
-        interest_rate_data = TestDataProvider().read_csv("short-term-interest.csv")
+        interest_rate_data: pd.DataFrame = TestDataProvider().read_csv("short-term-interest.csv")
         run_config = TestConfigStubs.backtest_run_config(
             catalog=self.catalog,
             instrument_ids=[self.instrument.id],
@@ -364,10 +365,10 @@ class TestBacktestConfigParsing:
                     account_type="MARGIN",
                     starting_balances=["1_000_000 USD"],
                     modules=[
-                        ImportableActorConfig(  # type: ignore
+                        ImportableActorConfig(
                             actor_path=FXRolloverInterestModule.fully_qualified_name(),
                             config_path=FXRolloverInterestConfig.fully_qualified_name(),
-                            config={"rate_data": interest_rate_data},
+                            config={"rate_data": interest_rate_data.to_json()},
                         ),
                     ],
                 ),

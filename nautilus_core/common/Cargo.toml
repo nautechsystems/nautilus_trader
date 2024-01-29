@@ -16,6 +16,7 @@ nautilus-model = { path = "../model", features = ["stubs"]}
 anyhow = { workspace = true }
 chrono = { workspace = true }
 indexmap = { workspace = true }
+log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 redis = { workspace = true, optional = true }
 serde = { workspace = true }
@@ -23,7 +24,6 @@ serde_json = { workspace = true }
 strum = { workspace = true }
 ustr = { workspace = true }
 tracing = { workspace = true }
-log = { version = "0.4.20", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
 sysinfo = "0.30.5"
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }

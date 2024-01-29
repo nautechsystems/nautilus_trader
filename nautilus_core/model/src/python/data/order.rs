@@ -60,26 +60,6 @@ impl BookOrder {
         format!("{self:?}")
     }
 
-    #[getter]
-    fn side(&self) -> OrderSide {
-        self.side
-    }
-
-    #[getter]
-    fn price(&self) -> Price {
-        self.price
-    }
-
-    #[getter]
-    fn size(&self) -> Quantity {
-        self.size
-    }
-
-    #[getter]
-    fn order_id(&self) -> u64 {
-        self.order_id
-    }
-
     #[staticmethod]
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {

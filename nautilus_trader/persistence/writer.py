@@ -54,6 +54,9 @@ class StreamingFeatherWriter:
         The flush interval (milliseconds) for writing chunks.
     replace : bool, default False
         If existing files at the given `path` should be replaced.
+    include_types : list[type], optional
+        A list of Arrow serializable types to write.
+        If this is specified then *only* the included types will be written.
 
     """
 
@@ -63,7 +66,7 @@ class StreamingFeatherWriter:
         fs_protocol: str | None = "file",
         flush_interval_ms: int | None = None,
         replace: bool = False,
-        include_types: tuple[type] | None = None,
+        include_types: list[type] | None = None,
     ) -> None:
         self.path = path
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
@@ -110,8 +113,9 @@ class StreamingFeatherWriter:
         """
         return all(self._files[table_name].closed for table_name in self._files)
 
-    def _create_writer(self, cls: type, table_name: str | None = None):
-        if self.include_types is not None and cls.__name__ not in self.include_types:
+    def _create_writer(self, cls: type, table_name: str | None = None) -> None:
+        # Check if an include types filter has been specified
+        if self.include_types is not None and cls not in self.include_types:
             return
 
         table_name = class_to_filename(cls) if not table_name else table_name
@@ -134,9 +138,11 @@ class StreamingFeatherWriter:
             self._create_writer(cls=cls)
 
     def _create_instrument_writer(self, cls: type, obj: Any) -> None:
-        """
-        Create an arrow writer with instrument specific metadata in the schema.
-        """
+        # Check if an include types filter has been specified
+        if self.include_types is not None and cls not in self.include_types:
+            return
+
+        # Create an arrow writer with instrument specific metadata in the schema
         metadata: dict[bytes, bytes] = self._extract_obj_metadata(obj)
         mapped_cls = {OrderBookDeltas: OrderBookDelta}.get(cls, cls)
         schema = self._schemas[mapped_cls].with_metadata(metadata)

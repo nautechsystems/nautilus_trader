@@ -153,6 +153,32 @@ cdef class FuturesContract(Instrument):
             f"info={self.info})"
         )
 
+    @property
+    def activation_utc(self) -> pd.Timestamp:
+        """
+        Return the contract activation timestamp (UTC).
+
+        Returns
+        -------
+        pd.Timestamp
+            tz-aware UTC.
+
+        """
+        return pd.Timestamp(self.activation_ns, tz=pytz.utc)
+
+    @property
+    def expiration_utc(self) -> pd.Timestamp:
+        """
+        Return the contract expriation timestamp (UTC).
+
+        Returns
+        -------
+        pd.Timestamp
+            tz-aware UTC.
+
+        """
+        return pd.Timestamp(self.expiration_ns, tz=pytz.utc)
+
     @staticmethod
     cdef FuturesContract from_dict_c(dict values):
         Condition.not_none(values, "values")
@@ -196,31 +222,23 @@ cdef class FuturesContract(Instrument):
             "ts_init": obj.ts_init,
         }
 
-    @property
-    def activation_utc(self) -> pd.Timestamp:
-        """
-        Return the contract activation timestamp (UTC).
-
-        Returns
-        -------
-        pd.Timestamp
-            tz-aware UTC.
-
-        """
-        return pd.Timestamp(self.activation_ns, tz=pytz.utc)
-
-    @property
-    def expiration_utc(self) -> pd.Timestamp:
-        """
-        Return the contract expriation timestamp (UTC).
-
-        Returns
-        -------
-        pd.Timestamp
-            tz-aware UTC.
-
-        """
-        return pd.Timestamp(self.expiration_ns, tz=pytz.utc)
+    @staticmethod
+    cdef FuturesContract from_pyo3_c(pyo3_instrument):
+        return FuturesContract(
+            instrument_id=InstrumentId.from_str_c(pyo3_instrument.id.value),
+            raw_symbol=Symbol(pyo3_instrument.raw_symbol.value),
+            asset_class=asset_class_from_str(str(pyo3_instrument.asset_class)),
+            currency=Currency.from_str_c(pyo3_instrument.currency.code),
+            price_precision=pyo3_instrument.price_precision,
+            price_increment=Price.from_raw_c(pyo3_instrument.price_increment.raw, pyo3_instrument.price_precision),
+            multiplier=Quantity.from_raw_c(pyo3_instrument.multiplier.raw, 0),
+            lot_size=Quantity.from_raw_c(pyo3_instrument.lot_size.raw, 0),
+            underlying=pyo3_instrument.underlying,
+            activation_ns=pyo3_instrument.activation_ns,
+            expiration_ns=pyo3_instrument.expiration_ns,
+            ts_event=pyo3_instrument.ts_event,
+            ts_init=pyo3_instrument.ts_init,
+        )
 
     @staticmethod
     def from_dict(dict values) -> FuturesContract:
@@ -250,3 +268,20 @@ cdef class FuturesContract(Instrument):
 
         """
         return FuturesContract.to_dict_c(obj)
+
+    @staticmethod
+    def from_pyo3(pyo3_instrument) -> FuturesContract:
+        """
+        Return legacy Cython futures contract instrument converted from the given pyo3 Rust object.
+
+        Parameters
+        ----------
+        pyo3_instrument : nautilus_pyo3.FuturesContract
+            The pyo3 Rust futures contract instrument to convert from.
+
+        Returns
+        -------
+        FuturesContract
+
+        """
+        return FuturesContract.from_pyo3_c(pyo3_instrument)

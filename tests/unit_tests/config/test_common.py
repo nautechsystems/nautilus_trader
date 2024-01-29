@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import msgspec
 import pandas as pd
 import pytest
@@ -21,17 +23,21 @@ from nautilus_trader.config import ImportableConfig
 from nautilus_trader.config.common import CUSTOM_DECODINGS
 from nautilus_trader.config.common import CUSTOM_ENCODINGS
 from nautilus_trader.config.common import DatabaseConfig
+from nautilus_trader.config.common import ImportableStrategyConfig
 from nautilus_trader.config.common import InstrumentProviderConfig
+from nautilus_trader.config.common import StrategyFactory
 from nautilus_trader.config.common import msgspec_decoding_hook
 from nautilus_trader.config.common import msgspec_encoding_hook
 from nautilus_trader.config.common import register_config_decoding
 from nautilus_trader.config.common import register_config_encoding
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 def test_equality_hash_repr() -> None:
@@ -121,6 +127,29 @@ def test_importable_config_simple() -> None:
 
     # Assert
     assert config.api_key == "abc"
+
+
+def test_importable_strategy_config_typing() -> None:
+    # Arrange
+    AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+    strategy_config = EMACrossConfig(
+        instrument_id=AUDUSD_SIM.id,
+        bar_type=BarType.from_str("AUD/USD.SIM-1-MINUTE-MID-INTERNAL"),
+        fast_ema_period=10,
+        slow_ema_period=20,
+        trade_size=Decimal(1_000_000),
+    )
+    importable_config = ImportableStrategyConfig(
+        strategy_path="nautilus_trader.examples.strategies.ema_cross:EMACross",
+        config_path="nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
+        config=strategy_config.json_primitives(),
+    )
+
+    # Act
+    strategy = StrategyFactory.create(importable_config)
+
+    # Assert
+    assert strategy.config == strategy_config
 
 
 def test_register_custom_encodings() -> None:
