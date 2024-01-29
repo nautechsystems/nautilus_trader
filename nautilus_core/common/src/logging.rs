@@ -18,8 +18,8 @@ use std::{
     collections::HashMap,
     env, fmt,
     fs::{create_dir_all, File},
-    io::{self, BufWriter, Stderr, Stdout, Write},
-    path::{Path, PathBuf},
+    io::Write,
+    path::PathBuf,
     str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -28,7 +28,7 @@ use std::{
     thread,
 };
 
-use chrono::{prelude::*, Utc};
+use chrono::Utc;
 use log::{
     debug, error, info,
     kv::{ToValue, Value},
@@ -44,8 +44,10 @@ use serde::{Deserialize, Serialize};
 use tracing_subscriber::EnvFilter;
 use ustr::Ustr;
 
-use crate::LogWriter;
-use crate::enums::{LogColor, LogLevel};
+use crate::{
+    enums::{LogColor, LogLevel},
+    logwriter::{FileWriter, LogWriter, StderrWriter, StdoutWriter},
+};
 
 static LOGGING_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static LOGGING_BYPASSED: AtomicBool = AtomicBool::new(false);
@@ -95,109 +97,6 @@ pub extern "C" fn logging_clock_set_static_time(time_ns: u64) {
     clock.set_time(time_ns);
 }
 
-#[derive(Debug)]
-pub struct StdoutWriter {
-    buf: BufWriter<Stdout>,
-}
-
-impl StdoutWriter {
-    pub fn new() -> Self {
-        Self {
-            buf: BufWriter::new(io::stdout()),
-        }
-    }
-}
-
-impl LogWriter for StdoutWriter {
-    fn write(&mut self, line: &str) {
-        match self.buf.write_all(line.as_bytes()) {
-            Ok(()) => {}
-            Err(e) => eprintln!("Error writing to stdout: {e:?}"),
-        }
-    }
-
-    fn flush(&mut self) {
-        match self.buf.flush() {
-            Ok(()) => {}
-            Err(e) => eprintln!("Error flushing stdout: {e:?}"),
-        }
-    }
-
-    fn enabled(&mut self, line: &LogLine, config: &LoggerConfig) -> bool {
-        line.level != LevelFilter::Error && line.level <= config.stdout_level
-    }
-}
-
-#[derive(Debug)]
-pub struct StderrWriter {
-    buf: BufWriter<Stderr>,
-}
-
-impl StderrWriter {
-    pub fn new() -> Self {
-        Self {
-            buf: BufWriter::new(io::stderr()),
-        }
-    }
-}
-
-impl LogWriter for StderrWriter {
-    fn write(&mut self, line: &str) {
-        match self.buf.write_all(line.as_bytes()) {
-            Ok(()) => {}
-            Err(e) => eprintln!("Error writing to stderr: {e:?}"),
-        }
-    }
-
-    fn flush(&mut self) {
-        match self.buf.flush() {
-            Ok(()) => {}
-            Err(e) => eprintln!("Error flushing stderr: {e:?}"),
-        }
-    }
-
-    fn enabled(&mut self, line: &LogLine, config: &LoggerConfig) -> bool {
-        line.level == LevelFilter::Error
-    }
-}
-
-#[derive(Debug)]
-pub struct FileWriter {
-    buf: Option<BufWriter<File>>,
-}
-
-impl FileWriter {
-    pub fn new(file: Option<File>) -> Self {
-        Self {
-            buf: file.map(BufWriter::new),
-        }
-    }
-}
-
-impl LogWriter for FileWriter {
-    fn write(&mut self, line: &str) {
-        if let Some(file_buf) = self.buf.as_mut() {
-            match file_buf.write_all(line.as_bytes()) {
-                Ok(()) => {}
-                Err(e) => eprintln!("Error writing to file: {e:?}"),
-            }
-        }
-    }
-
-    fn flush(&mut self) {
-        if let Some(file_buf) = self.buf.as_mut() {
-            match file_buf.flush() {
-                Ok(()) => {}
-                Err(e) => eprintln!("Error flushing file: {e:?}"),
-            }
-        }
-    }
-
-    fn enabled(&mut self, line: &LogLine, config: &LoggerConfig) -> bool {
-        line.level <= config.fileout_level
-    }
-}
-
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
@@ -205,9 +104,9 @@ impl LogWriter for FileWriter {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoggerConfig {
     /// Maximum log level to write to stdout.
-    stdout_level: LevelFilter,
+    pub stdout_level: LevelFilter,
     /// Maximum log level to write to file.
-    fileout_level: LevelFilter,
+    pub fileout_level: LevelFilter,
     /// Maximum log level to write for a given component.
     component_level: HashMap<Ustr, LevelFilter>,
     /// If logger is using ANSI color codes.
@@ -418,7 +317,7 @@ pub enum LogEvent {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LogLine {
     /// The log level for the event.
-    level: Level,
+    pub level: Level,
     /// The color for the log message content.
     color: LogColor,
     /// The Nautilus system component the log event originated from.
@@ -574,7 +473,7 @@ impl Logger {
             None
         };
 
-        let mut file_writer = FileWriter::new(file);
+        let mut file_writer = FileWriter::new(file, file_path, file_config);
 
         // Continue to receive and handle log events until channel is hung up
         while let Ok(event) = rx.recv() {
@@ -585,9 +484,7 @@ impl Logger {
 
             match event {
                 LogEvent::Flush => {
-                    stdout_writer.flush();
-                    stderr_writer.flush();
-                    file_writer.flush();
+                    continue;
                 }
                 LogEvent::Log(line) => {
                     let component_level = component_level.get(&line.component);
@@ -600,75 +497,79 @@ impl Logger {
                         }
                     }
 
-                    if fileout_level != LevelFilter::Off {
-                        if Self::should_rotate_file(&file_path) {
-                            // Ensure previous file buffer flushed
-                            file_writer.flush();
+                    let stderr_enabled = stderr_writer.enabled(&line, &config);
+                    let stdout_enabled = stdout_writer.enabled(&line, &config);
+                    let file_enabled = file_writer.enabled(&line, &config);
 
-                            let file_path = Self::create_log_file_path(
-                                &file_config,
-                                trader_id,
-                                instance_id,
-                                is_json_format,
-                            );
-
-                            let file = Some(
-                                File::options()
-                                    .create(true)
-                                    .append(true)
-                                    .open(file_path)
-                                    .expect("Error creating log file"),
-                            );
-
-                            file_writer = FileWriter::new(file);
-                        }
-
-                        if file_writer.enabled(&line, &config) {
-                            let print_string =
-                                Self::format_file_log(timestamp, &line, trader_id, is_json_format);
-                            file_writer.write(&print_string);
-                            file_writer.flush();
-                        }
+                    if !stderr_enabled && !stdout_enabled && !file_enabled {
+                        continue;
                     }
 
-                    if stderr_writer.enabled(&line, &config)
-                        || stdout_writer.enabled(&line, &config)
-                    {
-                        let print_string = Self::format_console_log(timestamp, &line, trader_id, is_colored);
+                    let timestamp_string = unix_nanos_to_iso8601(timestamp);
+                    let print_string = format!(
+                        "{} [{}] {}.{}: {}\n",
+                        timestamp_string, event.level, &trader_id, &event.component, &event.message
+                    );
 
-                        if stderr_writer.enabled(&line, &config) {
-                            stderr_writer.write(&print_string);
+                    if FileWriter::should_rotate_file(&file_path, fileout_level) {
+                        // Ensure previous file buffer flushed
+                        file_writer.flush();
+
+                        let file_path = Self::create_log_file_path(
+                            &file_config,
+                            trader_id,
+                            instance_id,
+                            is_json_format,
+                        );
+
+                        let file = Some(
+                            File::options()
+                                .create(true)
+                                .append(true)
+                                .open(file_path)
+                                .expect("Error creating log file"),
+                        );
+
+                        file_writer = FileWriter::new(file, file_path, file_config);
+                    }
+
+                    if file_enabled {
+                        let file_print_string = match is_json_format {
+                            true => {
+                                let json_string = serde_json::to_string(&line)
+                                    .expect("Error serializing log event to string");
+                                format!("{json_string}\n")
+                            }
+                            false => line,
+                        };
+
+                        file_writer.write(&file_print_string);
+                        file_writer.flush();
+                    }
+
+                    if stderr_enabled || stdout_enabled {
+                        let console_print_string = match is_colored {
+                            true => {
+                                let color_prefix = format!(
+                                    "\x1b[1m{}\x1b[0m {}",
+                                    timestamp_string, &event.color.to_string
+                                );
+                                let timestamp_length = timestamp_string.len();
+                                color_prefix + &print_string[timestamp_length..]
+                            }
+                            false => line,
+                        };
+
+                        if stderr_enabled {
+                            stderr_writer.write(&console_print_string);
                             stderr_writer.flush();
                         } else {
-                            stdout_writer.write(&print_string);
+                            stdout_writer.write(&console_print_string);
                             stdout_writer.flush();
                         }
                     }
                 }
             }
-        }
-
-        // Finally ensure remaining buffers are flushed
-        stderr_writer.flush();
-        stdout_writer.flush();
-    }
-
-    fn should_rotate_file(file_path: &Path) -> bool {
-        if file_path.exists() {
-            let current_date_utc = Utc::now().date_naive();
-            let metadata = file_path
-                .metadata()
-                .expect("Failed to read log file metadata");
-            let creation_time = metadata
-                .created()
-                .expect("Failed to get log file creation time");
-
-            let creation_time_utc: DateTime<Utc> = creation_time.into();
-            let creation_date_utc = creation_time_utc.date_naive();
-
-            current_date_utc != creation_date_utc
-        } else {
-            false
         }
     }
 
@@ -700,55 +601,6 @@ impl Logger {
         file_path.push(basename);
         file_path.set_extension(suffix);
         file_path
-    }
-
-    fn format_console_log(
-        timestamp: UnixNanos,
-        event: &LogLine,
-        trader_id: &str,
-        is_colored: bool,
-    ) -> String {
-        match is_colored {
-            true => format!(
-                "\x1b[1m{}\x1b[0m {}[{}] {}.{}: {}\x1b[0m\n",
-                unix_nanos_to_iso8601(timestamp),
-                &event.color.to_string(),
-                event.level,
-                &trader_id,
-                &event.component,
-                &event.message
-            ),
-            false => format!(
-                "{} [{}] {}.{}: {}\n",
-                unix_nanos_to_iso8601(timestamp),
-                event.level,
-                &trader_id,
-                &event.component,
-                &event.message
-            ),
-        }
-    }
-
-    fn format_file_log(
-        timestamp: UnixNanos,
-        event: &LogLine,
-        trader_id: &str,
-        is_json_format: bool,
-    ) -> String {
-        if is_json_format {
-            let json_string =
-                serde_json::to_string(event).expect("Error serializing log event to string");
-            format!("{json_string}\n")
-        } else {
-            format!(
-                "{} [{}] {}.{}: {}\n",
-                &unix_nanos_to_iso8601(timestamp),
-                event.level,
-                trader_id,
-                &event.component,
-                &event.message,
-            )
-        }
     }
 }
 
