@@ -1,13 +1,13 @@
 use std::{
     fs::{create_dir_all, File},
     io::{self, BufWriter, Stderr, Stdout, Write},
-    path::{PathBuf},
+    path::PathBuf,
 };
 
 use chrono::{DateTime, Utc};
 use log::LevelFilter;
 
-use crate::logging::{LogLine};
+use crate::logging::LogLine;
 
 pub trait LogWriter {
     /// Writes a log line.

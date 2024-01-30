@@ -19,7 +19,6 @@ use std::{
     borrow::Cow,
     collections::HashMap,
     env, fmt,
-    io::Write,
     str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -27,7 +26,6 @@ use std::{
     },
     thread,
 };
-
 
 use log::{
     debug, error, info,
