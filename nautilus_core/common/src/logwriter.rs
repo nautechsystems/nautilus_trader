@@ -1,13 +1,13 @@
 use std::{
-    fs::File,
-    io::{self, BufWriter, Stderr, Stdout},
+    fs::{create_dir_all, File},
+    io::{self, BufWriter, Stderr, Stdout, Write},
     path::{Path, PathBuf},
 };
 
 use chrono::{DateTime, Utc};
 use log::LevelFilter;
 
-use crate::logging::{FileWriterConfig, LogLine, LoggerConfig};
+use crate::logging::{LogLine, LoggerConfig};
 
 pub trait LogWriter {
     /// Writes a log line.
@@ -15,18 +15,22 @@ pub trait LogWriter {
     /// Flushes buffered logs.
     fn flush(&mut self);
     /// Checks if a line needs to be written to the writer or not.
-    fn enabled(&mut self, line: &LogLine, config: &LoggerConfig) -> bool;
+    fn enabled(&self, line: &LogLine) -> bool;
 }
 
 #[derive(Debug)]
 pub struct StdoutWriter {
     buf: BufWriter<Stdout>,
+    level: LevelFilter,
+    pub is_colored: bool,
 }
 
 impl StdoutWriter {
-    pub fn new() -> Self {
+    pub fn new(level: LevelFilter, is_colored: bool) -> Self {
         Self {
             buf: BufWriter::new(io::stdout()),
+            level,
+            is_colored,
         }
     }
 }
@@ -46,20 +50,22 @@ impl LogWriter for StdoutWriter {
         }
     }
 
-    fn enabled(&mut self, line: &LogLine, config: &LoggerConfig) -> bool {
-        line.level != LevelFilter::Error && line.level <= config.stdout_level
+    fn enabled(&self, line: &LogLine) -> bool {
+        line.level <= self.level
     }
 }
 
 #[derive(Debug)]
 pub struct StderrWriter {
     buf: BufWriter<Stderr>,
+    pub is_colored: bool,
 }
 
 impl StderrWriter {
-    pub fn new() -> Self {
+    pub fn new(is_colored: bool) -> Self {
         Self {
             buf: BufWriter::new(io::stderr()),
+            is_colored,
         }
     }
 }
@@ -79,73 +85,173 @@ impl LogWriter for StderrWriter {
         }
     }
 
-    fn enabled(&mut self, line: &LogLine, config: &LoggerConfig) -> bool {
+    fn enabled(&self, line: &LogLine) -> bool {
         line.level == LevelFilter::Error
+    }
+}
+
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
+#[derive(Debug, Clone, Default)]
+pub struct FileWriterConfig {
+    pub directory: Option<String>,
+    pub file_name: Option<String>,
+    pub file_format: Option<String>,
+}
+
+impl FileWriterConfig {
+    pub fn new(
+        directory: Option<String>,
+        file_name: Option<String>,
+        file_format: Option<String>,
+    ) -> Self {
+        Self {
+            directory,
+            file_name,
+            file_format,
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct FileWriter {
-    buf: Option<BufWriter<File>>,
+    buf: BufWriter<File>,
     path: PathBuf,
     file_config: FileWriterConfig,
+    trader_id: String,
+    instance_id: String,
+    pub json_format: bool,
+    level: LevelFilter,
 }
 
 impl FileWriter {
-    pub fn new(file: Option<File>, path: PathBuf, file_config: FileWriterConfig) -> Self {
-        Self {
-            buf: file.map(BufWriter::new),
-            path,
-            file_config,
+    pub fn new(
+        trader_id: String,
+        instance_id: String,
+        file_config: FileWriterConfig,
+        fileout_level: LevelFilter,
+    ) -> Option<Self> {
+        // Setup log file
+        let json_format = match file_config.file_format.as_ref().map(|s| s.to_lowercase()) {
+            Some(ref format) if format == "json" => true,
+            None => false,
+            Some(ref unrecognized) => {
+                eprintln!(
+                    "Unrecognized log file format: {unrecognized}. Using plain text format as default."
+                );
+                false
+            }
+        };
+
+        let file_path =
+            Self::create_log_file_path(&file_config, &trader_id, &instance_id, json_format);
+
+        match File::options()
+            .create(true)
+            .append(true)
+            .open(file_path.clone())
+        {
+            Ok(file) => Some(Self {
+                buf: BufWriter::new(file),
+                path: file_path,
+                file_config,
+                trader_id,
+                instance_id,
+                json_format,
+                level: fileout_level,
+            }),
+            Err(e) => {
+                eprintln!("Error creating log file: {}", e);
+                None
+            }
         }
+    }
+
+    fn create_log_file_path(
+        file_config: &FileWriterConfig,
+        trader_id: &str,
+        instance_id: &str,
+        is_json_format: bool,
+    ) -> PathBuf {
+        let basename = if let Some(file_name) = file_config.file_name.as_ref() {
+            file_name.clone()
+        } else {
+            // default base name
+            let current_date_utc = Utc::now().format("%Y-%m-%d");
+            format!("{trader_id}_{current_date_utc}_{instance_id}")
+        };
+
+        let suffix = if is_json_format { "json" } else { "log" };
+        let mut file_path = PathBuf::new();
+
+        if let Some(directory) = file_config.directory.as_ref() {
+            file_path.push(directory);
+            create_dir_all(&file_path).expect("Failed to create directories for log file");
+        }
+
+        file_path.push(basename);
+        file_path.set_extension(suffix);
+        file_path
+    }
+
+    pub fn should_rotate_file(&self) -> bool {
+        let current_date_utc = Utc::now().date_naive();
+        let metadata = self
+            .path
+            .metadata()
+            .expect("Failed to read log file metadata");
+        let creation_time = metadata
+            .created()
+            .expect("Failed to get log file creation time");
+
+        let creation_time_utc: DateTime<Utc> = creation_time.into();
+        let creation_date_utc = creation_time_utc.date_naive();
+
+        current_date_utc != creation_date_utc
     }
 }
 
 impl LogWriter for FileWriter {
     fn write(&mut self, line: &str) {
-        if let Some(file_buf) = self.buf.as_mut() {
-            match file_buf.write_all(line.as_bytes()) {
-                Ok(()) => {}
-                Err(e) => eprintln!("Error writing to file: {e:?}"),
+        if self.should_rotate_file() {
+            self.flush();
+
+            let file_path = Self::create_log_file_path(
+                &self.file_config,
+                &self.trader_id,
+                &self.instance_id,
+                self.json_format,
+            );
+
+            match File::options()
+                .create(true)
+                .append(true)
+                .open(file_path.clone())
+            {
+                Ok(file) => {
+                    self.buf = BufWriter::new(file);
+                    self.path = file_path;
+                }
+                Err(e) => eprintln!("Error creating log file: {}", e),
             }
+        }
+
+        match self.buf.write_all(line.as_bytes()) {
+            Ok(()) => {}
+            Err(e) => eprintln!("Error writing to file: {e:?}"),
         }
     }
 
     fn flush(&mut self) {
-        if let Some(file_buf) = self.buf.as_mut() {
-            match file_buf.flush() {
-                Ok(()) => {}
-                Err(e) => eprintln!("Error flushing file: {e:?}"),
-            }
+        match self.buf.flush() {
+            Ok(()) => {}
+            Err(e) => eprintln!("Error flushing file: {e:?}"),
         }
     }
 
-    fn enabled(&mut self, line: &LogLine, config: &LoggerConfig) -> bool {
-        config.fileout_level != LevelFilter::Off && line.level() <= config.fileout_level
-    }
-}
-
-impl FileWriter {
-    pub fn should_rotate_file(file_path: &Path, fileout_level: LevelFilter) -> bool {
-        if fileout_level == LevelFilter::Off {
-            false
-        }
-
-        if file_path.exists() {
-            let current_date_utc = Utc::now().date_naive();
-            let metadata = file_path
-                .metadata()
-                .expect("Failed to read log file metadata");
-            let creation_time = metadata
-                .created()
-                .expect("Failed to get log file creation time");
-
-            let creation_time_utc: DateTime<Utc> = creation_time.into();
-            let creation_date_utc = creation_time_utc.date_naive();
-
-            current_date_utc != creation_date_utc
-        } else {
-            false
-        }
+    fn enabled(&self, line: &LogLine) -> bool {
+        line.level <= self.level
     }
 }

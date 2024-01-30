@@ -19,10 +19,7 @@ pub mod versioning;
 
 use pyo3::prelude::*;
 
-use crate::{
-    enums,
-    logging::{FileWriterConfig, LoggerConfig},
-};
+use crate::{enums, logging::LoggerConfig, logwriter::FileWriterConfig};
 
 /// Loaded as nautilus_pyo3.common
 #[pymodule]
