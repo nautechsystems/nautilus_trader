@@ -19,9 +19,7 @@ use std::{
     borrow::Cow,
     collections::HashMap,
     env, fmt,
-    fs::{create_dir_all, File},
     io::Write,
-    path::PathBuf,
     str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -30,7 +28,7 @@ use std::{
     thread,
 };
 
-use chrono::Utc;
+
 use log::{
     debug, error, info,
     kv::{ToValue, Value},
