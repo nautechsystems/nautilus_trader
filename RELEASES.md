@@ -10,6 +10,7 @@ None
 
 ### Fixes
 - Fixed Interactive Brokers get account positions bug (#1475), thanks @benjaminsingleton
+- Fixed `TimeBarAggregator` handling of interval types on build
 
 ---
 
