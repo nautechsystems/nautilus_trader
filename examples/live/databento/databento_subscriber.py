@@ -31,7 +31,6 @@ from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.strategy import Strategy
@@ -43,15 +42,15 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 instrument_ids = [
-    # InstrumentId.from_str("AAPL.XCHI"),
-    # InstrumentId.from_str("ESH4.GLBX"),
+    InstrumentId.from_str("AAPL.XCHI"),
+    InstrumentId.from_str("ESH4.GLBX"),
     InstrumentId.from_str("ESM4.GLBX"),
 ]
 
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(log_level="INFO"),
+    logging=LoggingConfig(log_level="DEBUG"),
     exec_engine=LiveExecEngineConfig(
         reconciliation=False,  # Not applicable
         inflight_check_interval_ms=0,  # Not applicable
@@ -131,7 +130,7 @@ class DataSubscriber(Strategy):
         """
         Actions to be performed when the strategy is started.
 
-        Here we specify the 'DATABENTO' client for subscriptions.
+        Here we specify the 'DATABENTO' client_id for subscriptions.
 
         """
         for instrument_id in self.instrument_ids:
@@ -140,15 +139,15 @@ class DataSubscriber(Strategy):
             #     book_type=BookType.L3_MBO,
             #     client_id=DATABENTO_CLIENT_ID,
             # )
-            self.subscribe_order_book_snapshots(
-                instrument_id=instrument_id,
-                book_type=BookType.L2_MBP,
-                depth=10,
-                client_id=DATABENTO_CLIENT_ID,
-                interval_ms=100,
-            )
-            # self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
-            # self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
+            # self.subscribe_order_book_snapshots(
+            #     instrument_id=instrument_id,
+            #     book_type=BookType.L2_MBP,
+            #     depth=10,
+            #     client_id=DATABENTO_CLIENT_ID,
+            #     interval_ms=100,
+            # )
+            self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
+            self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
             # self.request_quote_ticks(instrument_id)
             # self.request_trade_ticks(instrument_id)
             # self.request_bars(BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"))

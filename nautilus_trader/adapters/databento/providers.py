@@ -21,6 +21,7 @@ import pytz
 
 from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
 from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
+from nautilus_trader.adapters.databento.enums import DatabentoSchema
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.providers import InstrumentProvider
@@ -123,20 +124,23 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         pyo3_instruments = []
 
-        async def receive_instruments(pyo3_instrument) -> None:
-            print(f"Received {pyo3_instrument}")
+        def receive_instruments(pyo3_instrument) -> None:
             pyo3_instruments.append(pyo3_instrument)
-            instrument_ids_to_decode.discard(instrument.id.value)
-            if not instrument_ids_to_decode:
-                raise asyncio.CancelledError("All instruments decoded")
+            instrument_ids_to_decode.discard(pyo3_instrument.id.value)
+            # TODO: Improve how to handle decode completion
+            # if not instrument_ids_to_decode:
+            #     raise asyncio.CancelledError("All instruments decoded")
 
         await live_client.subscribe(
-            schema="definition",
+            schema=DatabentoSchema.DEFINITION.value,
             symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
             start=0,  # From start of current session (latest definition)
         )
 
-        await asyncio.wait_for(live_client.start(callback=receive_instruments), timeout=5.0)
+        try:
+            await asyncio.wait_for(live_client.start(callback=receive_instruments), timeout=5.0)
+        except asyncio.CancelledError:
+            pass  # Expected on decode completion, continue
 
         instruments = instruments_from_pyo3(pyo3_instruments)
 
