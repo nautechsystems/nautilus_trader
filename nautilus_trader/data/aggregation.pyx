@@ -717,9 +717,9 @@ cdef class TimeBarAggregator(BarAggregator):
             ts_init = ts_event
 
             # Adjusting the timestamp logic based on interval_type
-            if self._interval_type == "left-open":
+            if self._is_left_open:
                 ts_event = self._stored_close_ns if self._timestamp_on_close else self._stored_open_ns
-            elif self._interval_type == "right-open":
+            else:
                 ts_event = self._stored_open_ns
 
             self._build_and_send(ts_event=ts_event, ts_init=ts_init)
