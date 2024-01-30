@@ -30,7 +30,6 @@ import cython
 import msgspec
 import numpy as np
 import pandas as pd
-import psutil
 import pyarrow
 import pytz
 
