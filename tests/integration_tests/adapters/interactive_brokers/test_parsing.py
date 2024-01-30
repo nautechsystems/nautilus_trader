@@ -47,10 +47,10 @@ INSTRUMENTS = [
         (IBContract(secType="FUT", exchange="SNFE", localSymbol="APH3"), "APH3=FUT.SNFE"),
         (IBContract(secType="FOP", exchange="NYBOT", localSymbol="EX2G3 P4080"), "EX2G3 P4080=FOP.NYBOT"),
         (IBContract(secType="FOP", exchange="NYBOT", localSymbol="DXH3 P103.5"), "DXH3 P103.5=FOP.NYBOT"),
-        (IBContract(secType="STK", exchange="SMART", primaryExchange="ARCA", symbol="SPY"), "SPY=STK.ARCA"),
-        (IBContract(secType="STK", exchange="SMART", primaryExchange="NASDAQ", symbol="AAPL"), "AAPL=STK.NASDAQ"),
-        (IBContract(secType="STK", exchange="SMART", primaryExchange="NYSE", symbol="BF B"), "BF B=STK.NYSE"),
-        (IBContract(secType="STK", exchange="SMART", primaryExchange="ASX", symbol="29M"), "29M=STK.ASX"),
+        (IBContract(secType="STK", exchange="SMART", primaryExchange="ARCA", localSymbol="SPY"), "SPY=STK.ARCA"),
+        (IBContract(secType="STK", exchange="SMART", primaryExchange="NASDAQ", localSymbol="AAPL"), "AAPL=STK.NASDAQ"),
+        (IBContract(secType="STK", exchange="SMART", primaryExchange="NYSE", localSymbol="BF B"), "BF B=STK.NYSE"),
+        (IBContract(secType="STK", exchange="SMART", primaryExchange="ASX", localSymbol="29M"), "29M=STK.ASX"),
         (IBContract(secType="FUT", exchange="EUREX", localSymbol="SCOI 20251219 M"), "SCOI 20251219 M=FUT.EUREX"),
         (IBContract(secType="FUT", exchange="LMEOTC", localSymbol="AH_20240221"), "AH_20240221=FUT.LMEOTC"),
         (IBContract(secType="FUT", exchange="NSE", localSymbol="INFY24FEBFUT"), "INFY24FEBFUT=FUT.NSE"),
@@ -77,7 +77,7 @@ INSTRUMENTS = [
         (IBContract(secType="FUT", exchange="EUREX", localSymbol="FMEU 20240129 D"), "FMEU 20240129 D=FUT.EUREX"),
         (IBContract(secType="FOP", exchange="ENDEX", localSymbol="TFMG0"), "TFMG0=FOP.ENDEX"),
         (IBContract(secType="FUT", exchange="OSE.JPN", localSymbol="1690200A1"), "1690200A1=FUT.OSE/JPN"),
-        (IBContract(secType="CRYPTO", exchange="PAXOS", symbol="BTC.USD"), "BTC.USD=CRYPTO.PAXOS"),
+        (IBContract(secType="CRYPTO", exchange="PAXOS", localSymbol="BTC.USD"), "BTC.USD=CRYPTO.PAXOS"),
     # fmt: on
 ]
 

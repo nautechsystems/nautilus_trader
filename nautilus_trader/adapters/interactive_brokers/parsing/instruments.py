@@ -263,12 +263,16 @@ def ib_contract_to_instrument_id(contract: IBContract) -> InstrumentId:
     exchange = contract.exchange.replace(".", "/")
 
     if sec_type == "STK":
-        symbol = f"{contract.symbol}={sec_type}"
+        symbol = f"{contract.localSymbol}={sec_type}"
         venue = contract.primaryExchange if exchange == "SMART" else exchange
-    elif sec_type in ["CONTFUT", "CRYPTO"]:
+    elif sec_type in ["CONTFUT"]:
         symbol = f"{contract.symbol}={sec_type}"
         venue = contract.exchange
-    elif sec_type in ["FUT", "FOP", "OPT", "CASH"]:
+    elif sec_type in ["CASH", "CRYPTO"]:
+        symbol = f"{contract.localSymbol}={sec_type}" or f"{contract.symbol}.{contract.currency}"
+
+        venue = contract.exchange
+    elif sec_type in ["FUT", "FOP", "OPT"]:
         symbol = f"{contract.localSymbol}={sec_type}"
         venue = exchange
     else:
@@ -295,15 +299,15 @@ def instrument_id_to_ib_contract(instrument_id: InstrumentId) -> IBContract:
             secType="STK",
             exchange="SMART",
             primaryExchange=venue,
-            symbol=parts[0],
+            localSymbol=parts[0],
         )
-    if sec_type in ["CONTFUT", "CRYPTO"]:
+    if sec_type in ["CONTFUT"]:
         return IBContract(
             secType=sec_type,
             exchange=venue,
             symbol=parts[0],
         )
-    elif sec_type in ["FUT", "FOP", "OPT", "CASH"]:
+    elif sec_type in ["FUT", "FOP", "OPT", "CASH", "CRYPTO"]:
         return IBContract(
             secType=sec_type,
             exchange=venue,
