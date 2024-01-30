@@ -137,7 +137,7 @@ class InteractiveBrokersClient(
         # ConnectionMixin
         self._connection_attempt_counter: int = 0
         self._contract_for_probe: IBContract = instrument_id_to_ib_contract(
-            InstrumentId.from_str("EUR/CHF.IDEALPRO"),
+            InstrumentId.from_str("EUR.CHF=CASH.IDEALPRO"),
         )
 
         # MarketDataMixin

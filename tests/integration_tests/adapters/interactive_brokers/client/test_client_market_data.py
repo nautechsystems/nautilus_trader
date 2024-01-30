@@ -111,7 +111,7 @@ async def test_unsubscribe_ticks(ib_client):
 async def test_subscribe_realtime_bars(ib_client):
     # Arrange
     ib_client._request_id_seq = 999
-    bar_type = BarType.from_str("AAPL.SMART-5-SECOND-BID-EXTERNAL")
+    bar_type = BarType.from_str("AAPL=STK.SMART-5-SECOND-BID-EXTERNAL")
     contract = IBTestContractStubs.aapl_equity_ib_contract()
     use_rth = True
     ib_client._eclient.reqRealTimeBars = Mock()
@@ -134,7 +134,7 @@ async def test_subscribe_realtime_bars(ib_client):
 async def test_unsubscribe_realtime_bars(ib_client):
     # Arrange
     ib_client._request_id_seq = 999
-    bar_type = BarType.from_str("AAPL.SMART-5-SECOND-BID-EXTERNAL")
+    bar_type = BarType.from_str("AAPL=STK.SMART-5-SECOND-BID-EXTERNAL")
     contract = IBTestContractStubs.aapl_equity_ib_contract()
     use_rth = True
     ib_client._eclient.reqRealTimeBars = Mock()
@@ -154,7 +154,7 @@ async def test_unsubscribe_realtime_bars(ib_client):
 async def test_subscribe_historical_bars(ib_client):
     # Arrange
     ib_client._request_id_seq = 999
-    bar_type = BarType.from_str("AAPL.SMART-5-SECOND-BID-EXTERNAL")
+    bar_type = BarType.from_str("AAPL=STK.SMART-5-SECOND-BID-EXTERNAL")
     contract = IBTestContractStubs.aapl_equity_ib_contract()
     use_rth = True
     handle_revised_bars = True
@@ -187,7 +187,7 @@ async def test_subscribe_historical_bars(ib_client):
 async def test_unsubscribe_historical_bars(ib_client):
     # Arrange
     ib_client._request_id_seq = 999
-    bar_type = BarType.from_str("AAPL.SMART-5-SECOND-BID-EXTERNAL")
+    bar_type = BarType.from_str("AAPL=STK.SMART-5-SECOND-BID-EXTERNAL")
     contract = IBTestContractStubs.aapl_equity_ib_contract()
     use_rth = True
     handle_revised_bars = True
@@ -213,7 +213,7 @@ async def test_unsubscribe_historical_bars(ib_client):
 async def test_get_historical_bars(ib_client):
     # Arrange
     ib_client._request_id_seq = 999
-    bar_type = BarType.from_str("AAPL.SMART-5-SECOND-BID-EXTERNAL")
+    bar_type = BarType.from_str("AAPL=STK.SMART-5-SECOND-BID-EXTERNAL")
     contract = IBTestContractStubs.aapl_equity_ib_contract()
     use_rth = True
     end_date_time = "20240101-010000"
@@ -282,7 +282,7 @@ async def test_get_historical_ticks(ib_client):
 
 def test_ib_bar_to_nautilus_bar(ib_client):
     # Arrange
-    bar_type_str = "AAPL.NASDAQ-5-SECOND-BID-INTERNAL"
+    bar_type_str = "AAPL=STK.NASDAQ-5-SECOND-BID-INTERNAL"
     bar_type = BarType.from_str(bar_type_str)
     bar = BarData()
     bar.date = "1704067200"
@@ -313,7 +313,7 @@ def test_ib_bar_to_nautilus_bar(ib_client):
 
 def test_process_bar_data(ib_client):
     # Arrange
-    bar_type_str = "AAPL.NASDAQ-5-SECOND-BID-INTERNAL"
+    bar_type_str = "AAPL=STK.NASDAQ-5-SECOND-BID-INTERNAL"
     previous_bar = BarData()
     previous_bar.date = "1704067200"
     previous_bar.open = 100.01
@@ -354,7 +354,7 @@ def test_process_bar_data(ib_client):
 def test_process_trade_ticks(ib_client):
     # Arrange
     mock_request = Mock(spec=Request)
-    mock_request.name = ["AAPL.NASDAQ"]
+    mock_request.name = ["AAPL=STK.NASDAQ"]
     mock_request.result = []
     ib_client._requests = Mock()
     ib_client._requests.get.return_value = mock_request
@@ -377,7 +377,7 @@ def test_process_trade_ticks(ib_client):
     assert len(mock_request.result) == 2
 
     result_1 = mock_request.result[0]
-    assert result_1.instrument_id == InstrumentId.from_str("AAPL.NASDAQ")
+    assert result_1.instrument_id == InstrumentId.from_str("AAPL=STK.NASDAQ")
     assert result_1.price == Price(100.01, precision=2)
     assert result_1.size == Quantity(100, precision=0)
     assert result_1.aggressor_side == AggressorSide.NO_AGGRESSOR
@@ -386,7 +386,7 @@ def test_process_trade_ticks(ib_client):
     assert result_1.ts_init == 1704067200000000000
 
     result_2 = mock_request.result[1]
-    assert result_2.instrument_id == InstrumentId.from_str("AAPL.NASDAQ")
+    assert result_2.instrument_id == InstrumentId.from_str("AAPL=STK.NASDAQ")
     assert result_2.price == Price(105.01, precision=2)
     assert result_2.size == Quantity(200, precision=0)
     assert result_2.aggressor_side == AggressorSide.NO_AGGRESSOR
@@ -399,7 +399,7 @@ def test_tickByTickBidAsk(ib_client):
     # Arrange
     ib_client._clock.set_time(1704067205000000000)
     mock_subscription = Mock(spec=Subscription)
-    mock_subscription.name = ["AAPL.NASDAQ"]
+    mock_subscription.name = ["AAPL=STK.NASDAQ"]
     ib_client._subscriptions = Mock()
     ib_client._subscriptions.get.return_value = mock_subscription
     ib_client._handle_data = Mock()
@@ -417,7 +417,7 @@ def test_tickByTickBidAsk(ib_client):
 
     # Assert
     quote_tick = QuoteTick(
-        instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
+        instrument_id=InstrumentId.from_str("AAPL=STK.NASDAQ"),
         bid_price=Price(100.01, precision=2),
         ask_price=Price(100.02, precision=2),
         bid_size=Quantity(100, precision=0),
@@ -432,7 +432,7 @@ def test_tickByTickAllLast(ib_client):
     # Arrange
     ib_client._clock.set_time(1704067205000000000)
     mock_subscription = Mock(spec=Subscription)
-    mock_subscription.name = ["AAPL.NASDAQ"]
+    mock_subscription.name = ["AAPL=STK.NASDAQ"]
     ib_client._subscriptions = Mock()
     ib_client._subscriptions.get.return_value = mock_subscription
     ib_client._handle_data = Mock()
@@ -451,7 +451,7 @@ def test_tickByTickAllLast(ib_client):
 
     # Assert
     trade_tick = TradeTick(
-        instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
+        instrument_id=InstrumentId.from_str("AAPL=STK.NASDAQ"),
         price=Price(100.01, precision=2),
         size=Quantity(100, precision=0),
         aggressor_side=AggressorSide.NO_AGGRESSOR,
@@ -466,7 +466,7 @@ def test_realtimeBar(ib_client):
     # Arrange
     ib_client._clock.set_time(1704067205000000000)
     mock_subscription = Mock(spec=Subscription)
-    bar_type_str = "AAPL.NASDAQ-5-SECOND-BID-INTERNAL"
+    bar_type_str = "AAPL=STK.NASDAQ-5-SECOND-BID-INTERNAL"
     mock_subscription.name = bar_type_str
     ib_client._subscriptions = Mock()
     ib_client._subscriptions.get.return_value = mock_subscription

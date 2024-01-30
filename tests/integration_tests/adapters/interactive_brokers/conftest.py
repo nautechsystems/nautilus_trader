@@ -13,6 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+# fmt: on
+import asyncio
+
 import pytest
 
 # fmt: off
@@ -32,7 +35,9 @@ from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 
 
-# fmt: on
+@pytest.fixture()
+def event_loop():
+    return asyncio.get_event_loop()
 
 
 @pytest.fixture()

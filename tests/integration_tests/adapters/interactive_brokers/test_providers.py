@@ -41,7 +41,7 @@ def mock_ib_contract_calls(mocker, instrument_provider, contract_details: Contra
 @pytest.mark.asyncio()
 async def test_load_equity_contract_instrument(mocker, instrument_provider):
     # Arrange
-    instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+    instrument_id = InstrumentId.from_str("AAPL=STK.NASDAQ")
     mock_ib_contract_calls(
         mocker=mocker,
         instrument_provider=instrument_provider,
@@ -56,7 +56,7 @@ async def test_load_equity_contract_instrument(mocker, instrument_provider):
     instrument_provider._client.stop()
 
     # Assert
-    assert InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")) == equity.id
+    assert InstrumentId(symbol=Symbol("AAPL=STK"), venue=Venue("NASDAQ")) == equity.id
     assert equity.asset_class == AssetClass.EQUITY
     assert equity.instrument_class == InstrumentClass.SPOT
     assert equity.multiplier == 1
@@ -67,7 +67,7 @@ async def test_load_equity_contract_instrument(mocker, instrument_provider):
 @pytest.mark.asyncio()
 async def test_load_futures_contract_instrument(mocker, instrument_provider):
     # Arrange
-    instrument_id = InstrumentId.from_str("CLZ23.NYMEX")
+    instrument_id = InstrumentId.from_str("CLZ3=FUT.NYMEX")
     mock_ib_contract_calls(
         mocker=mocker,
         instrument_provider=instrument_provider,
@@ -75,7 +75,10 @@ async def test_load_futures_contract_instrument(mocker, instrument_provider):
     )
 
     # Act
-    await instrument_provider.load_async(IBContract(secType="FUT", symbol="CLZ3", exchange="NYMEX"))
+    await instrument_provider.load_async(
+        IBContract(secType="FUT", localSymbol="CLZ3", exchange="NYMEX"),
+    )
+    print(instrument_provider._instruments)
     future = instrument_provider.find(instrument_id)
     instrument_provider._client.stop()
 
@@ -90,7 +93,7 @@ async def test_load_futures_contract_instrument(mocker, instrument_provider):
 @pytest.mark.asyncio()
 async def test_load_options_contract_instrument(mocker, instrument_provider):
     # Arrange
-    instrument_id = InstrumentId.from_str("TSLA230120C00100000.MIAX")
+    instrument_id = InstrumentId.from_str("TSLA  230120C00100000=OPT.MIAX")
     mock_ib_contract_calls(
         mocker=mocker,
         instrument_provider=instrument_provider,
@@ -99,7 +102,7 @@ async def test_load_options_contract_instrument(mocker, instrument_provider):
 
     # Act
     await instrument_provider.load_async(
-        IBContract(secType="OPT", symbol="TSLA230120C00100000", exchange="MIAX"),
+        IBContract(secType="OPT", localSymbol="TSLA  230120C00100000", exchange="MIAX"),
     )
     option = instrument_provider.find(instrument_id)
     instrument_provider._client.stop()
@@ -118,7 +121,7 @@ async def test_load_options_contract_instrument(mocker, instrument_provider):
 @pytest.mark.asyncio()
 async def test_load_forex_contract_instrument(mocker, instrument_provider):
     # Arrange
-    instrument_id = InstrumentId.from_str("EUR/USD.IDEALPRO")
+    instrument_id = InstrumentId.from_str("EUR.USD=CASH.IDEALPRO")
     mock_ib_contract_calls(
         mocker=mocker,
         instrument_provider=instrument_provider,
@@ -148,18 +151,20 @@ async def test_contract_id_to_instrument_id(mocker, instrument_provider):
     )
 
     # Act
-    await instrument_provider.load_async(IBContract(secType="FUT", symbol="CLZ3", exchange="NYMEX"))
+    await instrument_provider.load_async(
+        IBContract(secType="FUT", localSymbol="CLZ23", exchange="NYMEX"),
+    )
     instrument_provider._client.stop()
 
     # Assert
-    expected = {174230596: InstrumentId.from_str("CLZ23.NYMEX")}
+    expected = {174230596: InstrumentId.from_str("CLZ3=FUT.NYMEX")}
     assert instrument_provider.contract_id_to_instrument_id == expected
 
 
 @pytest.mark.asyncio()
 async def test_load_instrument_using_contract_id(mocker, instrument_provider):
     # Arrange
-    instrument_id = InstrumentId.from_str("EUR/USD.IDEALPRO")
+    instrument_id = InstrumentId.from_str("EUR.USD=CASH.IDEALPRO")
     mock_ib_contract_calls(
         mocker=mocker,
         instrument_provider=instrument_provider,
