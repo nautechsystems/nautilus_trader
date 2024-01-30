@@ -28,9 +28,9 @@ use crate::{
     enums::{LogColor, LogLevel},
     headers,
     logging::{
-        self, logging_set_bypass, map_log_level_to_filter, parse_component_levels, LoggerConfig,
+        self, logging_set_bypass, map_log_level_to_filter, parse_component_levels,
+        writer::FileWriterConfig, LoggerConfig,
     },
-    logwriter::FileWriterConfig,
 };
 
 /// Initializes tracing.

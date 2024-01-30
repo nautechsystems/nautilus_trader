@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod writer;
+
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -46,7 +48,7 @@ use ustr::Ustr;
 
 use crate::{
     enums::{LogColor, LogLevel},
-    logwriter::{FileWriter, FileWriterConfig, LogWriter, StderrWriter, StdoutWriter},
+    logging::writer::{FileWriter, FileWriterConfig, LogWriter, StderrWriter, StdoutWriter},
 };
 
 static LOGGING_INITIALIZED: AtomicBool = AtomicBool::new(false);

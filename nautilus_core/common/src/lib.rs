@@ -20,7 +20,6 @@ pub mod generators;
 pub mod handlers;
 pub mod headers;
 pub mod logging;
-pub mod logwriter;
 pub mod msgbus;
 pub mod testing;
 pub mod timer;
