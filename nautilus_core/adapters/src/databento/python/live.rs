@@ -19,7 +19,7 @@ use std::sync::{Arc, OnceLock};
 
 use anyhow::Result;
 use databento::live::Subscription;
-use dbn::{PitSymbolMap, RType, Record, SymbolIndex};
+use dbn::{PitSymbolMap, RType, Record, SymbolIndex, VersionUpgradePolicy};
 use indexmap::IndexMap;
 use log::{error, info};
 use nautilus_core::python::to_pyruntime_err;
@@ -59,6 +59,7 @@ impl DatabentoLiveClient {
         databento::LiveClient::builder()
             .key(&self.key)?
             .dataset(&self.dataset)
+            .upgrade_policy(VersionUpgradePolicy::Upgrade)
             .build()
             .await
     }
@@ -109,6 +110,8 @@ impl DatabentoLiveClient {
         let arc_client = self.get_inner_client().map_err(to_pyruntime_err)?;
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
+            // TODO: Attempt to obtain the mutex guard, if the client has already started then
+            // this will not be possible currently.
             let mut client = arc_client.lock().await;
 
             // TODO: This can be tidied up, conditionally calling `if let Some(start)` on
@@ -130,6 +133,9 @@ impl DatabentoLiveClient {
                     .build(),
             };
 
+            // TODO: Temporary debug logging
+            println!("{:?}", subscription);
+
             client
                 .subscribe(&subscription)
                 .await
@@ -148,7 +154,9 @@ impl DatabentoLiveClient {
             let mut client = arc_client.lock().await;
             let mut symbol_map = PitSymbolMap::new();
 
-            while let Some(record) = client.next_record().await.map_err(to_pyvalue_err)? {
+            client.start().await.map_err(to_pyruntime_err)?;
+
+            while let Some(record) = client.next_record().await.map_err(to_pyruntime_err)? {
                 let rtype = record.rtype().expect("Invalid `rtype`");
                 match rtype {
                     RType::SymbolMapping => {
@@ -163,7 +171,7 @@ impl DatabentoLiveClient {
                         continue;
                     }
                     RType::System => {
-                        println!("{record:?}"); // TODO: Just print stderr for now
+                        println!("{record:?}"); // TODO: Just print stdout for now
                         info!("{:?}", record);
                         continue;
                     }

@@ -27,6 +27,7 @@ from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
 from nautilus_trader.adapters.databento.constants import DATABENTO_CLIENT_ID
 from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
 from nautilus_trader.adapters.databento.enums import DatabentoRecordFlags
+from nautilus_trader.adapters.databento.enums import DatabentoSchema
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
 from nautilus_trader.adapters.databento.types import Dataset
@@ -259,7 +260,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         return live_client
 
-    def _check_live_client_started(
+    async def _check_live_client_started(
         self,
         dataset: Dataset,
         live_client: nautilus_pyo3.DatabentoLiveClient,
@@ -365,11 +366,15 @@ class DatabentoDataClient(LiveMarketDataClient):
         try:
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
-            await live_client.subscribe(
-                schema="definition",
-                symbols=instrument_id.symbol.value,
+            future = asyncio.ensure_future(
+                live_client.subscribe(
+                    schema=DatabentoSchema.DEFINITION.value,
+                    symbols=instrument_id.symbol.value,
+                ),
             )
-            self._check_live_client_started(dataset, live_client)
+            self._live_client_futures.add(future)
+            await future
+            await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_instrument` was canceled while still pending.")
 
@@ -380,12 +385,16 @@ class DatabentoDataClient(LiveMarketDataClient):
     ) -> None:
         try:
             live_client = self._get_live_client(dataset)
-            await live_client.subscribe(
-                schema="definition",
-                symbols=",".join(sorted(parent_symbols)),
-                stype_in="parent",
+            future = asyncio.ensure_future(
+                live_client.subscribe(
+                    schema=DatabentoSchema.DEFINITION.value,
+                    symbols=",".join(sorted(parent_symbols)),
+                    stype_in="parent",
+                ),
             )
-            self._check_live_client_started(dataset, live_client)
+            self._live_client_futures.add(future)
+            await future
+            await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_parent_symbols` was canceled while still pending.")
 
@@ -396,11 +405,15 @@ class DatabentoDataClient(LiveMarketDataClient):
     ) -> None:
         try:
             live_client = self._get_live_client(dataset)
-            await live_client.subscribe(
-                schema="definition",
-                symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
+            future = asyncio.ensure_future(
+                live_client.subscribe(
+                    schema=DatabentoSchema.DEFINITION.value,
+                    symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
+                ),
             )
-            self._check_live_client_started(dataset, live_client)
+            self._live_client_futures.add(future)
+            await future
+            await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_instrument_ids` was canceled while still pending.")
 
@@ -469,13 +482,18 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_ids[0].venue)
             live_client = self._get_live_client_mbo(dataset)
-            await live_client.subscribe(
-                schema="mbo",
-                symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
-                start=0,  # Must subscribe from start of week to get 'Sunday snapshot' for now
+            future = asyncio.ensure_future(
+                live_client.subscribe(
+                    schema=DatabentoSchema.MBO.value,
+                    symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
+                    start=0,  # Must subscribe from start of week to get 'Sunday snapshot' for now
+                ),
             )
+            self._live_client_futures.add(future)
+            await future
             future = asyncio.ensure_future(live_client.start(self._handle_record))
             self._live_client_futures.add(future)
+            await future
         except asyncio.CancelledError:
             self._log.warning(
                 "`_subscribe_order_book_deltas_batch` was canceled while still pending.",
@@ -493,9 +511,9 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             match depth:
                 case 1:
-                    schema = "mbp-1"
+                    schema = DatabentoSchema.MBP_1.value
                 case 10:
-                    schema = "mbp-10"
+                    schema = DatabentoSchema.MBP_10.value
                 case _:
                     self._log.error(
                         f"Cannot subscribe for order book snapshots of depth {depth}, use either 1 or 10.",
@@ -504,11 +522,15 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
-            await live_client.subscribe(
-                schema=schema,
-                symbols=",".join(sorted([instrument_id.symbol.value])),
+            future = asyncio.ensure_future(
+                live_client.subscribe(
+                    schema=schema,
+                    symbols=",".join(sorted([instrument_id.symbol.value])),
+                ),
             )
-            self._check_live_client_started(dataset, live_client)
+            self._live_client_futures.add(future)
+            await future
+            await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_order_book_snapshots` was canceled while still pending.")
 
@@ -518,11 +540,15 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
-            await live_client.subscribe(
-                schema="mbp-1",
-                symbols=",".join(sorted([instrument_id.symbol.value])),
+            future = asyncio.ensure_future(
+                live_client.subscribe(
+                    schema=DatabentoSchema.MBP_1.value,
+                    symbols=",".join(sorted([instrument_id.symbol.value])),
+                ),
             )
-            self._check_live_client_started(dataset, live_client)
+            self._live_client_futures.add(future)
+            await future
+            await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_quote_ticks` was canceled while still pending.")
 
@@ -535,11 +561,15 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
-            await live_client.subscribe(
-                schema="trades",
-                symbols=instrument_id.symbol.value,
+            future = asyncio.ensure_future(
+                live_client.subscribe(
+                    schema=DatabentoSchema.TRADES.value,
+                    symbols=instrument_id.symbol.value,
+                ),
             )
-            self._check_live_client_started(dataset, live_client)
+            self._live_client_futures.add(future)
+            await future
+            await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_trade_ticks` was canceled while still pending.")
 
@@ -554,11 +584,15 @@ class DatabentoDataClient(LiveMarketDataClient):
                 return
 
             live_client = self._get_live_client(dataset)
-            await live_client.subscribe(
-                schema=schema,
-                symbols=bar_type.instrument_id.symbol.value,
+            future = asyncio.ensure_future(
+                live_client.subscribe(
+                    schema=schema.value,
+                    symbols=bar_type.instrument_id.symbol.value,
+                ),
             )
-            self._check_live_client_started(dataset, live_client)
+            self._live_client_futures.add(future)
+            await future
+            await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_bars` was canceled while still pending.")
 
