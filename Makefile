@@ -10,7 +10,7 @@ install:
 
 .PHONY: install-debug
 install-debug:
-	BUILD_MODE=debug poetry install --with dev,test --all-extras
+	BUILD_MODE=debug poetry install --with dev,test --all-extras --sync
 
 .PHONY: install-just-deps
 install-just-deps:
