@@ -15,87 +15,50 @@
 
 #![allow(dead_code)]
 
+use std::ops::{Deref, DerefMut};
 use std::{
     collections::HashMap,
     fmt::Display,
     hash::{Hash, Hasher},
 };
 
+use crate::account::base::BaseAccount;
+use crate::account::Account;
+use crate::position::Position;
 use anyhow::Result;
+use nautilus_model::enums::{AccountType, LiquiditySide, OrderSide};
+use nautilus_model::events::account::state::AccountState;
+use nautilus_model::events::order::filled::OrderFilled;
+use nautilus_model::identifiers::instrument_id::InstrumentId;
+use nautilus_model::instruments::Instrument;
+use nautilus_model::types::balance::{AccountBalance, MarginBalance};
+use nautilus_model::types::currency::Currency;
+use nautilus_model::types::money::Money;
+use nautilus_model::types::price::Price;
+use nautilus_model::types::quantity::Quantity;
 use pyo3::prelude::*;
 use rust_decimal::prelude::ToPrimitive;
-
-use crate::{
-    enums::AccountType,
-    events::account::state::AccountState,
-    identifiers::{account_id::AccountId, instrument_id::InstrumentId},
-    instruments::Instrument,
-    types::{
-        balance::{AccountBalance, MarginBalance},
-        currency::Currency,
-        money::Money,
-        price::Price,
-        quantity::Quantity,
-    },
-};
 
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.accounting")
 )]
 pub struct MarginAccount {
-    pub id: AccountId,
-    pub account_type: AccountType,
-    pub base_currency: Currency,
-    calculate_account_state: bool,
-    events: Vec<AccountState>,
-    commissions: HashMap<Currency, f64>,
-    balances: HashMap<Currency, AccountBalance>,
-    balances_starting: HashMap<Currency, Money>,
-    margins: HashMap<InstrumentId, MarginBalance>,
+    pub base: BaseAccount,
     pub leverages: HashMap<InstrumentId, f64>,
+    pub margins: HashMap<InstrumentId, MarginBalance>,
     pub default_leverage: f64,
 }
 
 impl MarginAccount {
     pub fn new(event: AccountState, calculate_account_state: bool) -> Result<Self> {
-        let mut balances_starting: HashMap<Currency, Money> = HashMap::new();
-        let mut balances: HashMap<Currency, AccountBalance> = HashMap::new();
-        event.balances.iter().for_each(|balance| {
-            balances_starting.insert(balance.currency, balance.total);
-            balances.insert(balance.currency, *balance);
-        });
-        let mut margins: HashMap<InstrumentId, MarginBalance> = HashMap::new();
-        event.margins.iter().for_each(|margin| {
-            margins.insert(margin.instrument_id, *margin);
-        });
         Ok(Self {
-            id: event.account_id,
-            account_type: event.account_type,
-            base_currency: event.base_currency,
-            calculate_account_state,
-            events: vec![event],
-            commissions: HashMap::new(),
-            balances,
-            balances_starting,
-            margins: HashMap::new(),
+            base: BaseAccount::new(event, calculate_account_state)?,
             leverages: HashMap::new(),
+            margins: HashMap::new(),
             default_leverage: 1.0,
         })
-    }
-
-    pub fn update_balances(&mut self, balances: Vec<AccountBalance>) {
-        balances.into_iter().for_each(|balance| {
-            // clone real balance without reference
-            if balance.total.raw < 0 {
-                // TODO raise AccountBalanceNegative event
-                panic!("Cannot update balances with total less than 0.0")
-            } else {
-                // clear asset balance
-                self.balances.insert(balance.currency, balance);
-            }
-        });
     }
 
     pub fn set_default_leverage(&mut self, leverage: f64) {
@@ -283,6 +246,98 @@ impl MarginAccount {
     }
 }
 
+impl Deref for MarginAccount {
+    type Target = BaseAccount;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for MarginAccount {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+impl Account for MarginAccount {
+    fn balance_total(&self, currency: Option<Currency>) -> Option<Money> {
+        self.base_balance_total(currency)
+    }
+    fn balances_total(&self) -> HashMap<Currency, Money> {
+        self.base_balances_total()
+    }
+
+    fn balance_free(&self, currency: Option<Currency>) -> Option<Money> {
+        self.base_balance_free(currency)
+    }
+    fn balances_free(&self) -> HashMap<Currency, Money> {
+        self.base_balances_free()
+    }
+
+    fn balance_locked(&self, currency: Option<Currency>) -> Option<Money> {
+        self.base_balance_locked(currency)
+    }
+    fn balances_locked(&self) -> HashMap<Currency, Money> {
+        self.base_balances_locked()
+    }
+    fn last_event(&self) -> Option<AccountState> {
+        self.base_last_event()
+    }
+    fn events(&self) -> Vec<AccountState> {
+        self.events.clone()
+    }
+    fn event_count(&self) -> usize {
+        self.events.len()
+    }
+    fn currencies(&self) -> Vec<Currency> {
+        self.balances.keys().copied().collect()
+    }
+    fn starting_balances(&self) -> HashMap<Currency, Money> {
+        self.balances_starting.clone()
+    }
+    fn balances(&self) -> HashMap<Currency, AccountBalance> {
+        self.balances.clone()
+    }
+    fn apply(&mut self, event: AccountState) {
+        self.base_apply(event)
+    }
+    fn calculate_balance_locked<T: Instrument>(
+        &mut self,
+        instrument: T,
+        side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        use_quote_for_inverse: Option<bool>,
+    ) -> Result<Money> {
+        self.base_calculate_balance_locked(instrument, side, quantity, price, use_quote_for_inverse)
+    }
+    fn calculate_pnls<T: Instrument>(
+        &self,
+        instrument: T,
+        fill: OrderFilled,
+        position: Option<Position>,
+    ) -> Result<Vec<Money>> {
+        self.base_calculate_pnls(instrument, fill, position)
+    }
+    fn calculate_commission<T: Instrument>(
+        &self,
+        instrument: T,
+        last_qty: Quantity,
+        last_px: Price,
+        liquidity_side: LiquiditySide,
+        use_quote_for_inverse: Option<bool>,
+    ) -> Result<Money> {
+        self.base_calculate_commission(
+            instrument,
+            last_qty,
+            last_px,
+            liquidity_side,
+            use_quote_for_inverse,
+        )
+    }
+}
+
 impl PartialEq for MarginAccount {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
@@ -296,7 +351,11 @@ impl Display for MarginAccount {
         write!(
             f,
             "MarginAccount(id={}, type={}, base={})",
-            self.id, self.account_type, self.base_currency.code
+            self.id,
+            self.account_type,
+            self.base_currency
+                .map(|base_currency| format!("{}", base_currency.code))
+                .unwrap_or_else(|| "None".to_string()),
         )
     }
 }
@@ -312,18 +371,22 @@ impl Hash for MarginAccount {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use crate::account::margin::MarginAccount;
+    use crate::account::stubs::*;
+    use crate::account::Account;
+    use nautilus_model::events::account::state::AccountState;
+    use nautilus_model::events::account::stubs::*;
+    use nautilus_model::identifiers::instrument_id::InstrumentId;
+    use nautilus_model::identifiers::stubs::*;
+    use nautilus_model::instruments::crypto_perpetual::CryptoPerpetual;
+    use nautilus_model::instruments::currency_pair::CurrencyPair;
+    use nautilus_model::instruments::stubs::*;
+    use nautilus_model::types::currency::Currency;
+    use nautilus_model::types::money::Money;
+    use nautilus_model::types::price::Price;
+    use nautilus_model::types::quantity::Quantity;
     use rstest::rstest;
-
-    use crate::{
-        accounting::{margin::MarginAccount, stubs::*},
-        identifiers::{instrument_id::InstrumentId, stubs::*},
-        instruments::{
-            crypto_perpetual::CryptoPerpetual,
-            currency_pair::CurrencyPair,
-            stubs::{audusd_sim, xbtusd_bitmex},
-        },
-        types::{money::Money, price::Price, quantity::Quantity},
-    };
+    use std::collections::HashMap;
 
     #[rstest]
     fn test_display(margin_account: MarginAccount) {
@@ -331,6 +394,41 @@ mod tests {
             margin_account.to_string(),
             "MarginAccount(id=SIM-001, type=MARGIN, base=USD)"
         );
+    }
+
+    #[rstest]
+    fn test_base_account_properties(
+        margin_account: MarginAccount,
+        margin_account_state: AccountState,
+    ) {
+        assert_eq!(margin_account.base_currency, Some(Currency::from("USD")));
+        assert_eq!(
+            margin_account.last_event(),
+            Some(margin_account_state.clone())
+        );
+        assert_eq!(margin_account.events(), vec![margin_account_state.clone()]);
+        assert_eq!(margin_account.event_count(), 1);
+        assert_eq!(
+            margin_account.balance_total(None),
+            Some(Money::from("1525000 USD"))
+        );
+        assert_eq!(
+            margin_account.balance_free(None),
+            Some(Money::from("1500000 USD"))
+        );
+        assert_eq!(
+            margin_account.balance_locked(None),
+            Some(Money::from("25000 USD"))
+        );
+        let mut balances_total_expected = HashMap::new();
+        balances_total_expected.insert(Currency::from("USD"), Money::from("1525000 USD"));
+        assert_eq!(margin_account.balances_total(), balances_total_expected);
+        let mut balances_free_expected = HashMap::new();
+        balances_free_expected.insert(Currency::from("USD"), Money::from("1500000 USD"));
+        assert_eq!(margin_account.balances_free(), balances_free_expected);
+        let mut balances_locked_expected = HashMap::new();
+        balances_locked_expected.insert(Currency::from("USD"), Money::from("25000 USD"));
+        assert_eq!(margin_account.balances_locked(), balances_locked_expected);
     }
 
     #[rstest]

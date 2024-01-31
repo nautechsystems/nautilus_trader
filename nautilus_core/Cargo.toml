@@ -12,6 +12,7 @@ members = [
     "network/tokio-tungstenite",
     "persistence",
     "pyo3",
+    "accounting"
 ]
 
 [workspace.package]

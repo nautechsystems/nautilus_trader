@@ -32,8 +32,6 @@ pub mod macros;
 pub mod orders;
 pub mod types;
 
-pub mod accounting;
-
 pub const PY_MODULE_MODEL: &str = "nautilus_trader.core.nautilus_pyo3.model";
 
 /// Python iterator over the variants of an enum.
@@ -323,7 +321,5 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::events::order::expired::OrderExpired>()?;
     // Events - account
     m.add_class::<crate::events::account::state::AccountState>()?;
-    // Accounting
-    m.add_class::<crate::accounting::margin::MarginAccount>()?;
     Ok(())
 }

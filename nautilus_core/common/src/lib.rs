@@ -24,7 +24,7 @@ pub mod msgbus;
 pub mod testing;
 pub mod timer;
 
-#[cfg(test)]
+#[cfg(feature = "stubs")]
 pub mod stubs;
 
 #[cfg(feature = "ffi")]

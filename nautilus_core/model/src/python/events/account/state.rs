@@ -38,24 +38,24 @@ impl AccountState {
     fn py_new(
         account_id: AccountId,
         account_type: AccountType,
-        base_currency: Currency,
         balances: Vec<AccountBalance>,
         margins: Vec<MarginBalance>,
         is_reported: bool,
         event_id: UUID4,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
+        base_currency: Option<Currency>,
     ) -> PyResult<Self> {
         AccountState::new(
             account_id,
             account_type,
-            base_currency,
             balances,
             margins,
             is_reported,
             event_id,
             ts_event,
             ts_init,
+            base_currency,
         )
         .map_err(to_pyvalue_err)
     }
@@ -74,8 +74,9 @@ impl AccountState {
             stringify!(AccountState),
             self.account_id,
             self.account_type,
-            self.base_currency.code,
-            self.balances.iter().map(|b| format!("{}", b)).collect::<Vec<String>>().join(","),
+            self.base_currency
+                .map(|base_currency | format!("{}", base_currency.code))
+                .unwrap_or_else(|| "None".to_string()),            self.balances.iter().map(|b| format!("{}", b)).collect::<Vec<String>>().join(","),
             self.margins.iter().map(|m| format!("{}", m)).collect::<Vec<String>>().join(","),
             self.is_reported,
             self.event_id,
@@ -88,8 +89,9 @@ impl AccountState {
             stringify!(AccountState),
             self.account_id,
             self.account_type,
-            self.base_currency.code,
-            self.balances.iter().map(|b| format!("{}", b)).collect::<Vec<String>>().join(","),
+            self.base_currency
+                .map(|base_currency | format!("{}", base_currency.code))
+                .unwrap_or_else(|| "None".to_string()),            self.balances.iter().map(|b| format!("{}", b)).collect::<Vec<String>>().join(","),
             self.margins.iter().map(|m| format!("{}", m)).collect::<Vec<String>>().join(","),
             self.is_reported,
             self.event_id,
@@ -108,7 +110,6 @@ impl AccountState {
         dict.set_item("type", stringify!(AccountState))?;
         dict.set_item("account_id", self.account_id.to_string())?;
         dict.set_item("account_type", self.account_type.to_string())?;
-        dict.set_item("base_currency", self.base_currency.code.to_string())?;
         // iterate over balances and margins and run to_dict on each item and collect them
         let balances_dict: PyResult<Vec<_>> =
             self.balances.iter().map(|b| b.py_to_dict(py)).collect();
@@ -120,6 +121,12 @@ impl AccountState {
         dict.set_item("event_id", self.event_id.to_string())?;
         dict.set_item("ts_event", self.ts_event.to_u64())?;
         dict.set_item("ts_init", self.ts_init.to_u64())?;
+        match self.base_currency {
+            Some(base_currency) => {
+                dict.set_item("base_currency", base_currency.code.to_string())?
+            }
+            None => dict.set_item("base_currency", "None")?,
+        }
         Ok(dict.into())
     }
 }
