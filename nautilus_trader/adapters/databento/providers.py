@@ -15,6 +15,7 @@
 
 import asyncio
 import datetime as dt
+from typing import Any
 
 import pandas as pd
 import pytz
@@ -124,7 +125,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         pyo3_instruments = []
 
-        def receive_instruments(pyo3_instrument) -> None:
+        def receive_instruments(pyo3_instrument: Any) -> None:
             pyo3_instruments.append(pyo3_instrument)
             instrument_ids_to_decode.discard(pyo3_instrument.id.value)
             # TODO: Improve how to handle decode completion
