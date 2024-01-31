@@ -34,6 +34,7 @@ use nautilus_model::identifiers::venue::Venue;
 use pyo3::prelude::*;
 use time::OffsetDateTime;
 use tokio::sync::Mutex;
+use tokio::time::{timeout, Duration};
 
 use crate::databento::parsing::{parse_instrument_def_msg, parse_record};
 use crate::databento::types::{DatabentoPublisher, PublisherId};
@@ -110,8 +111,6 @@ impl DatabentoLiveClient {
         let arc_client = self.get_inner_client().map_err(to_pyruntime_err)?;
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            // TODO: Attempt to obtain the mutex guard, if the client has already started then
-            // this will not be possible currently.
             let mut client = arc_client.lock().await;
 
             // TODO: This can be tidied up, conditionally calling `if let Some(start)` on
@@ -134,7 +133,7 @@ impl DatabentoLiveClient {
             };
 
             // TODO: Temporary debug logging
-            println!("{:?}", subscription);
+            // println!("{:?}", subscription);
 
             client
                 .subscribe(&subscription)
@@ -154,26 +153,39 @@ impl DatabentoLiveClient {
             let mut client = arc_client.lock().await;
             let mut symbol_map = PitSymbolMap::new();
 
+            let timeout_duration = Duration::from_millis(10);
             client.start().await.map_err(to_pyruntime_err)?;
 
-            while let Some(record) = client.next_record().await.map_err(to_pyruntime_err)? {
+            loop {
+                drop(client);
+                client = arc_client.lock().await;
+
+                let result = timeout(timeout_duration, client.next_record()).await;
+                let record = match result {
+                    Ok(Ok(Some(record))) => record,
+                    Ok(Ok(None)) => break, // Session ended normally
+                    Ok(Err(e)) => {
+                        // Fail session entirely for now
+                        return Err(to_pyruntime_err(e));
+                    }
+                    Err(_) => continue, // Timeout
+                };
+
                 let rtype = record.rtype().expect("Invalid `rtype`");
+
                 match rtype {
                     RType::SymbolMapping => {
                         symbol_map.on_record(record).unwrap_or_else(|_| {
                             panic!("Error updating `symbol_map` with {record:?}")
                         });
-                        continue;
                     }
                     RType::Error => {
                         eprintln!("{record:?}"); // TODO: Just print stderr for now
                         error!("{:?}", record);
-                        continue;
                     }
                     RType::System => {
                         println!("{record:?}"); // TODO: Just print stdout for now
                         info!("{:?}", record);
-                        continue;
                     }
                     RType::InstrumentDef => {
                         let msg = record
@@ -186,7 +198,7 @@ impl DatabentoLiveClient {
 
                         match result {
                             Ok(instrument) => {
-                                // TODO: Improve the efficiency of this constant GIL aquisition
+                                // TODO: Optimize this by reducing the frequency of acquiring the GIL if possible
                                 Python::with_gil(|py| {
                                     let py_obj =
                                         convert_instrument_to_pyobject(py, instrument).unwrap();
@@ -217,7 +229,7 @@ impl DatabentoLiveClient {
                             parse_record(&record, rtype, instrument_id, 2, Some(ts_init))
                                 .map_err(to_pyvalue_err)?;
 
-                        // TODO: Improve the efficiency of this constant GIL aquisition
+                        // TODO: Optimize this by reducing the frequency of acquiring the GIL if possible
                         Python::with_gil(|py| {
                             let py_obj = match data {
                                 Data::Delta(delta) => delta.into_py(py),
