@@ -40,7 +40,7 @@ def test_get_publishers() -> None:
     result = loader.publishers
 
     # Assert
-    assert len(result) == 43  # From built-in map
+    assert len(result) == 61  # From built-in map
 
 
 # def test_loader_definition_glbx_futures() -> None:
