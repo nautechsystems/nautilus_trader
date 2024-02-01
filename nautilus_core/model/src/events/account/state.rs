@@ -38,7 +38,7 @@ use crate::{
 pub struct AccountState {
     pub account_id: AccountId,
     pub account_type: AccountType,
-    pub base_currency: Currency,
+    pub base_currency: Option<Currency>,
     pub balances: Vec<AccountBalance>,
     pub margins: Vec<MarginBalance>,
     pub is_reported: bool,
@@ -52,13 +52,13 @@ impl AccountState {
     pub fn new(
         account_id: AccountId,
         account_type: AccountType,
-        base_currency: Currency,
         balances: Vec<AccountBalance>,
         margins: Vec<MarginBalance>,
         is_reported: bool,
         event_id: UUID4,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
+        base_currency: Option<Currency>,
     ) -> Result<AccountState> {
         Ok(AccountState {
             account_id,
@@ -81,7 +81,9 @@ impl Display for AccountState {
             "AccountState(account_id={}, account_type={}, base_currency={}, is_reported={}, balances=[{}], margins=[{}], event_id={})",
             self.account_id,
             self.account_type,
-            self.base_currency.code,
+            self.base_currency
+                .map(|base_currency | format!("{}", base_currency.code))
+                .unwrap_or_else(|| "None".to_string()),
             self.is_reported,
             self.balances.iter().map(|b| format!("{}", b)).collect::<Vec<String>>().join(","),
             self.margins.iter().map(|m| format!("{}", m)).collect::<Vec<String>>().join(","),

@@ -35,8 +35,8 @@ pub struct TestOrderEventStubs;
 impl TestOrderEventStubs {
     #[allow(clippy::too_many_arguments)]
     pub fn order_filled<T: Order, I: Instrument>(
-        order: &T,
-        instrument: &I,
+        order: T,
+        instrument: I,
         strategy_id: Option<StrategyId>,
         trade_id: Option<TradeId>,
         position_id: Option<PositionId>,
