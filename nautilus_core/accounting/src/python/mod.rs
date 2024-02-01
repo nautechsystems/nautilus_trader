@@ -13,14 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use rstest::fixture;
+use pyo3::{prelude::*, pymodule};
 
-use crate::{
-    accounting::margin::MarginAccount,
-    events::account::{state::AccountState, stubs::*},
-};
+pub mod cash;
+pub mod margin;
+pub mod position;
 
-#[fixture]
-pub fn margin_account(margin_account_state: AccountState) -> MarginAccount {
-    MarginAccount::new(margin_account_state, true).unwrap()
+#[pymodule]
+pub fn accounting(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<crate::account::cash::CashAccount>()?;
+    m.add_class::<crate::account::margin::MarginAccount>()?;
+    m.add_class::<crate::position::Position>()?;
+    Ok(())
 }

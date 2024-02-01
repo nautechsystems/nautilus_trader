@@ -192,6 +192,11 @@ pub fn audusd_sim() -> CurrencyPair {
     default_fx_ccy(Symbol::from("AUD/USD"), Some(Venue::from("SIM")))
 }
 
+#[fixture]
+pub fn usdjpy_idealpro() -> CurrencyPair {
+    default_fx_ccy(Symbol::from("USD/JPY"), Some(Venue::from("IDEALPRO")))
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Equity
 ////////////////////////////////////////////////////////////////////////////////

@@ -13,6 +13,29 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod margin;
-#[cfg(feature = "stubs")]
-pub mod stubs;
+use nautilus_model::events::account::state::AccountState;
+use rstest::fixture;
+
+use crate::account::cash::CashAccount;
+use crate::account::margin::MarginAccount;
+use nautilus_model::events::account::stubs::*;
+
+#[fixture]
+pub fn margin_account(margin_account_state: AccountState) -> MarginAccount {
+    MarginAccount::new(margin_account_state, true).unwrap()
+}
+
+#[fixture]
+pub fn cash_account(cash_account_state: AccountState) -> CashAccount {
+    CashAccount::new(cash_account_state, true).unwrap()
+}
+
+#[fixture]
+pub fn cash_account_million_usd(cash_account_state_million_usd: AccountState) -> CashAccount {
+    CashAccount::new(cash_account_state_million_usd, true).unwrap()
+}
+
+#[fixture]
+pub fn cash_account_multi(cash_account_state_multi: AccountState) -> CashAccount {
+    CashAccount::new(cash_account_state_multi, true).unwrap()
+}

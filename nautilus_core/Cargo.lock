@@ -2414,6 +2414,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-accounting"
+version = "0.17.0"
+dependencies = [
+ "anyhow",
+ "cbindgen",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-model",
+ "pyo3",
+ "rstest",
+ "rust_decimal",
+]
+
+[[package]]
 name = "nautilus-adapters"
 version = "0.17.0"
 dependencies = [
@@ -2609,6 +2623,7 @@ dependencies = [
 name = "nautilus-pyo3"
 version = "0.17.0"
 dependencies = [
+ "nautilus-accounting",
  "nautilus-adapters",
  "nautilus-common",
  "nautilus-core",
