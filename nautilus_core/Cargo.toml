@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "accounting",
     "adapters",
     "backtest",
     "common",
@@ -12,7 +13,6 @@ members = [
     "network/tokio-tungstenite",
     "persistence",
     "pyo3",
-    "accounting"
 ]
 
 [workspace.package]
@@ -27,7 +27,7 @@ documentation = "https://docs.nautilustrader.io"
 anyhow = "1.0.79"
 chrono = "0.4.33"
 futures = "0.3.30"
-indexmap = "2.2.1"
+indexmap = "2.2.2"
 itoa = "1.0.10"
 once_cell = "1.19.0"
 log = { version = "0.4.20", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
@@ -36,8 +36,8 @@ pyo3-asyncio = { version = "0.20.0", features = ["tokio-runtime", "tokio", "attr
 rand = "0.8.5"
 redis = { version = "0.24.0", features = ["tokio-comp", "tls-rustls", "tokio-rustls-comp", "keep-alive", "connection-manager"] }
 rmp-serde = "1.1.2"
-rust_decimal = "1.33.1"
-rust_decimal_macros = "1.33.1"
+rust_decimal = "1.34.0"
+rust_decimal_macros = "1.34.0"
 serde = { version = "1.0.196", features = ["derive"] }
 serde_json = "1.0.112"
 strum = { version = "0.25.0", features = ["derive"] }
