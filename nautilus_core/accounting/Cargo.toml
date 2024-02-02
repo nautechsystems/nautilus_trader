@@ -17,6 +17,8 @@ nautilus-core = { path = "../core" }
 anyhow = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 rstest.workspace = true

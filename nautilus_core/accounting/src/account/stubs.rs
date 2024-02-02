@@ -13,12 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_model::enums::LiquiditySide;
 use nautilus_model::events::account::state::AccountState;
 use rstest::fixture;
 
 use crate::account::cash::CashAccount;
 use crate::account::margin::MarginAccount;
+use crate::account::Account;
 use nautilus_model::events::account::stubs::*;
+use nautilus_model::instruments::Instrument;
+use nautilus_model::types::currency::Currency;
+use nautilus_model::types::money::Money;
+use nautilus_model::types::price::Price;
+use nautilus_model::types::quantity::Quantity;
 
 #[fixture]
 pub fn margin_account(margin_account_state: AccountState) -> MarginAccount {
@@ -38,4 +45,21 @@ pub fn cash_account_million_usd(cash_account_state_million_usd: AccountState) ->
 #[fixture]
 pub fn cash_account_multi(cash_account_state_multi: AccountState) -> CashAccount {
     CashAccount::new(cash_account_state_multi, true).unwrap()
+}
+
+pub fn calculate_commission<T: Instrument>(
+    instrument: T,
+    quantity: Quantity,
+    price: Price,
+    currency: Option<Currency>,
+) -> Money {
+    let account_state = if Some(Currency::USDT()) == currency {
+        cash_account_state_million_usdt()
+    } else {
+        cash_account_state_million_usd()
+    };
+    let account = cash_account_million_usd(account_state);
+    account
+        .calculate_commission(instrument, quantity, price, LiquiditySide::Taker, None)
+        .unwrap()
 }

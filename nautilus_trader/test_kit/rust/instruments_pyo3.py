@@ -72,6 +72,33 @@ class TestInstrumentProviderPyo3:
         )
 
     @staticmethod
+    def ethusdt_binance() -> CurrencyPair:
+        return CurrencyPair(
+            id=InstrumentId(
+                symbol=Symbol("ETHUSDT"),
+                venue=Venue("BINANCE"),
+            ),
+            raw_symbol=Symbol("ETHUSDT"),
+            base_currency=Currency.from_str("ETH"),
+            quote_currency=Currency.from_str("USDT"),
+            price_precision=2,
+            size_precision=5,
+            price_increment=Price(1e-02, precision=2),
+            size_increment=Quantity(1e-05, precision=5),
+            lot_size=None,
+            max_quantity=Quantity(9000, precision=5),
+            min_quantity=Quantity(1e-05, precision=5),
+            max_price=Price(1000000, precision=2),
+            min_price=Price(0.01, precision=2),
+            margin_init=Decimal("1.00"),
+            margin_maint=Decimal("0.35"),
+            maker_fee=Decimal("0.0001"),
+            taker_fee=Decimal("0.0001"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
     def xbtusd_bitmex() -> CryptoPerpetual:
         return CryptoPerpetual(
             id=InstrumentId(
@@ -95,6 +122,36 @@ class TestInstrumentProviderPyo3:
             min_price=Price(0.5, precision=1),
             margin_init=Decimal("0.01"),
             margin_maint=Decimal("0.0035"),
+            maker_fee=Decimal("-0.00025"),
+            taker_fee=Decimal("0.00075"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def ethusd_bitmex() -> CryptoPerpetual:
+        return CryptoPerpetual(
+            id=InstrumentId(
+                symbol=Symbol("ETH/USD"),
+                venue=Venue("BITMEX"),
+            ),
+            symbol=Symbol("ETHUSD"),
+            base_currency=_ETH,
+            quote_currency=_USD,
+            settlement_currency=_ETH,
+            is_inverse=True,
+            price_precision=2,
+            size_precision=0,
+            price_increment=Price.from_str("0.05"),
+            size_increment=Quantity.from_int(1),
+            max_quantity=Quantity.from_int(10_000_000),
+            min_quantity=Quantity.from_int(1),
+            max_notional=None,
+            min_notional=None,
+            max_price=Price.from_str("1000000.00"),
+            min_price=Price.from_str("0.05"),
+            margin_init=Decimal("0.02"),
+            margin_maint=Decimal("0.007"),
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
             ts_event=0,
@@ -153,8 +210,8 @@ class TestInstrumentProviderPyo3:
             min_price=Price.from_str("0.01"),
             margin_init=Decimal("0.0500"),
             margin_maint=Decimal("0.0250"),
-            maker_fee=Decimal("0.000200"),
-            taker_fee=Decimal("0.000180"),
+            maker_fee=Decimal("0.001"),
+            taker_fee=Decimal("0.001"),
             ts_event=0,
             ts_init=0,
         )
@@ -236,6 +293,10 @@ class TestInstrumentProviderPyo3:
             ts_event=0,
             ts_init=0,
         )
+
+    @staticmethod
+    def audusd_sim():
+        return TestInstrumentProviderPyo3.default_fx_ccy("AUD/USD")
 
     @staticmethod
     def default_fx_ccy(

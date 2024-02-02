@@ -37,19 +37,19 @@ use crate::{
 };
 
 pub trait Instrument: Any + 'static + Send {
-    fn id(&self) -> &InstrumentId;
-    fn symbol(&self) -> &Symbol {
-        &self.id().symbol
+    fn id(&self) -> InstrumentId;
+    fn symbol(&self) -> Symbol {
+        self.id().symbol
     }
-    fn venue(&self) -> &Venue {
-        &self.id().venue
+    fn venue(&self) -> Venue {
+        self.id().venue
     }
-    fn raw_symbol(&self) -> &Symbol;
+    fn raw_symbol(&self) -> Symbol;
     fn asset_class(&self) -> AssetClass;
     fn instrument_class(&self) -> InstrumentClass;
-    fn base_currency(&self) -> Option<&Currency>;
-    fn quote_currency(&self) -> &Currency;
-    fn settlement_currency(&self) -> &Currency;
+    fn base_currency(&self) -> Option<Currency>;
+    fn quote_currency(&self) -> Currency;
+    fn settlement_currency(&self) -> Currency;
     fn is_inverse(&self) -> bool;
     fn price_precision(&self) -> u8;
     fn size_precision(&self) -> u8;

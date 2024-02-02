@@ -423,8 +423,8 @@ mod tests {
             None,
         );
         let fill = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
-            order,
-            audusd_sim,
+            &order,
+            &audusd_sim,
             Some(StrategyId::new("S-001").unwrap()),
             None,
             Some(PositionId::new("P-123456").unwrap()),
@@ -458,8 +458,8 @@ mod tests {
             None,
         );
         let fill1 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
-            order1,
-            currency_pair_btcusdt,
+            &order1,
+            &currency_pair_btcusdt,
             Some(StrategyId::new("S-001").unwrap()),
             None,
             Some(PositionId::new("P-123456").unwrap()),
@@ -484,8 +484,8 @@ mod tests {
             None,
         );
         let fill2 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
-            order2,
-            currency_pair_btcusdt,
+            &order2,
+            &currency_pair_btcusdt,
             Some(StrategyId::new("S-001").unwrap()),
             None,
             Some(PositionId::new("P-123456").unwrap()),

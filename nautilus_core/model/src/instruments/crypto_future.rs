@@ -144,12 +144,12 @@ impl Hash for CryptoFuture {
 }
 
 impl Instrument for CryptoFuture {
-    fn id(&self) -> &InstrumentId {
-        &self.id
+    fn id(&self) -> InstrumentId {
+        self.id
     }
 
-    fn raw_symbol(&self) -> &Symbol {
-        &self.raw_symbol
+    fn raw_symbol(&self) -> Symbol {
+        self.raw_symbol
     }
 
     fn asset_class(&self) -> AssetClass {
@@ -160,16 +160,16 @@ impl Instrument for CryptoFuture {
         InstrumentClass::Future
     }
 
-    fn quote_currency(&self) -> &Currency {
-        &self.quote_currency
+    fn quote_currency(&self) -> Currency {
+        self.quote_currency
     }
 
-    fn base_currency(&self) -> Option<&Currency> {
+    fn base_currency(&self) -> Option<Currency> {
         None
     }
 
-    fn settlement_currency(&self) -> &Currency {
-        &self.settlement_currency
+    fn settlement_currency(&self) -> Currency {
+        self.settlement_currency
     }
 
     fn is_inverse(&self) -> bool {

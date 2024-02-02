@@ -142,6 +142,15 @@ impl MarketOrder {
         self.account_id
     }
     #[getter]
+    fn instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+    #[getter]
+    fn trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    #[getter]
     fn client_order_id(&self) -> ClientOrderId {
         self.client_order_id
     }
@@ -156,5 +165,9 @@ impl MarketOrder {
     #[getter]
     fn order_type(&self) -> OrderType {
         self.order_type
+    }
+    #[getter]
+    fn strategy_id(&self) -> StrategyId {
+        self.strategy_id
     }
 }

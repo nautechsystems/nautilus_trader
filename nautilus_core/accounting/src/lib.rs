@@ -15,6 +15,8 @@
 
 pub mod account;
 pub mod position;
+#[cfg(test)]
+pub mod stubs;
 
 #[cfg(feature = "python")]
 pub mod python;
