@@ -338,9 +338,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             else:
                 binance_order = await self._http_account.query_order(
                     symbol=instrument_id.symbol.value,
-                    orig_client_order_id=client_order_id.value
-                    if client_order_id is not None
-                    else None,
+                    orig_client_order_id=(
+                        client_order_id.value if client_order_id is not None else None
+                    ),
                 )
         except BinanceError as e:
             retries += 1
