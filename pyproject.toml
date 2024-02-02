@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.186.0"
+version = "1.187.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -59,7 +59,7 @@ fsspec = "==2023.6.0"  # Pinned for stability
 msgspec = "^0.18.6"
 pandas = "^2.2.0"
 pyarrow = ">=15.0.0"
-pytz = "^2023.3.0"
+pytz = "^2024.1.0"
 tqdm = "^4.66.1"
 uvloop = {version = "^0.19.0", markers = "sys_platform != 'win32'"}
 
@@ -83,7 +83,7 @@ docformatter = "^1.7.5"
 mypy = "^1.8.0"
 pandas-stubs = "^2.1.4"
 pre-commit = "^3.6.0"
-ruff = "^0.1.15"
+ruff = "^0.2.0"
 types-pytz = "^2023.3"
 types-requests = "^2.31"
 types-toml = "^0.10.2"
@@ -114,7 +114,7 @@ sphinx-external-toc = "^0.3.1"
 sphinx-material = "^0.0.35"
 sphinx_togglebutton = "^0.3.0"
 
-[tool.isort]
+[tool.isort]  # Used by legacy isort for Cython modules
 py_version = "310"
 skip_glob = ["**/core/rust/*"]
 combine_as_imports = true
