@@ -120,7 +120,9 @@ class BinanceFuturesMarkFunding(msgspec.Struct, frozen=True):
     symbol: str
     markPrice: str  # Mark price
     indexPrice: str  # Index price
-    estimatedSettlePrice: str  # Estimated Settle Price (only useful in the last hour before the settlement starts)
+    estimatedSettlePrice: (
+        str  # Estimated Settle Price (only useful in the last hour before the settlement starts)
+    )
     lastFundingRate: str  # This is the lasted funding rate
     nextFundingTime: int
     interestRate: str

@@ -97,3 +97,6 @@ cdef class Instrument(Data):
     cpdef Quantity make_qty(self, value)
     cpdef Money notional_value(self, Quantity quantity, Price price, bint use_quote_for_inverse=*)
     cpdef Quantity calculate_base_quantity(self, Quantity quantity, Price last_px)
+
+
+cpdef list[Instrument] instruments_from_pyo3(list pyo3_instruments)

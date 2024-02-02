@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,14 +13,29 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_model::events::account::state::AccountState;
 use rstest::fixture;
 
-use crate::{
-    accounting::margin::MarginAccount,
-    events::account::{state::AccountState, stubs::*},
-};
+use crate::account::cash::CashAccount;
+use crate::account::margin::MarginAccount;
+use nautilus_model::events::account::stubs::*;
 
 #[fixture]
 pub fn margin_account(margin_account_state: AccountState) -> MarginAccount {
     MarginAccount::new(margin_account_state, true).unwrap()
+}
+
+#[fixture]
+pub fn cash_account(cash_account_state: AccountState) -> CashAccount {
+    CashAccount::new(cash_account_state, true).unwrap()
+}
+
+#[fixture]
+pub fn cash_account_million_usd(cash_account_state_million_usd: AccountState) -> CashAccount {
+    CashAccount::new(cash_account_state_million_usd, true).unwrap()
+}
+
+#[fixture]
+pub fn cash_account_multi(cash_account_state_multi: AccountState) -> CashAccount {
+    CashAccount::new(cash_account_state_multi, true).unwrap()
 }

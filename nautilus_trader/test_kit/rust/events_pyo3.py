@@ -14,12 +14,19 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.nautilus_pyo3 import UUID4
+from nautilus_trader.core.nautilus_pyo3 import AccountBalance
+from nautilus_trader.core.nautilus_pyo3 import AccountId
 from nautilus_trader.core.nautilus_pyo3 import AccountState
 from nautilus_trader.core.nautilus_pyo3 import AccountType
+from nautilus_trader.core.nautilus_pyo3 import CashAccount
 from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
 from nautilus_trader.core.nautilus_pyo3 import ContingencyType
+from nautilus_trader.core.nautilus_pyo3 import CryptoFuture
+from nautilus_trader.core.nautilus_pyo3 import CryptoPerpetual
 from nautilus_trader.core.nautilus_pyo3 import Currency
+from nautilus_trader.core.nautilus_pyo3 import CurrencyPair
 from nautilus_trader.core.nautilus_pyo3 import LiquiditySide
+from nautilus_trader.core.nautilus_pyo3 import MarketOrder
 from nautilus_trader.core.nautilus_pyo3 import Money
 from nautilus_trader.core.nautilus_pyo3 import OrderAccepted
 from nautilus_trader.core.nautilus_pyo3 import OrderCanceled
@@ -43,14 +50,16 @@ from nautilus_trader.core.nautilus_pyo3 import OrderUpdated
 from nautilus_trader.core.nautilus_pyo3 import PositionId
 from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import Quantity
+from nautilus_trader.core.nautilus_pyo3 import StrategyId
 from nautilus_trader.core.nautilus_pyo3 import TimeInForce
 from nautilus_trader.core.nautilus_pyo3 import TradeId
 from nautilus_trader.core.nautilus_pyo3 import TriggerType
+from nautilus_trader.core.nautilus_pyo3 import VenueOrderId
 from nautilus_trader.test_kit.rust.identifiers_pyo3 import TestIdProviderPyo3
 from nautilus_trader.test_kit.rust.types_pyo3 import TestTypesProviderPyo3
 
 
-uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
+_STUB_UUID4 = UUID4("91762096-b188-49ea-8562-8d8a4cc22ff2")
 
 
 class TestEventsProviderPyo3:
@@ -62,6 +71,76 @@ class TestEventsProviderPyo3:
             base_currency=Currency.from_str("USD"),
             balances=[
                 TestTypesProviderPyo3.account_balance(),
+            ],
+            margins=[],
+            is_reported=True,
+            event_id=UUID4("91762096-b188-49ea-8562-8d8a4cc22ff2"),
+            ts_init=0,
+            ts_event=0,
+        )
+
+    @staticmethod
+    def cash_account_state_million_usd() -> AccountState:
+        return AccountState(
+            account_id=TestIdProviderPyo3.account_id(),
+            account_type=AccountType.CASH,
+            base_currency=Currency.from_str("USD"),
+            balances=[
+                TestTypesProviderPyo3.account_balance(
+                    total=Money.from_str("1000000 USD"),
+                    locked=Money.from_str("0 USD"),
+                    free=Money.from_str("1000000 USD"),
+                ),
+            ],
+            margins=[],
+            is_reported=True,
+            event_id=UUID4("91762096-b188-49ea-8562-8d8a4cc22ff2"),
+            ts_init=0,
+            ts_event=0,
+        )
+
+    @staticmethod
+    def cash_account_state_multi() -> AccountState:
+        return AccountState(
+            account_id=TestIdProviderPyo3.account_id(),
+            account_type=AccountType.CASH,
+            base_currency=None,
+            balances=[
+                AccountBalance(
+                    total=Money.from_str("10 BTC"),
+                    locked=Money.from_str("0 BTC"),
+                    free=Money.from_str("10 BTC"),
+                ),
+                AccountBalance(
+                    total=Money.from_str("20 ETH"),
+                    locked=Money.from_str("0 ETH"),
+                    free=Money.from_str("20 ETH"),
+                ),
+            ],
+            margins=[],
+            is_reported=True,
+            event_id=UUID4("91762096-b188-49ea-8562-8d8a4cc22ff2"),
+            ts_init=0,
+            ts_event=0,
+        )
+
+    @staticmethod
+    def cash_account_state_multi_changed_btc() -> AccountState:
+        return AccountState(
+            account_id=TestIdProviderPyo3.account_id(),
+            account_type=AccountType.CASH,
+            base_currency=None,
+            balances=[
+                AccountBalance(
+                    total=Money.from_str("9 BTC"),
+                    locked=Money.from_str("0.5 BTC"),
+                    free=Money.from_str("8.5 BTC"),
+                ),
+                AccountBalance(
+                    total=Money.from_str("20 ETH"),
+                    locked=Money.from_str("0 ETH"),
+                    free=Money.from_str("20 ETH"),
+                ),
             ],
             margins=[],
             is_reported=True,
@@ -96,7 +175,7 @@ class TestEventsProviderPyo3:
             instrument_id=TestIdProviderPyo3.audusd_id(),
             client_order_id=TestIdProviderPyo3.client_order_id(),
             reason="Exceeded MAX_ORDER_SUBMIT_RATE",
-            event_id=UUID4(uuid),
+            event_id=_STUB_UUID4,
             ts_init=0,
             ts_event=0,
         )
@@ -110,7 +189,7 @@ class TestEventsProviderPyo3:
             client_order_id=TestIdProviderPyo3.client_order_id(),
             account_id=TestIdProviderPyo3.account_id(),
             reason="INSUFFICIENT_MARGIN",
-            event_id=UUID4(uuid),
+            event_id=_STUB_UUID4,
             ts_init=0,
             ts_event=0,
             reconciliation=False,
@@ -134,7 +213,7 @@ class TestEventsProviderPyo3:
             liquidity_side=LiquiditySide.MAKER,
             position_id=PositionId("2"),
             commission=Money.from_str("12.2 USDT"),
-            event_id=UUID4(uuid),
+            event_id=_STUB_UUID4,
             ts_init=0,
             ts_event=0,
             reconciliation=False,
@@ -155,7 +234,7 @@ class TestEventsProviderPyo3:
             reduce_only=True,
             quote_quantity=False,
             reconciliation=False,
-            event_id=UUID4(uuid),
+            event_id=_STUB_UUID4,
             emulation_trigger=TriggerType.BID_ASK,
             trigger_instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
             price=Price.from_str("1520.10"),
@@ -178,7 +257,7 @@ class TestEventsProviderPyo3:
             strategy_id=TestIdProviderPyo3.strategy_id(),
             instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
             client_order_id=TestIdProviderPyo3.client_order_id(),
-            event_id=UUID4(uuid),
+            event_id=_STUB_UUID4,
             ts_init=0,
             ts_event=0,
             venue_order_id=TestIdProviderPyo3.venue_order_id(),
@@ -194,7 +273,7 @@ class TestEventsProviderPyo3:
             instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
             client_order_id=TestIdProviderPyo3.client_order_id(),
             account_id=TestIdProviderPyo3.account_id(),
-            event_id=UUID4(uuid),
+            event_id=_STUB_UUID4,
             ts_init=0,
             ts_event=0,
         )
@@ -206,7 +285,7 @@ class TestEventsProviderPyo3:
             strategy_id=TestIdProviderPyo3.strategy_id(),
             instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
             client_order_id=TestIdProviderPyo3.client_order_id(),
-            event_id=UUID4(uuid),
+            event_id=_STUB_UUID4,
             ts_init=0,
             ts_event=0,
         )
@@ -219,7 +298,7 @@ class TestEventsProviderPyo3:
             instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
             client_order_id=TestIdProviderPyo3.client_order_id(),
             released_price=Price.from_str("22000.0"),
-            event_id=UUID4(uuid),
+            event_id=_STUB_UUID4,
             ts_init=0,
             ts_event=0,
         )
@@ -232,7 +311,7 @@ class TestEventsProviderPyo3:
             instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
             client_order_id=TestIdProviderPyo3.client_order_id(),
             quantity=Quantity.from_str("1.5"),
-            event_id=UUID4(uuid),
+            event_id=_STUB_UUID4,
             ts_init=0,
             ts_event=0,
             reconciliation=False,
@@ -250,7 +329,7 @@ class TestEventsProviderPyo3:
             instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
             client_order_id=TestIdProviderPyo3.client_order_id(),
             account_id=TestIdProviderPyo3.account_id(),
-            event_id=UUID4(uuid),
+            event_id=_STUB_UUID4,
             ts_init=0,
             ts_event=0,
             reconciliation=False,
@@ -265,7 +344,7 @@ class TestEventsProviderPyo3:
             instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
             client_order_id=TestIdProviderPyo3.client_order_id(),
             account_id=TestIdProviderPyo3.account_id(),
-            event_id=UUID4(uuid),
+            event_id=_STUB_UUID4,
             ts_init=0,
             ts_event=0,
             reconciliation=False,
@@ -281,7 +360,7 @@ class TestEventsProviderPyo3:
             client_order_id=TestIdProviderPyo3.client_order_id(),
             account_id=TestIdProviderPyo3.account_id(),
             venue_order_id=TestIdProviderPyo3.venue_order_id(),
-            event_id=UUID4(uuid),
+            event_id=_STUB_UUID4,
             reason="ORDER_DOES_NOT_EXIST",
             ts_init=0,
             ts_event=0,
@@ -297,7 +376,7 @@ class TestEventsProviderPyo3:
             client_order_id=TestIdProviderPyo3.client_order_id(),
             account_id=TestIdProviderPyo3.account_id(),
             venue_order_id=TestIdProviderPyo3.venue_order_id(),
-            event_id=UUID4(uuid),
+            event_id=_STUB_UUID4,
             ts_init=0,
             ts_event=0,
             reconciliation=False,
@@ -313,7 +392,7 @@ class TestEventsProviderPyo3:
             account_id=TestIdProviderPyo3.account_id(),
             venue_order_id=TestIdProviderPyo3.venue_order_id(),
             reason="ORDER_DOES_NOT_EXIST",
-            event_id=UUID4(uuid),
+            event_id=_STUB_UUID4,
             ts_init=0,
             ts_event=0,
             reconciliation=False,
@@ -328,7 +407,7 @@ class TestEventsProviderPyo3:
             client_order_id=TestIdProviderPyo3.client_order_id(),
             account_id=TestIdProviderPyo3.account_id(),
             venue_order_id=TestIdProviderPyo3.venue_order_id(),
-            event_id=UUID4(uuid),
+            event_id=_STUB_UUID4,
             ts_init=0,
             ts_event=0,
             reconciliation=False,
@@ -343,8 +422,72 @@ class TestEventsProviderPyo3:
             client_order_id=TestIdProviderPyo3.client_order_id(),
             account_id=TestIdProviderPyo3.account_id(),
             venue_order_id=TestIdProviderPyo3.venue_order_id(),
-            event_id=UUID4(uuid),
+            event_id=_STUB_UUID4,
             ts_init=0,
             ts_event=0,
+            reconciliation=False,
+        )
+
+    @staticmethod
+    def order_filled(
+        order: MarketOrder,
+        instrument: CurrencyPair | CryptoPerpetual | CryptoFuture,
+        strategy_id: StrategyId | None = None,
+        account_id: AccountId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+        trade_id: TradeId | None = None,
+        position_id: PositionId | None = None,
+        last_qty: Quantity | None = None,
+        last_px: Price | None = None,
+        liquidity_side: LiquiditySide = LiquiditySide.TAKER,
+        ts_filled_ns: int = 0,
+        account: CashAccount | None = None,
+    ) -> OrderFilled:
+        if strategy_id is None:
+            strategy_id = order.strategy_id
+        if account_id is None:
+            account_id = order.account_id
+            if account_id is None:
+                account_id = TestIdProviderPyo3.account_id()
+        if venue_order_id is None:
+            venue_order_id = VenueOrderId("1")
+        if trade_id is None:
+            trade_id = TradeId(order.client_order_id.value.replace("O", "E"))
+        if position_id is None:
+            position_id = order.position_id
+        if last_px is None:
+            last_px = Price.from_str(f"{1:.{instrument.price_precision}f}")
+        if last_qty is None:
+            last_qty = order.quantity
+        if account is None:
+            from nautilus_trader.test_kit.rust.accounting_pyo3 import TestAccountingProviderPyo3
+
+            account = TestAccountingProviderPyo3.cash_account()
+        assert account is not None
+        commission = account.calculate_commission(
+            instrument=instrument,
+            last_qty=order.quantity,
+            last_px=last_px,
+            liquidity_side=liquidity_side,
+        )
+        return OrderFilled(
+            trader_id=TestIdProviderPyo3.trader_id(),
+            strategy_id=strategy_id,
+            instrument_id=instrument.id,
+            client_order_id=order.client_order_id,
+            venue_order_id=venue_order_id,
+            account_id=account_id,
+            trade_id=trade_id,
+            position_id=position_id,
+            order_side=order.side,
+            order_type=order.order_type,
+            last_qty=last_qty,
+            last_px=last_px or order.price,
+            currency=instrument.quote_currency,
+            commission=commission,
+            liquidity_side=liquidity_side,
+            ts_event=ts_filled_ns,
+            event_id=TestIdProviderPyo3.uuid(),
+            ts_init=0,
             reconciliation=False,
         )

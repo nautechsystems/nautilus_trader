@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import pytest
 
 from nautilus_trader.core.nautilus_pyo3 import AccountId
@@ -29,7 +30,7 @@ USD = Currency.from_str("USD")
 BTC = Currency.from_str("BTC")
 
 
-def test_instantiated_accounts_basic_properties():
+def test_instantiated_account_basic_properties():
     account = TestAccountingProviderPyo3.margin_account()
 
     assert account.id == AccountId("SIM-000")

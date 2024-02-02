@@ -196,12 +196,12 @@ class BetfairTicker(Data):
             ts_init=values["ts_init"],
             last_traded_price=values["last_traded_price"] if values["last_traded_price"] else None,
             traded_volume=values["traded_volume"] if values["traded_volume"] else None,
-            starting_price_near=values["starting_price_near"]
-            if values["starting_price_near"]
-            else None,
-            starting_price_far=values["starting_price_far"]
-            if values["starting_price_far"]
-            else None,
+            starting_price_near=(
+                values["starting_price_near"] if values["starting_price_near"] else None
+            ),
+            starting_price_far=(
+                values["starting_price_far"] if values["starting_price_far"] else None
+            ),
         )
 
     @staticmethod

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.config.common import NautilusConfig
+
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache

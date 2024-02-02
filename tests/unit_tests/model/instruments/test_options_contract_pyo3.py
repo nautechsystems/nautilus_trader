@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.nautilus_pyo3 import OptionsContract
+from nautilus_trader.model.instruments import OptionsContract as LegacyOptionsContract
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
@@ -55,3 +56,9 @@ def test_to_dict():
         "ts_event": 0,
         "ts_init": 0,
     }
+
+
+def test_legacy_options_contract_from_pyo3():
+    option = LegacyOptionsContract.from_pyo3(_AAPL_OPTION)
+
+    assert option.id.value == "AAPL211217C00150000.OPRA"

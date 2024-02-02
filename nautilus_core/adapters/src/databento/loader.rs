@@ -193,10 +193,10 @@ impl DatabentoDataLoader {
         Ok(InstrumentId::new(symbol, venue))
     }
 
-    pub fn schema_from_file(&self, path: PathBuf) -> Result<Option<dbn::Schema>> {
+    pub fn schema_from_file(&self, path: PathBuf) -> Result<Option<String>> {
         let decoder = Decoder::from_zstd_file(path)?;
         let metadata = decoder.metadata();
-        Ok(metadata.schema)
+        Ok(metadata.schema.map(|schema| schema.to_string()))
     }
 
     pub fn read_records<T>(

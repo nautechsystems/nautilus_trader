@@ -19,6 +19,7 @@ nautilus-infrastructure = { path = "../infrastructure" }
 nautilus-model = { path = "../model" }
 nautilus-persistence = { path = "../persistence" }
 nautilus-network = { path = "../network" }
+nautilus-accounting = { path = "../accounting" }
 pyo3 = { workspace = true }
 
 [features]

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,4 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use pyo3::{prelude::*, pymodule};
+
+pub mod cash;
 pub mod margin;
+pub mod position;
+
+#[pymodule]
+pub fn accounting(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<crate::account::cash::CashAccount>()?;
+    m.add_class::<crate::account::margin::MarginAccount>()?;
+    m.add_class::<crate::position::Position>()?;
+    Ok(())
+}

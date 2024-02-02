@@ -1,3 +1,21 @@
+# NautilusTrader 1.186.0 Beta
+
+Released on 2nd February 2024 (UTC).
+
+### Enhancements
+None
+
+### Breaking Changes
+None
+
+### Fixes
+- Fixed Interactive Brokers get account positions bug (#1475), thanks @benjaminsingleton
+- Fixed `TimeBarAggregator` handling of interval types on build
+- Fixed `BinanceSpotExecutionClient` non-existent method name, thanks @sunlei
+- Fixed unused `psutil` import, thanks @sunlei
+
+---
+
 # NautilusTrader 1.185.0 Beta
 
 Released on 26th January 2024 (UTC).

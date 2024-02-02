@@ -167,9 +167,11 @@ class NautilusKernel:
                     machine_id=self._machine_id,
                     instance_id=self._instance_id,
                     level_stdout=log_level_from_str(logging.log_level),
-                    level_file=log_level_from_str(logging.log_level_file)
-                    if logging.log_level_file is not None
-                    else LogLevel.OFF,
+                    level_file=(
+                        log_level_from_str(logging.log_level_file)
+                        if logging.log_level_file is not None
+                        else LogLevel.OFF
+                    ),
                     directory=logging.log_directory,
                     file_name=logging.log_file_name,
                     file_format=logging.log_file_format,

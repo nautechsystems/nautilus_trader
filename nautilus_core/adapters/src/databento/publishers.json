@@ -9,19 +9,19 @@
     "publisher_id": 2,
     "dataset": "XNAS.ITCH",
     "venue": "XNAS",
-    "description": "Nasdaq TotalView ITCH"
+    "description": "Nasdaq TotalView-ITCH"
   },
   {
     "publisher_id": 3,
     "dataset": "XBOS.ITCH",
     "venue": "XBOS",
-    "description": "Nasdaq BX TotalView ITCH"
+    "description": "Nasdaq BX TotalView-ITCH"
   },
   {
     "publisher_id": 4,
     "dataset": "XPSX.ITCH",
     "venue": "XPSX",
-    "description": "Nasdaq PSX TotalView ITCH"
+    "description": "Nasdaq PSX TotalView-ITCH"
   },
   {
     "publisher_id": 5,
@@ -256,5 +256,113 @@
     "dataset": "ARCX.PILLAR",
     "venue": "ARCX",
     "description": "NYSE Arca Integrated"
+  },
+  {
+    "publisher_id": 44,
+    "dataset": "XNYS.BBO",
+    "venue": "XNYS",
+    "description": "NYSE BBO"
+  },
+  {
+    "publisher_id": 45,
+    "dataset": "XNYS.TRADES",
+    "venue": "XNYS",
+    "description": "NYSE Trades"
+  },
+  {
+    "publisher_id": 46,
+    "dataset": "XNAS.QBBO",
+    "venue": "XNAS",
+    "description": "Nasdaq QBBO"
+  },
+  {
+    "publisher_id": 47,
+    "dataset": "XNAS.NLS",
+    "venue": "XNAS",
+    "description": "Nasdaq Trades"
+  },
+  {
+    "publisher_id": 48,
+    "dataset": "DBEQ.PLUS",
+    "venue": "XCHI",
+    "description": "DBEQ Plus - NYSE Chicago"
+  },
+  {
+    "publisher_id": 49,
+    "dataset": "DBEQ.PLUS",
+    "venue": "XCIS",
+    "description": "DBEQ Plus - NYSE National"
+  },
+  {
+    "publisher_id": 50,
+    "dataset": "DBEQ.PLUS",
+    "venue": "IEXG",
+    "description": "DBEQ Plus - IEX"
+  },
+  {
+    "publisher_id": 51,
+    "dataset": "DBEQ.PLUS",
+    "venue": "EPRL",
+    "description": "DBEQ Plus - MIAX Pearl"
+  },
+  {
+    "publisher_id": 52,
+    "dataset": "DBEQ.PLUS",
+    "venue": "XNAS",
+    "description": "DBEQ Plus - Nasdaq"
+  },
+  {
+    "publisher_id": 53,
+    "dataset": "DBEQ.PLUS",
+    "venue": "XNYS",
+    "description": "DBEQ Plus - NYSE"
+  },
+  {
+    "publisher_id": 54,
+    "dataset": "DBEQ.PLUS",
+    "venue": "FINN",
+    "description": "DBEQ Plus - FINRA/NYSE TRF"
+  },
+  {
+    "publisher_id": 55,
+    "dataset": "DBEQ.PLUS",
+    "venue": "FINY",
+    "description": "DBEQ Plus - FINRA/Nasdaq TRF Carteret"
+  },
+  {
+    "publisher_id": 56,
+    "dataset": "DBEQ.PLUS",
+    "venue": "FINC",
+    "description": "DBEQ Plus - FINRA/Nasdaq TRF Chicago"
+  },
+  {
+    "publisher_id": 57,
+    "dataset": "IFEU.IMPACT",
+    "venue": "IFEU",
+    "description": "ICE Futures Europe (Commodities)"
+  },
+  {
+    "publisher_id": 58,
+    "dataset": "NDEX.IMPACT",
+    "venue": "NDEX",
+    "description": "ICE Endex"
+  },
+  {
+    "publisher_id": 59,
+    "dataset": "DBEQ.BASIC",
+    "venue": "DBEQ",
+    "description": "DBEQ Basic - Consolidated"
+  },
+  {
+    "publisher_id": 60,
+    "dataset": "DBEQ.PLUS",
+    "venue": "DBEQ",
+    "description": "DBEQ Plus - Consolidated"
+  },
+  {
+    "publisher_id": 61,
+    "dataset": "OPRA.PILLAR",
+    "venue": "SPHR",
+    "description": "OPRA - MIAX Sapphire"
   }
 ]

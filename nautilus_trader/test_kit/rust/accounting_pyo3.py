@@ -12,6 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from nautilus_trader.core.nautilus_pyo3 import CashAccount
 from nautilus_trader.core.nautilus_pyo3 import MarginAccount
 from nautilus_trader.test_kit.rust.events_pyo3 import TestEventsProviderPyo3
 
@@ -21,5 +23,26 @@ class TestAccountingProviderPyo3:
     def margin_account() -> MarginAccount:
         return MarginAccount(
             event=TestEventsProviderPyo3.margin_account_state(),
+            calculate_account_state=False,
+        )
+
+    @staticmethod
+    def cash_account() -> CashAccount:
+        return CashAccount(
+            event=TestEventsProviderPyo3.cash_account_state(),
+            calculate_account_state=False,
+        )
+
+    @staticmethod
+    def cash_account_million_usd() -> CashAccount:
+        return CashAccount(
+            event=TestEventsProviderPyo3.cash_account_state_million_usd(),
+            calculate_account_state=False,
+        )
+
+    @staticmethod
+    def cash_account_multi() -> CashAccount:
+        return CashAccount(
+            event=TestEventsProviderPyo3.cash_account_state_multi(),
             calculate_account_state=False,
         )

@@ -50,6 +50,8 @@ pub struct DatabentoHistoricalClient {
     clock: &'static AtomicTime,
     inner: Arc<Mutex<databento::HistoricalClient>>,
     publishers: Arc<IndexMap<PublisherId, DatabentoPublisher>>,
+    #[pyo3(get)]
+    pub key: String,
 }
 
 #[pymethods]
@@ -57,7 +59,7 @@ impl DatabentoHistoricalClient {
     #[new]
     pub fn py_new(key: String, publishers_path: &str) -> PyResult<Self> {
         let client = databento::HistoricalClient::builder()
-            .key(key)
+            .key(key.clone())
             .map_err(to_pyvalue_err)?
             .build()
             .map_err(to_pyvalue_err)?;
@@ -66,7 +68,6 @@ impl DatabentoHistoricalClient {
         let publishers_vec: Vec<DatabentoPublisher> =
             serde_json::from_str(&file_content).map_err(to_pyvalue_err)?;
         let publishers = publishers_vec
-            .clone()
             .into_iter()
             .map(|p| (p.publisher_id, p))
             .collect::<IndexMap<u16, DatabentoPublisher>>();
@@ -75,6 +76,7 @@ impl DatabentoHistoricalClient {
             clock: get_atomic_clock_realtime(),
             inner: Arc::new(Mutex::new(client)),
             publishers: Arc::new(publishers),
+            key,
         })
     }
 
@@ -141,7 +143,7 @@ impl DatabentoHistoricalClient {
                 let result = parse_instrument_def_msg(rec, publisher, ts_init);
                 match result {
                     Ok(instrument) => instruments.push(instrument),
-                    Err(e) => eprintln!("{:?}", e),
+                    Err(e) => eprintln!("{e:?}"),
                 };
             }
 
@@ -211,7 +213,7 @@ impl DatabentoHistoricalClient {
                     Data::Quote(quote) => {
                         result.push(quote);
                     }
-                    _ => panic!("Invalid data element not `QuoteTick`, was {:?}", data),
+                    _ => panic!("Invalid data element not `QuoteTick`, was {data:?}"),
                 }
             }
 
@@ -274,7 +276,7 @@ impl DatabentoHistoricalClient {
                     Data::Trade(trade) => {
                         result.push(trade);
                     }
-                    _ => panic!("Invalid data element not `TradeTick`, was {:?}", data),
+                    _ => panic!("Invalid data element not `TradeTick`, was {data:?}"),
                 }
             }
 
@@ -346,7 +348,7 @@ impl DatabentoHistoricalClient {
                     Data::Bar(bar) => {
                         result.push(bar);
                     }
-                    _ => panic!("Invalid data element not `Bar`, was {:?}", data),
+                    _ => panic!("Invalid data element not `Bar`, was {data:?}"),
                 }
             }
 

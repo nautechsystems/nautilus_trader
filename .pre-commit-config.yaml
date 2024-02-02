@@ -45,7 +45,7 @@ repos:
     hooks:
       - id: fmt
         name: cargo fmt
-        description: Format files with cargo fmt (nightly toolchain).
+        description: Format files with cargo fmt.
         entry: cargo fmt
         language: system
         types: [rust]
@@ -73,7 +73,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/psf/black
-    rev: 23.12.1
+    rev: 24.1.1
     hooks:
       - id: black
         types_or: [python, pyi]
@@ -82,7 +82,7 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.14
+    rev: v0.1.15
     hooks:
       - id: ruff
         args: ["--fix"]
