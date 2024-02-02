@@ -178,12 +178,12 @@ class TestTradingNodeConfiguration:
         # Mock factories so nothing actually connects
         from nautilus_trader.adapters.binance import factories
 
-        mock_data_factory = (
-            factories.BinanceLiveDataClientFactory.create
-        ) = unittest.mock.MagicMock()
-        mock_exec_factory = (
-            factories.BinanceLiveExecClientFactory.create
-        ) = unittest.mock.MagicMock()
+        mock_data_factory = factories.BinanceLiveDataClientFactory.create = (
+            unittest.mock.MagicMock()
+        )
+        mock_exec_factory = factories.BinanceLiveExecClientFactory.create = (
+            unittest.mock.MagicMock()
+        )
 
         # Act - lazy way of mocking the whole client
         with pytest.raises(TypeError):

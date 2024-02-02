@@ -182,9 +182,11 @@ def market_definition_to_instruments(
             betting_type=market_definition.betting_type.name,
             market_id=market_definition.market_id,
             market_name=market_definition.market_name or "",
-            market_start_time=pd.Timestamp(market_definition.market_time)
-            if market_definition.market_time
-            else pd.Timestamp(0, tz="UTC"),
+            market_start_time=(
+                pd.Timestamp(market_definition.market_time)
+                if market_definition.market_time
+                else pd.Timestamp(0, tz="UTC")
+            ),
             market_type=market_definition.market_type,
             selection_id=runner.id,
             selection_name=runner.name or "",
