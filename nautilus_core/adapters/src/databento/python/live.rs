@@ -132,9 +132,6 @@ impl DatabentoLiveClient {
                     .build(),
             };
 
-            // TODO: Temporary debug logging
-            // println!("{:?}", subscription);
-
             client
                 .subscribe(&subscription)
                 .await
@@ -154,21 +151,38 @@ impl DatabentoLiveClient {
             let mut symbol_map = PitSymbolMap::new();
 
             let timeout_duration = Duration::from_millis(10);
+            let relock_interval = timeout_duration.as_nanos() as u64;
+            let mut lock_last_dropped_ns = 0_u64;
+
             client.start().await.map_err(to_pyruntime_err)?;
 
             loop {
-                drop(client);
-                client = arc_client.lock().await;
+                // Check if need to drop then re-aquire lock
+                let now_ns = clock.get_time_ns();
+                if now_ns >= lock_last_dropped_ns + relock_interval {
+                    // Drop the client which will release the `MutexGuard`,
+                    // allowing other futures to obtain it.
+                    drop(client);
+
+                    // Re-aquire the lock to be able to receive the next record
+                    client = arc_client.lock().await;
+                    lock_last_dropped_ns = now_ns;
+                }
 
                 let result = timeout(timeout_duration, client.next_record()).await;
-                let record = match result {
-                    Ok(Ok(Some(record))) => record,
-                    Ok(Ok(None)) => break, // Session ended normally
-                    Ok(Err(e)) => {
-                        // Fail session entirely for now
+                let record_opt = match result {
+                    Ok(record_opt) => record_opt,
+                    Err(_) => continue, // Timeout
+                };
+
+                let record = match record_opt {
+                    Ok(Some(record)) => record,
+                    Ok(None) => break, // Session ended normally
+                    Err(e) => {
+                        // Fail the session entirely for now. Consider refining
+                        // this strategy to handle specific errors more gracefully.
                         return Err(to_pyruntime_err(e));
                     }
-                    Err(_) => continue, // Timeout
                 };
 
                 let rtype = record.rtype().expect("Invalid `rtype`");
