@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
 use anyhow::Result;
 use nautilus_core::time::UnixNanos;
 use nautilus_model::enums::{OrderSide, PositionSide};
@@ -30,7 +32,6 @@ use nautilus_model::types::currency::Currency;
 use nautilus_model::types::money::Money;
 use nautilus_model::types::quantity::Quantity;
 use pyo3::prelude::*;
-use std::collections::HashMap;
 
 /// Represents a position in a financial market.
 ///
@@ -108,7 +109,7 @@ impl Position {
             size_precision: instrument.size_precision(),
             multiplier: instrument.multiplier(),
             is_inverse: instrument.is_inverse(),
-            base_currency: instrument.base_currency().to_owned().copied(),
+            base_currency: instrument.base_currency().copied(),
             quote_currency: *instrument.quote_currency(),
             settlement_currency: *instrument.settlement_currency(),
             ts_init: fill.ts_init,

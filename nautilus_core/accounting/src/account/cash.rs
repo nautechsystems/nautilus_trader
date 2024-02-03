@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::account::base::BaseAccount;
-use crate::account::Account;
-use crate::position::Position;
+use std::collections::HashMap;
+use std::fmt::Display;
+use std::ops::{Deref, DerefMut};
+
 use anyhow::Result;
 use nautilus_model::enums::{AccountType, LiquiditySide, OrderSide};
 use nautilus_model::events::account::state::AccountState;
@@ -27,9 +28,10 @@ use nautilus_model::types::money::Money;
 use nautilus_model::types::price::Price;
 use nautilus_model::types::quantity::Quantity;
 use pyo3::prelude::*;
-use std::collections::HashMap;
-use std::fmt::Display;
-use std::ops::{Deref, DerefMut};
+
+use crate::account::base::BaseAccount;
+use crate::account::Account;
+use crate::position::Position;
 
 #[derive(Debug)]
 #[cfg_attr(
@@ -47,13 +49,16 @@ impl CashAccount {
         })
     }
 
+    #[must_use]
     pub fn is_cash_account(&self) -> bool {
         self.account_type == AccountType::Cash
     }
+    #[must_use]
     pub fn is_margin_account(&self) -> bool {
         self.account_type == AccountType::Margin
     }
 
+    #[must_use]
     pub fn is_unleveraged(&self) -> bool {
         false
     }
@@ -99,7 +104,7 @@ impl Account for CashAccount {
         self.balances.clone()
     }
     fn apply(&mut self, event: AccountState) {
-        self.base_apply(event)
+        self.base_apply(event);
     }
 
     fn calculate_balance_locked<T: Instrument>(
@@ -167,9 +172,10 @@ impl Display for CashAccount {
             "CashAccount(id={}, type={}, base={})",
             self.id,
             self.account_type,
-            self.base_currency
-                .map(|base_currency| format!("{}", base_currency.code))
-                .unwrap_or_else(|| "None".to_string()),
+            self.base_currency.map_or_else(
+                || "None".to_string(),
+                |base_currency| format!("{}", base_currency.code)
+            ),
         )
     }
 }
@@ -208,9 +214,9 @@ mod tests {
     #[rstest]
     fn test_display(cash_account: CashAccount) {
         assert_eq!(
-            format!("{}", cash_account),
+            format!("{cash_account}"),
             "CashAccount(id=SIM-001, type=CASH, base=USD)"
-        )
+        );
     }
 
     #[rstest]
@@ -222,7 +228,7 @@ mod tests {
         assert_eq!(cash_account.account_type, AccountType::Cash);
         assert_eq!(cash_account.base_currency, Some(Currency::from("USD")));
         assert_eq!(cash_account.last_event(), Some(cash_account_state.clone()));
-        assert_eq!(cash_account.events(), vec![cash_account_state.clone()]);
+        assert_eq!(cash_account.events(), vec![cash_account_state]);
         assert_eq!(cash_account.event_count(), 1);
         assert_eq!(
             cash_account.balance_total(None),
@@ -259,10 +265,7 @@ mod tests {
             Some(cash_account_state_multi.clone())
         );
         assert_eq!(cash_account_state_multi.base_currency, None);
-        assert_eq!(
-            cash_account_multi.events(),
-            vec![cash_account_state_multi.clone()]
-        );
+        assert_eq!(cash_account_multi.events(), vec![cash_account_state_multi]);
         assert_eq!(cash_account_multi.event_count(), 1);
         assert_eq!(
             cash_account_multi.balance_total(Some(Currency::BTC())),
@@ -320,8 +323,8 @@ mod tests {
         assert_eq!(
             cash_account_multi.events,
             vec![
-                cash_account_state_multi.clone(),
-                cash_account_state_multi_changed_btc.clone()
+                cash_account_state_multi,
+                cash_account_state_multi_changed_btc
             ]
         );
         assert_eq!(cash_account_multi.event_count(), 2);
@@ -365,7 +368,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        assert_eq!(balance_locked, Money::from("800032 USD"))
+        assert_eq!(balance_locked, Money::from("800032 USD"));
     }
 
     #[rstest]
@@ -382,7 +385,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        assert_eq!(balance_locked, Money::from("1000040 AUD"))
+        assert_eq!(balance_locked, Money::from("1000040 AUD"));
     }
 
     #[rstest]
@@ -399,7 +402,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        assert_eq!(balance_locked, Money::from("100 USD"))
+        assert_eq!(balance_locked, Money::from("100 USD"));
     }
 
     #[rstest]
@@ -434,7 +437,7 @@ mod tests {
         let pnls = cash_account_million_usd
             .calculate_pnls(audusd_sim, fill, Some(position))
             .unwrap();
-        assert_eq!(pnls, vec![Money::from("-800000 USD")])
+        assert_eq!(pnls, vec![Money::from("-800000 USD")]);
     }
 
     #[rstest]

@@ -53,9 +53,9 @@ fn mem_leak_test<T>(setup: impl FnOnce() -> T, run: impl Fn(&T), threshold: f64,
     let after = me.stat().unwrap().rss * page_size / 1024 - setup_mem;
 
     if !(after.abs_diff(before) as f64 / (before as f64) < threshold) {
-        println!("Memory leak detected after {} iterations", iter);
-        println!("Memory before runs (in KB): {}", before);
-        println!("Memory after runs (in KB): {}", after);
+        println!("Memory leak detected after {iter} iterations");
+        println!("Memory before runs (in KB): {before}");
+        println!("Memory after runs (in KB): {after}");
         assert!(false);
     }
 }
@@ -64,7 +64,7 @@ fn mem_leak_test<T>(setup: impl FnOnce() -> T, run: impl Fn(&T), threshold: f64,
 #[rstest]
 fn catalog_query_mem_leak_test() {
     mem_leak_test(
-        || pyo3::prepare_freethreaded_python(),
+        pyo3::prepare_freethreaded_python,
         |_args| {
             let file_path = "../../tests/test_data/nautilus/quotes.parquet";
             let expected_length = 9500;

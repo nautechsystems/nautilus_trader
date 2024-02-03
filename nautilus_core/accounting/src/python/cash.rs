@@ -13,9 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::account::cash::CashAccount;
-use crate::account::Account;
-use crate::position::Position;
+use std::collections::HashMap;
+
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::enums::{LiquiditySide, OrderSide};
 use nautilus_model::events::account::state::AccountState;
@@ -33,7 +32,10 @@ use nautilus_model::types::price::Price;
 use nautilus_model::types::quantity::Quantity;
 use pyo3::basic::CompareOp;
 use pyo3::prelude::*;
-use std::collections::HashMap;
+
+use crate::account::cash::CashAccount;
+use crate::account::Account;
+use crate::position::Position;
 
 #[pymethods]
 impl CashAccount {
@@ -61,9 +63,10 @@ impl CashAccount {
             stringify!(CashAccount),
             self.id,
             self.account_type,
-            self.base_currency
-                .map(|base_currency| format!("{}", base_currency.code))
-                .unwrap_or_else(|| "None".to_string()),
+            self.base_currency.map_or_else(
+                || "None".to_string(),
+                |base_currency| format!("{}", base_currency.code)
+            ),
         )
     }
 
@@ -73,9 +76,10 @@ impl CashAccount {
             stringify!(CashAccount),
             self.id,
             self.account_type,
-            self.base_currency
-                .map(|base_currency| format!("{}", base_currency.code))
-                .unwrap_or_else(|| "None".to_string()),
+            self.base_currency.map_or_else(
+                || "None".to_string(),
+                |base_currency| format!("{}", base_currency.code)
+            ),
         )
     }
 
@@ -133,7 +137,7 @@ impl CashAccount {
 
     #[pyo3(name = "apply")]
     fn py_apply(&mut self, event: AccountState) {
-        self.apply(event)
+        self.apply(event);
     }
 
     #[pyo3(name = "calculate_balance_locked")]

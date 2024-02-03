@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::position::Position;
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::events::order::filled::OrderFilled;
 use nautilus_model::instruments::crypto_future::CryptoFuture;
@@ -22,6 +21,8 @@ use nautilus_model::instruments::equity::Equity;
 use nautilus_model::instruments::futures_contract::FuturesContract;
 use nautilus_model::instruments::options_contract::OptionsContract;
 use pyo3::prelude::*;
+
+use crate::position::Position;
 
 #[pymethods]
 impl Position {

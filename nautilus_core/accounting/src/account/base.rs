@@ -13,7 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::position::Position;
+use std::collections::HashMap;
+
 use anyhow::Result;
 use nautilus_model::enums::{AccountType, LiquiditySide, OrderSide};
 use nautilus_model::events::account::state::AccountState;
@@ -27,7 +28,8 @@ use nautilus_model::types::price::Price;
 use nautilus_model::types::quantity::Quantity;
 use pyo3::prelude::*;
 use rust_decimal::prelude::ToPrimitive;
-use std::collections::HashMap;
+
+use crate::position::Position;
 
 #[derive(Debug)]
 #[cfg_attr(
@@ -66,6 +68,7 @@ impl BaseAccount {
         })
     }
 
+    #[must_use]
     pub fn base_balance_total(&self, currency: Option<Currency>) -> Option<Money> {
         let currency = currency
             .or(self.base_currency)
@@ -74,6 +77,7 @@ impl BaseAccount {
         account_balance.map(|balance| balance.total)
     }
 
+    #[must_use]
     pub fn base_balances_total(&self) -> HashMap<Currency, Money> {
         self.balances
             .iter()
@@ -81,6 +85,7 @@ impl BaseAccount {
             .collect()
     }
 
+    #[must_use]
     pub fn base_balance_free(&self, currency: Option<Currency>) -> Option<Money> {
         let currency = currency
             .or(self.base_currency)
@@ -89,6 +94,7 @@ impl BaseAccount {
         account_balance.map(|balance| balance.free)
     }
 
+    #[must_use]
     pub fn base_balances_free(&self) -> HashMap<Currency, Money> {
         self.balances
             .iter()
@@ -96,6 +102,7 @@ impl BaseAccount {
             .collect()
     }
 
+    #[must_use]
     pub fn base_balance_locked(&self, currency: Option<Currency>) -> Option<Money> {
         let currency = currency
             .or(self.base_currency)
@@ -104,6 +111,7 @@ impl BaseAccount {
         account_balance.map(|balance| balance.locked)
     }
 
+    #[must_use]
     pub fn base_balances_locked(&self) -> HashMap<Currency, Money> {
         self.balances
             .iter()
@@ -111,11 +119,13 @@ impl BaseAccount {
             .collect()
     }
 
+    #[must_use]
     pub fn base_last_event(&self) -> Option<AccountState> {
         self.events.last().cloned()
     }
+
     pub fn update_balances(&mut self, balances: Vec<AccountBalance>) {
-        balances.into_iter().for_each(|balance| {
+        for balance in balances {
             // clone real balance without reference
             if balance.total.raw < 0 {
                 // TODO raise AccountBalanceNegative event
@@ -124,11 +134,12 @@ impl BaseAccount {
                 // clear asset balance
                 self.balances.insert(balance.currency, balance);
             }
-        });
+        }
     }
+
     pub fn base_apply(&mut self, event: AccountState) {
         self.update_balances(event.balances.clone());
-        self.events.push(event.clone());
+        self.events.push(event);
     }
 
     pub fn base_calculate_balance_locked<T: Instrument>(
@@ -148,13 +159,13 @@ impl BaseAccount {
                 .calculate_notional_value(quantity, price, use_quote_for_inverse)
                 .as_f64(),
             OrderSide::Sell => quantity.as_f64(),
-            _ => panic!("Invalid order side in base_calculate_balance_locked"),
+            _ => panic!("Invalid order side in `base_calculate_balance_locked`"),
         };
-        // add expected commission
+        // Add expected commission
         let taker_fee = instrument.taker_fee().to_f64().unwrap();
-        let locked: f64 = notional + (notional * taker_fee * 2.0);
+        let locked: f64 = (notional * taker_fee).mul_add(2.0, notional);
 
-        // handle inverse
+        // Handle inverse
         if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false) {
             Ok(Money::new(locked, *base_currency).unwrap())
         } else if side == OrderSide::Buy {
@@ -162,7 +173,7 @@ impl BaseAccount {
         } else if side == OrderSide::Sell {
             Ok(Money::new(locked, *base_currency).unwrap())
         } else {
-            panic!("Invalid order side in base_calculate_balance_locked")
+            panic!("Invalid order side in `base_calculate_balance_locked`")
         }
     }
 
@@ -203,7 +214,7 @@ impl BaseAccount {
                 Money::new(fill_qty * fill_px, *quote_currency).unwrap(),
             );
         } else {
-            panic!("Invalid order side in base_calculate_pnls")
+            panic!("Invalid order side in   base_calculate_pnls")
         }
         Ok(pnls.into_values().collect())
     }
@@ -216,9 +227,10 @@ impl BaseAccount {
         liquidity_side: LiquiditySide,
         use_quote_for_inverse: Option<bool>,
     ) -> Result<Money> {
-        if liquidity_side == LiquiditySide::NoLiquiditySide {
-            panic!("Invalid liquidity side")
-        }
+        assert!(
+            liquidity_side != LiquiditySide::NoLiquiditySide,
+            "Invalid liquidity side"
+        );
         let notional = instrument
             .calculate_notional_value(last_qty, last_px, use_quote_for_inverse)
             .as_f64();
@@ -227,7 +239,7 @@ impl BaseAccount {
         } else if liquidity_side == LiquiditySide::Taker {
             notional * instrument.taker_fee().to_f64().unwrap()
         } else {
-            panic!("Invalid liquid side {}", liquidity_side)
+            panic!("Invalid liquid side {liquidity_side}")
         };
         if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false) {
             Ok(Money::new(commission, *instrument.base_currency().unwrap()).unwrap())
