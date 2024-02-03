@@ -243,9 +243,14 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         """
         if isinstance(instrument_id, InstrumentId):
             try:
-                contract = instrument_id_to_ib_contract(instrument_id)
+                contract = instrument_id_to_ib_contract(
+                    instrument_id=instrument_id,
+                    strict_symbology=self.config.strict_symbology,
+                )
             except ValueError as e:
-                self._log.error(f"{e}")
+                self._log.error(
+                    f"{self.config.strict_symbology=} failed to parse {instrument_id=}, {e}",
+                )
                 return
         elif isinstance(instrument_id, IBContract):
             contract = instrument_id
@@ -261,9 +266,14 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             details.contract = IBContract(**details.contract.__dict__)
             details = IBContractDetails(**details.__dict__)
             self._log.debug(f"Attempting to create instrument from {details}")
-            instrument: Instrument = parse_instrument(
-                contract_details=details,
-            )
+            try:
+                instrument: Instrument = parse_instrument(
+                    contract_details=details,
+                    strict_symbology=self.config.strict_symbology,
+                )
+            except ValueError as e:
+                self._log.error(f"{self.config.strict_symbology=} failed to parse {details=}, {e}")
+                continue
             if self.config.filter_callable is not None:
                 filter_callable = resolve_path(self.config.filter_callable)
                 if not filter_callable(instrument):
