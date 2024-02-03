@@ -29,7 +29,7 @@ use crate::{
     headers,
     logging::{
         self, logging_set_bypass, map_log_level_to_filter, parse_component_levels,
-        FileWriterConfig, LoggerConfig,
+        writer::FileWriterConfig, LoggerConfig,
     },
 };
 

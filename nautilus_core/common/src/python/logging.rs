@@ -25,7 +25,7 @@ use crate::{
     enums::{LogColor, LogLevel},
     logging::{
         self, logging_set_bypass, map_log_level_to_filter, parse_level_filter_str,
-        FileWriterConfig, LoggerConfig,
+        writer::FileWriterConfig, LoggerConfig,
     },
 };
 
