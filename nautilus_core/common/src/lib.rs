@@ -18,7 +18,6 @@ pub mod enums;
 pub mod factories;
 pub mod generators;
 pub mod handlers;
-pub mod headers;
 pub mod logging;
 pub mod msgbus;
 pub mod testing;
