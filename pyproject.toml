@@ -38,7 +38,7 @@ include = [
 [build-system]
 requires = [
     "setuptools",
-    "poetry-core>=1.8.1",
+    "poetry-core>=1.9.0",
     "numpy>=1.26.3",
     "Cython==3.0.8",
     "toml>=0.10.2",
