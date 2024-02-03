@@ -38,6 +38,10 @@ jobs:
           docker-images: true
           swap-storage: true
 
+      - name: Install runner dependencies
+        if: runner.os == 'Linux'
+        run: apt-get install -y curl clang git libssl-dev make pkg-config
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -104,6 +108,10 @@ jobs:
           large-packages: true
           docker-images: true
           swap-storage: true
+
+      - name: Install runner dependencies
+        if: runner.os == 'Linux'
+        run: apt-get install -y curl clang git libssl-dev make pkg-config
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -197,6 +205,9 @@ jobs:
           large-packages: true
           docker-images: true
           swap-storage: true
+
+      - name: Install runner dependencies
+        run: apt-get install -y curl clang git libssl-dev make pkg-config
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -300,6 +311,10 @@ jobs:
           large-packages: true
           docker-images: true
           swap-storage: true
+
+      - name: Install runner dependencies
+        if: runner.os == 'Linux'
+        run: apt-get install -y curl clang git libssl-dev make pkg-config
 
       - name: Checkout repository
         uses: actions/checkout@v4
