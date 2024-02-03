@@ -897,8 +897,6 @@ class NautilusKernel:
         if self._writer:
             self._writer.close()
 
-        self._log.flush()
-
     def cancel_all_tasks(self) -> None:
         """
         Cancel all tasks currently running for the Nautilus kernel.
