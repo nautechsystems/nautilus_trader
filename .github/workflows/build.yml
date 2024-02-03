@@ -38,7 +38,7 @@ jobs:
 
       - name: Install runner dependencies
         if: runner.os == 'Linux'
-        run: apt-get install -y curl clang git libssl-dev make pkg-config
+        run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
 
       - name: Checkout repository
         uses: actions/checkout@v4
