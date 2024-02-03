@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::account::margin::MarginAccount;
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::events::account::state::AccountState;
 use nautilus_model::identifiers::account_id::AccountId;
@@ -28,6 +27,8 @@ use nautilus_model::types::money::Money;
 use nautilus_model::types::price::Price;
 use nautilus_model::types::quantity::Quantity;
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
+
+use crate::account::margin::MarginAccount;
 
 #[pymethods]
 impl MarginAccount {
@@ -60,9 +61,10 @@ impl MarginAccount {
             stringify!(MarginAccount),
             self.id,
             self.account_type,
-            self.base_currency
-                .map(|base_currency| format!("{}", base_currency.code))
-                .unwrap_or_else(|| "None".to_string())
+            self.base_currency.map_or_else(
+                || "None".to_string(),
+                |base_currency| format!("{}", base_currency.code)
+            )
         )
     }
 
@@ -72,9 +74,10 @@ impl MarginAccount {
             stringify!(MarginAccount),
             self.id,
             self.account_type,
-            self.base_currency
-                .map(|base_currency| format!("{}", base_currency.code))
-                .unwrap_or_else(|| "None".to_string()),
+            self.base_currency.map_or_else(
+                || "None".to_string(),
+                |base_currency| format!("{}", base_currency.code)
+            ),
         )
     }
 
@@ -87,7 +90,7 @@ impl MarginAccount {
     #[pyo3(name = "leverages")]
     fn py_leverages(&self, py: Python) -> PyResult<PyObject> {
         let leverages = PyDict::new(py);
-        for (key, &value) in self.leverages.iter() {
+        for (key, &value) in &self.leverages {
             leverages.set_item(key.to_object(py), value).unwrap();
         }
         Ok(leverages.to_object(py))
@@ -112,7 +115,7 @@ impl MarginAccount {
     #[pyo3(name = "initial_margins")]
     fn py_initial_margins(&self, py: Python) -> PyResult<PyObject> {
         let initial_margins = PyDict::new(py);
-        for (key, &value) in self.initial_margins().iter() {
+        for (key, &value) in &self.initial_margins() {
             initial_margins
                 .set_item(key.to_object(py), value.to_object(py))
                 .unwrap();
@@ -123,7 +126,7 @@ impl MarginAccount {
     #[pyo3(name = "maintenance_margins")]
     fn py_maintenance_margins(&self, py: Python) -> PyResult<PyObject> {
         let maintenance_margins = PyDict::new(py);
-        for (key, &value) in self.maintenance_margins().iter() {
+        for (key, &value) in &self.maintenance_margins() {
             maintenance_margins
                 .set_item(key.to_object(py), value.to_object(py))
                 .unwrap();
