@@ -1438,23 +1438,6 @@ cdef class Logger:
         """
         return self._name
 
-    cpdef void flush(self):
-        """
-        Flush all buffers for the logging system.
-
-        This could include stdout/stderr and file writer buffers.
-
-        Warning
-        -------
-        This method is intended to be called once at application shutdown.
-        It will intentionally block the main thread for 100 milliseconds, allowing all
-        buffers to be flushed prior to exiting.
-
-        """
-        if logging_is_initialized():
-            logger_flush()
-            time.sleep(0.1)  # Temporary solution before joining logging thread
-
     cpdef void debug(
         self,
         str message,

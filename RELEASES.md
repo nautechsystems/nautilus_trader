@@ -3,13 +3,13 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Refined logging system module and writers in Rust, thanks @ayush-sb and @twitu
 
 ### Breaking Changes
 None
 
 ### Fixes
-None
+- Fixed `BacktestEngine` and `Trader` disposal (now properly releasing resources), thanks for reporting @davidsblom
 
 ---
 
