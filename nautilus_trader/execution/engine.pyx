@@ -558,7 +558,6 @@ cdef class ExecutionEngine(Component):
         self.report_count = 0
 
     cpdef void _dispose(self):
-        cdef ExecutionClient client
         for client in self._clients.values():
             client.dispose()
 
