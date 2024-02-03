@@ -12,12 +12,7 @@ jobs:
       BUILD_MODE: release
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Free Disk Space (Ubuntu)
+      - name: Free disk space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: true
@@ -27,6 +22,11 @@ jobs:
           large-packages: true
           docker-images: true
           swap-storage: true
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
