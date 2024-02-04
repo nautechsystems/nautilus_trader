@@ -994,6 +994,8 @@ cdef class Bar(Data):
 
     @staticmethod
     cdef Bar from_pyo3_c(pyo3_bar):
+        # SAFETY: Do NOT deallocate the capsule here
+        # It is supposed to be deallocated by the creator
         return <Bar>capsule_to_data(pyo3_bar.as_pycapsule())
 
     @staticmethod
@@ -1776,6 +1778,8 @@ cdef class OrderBookDelta(Data):
 
     @staticmethod
     cdef OrderBookDelta from_pyo3_c(pyo3_delta):
+        # SAFETY: Do NOT deallocate the capsule here
+        # It is supposed to be deallocated by the creator
         return <OrderBookDelta>capsule_to_data(pyo3_delta.as_pycapsule())
 
     @staticmethod
@@ -1829,10 +1833,10 @@ cdef class OrderBookDelta(Data):
             sequence=sequence,
         )
 
-    # SAFETY: Do NOT deallocate the capsule here
-    # It is supposed to be deallocated by the creator
     @staticmethod
     cdef inline list capsule_to_list_c(object capsule):
+        # SAFETY: Do NOT deallocate the capsule here
+        # It is supposed to be deallocated by the creator
         cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
         cdef OrderBookDelta_t* ptr = <OrderBookDelta_t*>data.ptr
         cdef list deltas = []
@@ -2518,10 +2522,10 @@ cdef class OrderBookDepth10(Data):
             "ts_init": obj.ts_init,
         }
 
-    # SAFETY: Do NOT deallocate the capsule here
-    # It is supposed to be deallocated by the creator
     @staticmethod
     cdef inline list capsule_to_list_c(object capsule):
+        # SAFETY: Do NOT deallocate the capsule here
+        # It is supposed to be deallocated by the creator
         cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
         cdef OrderBookDepth10_t* ptr = <OrderBookDepth10_t*>data.ptr
         cdef list depths = []
@@ -2613,8 +2617,8 @@ cdef class OrderBookDepth10(Data):
 
         Parameters
         ----------
-        pyo3_quote : nautilus_pyo3.OrderBookDepth10
-            The pyo3 Rust order book depth to convert from.
+        pyo3_depths : nautilus_pyo3.OrderBookDepth10
+            The pyo3 Rust order book depths to convert from.
 
         Returns
         -------
@@ -3196,10 +3200,10 @@ cdef class QuoteTick(Data):
         )
         return quote
 
-    # SAFETY: Do NOT deallocate the capsule here
-    # It is supposed to be deallocated by the creator
     @staticmethod
     cdef inline list capsule_to_list_c(object capsule):
+        # SAFETY: Do NOT deallocate the capsule here
+        # It is supposed to be deallocated by the creator
         cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
         cdef QuoteTick_t* ptr = <QuoteTick_t*>data.ptr
         cdef list quotes = []
@@ -3687,10 +3691,10 @@ cdef class TradeTick(Data):
         )
         return trade
 
-    # SAFETY: Do NOT deallocate the capsule here
-    # It is supposed to be deallocated by the creator
     @staticmethod
     cdef inline list capsule_to_list_c(capsule):
+        # SAFETY: Do NOT deallocate the capsule here
+        # It is supposed to be deallocated by the creator
         cdef CVec* data = <CVec *>PyCapsule_GetPointer(capsule, NULL)
         cdef TradeTick_t* ptr = <TradeTick_t *>data.ptr
         cdef list trades = []
