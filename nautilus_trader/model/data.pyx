@@ -146,6 +146,24 @@ cpdef list capsule_to_list(capsule):
     return objects
 
 
+# SAFETY: Do NOT deallocate the capsule here
+cpdef Data capsule_to_data(capsule):
+    cdef Data_t* ptr = <Data_t*>PyCapsule_GetPointer(capsule, NULL)
+
+    if ptr.tag == Data_t_Tag.DELTA:
+        return OrderBookDelta.from_mem_c(ptr.delta)
+    elif ptr.tag == Data_t_Tag.DEPTH10:
+        return OrderBookDepth10.from_mem_c(ptr.depth10)
+    elif ptr.tag == Data_t_Tag.QUOTE:
+        return QuoteTick.from_mem_c(ptr.quote)
+    elif ptr.tag == Data_t_Tag.TRADE:
+        return TradeTick.from_mem_c(ptr.trade)
+    elif ptr.tag == Data_t_Tag.BAR:
+        return Bar.from_mem_c(ptr.bar)
+    else:
+        raise RuntimeError("Invalid data element to convert from `PyCapsule`")
+
+
 cdef class BarSpecification:
     """
     Represents a bar aggregation specification including a step, aggregation
@@ -976,19 +994,7 @@ cdef class Bar(Data):
 
     @staticmethod
     cdef Bar from_pyo3_c(pyo3_bar):
-        cdef uint8_t price_prec = pyo3_bar.open.precision
-        cdef uint8_t volume_prec = pyo3_bar.volume.precision
-
-        return Bar(
-            BarType.from_str_c(str(pyo3_bar.bar_type)),
-            Price.from_raw_c(pyo3_bar.open.raw, price_prec),
-            Price.from_raw_c(pyo3_bar.high.raw, price_prec),
-            Price.from_raw_c(pyo3_bar.low.raw, price_prec),
-            Price.from_raw_c(pyo3_bar.close.raw, price_prec),
-            Quantity.from_raw_c(pyo3_bar.volume.raw, volume_prec),
-            pyo3_bar.ts_event,
-            pyo3_bar.ts_init,
-        )
+        return <Bar>capsule_to_data(pyo3_bar.as_pycapsule())
 
     @staticmethod
     def from_dict(dict values) -> Bar:
@@ -1081,29 +1087,8 @@ cdef class Bar(Data):
         """
         cdef list[Bar] output = []
 
-        cdef BarType bar_type = None
-        cdef uint8_t price_prec = 0
-        cdef uint8_t volume_prec = 0
-
-        cdef:
-            Bar bar
         for pyo3_bar in pyo3_bars:
-            if bar_type is None:
-                bar_type = BarType.from_str_c(str(pyo3_bar.bar_type))
-                price_prec = pyo3_bar.open.precision
-                volume_prec = pyo3_bar.volume.precision
-
-            bar = Bar(
-                bar_type,
-                Price.from_raw_c(pyo3_bar.open.raw, price_prec),
-                Price.from_raw_c(pyo3_bar.high.raw, price_prec),
-                Price.from_raw_c(pyo3_bar.low.raw, price_prec),
-                Price.from_raw_c(pyo3_bar.close.raw, price_prec),
-                Quantity.from_raw_c(pyo3_bar.volume.raw, volume_prec),
-                pyo3_bar.ts_event,
-                pyo3_bar.ts_init,
-            )
-            output.append(bar)
+            output.append(Bar.from_pyo3_c(pyo3_bar))
 
         return output
 
@@ -1790,6 +1775,10 @@ cdef class OrderBookDelta(Data):
         return delta
 
     @staticmethod
+    cdef OrderBookDelta from_pyo3_c(pyo3_delta):
+        return <OrderBookDelta>capsule_to_data(pyo3_delta.as_pycapsule())
+
+    @staticmethod
     cdef OrderBookDelta from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef BookAction action = book_action_from_str(values["action"])
@@ -1823,23 +1812,6 @@ cdef class OrderBookDelta(Data):
             "ts_event": obj._mem.ts_event,
             "ts_init": obj._mem.ts_init,
         }
-
-    @staticmethod
-    cdef OrderBookDelta from_pyo3_c(pyo3_delta):
-        return OrderBookDelta.from_raw_c(
-            InstrumentId.from_str_c(pyo3_delta.instrument_id.value),
-            pyo3_delta.action.value,
-            pyo3_delta.order.side.value,
-            pyo3_delta.order.price.raw,
-            pyo3_delta.order.price.precision,
-            pyo3_delta.order.size.raw,
-            pyo3_delta.order.size.precision,
-            pyo3_delta.order.order_id,
-            pyo3_delta.flags,
-            pyo3_delta.sequence,
-            pyo3_delta.ts_event,
-            pyo3_delta.ts_init,
-        )
 
     @staticmethod
     cdef OrderBookDelta clear_c(
@@ -2089,34 +2061,8 @@ cdef class OrderBookDelta(Data):
         """
         cdef list[OrderBookDelta] output = []
 
-        cdef InstrumentId instrument_id = None
-        cdef uint8_t price_prec = 0
-        cdef uint8_t size_prec = 0
-
-        cdef:
-            OrderBookDelta delta
-            BookOrder book_order
         for pyo3_delta in pyo3_deltas:
-            if instrument_id is None:
-                instrument_id = InstrumentId.from_str_c(pyo3_delta.instrument_id.value)
-                price_prec = pyo3_delta.order.price.precision
-                size_prec = pyo3_delta.order.size.precision
-
-            delta = OrderBookDelta.from_raw_c(
-                instrument_id,
-                pyo3_delta.action.value,
-                pyo3_delta.order.side.value,
-                pyo3_delta.order.price.raw,
-                price_prec,
-                pyo3_delta.order.size.raw,
-                size_prec,
-                pyo3_delta.order.order_id,
-                pyo3_delta.flags,
-                pyo3_delta.sequence,
-                pyo3_delta.ts_event,
-                pyo3_delta.ts_init,
-            )
-            output.append(delta)
+            output.append(OrderBookDelta.from_pyo3_c(pyo3_delta))
 
         return output
 
@@ -2538,6 +2484,10 @@ cdef class OrderBookDepth10(Data):
         return depth
 
     @staticmethod
+    cdef OrderBookDepth10 from_pyo3_c(pyo3_depth10):
+        return <OrderBookDepth10>capsule_to_data(pyo3_depth10.as_pycapsule())
+
+    @staticmethod
     cdef OrderBookDepth10 from_dict_c(dict values):
         Condition.not_none(values, "values")
         return OrderBookDepth10(
@@ -2638,6 +2588,45 @@ cdef class OrderBookDepth10(Data):
 
         """
         return OrderBookDepth10.to_dict_c(obj)
+
+    @staticmethod
+    def from_pyo3(pyo3_depth) -> OrderBookDepth10:
+        """
+        Return a legacy Cython order book depth converted from the given pyo3 Rust object.
+
+        Parameters
+        ----------
+        pyo3_depth : nautilus_pyo3.OrderBookDepth10
+            The pyo3 Rust order book depth to convert from.
+
+        Returns
+        -------
+        OrderBookDepth10
+
+        """
+        return OrderBookDepth10.from_pyo3_c(pyo3_depth)
+
+    @staticmethod
+    def from_pyo3_list(pyo3_depths) -> list[OrderBookDepth10]:
+        """
+        Return legacy Cython order book depths converted from the given pyo3 Rust objects.
+
+        Parameters
+        ----------
+        pyo3_quote : nautilus_pyo3.OrderBookDepth10
+            The pyo3 Rust order book depth to convert from.
+
+        Returns
+        -------
+        list[OrderBookDepth10]
+
+        """
+        cdef list[OrderBookDepth10] output = []
+
+        for pyo3_depth in pyo3_depths:
+            output.append(OrderBookDepth10.from_pyo3_c(pyo3_depth))
+
+        return output
 
 
 cdef class VenueStatus(Data):
@@ -3139,6 +3128,18 @@ cdef class QuoteTick(Data):
         return self._mem.ts_init
 
     @staticmethod
+    cdef QuoteTick from_mem_c(QuoteTick_t mem):
+        cdef QuoteTick quote = QuoteTick.__new__(QuoteTick)
+        quote._mem = mem
+        return quote
+
+    @staticmethod
+    cdef QuoteTick from_pyo3_c(pyo3_quote):
+        # SAFETY: Do NOT deallocate the capsule here
+        # It is supposed to be deallocated by the creator
+        return <QuoteTick>capsule_to_data(pyo3_quote.as_pycapsule())
+
+    @staticmethod
     cdef QuoteTick from_dict_c(dict values):
         Condition.not_none(values, "values")
         return QuoteTick(
@@ -3194,28 +3195,6 @@ cdef class QuoteTick(Data):
             ts_init,
         )
         return quote
-
-    @staticmethod
-    cdef QuoteTick from_mem_c(QuoteTick_t mem):
-        cdef QuoteTick quote = QuoteTick.__new__(QuoteTick)
-        quote._mem = mem
-        return quote
-
-    @staticmethod
-    cdef QuoteTick from_pyo3_c(pyo3_quote):
-        return QuoteTick.from_raw_c(
-            InstrumentId.from_str_c(pyo3_quote.instrument_id.value),
-            pyo3_quote.bid_price.raw,
-            pyo3_quote.ask_price.raw,
-            pyo3_quote.bid_price.precision,
-            pyo3_quote.ask_price.precision,
-            pyo3_quote.bid_size.raw,
-            pyo3_quote.ask_size.raw,
-            pyo3_quote.bid_size.precision,
-            pyo3_quote.ask_size.precision,
-            pyo3_quote.ts_event,
-            pyo3_quote.ts_init,
-        )
 
     # SAFETY: Do NOT deallocate the capsule here
     # It is supposed to be deallocated by the creator
@@ -3376,36 +3355,8 @@ cdef class QuoteTick(Data):
         """
         cdef list[QuoteTick] output = []
 
-        cdef InstrumentId instrument_id = None
-        cdef uint8_t bid_prec = 0
-        cdef uint8_t ask_prec = 0
-        cdef uint8_t bid_size_prec = 0
-        cdef uint8_t ask_size_prec = 0
-
-        cdef:
-            QuoteTick quote
         for pyo3_quote in pyo3_quotes:
-            if instrument_id is None:
-                instrument_id = InstrumentId.from_str_c(pyo3_quote.instrument_id.value)
-                bid_prec = pyo3_quote.bid_price.precision
-                ask_prec = pyo3_quote.ask_price.precision
-                bid_size_prec = pyo3_quote.bid_size.precision
-                ask_size_prec = pyo3_quote.ask_size.precision
-
-            quote = QuoteTick.from_raw_c(
-                instrument_id,
-                pyo3_quote.bid_price.raw,
-                pyo3_quote.ask_price.raw,
-                bid_prec,
-                ask_prec,
-                pyo3_quote.bid_size.raw,
-                pyo3_quote.ask_size.raw,
-                bid_size_prec,
-                ask_size_prec,
-                pyo3_quote.ts_event,
-                pyo3_quote.ts_init,
-            )
-            output.append(quote)
+            output.append(QuoteTick.from_pyo3_c(pyo3_quote))
 
         return output
 
@@ -3699,6 +3650,18 @@ cdef class TradeTick(Data):
         return self._mem.ts_init
 
     @staticmethod
+    cdef TradeTick from_mem_c(TradeTick_t mem):
+        cdef TradeTick trade = TradeTick.__new__(TradeTick)
+        trade._mem = mem
+        return trade
+
+    @staticmethod
+    cdef TradeTick from_pyo3_c(pyo3_trade):
+        # SAFETY: Do NOT deallocate the capsule here
+        # It is supposed to be deallocated by the creator
+        return <TradeTick>capsule_to_data(pyo3_trade.as_pycapsule())
+
+    @staticmethod
     cdef TradeTick from_raw_c(
         InstrumentId instrument_id,
         int64_t price_raw,
@@ -3722,12 +3685,6 @@ cdef class TradeTick(Data):
             ts_event,
             ts_init,
         )
-        return trade
-
-    @staticmethod
-    cdef TradeTick from_mem_c(TradeTick_t mem):
-        cdef TradeTick trade = TradeTick.__new__(TradeTick)
-        trade._mem = mem
         return trade
 
     # SAFETY: Do NOT deallocate the capsule here
@@ -3798,20 +3755,6 @@ cdef class TradeTick(Data):
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
-
-    @staticmethod
-    cdef TradeTick from_pyo3_c(pyo3_trade):
-        return TradeTick.from_raw_c(
-            InstrumentId.from_str_c(pyo3_trade.instrument_id.value),
-            pyo3_trade.price.raw,
-            pyo3_trade.price.precision,
-            pyo3_trade.size.raw,
-            pyo3_trade.size.precision,
-            pyo3_trade.aggressor_side.value,
-            TradeId(pyo3_trade.trade_id.value),
-            pyo3_trade.ts_event,
-            pyo3_trade.ts_init,
-        )
 
     @staticmethod
     def from_raw(
@@ -3954,30 +3897,8 @@ cdef class TradeTick(Data):
         """
         cdef list[TradeTick] output = []
 
-        cdef InstrumentId instrument_id = None
-        cdef uint8_t price_prec = 0
-        cdef uint8_t size_prec = 0
-
-        cdef:
-            TradeTick trade
         for pyo3_trade in pyo3_trades:
-            if instrument_id is None:
-                instrument_id = InstrumentId.from_str_c(pyo3_trade.instrument_id.value)
-                price_prec = pyo3_trade.price.precision
-                size_prec = pyo3_trade.size.precision
-
-            trade = TradeTick.from_raw_c(
-                instrument_id,
-                pyo3_trade.price.raw,
-                price_prec,
-                pyo3_trade.size.raw,
-                size_prec,
-                pyo3_trade.aggressor_side.value,
-                TradeId(pyo3_trade.trade_id.value),
-                pyo3_trade.ts_event,
-                pyo3_trade.ts_init,
-            )
-            output.append(trade)
+            output.append(TradeTick.from_pyo3_c(pyo3_trade))
 
         return output
 

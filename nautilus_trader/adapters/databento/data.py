@@ -44,9 +44,9 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.identifiers import InstrumentId
@@ -840,12 +840,13 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     def _handle_record(
         self,
-        pyo3_data: Any,  # TODO: Define `Data` base class
+        pycapsule: object,
     ) -> None:
         # self._log.debug(f"Received {record}", LogColor.MAGENTA)
 
-        if isinstance(pyo3_data, nautilus_pyo3.OrderBookDelta):
-            data = OrderBookDelta.from_pyo3(pyo3_data)
+        data = capsule_to_data(pycapsule)
+
+        if isinstance(data, OrderBookDelta):
             instrument_id = data.instrument_id
             if DatabentoRecordFlags.F_LAST not in DatabentoRecordFlags(data.flags):
                 buffer = self._buffered_deltas[instrument_id]
@@ -856,17 +857,5 @@ class DatabentoDataClient(LiveMarketDataClient):
                 buffer.append(data)
                 data = OrderBookDeltas(instrument_id, deltas=buffer.copy())
                 buffer.clear()
-        elif isinstance(pyo3_data, nautilus_pyo3.OrderBookDepth10):
-            raise RuntimeError("MBP-10 not currently supported: pyo3 conversion function needed")
-            data = OrderBookDepth10.from_pyo3(pyo3_data)
-        elif isinstance(pyo3_data, nautilus_pyo3.QuoteTick):
-            data = QuoteTick.from_pyo3(pyo3_data)
-        elif isinstance(pyo3_data, nautilus_pyo3.TradeTick):
-            data = TradeTick.from_pyo3(pyo3_data)
-        elif isinstance(pyo3_data, nautilus_pyo3.Bar):
-            data = Bar.from_pyo3(pyo3_data)
-        else:
-            self._log.error(f"Unimplemented data type in handler: {pyo3_data}.")
-            return
 
         self._handle_data(data)
