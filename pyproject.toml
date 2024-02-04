@@ -142,6 +142,21 @@ in-place = true
 [tool.ruff]
 target-version = "py310"
 line-length = 150  # Reduce to 100
+
+exclude = [
+    ".benchmarks",
+    ".eggs",
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "build",
+    "dist",
+    "venv",
+]
+
+[tool.ruff.lint]
 select = [
     "C4",
     "E",
@@ -224,20 +239,6 @@ fixable = [
 ]
 
 unfixable = []
-
-exclude = [
-    ".benchmarks",
-    ".eggs",
-    ".git",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".venv",
-    "build",
-    "dist",
-    "venv",
-]
-
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
