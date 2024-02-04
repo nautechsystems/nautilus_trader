@@ -17,8 +17,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import msgspec
-
 from nautilus_trader.adapters.databento.enums import DatabentoStatisticType
 from nautilus_trader.adapters.databento.enums import DatabentoStatisticUpdateAction
 from nautilus_trader.core.data import Data
@@ -32,17 +30,6 @@ from nautilus_trader.model.objects import Quantity
 
 Dataset = str
 PublisherId = int
-
-
-class DatabentoPublisher(msgspec.Struct, frozen=True):
-    """
-    Represents a Databento publisher including dataset name and venue.
-    """
-
-    publisher_id: int
-    dataset: str
-    venue: str
-    description: str
 
 
 class DatabentoImbalance(Data):

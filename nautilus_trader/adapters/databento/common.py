@@ -13,71 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from pathlib import Path
-
 from nautilus_trader.adapters.databento.enums import DatabentoSchema
-from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import Venue
-
-
-def check_file_path(path: Path) -> None:
-    """
-    Check that the file at the given `path` exists and is not empty.
-
-    Parameters
-    ----------
-    path : Path
-        The file path to check.
-
-    Raises
-    ------
-    FileNotFoundError
-        If a file is not found at the given `path`.
-    ValueError
-        If the file at the given `path` is empty.
-
-    """
-    if not path.is_file() or not path.exists():
-        raise FileNotFoundError(path)
-
-    if path.stat().st_size == 0:
-        raise ValueError(
-            f"Empty file found at {path}",
-        )
-
-
-def nautilus_instrument_id_from_databento(
-    raw_symbol: str,
-    publisher: DatabentoPublisher,
-) -> InstrumentId:
-    """
-    Return the Nautilus `InstrumentId` parsed from the given `symbol` and `publisher`
-    details.
-
-    Parameters
-    ----------
-    raw_symbol : str
-        The raw symbol for the identifier.
-    publisher : DatebentoPublisher
-        The Databento publisher details for the identifier.
-
-    Returns
-    -------
-    InstrumentId
-
-    Notes
-    -----
-    The Databento `instrument_id` is an integer, where as a Nautilus `InstrumentId` is a
-    symbol and venue combination.
-
-    """
-    return InstrumentId(Symbol(raw_symbol), Venue(publisher.venue))
 
 
 def databento_schema_from_nautilus_bar_type(bar_type: BarType) -> DatabentoSchema:

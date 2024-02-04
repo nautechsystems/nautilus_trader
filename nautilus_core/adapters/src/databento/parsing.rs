@@ -203,20 +203,20 @@ pub fn parse_futures_contract_v1(
 ) -> Result<FuturesContract> {
     let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
     let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
-    let asset = unsafe { parse_raw_ptr_to_ustr(record.asset.as_ptr())? };
+    let underlying = unsafe { parse_raw_ptr_to_ustr(record.asset.as_ptr())? };
     let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
 
     FuturesContract::new(
         instrument_id,
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
-        asset,
+        underlying,
         record.activation,
         record.expiration,
         currency,
         currency.precision,
         parse_min_price_increment(record.min_price_increment, currency)?,
-        Quantity::new(record.contract_multiplier.into(), 0)?,
+        Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
         None,                   // TBD
@@ -234,15 +234,21 @@ pub fn parse_options_contract_v1(
 ) -> Result<OptionsContract> {
     let currency_str = unsafe { parse_raw_ptr_to_string(record.currency.as_ptr())? };
     let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
+    let asset_class_opt = match instrument_id.venue.value.as_str() {
+        "OPRA" => Some(AssetClass::Equity),
+        _ => {
+            let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+            asset_class
+        }
+    };
+    let underlying = unsafe { parse_raw_ptr_to_ustr(record.underlying.as_ptr())? };
     let currency = Currency::from_str(&currency_str)?;
-    let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
-    let lot_size = Quantity::new(1.0, 0)?; // TBD
 
     OptionsContract::new(
         instrument_id,
         instrument_id.symbol,
-        asset_class.unwrap_or(AssetClass::Commodity),
-        unsafe { parse_raw_ptr_to_ustr(record.asset.as_ptr())? },
+        asset_class_opt.unwrap_or(AssetClass::Commodity),
+        underlying,
         parse_option_kind(record.instrument_class)?,
         record.activation,
         record.expiration,
@@ -250,13 +256,13 @@ pub fn parse_options_contract_v1(
         currency,
         currency.precision,
         parse_min_price_increment(record.min_price_increment, currency)?,
-        Quantity::new(record.contract_multiplier.into(), 0)?,
-        lot_size,
-        None,           // TBD
-        None,           // TBD
-        None,           // TBD
-        None,           // TBD
-        record.ts_recv, // More accurate and reliable timestamp
+        Quantity::new(1.0, 0)?, // TBD
+        Quantity::new(1.0, 0)?, // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        record.ts_recv,         // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -656,20 +662,20 @@ pub fn parse_futures_contract(
 ) -> Result<FuturesContract> {
     let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
     let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
-    let asset = unsafe { parse_raw_ptr_to_ustr(record.asset.as_ptr())? };
+    let underlying = unsafe { parse_raw_ptr_to_ustr(record.asset.as_ptr())? };
     let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
 
     FuturesContract::new(
         instrument_id,
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
-        asset,
+        underlying,
         record.activation,
         record.expiration,
         currency,
         currency.precision,
         parse_min_price_increment(record.min_price_increment, currency)?,
-        Quantity::new(record.contract_multiplier.into(), 0)?,
+        Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
         None,                   // TBD
@@ -687,15 +693,21 @@ pub fn parse_options_contract(
 ) -> Result<OptionsContract> {
     let currency_str = unsafe { parse_raw_ptr_to_string(record.currency.as_ptr())? };
     let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
+    let asset_class_opt = match instrument_id.venue.value.as_str() {
+        "OPRA" => Some(AssetClass::Equity),
+        _ => {
+            let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+            asset_class
+        }
+    };
+    let underlying = unsafe { parse_raw_ptr_to_ustr(record.underlying.as_ptr())? };
     let currency = Currency::from_str(&currency_str)?;
-    let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
-    let lot_size = Quantity::new(1.0, 0)?; // TBD
 
     OptionsContract::new(
         instrument_id,
         instrument_id.symbol,
-        asset_class.unwrap_or(AssetClass::Commodity),
-        unsafe { parse_raw_ptr_to_ustr(record.asset.as_ptr())? },
+        asset_class_opt.unwrap_or(AssetClass::Commodity),
+        underlying,
         parse_option_kind(record.instrument_class)?,
         record.activation,
         record.expiration,
@@ -703,13 +715,13 @@ pub fn parse_options_contract(
         currency,
         currency.precision,
         parse_min_price_increment(record.min_price_increment, currency)?,
-        Quantity::new(record.contract_multiplier.into(), 0)?,
-        lot_size,
-        None,           // TBD
-        None,           // TBD
-        None,           // TBD
-        None,           // TBD
-        record.ts_recv, // More accurate and reliable timestamp
+        Quantity::new(1.0, 0)?, // TBD
+        Quantity::new(1.0, 0)?, // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        record.ts_recv,         // More accurate and reliable timestamp
         ts_init,
     )
 }
