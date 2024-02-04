@@ -35,8 +35,8 @@ pub struct TestOrderEventStubs;
 impl TestOrderEventStubs {
     #[allow(clippy::too_many_arguments)]
     pub fn order_filled<T: Order, I: Instrument>(
-        order: T,
-        instrument: I,
+        order: &T,
+        instrument: &I,
         strategy_id: Option<StrategyId>,
         trade_id: Option<TradeId>,
         position_id: Option<PositionId>,
@@ -77,7 +77,7 @@ impl TestOrderEventStubs {
             order.order_type(),
             last_qty,
             last_px,
-            *instrument.quote_currency(),
+            instrument.quote_currency(),
             liquidity_side,
             event,
             ts_filled_ns.unwrap_or(0),

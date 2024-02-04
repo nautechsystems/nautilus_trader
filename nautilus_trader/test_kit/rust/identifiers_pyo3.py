@@ -46,7 +46,7 @@ class TestIdProviderPyo3:
 
     @staticmethod
     def position_id() -> PositionId:
-        return PositionId("001")
+        return PositionId("P-123456")
 
     @staticmethod
     def btcusdt_binance_id() -> InstrumentId:

@@ -25,6 +25,7 @@ use nautilus_core::{
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use ustr::Ustr;
 
+use crate::instruments::Instrument;
 use crate::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     instruments::equity::Equity,
@@ -92,6 +93,18 @@ impl Equity {
             Some(isin) => Some(isin.as_str()),
             None => None,
         }
+    }
+
+    #[getter]
+    #[pyo3(name = "quote_currency")]
+    fn py_quote_currency(&self) -> Currency {
+        self.quote_currency()
+    }
+
+    #[getter]
+    #[pyo3(name = "base_currency")]
+    fn py_base_currenct(&self) -> u8 {
+        self.price_precision
     }
 
     #[staticmethod]

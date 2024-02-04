@@ -65,6 +65,27 @@ pub fn cash_account_state_million_usd() -> AccountState {
 }
 
 #[fixture]
+pub fn cash_account_state_million_usdt() -> AccountState {
+    AccountState::new(
+        account_id(),
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("1000000 USD"),
+            Money::from("0 USD"),
+            Money::from("1000000 USD"),
+        )
+        .unwrap()],
+        vec![],
+        true,
+        uuid4(),
+        0,
+        0,
+        Some(Currency::USD()),
+    )
+    .unwrap()
+}
+
+#[fixture]
 pub fn cash_account_state_multi() -> AccountState {
     let btc_account_balance = AccountBalance::new(
         Money::from("10 BTC"),

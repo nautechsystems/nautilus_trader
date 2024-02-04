@@ -167,11 +167,11 @@ impl BaseAccount {
 
         // Handle inverse
         if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false) {
-            Ok(Money::new(locked, *base_currency).unwrap())
+            Ok(Money::new(locked, base_currency).unwrap())
         } else if side == OrderSide::Buy {
-            Ok(Money::new(locked, *quote_currency).unwrap())
+            Ok(Money::new(locked, quote_currency).unwrap())
         } else if side == OrderSide::Sell {
-            Ok(Money::new(locked, *base_currency).unwrap())
+            Ok(Money::new(locked, base_currency).unwrap())
         } else {
             panic!("Invalid order side in `base_calculate_balance_locked`")
         }
@@ -194,24 +194,24 @@ impl BaseAccount {
         if fill.order_side == OrderSide::Buy {
             if let (Some(base_currency_value), None) = (base_currency, self.base_currency) {
                 pnls.insert(
-                    *base_currency_value,
-                    Money::new(fill_qty, *base_currency_value).unwrap(),
+                    base_currency_value,
+                    Money::new(fill_qty, base_currency_value).unwrap(),
                 );
             }
             pnls.insert(
-                *quote_currency,
-                Money::new(-(fill_qty * fill_px), *quote_currency).unwrap(),
+                quote_currency,
+                Money::new(-(fill_qty * fill_px), quote_currency).unwrap(),
             );
         } else if fill.order_side == OrderSide::Sell {
             if let (Some(base_currency_value), None) = (base_currency, self.base_currency) {
                 pnls.insert(
-                    *base_currency_value,
-                    Money::new(-fill_qty, *base_currency_value).unwrap(),
+                    base_currency_value,
+                    Money::new(-fill_qty, base_currency_value).unwrap(),
                 );
             }
             pnls.insert(
-                *quote_currency,
-                Money::new(fill_qty * fill_px, *quote_currency).unwrap(),
+                quote_currency,
+                Money::new(fill_qty * fill_px, quote_currency).unwrap(),
             );
         } else {
             panic!("Invalid order side in   base_calculate_pnls")
@@ -242,9 +242,9 @@ impl BaseAccount {
             panic!("Invalid liquid side {liquidity_side}")
         };
         if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false) {
-            Ok(Money::new(commission, *instrument.base_currency().unwrap()).unwrap())
+            Ok(Money::new(commission, instrument.base_currency().unwrap()).unwrap())
         } else {
-            Ok(Money::new(commission, *instrument.quote_currency()).unwrap())
+            Ok(Money::new(commission, instrument.quote_currency()).unwrap())
         }
     }
 }
