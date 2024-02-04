@@ -28,6 +28,7 @@ use nautilus_model::events::account::state::AccountState;
 use nautilus_model::events::order::filled::OrderFilled;
 use nautilus_model::identifiers::instrument_id::InstrumentId;
 use nautilus_model::instruments::Instrument;
+use nautilus_model::position::Position;
 use nautilus_model::types::balance::{AccountBalance, MarginBalance};
 use nautilus_model::types::currency::Currency;
 use nautilus_model::types::money::Money;
@@ -38,7 +39,6 @@ use rust_decimal::prelude::ToPrimitive;
 
 use crate::account::base::BaseAccount;
 use crate::account::Account;
-use crate::position::Position;
 
 #[derive(Debug)]
 #[cfg_attr(

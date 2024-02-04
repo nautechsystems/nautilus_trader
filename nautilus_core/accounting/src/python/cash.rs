@@ -26,6 +26,7 @@ use nautilus_model::instruments::currency_pair::CurrencyPair;
 use nautilus_model::instruments::equity::Equity;
 use nautilus_model::instruments::futures_contract::FuturesContract;
 use nautilus_model::instruments::options_contract::OptionsContract;
+use nautilus_model::position::Position;
 use nautilus_model::types::currency::Currency;
 use nautilus_model::types::money::Money;
 use nautilus_model::types::price::Price;
@@ -35,7 +36,6 @@ use pyo3::prelude::*;
 
 use crate::account::cash::CashAccount;
 use crate::account::Account;
-use crate::position::Position;
 
 #[pymethods]
 impl CashAccount {

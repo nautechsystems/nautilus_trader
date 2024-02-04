@@ -13,29 +13,30 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::position::Position;
 use nautilus_core::python::serialization::from_dict_pyo3;
 use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::enums::OrderSide;
-use nautilus_model::events::order::filled::OrderFilled;
-use nautilus_model::identifiers::client_order_id::ClientOrderId;
-use nautilus_model::identifiers::symbol::Symbol;
-use nautilus_model::identifiers::trade_id::TradeId;
-use nautilus_model::identifiers::venue::Venue;
-use nautilus_model::identifiers::venue_order_id::VenueOrderId;
-use nautilus_model::instruments::crypto_future::CryptoFuture;
-use nautilus_model::instruments::crypto_perpetual::CryptoPerpetual;
-use nautilus_model::instruments::currency_pair::CurrencyPair;
-use nautilus_model::instruments::equity::Equity;
-use nautilus_model::instruments::futures_contract::FuturesContract;
-use nautilus_model::instruments::options_contract::OptionsContract;
-use nautilus_model::types::money::Money;
-use nautilus_model::types::price::Price;
-use nautilus_model::types::quantity::Quantity;
 use pyo3::basic::CompareOp;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use rust_decimal::prelude::ToPrimitive;
+
+use crate::enums::OrderSide;
+use crate::events::order::filled::OrderFilled;
+use crate::identifiers::client_order_id::ClientOrderId;
+use crate::identifiers::symbol::Symbol;
+use crate::identifiers::trade_id::TradeId;
+use crate::identifiers::venue::Venue;
+use crate::identifiers::venue_order_id::VenueOrderId;
+use crate::instruments::crypto_future::CryptoFuture;
+use crate::instruments::crypto_perpetual::CryptoPerpetual;
+use crate::instruments::currency_pair::CurrencyPair;
+use crate::instruments::equity::Equity;
+use crate::instruments::futures_contract::FuturesContract;
+use crate::instruments::options_contract::OptionsContract;
+use crate::position::Position;
+use crate::types::money::Money;
+use crate::types::price::Price;
+use crate::types::quantity::Quantity;
 
 #[pymethods]
 impl Position {

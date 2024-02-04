@@ -22,6 +22,7 @@ use nautilus_model::enums::{AccountType, LiquiditySide, OrderSide};
 use nautilus_model::events::account::state::AccountState;
 use nautilus_model::events::order::filled::OrderFilled;
 use nautilus_model::instruments::Instrument;
+use nautilus_model::position::Position;
 use nautilus_model::types::balance::AccountBalance;
 use nautilus_model::types::currency::Currency;
 use nautilus_model::types::money::Money;
@@ -31,7 +32,6 @@ use pyo3::prelude::*;
 
 use crate::account::base::BaseAccount;
 use crate::account::Account;
-use crate::position::Position;
 
 #[derive(Debug)]
 #[cfg_attr(
@@ -188,7 +188,6 @@ mod tests {
     use crate::account::cash::CashAccount;
     use crate::account::stubs::*;
     use crate::account::Account;
-    use crate::position::Position;
     use nautilus_common::factories::OrderFactory;
     use nautilus_common::stubs::*;
     use nautilus_model::enums::{AccountType, LiquiditySide, OrderSide};
@@ -203,6 +202,7 @@ mod tests {
     use nautilus_model::instruments::stubs::*;
     use nautilus_model::orders::market::MarketOrder;
     use nautilus_model::orders::stubs::TestOrderEventStubs;
+    use nautilus_model::position::Position;
     use nautilus_model::types::currency::Currency;
     use nautilus_model::types::money::Money;
     use nautilus_model::types::price::Price;

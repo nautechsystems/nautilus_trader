@@ -17,12 +17,10 @@ use pyo3::{prelude::*, pymodule};
 
 pub mod cash;
 pub mod margin;
-pub mod position;
 
 #[pymodule]
 pub fn accounting(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::account::cash::CashAccount>()?;
     m.add_class::<crate::account::margin::MarginAccount>()?;
-    m.add_class::<crate::position::Position>()?;
     Ok(())
 }

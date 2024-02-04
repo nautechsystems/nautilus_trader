@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::position::Position;
 use nautilus_common::factories::OrderFactory;
 use nautilus_common::stubs::*;
 use nautilus_model::enums::OrderSide;
@@ -22,6 +21,7 @@ use nautilus_model::instruments::currency_pair::CurrencyPair;
 use nautilus_model::instruments::stubs::audusd_sim;
 use nautilus_model::orders::market::MarketOrder;
 use nautilus_model::orders::stubs::TestOrderEventStubs;
+use nautilus_model::position::Position;
 use nautilus_model::types::price::Price;
 use nautilus_model::types::quantity::Quantity;
 use rstest::fixture;

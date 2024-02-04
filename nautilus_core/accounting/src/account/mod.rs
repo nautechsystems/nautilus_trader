@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::position::Position;
 use anyhow::Result;
 use nautilus_model::enums::{LiquiditySide, OrderSide};
 use nautilus_model::events::account::state::AccountState;
 use nautilus_model::events::order::filled::OrderFilled;
 use nautilus_model::instruments::Instrument;
+use nautilus_model::position::Position;
 use nautilus_model::types::balance::AccountBalance;
 use nautilus_model::types::currency::Currency;
 use nautilus_model::types::money::Money;
