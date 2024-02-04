@@ -25,6 +25,7 @@ from nautilus_trader.core.nautilus_pyo3 import CryptoFuture
 from nautilus_trader.core.nautilus_pyo3 import CryptoPerpetual
 from nautilus_trader.core.nautilus_pyo3 import Currency
 from nautilus_trader.core.nautilus_pyo3 import CurrencyPair
+from nautilus_trader.core.nautilus_pyo3 import Equity
 from nautilus_trader.core.nautilus_pyo3 import LiquiditySide
 from nautilus_trader.core.nautilus_pyo3 import MarketOrder
 from nautilus_trader.core.nautilus_pyo3 import Money
@@ -431,7 +432,7 @@ class TestEventsProviderPyo3:
     @staticmethod
     def order_filled(
         order: MarketOrder,
-        instrument: CurrencyPair | CryptoPerpetual | CryptoFuture,
+        instrument: CurrencyPair | CryptoPerpetual | CryptoFuture | Equity,
         strategy_id: StrategyId | None = None,
         account_id: AccountId | None = None,
         venue_order_id: VenueOrderId | None = None,

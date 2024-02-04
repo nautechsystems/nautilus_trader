@@ -184,10 +184,10 @@ impl MarginAccount {
         use_quote_for_inverse: Option<bool>,
     ) -> Money {
         let notional = instrument.calculate_notional_value(quantity, price, use_quote_for_inverse);
-        let leverage = self.get_leverage(instrument.id());
+        let leverage = self.get_leverage(&instrument.id());
         if leverage == 0.0 {
             self.leverages
-                .insert(*instrument.id(), self.default_leverage);
+                .insert(instrument.id(), self.default_leverage);
         }
         let adjusted_notional = notional / leverage;
         let initial_margin_f64 = instrument.margin_init().to_f64().unwrap();
@@ -196,9 +196,9 @@ impl MarginAccount {
         margin += adjusted_notional * instrument.taker_fee().to_f64().unwrap() * 2.0;
         let use_quote_for_inverse = use_quote_for_inverse.unwrap_or(false);
         if instrument.is_inverse() && !use_quote_for_inverse {
-            Money::new(margin, *instrument.base_currency().unwrap()).unwrap()
+            Money::new(margin, instrument.base_currency().unwrap()).unwrap()
         } else {
-            Money::new(margin, *instrument.quote_currency()).unwrap()
+            Money::new(margin, instrument.quote_currency()).unwrap()
         }
     }
 
@@ -210,10 +210,10 @@ impl MarginAccount {
         use_quote_for_inverse: Option<bool>,
     ) -> Money {
         let notional = instrument.calculate_notional_value(quantity, price, use_quote_for_inverse);
-        let leverage = self.get_leverage(instrument.id());
+        let leverage = self.get_leverage(&instrument.id());
         if leverage == 0.0 {
             self.leverages
-                .insert(*instrument.id(), self.default_leverage);
+                .insert(instrument.id(), self.default_leverage);
         }
         let adjusted_notional = notional / leverage;
         let margin_maint_f64 = instrument.margin_maint().to_f64().unwrap();
@@ -222,9 +222,9 @@ impl MarginAccount {
         margin += adjusted_notional * instrument.taker_fee().to_f64().unwrap();
         let use_quote_for_inverse = use_quote_for_inverse.unwrap_or(false);
         if instrument.is_inverse() && !use_quote_for_inverse {
-            Money::new(margin, *instrument.base_currency().unwrap()).unwrap()
+            Money::new(margin, instrument.base_currency().unwrap()).unwrap()
         } else {
-            Money::new(margin, *instrument.quote_currency()).unwrap()
+            Money::new(margin, instrument.quote_currency()).unwrap()
         }
     }
 

@@ -2423,6 +2423,8 @@ dependencies = [
  "pyo3",
  "rstest",
  "rust_decimal",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

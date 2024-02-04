@@ -40,24 +40,43 @@ use crate::{
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct OrderFilled {
+    #[pyo3(get)]
     pub trader_id: TraderId,
+    #[pyo3(get)]
     pub strategy_id: StrategyId,
+    #[pyo3(get)]
     pub instrument_id: InstrumentId,
+    #[pyo3(get)]
     pub client_order_id: ClientOrderId,
+    #[pyo3(get)]
     pub venue_order_id: VenueOrderId,
+    #[pyo3(get)]
     pub account_id: AccountId,
+    #[pyo3(get)]
     pub trade_id: TradeId,
+    #[pyo3(get)]
     pub order_side: OrderSide,
+    #[pyo3(get)]
     pub order_type: OrderType,
+    #[pyo3(get)]
     pub last_qty: Quantity,
+    #[pyo3(get)]
     pub last_px: Price,
+    #[pyo3(get)]
     pub currency: Currency,
+    #[pyo3(get)]
     pub liquidity_side: LiquiditySide,
+    #[pyo3(get)]
     pub event_id: UUID4,
+    #[pyo3(get)]
     pub ts_event: UnixNanos,
+    #[pyo3(get)]
     pub ts_init: UnixNanos,
+    #[pyo3(get)]
     pub reconciliation: bool,
+    #[pyo3(get)]
     pub position_id: Option<PositionId>,
+    #[pyo3(get)]
     pub commission: Option<Money>,
 }
 
