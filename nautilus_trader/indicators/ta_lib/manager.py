@@ -90,6 +90,15 @@ class TAFunctionWrapper:
     def __repr__(self):
         return f"TAFunctionWrapper({','.join(map(str, self.output_names))})"
 
+    def __eq__(self, other):
+        return isinstance(other, TAFunctionWrapper) and self.output_names == other.output_names
+
+    def __hash__(self):
+        return hash(tuple(self.output_names))
+
+    def __reduce__(self):
+        return (self.from_str, (self.output_names[0],))
+
     @staticmethod
     def _get_outputs_names(name: str, fn: abstract.Function) -> list[str]:
         """
@@ -307,7 +316,7 @@ class TALibIndicatorManager(Indicator):
         self._log.debug(f"Setting indicators {indicators}")
         PyCondition().list_type(list(indicators), TAFunctionWrapper, "ta_functions")
 
-        self._indicators = set({hash(repr(obj)): obj for obj in indicators}.values())
+        self._indicators = set(indicators)
         output_names = list(self.input_names())
         lookback = 0
 
@@ -325,7 +334,7 @@ class TALibIndicatorManager(Indicator):
             for col in self.output_names
         ]
 
-        self._log.info(f"Registered indicators {indicators}")
+        self._log.info(f"Registered {len(indicators)} indicators, {indicators}")
 
     def __repr__(self) -> str:
         return f"{self.name}[{self._bar_type}]"
