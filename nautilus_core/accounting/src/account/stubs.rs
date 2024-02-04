@@ -15,17 +15,17 @@
 
 use nautilus_model::enums::LiquiditySide;
 use nautilus_model::events::account::state::AccountState;
-use rstest::fixture;
-
-use crate::account::cash::CashAccount;
-use crate::account::margin::MarginAccount;
-use crate::account::Account;
 use nautilus_model::events::account::stubs::*;
 use nautilus_model::instruments::Instrument;
 use nautilus_model::types::currency::Currency;
 use nautilus_model::types::money::Money;
 use nautilus_model::types::price::Price;
 use nautilus_model::types::quantity::Quantity;
+use rstest::fixture;
+
+use crate::account::cash::CashAccount;
+use crate::account::margin::MarginAccount;
+use crate::account::Account;
 
 #[fixture]
 pub fn margin_account(margin_account_state: AccountState) -> MarginAccount {
