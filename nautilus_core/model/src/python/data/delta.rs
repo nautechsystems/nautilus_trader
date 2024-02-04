@@ -26,11 +26,13 @@ use nautilus_core::{
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 
 use crate::{
-    data::{delta::OrderBookDelta, order::BookOrder},
+    data::{delta::OrderBookDelta, order::BookOrder, Data},
     enums::BookAction,
     identifiers::instrument_id::InstrumentId,
     python::PY_MODULE_MODEL,
 };
+
+use super::data_to_pycapsule;
 
 #[pymethods]
 impl OrderBookDelta {
@@ -81,6 +83,27 @@ impl OrderBookDelta {
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(OrderBookDelta))
+    }
+
+    /// Creates a `PyCapsule` containing a raw pointer to a `Data::Delta` object.
+    ///
+    /// This function takes the current object (assumed to be of a type that can be represented as
+    /// `Data::Delta`), and encapsulates a raw pointer to it within a `PyCapsule`.
+    ///
+    /// # Safety
+    ///
+    /// This function is safe as long as the following conditions are met:
+    /// - The `Data::Delta` object pointed to by the capsule must remain valid for the lifetime of the capsule.
+    /// - The consumer of the capsule must ensure proper handling to avoid dereferencing a dangling pointer.
+    ///
+    /// # Panics
+    ///
+    /// The function will panic if the `PyCapsule` creation fails, which can occur if the
+    /// `Data::Delta` object cannot be converted into a raw pointer.
+    ///
+    #[pyo3(name = "as_pycapsule")]
+    fn py_as_pycapsule(&self, py: Python<'_>) -> PyObject {
+        data_to_pycapsule(py, Data::Delta(*self))
     }
 
     /// Return a dictionary representation of the object.

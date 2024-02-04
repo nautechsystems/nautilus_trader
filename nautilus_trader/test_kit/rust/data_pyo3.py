@@ -56,19 +56,24 @@ class TestDataProviderPyo3:
         )
 
     @staticmethod
-    def trade_tick(
+    def order_book_depth10(
         instrument_id: InstrumentId | None = None,
-        price: float = 1987.0,
-        size: float = 0.1,
+        price: float = 100.0,
+        size: float = 10,
         ts_event: int = 0,
         ts_init: int = 0,
-    ) -> TradeTick:
-        return TradeTick(
+    ) -> OrderBookDelta:
+        return OrderBookDelta(
             instrument_id=instrument_id or TestIdProviderPyo3.ethusdt_binance_id(),
-            price=Price.from_str(str(price)),
-            size=Quantity.from_str(str(size)),
-            aggressor_side=AggressorSide.BUYER,
-            trade_id=TestIdProviderPyo3.trade_id(),
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.BUY,
+                price=Price.from_str(str(price)),
+                size=Quantity.from_str(str(size)),
+                order_id=0,
+            ),
+            flags=0,
+            sequence=0,
             ts_init=ts_init,
             ts_event=ts_event,
         )
@@ -91,6 +96,24 @@ class TestDataProviderPyo3:
             ask_size=Quantity.from_str(str(ask_size)),
             ts_event=ts_event,
             ts_init=ts_init,
+        )
+
+    @staticmethod
+    def trade_tick(
+        instrument_id: InstrumentId | None = None,
+        price: float = 1987.0,
+        size: float = 0.1,
+        ts_event: int = 0,
+        ts_init: int = 0,
+    ) -> TradeTick:
+        return TradeTick(
+            instrument_id=instrument_id or TestIdProviderPyo3.ethusdt_binance_id(),
+            price=Price.from_str(str(price)),
+            size=Quantity.from_str(str(size)),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TestIdProviderPyo3.trade_id(),
+            ts_init=ts_init,
+            ts_event=ts_event,
         )
 
     @staticmethod

@@ -31,6 +31,7 @@ use nautilus_model::data::Data;
 use nautilus_model::identifiers::instrument_id::InstrumentId;
 use nautilus_model::identifiers::symbol::Symbol;
 use nautilus_model::identifiers::venue::Venue;
+use nautilus_model::python::data::data_to_pycapsule;
 use pyo3::prelude::*;
 use time::OffsetDateTime;
 use tokio::sync::Mutex;
@@ -212,7 +213,6 @@ impl DatabentoLiveClient {
 
                         match result {
                             Ok(instrument) => {
-                                // TODO: Optimize this by reducing the frequency of acquiring the GIL if possible
                                 Python::with_gil(|py| {
                                     let py_obj =
                                         convert_instrument_to_pyobject(py, instrument).unwrap();
@@ -239,24 +239,16 @@ impl DatabentoLiveClient {
                         let instrument_id = InstrumentId::new(symbol, venue);
                         let ts_init = clock.get_time_ns();
 
-                        let (data, _) =
+                        let (data, maybe_data) =
                             parse_record(&record, rtype, instrument_id, 2, Some(ts_init))
                                 .map_err(to_pyvalue_err)?;
 
-                        // TODO: Optimize this by reducing the frequency of acquiring the GIL if possible
                         Python::with_gil(|py| {
-                            let py_obj = match data {
-                                Data::Delta(delta) => delta.into_py(py),
-                                Data::Depth10(depth) => depth.into_py(py),
-                                Data::Quote(quote) => quote.into_py(py),
-                                Data::Trade(trade) => trade.into_py(py),
-                                _ => panic!("Invalid data element, was {data:?}"),
-                            };
+                            call_python_with_data(py, &callback, data);
 
-                            match callback.call1(py, (py_obj,)) {
-                                Ok(_) => {}
-                                Err(e) => eprintln!("Error on callback, {e:?}"), // Just print error for now
-                            };
+                            if let Some(data) = maybe_data {
+                                call_python_with_data(py, &callback, data);
+                            }
                         });
                     }
                 }
@@ -276,4 +268,12 @@ impl DatabentoLiveClient {
             Ok(())
         })
     }
+}
+
+fn call_python_with_data(py: Python, callback: &PyObject, data: Data) {
+    let py_obj = data_to_pycapsule(py, data);
+    match callback.call1(py, (py_obj,)) {
+        Ok(_) => {}
+        Err(e) => eprintln!("Error on callback, {e:?}"), // Just print error for now
+    };
 }
