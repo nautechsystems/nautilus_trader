@@ -16,12 +16,8 @@
 from os import PathLike
 from pathlib import Path
 
-import msgspec
-
-from nautilus_trader.adapters.databento.common import check_file_path
 from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
 from nautilus_trader.adapters.databento.enums import DatabentoSchema
-from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
@@ -31,7 +27,6 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
@@ -72,16 +67,11 @@ class DatabentoDataLoader:
     """
 
     def __init__(self) -> None:
-        self._publishers: dict[int, DatabentoPublisher] = {}
-        self._instruments: dict[InstrumentId, Instrument] = {}
-
         self._pyo3_loader: nautilus_pyo3.DatabentoDataLoader = nautilus_pyo3.DatabentoDataLoader(
             str(PUBLISHERS_PATH),
         )
-        self.load_publishers(path=PUBLISHERS_PATH)
 
-    @property
-    def publishers(self) -> dict[int, DatabentoPublisher]:
+    def get_publishers(self) -> dict[int, nautilus_pyo3.DatabentoPublisher]:
         """
         Return the internal Databento publishers currently held by the loader.
 
@@ -89,12 +79,8 @@ class DatabentoDataLoader:
         -------
         dict[int, DatabentoPublisher]
 
-        Notes
-        -----
-        Returns a copy of the internal dictionary.
-
         """
-        return self._publishers
+        return self._pyo3_loader.get_publishers()
 
     def get_dataset_for_venue(self, venue: Venue) -> str:
         """
@@ -115,7 +101,7 @@ class DatabentoDataLoader:
             If `venue` is not in the map of publishers.
 
         """
-        dataset = self._venue_dataset.get(venue)
+        dataset = self._pyo3_loader.get_dataset_for_venue(nautilus_pyo3.Venue(venue.value))
         if dataset is None:
             raise ValueError(f"No Databento dataset for venue '{venue}'")
 
@@ -131,24 +117,16 @@ class DatabentoDataLoader:
             The path for the publishers data to load.
 
         """
-        path = Path(path)
-        check_file_path(path)
+        self._pyo3_loader.load_publishers(str(path))
 
-        decoder = msgspec.json.Decoder(list[DatabentoPublisher])
-        publishers: list[DatabentoPublisher] = decoder.decode(path.read_bytes())
-
-        self._publishers = {p.publisher_id: p for p in publishers}
-        self._venue_dataset: dict[Venue, str] = {Venue(p.venue): p.dataset for p in publishers}
-
-    def load_from_file_pyo3(
+    def from_dbn_file(
         self,
         path: PathLike[str] | str,
         instrument_id: InstrumentId | None = None,
-        as_legacy_cython: bool = False,
+        as_legacy_cython: bool = True,
     ) -> list[Data]:
         """
-        Return a list of pyo3 data objects decoded from the DBN file at the given
-        `path`.
+        Return a list of data objects decoded from the DBN file at the given `path`.
 
         Parameters
         ----------
@@ -159,8 +137,10 @@ class DatabentoDataLoader:
             as all records will have their symbology overridden with the given Nautilus identifier.
             This option should only be used if the instrument ID is definitely know (for instance
             if all records in a file are guarantted to be for the same instrument).
-        as_legacy_cython : bool, False
+        as_legacy_cython : bool, True
             If data should be converted to 'legacy Cython' objects.
+            You would typically only set this False if passing the objects
+            directly to a data catalog to be written out to Nautilus Parquet format.
 
         Returns
         -------
