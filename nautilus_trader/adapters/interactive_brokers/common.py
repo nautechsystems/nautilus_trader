@@ -19,7 +19,7 @@ from typing import Final, Literal
 from ibapi.common import UNSET_DECIMAL
 from ibapi.tag_value import TagValue
 
-from nautilus_trader.config.common import NautilusConfig
+from nautilus_trader.config import NautilusConfig
 from nautilus_trader.model.identifiers import Venue
 
 

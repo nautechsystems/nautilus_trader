@@ -29,10 +29,10 @@ from concurrent.futures import Executor
 
 import cython
 
+from nautilus_trader.common.config import ActorConfig
+from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.common.executor import ActorExecutor
 from nautilus_trader.common.executor import TaskId
-from nautilus_trader.config import ActorConfig
-from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.persistence.writer import generate_signal_class
 
 from cpython.datetime cimport datetime

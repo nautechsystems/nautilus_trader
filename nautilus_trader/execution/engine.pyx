@@ -32,8 +32,8 @@ just need to override the `execute` and `process` methods.
 import time
 from decimal import Decimal
 
-from nautilus_trader.config import ExecEngineConfig
-from nautilus_trader.config.error import InvalidConfiguration
+from nautilus_trader.common.config import InvalidConfiguration
+from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import ExecutionReport
 

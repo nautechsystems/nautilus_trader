@@ -17,7 +17,7 @@ from collections import deque
 from decimal import Decimal
 from heapq import heappush
 
-from nautilus_trader.config.error import InvalidConfiguration
+from nautilus_trader.common.config import InvalidConfiguration
 
 from libc.stdint cimport uint64_t
 

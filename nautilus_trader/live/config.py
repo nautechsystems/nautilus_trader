@@ -15,17 +15,23 @@
 
 from __future__ import annotations
 
+import msgspec
+
 from nautilus_trader.common import Environment
-from nautilus_trader.config.common import DataEngineConfig
-from nautilus_trader.config.common import ExecEngineConfig
-from nautilus_trader.config.common import InstrumentProviderConfig
-from nautilus_trader.config.common import NautilusConfig
-from nautilus_trader.config.common import NautilusKernelConfig
-from nautilus_trader.config.common import RiskEngineConfig
-from nautilus_trader.config.validation import NonNegativeInt
-from nautilus_trader.config.validation import PositiveFloat
-from nautilus_trader.config.validation import PositiveInt
+from nautilus_trader.common.config import InstrumentProviderConfig
+from nautilus_trader.common.config import NautilusConfig
+from nautilus_trader.common.config import NonNegativeInt
+from nautilus_trader.common.config import PositiveFloat
+from nautilus_trader.common.config import PositiveInt
+from nautilus_trader.common.config import resolve_config_path
+from nautilus_trader.common.config import resolve_path
+from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.data.config import DataEngineConfig
+from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.risk.config import RiskEngineConfig
+from nautilus_trader.system.config import NautilusKernelConfig
+from nautilus_trader.trading.config import ImportableControllerConfig
 
 
 class LiveDataEngineConfig(DataEngineConfig, frozen=True):
@@ -153,6 +159,31 @@ class LiveExecClientConfig(NautilusConfig, frozen=True):
 
     instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
     routing: RoutingConfig = RoutingConfig()
+
+
+class ControllerConfig(NautilusConfig, kw_only=True, frozen=True):
+    """
+    The base model for all trading strategy configurations.
+    """
+
+
+class ControllerFactory:
+    """
+    Provides controller creation from importable configurations.
+    """
+
+    @staticmethod
+    def create(
+        config: ImportableControllerConfig,
+        trader,
+    ):
+        from nautilus_trader.trading.trader import Trader
+
+        PyCondition.type(trader, Trader, "trader")
+        controller_cls = resolve_path(config.controller_path)
+        config_cls = resolve_config_path(config.config_path)
+        config = config_cls.parse(msgspec.json.encode(config.config))
+        return controller_cls(config=config, trader=trader)
 
 
 class TradingNodeConfig(NautilusKernelConfig, frozen=True):

@@ -23,7 +23,7 @@ from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
-from nautilus_trader.config.common import NautilusConfig
+from nautilus_trader.config import NautilusConfig
 
 
 class InteractiveBrokersGatewayConfig(NautilusConfig, frozen=True):

@@ -22,8 +22,8 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.config.common import StrategyConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.book import OrderBook
 

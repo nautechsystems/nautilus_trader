@@ -33,8 +33,8 @@ import pandas as pd
 import pyarrow
 import pytz
 
-from nautilus_trader.config.common import NautilusConfig
-from nautilus_trader.config.error import InvalidConfiguration
+from nautilus_trader.common.config import InvalidConfiguration
+from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.core.rust.common import ComponentState as PyComponentState
 
 cimport numpy as np
@@ -2247,7 +2247,7 @@ cdef class MessageBus:
         config: Any | None = None,
     ):
         # Temporary fix for import error
-        from nautilus_trader.config.common import MessageBusConfig
+        from nautilus_trader.common.config import MessageBusConfig
 
         if instance_id is None:
             instance_id = UUID4()
