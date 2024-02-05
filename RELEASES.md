@@ -6,7 +6,7 @@ Released on TBD (UTC).
 - Refined logging system module and writers in Rust, thanks @ayush-sb and @twitu
 
 ### Breaking Changes
-None
+- Reorganized configuration objects (separated into a `config` module per subpackage, with re-exports from `nautilus_trader.config`)
 
 ### Fixes
 - Fixed `BacktestEngine` and `Trader` disposal (now properly releasing resources), thanks for reporting @davidsblom
