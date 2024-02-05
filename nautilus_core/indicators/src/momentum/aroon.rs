@@ -16,15 +16,11 @@
 use std::fmt::{Debug, Display};
 
 use anyhow::Result;
-use nautilus_model::{
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
-};
+use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::prelude::*;
 use std::collections::VecDeque;
 
-use crate::{
-    indicator::{Indicator},
-};
+use crate::indicator::Indicator;
 
 /// The Aroon Oscillator calculates the Aroon Up and Aroon Down indicators to
 /// determine if an instrument is trending, and the strength of the trend.
@@ -54,9 +50,13 @@ impl Indicator for AroonOscillator {
         stringify!(AroonOscillator).to_string()
     }
 
-    fn has_inputs(&self) -> bool { self.has_inputs }
+    fn has_inputs(&self) -> bool {
+        self.has_inputs
+    }
 
-    fn is_initialized(&self) -> bool { self.is_initialized }
+    fn is_initialized(&self) -> bool {
+        self.is_initialized
+    }
 
     fn handle_quote_tick(&mut self, _tick: &QuoteTick) {
         // Function body intentionally left blank.
@@ -109,19 +109,38 @@ impl AroonOscillator {
         self.low_inputs.push_front(low);
 
         self.increment_count();
-        if self.is_initialized {  // Makes sure we calculate with stable period
+        if self.is_initialized {
+            // Makes sure we calculate with stable period
             self.calculate_aroon();
         }
     }
 
     fn calculate_aroon(&mut self) {
-        let periods_since_high = self.high_inputs.iter().enumerate().fold((0, std::f64::MIN), |(max_idx, max_val), (idx, &val)| {
-            if val > max_val { (idx, val) } else { (max_idx, max_val) }
-        }).0;
+        let periods_since_high = self
+            .high_inputs
+            .iter()
+            .enumerate()
+            .fold((0, std::f64::MIN), |(max_idx, max_val), (idx, &val)| {
+                if val > max_val {
+                    (idx, val)
+                } else {
+                    (max_idx, max_val)
+                }
+            })
+            .0;
 
-        let periods_since_low = self.low_inputs.iter().enumerate().fold((0, std::f64::MAX), |(min_idx, min_val), (idx, &val)| {
-            if val < min_val { (idx, val) } else { (min_idx, min_val) }
-        }).0;
+        let periods_since_low = self
+            .low_inputs
+            .iter()
+            .enumerate()
+            .fold((0, std::f64::MAX), |(min_idx, min_val), (idx, &val)| {
+                if val < min_val {
+                    (idx, val)
+                } else {
+                    (min_idx, min_val)
+                }
+            })
+            .0;
 
         self.aroon_up = 100.0 * ((self.period - periods_since_high) as f64 / self.period as f64);
         self.aroon_down = 100.0 * ((self.period - periods_since_low) as f64 / self.period as f64);

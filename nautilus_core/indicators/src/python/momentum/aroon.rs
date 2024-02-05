@@ -14,14 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::{
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
-};
+use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::prelude::*;
 
-use crate::{
-    indicator::Indicator, momentum::aroon::AroonOscillator,
-};
+use crate::{indicator::Indicator, momentum::aroon::AroonOscillator};
 
 #[pymethods]
 impl AroonOscillator {
@@ -44,7 +40,9 @@ impl AroonOscillator {
 
     #[getter]
     #[pyo3(name = "has_inputs")]
-    fn py_has_inputs(&self) -> bool { self.has_inputs() }
+    fn py_has_inputs(&self) -> bool {
+        self.has_inputs()
+    }
 
     #[getter]
     #[pyo3(name = "count")]
@@ -97,7 +95,9 @@ impl AroonOscillator {
     }
 
     #[pyo3(name = "reset")]
-    fn py_reset(&mut self) { self.reset() }
+    fn py_reset(&mut self) {
+        self.reset()
+    }
 
     fn __repr__(&self) -> String {
         format!("AroonOscillator({})", self.period)
