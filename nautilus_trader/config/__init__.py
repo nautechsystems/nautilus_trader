@@ -19,49 +19,67 @@ All configurations inherit from :class:`msgspec.Struct`.
 
 """
 
-from nautilus_trader.config.backtest import BacktestDataConfig
-from nautilus_trader.config.backtest import BacktestEngineConfig
-from nautilus_trader.config.backtest import BacktestRunConfig
-from nautilus_trader.config.backtest import BacktestVenueConfig
-from nautilus_trader.config.common import ActorConfig
-from nautilus_trader.config.common import ActorFactory
-from nautilus_trader.config.common import CacheConfig
-from nautilus_trader.config.common import DatabaseConfig
-from nautilus_trader.config.common import DataCatalogConfig
-from nautilus_trader.config.common import DataEngineConfig
-from nautilus_trader.config.common import ExecAlgorithmConfig
-from nautilus_trader.config.common import ExecAlgorithmFactory
-from nautilus_trader.config.common import ExecEngineConfig
-from nautilus_trader.config.common import ImportableActorConfig
-from nautilus_trader.config.common import ImportableConfig
-from nautilus_trader.config.common import ImportableExecAlgorithmConfig
-from nautilus_trader.config.common import ImportableStrategyConfig
-from nautilus_trader.config.common import InstrumentProviderConfig
-from nautilus_trader.config.common import LoggingConfig
-from nautilus_trader.config.common import MessageBusConfig
-from nautilus_trader.config.common import NautilusKernelConfig
-from nautilus_trader.config.common import OrderEmulatorConfig
-from nautilus_trader.config.common import RiskEngineConfig
-from nautilus_trader.config.common import StrategyConfig
-from nautilus_trader.config.common import StrategyFactory
-from nautilus_trader.config.common import StreamingConfig
-from nautilus_trader.config.live import LiveDataClientConfig
-from nautilus_trader.config.live import LiveDataEngineConfig
-from nautilus_trader.config.live import LiveExecClientConfig
-from nautilus_trader.config.live import LiveExecEngineConfig
-from nautilus_trader.config.live import LiveRiskEngineConfig
-from nautilus_trader.config.live import RoutingConfig
-from nautilus_trader.config.live import TradingNodeConfig
+from nautilus_trader.backtest.config import BacktestDataConfig
+from nautilus_trader.backtest.config import BacktestEngineConfig
+from nautilus_trader.backtest.config import BacktestRunConfig
+from nautilus_trader.backtest.config import BacktestVenueConfig
+from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.common.config import ActorConfig
+from nautilus_trader.common.config import ActorFactory
+from nautilus_trader.common.config import DatabaseConfig
+from nautilus_trader.common.config import ImportableActorConfig
+from nautilus_trader.common.config import ImportableConfig
+from nautilus_trader.common.config import InstrumentProviderConfig
+from nautilus_trader.common.config import InvalidConfiguration
+from nautilus_trader.common.config import LoggingConfig
+from nautilus_trader.common.config import MessageBusConfig
+from nautilus_trader.common.config import NautilusConfig
+from nautilus_trader.common.config import NonNegativeFloat
+from nautilus_trader.common.config import NonNegativeInt
+from nautilus_trader.common.config import OrderEmulatorConfig
+from nautilus_trader.common.config import PositiveFloat
+from nautilus_trader.common.config import PositiveInt
+from nautilus_trader.common.config import msgspec_decoding_hook
+from nautilus_trader.common.config import msgspec_encoding_hook
+from nautilus_trader.common.config import register_config_decoding
+from nautilus_trader.common.config import register_config_encoding
+from nautilus_trader.common.config import resolve_config_path
+from nautilus_trader.common.config import resolve_path
+from nautilus_trader.common.config import tokenize_config
+from nautilus_trader.data.config import DataEngineConfig
+from nautilus_trader.execution.config import ExecAlgorithmConfig
+from nautilus_trader.execution.config import ExecAlgorithmFactory
+from nautilus_trader.execution.config import ExecEngineConfig
+from nautilus_trader.execution.config import ImportableExecAlgorithmConfig
+from nautilus_trader.live.config import ControllerConfig
+from nautilus_trader.live.config import ControllerFactory
+from nautilus_trader.live.config import ImportableControllerConfig
+from nautilus_trader.live.config import LiveDataClientConfig
+from nautilus_trader.live.config import LiveDataEngineConfig
+from nautilus_trader.live.config import LiveExecClientConfig
+from nautilus_trader.live.config import LiveExecEngineConfig
+from nautilus_trader.live.config import LiveRiskEngineConfig
+from nautilus_trader.live.config import RoutingConfig
+from nautilus_trader.live.config import TradingNodeConfig
+from nautilus_trader.persistence.config import DataCatalogConfig
+from nautilus_trader.persistence.config import StreamingConfig
+from nautilus_trader.risk.config import RiskEngineConfig
+from nautilus_trader.system.config import NautilusKernelConfig
+from nautilus_trader.trading.config import ImportableStrategyConfig
+from nautilus_trader.trading.config import StrategyConfig
+from nautilus_trader.trading.config import StrategyFactory
 
 
 __all__ = [
+    "ActorConfig",
+    "ActorFactory",
     "BacktestDataConfig",
     "BacktestEngineConfig",
     "BacktestRunConfig",
     "BacktestVenueConfig",
-    "ActorConfig",
-    "ActorFactory",
     "CacheConfig",
+    "ControllerConfig",
+    "ControllerFactory",
     "DatabaseConfig",
     "DataCatalogConfig",
     "DataEngineConfig",
@@ -69,13 +87,20 @@ __all__ = [
     "ExecAlgorithmFactory",
     "ExecEngineConfig",
     "ImportableActorConfig",
+    "ImportableControllerConfig",
     "ImportableExecAlgorithmConfig",
     "ImportableStrategyConfig",
     "InstrumentProviderConfig",
+    "InvalidConfiguration",
     "LoggingConfig",
     "MessageBusConfig",
+    "NautilusConfig",
     "NautilusKernelConfig",
+    "NonNegativeInt",
+    "NonNegativeFloat",
     "OrderEmulatorConfig",
+    "PositiveInt",
+    "PositiveFloat",
     "RiskEngineConfig",
     "StrategyConfig",
     "StrategyFactory",
@@ -88,4 +113,11 @@ __all__ = [
     "LiveRiskEngineConfig",
     "RoutingConfig",
     "TradingNodeConfig",
+    "msgspec_encoding_hook",
+    "msgspec_decoding_hook",
+    "register_config_encoding",
+    "register_config_decoding",
+    "resolve_path",
+    "resolve_config_path",
+    "tokenize_config",
 ]

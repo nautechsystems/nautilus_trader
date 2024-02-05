@@ -20,7 +20,7 @@ from decimal import Decimal
 
 from nautilus_trader.common.component import TimeEvent
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.config.common import ExecAlgorithmConfig
+from nautilus_trader.config import ExecAlgorithmConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.execution.algorithm import ExecAlgorithm
 from nautilus_trader.model.enums import OrderType

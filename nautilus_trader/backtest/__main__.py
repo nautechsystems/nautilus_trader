@@ -19,7 +19,7 @@ import msgspec
 
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import BacktestRunConfig
-from nautilus_trader.config.common import msgspec_decoding_hook
+from nautilus_trader.config import msgspec_decoding_hook
 
 
 @click.command()

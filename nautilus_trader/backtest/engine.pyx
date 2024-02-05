@@ -21,13 +21,13 @@ import pandas as pd
 from nautilus_trader.accounting.error import AccountError
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common import Environment
+from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import CacheConfig
-from nautilus_trader.config import DataEngineConfig
-from nautilus_trader.config import ExecEngineConfig
-from nautilus_trader.config import RiskEngineConfig
-from nautilus_trader.config.error import InvalidConfiguration
+from nautilus_trader.data.config import DataEngineConfig
+from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.model import NAUTILUS_PYO3_DATA_TYPES
+from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.system.kernel import NautilusKernel
 from nautilus_trader.trading.trader import Trader
 

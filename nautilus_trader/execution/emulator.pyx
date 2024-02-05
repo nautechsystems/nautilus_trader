@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.config.common import OrderEmulatorConfig
+from nautilus_trader.common.config import OrderEmulatorConfig
 
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t

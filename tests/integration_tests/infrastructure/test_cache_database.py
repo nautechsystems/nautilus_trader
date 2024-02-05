@@ -26,9 +26,9 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.cache.database import CacheDatabaseAdapter
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
+from nautilus_trader.config import CacheConfig
+from nautilus_trader.config import DatabaseConfig
 from nautilus_trader.config import LoggingConfig
-from nautilus_trader.config.common import CacheConfig
-from nautilus_trader.config.common import DatabaseConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross

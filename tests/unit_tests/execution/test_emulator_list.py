@@ -26,9 +26,9 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
+from nautilus_trader.config import OrderEmulatorConfig
 from nautilus_trader.config import RiskEngineConfig
-from nautilus_trader.config.common import OrderEmulatorConfig
-from nautilus_trader.config.common import StrategyConfig
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.engine import ExecutionEngine

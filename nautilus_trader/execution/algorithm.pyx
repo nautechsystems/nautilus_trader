@@ -15,8 +15,8 @@
 
 from typing import Any
 
-from nautilus_trader.config import ExecAlgorithmConfig
-from nautilus_trader.config import ImportableExecAlgorithmConfig
+from nautilus_trader.execution.config import ExecAlgorithmConfig
+from nautilus_trader.execution.config import ImportableExecAlgorithmConfig
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint8_t
