@@ -379,14 +379,17 @@ impl Position {
     pub fn symbol(&self) -> Symbol {
         self.instrument_id.symbol
     }
+
     #[must_use]
     pub fn venue(&self) -> Venue {
         self.instrument_id.venue
     }
+
     #[must_use]
     pub fn event_count(&self) -> usize {
         self.events.len()
     }
+
     #[must_use]
     pub fn client_order_ids(&self) -> Vec<ClientOrderId> {
         // first to hash set to remove duplicate,
@@ -418,6 +421,19 @@ impl Position {
     }
 
     #[must_use]
+    pub fn trade_ids(&self) -> Vec<TradeId> {
+        let mut result = self
+            .events
+            .iter()
+            .map(|event| event.trade_id)
+            .collect::<HashSet<TradeId>>()
+            .into_iter()
+            .collect::<Vec<TradeId>>();
+        result.sort_unstable();
+        result
+    }
+
+    #[must_use]
     pub fn notional_value(&self, last: Price) -> Money {
         if self.is_inverse {
             Money::new(
@@ -433,26 +449,38 @@ impl Position {
             .unwrap()
         }
     }
+
+    #[must_use]
+    pub fn last_event(&self) -> OrderFilled {
+        // SAFETY: Position invariant guarantees at least one event
+        *self.events.last().unwrap()
+    }
+
     #[must_use]
     pub fn last_trade_id(&self) -> Option<TradeId> {
         self.trade_ids.last().copied()
     }
+
     #[must_use]
     pub fn is_long(&self) -> bool {
         self.side == PositionSide::Long
     }
+
     #[must_use]
     pub fn is_short(&self) -> bool {
         self.side == PositionSide::Short
     }
+
     #[must_use]
-    pub fn is_opened(&self) -> bool {
+    pub fn is_open(&self) -> bool {
         self.side != PositionSide::Flat && self.ts_closed.is_none()
     }
+
     #[must_use]
     pub fn is_closed(&self) -> bool {
         self.side == PositionSide::Flat && self.ts_closed.is_some()
     }
+
     #[must_use]
     pub fn commissions(&self) -> Vec<Money> {
         self.commissions.values().copied().collect()
@@ -737,7 +765,7 @@ impl Display for Position {
 //         assert_eq!(position.events.len(), 1);
 //         assert!(position.is_long());
 //         assert!(!position.is_short());
-//         assert!(position.is_opened());
+//         assert!(position.is_open());
 //         assert!(!position.is_closed());
 //         assert_eq!(position.realized_return, 0.0);
 //         assert_eq!(
@@ -820,7 +848,7 @@ impl Display for Position {
 //         assert_eq!(position.events.len(), 1);
 //         assert!(!position.is_long());
 //         assert!(position.is_short());
-//         assert!(position.is_opened());
+//         assert!(position.is_open());
 //         assert!(!position.is_closed());
 //         assert_eq!(position.realized_return, 0.0);
 //         assert_eq!(
@@ -883,7 +911,7 @@ impl Display for Position {
 //         assert_eq!(position.ts_opened, 0);
 //         assert!(position.is_long());
 //         assert!(!position.is_short());
-//         assert!(position.is_opened());
+//         assert!(position.is_open());
 //         assert!(!position.is_closed());
 //         assert_eq!(position.realized_return, 0.0);
 //         assert_eq!(
@@ -959,7 +987,7 @@ impl Display for Position {
 //         assert_eq!(position.ts_opened, 0);
 //         assert!(position.is_short());
 //         assert!(!position.is_long());
-//         assert!(position.is_opened());
+//         assert!(position.is_open());
 //         assert!(!position.is_closed());
 //         assert_eq!(position.realized_return, 0.0);
 //         assert_eq!(
@@ -1051,7 +1079,7 @@ impl Display for Position {
 //         assert_eq!(position.avg_px_close, Some(1.00011));
 //         assert!(!position.is_long());
 //         assert!(!position.is_short());
-//         assert!(!position.is_opened());
+//         assert!(!position.is_open());
 //         assert!(position.is_closed());
 //         assert_eq!(position.realized_return, 9.999_900_000_998_888e-5);
 //         assert_eq!(
@@ -1152,7 +1180,7 @@ impl Display for Position {
 //         assert_eq!(position.avg_px_close, Some(1.00002));
 //         assert!(!position.is_long());
 //         assert!(!position.is_short());
-//         assert!(!position.is_opened());
+//         assert!(!position.is_open());
 //         assert!(position.is_closed());
 //         assert_eq!(
 //             position.commissions(),
@@ -1246,7 +1274,7 @@ impl Display for Position {
 //         assert_eq!(position.avg_px_close, Some(1.0));
 //         assert!(!position.is_long());
 //         assert!(!position.is_short());
-//         assert!(!position.is_opened());
+//         assert!(!position.is_open());
 //         assert!(position.is_closed());
 //         assert_eq!(
 //             position.commissions(),
@@ -1369,7 +1397,7 @@ impl Display for Position {
 //         assert_eq!(position.ts_closed, Some(0));
 //         assert_eq!(position.avg_px_close, Some(1.0001));
 //         assert!(position.is_closed());
-//         assert!(!position.is_opened());
+//         assert!(!position.is_open());
 //         assert!(!position.is_long());
 //         assert!(!position.is_short());
 //         assert_eq!(
@@ -1679,7 +1707,7 @@ impl Display for Position {
 //         assert_eq!(position.avg_px_close, None);
 //         assert!(position.is_long());
 //         assert!(!position.is_short());
-//         assert!(position.is_opened());
+//         assert!(position.is_open());
 //         assert!(!position.is_closed());
 //         assert_eq!(position.realized_return, 0.0);
 //         assert_eq!(

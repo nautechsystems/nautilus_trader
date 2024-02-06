@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import pytest
 
 from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
@@ -163,7 +164,7 @@ def test_position_filled_with_buy_order():
     assert position.is_long
     assert not position.is_short
     assert not position.is_closed
-    assert position.is_opened
+    assert position.is_open
     assert position.realized_return == 0
     assert position.realized_pnl == Money(-2.00, USD)
     assert position.unrealized_pnl(last) == Money(49.00, USD)
@@ -189,7 +190,7 @@ def test_position_filled_with_sell_order():
     assert position.id == PositionId("P-123456")
     assert not position.is_long
     assert position.is_short
-    assert position.is_opened
+    assert position.is_open
     assert not position.is_closed
     assert position.realized_return == 0
     assert position.realized_pnl == Money(-2.00, USD)
@@ -224,7 +225,7 @@ def test_position_partial_fills_with_buy_order() -> None:
     assert position.event_count == 1
     assert position.is_long
     assert not position.is_short
-    assert position.is_opened
+    assert position.is_open
     assert not position.is_closed
     assert position.realized_return == 0
     assert position.realized_pnl == Money(-2.00, USD)
@@ -269,7 +270,7 @@ def test_position_partial_fills_with_sell_order() -> None:
     assert position.event_count == 2
     assert not position.is_long
     assert position.is_short
-    assert position.is_opened
+    assert position.is_open
     assert not position.is_closed
     assert position.realized_return == 0
     assert position.realized_pnl == Money(-4.00, USD)
@@ -332,7 +333,7 @@ def test_position_filled_with_buy_order_then_sell_order():
     assert position.avg_px_close == 1.00011
     assert not position.is_long
     assert not position.is_short
-    assert not position.is_opened
+    assert not position.is_open
     assert position.is_closed
     assert position.realized_return == 9.999900000998888e-05
     assert position.realized_pnl == Money(12.00, USD)
@@ -394,7 +395,7 @@ def test_position_filled_with_sell_order_then_buy_order():
     assert position.avg_px_close == 1.00002
     assert not position.is_long
     assert not position.is_short
-    assert not position.is_opened
+    assert not position.is_open
     assert position.is_closed
     assert position.realized_pnl == Money(-8.00, USD)
     assert position.unrealized_pnl(last) == Money(0, USD)
@@ -451,7 +452,7 @@ def test_position_filled_with_no_change():
     assert position.avg_px_close == 1.0
     assert not position.is_long
     assert not position.is_short
-    assert not position.is_opened
+    assert not position.is_open
     assert position.is_closed
     assert position.realized_return == 0
     assert position.realized_pnl == Money(-4.00, USD)
@@ -525,7 +526,7 @@ def test_position_long_with_multiple_filled_orders():
     assert position.avg_px_close == 1.0001
     assert not position.is_long
     assert not position.is_short
-    assert not position.is_opened
+    assert not position.is_open
     assert position.is_closed
     assert position.realized_pnl == Money(11.00, USD)
     assert position.unrealized_pnl(last) == Money(0, USD)
@@ -699,7 +700,7 @@ def test_position_closed_and_reopened() -> None:
     assert position.ts_closed is None
     assert position.avg_px_close is None
     assert position.is_long
-    assert position.is_opened
+    assert position.is_open
     assert not position.is_short
     assert not position.is_closed
     assert position.realized_return == 0.0
