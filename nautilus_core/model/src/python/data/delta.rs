@@ -79,6 +79,48 @@ impl OrderBookDelta {
         format!("{self:?}")
     }
 
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "action")]
+    fn py_action(&self) -> BookAction {
+        self.action
+    }
+
+    #[getter]
+    #[pyo3(name = "order")]
+    fn py_order(&self) -> BookOrder {
+        self.order
+    }
+
+    #[getter]
+    #[pyo3(name = "flags")]
+    fn py_flags(&self) -> u8 {
+        self.flags
+    }
+
+    #[getter]
+    #[pyo3(name = "sequence")]
+    fn py_sequence(&self) -> u64 {
+        self.sequence
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+
     #[staticmethod]
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {

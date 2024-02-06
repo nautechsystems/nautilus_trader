@@ -74,12 +74,11 @@ impl MarketOrder {
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Ustr>,
     ) -> Result<Self> {
-        // check if quantity is positive
         check_quantity_positive(quantity)?;
-        // market order cannot be GTD
         if time_in_force == TimeInForce::Gtd {
             bail!("{}", "GTD not supported for Market orders");
         }
+
         Ok(Self {
             core: OrderCore::new(
                 trader_id,

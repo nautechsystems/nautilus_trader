@@ -84,7 +84,8 @@ impl CashAccount {
     }
 
     #[getter]
-    fn base_currency(&self) -> Option<Currency> {
+    #[pyo3(name = "base_currency")]
+    fn py_base_currency(&self) -> Option<Currency> {
         self.base_currency
     }
 

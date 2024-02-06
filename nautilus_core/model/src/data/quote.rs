@@ -47,25 +47,18 @@ use crate::{
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct QuoteTick {
     /// The quotes instrument ID.
-    #[pyo3(get)]
     pub instrument_id: InstrumentId,
     /// The top of book bid price.
-    #[pyo3(get)]
     pub bid_price: Price,
     /// The top of book ask price.
-    #[pyo3(get)]
     pub ask_price: Price,
     /// The top of book bid size.
-    #[pyo3(get)]
     pub bid_size: Quantity,
     /// The top of book ask size.
-    #[pyo3(get)]
     pub ask_size: Quantity,
     /// The UNIX timestamp (nanoseconds) when the tick event occurred.
-    #[pyo3(get)]
     pub ts_event: UnixNanos,
     /// The UNIX timestamp (nanoseconds) when the data object was initialized.
-    #[pyo3(get)]
     pub ts_init: UnixNanos,
 }
 

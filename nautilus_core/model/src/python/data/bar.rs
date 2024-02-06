@@ -169,6 +169,54 @@ impl Bar {
         format!("{self:?}")
     }
 
+    #[getter]
+    #[pyo3(name = "bar_type")]
+    fn py_bar_type(&self) -> BarType {
+        self.bar_type
+    }
+
+    #[getter]
+    #[pyo3(name = "open")]
+    fn py_open(&self) -> Price {
+        self.open
+    }
+
+    #[getter]
+    #[pyo3(name = "high")]
+    fn py_high(&self) -> Price {
+        self.high
+    }
+
+    #[getter]
+    #[pyo3(name = "low")]
+    fn py_low(&self) -> Price {
+        self.low
+    }
+
+    #[getter]
+    #[pyo3(name = "close")]
+    fn py_close(&self) -> Price {
+        self.close
+    }
+
+    #[getter]
+    #[pyo3(name = "volume")]
+    fn py_volume(&self) -> Quantity {
+        self.volume
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+
     #[staticmethod]
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {

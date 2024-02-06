@@ -150,6 +150,48 @@ impl TradeTick {
         format!("{}({})", stringify!(TradeTick), self)
     }
 
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "price")]
+    fn py_price(&self) -> Price {
+        self.price
+    }
+
+    #[getter]
+    #[pyo3(name = "size")]
+    fn py_size(&self) -> Quantity {
+        self.size
+    }
+
+    #[getter]
+    #[pyo3(name = "aggressor_side")]
+    fn py_aggressor_side(&self) -> AggressorSide {
+        self.aggressor_side
+    }
+
+    #[getter]
+    #[pyo3(name = "trade_id")]
+    fn py_trade_id(&self) -> TradeId {
+        self.trade_id
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+
     #[staticmethod]
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {

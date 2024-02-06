@@ -46,31 +46,22 @@ pub const DEPTH10_LEN: usize = 10;
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct OrderBookDepth10 {
     /// The instrument ID for the book.
-    #[pyo3(get)]
     pub instrument_id: InstrumentId,
     /// The bid orders for the depth update.
-    #[pyo3(get)]
     pub bids: [BookOrder; DEPTH10_LEN],
     /// The ask orders for the depth update.
-    #[pyo3(get)]
     pub asks: [BookOrder; DEPTH10_LEN],
     /// The count of bid orders per level for the depth update.
-    #[pyo3(get)]
     pub bid_counts: [u32; DEPTH10_LEN],
     /// The count of ask orders per level for the depth update.
-    #[pyo3(get)]
     pub ask_counts: [u32; DEPTH10_LEN],
     /// A combination of packet end with matching engine status.
-    #[pyo3(get)]
     pub flags: u8,
     /// The message sequence number assigned at the venue.
-    #[pyo3(get)]
     pub sequence: u64,
     /// The UNIX timestamp (nanoseconds) when the data event occurred.
-    #[pyo3(get)]
     pub ts_event: UnixNanos,
     /// The UNIX timestamp (nanoseconds) when the data object was initialized.
-    #[pyo3(get)]
     pub ts_init: UnixNanos,
 }
 
@@ -265,8 +256,8 @@ pub mod stubs {
             order_id += 1;
         }
 
-        let bid_counts: [u32; 10] = [1; 10];
-        let ask_counts: [u32; 10] = [1; 10];
+        let bid_counts: [u32; DEPTH10_LEN] = [1; DEPTH10_LEN];
+        let ask_counts: [u32; DEPTH10_LEN] = [1; DEPTH10_LEN];
 
         OrderBookDepth10::new(
             instrument_id,
