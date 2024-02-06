@@ -140,7 +140,7 @@ class DatabentoDataLoader:
         as_legacy_cython : bool, True
             If data should be converted to 'legacy Cython' objects.
             You would typically only set this False if passing the objects
-            directly to a data catalog to be written out to Nautilus Parquet format.
+            directly to a data catalog for the data to then be written in Nautilus Parquet format.
 
         Returns
         -------
