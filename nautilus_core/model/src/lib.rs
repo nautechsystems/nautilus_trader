@@ -29,3 +29,5 @@ pub mod types;
 pub mod ffi;
 #[cfg(feature = "python")]
 pub mod python;
+#[cfg(feature = "stubs")]
+pub mod stubs;
