@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import pytest
 
 from nautilus_trader.core.nautilus_pyo3 import UUID4

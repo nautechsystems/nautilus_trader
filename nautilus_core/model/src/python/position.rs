@@ -15,16 +15,21 @@
 
 use nautilus_core::python::serialization::from_dict_pyo3;
 use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::time::UnixNanos;
 use pyo3::basic::CompareOp;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use rust_decimal::prelude::ToPrimitive;
 
-use crate::enums::OrderSide;
+use crate::enums::{OrderSide, PositionSide};
 use crate::events::order::filled::OrderFilled;
 use crate::identifiers::client_order_id::ClientOrderId;
+use crate::identifiers::instrument_id::InstrumentId;
+use crate::identifiers::position_id::PositionId;
+use crate::identifiers::strategy_id::StrategyId;
 use crate::identifiers::symbol::Symbol;
 use crate::identifiers::trade_id::TradeId;
+use crate::identifiers::trader_id::TraderId;
 use crate::identifiers::venue::Venue;
 use crate::identifiers::venue_order_id::VenueOrderId;
 use crate::instruments::crypto_future::CryptoFuture;
@@ -34,6 +39,7 @@ use crate::instruments::equity::Equity;
 use crate::instruments::futures_contract::FuturesContract;
 use crate::instruments::options_contract::OptionsContract;
 use crate::position::Position;
+use crate::types::currency::Currency;
 use crate::types::money::Money;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
@@ -41,7 +47,7 @@ use crate::types::quantity::Quantity;
 #[pymethods]
 impl Position {
     #[new]
-    fn py_new(instrument: PyObject, fill: OrderFilled, py: Python) -> PyResult<Self> {
+    fn py_new(py: Python, instrument: PyObject, fill: OrderFilled) -> PyResult<Self> {
         // Extract instrument from PyObject
         let instrument_type = instrument
             .getattr(py, "instrument_type")?
@@ -86,6 +92,30 @@ impl Position {
     }
 
     #[getter]
+    #[pyo3(name = "trader_id")]
+    fn py_trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    #[getter]
+    #[pyo3(name = "strategy_id")]
+    fn py_strategy_id(&self) -> StrategyId {
+        self.strategy_id
+    }
+
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "id")]
+    fn py_id(&self) -> PositionId {
+        self.id
+    }
+
+    #[getter]
     #[pyo3(name = "symbol")]
     fn py_symbol(&self) -> Symbol {
         self.symbol()
@@ -98,9 +128,141 @@ impl Position {
     }
 
     #[getter]
-    #[pyo3(name = "event_count")]
-    fn py_event_count(&self) -> usize {
-        self.event_count()
+    #[pyo3(name = "opening_order_id")]
+    fn py_opening_order_id(&self) -> ClientOrderId {
+        self.opening_order_id
+    }
+
+    #[getter]
+    #[pyo3(name = "closing_order_id")]
+    fn py_closing_order_id(&self) -> Option<ClientOrderId> {
+        self.closing_order_id
+    }
+
+    #[getter]
+    #[pyo3(name = "entry")]
+    fn py_entry(&self) -> OrderSide {
+        self.entry
+    }
+
+    #[getter]
+    #[pyo3(name = "side")]
+    fn py_side(&self) -> PositionSide {
+        self.side
+    }
+
+    #[getter]
+    #[pyo3(name = "signed_qty")]
+    fn py_signed_qty(&self) -> f64 {
+        self.signed_qty
+    }
+
+    #[getter]
+    #[pyo3(name = "quantity")]
+    fn py_quantity(&self) -> Quantity {
+        self.quantity
+    }
+
+    #[getter]
+    #[pyo3(name = "peak_qty")]
+    fn py_peak_qty(&self) -> Quantity {
+        self.peak_qty
+    }
+
+    #[getter]
+    #[pyo3(name = "price_precision")]
+    fn py_price_precision(&self) -> u8 {
+        self.price_precision
+    }
+
+    #[getter]
+    #[pyo3(name = "size_precision")]
+    fn py_size_precision(&self) -> u8 {
+        self.size_precision
+    }
+
+    #[getter]
+    #[pyo3(name = "multiplier")]
+    fn py_multiplier(&self) -> Quantity {
+        self.multiplier
+    }
+
+    #[getter]
+    #[pyo3(name = "is_inverse")]
+    fn py_is_inverse(&self) -> bool {
+        self.is_inverse
+    }
+
+    #[getter]
+    #[pyo3(name = "base_currency")]
+    fn py_base_currency(&self) -> Option<Currency> {
+        self.base_currency
+    }
+
+    #[getter]
+    #[pyo3(name = "quote_currency")]
+    fn py_quote_currency(&self) -> Currency {
+        self.quote_currency
+    }
+
+    #[getter]
+    #[pyo3(name = "settlement_currency")]
+    fn py_settlement_currency(&self) -> Currency {
+        self.settlement_currency
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_opened")]
+    fn py_ts_opened(&self) -> UnixNanos {
+        self.ts_opened
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_closed")]
+    fn py_ts_closed(&self) -> Option<UnixNanos> {
+        self.ts_closed
+    }
+
+    #[getter]
+    #[pyo3(name = "duration_ns")]
+    fn py_duration_ns(&self) -> u64 {
+        self.duration_ns
+    }
+
+    #[getter]
+    #[pyo3(name = "avg_px_open")]
+    fn py_avg_px_open(&self) -> f64 {
+        self.avg_px_open
+    }
+
+    #[getter]
+    #[pyo3(name = "avg_px_close")]
+    fn py_avg_px_close(&self) -> Option<f64> {
+        self.avg_px_close
+    }
+
+    #[getter]
+    #[pyo3(name = "realized_return")]
+    fn py_realized_return(&self) -> f64 {
+        self.realized_return
+    }
+
+    #[getter]
+    #[pyo3(name = "realized_pnl")]
+    fn py_realized_pnl(&self) -> Option<Money> {
+        self.realized_pnl
+    }
+
+    #[getter]
+    #[pyo3(name = "events")]
+    fn py_events(&self) -> Vec<OrderFilled> {
+        self.events.clone()
     }
 
     #[getter]
@@ -116,15 +278,33 @@ impl Position {
     }
 
     #[getter]
+    #[pyo3(name = "trade_ids")]
+    fn py_trade_ids(&self) -> Vec<TradeId> {
+        self.trade_ids()
+    }
+
+    #[getter]
+    #[pyo3(name = "last_event")]
+    fn py_last_event(&self) -> OrderFilled {
+        self.last_event()
+    }
+
+    #[getter]
     #[pyo3(name = "last_trade_id")]
     fn py_last_trade_id(&self) -> Option<TradeId> {
         self.last_trade_id()
     }
 
     #[getter]
-    #[pyo3(name = "is_opened")]
-    fn py_is_opened(&self) -> bool {
-        self.is_opened()
+    #[pyo3(name = "event_count")]
+    fn py_event_count(&self) -> usize {
+        self.events.len()
+    }
+
+    #[getter]
+    #[pyo3(name = "is_open")]
+    fn py_is_open(&self) -> bool {
+        self.is_open()
     }
 
     #[getter]
