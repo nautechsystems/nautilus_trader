@@ -15,7 +15,7 @@
 
 use std::fs;
 use std::str::FromStr;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use anyhow::Result;
 use databento::live::Subscription;
@@ -32,6 +32,7 @@ use nautilus_model::identifiers::instrument_id::InstrumentId;
 use nautilus_model::identifiers::symbol::Symbol;
 use nautilus_model::identifiers::venue::Venue;
 use nautilus_model::python::data::data_to_pycapsule;
+use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use time::OffsetDateTime;
 use tokio::sync::Mutex;
@@ -51,7 +52,7 @@ pub struct DatabentoLiveClient {
     pub key: String,
     #[pyo3(get)]
     pub dataset: String,
-    inner: OnceLock<Arc<Mutex<databento::LiveClient>>>,
+    inner: Option<Arc<Mutex<databento::LiveClient>>>,
     runtime: tokio::runtime::Runtime,
     publishers: Arc<IndexMap<PublisherId, DatabentoPublisher>>,
 }
@@ -66,14 +67,14 @@ impl DatabentoLiveClient {
             .await
     }
 
-    fn get_inner_client(&self) -> Result<Arc<Mutex<databento::LiveClient>>, databento::Error> {
-        if let Some(client) = self.inner.get() {
-            Ok(client.clone())
-        } else {
-            let client = self.runtime.block_on(self.initialize_client())?;
-            let arc_client = Arc::new(Mutex::new(client));
-            let _ = self.inner.set(arc_client.clone());
-            Ok(arc_client)
+    fn get_inner_client(&mut self) -> Result<Arc<Mutex<databento::LiveClient>>, databento::Error> {
+        match &self.inner {
+            Some(client) => Ok(client.clone()),
+            None => {
+                let client = self.runtime.block_on(self.initialize_client())?;
+                self.inner = Some(Arc::new(Mutex::new(client)));
+                Ok(self.inner.clone().unwrap())
+            }
         }
     }
 }
@@ -93,7 +94,7 @@ impl DatabentoLiveClient {
         Ok(Self {
             key,
             dataset,
-            inner: OnceLock::new(),
+            inner: None,
             runtime: tokio::runtime::Runtime::new()?,
             publishers: Arc::new(publishers),
         })
@@ -101,7 +102,7 @@ impl DatabentoLiveClient {
 
     #[pyo3(name = "subscribe")]
     fn py_subscribe<'py>(
-        &self,
+        &mut self,
         py: Python<'py>,
         schema: String,
         symbols: String,
@@ -142,7 +143,7 @@ impl DatabentoLiveClient {
     }
 
     #[pyo3(name = "start")]
-    fn py_start<'py>(&self, py: Python<'py>, callback: PyObject) -> PyResult<&'py PyAny> {
+    fn py_start<'py>(&mut self, py: Python<'py>, callback: PyObject) -> PyResult<&'py PyAny> {
         let arc_client = self.get_inner_client().map_err(to_pyruntime_err)?;
         let publishers = self.publishers.clone();
 
@@ -257,16 +258,21 @@ impl DatabentoLiveClient {
         })
     }
 
-    // TODO: Close wants to take ownership which isn't possible?
     #[pyo3(name = "close")]
-    fn py_close<'py>(&self, py: Python<'py>) -> PyResult<&'py PyAny> {
-        // let arc_client = self.get_inner_client().map_err(to_pyvalue_err)?;
-
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            // let client = arc_client.lock_owned().await;
-            // client.close().await.map_err(to_pyvalue_err)?;
-            Ok(())
-        })
+    fn py_close<'py>(&mut self, py: Python<'py>) -> PyResult<&'py PyAny> {
+        match self.inner.take() {
+            Some(arc_client) => {
+                pyo3_asyncio::tokio::future_into_py(py, async move {
+                    let _client = arc_client.lock_owned().await;
+                    // Still need to determine how to take ownership here
+                    // client.close().await.map_err(to_pyruntime_err)
+                    Ok(())
+                })
+            }
+            None => Err(PyRuntimeError::new_err(
+                "Error on close: client was never started",
+            )),
+        }
     }
 }
 
