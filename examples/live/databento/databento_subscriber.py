@@ -31,6 +31,7 @@ from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.strategy import Strategy
@@ -42,9 +43,9 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 instrument_ids = [
-    InstrumentId.from_str("AAPL.XCHI"),
     InstrumentId.from_str("ESH4.GLBX"),
-    InstrumentId.from_str("ESM4.GLBX"),
+    # InstrumentId.from_str("ESM4.GLBX"),
+    # InstrumentId.from_str("AAPL.XCHI"),
 ]
 
 # Configure the trading node
@@ -139,15 +140,15 @@ class DataSubscriber(Strategy):
             #     book_type=BookType.L3_MBO,
             #     client_id=DATABENTO_CLIENT_ID,
             # )
-            # self.subscribe_order_book_snapshots(
-            #     instrument_id=instrument_id,
-            #     book_type=BookType.L2_MBP,
-            #     depth=10,
-            #     client_id=DATABENTO_CLIENT_ID,
-            #     interval_ms=100,
-            # )
-            self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
-            self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
+            self.subscribe_order_book_snapshots(
+                instrument_id=instrument_id,
+                book_type=BookType.L2_MBP,
+                depth=10,
+                client_id=DATABENTO_CLIENT_ID,
+                interval_ms=100,
+            )
+            # self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
+            # self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
             # self.request_quote_ticks(instrument_id)
             # self.request_trade_ticks(instrument_id)
             # self.request_bars(BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"))
@@ -179,7 +180,7 @@ class DataSubscriber(Strategy):
         """
         Actions to be performed when an order book update is received.
         """
-        # self.log.info("\n" + order_book.pprint(10), LogColor.CYAN)
+        self.log.info("\n" + order_book.pprint(10), LogColor.CYAN)
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
