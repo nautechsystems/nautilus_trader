@@ -43,13 +43,10 @@ use crate::{
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct BarSpecification {
     /// The step for binning samples for bar aggregation.
-    #[pyo3(get)]
     pub step: usize,
     /// The type of bar aggregation.
-    #[pyo3(get)]
     pub aggregation: BarAggregation,
     /// The price type to use for aggregation.
-    #[pyo3(get)]
     pub price_type: PriceType,
 }
 
@@ -80,13 +77,10 @@ impl Display for BarSpecification {
 )]
 pub struct BarType {
     /// The bar types instrument ID.
-    #[pyo3(get)]
     pub instrument_id: InstrumentId,
     /// The bar types specification.
-    #[pyo3(get)]
     pub spec: BarSpecification,
     /// The bar types aggregation source.
-    #[pyo3(get)]
     pub aggregation_source: AggregationSource,
 }
 
@@ -216,28 +210,20 @@ impl<'de> Deserialize<'de> for BarType {
 )]
 pub struct Bar {
     /// The bar type for this bar.
-    #[pyo3(get)]
     pub bar_type: BarType,
     /// The bars open price.
-    #[pyo3(get)]
     pub open: Price,
     /// The bars high price.
-    #[pyo3(get)]
     pub high: Price,
     /// The bars low price.
-    #[pyo3(get)]
     pub low: Price,
     /// The bars close price.
-    #[pyo3(get)]
     pub close: Price,
     /// The bars volume.
-    #[pyo3(get)]
     pub volume: Quantity,
     /// The UNIX timestamp (nanoseconds) when the data event occurred.
-    #[pyo3(get)]
     pub ts_event: UnixNanos,
     /// The UNIX timestamp (nanoseconds) when the data object was initialized.
-    #[pyo3(get)]
     pub ts_init: UnixNanos,
 }
 

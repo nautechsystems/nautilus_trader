@@ -89,6 +89,60 @@ impl OrderBookDepth10 {
         format!("{self:?}")
     }
 
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "bids")]
+    fn py_bids(&self) -> [BookOrder; DEPTH10_LEN] {
+        self.bids
+    }
+
+    #[getter]
+    #[pyo3(name = "asks")]
+    fn py_asks(&self) -> [BookOrder; DEPTH10_LEN] {
+        self.asks
+    }
+
+    #[getter]
+    #[pyo3(name = "bid_counts")]
+    fn py_bid_counts(&self) -> [u32; DEPTH10_LEN] {
+        self.bid_counts
+    }
+
+    #[getter]
+    #[pyo3(name = "ask_counts")]
+    fn py_ask_counts(&self) -> [u32; DEPTH10_LEN] {
+        self.ask_counts
+    }
+
+    #[getter]
+    #[pyo3(name = "flags")]
+    fn py_flags(&self) -> u8 {
+        self.flags
+    }
+
+    #[getter]
+    #[pyo3(name = "sequence")]
+    fn py_sequence(&self) -> u64 {
+        self.sequence
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+
     #[staticmethod]
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {

@@ -159,6 +159,48 @@ impl QuoteTick {
         format!("{}({})", stringify!(QuoteTick), self)
     }
 
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "bid_price")]
+    fn py_bid_price(&self) -> Price {
+        self.bid_price
+    }
+
+    #[getter]
+    #[pyo3(name = "ask_price")]
+    fn py_ask_price(&self) -> Price {
+        self.ask_price
+    }
+
+    #[getter]
+    #[pyo3(name = "bid_size")]
+    fn py_bid_size(&self) -> Quantity {
+        self.bid_size
+    }
+
+    #[getter]
+    #[pyo3(name = "ask_size")]
+    fn py_ask_size(&self) -> Quantity {
+        self.ask_size
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+
     #[staticmethod]
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {

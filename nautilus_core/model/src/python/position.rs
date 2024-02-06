@@ -42,7 +42,7 @@ use crate::types::quantity::Quantity;
 impl Position {
     #[new]
     fn py_new(instrument: PyObject, fill: OrderFilled, py: Python) -> PyResult<Self> {
-        // extract instrument from PyObject
+        // Extract instrument from PyObject
         let instrument_type = instrument
             .getattr(py, "instrument_type")?
             .extract::<String>(py)?;
@@ -65,7 +65,6 @@ impl Position {
             let instrument_rust = instrument.extract::<OptionsContract>(py)?;
             Ok(Self::new(instrument_rust, fill).unwrap())
         } else {
-            // throw error unsupported instrument
             Err(to_pyvalue_err("Unsupported instrument type"))
         }
     }

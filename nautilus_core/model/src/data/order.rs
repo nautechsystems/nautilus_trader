@@ -54,16 +54,12 @@ pub const NULL_ORDER: BookOrder = BookOrder {
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct BookOrder {
     /// The order side.
-    #[pyo3(get)]
     pub side: OrderSide,
     /// The order price.
-    #[pyo3(get)]
     pub price: Price,
     /// The order size.
-    #[pyo3(get)]
     pub size: Quantity,
     /// The order ID.
-    #[pyo3(get)]
     pub order_id: OrderId,
 }
 

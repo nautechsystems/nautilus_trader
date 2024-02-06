@@ -51,69 +51,37 @@ use crate::types::quantity::Quantity;
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
 pub struct Position {
-    #[pyo3(get)]
     pub events: Vec<OrderFilled>,
-    #[pyo3(get)]
     pub trader_id: TraderId,
-    #[pyo3(get)]
     pub strategy_id: StrategyId,
-    #[pyo3(get)]
     pub instrument_id: InstrumentId,
-    #[pyo3(get)]
     pub id: PositionId,
-    #[pyo3(get)]
     pub account_id: AccountId,
-    #[pyo3(get)]
     pub opening_order_id: ClientOrderId,
-    #[pyo3(get)]
     pub closing_order_id: Option<ClientOrderId>,
-    #[pyo3(get)]
     pub entry: OrderSide,
-    #[pyo3(get)]
     pub side: PositionSide,
-    #[pyo3(get)]
     pub signed_qty: f64,
-    #[pyo3(get)]
     pub quantity: Quantity,
-    #[pyo3(get)]
     pub peak_qty: Quantity,
-    #[pyo3(get)]
     pub price_precision: u8,
-    #[pyo3(get)]
     pub size_precision: u8,
-    #[pyo3(get)]
     pub multiplier: Quantity,
-    #[pyo3(get)]
     pub is_inverse: bool,
-    #[pyo3(get)]
     pub base_currency: Option<Currency>,
-    #[pyo3(get)]
     pub quote_currency: Currency,
-    #[pyo3(get)]
     pub settlement_currency: Currency,
-    #[pyo3(get)]
     pub ts_init: UnixNanos,
-    #[pyo3(get)]
     pub ts_opened: UnixNanos,
-    #[pyo3(get)]
     pub ts_last: UnixNanos,
-    #[pyo3(get)]
     pub ts_closed: Option<UnixNanos>,
-    #[pyo3(get)]
     pub duration_ns: u64,
-    #[pyo3(get)]
     pub avg_px_open: f64,
-    #[pyo3(get)]
     pub avg_px_close: Option<f64>,
-    #[pyo3(get)]
     pub realized_return: f64,
-    #[pyo3(get)]
     pub realized_pnl: Option<Money>,
-    #[pyo3(get)]
     pub trade_ids: Vec<TradeId>,
-    #[pyo3(get)]
     pub buy_qty: Quantity,
-    #[pyo3(get)]
     pub sell_qty: Quantity,
     pub commissions: HashMap<Currency, Money>,
 }
