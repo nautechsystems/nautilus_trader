@@ -367,17 +367,32 @@ impl From<OrderInitialized> for MarketOrder {
 mod tests {
     use rstest::rstest;
 
+    use crate::enums::OrderSide;
+    use crate::instruments::currency_pair::CurrencyPair;
+    use crate::instruments::stubs::*;
     use crate::{enums::TimeInForce, orders::stubs::*, types::quantity::Quantity};
 
     #[rstest]
     #[should_panic(expected = "Condition failed: invalid `Quantity`, should be positive and was 0")]
-    fn test_positive_quantity_condition() {
-        let _ = market_order(Quantity::from(0), None);
+    fn test_positive_quantity_condition(audusd_sim: CurrencyPair) {
+        let _ = TestOrderStubs::market_order(
+            audusd_sim.id,
+            OrderSide::Buy,
+            Quantity::from(0),
+            None,
+            None,
+        );
     }
 
     #[rstest]
     #[should_panic(expected = "GTD not supported for Market orders")]
-    fn test_gtd_condition() {
-        let _ = market_order(Quantity::from(100), Some(TimeInForce::Gtd));
+    fn test_gtd_condition(audusd_sim: CurrencyPair) {
+        let _ = TestOrderStubs::market_order(
+            audusd_sim.id,
+            OrderSide::Buy,
+            Quantity::from(100),
+            None,
+            Some(TimeInForce::Gtd),
+        );
     }
 }
