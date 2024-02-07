@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Refined logging system module and writers in Rust, thanks @ayush-sb and @twitu
+- Improved Interactive Brokers adapter symbology and parsing with a `strict_symbology` option, thanks @rsmb7z and @fhill2
 
 ### Breaking Changes
 - Reorganized configuration objects (separated into a `config` module per subpackage, with re-exports from `nautilus_trader.config`)
