@@ -124,11 +124,11 @@ pub fn log_sysinfo(component: Ustr) {
 }
 
 fn header_sepr(c: Ustr, s: &str) {
-    log(LogLevel::Info, LogColor::Cyan, c, Cow::Borrowed(s));
+    log(LogLevel::Info, LogColor::Cyan, c, s);
 }
 
 fn header_line(c: Ustr, s: &str) {
-    log(LogLevel::Info, LogColor::Normal, c, Cow::Borrowed(s));
+    log(LogLevel::Info, LogColor::Normal, c, s);
 }
 
 fn bytes_to_gib(b: u64) -> f64 {
