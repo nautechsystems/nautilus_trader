@@ -1,3 +1,5 @@
+#![allow(clippy::all)]
+
 use log::trace;
 use std::{
     io::{Read, Write},
