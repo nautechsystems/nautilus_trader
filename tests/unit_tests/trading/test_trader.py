@@ -26,8 +26,8 @@ from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.config import ActorConfig
+from nautilus_trader.config import ExecAlgorithmConfig
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.config.common import ExecAlgorithmConfig
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.blank import MyStrategy
 from nautilus_trader.examples.strategies.blank import MyStrategyConfig

@@ -18,13 +18,12 @@ pub mod enums;
 pub mod factories;
 pub mod generators;
 pub mod handlers;
-pub mod headers;
 pub mod logging;
 pub mod msgbus;
 pub mod testing;
 pub mod timer;
 
-#[cfg(test)]
+#[cfg(feature = "stubs")]
 pub mod stubs;
 
 #[cfg(feature = "ffi")]

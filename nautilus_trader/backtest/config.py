@@ -19,17 +19,17 @@ import sys
 from typing import Any
 
 from nautilus_trader.common import Environment
-from nautilus_trader.config.common import DataEngineConfig
-from nautilus_trader.config.common import ExecEngineConfig
-from nautilus_trader.config.common import ImportableConfig
-from nautilus_trader.config.common import NautilusConfig
-from nautilus_trader.config.common import NautilusKernelConfig
-from nautilus_trader.config.common import RiskEngineConfig
-from nautilus_trader.config.common import resolve_path
+from nautilus_trader.common.config import ImportableActorConfig
+from nautilus_trader.common.config import NautilusConfig
+from nautilus_trader.common.config import resolve_path
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.data.config import DataEngineConfig
+from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.risk.config import RiskEngineConfig
+from nautilus_trader.system.config import NautilusKernelConfig
 
 
 class BacktestVenueConfig(NautilusConfig, frozen=True):
@@ -55,7 +55,7 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     use_random_ids: bool = False
     use_reduce_only: bool = True
     # fill_model: FillModel | None = None  # TODO(cs): Implement
-    modules: list[ImportableConfig] | None = None
+    modules: list[ImportableActorConfig] | None = None
 
 
 class BacktestDataConfig(NautilusConfig, frozen=True):

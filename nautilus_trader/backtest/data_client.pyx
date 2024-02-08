@@ -17,7 +17,7 @@
 This module provides a data client for backtesting.
 """
 
-from nautilus_trader.config.common import NautilusConfig
+from nautilus_trader.common.config import NautilusConfig
 
 from cpython.datetime cimport datetime
 

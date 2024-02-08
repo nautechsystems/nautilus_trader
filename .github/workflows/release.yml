@@ -26,6 +26,22 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+      - name: Free disk space (Ubuntu)
+        if: runner.os == 'Linux'
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: false
+          dotnet: false
+          haskell: false
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Install runner dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -54,7 +70,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Set up Python environment
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -82,6 +98,21 @@ jobs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
 
     steps:
+      - name: Free disk space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: false
+          dotnet: false
+          haskell: false
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Install runner dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -102,7 +133,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Set up Python environment
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
@@ -124,7 +155,7 @@ jobs:
 
       - name: Poetry cache
         id: cached-poetry
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{ env.POETRY_CACHE_DIR }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
@@ -164,6 +195,20 @@ jobs:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
 
     steps:
+      - name: Free disk space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: false
+          dotnet: false
+          haskell: false
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Install runner dependencies
+        run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -182,7 +227,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Set up Python environment
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
@@ -204,7 +249,7 @@ jobs:
 
       - name: Poetry cache
         id: cached-poetry
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{ env.POETRY_CACHE_DIR }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
@@ -255,6 +300,22 @@ jobs:
       BUILD_MODE: release
 
     steps:
+      - name: Free disk space (Ubuntu)
+        if: runner.os == 'Linux'
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: false
+          dotnet: false
+          haskell: false
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Install runner dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -283,7 +344,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Set up Python environment
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -305,7 +366,7 @@ jobs:
 
       - name: Poetry cache
         id: cached-poetry
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{ env.POETRY_CACHE_DIR }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}

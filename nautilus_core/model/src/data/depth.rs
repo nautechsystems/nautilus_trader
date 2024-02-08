@@ -256,8 +256,8 @@ pub mod stubs {
             order_id += 1;
         }
 
-        let bid_counts: [u32; 10] = [1; 10];
-        let ask_counts: [u32; 10] = [1; 10];
+        let bid_counts: [u32; DEPTH10_LEN] = [1; DEPTH10_LEN];
+        let ask_counts: [u32; DEPTH10_LEN] = [1; DEPTH10_LEN];
 
         OrderBookDepth10::new(
             instrument_id,

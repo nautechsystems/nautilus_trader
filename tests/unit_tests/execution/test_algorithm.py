@@ -27,9 +27,9 @@ from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.component import TimeEventHandler
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
+from nautilus_trader.config import ImportableExecAlgorithmConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.config.common import ImportableExecAlgorithmConfig
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm

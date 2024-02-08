@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from nautilus_trader.core.nautilus_pyo3 import OrderAccepted
 from nautilus_trader.core.nautilus_pyo3 import OrderCanceled
 from nautilus_trader.core.nautilus_pyo3 import OrderCancelRejected

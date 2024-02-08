@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_adapters::databento::{loader, python::historical, python::parsing};
+use nautilus_adapters::databento::{
+    loader, python::historical, python::live, python::parsing, types,
+};
 use pyo3::{
     prelude::*,
     types::{PyDict, PyString},
@@ -25,7 +27,9 @@ use pyo3::{
 /// Loaded as nautilus_pyo3.databento
 #[pymodule]
 pub fn databento(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<types::DatabentoPublisher>()?;
     m.add_class::<loader::DatabentoDataLoader>()?;
+    m.add_class::<live::DatabentoLiveClient>()?;
     m.add_class::<historical::DatabentoHistoricalClient>()?;
     m.add_function(wrap_pyfunction!(parsing::py_parse_equity, m)?)?;
     m.add_function(wrap_pyfunction!(parsing::py_parse_futures_contract, m)?)?;
@@ -51,6 +55,12 @@ fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
 
     // Set pyo3_nautilus to be recognized as a subpackage
     sys_modules.set_item(module_name, m)?;
+
+    let n = "accounting";
+    let submodule = pyo3::wrap_pymodule!(nautilus_accounting::python::accounting);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    re_export_module_attributes(m, n)?;
 
     let n = "databento";
     let submodule = pyo3::wrap_pymodule!(databento);

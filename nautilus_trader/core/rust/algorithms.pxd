@@ -2,8 +2,11 @@
 
 from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t, uint64_t, uintptr_t
+
 from nautilus_trader.core.rust.core cimport CVec, UUID4_t
-from nautilus_trader.core.rust.model cimport Symbol_t, Venue_t, InstrumentId_t, Price_t
+from nautilus_trader.core.rust.model cimport (InstrumentId_t, Price_t,
+                                              Symbol_t, Venue_t)
+
 
 cdef extern from "../includes/algorithms.h":
 

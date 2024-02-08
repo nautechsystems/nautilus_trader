@@ -166,6 +166,8 @@ cdef class OptionsContract(Instrument):
         """
         return pd.Timestamp(self.expiration_ns, tz=pytz.utc)
 
+
+
     @staticmethod
     cdef OptionsContract from_dict_c(dict values):
         Condition.not_none(values, "values")
@@ -214,6 +216,27 @@ cdef class OptionsContract(Instrument):
         }
 
     @staticmethod
+    cdef OptionsContract from_pyo3_c(pyo3_instrument):
+        Condition.not_none(pyo3_instrument, "pyo3_instrument")
+        return OptionsContract(
+            instrument_id=InstrumentId.from_str_c(pyo3_instrument.id.value),
+            raw_symbol=Symbol(pyo3_instrument.raw_symbol.value),
+            asset_class=asset_class_from_str(str(pyo3_instrument.asset_class)),
+            currency=Currency.from_str_c(pyo3_instrument.currency.code),
+            price_precision=pyo3_instrument.price_precision,
+            price_increment=Price.from_raw_c(pyo3_instrument.price_increment.raw, pyo3_instrument.price_precision),
+            multiplier=Quantity.from_raw_c(pyo3_instrument.multiplier.raw, 0),
+            lot_size=Quantity.from_raw_c(pyo3_instrument.lot_size.raw, 0),
+            underlying=pyo3_instrument.underlying,
+            option_kind=option_kind_from_str(str(pyo3_instrument.option_kind)),
+            activation_ns=pyo3_instrument.activation_ns,
+            expiration_ns=pyo3_instrument.expiration_ns,
+            strike_price=Price.from_raw_c(pyo3_instrument.strike_price.raw, pyo3_instrument.strike_price.precision),
+            ts_event=pyo3_instrument.ts_event,
+            ts_init=pyo3_instrument.ts_init,
+        )
+
+    @staticmethod
     def from_dict(dict values) -> OptionsContract:
         """
         Return an instrument from the given initialization values.
@@ -241,3 +264,20 @@ cdef class OptionsContract(Instrument):
 
         """
         return OptionsContract.to_dict_c(obj)
+
+    @staticmethod
+    def from_pyo3(pyo3_instrument) -> OptionsContract:
+        """
+        Return legacy Cython options contract instrument converted from the given pyo3 Rust object.
+
+        Parameters
+        ----------
+        pyo3_instrument : nautilus_pyo3.OptionsContract
+            The pyo3 Rust options contract instrument to convert from.
+
+        Returns
+        -------
+        OptionsContract
+
+        """
+        return OptionsContract.from_pyo3_c(pyo3_instrument)

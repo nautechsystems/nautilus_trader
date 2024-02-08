@@ -39,23 +39,23 @@ from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.component import init_tracing
 from nautilus_trader.common.component import is_logging_initialized
 from nautilus_trader.common.component import log_header
+from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.config import ActorFactory
+from nautilus_trader.config import ControllerFactory
 from nautilus_trader.config import DataEngineConfig
+from nautilus_trader.config import ExecAlgorithmFactory
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
+from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import NautilusKernelConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StrategyFactory
 from nautilus_trader.config import StreamingConfig
-from nautilus_trader.config.common import ControllerFactory
-from nautilus_trader.config.common import ExecAlgorithmFactory
-from nautilus_trader.config.common import LoggingConfig
-from nautilus_trader.config.common import NautilusKernelConfig
-from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import nanos_to_millis
 from nautilus_trader.core.uuid import UUID4
@@ -167,9 +167,11 @@ class NautilusKernel:
                     machine_id=self._machine_id,
                     instance_id=self._instance_id,
                     level_stdout=log_level_from_str(logging.log_level),
-                    level_file=log_level_from_str(logging.log_level_file)
-                    if logging.log_level_file is not None
-                    else LogLevel.OFF,
+                    level_file=(
+                        log_level_from_str(logging.log_level_file)
+                        if logging.log_level_file is not None
+                        else LogLevel.OFF
+                    ),
                     directory=logging.log_directory,
                     file_name=logging.log_file_name,
                     file_format=logging.log_file_format,
@@ -894,8 +896,6 @@ class NautilusKernel:
 
         if self._writer:
             self._writer.close()
-
-        self._log.flush()
 
     def cancel_all_tasks(self) -> None:
         """

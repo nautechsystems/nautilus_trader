@@ -105,9 +105,9 @@ async def _setup_order_state(
                             price=betfair_float_to_price(order_update.p),
                             client_order_id=client_order_id,
                         )
-                        exec_client.venue_order_id_to_client_order_id[
-                            venue_order_id
-                        ] = client_order_id
+                        exec_client.venue_order_id_to_client_order_id[venue_order_id] = (
+                            client_order_id
+                        )
                         await _accept_order(order, venue_order_id, exec_client, strategy, cache)
 
                         if include_fills and order_update.sm:

@@ -54,7 +54,6 @@ cdef class Portfolio(PortfolioFacade):
     cpdef void update_account(self, AccountState event)
     cpdef void update_order(self, OrderEvent event)
     cpdef void update_position(self, PositionEvent event)
-    cpdef void reset(self)
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 

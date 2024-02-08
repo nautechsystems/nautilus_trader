@@ -22,10 +22,12 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.config.common import StrategyConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.book import OrderBook
+
+# from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -41,11 +43,9 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 instrument_ids = [
-    # InstrumentId.from_str("AAPL.XCHI"),
-    # InstrumentId.from_str("ESF4.GLBX"),
-    # InstrumentId.from_str("ESG4.GLBX"),
     InstrumentId.from_str("ESH4.GLBX"),
     # InstrumentId.from_str("ESM4.GLBX"),
+    # InstrumentId.from_str("AAPL.XCHI"),
 ]
 
 # Configure the trading node
@@ -82,6 +82,7 @@ config_node = TradingNodeConfig(
             http_gateway=None,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_ids=instrument_ids,
+            parent_symbols={"GLBX.MDP3": {"ES.FUT", "ES.OPT"}},
         ),
     },
     timeout_connection=10.0,
@@ -130,7 +131,7 @@ class DataSubscriber(Strategy):
         """
         Actions to be performed when the strategy is started.
 
-        Here we specify the 'DATABENTO' client for subscriptions.
+        Here we specify the 'DATABENTO' client_id for subscriptions.
 
         """
         for instrument_id in self.instrument_ids:

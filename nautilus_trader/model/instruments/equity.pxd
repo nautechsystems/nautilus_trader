@@ -24,3 +24,6 @@ cdef class Equity(Instrument):
 
     @staticmethod
     cdef dict to_dict_c(Equity obj)
+
+    @staticmethod
+    cdef Equity from_pyo3_c(pyo3_instrument)

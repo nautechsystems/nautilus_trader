@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.config import CacheConfig
+from nautilus_trader.cache.config import CacheConfig
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t

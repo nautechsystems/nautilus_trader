@@ -17,9 +17,9 @@ from datetime import timedelta
 from decimal import Decimal
 
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.config import PositiveFloat
+from nautilus_trader.config import PositiveInt
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.config.validation import PositiveFloat
-from nautilus_trader.config.validation import PositiveInt
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event

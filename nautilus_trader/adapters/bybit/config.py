@@ -17,8 +17,8 @@
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
-from nautilus_trader.config.validation import PositiveFloat
-from nautilus_trader.config.validation import PositiveInt
+from nautilus_trader.config import PositiveFloat
+from nautilus_trader.config import PositiveInt
 
 
 class BybitDataClientConfig(LiveDataClientConfig, frozen=True):

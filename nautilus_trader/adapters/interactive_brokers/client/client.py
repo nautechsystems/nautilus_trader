@@ -486,8 +486,12 @@ class InteractiveBrokersClient(
                 self._internal_msg_queue.task_done()
         except asyncio.CancelledError:
             log_msg = f"Internal message queue processing stopped. (qsize={self._internal_msg_queue.qsize()})."
-            self._log.warning(log_msg) if not self._internal_msg_queue.empty() else self._log.debug(
-                log_msg,
+            (
+                self._log.warning(log_msg)
+                if not self._internal_msg_queue.empty()
+                else self._log.debug(
+                    log_msg,
+                )
             )
         finally:
             self._eclient.disconnect()

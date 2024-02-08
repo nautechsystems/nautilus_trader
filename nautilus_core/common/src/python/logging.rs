@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,7 +25,7 @@ use crate::{
     enums::{LogColor, LogLevel},
     logging::{
         self, logging_set_bypass, map_log_level_to_filter, parse_level_filter_str,
-        FileWriterConfig, LoggerConfig,
+        writer::FileWriterConfig, LoggerConfig,
     },
 };
 

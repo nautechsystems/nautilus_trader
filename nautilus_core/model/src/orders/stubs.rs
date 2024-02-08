@@ -17,6 +17,8 @@ use std::str::FromStr;
 
 use nautilus_core::uuid::UUID4;
 
+use crate::identifiers::client_order_id::ClientOrderId;
+use crate::identifiers::instrument_id::InstrumentId;
 use crate::{
     enums::{LiquiditySide, OrderSide, TimeInForce},
     events::order::filled::OrderFilled,
@@ -77,7 +79,7 @@ impl TestOrderEventStubs {
             order.order_type(),
             last_qty,
             last_px,
-            *instrument.quote_currency(),
+            instrument.quote_currency(),
             liquidity_side,
             event,
             ts_filled_ns.unwrap_or(0),
@@ -90,32 +92,42 @@ impl TestOrderEventStubs {
     }
 }
 
-// ---- MarketOrder ----
-pub fn market_order(quantity: Quantity, time_in_force: Option<TimeInForce>) -> MarketOrder {
-    let trader = trader_id();
-    let strategy = strategy_id_ema_cross();
-    let instrument = instrument_id_eth_usdt_binance();
-    let client_order_id = client_order_id();
-    MarketOrder::new(
-        trader,
-        strategy,
-        instrument,
-        client_order_id,
-        OrderSide::Buy,
-        quantity,
-        time_in_force.unwrap_or(TimeInForce::Gtc),
-        UUID4::new(),
-        12321312321312,
-        false,
-        false,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
-    .unwrap()
+pub struct TestOrderStubs;
+
+impl TestOrderStubs {
+    pub fn market_order(
+        instrument_id: InstrumentId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        client_order_id: Option<ClientOrderId>,
+        time_in_force: Option<TimeInForce>,
+    ) -> MarketOrder {
+        let trader = trader_id();
+        let strategy = strategy_id_ema_cross();
+        let client_order_id =
+            client_order_id.unwrap_or(ClientOrderId::from("O-20200814-102234-001-001-1"));
+        let time_in_force = time_in_force.unwrap_or(TimeInForce::Gtc);
+        MarketOrder::new(
+            trader,
+            strategy,
+            instrument_id,
+            client_order_id,
+            order_side,
+            quantity,
+            time_in_force,
+            UUID4::new(),
+            12321312321312,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+    }
 }

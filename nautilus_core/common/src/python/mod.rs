@@ -21,7 +21,7 @@ use pyo3::prelude::*;
 
 use crate::{
     enums,
-    logging::{FileWriterConfig, LoggerConfig},
+    logging::{writer::FileWriterConfig, LoggerConfig},
 };
 
 /// Loaded as nautilus_pyo3.common

@@ -30,12 +30,11 @@ import cython
 import msgspec
 import numpy as np
 import pandas as pd
-import psutil
 import pyarrow
 import pytz
 
-from nautilus_trader.config.common import NautilusConfig
-from nautilus_trader.config.error import InvalidConfiguration
+from nautilus_trader.common.config import InvalidConfiguration
+from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.core.rust.common import ComponentState as PyComponentState
 
 cimport numpy as np
@@ -1439,23 +1438,6 @@ cdef class Logger:
         """
         return self._name
 
-    cpdef void flush(self):
-        """
-        Flush all buffers for the logging system.
-
-        This could include stdout/stderr and file writer buffers.
-
-        Warning
-        -------
-        This method is intended to be called once at application shutdown.
-        It will intentionally block the main thread for 100 milliseconds, allowing all
-        buffers to be flushed prior to exiting.
-
-        """
-        if logging_is_initialized():
-            logger_flush()
-            time.sleep(0.1)  # Temporary solution before joining logging thread
-
     cpdef void debug(
         self,
         str message,
@@ -2265,7 +2247,7 @@ cdef class MessageBus:
         config: Any | None = None,
     ):
         # Temporary fix for import error
-        from nautilus_trader.config.common import MessageBusConfig
+        from nautilus_trader.common.config import MessageBusConfig
 
         if instance_id is None:
             instance_id = UUID4()

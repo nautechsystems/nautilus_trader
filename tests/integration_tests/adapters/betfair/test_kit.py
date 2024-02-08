@@ -227,25 +227,29 @@ class BetfairTestStubs:
                 bypass_logging=bypass_logging,
             ),
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
-            streaming=BetfairTestStubs.streaming_config(
-                catalog_fs_protocol=catalog_fs_protocol,
-                catalog_path=catalog_path,
-                flush_interval_ms=flush_interval_ms,
-            )
-            if persist
-            else None,
-            strategies=[
-                ImportableStrategyConfig(
-                    strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
-                    config_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalanceConfig",
-                    config={
-                        "instrument_id": instrument_id,
-                        "max_trade_size": 50,
-                    },
-                ),
-            ]
-            if add_strategy
-            else None,
+            streaming=(
+                BetfairTestStubs.streaming_config(
+                    catalog_fs_protocol=catalog_fs_protocol,
+                    catalog_path=catalog_path,
+                    flush_interval_ms=flush_interval_ms,
+                )
+                if persist
+                else None
+            ),
+            strategies=(
+                [
+                    ImportableStrategyConfig(
+                        strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
+                        config_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalanceConfig",
+                        config={
+                            "instrument_id": instrument_id.value,
+                            "max_trade_size": 50,
+                        },
+                    ),
+                ]
+                if add_strategy
+                else None
+            ),
         )
         run_config = BacktestRunConfig(  # typing: ignore
             engine=engine_config,

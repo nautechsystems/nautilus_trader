@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import itertools
 import os
 import pathlib
 import platform
@@ -672,7 +673,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 if raise_on_failed_deserialize:
                     raise
                 print(f"Failed to deserialize {cls_name}: {e}")
-        return sorted(sum(data.values(), []), key=lambda x: x.ts_init)
+        return sorted(itertools.chain.from_iterable(data.values()), key=lambda x: x.ts_init)
 
     def _list_feather_files(
         self,

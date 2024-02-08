@@ -37,3 +37,6 @@ cdef class OptionsContract(Instrument):
 
     @staticmethod
     cdef dict to_dict_c(OptionsContract obj)
+
+    @staticmethod
+    cdef OptionsContract from_pyo3_c(pyo3_instrument)

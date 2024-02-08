@@ -157,12 +157,12 @@ impl Hash for CryptoPerpetual {
 }
 
 impl Instrument for CryptoPerpetual {
-    fn id(&self) -> &InstrumentId {
-        &self.id
+    fn id(&self) -> InstrumentId {
+        self.id
     }
 
-    fn raw_symbol(&self) -> &Symbol {
-        &self.raw_symbol
+    fn raw_symbol(&self) -> Symbol {
+        self.raw_symbol
     }
 
     fn asset_class(&self) -> AssetClass {
@@ -173,16 +173,16 @@ impl Instrument for CryptoPerpetual {
         InstrumentClass::Swap
     }
 
-    fn quote_currency(&self) -> &Currency {
-        &self.quote_currency
+    fn quote_currency(&self) -> Currency {
+        self.quote_currency
     }
 
-    fn base_currency(&self) -> Option<&Currency> {
-        Some(&self.base_currency)
+    fn base_currency(&self) -> Option<Currency> {
+        Some(self.base_currency)
     }
 
-    fn settlement_currency(&self) -> &Currency {
-        &self.settlement_currency
+    fn settlement_currency(&self) -> Currency {
+        self.settlement_currency
     }
 
     fn is_inverse(&self) -> bool {

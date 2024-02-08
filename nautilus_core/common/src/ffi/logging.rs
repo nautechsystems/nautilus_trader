@@ -26,10 +26,9 @@ use nautilus_model::identifiers::trader_id::TraderId;
 
 use crate::{
     enums::{LogColor, LogLevel},
-    headers,
     logging::{
-        self, logging_set_bypass, map_log_level_to_filter, parse_component_levels,
-        FileWriterConfig, LoggerConfig,
+        self, headers, logging_set_bypass, map_log_level_to_filter, parse_component_levels,
+        writer::FileWriterConfig, LoggerConfig,
     },
 };
 

@@ -15,6 +15,7 @@
 
 from nautilus_trader.core.nautilus_pyo3 import Equity
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
+from nautilus_trader.model.instruments import Equity as LegacyEquity
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
@@ -54,3 +55,9 @@ def test_to_dict():
         "ts_event": 0,
         "ts_init": 0,
     }
+
+
+def test_legacy_equity_from_pyo3():
+    equity = LegacyEquity.from_pyo3(_AAPL_EQUITY)
+
+    assert equity.id.value == "AAPL.XNAS"

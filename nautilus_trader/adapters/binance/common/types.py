@@ -429,9 +429,9 @@ class BinanceTicker(Data):
             "price_change": str(obj.price_change),
             "price_change_percent": str(obj.price_change_percent),
             "weighted_avg_price": str(obj.weighted_avg_price),
-            "prev_close_price": str(obj.prev_close_price)
-            if obj.prev_close_price is not None
-            else None,
+            "prev_close_price": (
+                str(obj.prev_close_price) if obj.prev_close_price is not None else None
+            ),
             "last_price": str(obj.last_price),
             "last_qty": str(obj.last_qty),
             "bid_price": str(obj.bid_price),

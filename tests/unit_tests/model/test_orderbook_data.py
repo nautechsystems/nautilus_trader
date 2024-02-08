@@ -17,6 +17,7 @@ import pickle
 
 import pytest
 
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.data import NULL_ORDER
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
@@ -26,6 +27,7 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.test_kit.rust.data_pyo3 import TestDataProviderPyo3
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
@@ -555,6 +557,29 @@ def test_deltas_from_dict_returns_expected_dict() -> None:
     assert result == deltas
 
 
+def test_deltas_from_pyo3():
+    # Arrange
+    pyo3_delta = TestDataProviderPyo3.order_book_delta()
+
+    # Act
+    delta = OrderBookDelta.from_pyo3(pyo3_delta)
+
+    # Assert
+    assert isinstance(delta, OrderBookDelta)
+
+
+def test_deltas_from_pyo3_list():
+    # Arrange
+    pyo3_deltas = [TestDataProviderPyo3.order_book_delta()] * 1024
+
+    # Act
+    deltas = OrderBookDelta.from_pyo3_list(pyo3_deltas)
+
+    # Assert
+    assert len(deltas) == 1024
+    assert isinstance(deltas[0], OrderBookDelta)
+
+
 def test_depth10_fully_qualified_name() -> None:
     # Arrange, Act, Assert
     assert OrderBookDepth10.fully_qualified_name() == "nautilus_trader.model.data:OrderBookDepth10"
@@ -668,3 +693,14 @@ def test_depth10_to_dict_from_dict_round_trip() -> None:
         "ts_event": 2,
         "ts_init": 3,
     }
+
+
+def test_depth10_from_pyo3():
+    # Arrange
+    pyo3_depth = nautilus_pyo3.OrderBookDepth10.get_stub()
+
+    # Act
+    depth = OrderBookDepth10.from_pyo3(pyo3_depth)
+
+    # Assert
+    assert isinstance(depth, OrderBookDepth10)

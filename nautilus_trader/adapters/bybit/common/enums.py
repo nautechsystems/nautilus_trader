@@ -209,15 +209,21 @@ class BybitEnumParser:
         self.aggregation_kline_mapping = {
             BarAggregation.MINUTE: lambda x: BybitKlineInterval(f"{x}"),
             BarAggregation.HOUR: lambda x: BybitKlineInterval(f"{x * 60}"),
-            BarAggregation.DAY: lambda x: BybitKlineInterval("D")
-            if x == 1
-            else raise_error(ValueError(f"Bybit incorrect day kline interval {x}")),
-            BarAggregation.WEEK: lambda x: BybitKlineInterval("W")
-            if x == 1
-            else raise_error(ValueError(f"Bybit incorrect week kline interval {x}")),
-            BarAggregation.MONTH: lambda x: BybitKlineInterval("M")
-            if x == 1
-            else raise_error(ValueError(f"Bybit incorrect month kline interval {x}")),
+            BarAggregation.DAY: lambda x: (
+                BybitKlineInterval("D")
+                if x == 1
+                else raise_error(ValueError(f"Bybit incorrect day kline interval {x}"))
+            ),
+            BarAggregation.WEEK: lambda x: (
+                BybitKlineInterval("W")
+                if x == 1
+                else raise_error(ValueError(f"Bybit incorrect week kline interval {x}"))
+            ),
+            BarAggregation.MONTH: lambda x: (
+                BybitKlineInterval("M")
+                if x == 1
+                else raise_error(ValueError(f"Bybit incorrect month kline interval {x}"))
+            ),
         }
         self.valid_order_types = {
             OrderType.MARKET,

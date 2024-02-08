@@ -98,32 +98,6 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         else:
             self._log.debug(f"Subscription doesn't exist for {name}")
 
-    def process_position(
-        self,
-        account_id: str,
-        contract: IBContract,
-        position: Decimal,
-        avg_cost: float,
-    ) -> None:
-        """
-        Process position data for an account.
-
-        Parameters
-        ----------
-        account_id : str
-            The account identifier
-        contract : IBContract
-            The contract details for the position.
-        position : Decimal
-            The quantity of the position.
-        avg_cost : float
-            The average cost of the position.
-
-        """
-        self.logAnswer(current_fn_name(), vars())
-        if request := self._requests.get(name="OpenPositions"):
-            request.result.append(IBPosition(account_id, contract, position, avg_cost))
-
     async def get_positions(self, account_id: str) -> list[Position] | None:
         """
         Fetch open positions for a specified account.
@@ -190,6 +164,20 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         if self._next_valid_order_id >= 0 and not self._is_ib_ready.is_set():
             self._log.info("`is_ib_ready` set by managedAccounts", LogColor.BLUE)
             self._is_ib_ready.set()
+
+    def position(
+        self,
+        account_id: str,
+        contract: IBContract,
+        position: Decimal,
+        avg_cost: float,
+    ) -> None:
+        """
+        Provide the portfolio's open positions.
+        """
+        self.logAnswer(current_fn_name(), vars())
+        if request := self._requests.get(name="OpenPositions"):
+            request.result.append(IBPosition(account_id, contract, position, avg_cost))
 
     def positionEnd(self) -> None:
         """

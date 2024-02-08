@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod accounting;
 pub mod currencies;
 pub mod data;
 pub mod enums;
@@ -23,9 +22,12 @@ pub mod instruments;
 pub mod macros;
 pub mod orderbook;
 pub mod orders;
+pub mod position;
 pub mod types;
 
 #[cfg(feature = "ffi")]
 pub mod ffi;
 #[cfg(feature = "python")]
 pub mod python;
+#[cfg(feature = "stubs")]
+pub mod stubs;

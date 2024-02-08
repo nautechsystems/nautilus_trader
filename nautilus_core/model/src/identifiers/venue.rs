@@ -45,6 +45,12 @@ impl Venue {
         })
     }
 
+    pub fn from_str_unchecked(s: &str) -> Self {
+        Self {
+            value: Ustr::from(s),
+        }
+    }
+
     #[must_use]
     pub fn synthetic() -> Self {
         // SAFETY: Unwrap safe as using known synthetic venue constant

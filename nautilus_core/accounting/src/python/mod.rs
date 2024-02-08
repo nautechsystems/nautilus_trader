@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,14 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use rstest::fixture;
+use pyo3::{prelude::*, pymodule};
 
-use crate::{
-    accounting::margin::MarginAccount,
-    events::account::{state::AccountState, stubs::*},
-};
+pub mod cash;
+pub mod margin;
 
-#[fixture]
-pub fn margin_account(margin_account_state: AccountState) -> MarginAccount {
-    MarginAccount::new(margin_account_state, true).unwrap()
+#[pymodule]
+pub fn accounting(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<crate::account::cash::CashAccount>()?;
+    m.add_class::<crate::account::margin::MarginAccount>()?;
+    Ok(())
 }

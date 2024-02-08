@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.actor import Actor
-from nautilus_trader.config.common import ActorConfig
+from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.trading.strategy import Strategy
 from nautilus_trader.trading.trader import Trader

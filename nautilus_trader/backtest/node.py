@@ -17,14 +17,14 @@ from decimal import Decimal
 
 import pandas as pd
 
+from nautilus_trader.backtest.config import BacktestDataConfig
+from nautilus_trader.backtest.config import BacktestRunConfig
+from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
-from nautilus_trader.config import ActorFactory
-from nautilus_trader.config import BacktestDataConfig
-from nautilus_trader.config import BacktestRunConfig
-from nautilus_trader.config import BacktestVenueConfig
-from nautilus_trader.config.error import InvalidConfiguration
+from nautilus_trader.common.config import ActorFactory
+from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
@@ -289,9 +289,9 @@ class BacktestNode:
                 bar_type = None
             session = catalog.backend_session(
                 data_cls=config.data_type,
-                instrument_ids=[config.instrument_id]
-                if config.instrument_id and not bar_type
-                else [],
+                instrument_ids=(
+                    [config.instrument_id] if config.instrument_id and not bar_type else []
+                ),
                 bar_types=[bar_type] if bar_type else [],
                 start=config.start_time,
                 end=config.end_time,

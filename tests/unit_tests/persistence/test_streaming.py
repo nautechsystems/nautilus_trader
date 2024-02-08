@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import copy
-import sys
 from collections import Counter
 
 import pytest
@@ -40,7 +39,6 @@ from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="failing on Windows")
 class TestPersistenceStreaming:
     def setup(self) -> None:
         self.catalog: ParquetDataCatalog | None = None
@@ -53,7 +51,7 @@ class TestPersistenceStreaming:
             catalog_fs_protocol="file",
             instrument_id=instrument.id,
             flush_interval_ms=5_000,
-            bypass_logging=False,
+            bypass_logging=True,
         )
 
         node = BacktestNode(configs=[run_config])
@@ -165,7 +163,7 @@ class TestPersistenceStreaming:
                     ImportableStrategyConfig(
                         strategy_path="nautilus_trader.examples.strategies.signal_strategy:SignalStrategy",
                         config_path="nautilus_trader.examples.strategies.signal_strategy:SignalStrategyConfig",
-                        config={"instrument_id": instrument_id},
+                        config={"instrument_id": instrument_id.value},
                     ),
                 ],
             ),
@@ -223,7 +221,7 @@ class TestPersistenceStreaming:
                     ImportableStrategyConfig(
                         strategy_path="nautilus_trader.examples.strategies.signal_strategy:SignalStrategy",
                         config_path="nautilus_trader.examples.strategies.signal_strategy:SignalStrategyConfig",
-                        config={"instrument_id": instrument_id},
+                        config={"instrument_id": instrument_id.value},
                     ),
                 ],
             ),

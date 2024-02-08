@@ -673,13 +673,13 @@ class TestOrderBook:
         # path_20231226 = TEST_DATA_DIR / "temp" / "databento" / "esh4-glbx-mdp3-20231226.mbo.dbn.zst"
 
         # Act
-        data = loader.load_from_file_pyo3(
+        data = loader.from_dbn_file(
             path_20231224,
             instrument_id=instrument.id,
             as_legacy_cython=True,
         )
         data.extend(
-            loader.load_from_file_pyo3(
+            loader.from_dbn_file(
                 path_20231225,
                 instrument_id=instrument.id,
                 as_legacy_cython=True,
