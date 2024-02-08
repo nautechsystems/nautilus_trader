@@ -18,7 +18,7 @@ use std::{borrow::Cow, collections::HashMap};
 use log::LevelFilter;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
-use pyo3::prelude::*;
+use pyo3::{prelude::*, types::PyString};
 use ustr::Ustr;
 
 use crate::{
@@ -113,8 +113,11 @@ fn parse_component_levels(
 /// Create a new log event.
 #[pyfunction]
 #[pyo3(name = "logger_log")]
-pub fn py_logger_log(level: LogLevel, color: LogColor, component: String, message: String) {
-    logging::log(level, color, Ustr::from(&component), Cow::from(message));
+pub fn py_logger_log(level: LogLevel, color: LogColor, component: &PyString, message: &PyString) {
+    // TODO handle unwrap properly
+    let component = Ustr::from(component.to_str().unwrap());
+    let message = message.to_str().unwrap();
+    logging::log(level, color, component, message);
 }
 
 #[pymethods]

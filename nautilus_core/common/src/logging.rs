@@ -694,7 +694,7 @@ impl Logger {
     }
 }
 
-pub fn log(level: LogLevel, color: LogColor, component: Ustr, message: Cow<'_, str>) {
+pub fn log(level: LogLevel, color: LogColor, component: Ustr, message: &str) {
     let color = Value::from(color as u8);
 
     match level {

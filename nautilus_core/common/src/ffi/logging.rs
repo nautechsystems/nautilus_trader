@@ -120,7 +120,7 @@ pub unsafe extern "C" fn logger_log(
     let component = cstr_to_ustr(component_ptr);
     let message = cstr_to_lossy_cow(message_ptr);
 
-    logging::log(level, color, component, message);
+    logging::log(level, color, component, &message);
 }
 
 /// Logs the Nautilus system header.
