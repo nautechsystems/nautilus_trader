@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{borrow::Cow, collections::HashMap};
+use std::collections::HashMap;
 
 use log::LevelFilter;
 use nautilus_core::uuid::UUID4;

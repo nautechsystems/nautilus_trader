@@ -8,6 +8,7 @@
 //! Each `WebSocket` stream implements the required `Stream` and `Sink` traits,
 //! so the socket is just a stream of messages coming in and going out.
 
+#![allow(clippy::all)]
 #![deny(missing_docs, unused_must_use, unused_mut, unused_imports, unused_import_braces)]
 
 pub use tungstenite;

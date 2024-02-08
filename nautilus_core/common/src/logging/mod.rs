@@ -17,7 +17,6 @@ pub mod headers;
 pub mod writer;
 
 use std::{
-    borrow::Cow,
     collections::HashMap,
     env, fmt,
     str::FromStr,
