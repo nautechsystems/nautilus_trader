@@ -70,14 +70,12 @@ class DatabentoDataClient(LiveMarketDataClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
+    instrument_provder : DatabentoInstrumentProvider
+        The instrument provider for the client.
     loader : DatabentoDataLoader, optional
         The loader for the client.
     config : DatabentoDataClientConfig, optional
         The configuration for the client.
-
-    Warnings
-    --------
-    This class should not be used directly, but through a concrete subclass.
 
     """
 
@@ -491,6 +489,11 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             self._live_client_futures.add(future)
             await future
+
+            # Add trade tick subscriptions for all instruments (MBO data includes trades)
+            for instrument_id in instrument_ids:
+                self._add_subscription_trade_ticks(instrument_id)
+
             future = asyncio.ensure_future(live_client.start(self._handle_record))
             self._live_client_futures.add(future)
             await future
@@ -548,15 +551,16 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             self._live_client_futures.add(future)
             await future
+
+            # Add trade tick subscriptions for instrument (MBP-1 data includes trades)
+            self._add_subscription_trade_ticks(instrument_id)
+
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_quote_ticks` was canceled while still pending.")
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         try:
-            if instrument_id in self.subscribed_quote_ticks():
-                return  # Already subscribed for trades
-
             await self._ensure_subscribed_for_instrument(instrument_id)
 
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
