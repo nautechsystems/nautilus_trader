@@ -16,7 +16,7 @@ members = [
 ]
 
 [workspace.package]
-rust-version = "1.75.0"
+rust-version = "1.76.0"
 version = "0.18.0"
 edition = "2021"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
