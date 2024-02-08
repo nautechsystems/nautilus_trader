@@ -996,7 +996,11 @@ cdef class Bar(Data):
     cdef Bar from_pyo3_c(pyo3_bar):
         # SAFETY: Do NOT deallocate the capsule here
         # It is supposed to be deallocated by the creator
-        return <Bar>capsule_to_data(pyo3_bar.as_pycapsule())
+        capsule = pyo3_bar.as_pycapsule()
+        cdef Data_t* ptr = <Data_t*>PyCapsule_GetPointer(capsule, NULL)
+        cdef Bar bar = Bar.__new__(Bar)
+        bar._mem = ptr.bar
+        return bar
 
     @staticmethod
     def from_dict(dict values) -> Bar:
@@ -1780,7 +1784,11 @@ cdef class OrderBookDelta(Data):
     cdef OrderBookDelta from_pyo3_c(pyo3_delta):
         # SAFETY: Do NOT deallocate the capsule here
         # It is supposed to be deallocated by the creator
-        return <OrderBookDelta>capsule_to_data(pyo3_delta.as_pycapsule())
+        capsule = pyo3_delta.as_pycapsule()
+        cdef Data_t* ptr = <Data_t*>PyCapsule_GetPointer(capsule, NULL)
+        cdef OrderBookDelta delta = OrderBookDelta.__new__(OrderBookDelta)
+        delta._mem = ptr.delta
+        return delta
 
     @staticmethod
     cdef OrderBookDelta from_dict_c(dict values):
@@ -2489,7 +2497,13 @@ cdef class OrderBookDepth10(Data):
 
     @staticmethod
     cdef OrderBookDepth10 from_pyo3_c(pyo3_depth10):
-        return <OrderBookDepth10>capsule_to_data(pyo3_depth10.as_pycapsule())
+        # SAFETY: Do NOT deallocate the capsule here
+        # It is supposed to be deallocated by the creator
+        capsule = pyo3_depth10.as_pycapsule()
+        cdef Data_t* ptr = <Data_t*>PyCapsule_GetPointer(capsule, NULL)
+        cdef OrderBookDepth10 depth10 = OrderBookDepth10.__new__(OrderBookDepth10)
+        depth10._mem = ptr.depth10
+        return depth10
 
     @staticmethod
     cdef OrderBookDepth10 from_dict_c(dict values):
@@ -3141,7 +3155,11 @@ cdef class QuoteTick(Data):
     cdef QuoteTick from_pyo3_c(pyo3_quote):
         # SAFETY: Do NOT deallocate the capsule here
         # It is supposed to be deallocated by the creator
-        return <QuoteTick>capsule_to_data(pyo3_quote.as_pycapsule())
+        capsule = pyo3_quote.as_pycapsule()
+        cdef Data_t* ptr = <Data_t*>PyCapsule_GetPointer(capsule, NULL)
+        cdef QuoteTick quote = QuoteTick.__new__(QuoteTick)
+        quote._mem = ptr.quote
+        return quote
 
     @staticmethod
     cdef QuoteTick from_dict_c(dict values):
@@ -3663,7 +3681,11 @@ cdef class TradeTick(Data):
     cdef TradeTick from_pyo3_c(pyo3_trade):
         # SAFETY: Do NOT deallocate the capsule here
         # It is supposed to be deallocated by the creator
-        return <TradeTick>capsule_to_data(pyo3_trade.as_pycapsule())
+        capsule = pyo3_trade.as_pycapsule()
+        cdef Data_t* ptr = <Data_t*>PyCapsule_GetPointer(capsule, NULL)
+        cdef TradeTick trade = TradeTick.__new__(TradeTick)
+        trade._mem = ptr.trade
+        return trade
 
     @staticmethod
     cdef TradeTick from_raw_c(
