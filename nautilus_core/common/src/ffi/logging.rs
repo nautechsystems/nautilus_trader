@@ -18,7 +18,7 @@ use std::ffi::c_char;
 use nautilus_core::{
     ffi::{
         parsing::{optional_bytes_to_json, u8_as_bool},
-        string::{cstr_to_lossy_cow, cstr_to_str, cstr_to_ustr, optional_cstr_to_str},
+        string::{cstr_to_str, cstr_to_ustr, optional_cstr_to_str},
     },
     uuid::UUID4,
 };
@@ -117,7 +117,7 @@ pub unsafe extern "C" fn logger_log(
     message_ptr: *const c_char,
 ) {
     let component = cstr_to_ustr(component_ptr);
-    let message = cstr_to_lossy_cow(message_ptr);
+    let message = cstr_to_str(message_ptr);
 
     logging::log(level, color, component, message);
 }
