@@ -121,6 +121,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._loader = loader or DatabentoDataLoader()
         self._dataset_ranges: dict[Dataset, tuple[pd.Timestamp, pd.Timestamp]] = {}
         self._dataset_ranges_requested: set[Dataset] = set()
+        self._trade_tick_subscriptions: set[InstrumentId] = set()
 
         # Cache parent symbol index
         for dataset, parent_symbols in (config.parent_symbols or {}).items():
@@ -217,6 +218,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _buffer_mbo_subscriptions(self) -> None:
         try:
+            self._log.debug("Buffering MBO subscriptions...", LogColor.MAGENTA)
             await asyncio.sleep(self._mbo_subscriptions_delay or 0.0)
             self._is_buffering_mbo_subscriptions = False
 
@@ -443,7 +445,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 self._buffered_mbo_subscriptions[dataset].append(instrument_id)
                 return
 
-            if self._get_live_client_mbo(dataset) is not None:
+            if self._live_clients_mbo.get(dataset) is not None:
                 self._log.error(
                     f"Cannot subscribe to order book deltas for {instrument_id}, "
                     "MBO/L3 feed already started.",
@@ -478,6 +480,9 @@ class DatabentoDataClient(LiveMarketDataClient):
             if not instrument_ids:
                 return  # No subscribing instrument IDs were loaded in the cache
 
+            ids_str = ",".join([i.value for i in instrument_ids])
+            self._log.info(f"Subscribing to MBO/L3 for {ids_str}.", LogColor.BLUE)
+
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_ids[0].venue)
             live_client = self._get_live_client_mbo(dataset)
             future = asyncio.ensure_future(
@@ -492,11 +497,10 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             # Add trade tick subscriptions for all instruments (MBO data includes trades)
             for instrument_id in instrument_ids:
-                self._add_subscription_trade_ticks(instrument_id)
+                self._trade_tick_subscriptions.add(instrument_id)
 
             future = asyncio.ensure_future(live_client.start(self._handle_record))
             self._live_client_futures.add(future)
-            await future
         except asyncio.CancelledError:
             self._log.warning(
                 "`_subscribe_order_book_deltas_batch` was canceled while still pending.",
@@ -553,7 +557,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             await future
 
             # Add trade tick subscriptions for instrument (MBP-1 data includes trades)
-            self._add_subscription_trade_ticks(instrument_id)
+            self._trade_tick_subscriptions.add(instrument_id)
 
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
@@ -561,6 +565,9 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         try:
+            if instrument_id in self._trade_tick_subscriptions:
+                return  # Already subscribed (this will save on data costs)
+
             await self._ensure_subscribed_for_instrument(instrument_id)
 
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)

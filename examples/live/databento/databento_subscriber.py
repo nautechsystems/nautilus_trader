@@ -174,7 +174,7 @@ class DataSubscriber(Strategy):
             The order book deltas received.
 
         """
-        # self.log.info(repr(deltas), LogColor.CYAN)
+        self.log.info(repr(deltas), LogColor.CYAN)
 
     def on_order_book(self, order_book: OrderBook) -> None:
         """
