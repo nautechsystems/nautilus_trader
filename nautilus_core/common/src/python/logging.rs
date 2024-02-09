@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{borrow::Cow, collections::HashMap};
+use std::collections::HashMap;
 
 use log::LevelFilter;
 use nautilus_core::uuid::UUID4;
@@ -25,7 +25,7 @@ use crate::{
     enums::{LogColor, LogLevel},
     logging::{
         self, logging_set_bypass, map_log_level_to_filter, parse_level_filter_str,
-        FileWriterConfig, LoggerConfig,
+        writer::FileWriterConfig, LoggerConfig,
     },
 };
 
@@ -114,7 +114,7 @@ fn parse_component_levels(
 #[pyfunction]
 #[pyo3(name = "logger_log")]
 pub fn py_logger_log(level: LogLevel, color: LogColor, component: String, message: String) {
-    logging::log(level, color, Ustr::from(&component), Cow::from(message));
+    logging::log(level, color, Ustr::from(&component), message.as_str());
 }
 
 #[pymethods]

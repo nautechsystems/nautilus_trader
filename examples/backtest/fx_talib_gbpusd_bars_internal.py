@@ -21,8 +21,8 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
-from nautilus_trader.config.common import LoggingConfig
-from nautilus_trader.config.common import RiskEngineConfig
+from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.examples.strategies.talib_strategy import TALibStrategy
 from nautilus_trader.examples.strategies.talib_strategy import TALibStrategyConfig
 from nautilus_trader.model.currencies import USD

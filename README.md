@@ -15,10 +15,10 @@
 
 | Platform           | Rust    | Python |
 | :----------------- | :------ | :----- |
-| `Linux (x86_64)`   | 1.75.0+ | 3.10+  |
-| `macOS (x86_64)`   | 1.75.0+ | 3.10+  |
-| `macOS (arm64)`    | 1.75.0+ | 3.10+  |
-| `Windows (x86_64)` | 1.75.0+ | 3.10+  |
+| `Linux (x86_64)`   | 1.76.0+ | 3.10+  |
+| `macOS (x86_64)`   | 1.76.0+ | 3.10+  |
+| `macOS (arm64)`    | 1.76.0+ | 3.10+  |
+| `Windows (x86_64)` | 1.76.0+ | 3.10+  |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -104,9 +104,8 @@ written in Cython, however the libraries can be accessed from both Python and Cy
 ## What is Rust?
 
 [Rust](https://www.rust-lang.org/) is a multi-paradigm programming language designed for performance and safety, especially safe
-concurrency. Rust is blazingly fast and memory-efficient (comparable to C and C++) with no runtime or
-garbage collector. It can power mission-critical systems, run on embedded devices, and easily
-integrates with other languages.
+concurrency. Rust is blazingly fast and memory-efficient (comparable to C and C++) with no garbage collector.
+It can power mission-critical systems, run on embedded devices, and easily integrates with other languages.
 
 Rust’s rich type system and ownership model guarantees memory-safety and thread-safety deterministically —
 eliminating many classes of bugs at compile-time.
@@ -216,7 +215,7 @@ Documentation of these changes in the release notes are made on a best-effort ba
 ### Branches
 
 - `master` branch will always reflect the source code for the latest released version
-- `nightly` branch is automatically merged from `develop` branch daily at 14:00 UTC, and also when required
+- `nightly` branch may contain experimental features and is generally merged from `develop` branch daily, and also when required
 - `develop` branch is normally very active with frequent commits and may contain experimental features. We aim to maintain a stable
   passing build on this branch
 
@@ -233,11 +232,13 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 - `make install-just-deps-all` -- Same as `make install-just-deps` and additionally installs `docs` dependencies
 - `make build` -- Runs the Cython build script in `release` build mode (default)
 - `make build-debug` -- Runs the Cython build script in `debug` build mode
+- `make build-wheel` -- Runs the Poetry build with a wheel format in `release` mode
+- `make build-wheel-debug` -- Runs the Poetry build with a wheel format in `debug` mode
 - `make clean` -- **CAUTION** Cleans all non-source artifacts from the repository
 - `make docs` -- Builds the documentation HTML using Sphinx
 - `make pre-commit` -- Runs the pre-commit checks over all files
-- `make pre-flight` -- Runs pre-commit, makes a clean debug build and runs all tests (except performance tests)
 - `make ruff` -- Runs ruff over all files using the `pyproject.toml` config
+- `make outdated` -- Runs commands to show outdated dependencies for both Rust and Python
 - `make pytest` -- Runs all tests with `pytest` (except performance tests)
 - `make pytest-coverage` -- Same as `make pytest` and additionally runs with test coverage and produces a report
 
@@ -279,7 +280,7 @@ Then open your browser at the following address:
 | :---------------- |
 
 **NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
-this is why `log_level` in the examples is set to "ERROR". If you lower this level to see more
+this is why `log_level` in the examples is set to `ERROR`. If you lower this level to see more
 logging then the notebook will hang during cell execution. A fix is currently
 being investigated which involves either raising the configured rate limits for
 Jupyter, or throttling the log flushing from Nautilus.**

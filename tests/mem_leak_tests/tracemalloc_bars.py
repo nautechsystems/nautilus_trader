@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
 #  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
@@ -13,19 +14,24 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Annotated
+from nautilus_trader.model.data import Bar
+from nautilus_trader.test_kit.rust.data_pyo3 import TestDataProviderPyo3
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from tests.mem_leak_tests.conftest import snapshot_memory
 
-from msgspec import Meta
+
+@snapshot_memory(4000)
+def run_repr(*args, **kwargs):
+    bar = TestDataStubs.bar_5decimal()
+    repr(bar)
 
 
-# An integer constrained to values > 0
-PositiveInt = Annotated[int, Meta(gt=0)]
+@snapshot_memory(4000)
+def run_from_pyo3(*args, **kwargs):
+    pyo3_bar = TestDataProviderPyo3.bar_5decimal()
+    Bar.from_pyo3(pyo3_bar)
 
-# An integer constrained to values >= 0
-NonNegativeInt = Annotated[int, Meta(ge=0)]
 
-# A float constrained to values > 0
-PositiveFloat = Annotated[float, Meta(gt=0.0)]
-
-# A float constrained to values >= 0
-NonNegativeFloat = Annotated[float, Meta(ge=0.0)]
+if __name__ == "__main__":
+    run_repr()
+    run_from_pyo3()

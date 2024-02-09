@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
 #  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
@@ -13,8 +14,24 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.test_kit.rust.data_pyo3 import TestDataProviderPyo3
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from tests.mem_leak_tests.conftest import snapshot_memory
 
-class InvalidConfiguration(RuntimeError):
-    """
-    Raised when there is a violation of a configuration condition, making it invalid.
-    """
+
+@snapshot_memory(4000)
+def run_repr(*args, **kwargs):
+    depth = TestDataStubs.order_book_delta()
+    repr(depth)  # Copies bids and asks book order data from Rust on every iteration
+
+
+@snapshot_memory(4000)
+def run_from_pyo3(*args, **kwargs):
+    pyo3_delta = TestDataProviderPyo3.order_book_delta()
+    OrderBookDelta.from_pyo3(pyo3_delta)
+
+
+if __name__ == "__main__":
+    run_repr()
+    run_from_pyo3()

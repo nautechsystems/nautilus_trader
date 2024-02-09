@@ -15,7 +15,7 @@
 
 use std::fs;
 use std::str::FromStr;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use anyhow::Result;
 use databento::live::Subscription;
@@ -31,6 +31,8 @@ use nautilus_model::data::Data;
 use nautilus_model::identifiers::instrument_id::InstrumentId;
 use nautilus_model::identifiers::symbol::Symbol;
 use nautilus_model::identifiers::venue::Venue;
+use nautilus_model::python::data::data_to_pycapsule;
+use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use time::OffsetDateTime;
 use tokio::sync::Mutex;
@@ -50,7 +52,7 @@ pub struct DatabentoLiveClient {
     pub key: String,
     #[pyo3(get)]
     pub dataset: String,
-    inner: OnceLock<Arc<Mutex<databento::LiveClient>>>,
+    inner: Option<Arc<Mutex<databento::LiveClient>>>,
     runtime: tokio::runtime::Runtime,
     publishers: Arc<IndexMap<PublisherId, DatabentoPublisher>>,
 }
@@ -65,14 +67,14 @@ impl DatabentoLiveClient {
             .await
     }
 
-    fn get_inner_client(&self) -> Result<Arc<Mutex<databento::LiveClient>>, databento::Error> {
-        if let Some(client) = self.inner.get() {
-            Ok(client.clone())
-        } else {
-            let client = self.runtime.block_on(self.initialize_client())?;
-            let arc_client = Arc::new(Mutex::new(client));
-            let _ = self.inner.set(arc_client.clone());
-            Ok(arc_client)
+    fn get_inner_client(&mut self) -> Result<Arc<Mutex<databento::LiveClient>>, databento::Error> {
+        match &self.inner {
+            Some(client) => Ok(client.clone()),
+            None => {
+                let client = self.runtime.block_on(self.initialize_client())?;
+                self.inner = Some(Arc::new(Mutex::new(client)));
+                Ok(self.inner.clone().unwrap())
+            }
         }
     }
 }
@@ -92,7 +94,7 @@ impl DatabentoLiveClient {
         Ok(Self {
             key,
             dataset,
-            inner: OnceLock::new(),
+            inner: None,
             runtime: tokio::runtime::Runtime::new()?,
             publishers: Arc::new(publishers),
         })
@@ -100,7 +102,7 @@ impl DatabentoLiveClient {
 
     #[pyo3(name = "subscribe")]
     fn py_subscribe<'py>(
-        &self,
+        &mut self,
         py: Python<'py>,
         schema: String,
         symbols: String,
@@ -132,9 +134,6 @@ impl DatabentoLiveClient {
                     .build(),
             };
 
-            // TODO: Temporary debug logging
-            // println!("{:?}", subscription);
-
             client
                 .subscribe(&subscription)
                 .await
@@ -144,7 +143,7 @@ impl DatabentoLiveClient {
     }
 
     #[pyo3(name = "start")]
-    fn py_start<'py>(&self, py: Python<'py>, callback: PyObject) -> PyResult<&'py PyAny> {
+    fn py_start<'py>(&mut self, py: Python<'py>, callback: PyObject) -> PyResult<&'py PyAny> {
         let arc_client = self.get_inner_client().map_err(to_pyruntime_err)?;
         let publishers = self.publishers.clone();
 
@@ -154,21 +153,38 @@ impl DatabentoLiveClient {
             let mut symbol_map = PitSymbolMap::new();
 
             let timeout_duration = Duration::from_millis(10);
+            let relock_interval = timeout_duration.as_nanos() as u64;
+            let mut lock_last_dropped_ns = 0_u64;
+
             client.start().await.map_err(to_pyruntime_err)?;
 
             loop {
-                drop(client);
-                client = arc_client.lock().await;
+                // Check if need to drop then re-aquire lock
+                let now_ns = clock.get_time_ns();
+                if now_ns >= lock_last_dropped_ns + relock_interval {
+                    // Drop the client which will release the `MutexGuard`,
+                    // allowing other futures to obtain it.
+                    drop(client);
+
+                    // Re-aquire the lock to be able to receive the next record
+                    client = arc_client.lock().await;
+                    lock_last_dropped_ns = now_ns;
+                }
 
                 let result = timeout(timeout_duration, client.next_record()).await;
-                let record = match result {
-                    Ok(Ok(Some(record))) => record,
-                    Ok(Ok(None)) => break, // Session ended normally
-                    Ok(Err(e)) => {
-                        // Fail session entirely for now
+                let record_opt = match result {
+                    Ok(record_opt) => record_opt,
+                    Err(_) => continue, // Timeout
+                };
+
+                let record = match record_opt {
+                    Ok(Some(record)) => record,
+                    Ok(None) => break, // Session ended normally
+                    Err(e) => {
+                        // Fail the session entirely for now. Consider refining
+                        // this strategy to handle specific errors more gracefully.
                         return Err(to_pyruntime_err(e));
                     }
-                    Err(_) => continue, // Timeout
                 };
 
                 let rtype = record.rtype().expect("Invalid `rtype`");
@@ -198,7 +214,6 @@ impl DatabentoLiveClient {
 
                         match result {
                             Ok(instrument) => {
-                                // TODO: Optimize this by reducing the frequency of acquiring the GIL if possible
                                 Python::with_gil(|py| {
                                     let py_obj =
                                         convert_instrument_to_pyobject(py, instrument).unwrap();
@@ -225,24 +240,16 @@ impl DatabentoLiveClient {
                         let instrument_id = InstrumentId::new(symbol, venue);
                         let ts_init = clock.get_time_ns();
 
-                        let (data, _) =
+                        let (data, maybe_data) =
                             parse_record(&record, rtype, instrument_id, 2, Some(ts_init))
                                 .map_err(to_pyvalue_err)?;
 
-                        // TODO: Optimize this by reducing the frequency of acquiring the GIL if possible
                         Python::with_gil(|py| {
-                            let py_obj = match data {
-                                Data::Delta(delta) => delta.into_py(py),
-                                Data::Depth10(depth) => depth.into_py(py),
-                                Data::Quote(quote) => quote.into_py(py),
-                                Data::Trade(trade) => trade.into_py(py),
-                                _ => panic!("Invalid data element, was {data:?}"),
-                            };
+                            call_python_with_data(py, &callback, data);
 
-                            match callback.call1(py, (py_obj,)) {
-                                Ok(_) => {}
-                                Err(e) => eprintln!("Error on callback, {e:?}"), // Just print error for now
-                            };
+                            if let Some(data) = maybe_data {
+                                call_python_with_data(py, &callback, data);
+                            }
                         });
                     }
                 }
@@ -251,15 +258,28 @@ impl DatabentoLiveClient {
         })
     }
 
-    // TODO: Close wants to take ownership which isn't possible?
     #[pyo3(name = "close")]
-    fn py_close<'py>(&self, py: Python<'py>) -> PyResult<&'py PyAny> {
-        // let arc_client = self.get_inner_client().map_err(to_pyvalue_err)?;
-
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            // let client = arc_client.lock_owned().await;
-            // client.close().await.map_err(to_pyvalue_err)?;
-            Ok(())
-        })
+    fn py_close<'py>(&mut self, py: Python<'py>) -> PyResult<&'py PyAny> {
+        match self.inner.take() {
+            Some(arc_client) => {
+                pyo3_asyncio::tokio::future_into_py(py, async move {
+                    let _client = arc_client.lock_owned().await;
+                    // Still need to determine how to take ownership here
+                    // client.close().await.map_err(to_pyruntime_err)
+                    Ok(())
+                })
+            }
+            None => Err(PyRuntimeError::new_err(
+                "Error on close: client was never started",
+            )),
+        }
     }
+}
+
+fn call_python_with_data(py: Python, callback: &PyObject, data: Data) {
+    let py_obj = data_to_pycapsule(py, data);
+    match callback.call1(py, (py_obj,)) {
+        Ok(_) => {}
+        Err(e) => eprintln!("Error on callback, {e:?}"), // Just print error for now
+    };
 }

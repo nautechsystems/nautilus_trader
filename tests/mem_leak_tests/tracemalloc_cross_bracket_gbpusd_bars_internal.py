@@ -21,8 +21,8 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
-from nautilus_trader.config.common import LoggingConfig
-from nautilus_trader.config.common import RiskEngineConfig
+from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.examples.strategies.ema_cross_bracket import EMACrossBracket
 from nautilus_trader.examples.strategies.ema_cross_bracket import EMACrossBracketConfig
 from nautilus_trader.model.currencies import USD

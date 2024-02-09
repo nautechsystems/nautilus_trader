@@ -1,3 +1,21 @@
+# NautilusTrader 1.187.0 Beta
+
+Released on 9th February 2024 (UTC).
+
+### Enhancements
+- Refined logging system module and writers in Rust, thanks @ayush-sb and @twitu
+- Improved Interactive Brokers adapter symbology and parsing with a `strict_symbology` option, thanks @rsmb7z and @fhill2
+
+### Breaking Changes
+- Reorganized configuration objects (separated into a `config` module per subpackage, with re-exports from `nautilus_trader.config`)
+
+### Fixes
+- Fixed `BacktestEngine` and `Trader` disposal (now properly releasing resources), thanks for reporting @davidsblom
+- Fixed circular import issues from configuration objects, thanks for reporting @cuberone
+- Fixed unnecessary creation of log files when file logging off
+
+---
+
 # NautilusTrader 1.186.0 Beta
 
 Released on 2nd February 2024 (UTC).

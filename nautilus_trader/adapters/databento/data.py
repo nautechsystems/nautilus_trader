@@ -44,9 +44,9 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.identifiers import InstrumentId
@@ -70,14 +70,12 @@ class DatabentoDataClient(LiveMarketDataClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
+    instrument_provder : DatabentoInstrumentProvider
+        The instrument provider for the client.
     loader : DatabentoDataLoader, optional
         The loader for the client.
     config : DatabentoDataClientConfig, optional
         The configuration for the client.
-
-    Warnings
-    --------
-    This class should not be used directly, but through a concrete subclass.
 
     """
 
@@ -123,6 +121,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._loader = loader or DatabentoDataLoader()
         self._dataset_ranges: dict[Dataset, tuple[pd.Timestamp, pd.Timestamp]] = {}
         self._dataset_ranges_requested: set[Dataset] = set()
+        self._trade_tick_subscriptions: set[InstrumentId] = set()
 
         # Cache parent symbol index
         for dataset, parent_symbols in (config.parent_symbols or {}).items():
@@ -219,6 +218,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _buffer_mbo_subscriptions(self) -> None:
         try:
+            self._log.debug("Buffering MBO subscriptions...", LogColor.MAGENTA)
             await asyncio.sleep(self._mbo_subscriptions_delay or 0.0)
             self._is_buffering_mbo_subscriptions = False
 
@@ -445,7 +445,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 self._buffered_mbo_subscriptions[dataset].append(instrument_id)
                 return
 
-            if self._get_live_client_mbo(dataset) is not None:
+            if self._live_clients_mbo.get(dataset) is not None:
                 self._log.error(
                     f"Cannot subscribe to order book deltas for {instrument_id}, "
                     "MBO/L3 feed already started.",
@@ -480,6 +480,9 @@ class DatabentoDataClient(LiveMarketDataClient):
             if not instrument_ids:
                 return  # No subscribing instrument IDs were loaded in the cache
 
+            ids_str = ",".join([i.value for i in instrument_ids])
+            self._log.info(f"Subscribing to MBO/L3 for {ids_str}.", LogColor.BLUE)
+
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_ids[0].venue)
             live_client = self._get_live_client_mbo(dataset)
             future = asyncio.ensure_future(
@@ -491,9 +494,13 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             self._live_client_futures.add(future)
             await future
+
+            # Add trade tick subscriptions for all instruments (MBO data includes trades)
+            for instrument_id in instrument_ids:
+                self._trade_tick_subscriptions.add(instrument_id)
+
             future = asyncio.ensure_future(live_client.start(self._handle_record))
             self._live_client_futures.add(future)
-            await future
         except asyncio.CancelledError:
             self._log.warning(
                 "`_subscribe_order_book_deltas_batch` was canceled while still pending.",
@@ -548,14 +555,18 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             self._live_client_futures.add(future)
             await future
+
+            # Add trade tick subscriptions for instrument (MBP-1 data includes trades)
+            self._trade_tick_subscriptions.add(instrument_id)
+
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_quote_ticks` was canceled while still pending.")
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         try:
-            if instrument_id in self.subscribed_quote_ticks():
-                return  # Already subscribed for trades
+            if instrument_id in self._trade_tick_subscriptions:
+                return  # Already subscribed (this will save on data costs)
 
             await self._ensure_subscribed_for_instrument(instrument_id)
 
@@ -840,12 +851,13 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     def _handle_record(
         self,
-        pyo3_data: Any,  # TODO: Define `Data` base class
+        pycapsule: object,
     ) -> None:
         # self._log.debug(f"Received {record}", LogColor.MAGENTA)
 
-        if isinstance(pyo3_data, nautilus_pyo3.OrderBookDelta):
-            data = OrderBookDelta.from_pyo3(pyo3_data)
+        data = capsule_to_data(pycapsule)
+
+        if isinstance(data, OrderBookDelta):
             instrument_id = data.instrument_id
             if DatabentoRecordFlags.F_LAST not in DatabentoRecordFlags(data.flags):
                 buffer = self._buffered_deltas[instrument_id]
@@ -856,17 +868,5 @@ class DatabentoDataClient(LiveMarketDataClient):
                 buffer.append(data)
                 data = OrderBookDeltas(instrument_id, deltas=buffer.copy())
                 buffer.clear()
-        elif isinstance(pyo3_data, nautilus_pyo3.OrderBookDepth10):
-            raise RuntimeError("MBP-10 not currently supported: pyo3 conversion function needed")
-            data = OrderBookDepth10.from_pyo3(pyo3_data)
-        elif isinstance(pyo3_data, nautilus_pyo3.QuoteTick):
-            data = QuoteTick.from_pyo3(pyo3_data)
-        elif isinstance(pyo3_data, nautilus_pyo3.TradeTick):
-            data = TradeTick.from_pyo3(pyo3_data)
-        elif isinstance(pyo3_data, nautilus_pyo3.Bar):
-            data = Bar.from_pyo3(pyo3_data)
-        else:
-            self._log.error(f"Unimplemented data type in handler: {pyo3_data}.")
-            return
 
         self._handle_data(data)

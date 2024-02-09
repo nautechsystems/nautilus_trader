@@ -17,6 +17,7 @@ import pickle
 
 import pytest
 
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.data import NULL_ORDER
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
@@ -692,3 +693,14 @@ def test_depth10_to_dict_from_dict_round_trip() -> None:
         "ts_event": 2,
         "ts_init": 3,
     }
+
+
+def test_depth10_from_pyo3():
+    # Arrange
+    pyo3_depth = nautilus_pyo3.OrderBookDepth10.get_stub()
+
+    # Act
+    depth = OrderBookDepth10.from_pyo3(pyo3_depth)
+
+    # Assert
+    assert isinstance(depth, OrderBookDepth10)

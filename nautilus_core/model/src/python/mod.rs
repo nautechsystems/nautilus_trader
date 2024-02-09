@@ -30,6 +30,7 @@ pub mod identifiers;
 pub mod instruments;
 pub mod macros;
 pub mod orders;
+pub mod position;
 pub mod types;
 
 pub const PY_MODULE_MODEL: &str = "nautilus_trader.core.nautilus_pyo3.model";
@@ -293,7 +294,6 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::types::quantity::Quantity>()?;
     m.add_class::<crate::types::balance::AccountBalance>()?;
     m.add_class::<crate::types::balance::MarginBalance>()?;
-
     // Instruments
     m.add_class::<crate::instruments::crypto_future::CryptoFuture>()?;
     m.add_class::<crate::instruments::crypto_perpetual::CryptoPerpetual>()?;
@@ -321,5 +321,6 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::events::order::expired::OrderExpired>()?;
     // Events - account
     m.add_class::<crate::events::account::state::AccountState>()?;
+    m.add_class::<crate::position::Position>()?;
     Ok(())
 }

@@ -24,6 +24,22 @@ jobs:
       RUST_BACKTRACE: 1
 
     steps:
+      - name: Free disk space (Ubuntu)
+        if: runner.os == 'Linux'
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: false
+          dotnet: false
+          haskell: false
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Install runner dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -42,7 +58,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Set up Python environment
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -67,7 +83,7 @@ jobs:
 
       - name: Setup cached pre-commit
         id: cached-pre-commit
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
@@ -77,7 +93,7 @@ jobs:
 
       - name: Poetry cache
         id: cached-poetry
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{ env.POETRY_CACHE_DIR }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
@@ -152,7 +168,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Set up Python environment
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -171,7 +187,7 @@ jobs:
 
       - name: Setup cached pre-commit
         id: cached-pre-commit
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
@@ -181,7 +197,7 @@ jobs:
 
       - name: Poetry cache
         id: cached-poetry
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{ env.POETRY_CACHE_DIR }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}

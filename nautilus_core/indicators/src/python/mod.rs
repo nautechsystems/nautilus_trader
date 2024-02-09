@@ -32,5 +32,6 @@ pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::ratio::efficiency_ratio::EfficiencyRatio>()?;
     // momentum
     m.add_class::<crate::momentum::rsi::RelativeStrengthIndex>()?;
+    m.add_class::<crate::momentum::aroon::AroonOscillator>()?;
     Ok(())
 }

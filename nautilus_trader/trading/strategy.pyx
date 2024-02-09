@@ -25,15 +25,13 @@ attempts to operate without a managing `Trader` instance.
 
 """
 
-import cython
-
-from nautilus_trader.cache.cache import Cache
-from nautilus_trader.config import ImportableStrategyConfig
-from nautilus_trader.config import StrategyConfig
+from nautilus_trader.trading.config import ImportableStrategyConfig
+from nautilus_trader.trading.config import StrategyConfig
 
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.cache.base cimport CacheFacade
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.component cimport CMD
 from nautilus_trader.common.component cimport EVT

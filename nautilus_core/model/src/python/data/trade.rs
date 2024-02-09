@@ -31,12 +31,14 @@ use pyo3::{
 };
 
 use crate::{
-    data::trade::TradeTick,
+    data::{trade::TradeTick, Data},
     enums::{AggressorSide, FromU8},
     identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
     python::PY_MODULE_MODEL,
     types::{price::Price, quantity::Quantity},
 };
+
+use super::data_to_pycapsule;
 
 #[pymethods]
 impl TradeTick {
@@ -148,10 +150,73 @@ impl TradeTick {
         format!("{}({})", stringify!(TradeTick), self)
     }
 
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "price")]
+    fn py_price(&self) -> Price {
+        self.price
+    }
+
+    #[getter]
+    #[pyo3(name = "size")]
+    fn py_size(&self) -> Quantity {
+        self.size
+    }
+
+    #[getter]
+    #[pyo3(name = "aggressor_side")]
+    fn py_aggressor_side(&self) -> AggressorSide {
+        self.aggressor_side
+    }
+
+    #[getter]
+    #[pyo3(name = "trade_id")]
+    fn py_trade_id(&self) -> TradeId {
+        self.trade_id
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+
     #[staticmethod]
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(TradeTick))
+    }
+
+    /// Creates a `PyCapsule` containing a raw pointer to a `Data::Trade` object.
+    ///
+    /// This function takes the current object (assumed to be of a type that can be represented as
+    /// `Data::Trade`), and encapsulates a raw pointer to it within a `PyCapsule`.
+    ///
+    /// # Safety
+    ///
+    /// This function is safe as long as the following conditions are met:
+    /// - The `Data::Trade` object pointed to by the capsule must remain valid for the lifetime of the capsule.
+    /// - The consumer of the capsule must ensure proper handling to avoid dereferencing a dangling pointer.
+    ///
+    /// # Panics
+    ///
+    /// The function will panic if the `PyCapsule` creation fails, which can occur if the
+    /// `Data::Trade` object cannot be converted into a raw pointer.
+    ///
+    #[pyo3(name = "as_pycapsule")]
+    fn py_as_pycapsule(&self, py: Python<'_>) -> PyObject {
+        data_to_pycapsule(py, Data::Trade(*self))
     }
 
     /// Return a dictionary representation of the object.

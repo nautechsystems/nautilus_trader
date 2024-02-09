@@ -19,17 +19,17 @@ import msgspec
 import pandas as pd
 import pytest
 
+from nautilus_trader.common.config import CUSTOM_DECODINGS
+from nautilus_trader.common.config import CUSTOM_ENCODINGS
+from nautilus_trader.config import DatabaseConfig
 from nautilus_trader.config import ImportableConfig
-from nautilus_trader.config.common import CUSTOM_DECODINGS
-from nautilus_trader.config.common import CUSTOM_ENCODINGS
-from nautilus_trader.config.common import DatabaseConfig
-from nautilus_trader.config.common import ImportableStrategyConfig
-from nautilus_trader.config.common import InstrumentProviderConfig
-from nautilus_trader.config.common import StrategyFactory
-from nautilus_trader.config.common import msgspec_decoding_hook
-from nautilus_trader.config.common import msgspec_encoding_hook
-from nautilus_trader.config.common import register_config_decoding
-from nautilus_trader.config.common import register_config_encoding
+from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.config import StrategyFactory
+from nautilus_trader.config import msgspec_decoding_hook
+from nautilus_trader.config import msgspec_encoding_hook
+from nautilus_trader.config import register_config_decoding
+from nautilus_trader.config import register_config_encoding
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model.data import BarType
@@ -68,7 +68,7 @@ def test_fully_qualified_name() -> None:
     config = DatabaseConfig()
 
     # Act, Assert
-    assert config.fully_qualified_name() == "nautilus_trader.config.common:DatabaseConfig"
+    assert config.fully_qualified_name() == "nautilus_trader.common.config:DatabaseConfig"
 
 
 def test_dict() -> None:

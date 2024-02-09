@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.config.common import NautilusConfig
+from nautilus_trader.common.config import NautilusConfig
 
 from cpython.datetime cimport datetime
 

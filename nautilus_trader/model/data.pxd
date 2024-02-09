@@ -48,6 +48,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 
 cpdef list capsule_to_list(capsule)
+cpdef Data capsule_to_data(capsule)
 
 cdef inline void capsule_destructor(object capsule):
     cdef CVec* cvec = <CVec*>PyCapsule_GetPointer(capsule, NULL)
@@ -150,10 +151,10 @@ cdef class Bar(Data):
     cdef Bar from_mem_c(Bar_t mem)
 
     @staticmethod
-    cdef Bar from_dict_c(dict values)
+    cdef Bar from_pyo3_c(pyo3_bar)
 
     @staticmethod
-    cdef Bar from_pyo3_c(pyo3_bar)
+    cdef Bar from_dict_c(dict values)
 
     @staticmethod
     cdef dict to_dict_c(Bar obj)
@@ -210,10 +211,10 @@ cdef class OrderBookDelta(Data):
     cdef OrderBookDelta from_mem_c(OrderBookDelta_t mem)
 
     @staticmethod
-    cdef OrderBookDelta from_dict_c(dict values)
+    cdef OrderBookDelta from_pyo3_c(pyo3_delta)
 
     @staticmethod
-    cdef OrderBookDelta from_pyo3_c(pyo3_delta)
+    cdef OrderBookDelta from_dict_c(dict values)
 
     @staticmethod
     cdef dict to_dict_c(OrderBookDelta obj)
@@ -259,6 +260,9 @@ cdef class OrderBookDepth10(Data):
 
     @staticmethod
     cdef OrderBookDepth10 from_mem_c(OrderBookDepth10_t mem)
+
+    @staticmethod
+    cdef OrderBookDepth10 from_pyo3_c(pyo3_depth10)
 
     @staticmethod
     cdef OrderBookDepth10 from_dict_c(dict values)
@@ -354,6 +358,9 @@ cdef class QuoteTick(Data):
     cdef QuoteTick from_mem_c(QuoteTick_t mem)
 
     @staticmethod
+    cdef QuoteTick from_pyo3_c(pyo3_quote)
+
+    @staticmethod
     cdef list capsule_to_list_c(capsule)
 
     @staticmethod
@@ -361,9 +368,6 @@ cdef class QuoteTick(Data):
 
     @staticmethod
     cdef QuoteTick from_dict_c(dict values)
-
-    @staticmethod
-    cdef QuoteTick from_pyo3_c(pyo3_quote)
 
     @staticmethod
     cdef dict to_dict_c(QuoteTick obj)
@@ -394,6 +398,9 @@ cdef class TradeTick(Data):
     cdef TradeTick from_mem_c(TradeTick_t mem)
 
     @staticmethod
+    cdef TradeTick from_pyo3_c(pyo3_trade)
+
+    @staticmethod
     cdef list capsule_to_list_c(capsule)
 
     @staticmethod
@@ -401,9 +408,6 @@ cdef class TradeTick(Data):
 
     @staticmethod
     cdef TradeTick from_dict_c(dict values)
-
-    @staticmethod
-    cdef TradeTick from_pyo3_c(pyo3_trade)
 
     @staticmethod
     cdef dict to_dict_c(TradeTick obj)

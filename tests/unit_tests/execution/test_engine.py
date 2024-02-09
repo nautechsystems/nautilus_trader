@@ -20,8 +20,8 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.config import ExecEngineConfig
+from nautilus_trader.config import InvalidConfiguration
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine

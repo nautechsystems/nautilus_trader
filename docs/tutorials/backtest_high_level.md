@@ -21,11 +21,11 @@ from pathlib import Path
 import fsspec
 import pandas as pd
 
+from nautilus_trader.backtest.node import BacktestNode, BacktestVenueConfig, BacktestDataConfig, BacktestRunConfig, BacktestEngineConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.objects import Price, Quantity
-from nautilus_trader.backtest.node import BacktestNode, BacktestVenueConfig, BacktestDataConfig, BacktestRunConfig, BacktestEngineConfig
-from nautilus_trader.config.common import ImportableStrategyConfig
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.test_kit.providers import CSVTickDataLoader

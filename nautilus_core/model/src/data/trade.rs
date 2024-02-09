@@ -42,25 +42,18 @@ use crate::{
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct TradeTick {
     /// The trade instrument ID.
-    #[pyo3(get)]
     pub instrument_id: InstrumentId,
     /// The traded price.
-    #[pyo3(get)]
     pub price: Price,
     /// The traded size.
-    #[pyo3(get)]
     pub size: Quantity,
     /// The trade aggressor side.
-    #[pyo3(get)]
     pub aggressor_side: AggressorSide,
     /// The trade match ID (assigned by the venue).
-    #[pyo3(get)]
     pub trade_id: TradeId,
     /// The UNIX timestamp (nanoseconds) when the tick event occurred.
-    #[pyo3(get)]
     pub ts_event: UnixNanos,
     ///  The UNIX timestamp (nanoseconds) when the data object was initialized.
-    #[pyo3(get)]
     pub ts_init: UnixNanos,
 }
 

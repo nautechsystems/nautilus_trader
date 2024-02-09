@@ -117,12 +117,12 @@ impl Hash for Equity {
 }
 
 impl Instrument for Equity {
-    fn id(&self) -> &InstrumentId {
-        &self.id
+    fn id(&self) -> InstrumentId {
+        self.id
     }
 
-    fn raw_symbol(&self) -> &Symbol {
-        &self.raw_symbol
+    fn raw_symbol(&self) -> Symbol {
+        self.raw_symbol
     }
 
     fn asset_class(&self) -> AssetClass {
@@ -133,16 +133,16 @@ impl Instrument for Equity {
         InstrumentClass::Spot
     }
 
-    fn quote_currency(&self) -> &Currency {
-        &self.currency
+    fn quote_currency(&self) -> Currency {
+        self.currency
     }
 
-    fn base_currency(&self) -> Option<&Currency> {
+    fn base_currency(&self) -> Option<Currency> {
         None
     }
 
-    fn settlement_currency(&self) -> &Currency {
-        &self.currency
+    fn settlement_currency(&self) -> Currency {
+        self.currency
     }
 
     fn is_inverse(&self) -> bool {

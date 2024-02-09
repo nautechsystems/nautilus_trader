@@ -23,7 +23,7 @@ from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
-from nautilus_trader.config.common import NautilusConfig
+from nautilus_trader.config import NautilusConfig
 
 
 class InteractiveBrokersGatewayConfig(NautilusConfig, frozen=True):
@@ -69,6 +69,12 @@ class InteractiveBrokersInstrumentProviderConfig(InstrumentProviderConfig, froze
 
     Parameters
     ----------
+    strict_symbology : bool, optional
+        Determines the symbology format used for identifying instruments. If set to True,
+        a strict symbology format is used, as provided by InteractiveBrokers where instrument symbols
+        are detailed in the format `localSymbol=secType.exchange` (e.g., `EUR.USD=CASH.IDEALPRO`).
+        If False, a simplified symbology format is applied, using a notation like `EUR/USD.IDEALPRO`.
+        The default value is False, favoring simplified symbology unless specified otherwise.
     build_options_chain: bool (default: None)
         Search for full option chain. Global setting for all applicable instruments.
     build_futures_chain: bool (default: None)
@@ -112,6 +118,7 @@ class InteractiveBrokersInstrumentProviderConfig(InstrumentProviderConfig, froze
             ),
         )
 
+    strict_symbology: bool = False
     load_contracts: frozenset[IBContract] | None = None
     build_options_chain: bool | None = None
     build_futures_chain: bool | None = None

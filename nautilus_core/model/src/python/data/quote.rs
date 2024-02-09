@@ -31,12 +31,14 @@ use pyo3::{
 };
 
 use crate::{
-    data::quote::QuoteTick,
+    data::{quote::QuoteTick, Data},
     enums::PriceType,
     identifiers::instrument_id::InstrumentId,
     python::PY_MODULE_MODEL,
     types::{price::Price, quantity::Quantity},
 };
+
+use super::data_to_pycapsule;
 
 #[pymethods]
 impl QuoteTick {
@@ -157,6 +159,48 @@ impl QuoteTick {
         format!("{}({})", stringify!(QuoteTick), self)
     }
 
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "bid_price")]
+    fn py_bid_price(&self) -> Price {
+        self.bid_price
+    }
+
+    #[getter]
+    #[pyo3(name = "ask_price")]
+    fn py_ask_price(&self) -> Price {
+        self.ask_price
+    }
+
+    #[getter]
+    #[pyo3(name = "bid_size")]
+    fn py_bid_size(&self) -> Quantity {
+        self.bid_size
+    }
+
+    #[getter]
+    #[pyo3(name = "ask_size")]
+    fn py_ask_size(&self) -> Quantity {
+        self.ask_size
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+
     #[staticmethod]
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {
@@ -171,6 +215,27 @@ impl QuoteTick {
     #[pyo3(name = "extract_volume")]
     fn py_extract_volume(&self, price_type: PriceType) -> PyResult<Quantity> {
         Ok(self.extract_volume(price_type))
+    }
+
+    /// Creates a `PyCapsule` containing a raw pointer to a `Data::Quote` object.
+    ///
+    /// This function takes the current object (assumed to be of a type that can be represented as
+    /// `Data::Quote`), and encapsulates a raw pointer to it within a `PyCapsule`.
+    ///
+    /// # Safety
+    ///
+    /// This function is safe as long as the following conditions are met:
+    /// - The `Data::Quote` object pointed to by the capsule must remain valid for the lifetime of the capsule.
+    /// - The consumer of the capsule must ensure proper handling to avoid dereferencing a dangling pointer.
+    ///
+    /// # Panics
+    ///
+    /// The function will panic if the `PyCapsule` creation fails, which can occur if the
+    /// `Data::Quote` object cannot be converted into a raw pointer.
+    ///
+    #[pyo3(name = "as_pycapsule")]
+    fn py_as_pycapsule(&self, py: Python<'_>) -> PyObject {
+        data_to_pycapsule(py, Data::Quote(*self))
     }
 
     /// Return a dictionary representation of the object.

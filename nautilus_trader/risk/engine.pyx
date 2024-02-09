@@ -17,7 +17,7 @@ from decimal import Decimal
 
 import pandas as pd
 
-from nautilus_trader.config import RiskEngineConfig
+from nautilus_trader.risk.config import RiskEngineConfig
 
 from libc.stdint cimport uint64_t
 

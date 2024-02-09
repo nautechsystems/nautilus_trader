@@ -29,10 +29,15 @@ use crate::{
     data::{
         depth::{OrderBookDepth10, DEPTH10_LEN},
         order::BookOrder,
+        Data,
     },
+    enums::OrderSide,
     identifiers::instrument_id::InstrumentId,
     python::PY_MODULE_MODEL,
+    types::{price::Price, quantity::Quantity},
 };
+
+use super::data_to_pycapsule;
 
 #[pymethods]
 impl OrderBookDepth10 {
@@ -84,10 +89,85 @@ impl OrderBookDepth10 {
         format!("{self:?}")
     }
 
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "bids")]
+    fn py_bids(&self) -> [BookOrder; DEPTH10_LEN] {
+        self.bids
+    }
+
+    #[getter]
+    #[pyo3(name = "asks")]
+    fn py_asks(&self) -> [BookOrder; DEPTH10_LEN] {
+        self.asks
+    }
+
+    #[getter]
+    #[pyo3(name = "bid_counts")]
+    fn py_bid_counts(&self) -> [u32; DEPTH10_LEN] {
+        self.bid_counts
+    }
+
+    #[getter]
+    #[pyo3(name = "ask_counts")]
+    fn py_ask_counts(&self) -> [u32; DEPTH10_LEN] {
+        self.ask_counts
+    }
+
+    #[getter]
+    #[pyo3(name = "flags")]
+    fn py_flags(&self) -> u8 {
+        self.flags
+    }
+
+    #[getter]
+    #[pyo3(name = "sequence")]
+    fn py_sequence(&self) -> u64 {
+        self.sequence
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+
     #[staticmethod]
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(OrderBookDepth10))
+    }
+
+    /// Creates a `PyCapsule` containing a raw pointer to a `Data::Depth10` object.
+    ///
+    /// This function takes the current object (assumed to be of a type that can be represented as
+    /// `Data::Depth10`), and encapsulates a raw pointer to it within a `PyCapsule`.
+    ///
+    /// # Safety
+    ///
+    /// This function is safe as long as the following conditions are met:
+    /// - The `Data::Depth10` object pointed to by the capsule must remain valid for the lifetime of the capsule.
+    /// - The consumer of the capsule must ensure proper handling to avoid dereferencing a dangling pointer.
+    ///
+    /// # Panics
+    ///
+    /// The function will panic if the `PyCapsule` creation fails, which can occur if the
+    /// `Data::Depth10` object cannot be converted into a raw pointer.
+    ///
+    #[pyo3(name = "as_pycapsule")]
+    fn py_as_pycapsule(&self, py: Python<'_>) -> PyObject {
+        data_to_pycapsule(py, Data::Depth10(*self))
     }
 
     /// Return a dictionary representation of the object.
@@ -132,6 +212,71 @@ impl OrderBookDepth10 {
         }
 
         Ok(py_dict)
+    }
+
+    // TODO: Expose this properly from a test stub provider
+    #[staticmethod]
+    #[pyo3(name = "get_stub")]
+    fn py_get_stub() -> Self {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let flags = 0;
+        let sequence = 0;
+        let ts_event = 1;
+        let ts_init = 2;
+
+        let mut bids: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
+        let mut asks: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
+
+        // Create bids
+        let mut price = 99.00;
+        let mut quantity = 100.0;
+        let mut order_id = 1;
+
+        for order in bids.iter_mut().take(DEPTH10_LEN) {
+            *order = BookOrder::new(
+                OrderSide::Buy,
+                Price::new(price, 2).unwrap(),
+                Quantity::new(quantity, 0).unwrap(),
+                order_id,
+            );
+
+            price -= 1.0;
+            quantity += 100.0;
+            order_id += 1;
+        }
+
+        // Create asks
+        let mut price = 100.00;
+        let mut quantity = 100.0;
+        let mut order_id = 11;
+
+        for order in asks.iter_mut().take(DEPTH10_LEN) {
+            *order = BookOrder::new(
+                OrderSide::Sell,
+                Price::new(price, 2).unwrap(),
+                Quantity::new(quantity, 0).unwrap(),
+                order_id,
+            );
+
+            price += 1.0;
+            quantity += 100.0;
+            order_id += 1;
+        }
+
+        let bid_counts: [u32; 10] = [1; 10];
+        let ask_counts: [u32; 10] = [1; 10];
+
+        OrderBookDepth10::new(
+            instrument_id,
+            bids,
+            asks,
+            bid_counts,
+            ask_counts,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        )
     }
 
     #[staticmethod]

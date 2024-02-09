@@ -17,7 +17,7 @@ import warnings
 
 import msgspec
 
-from nautilus_trader.config import CacheConfig
+from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.core import nautilus_pyo3
 
 from cpython.datetime cimport datetime

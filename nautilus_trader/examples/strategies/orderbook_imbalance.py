@@ -16,9 +16,9 @@
 import datetime
 from decimal import Decimal
 
+from nautilus_trader.config import NonNegativeFloat
+from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.config.validation import NonNegativeFloat
-from nautilus_trader.config.validation import PositiveFloat
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import OrderBookDeltas

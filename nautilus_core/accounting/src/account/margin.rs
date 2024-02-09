@@ -22,15 +22,13 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use crate::account::base::BaseAccount;
-use crate::account::Account;
-use crate::position::Position;
 use anyhow::Result;
 use nautilus_model::enums::{AccountType, LiquiditySide, OrderSide};
 use nautilus_model::events::account::state::AccountState;
 use nautilus_model::events::order::filled::OrderFilled;
 use nautilus_model::identifiers::instrument_id::InstrumentId;
 use nautilus_model::instruments::Instrument;
+use nautilus_model::position::Position;
 use nautilus_model::types::balance::{AccountBalance, MarginBalance};
 use nautilus_model::types::currency::Currency;
 use nautilus_model::types::money::Money;
@@ -38,6 +36,9 @@ use nautilus_model::types::price::Price;
 use nautilus_model::types::quantity::Quantity;
 use pyo3::prelude::*;
 use rust_decimal::prelude::ToPrimitive;
+
+use crate::account::base::BaseAccount;
+use crate::account::Account;
 
 #[derive(Debug)]
 #[cfg_attr(
@@ -69,6 +70,7 @@ impl MarginAccount {
         self.leverages.insert(instrument_id, leverage);
     }
 
+    #[must_use]
     pub fn get_leverage(&self, instrument_id: &InstrumentId) -> f64 {
         *self
             .leverages
@@ -76,17 +78,21 @@ impl MarginAccount {
             .unwrap_or(&self.default_leverage)
     }
 
+    #[must_use]
     pub fn is_unleveraged(&self, instrument_id: InstrumentId) -> bool {
         self.get_leverage(&instrument_id) == 1.0
     }
 
+    #[must_use]
     pub fn is_cash_account(&self) -> bool {
         self.account_type == AccountType::Cash
     }
+    #[must_use]
     pub fn is_margin_account(&self) -> bool {
         self.account_type == AccountType::Margin
     }
 
+    #[must_use]
     pub fn initial_margins(&self) -> HashMap<InstrumentId, Money> {
         let mut initial_margins: HashMap<InstrumentId, Money> = HashMap::new();
         self.margins.values().for_each(|margin_balance| {
@@ -95,6 +101,7 @@ impl MarginAccount {
         initial_margins
     }
 
+    #[must_use]
     pub fn maintenance_margins(&self) -> HashMap<InstrumentId, Money> {
         let mut maintenance_margins: HashMap<InstrumentId, Money> = HashMap::new();
         self.margins.values().for_each(|margin_balance| {
@@ -121,14 +128,16 @@ impl MarginAccount {
             new_margin_balance.initial = margin_init;
             self.margins.insert(instrument_id, new_margin_balance);
         }
-        self.recalculate_balance(margin_init.currency)
+        self.recalculate_balance(margin_init.currency);
     }
 
+    #[must_use]
     pub fn initial_margin(&self, instrument_id: InstrumentId) -> Money {
         let margin_balance = self.margins.get(&instrument_id);
-        if margin_balance.is_none() {
-            panic!("Cannot get margin_init when no margin_balance")
-        }
+        assert!(
+            margin_balance.is_some(),
+            "Cannot get margin_init when no margin_balance"
+        );
         margin_balance.unwrap().initial
     }
 
@@ -154,14 +163,16 @@ impl MarginAccount {
             new_margin_balance.maintenance = margin_maintenance;
             self.margins.insert(instrument_id, new_margin_balance);
         }
-        self.recalculate_balance(margin_maintenance.currency)
+        self.recalculate_balance(margin_maintenance.currency);
     }
 
+    #[must_use]
     pub fn maintenance_margin(&self, instrument_id: InstrumentId) -> Money {
         let margin_balance = self.margins.get(&instrument_id);
-        if margin_balance.is_none() {
-            panic!("Cannot get maintenance_margin when no margin_balance")
-        }
+        assert!(
+            margin_balance.is_some(),
+            "Cannot get maintenance_margin when no margin_balance"
+        );
         margin_balance.unwrap().maintenance
     }
 
@@ -173,10 +184,10 @@ impl MarginAccount {
         use_quote_for_inverse: Option<bool>,
     ) -> Money {
         let notional = instrument.calculate_notional_value(quantity, price, use_quote_for_inverse);
-        let leverage = self.get_leverage(instrument.id());
+        let leverage = self.get_leverage(&instrument.id());
         if leverage == 0.0 {
             self.leverages
-                .insert(*instrument.id(), self.default_leverage);
+                .insert(instrument.id(), self.default_leverage);
         }
         let adjusted_notional = notional / leverage;
         let initial_margin_f64 = instrument.margin_init().to_f64().unwrap();
@@ -185,9 +196,9 @@ impl MarginAccount {
         margin += adjusted_notional * instrument.taker_fee().to_f64().unwrap() * 2.0;
         let use_quote_for_inverse = use_quote_for_inverse.unwrap_or(false);
         if instrument.is_inverse() && !use_quote_for_inverse {
-            Money::new(margin, *instrument.base_currency().unwrap()).unwrap()
+            Money::new(margin, instrument.base_currency().unwrap()).unwrap()
         } else {
-            Money::new(margin, *instrument.quote_currency()).unwrap()
+            Money::new(margin, instrument.quote_currency()).unwrap()
         }
     }
 
@@ -199,10 +210,10 @@ impl MarginAccount {
         use_quote_for_inverse: Option<bool>,
     ) -> Money {
         let notional = instrument.calculate_notional_value(quantity, price, use_quote_for_inverse);
-        let leverage = self.get_leverage(instrument.id());
+        let leverage = self.get_leverage(&instrument.id());
         if leverage == 0.0 {
             self.leverages
-                .insert(*instrument.id(), self.default_leverage);
+                .insert(instrument.id(), self.default_leverage);
         }
         let adjusted_notional = notional / leverage;
         let margin_maint_f64 = instrument.margin_maint().to_f64().unwrap();
@@ -211,9 +222,9 @@ impl MarginAccount {
         margin += adjusted_notional * instrument.taker_fee().to_f64().unwrap();
         let use_quote_for_inverse = use_quote_for_inverse.unwrap_or(false);
         if instrument.is_inverse() && !use_quote_for_inverse {
-            Money::new(margin, *instrument.base_currency().unwrap()).unwrap()
+            Money::new(margin, instrument.base_currency().unwrap()).unwrap()
         } else {
-            Money::new(margin, *instrument.quote_currency()).unwrap()
+            Money::new(margin, instrument.quote_currency()).unwrap()
         }
     }
 
@@ -232,10 +243,11 @@ impl MarginAccount {
             }
         });
         let total_free = current_balance.total.raw - total_margin;
-        if total_free < 0 {
-            // TODO error handle this with AccountMarginExceeded
-            panic!("Cannot recalculate balance when total_free is less than 0.0")
-        }
+        // TODO error handle this with AccountMarginExceeded
+        assert!(
+            total_free >= 0,
+            "Cannot recalculate balance when total_free is less than 0.0"
+        );
         let new_balance = AccountBalance::new(
             current_balance.total,
             Money::from_raw(total_margin, currency),
@@ -300,7 +312,7 @@ impl Account for MarginAccount {
         self.balances.clone()
     }
     fn apply(&mut self, event: AccountState) {
-        self.base_apply(event)
+        self.base_apply(event);
     }
     fn calculate_balance_locked<T: Instrument>(
         &mut self,
@@ -353,9 +365,10 @@ impl Display for MarginAccount {
             "MarginAccount(id={}, type={}, base={})",
             self.id,
             self.account_type,
-            self.base_currency
-                .map(|base_currency| format!("{}", base_currency.code))
-                .unwrap_or_else(|| "None".to_string()),
+            self.base_currency.map_or_else(
+                || "None".to_string(),
+                |base_currency| format!("{}", base_currency.code)
+            ),
         )
     }
 }
@@ -406,7 +419,7 @@ mod tests {
             margin_account.last_event(),
             Some(margin_account_state.clone())
         );
-        assert_eq!(margin_account.events(), vec![margin_account_state.clone()]);
+        assert_eq!(margin_account.events(), vec![margin_account_state]);
         assert_eq!(margin_account.event_count(), 1);
         assert_eq!(
             margin_account.balance_total(None),
@@ -465,7 +478,7 @@ mod tests {
         mut margin_account: MarginAccount,
         instrument_id_aud_usd_sim: InstrumentId,
     ) {
-        margin_account.set_leverage(instrument_id_aud_usd_sim.clone(), 10.0);
+        margin_account.set_leverage(instrument_id_aud_usd_sim, 10.0);
         assert!(!margin_account.is_unleveraged(instrument_id_aud_usd_sim));
     }
 
@@ -474,7 +487,7 @@ mod tests {
         mut margin_account: MarginAccount,
         instrument_id_aud_usd_sim: InstrumentId,
     ) {
-        margin_account.set_leverage(instrument_id_aud_usd_sim.clone(), 1.0);
+        margin_account.set_leverage(instrument_id_aud_usd_sim, 1.0);
         assert!(margin_account.is_unleveraged(instrument_id_aud_usd_sim));
     }
 
@@ -561,7 +574,7 @@ mod tests {
         xbtusd_bitmex: CryptoPerpetual,
     ) {
         let result_use_quote_inverse_true = margin_account.calculate_initial_margin(
-            xbtusd_bitmex.clone(),
+            xbtusd_bitmex,
             Quantity::from(100_000),
             Price::from("11493.60"),
             Some(false),

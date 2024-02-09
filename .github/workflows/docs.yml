@@ -8,6 +8,20 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: false
+          dotnet: false
+          haskell: false
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Install runner dependencies
+        run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -35,7 +49,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Set up Python environment
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 

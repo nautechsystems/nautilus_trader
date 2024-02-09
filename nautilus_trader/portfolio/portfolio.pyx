@@ -542,14 +542,7 @@ cdef class Portfolio(PortfolioFacade):
 
         self._log.debug(f"Updated {event}.")
 
-    cpdef void reset(self):
-        """
-        Reset the portfolio.
-
-        All stateful fields are reset to their initial value.
-        """
-        self._log.debug(f"Resetting...")
-
+    def _reset(self) -> None:
         self._net_positions.clear()
         self._unrealized_pnls.clear()
         self._pending_calcs.clear()
@@ -557,7 +550,31 @@ cdef class Portfolio(PortfolioFacade):
 
         self.initialized = False
 
-        self._log.info("Reset.")
+    def reset(self) -> None:
+        """
+        Reset the portfolio.
+
+        All stateful fields are reset to their initial value.
+
+        """
+        self._log.debug(f"RESETTING...")
+
+        self._reset()
+
+        self._log.info("READY.")
+
+    def dispose(self) -> None:
+        """
+        Dispose of the portfolio.
+
+        All stateful fields are reset to their initial value.
+
+        """
+        self._log.debug(f"DISPOSING...")
+
+        self._reset()
+
+        self._log.info("DISPOSED.")
 
 # -- QUERIES --------------------------------------------------------------------------------------
 

@@ -263,14 +263,9 @@ class Trader(Component):
         self._portfolio.reset()
 
     def _dispose(self) -> None:
-        for actor in self._actors.values():
-            actor.dispose()
-
-        for strategy in self._strategies.values():
-            strategy.dispose()
-
-        for exec_algorithm in self._exec_algorithms.values():
-            exec_algorithm.dispose()
+        self.clear_actors()
+        self.clear_strategies()
+        self.clear_exec_algorithms()
 
     # --------------------------------------------------------------------------------------------------
 

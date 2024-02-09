@@ -211,7 +211,6 @@ cdef class Logger:
     cdef str _name
     cdef const char* _name_ptr
 
-    cpdef void flush(self)
     cpdef void debug(self, str message, LogColor color=*)
     cpdef void info(self, str message, LogColor color=*)
     cpdef void warning(self, str message, LogColor color=*)
