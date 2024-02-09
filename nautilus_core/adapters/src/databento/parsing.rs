@@ -47,8 +47,6 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-use super::{common::nautilus_instrument_id_from_databento, types::DatabentoPublisher};
-
 const BAR_SPEC_1S: BarSpecification = BarSpecification {
     step: 1,
     aggregation: BarAggregation::Second,
@@ -569,12 +567,9 @@ pub fn parse_record(
 
 pub fn parse_instrument_def_msg_v1(
     record: &dbn::compat::InstrumentDefMsgV1,
-    publisher: &DatabentoPublisher,
+    instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<Box<dyn Instrument>> {
-    let raw_symbol = unsafe { parse_raw_ptr_to_ustr(record.raw_symbol.as_ptr())? };
-    let instrument_id = nautilus_instrument_id_from_databento(raw_symbol, publisher);
-
     match record.instrument_class as u8 as char {
         'K' => Ok(Box::new(parse_equity_v1(record, instrument_id, ts_init)?)),
         'F' => Ok(Box::new(parse_futures_contract_v1(
@@ -601,12 +596,9 @@ pub fn parse_instrument_def_msg_v1(
 
 pub fn parse_instrument_def_msg(
     record: &dbn::InstrumentDefMsg,
-    publisher: &DatabentoPublisher,
+    instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<Box<dyn Instrument>> {
-    let raw_symbol = unsafe { parse_raw_ptr_to_ustr(record.raw_symbol.as_ptr())? };
-    let instrument_id = nautilus_instrument_id_from_databento(raw_symbol, publisher);
-
     match record.instrument_class as u8 as char {
         'K' => Ok(Box::new(parse_equity(record, instrument_id, ts_init)?)),
         'F' => Ok(Box::new(parse_futures_contract(

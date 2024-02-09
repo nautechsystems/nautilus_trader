@@ -16,27 +16,10 @@
 use anyhow::Result;
 use databento::historical::DateTimeRange;
 use nautilus_core::time::UnixNanos;
-use nautilus_model::identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue};
 use time::OffsetDateTime;
-use ustr::Ustr;
-
-use super::types::DatabentoPublisher;
 
 pub const DATABENTO: &str = "DATABENTO";
 pub const ALL_SYMBOLS: &str = "ALL_SYMBOLS";
-
-#[must_use]
-pub fn nautilus_instrument_id_from_databento(
-    raw_symbol: Ustr,
-    publisher: &DatabentoPublisher,
-) -> InstrumentId {
-    let symbol = Symbol { value: raw_symbol };
-    let venue = Venue {
-        value: Ustr::from(publisher.venue.as_str()),
-    }; // TODO: Optimize
-
-    InstrumentId::new(symbol, venue)
-}
 
 pub fn get_date_time_range(start: UnixNanos, end: Option<UnixNanos>) -> Result<DateTimeRange> {
     match end {

@@ -38,7 +38,7 @@ use time::OffsetDateTime;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 
-use crate::databento::parsing::{parse_instrument_def_msg, parse_record};
+use crate::databento::parsing::{parse_instrument_def_msg, parse_raw_ptr_to_ustr, parse_record};
 use crate::databento::types::{DatabentoPublisher, PublisherId};
 
 use super::loader::convert_instrument_to_pyobject;
@@ -54,7 +54,7 @@ pub struct DatabentoLiveClient {
     pub dataset: String,
     inner: Option<Arc<Mutex<databento::LiveClient>>>,
     runtime: tokio::runtime::Runtime,
-    publishers: Arc<IndexMap<PublisherId, DatabentoPublisher>>,
+    publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
 }
 
 impl DatabentoLiveClient {
@@ -86,17 +86,18 @@ impl DatabentoLiveClient {
         let file_content = fs::read_to_string(publishers_path)?;
         let publishers_vec: Vec<DatabentoPublisher> =
             serde_json::from_str(&file_content).map_err(to_pyvalue_err)?;
-        let publishers = publishers_vec
+
+        let publisher_venue_map = publishers_vec
             .into_iter()
-            .map(|p| (p.publisher_id, p))
-            .collect::<IndexMap<u16, DatabentoPublisher>>();
+            .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
+            .collect::<IndexMap<u16, Venue>>();
 
         Ok(Self {
             key,
             dataset,
             inner: None,
             runtime: tokio::runtime::Runtime::new()?,
-            publishers: Arc::new(publishers),
+            publisher_venue_map: Arc::new(publisher_venue_map),
         })
     }
 
@@ -145,7 +146,7 @@ impl DatabentoLiveClient {
     #[pyo3(name = "start")]
     fn py_start<'py>(&mut self, py: Python<'py>, callback: PyObject) -> PyResult<&'py PyAny> {
         let arc_client = self.get_inner_client().map_err(to_pyruntime_err)?;
-        let publishers = self.publishers.clone();
+        let publisher_venue_map = self.publisher_venue_map.clone();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
             let clock = get_atomic_clock_realtime();
@@ -207,10 +208,14 @@ impl DatabentoLiveClient {
                         let msg = record
                             .get::<dbn::InstrumentDefMsg>()
                             .expect("Error converting record to `InstrumentDefMsg`");
-                        let publisher_id = record.publisher().unwrap() as PublisherId;
-                        let publisher = publishers.get(&publisher_id).unwrap();
+                        let raw_symbol =
+                            unsafe { parse_raw_ptr_to_ustr(msg.raw_symbol.as_ptr()).unwrap() };
+                        let symbol = Symbol { value: raw_symbol };
+                        let venue = publisher_venue_map.get(&msg.hd.publisher_id).unwrap();
+                        let instrument_id = InstrumentId::new(symbol, *venue);
+
                         let ts_init = clock.get_time_ns();
-                        let result = parse_instrument_def_msg(msg, publisher, ts_init);
+                        let result = parse_instrument_def_msg(msg, instrument_id, ts_init);
 
                         match result {
                             Ok(instrument) => {
@@ -230,19 +235,23 @@ impl DatabentoLiveClient {
                     _ => {
                         let raw_symbol = symbol_map
                             .get_for_rec(&record)
-                            .expect("Cannot resolve raw_symbol from `symbol_map`");
-
-                        let symbol = Symbol::from_str_unchecked(raw_symbol);
+                            .expect("Cannot resolve `raw_symbol` from `symbol_map`");
                         let publisher_id = record.publisher().unwrap() as PublisherId;
-                        let venue_str = publishers.get(&publisher_id).unwrap().venue.as_str();
-                        let venue = Venue::from_str_unchecked(venue_str);
+                        let symbol = Symbol::from_str_unchecked(raw_symbol);
+                        let venue = publisher_venue_map.get(&publisher_id).unwrap();
+                        let instrument_id = InstrumentId::new(symbol, *venue);
 
-                        let instrument_id = InstrumentId::new(symbol, venue);
+                        let price_precision = 2; // Hard coded for now
                         let ts_init = clock.get_time_ns();
 
-                        let (data, maybe_data) =
-                            parse_record(&record, rtype, instrument_id, 2, Some(ts_init))
-                                .map_err(to_pyvalue_err)?;
+                        let (data, maybe_data) = parse_record(
+                            &record,
+                            rtype,
+                            instrument_id,
+                            price_precision,
+                            Some(ts_init),
+                        )
+                        .map_err(to_pyvalue_err)?;
 
                         Python::with_gil(|py| {
                             call_python_with_data(py, &callback, data);
