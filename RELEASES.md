@@ -1,6 +1,6 @@
 # NautilusTrader 1.187.0 Beta
 
-Released on TBD (UTC).
+Released on 9th February 2024 (UTC).
 
 ### Enhancements
 - Refined logging system module and writers in Rust, thanks @ayush-sb and @twitu
@@ -11,6 +11,8 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed `BacktestEngine` and `Trader` disposal (now properly releasing resources), thanks for reporting @davidsblom
+- Fixed circular import issues from configuration objects, thanks for reporting @cuberone
+- Fixed unnecessary creation of log files when file logging off
 
 ---
 
