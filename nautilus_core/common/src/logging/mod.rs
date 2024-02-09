@@ -318,7 +318,7 @@ impl LogLineWrapper {
         }
     }
 
-    pub fn get_string(&mut self) -> &String {
+    pub fn get_string(&mut self) -> &str {
         self.cache.get_or_insert_with(|| {
             format!(
                 "{} [{}] {}.{}: {}\n",
@@ -331,7 +331,7 @@ impl LogLineWrapper {
         })
     }
 
-    pub fn get_colored(&mut self) -> &String {
+    pub fn get_colored(&mut self) -> &str {
         self.colored.get_or_insert_with(|| {
             format!(
                 "\x1b[1m{}\x1b[0m {}[{}] {}.{}: {}\x1b[0m\n",
@@ -366,7 +366,6 @@ impl Log for Logger {
     }
 
     fn log(&self, record: &log::Record) {
-        // TODO remove unwraps
         if self.enabled(record.metadata()) {
             let key_values = record.key_values();
             let color = key_values
@@ -469,8 +468,13 @@ impl Logger {
         // Setup std I/O buffers
         let mut stdout_writer = StdoutWriter::new(stdout_level, is_colored);
         let mut stderr_writer = StderrWriter::new(is_colored);
-        let mut file_writer =
-            FileWriter::new(trader_id.clone(), instance_id, file_config, fileout_level);
+
+        // Conditionally create file writer based on fileout_level
+        let mut file_writer_opt = if fileout_level != LevelFilter::Off {
+            FileWriter::new(trader_id.clone(), instance_id, file_config, fileout_level)
+        } else {
+            None
+        };
 
         // Continue to receive and handle log events until channel is hung up
         while let Ok(event) = rx.recv() {
@@ -515,7 +519,7 @@ impl Logger {
                         stdout_writer.flush();
                     }
 
-                    if let Some(ref mut writer) = file_writer {
+                    if let Some(ref mut writer) = file_writer_opt {
                         if writer.enabled(&wrapper.line) {
                             if writer.json_format {
                                 writer.write(&wrapper.get_json());
