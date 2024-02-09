@@ -35,10 +35,8 @@ use time;
 use ustr::Ustr;
 
 use super::{
-    parsing::{parse_instrument_def_msg_v1, parse_record},
-    types::DatabentoPublisher,
-    types::Dataset,
-    types::PublisherId,
+    parsing::{parse_instrument_def_msg_v1, parse_raw_ptr_to_ustr, parse_record},
+    types::{DatabentoPublisher, Dataset, PublisherId},
 };
 
 /// Provides a Nautilus data loader for Databento Binary Encoding (DBN) format data.
@@ -75,15 +73,17 @@ use super::{
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
 )]
 pub struct DatabentoDataLoader {
-    publishers: IndexMap<PublisherId, DatabentoPublisher>,
-    venue_dataset: IndexMap<Venue, Dataset>,
+    publishers_map: IndexMap<PublisherId, DatabentoPublisher>,
+    venue_dataset_map: IndexMap<Venue, Dataset>,
+    publisher_venue_map: IndexMap<PublisherId, Venue>,
 }
 
 impl DatabentoDataLoader {
     pub fn new(path: Option<PathBuf>) -> Result<Self> {
         let mut loader = Self {
-            publishers: IndexMap::new(),
-            venue_dataset: IndexMap::new(),
+            publishers_map: IndexMap::new(),
+            venue_dataset_map: IndexMap::new(),
+            publisher_venue_map: IndexMap::new(),
         };
 
         // Load publishers
@@ -108,13 +108,13 @@ impl DatabentoDataLoader {
         let file_content = fs::read_to_string(path)?;
         let publishers: Vec<DatabentoPublisher> = serde_json::from_str(&file_content)?;
 
-        self.publishers = publishers
+        self.publishers_map = publishers
             .clone()
             .into_iter()
             .map(|p| (p.publisher_id, p))
             .collect::<IndexMap<u16, DatabentoPublisher>>();
 
-        self.venue_dataset = publishers
+        self.venue_dataset_map = publishers
             .iter()
             .map(|p| {
                 (
@@ -124,42 +124,55 @@ impl DatabentoDataLoader {
             })
             .collect::<IndexMap<Venue, Ustr>>();
 
+        self.publisher_venue_map = publishers
+            .clone()
+            .into_iter()
+            .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
+            .collect::<IndexMap<u16, Venue>>();
+
         Ok(())
     }
 
     /// Return the internal Databento publishers currently held by the loader.
     #[must_use]
     pub fn get_publishers(&self) -> &IndexMap<u16, DatabentoPublisher> {
-        &self.publishers
+        &self.publishers_map
     }
 
     // Return the dataset which matches the given `venue` (if found).
     #[must_use]
     pub fn get_dataset_for_venue(&self, venue: &Venue) -> Option<&Dataset> {
-        self.venue_dataset.get(venue)
+        self.venue_dataset_map.get(venue)
+    }
+
+    // Return the venue which matches the given `publisher_id` (if found).
+    #[must_use]
+    pub fn get_venue_for_publisher(&self, publisher_id: PublisherId) -> Option<&Venue> {
+        self.publisher_venue_map.get(&publisher_id)
     }
 
     pub fn get_nautilus_instrument_id_for_record(
         &self,
         record: &dbn::RecordRef,
         metadata: &dbn::Metadata,
+        venue: Venue,
     ) -> Result<InstrumentId> {
-        let (publisher_id, instrument_id, nanoseconds) = match record.rtype()? {
+        let (instrument_id, nanoseconds) = match record.rtype()? {
             dbn::RType::Mbo => {
                 let msg = record.get::<dbn::MboMsg>().unwrap(); // SAFETY: RType known
-                (msg.hd.publisher_id, msg.hd.instrument_id, msg.ts_recv)
+                (msg.hd.instrument_id, msg.ts_recv)
             }
             dbn::RType::Mbp0 => {
                 let msg = record.get::<dbn::TradeMsg>().unwrap(); // SAFETY: RType known
-                (msg.hd.publisher_id, msg.hd.instrument_id, msg.ts_recv)
+                (msg.hd.instrument_id, msg.ts_recv)
             }
             dbn::RType::Mbp1 => {
                 let msg = record.get::<dbn::Mbp1Msg>().unwrap(); // SAFETY: RType known
-                (msg.hd.publisher_id, msg.hd.instrument_id, msg.ts_recv)
+                (msg.hd.instrument_id, msg.ts_recv)
             }
             dbn::RType::Mbp10 => {
                 let msg = record.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
-                (msg.hd.publisher_id, msg.hd.instrument_id, msg.ts_recv)
+                (msg.hd.instrument_id, msg.ts_recv)
             }
             dbn::RType::Ohlcv1S
             | dbn::RType::Ohlcv1M
@@ -167,7 +180,7 @@ impl DatabentoDataLoader {
             | dbn::RType::Ohlcv1D
             | dbn::RType::OhlcvEod => {
                 let msg = record.get::<dbn::OhlcvMsg>().unwrap(); // SAFETY: RType known
-                (msg.hd.publisher_id, msg.hd.instrument_id, msg.hd.ts_event)
+                (msg.hd.instrument_id, msg.hd.ts_event)
             }
             _ => bail!("RType is currently unsupported by NautilusTrader"),
         };
@@ -175,7 +188,7 @@ impl DatabentoDataLoader {
         let duration = time::Duration::nanoseconds(nanoseconds as i64);
         let datetime = time::OffsetDateTime::UNIX_EPOCH
             .checked_add(duration)
-            .unwrap();
+            .unwrap(); // SAFETY: Relying on correctness of record timestamps
         let date = datetime.date();
         let symbol_map = metadata.symbol_map_for_date(date)?;
         let raw_symbol = symbol_map
@@ -184,10 +197,6 @@ impl DatabentoDataLoader {
 
         let symbol = Symbol {
             value: Ustr::from(raw_symbol),
-        };
-        let venue_str = self.publishers.get(&publisher_id).unwrap().venue.as_str();
-        let venue = Venue {
-            value: Ustr::from(venue_str),
         };
 
         Ok(InstrumentId::new(symbol, venue))
@@ -221,9 +230,16 @@ impl DatabentoDataLoader {
                     let rtype = rec_ref.rtype().expect("Invalid `rtype` for data loading");
                     let instrument_id = match &instrument_id {
                         Some(id) => *id, // Copy
-                        None => self
-                            .get_nautilus_instrument_id_for_record(&rec_ref, &metadata)
-                            .expect("Error resolving symbology mapping for {rec_ref}"),
+                        None => {
+                            let publisher_id = rec_ref.publisher().expect("No publisher for record")
+                                as PublisherId;
+                            let venue = self
+                                .publisher_venue_map
+                                .get(&publisher_id)
+                                .expect("`Venue` not found for `publisher_id`");
+                            self.get_nautilus_instrument_id_for_record(&rec_ref, &metadata, *venue)
+                                .expect("Error resolving symbology mapping for {rec_ref}")
+                        }
                     };
 
                     match parse_record(&rec_ref, rtype, instrument_id, price_precision, None) {
@@ -251,9 +267,18 @@ impl DatabentoDataLoader {
                     let rec_ref = dbn::RecordRef::from(record);
                     let msg = rec_ref.get::<InstrumentDefMsgV1>().unwrap();
 
-                    let publisher = self.publishers.get(&msg.hd.publisher_id).unwrap();
+                    let raw_symbol = unsafe {
+                        parse_raw_ptr_to_ustr(record.raw_symbol.as_ptr())
+                            .expect("Error parsing `raw_symbol`")
+                    };
+                    let symbol = Symbol { value: raw_symbol };
+                    let venue = self
+                        .publisher_venue_map
+                        .get(&msg.hd.publisher_id)
+                        .expect("`Venue` not found `publisher_id`");
+                    let instrument_id = InstrumentId::new(symbol, *venue);
 
-                    match parse_instrument_def_msg_v1(record, publisher, msg.ts_recv) {
+                    match parse_instrument_def_msg_v1(record, instrument_id, msg.ts_recv) {
                         Ok(data) => Some(Ok(data)),
                         Err(e) => Some(Err(e)),
                     }

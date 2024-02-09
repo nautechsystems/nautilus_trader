@@ -25,6 +25,7 @@ use nautilus_core::{
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick, Data},
     enums::BarAggregation,
+    identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
 };
 use pyo3::{
     exceptions::PyException,
@@ -35,7 +36,7 @@ use tokio::sync::Mutex;
 
 use crate::databento::{
     common::get_date_time_range,
-    parsing::{parse_instrument_def_msg, parse_record},
+    parsing::{parse_instrument_def_msg, parse_raw_ptr_to_ustr, parse_record},
     symbology::parse_nautilus_instrument_id,
     types::{DatabentoPublisher, PublisherId},
 };
@@ -49,7 +50,7 @@ use super::loader::convert_instrument_to_pyobject;
 pub struct DatabentoHistoricalClient {
     clock: &'static AtomicTime,
     inner: Arc<Mutex<databento::HistoricalClient>>,
-    publishers: Arc<IndexMap<PublisherId, DatabentoPublisher>>,
+    publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
     #[pyo3(get)]
     pub key: String,
 }
@@ -67,15 +68,16 @@ impl DatabentoHistoricalClient {
         let file_content = fs::read_to_string(publishers_path)?;
         let publishers_vec: Vec<DatabentoPublisher> =
             serde_json::from_str(&file_content).map_err(to_pyvalue_err)?;
-        let publishers = publishers_vec
+
+        let publisher_venue_map = publishers_vec
             .into_iter()
-            .map(|p| (p.publisher_id, p))
-            .collect::<IndexMap<u16, DatabentoPublisher>>();
+            .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
+            .collect::<IndexMap<u16, Venue>>();
 
         Ok(Self {
             clock: get_atomic_clock_realtime(),
             inner: Arc::new(Mutex::new(client)),
-            publishers: Arc::new(publishers),
+            publisher_venue_map: Arc::new(publisher_venue_map),
             key,
         })
     }
@@ -122,7 +124,7 @@ impl DatabentoHistoricalClient {
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let publishers = self.publishers.clone();
+        let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
@@ -138,9 +140,12 @@ impl DatabentoHistoricalClient {
             let mut instruments = Vec::new();
 
             while let Ok(Some(rec)) = decoder.decode_record::<dbn::InstrumentDefMsg>().await {
-                let publisher_id = rec.publisher().unwrap() as PublisherId;
-                let publisher = publishers.get(&publisher_id).unwrap();
-                let result = parse_instrument_def_msg(rec, publisher, ts_init);
+                let raw_symbol = unsafe { parse_raw_ptr_to_ustr(rec.raw_symbol.as_ptr()).unwrap() };
+                let symbol = Symbol { value: raw_symbol };
+                let venue = publisher_venue_map.get(&rec.hd.publisher_id).unwrap();
+                let instrument_id = InstrumentId::new(symbol, *venue);
+
+                let result = parse_instrument_def_msg(rec, instrument_id, ts_init);
                 match result {
                     Ok(instrument) => instruments.push(instrument),
                     Err(e) => eprintln!("{e:?}"),
@@ -180,7 +185,7 @@ impl DatabentoHistoricalClient {
             .build();
 
         let price_precision = 2; // TODO: Hard coded for now
-        let publishers = self.publishers.clone();
+        let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
@@ -197,7 +202,9 @@ impl DatabentoHistoricalClient {
             while let Ok(Some(rec)) = decoder.decode_record::<dbn::Mbp1Msg>().await {
                 let rec_ref = dbn::RecordRef::from(rec);
                 let rtype = rec_ref.rtype().expect("Invalid `rtype` for data loading");
-                let instrument_id = parse_nautilus_instrument_id(&rec_ref, &metadata, &publishers)
+
+                let venue = publisher_venue_map.get(&rec.hd.publisher_id).unwrap();
+                let instrument_id = parse_nautilus_instrument_id(&rec_ref, &metadata, *venue)
                     .map_err(to_pyvalue_err)?;
 
                 let (data, _) = parse_record(
@@ -243,7 +250,7 @@ impl DatabentoHistoricalClient {
             .build();
 
         let price_precision = 2; // TODO: Hard coded for now
-        let publishers = self.publishers.clone();
+        let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
@@ -260,7 +267,9 @@ impl DatabentoHistoricalClient {
             while let Ok(Some(rec)) = decoder.decode_record::<dbn::TradeMsg>().await {
                 let rec_ref = dbn::RecordRef::from(rec);
                 let rtype = rec_ref.rtype().expect("Invalid `rtype` for data loading");
-                let instrument_id = parse_nautilus_instrument_id(&rec_ref, &metadata, &publishers)
+
+                let venue = publisher_venue_map.get(&rec.hd.publisher_id).unwrap();
+                let instrument_id = parse_nautilus_instrument_id(&rec_ref, &metadata, *venue)
                     .map_err(to_pyvalue_err)?;
 
                 let (data, _) = parse_record(
@@ -315,7 +324,7 @@ impl DatabentoHistoricalClient {
             .build();
 
         let price_precision = 2; // TODO: Hard coded for now
-        let publishers = self.publishers.clone();
+        let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
@@ -332,7 +341,9 @@ impl DatabentoHistoricalClient {
             while let Ok(Some(rec)) = decoder.decode_record::<dbn::OhlcvMsg>().await {
                 let rec_ref = dbn::RecordRef::from(rec);
                 let rtype = rec_ref.rtype().expect("Invalid `rtype` for data loading");
-                let instrument_id = parse_nautilus_instrument_id(&rec_ref, &metadata, &publishers)
+
+                let venue = publisher_venue_map.get(&rec.hd.publisher_id).unwrap();
+                let instrument_id = parse_nautilus_instrument_id(&rec_ref, &metadata, *venue)
                     .map_err(to_pyvalue_err)?;
 
                 let (data, _) = parse_record(
