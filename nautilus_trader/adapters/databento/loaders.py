@@ -140,8 +140,8 @@ class DatabentoDataLoader:
             You would typically only set this False if passing the objects
             directly to a data catalog for the data to then be written in Nautilus Parquet format.
         include_trades : bool, False
-            If separate `TradeTick` elements will be included in the data for MBO and MBO-1 schemas
-            (your code will have to handle these two types in the returned list).
+            If separate `TradeTick` elements will be included in the data for MBO and MBP-1 schemas
+            when applicable (your code will have to handle these two types in the returned list).
 
         Returns
         -------
