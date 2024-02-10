@@ -101,6 +101,7 @@ impl DatabentoDataLoader {
         Ok(PyList::new(py, &data).into())
     }
 
+    /// Cannot include trades
     #[pyo3(name = "load_order_book_deltas")]
     pub fn py_load_order_book_deltas(
         &self,
@@ -109,17 +110,18 @@ impl DatabentoDataLoader {
     ) -> PyResult<Vec<OrderBookDelta>> {
         let path_buf = PathBuf::from(path);
         let iter = self
-            .read_records::<dbn::MboMsg>(path_buf, instrument_id)
+            .read_records::<dbn::MboMsg>(path_buf, instrument_id, false)
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
         for result in iter {
             match result {
-                Ok((item1, _)) => {
+                Ok((Some(item1), _)) => {
                     if let Data::Delta(delta) = item1 {
                         data.push(delta);
                     }
                 }
+                Ok((None, _)) => continue,
                 Err(e) => return Err(to_pyvalue_err(e)),
             }
         }
@@ -133,10 +135,11 @@ impl DatabentoDataLoader {
         py: Python,
         path: String,
         instrument_id: Option<InstrumentId>,
+        include_trades: Option<bool>,
     ) -> PyResult<PyObject> {
         let path_buf = PathBuf::from(path);
         let iter = self
-            .read_records::<dbn::MboMsg>(path_buf, instrument_id)
+            .read_records::<dbn::MboMsg>(path_buf, instrument_id, include_trades.unwrap_or(false))
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter)
@@ -150,17 +153,18 @@ impl DatabentoDataLoader {
     ) -> PyResult<Vec<OrderBookDepth10>> {
         let path_buf = PathBuf::from(path);
         let iter = self
-            .read_records::<dbn::Mbp10Msg>(path_buf, instrument_id)
+            .read_records::<dbn::Mbp10Msg>(path_buf, instrument_id, false)
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
         for result in iter {
             match result {
-                Ok((item1, _)) => {
+                Ok((Some(item1), _)) => {
                     if let Data::Depth10(depth) = item1 {
                         data.push(depth);
                     }
                 }
+                Ok((None, _)) => continue,
                 Err(e) => return Err(to_pyvalue_err(e)),
             }
         }
@@ -177,7 +181,7 @@ impl DatabentoDataLoader {
     ) -> PyResult<PyObject> {
         let path_buf = PathBuf::from(path);
         let iter = self
-            .read_records::<dbn::Mbp10Msg>(path_buf, instrument_id)
+            .read_records::<dbn::Mbp10Msg>(path_buf, instrument_id, false)
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter)
@@ -188,20 +192,22 @@ impl DatabentoDataLoader {
         &self,
         path: String,
         instrument_id: Option<InstrumentId>,
+        include_trades: Option<bool>,
     ) -> PyResult<Vec<QuoteTick>> {
         let path_buf = PathBuf::from(path);
         let iter = self
-            .read_records::<dbn::Mbp1Msg>(path_buf, instrument_id)
+            .read_records::<dbn::Mbp1Msg>(path_buf, instrument_id, include_trades.unwrap_or(false))
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
         for result in iter {
             match result {
-                Ok((item1, _)) => {
+                Ok((Some(item1), _)) => {
                     if let Data::Quote(quote) = item1 {
                         data.push(quote);
                     }
                 }
+                Ok((None, _)) => continue,
                 Err(e) => return Err(to_pyvalue_err(e)),
             }
         }
@@ -215,10 +221,11 @@ impl DatabentoDataLoader {
         py: Python,
         path: String,
         instrument_id: Option<InstrumentId>,
+        include_trades: Option<bool>,
     ) -> PyResult<PyObject> {
         let path_buf = PathBuf::from(path);
         let iter = self
-            .read_records::<dbn::Mbp1Msg>(path_buf, instrument_id)
+            .read_records::<dbn::Mbp1Msg>(path_buf, instrument_id, include_trades.unwrap_or(false))
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter)
@@ -232,7 +239,7 @@ impl DatabentoDataLoader {
     ) -> PyResult<Vec<TradeTick>> {
         let path_buf = PathBuf::from(path);
         let iter = self
-            .read_records::<dbn::TbboMsg>(path_buf, instrument_id)
+            .read_records::<dbn::TbboMsg>(path_buf, instrument_id, false)
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
@@ -259,7 +266,7 @@ impl DatabentoDataLoader {
     ) -> PyResult<PyObject> {
         let path_buf = PathBuf::from(path);
         let iter = self
-            .read_records::<dbn::TbboMsg>(path_buf, instrument_id)
+            .read_records::<dbn::TbboMsg>(path_buf, instrument_id, false)
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter)
@@ -273,17 +280,18 @@ impl DatabentoDataLoader {
     ) -> PyResult<Vec<TradeTick>> {
         let path_buf = PathBuf::from(path);
         let iter = self
-            .read_records::<dbn::TradeMsg>(path_buf, instrument_id)
+            .read_records::<dbn::TradeMsg>(path_buf, instrument_id, false)
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
         for result in iter {
             match result {
-                Ok((item1, _)) => {
+                Ok((Some(item1), _)) => {
                     if let Data::Trade(trade) = item1 {
                         data.push(trade);
                     }
                 }
+                Ok((None, _)) => continue,
                 Err(e) => return Err(to_pyvalue_err(e)),
             }
         }
@@ -300,7 +308,7 @@ impl DatabentoDataLoader {
     ) -> PyResult<PyObject> {
         let path_buf = PathBuf::from(path);
         let iter = self
-            .read_records::<dbn::TradeMsg>(path_buf, instrument_id)
+            .read_records::<dbn::TradeMsg>(path_buf, instrument_id, false)
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter)
@@ -314,17 +322,18 @@ impl DatabentoDataLoader {
     ) -> PyResult<Vec<Bar>> {
         let path_buf = PathBuf::from(path);
         let iter = self
-            .read_records::<dbn::OhlcvMsg>(path_buf, instrument_id)
+            .read_records::<dbn::OhlcvMsg>(path_buf, instrument_id, false)
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
         for result in iter {
             match result {
-                Ok((item1, _)) => {
+                Ok((Some(item1), _)) => {
                     if let Data::Bar(bar) = item1 {
                         data.push(bar);
                     }
                 }
+                Ok((None, _)) => continue,
                 Err(e) => return Err(to_pyvalue_err(e)),
             }
         }
@@ -341,7 +350,7 @@ impl DatabentoDataLoader {
     ) -> PyResult<PyObject> {
         let path_buf = PathBuf::from(path);
         let iter = self
-            .read_records::<dbn::OhlcvMsg>(path_buf, instrument_id)
+            .read_records::<dbn::OhlcvMsg>(path_buf, instrument_id, false)
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter)
@@ -370,12 +379,20 @@ pub fn convert_instrument_to_pyobject(
 
 fn exhaust_data_iter_to_pycapsule(
     py: Python,
-    iter: impl Iterator<Item = anyhow::Result<(Data, Option<Data>)>>,
+    iter: impl Iterator<Item = anyhow::Result<(Option<Data>, Option<Data>)>>,
 ) -> PyResult<PyObject> {
     let mut data = Vec::new();
     for result in iter {
         match result {
-            Ok((item1, _)) => data.push(item1),
+            Ok((Some(item1), None)) => data.push(item1),
+            Ok((None, Some(item2))) => data.push(item2),
+            Ok((Some(item1), Some(item2))) => {
+                data.push(item1);
+                data.push(item2)
+            }
+            Ok((None, None)) => {
+                continue;
+            }
             Err(e) => return Err(to_pyvalue_err(e)),
         }
     }

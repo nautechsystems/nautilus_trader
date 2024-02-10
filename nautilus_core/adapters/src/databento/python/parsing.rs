@@ -68,11 +68,10 @@ pub fn py_parse_mbo_msg(
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> PyResult<PyObject> {
-    let result = parse_mbo_msg(record, instrument_id, price_precision, ts_init);
+    let result = parse_mbo_msg(record, instrument_id, price_precision, ts_init, false);
 
     match result {
-        Ok((Some(delta), None)) => Ok(delta.into_py(py)),
-        Ok((None, Some(trade))) => Ok(trade.into_py(py)),
+        Ok((Some(data), None)) => Ok(data.into_py(py)),
         Err(e) => Err(to_pyvalue_err(e)),
         _ => Err(PyRuntimeError::new_err("Error parsing MBO message")),
     }
@@ -97,8 +96,15 @@ pub fn py_parse_mbp1_msg(
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
+    include_trades: bool,
 ) -> PyResult<PyObject> {
-    let result = parse_mbp1_msg(record, instrument_id, price_precision, ts_init);
+    let result = parse_mbp1_msg(
+        record,
+        instrument_id,
+        price_precision,
+        ts_init,
+        include_trades,
+    );
 
     match result {
         Ok((quote, Some(trade))) => {

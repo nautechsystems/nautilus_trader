@@ -250,11 +250,14 @@ impl DatabentoLiveClient {
                             instrument_id,
                             price_precision,
                             Some(ts_init),
+                            true, // Always include trades
                         )
                         .map_err(to_pyvalue_err)?;
 
                         Python::with_gil(|py| {
-                            call_python_with_data(py, &callback, data);
+                            if let Some(data) = data {
+                                call_python_with_data(py, &callback, data);
+                            }
 
                             if let Some(data) = maybe_data {
                                 call_python_with_data(py, &callback, data);

@@ -121,6 +121,7 @@ class DatabentoDataLoader:
         path: PathLike[str] | str,
         instrument_id: InstrumentId | None = None,
         as_legacy_cython: bool = True,
+        include_trades: bool = False,
     ) -> list[Data]:
         """
         Return a list of data objects decoded from the DBN file at the given `path`.
@@ -138,6 +139,9 @@ class DatabentoDataLoader:
             If data should be converted to 'legacy Cython' objects.
             You would typically only set this False if passing the objects
             directly to a data catalog for the data to then be written in Nautilus Parquet format.
+        include_trades : bool, False
+            If separate `TradeTick` elements will be included in the data for MBO and MBO-1 schemas
+            (your code will have to handle these two types in the returned list).
 
         Returns
         -------
@@ -175,25 +179,35 @@ class DatabentoDataLoader:
                     capsule = self._pyo3_loader.load_order_book_deltas_as_pycapsule(
                         path=str(path),
                         instrument_id=pyo3_instrument_id,
+                        include_trades=include_trades,
                     )
                     data = capsule_to_list(capsule)
                     # Drop encapsulated `CVec` as data is now transferred
                     drop_cvec_pycapsule(capsule)
                     return data
                 else:
-                    return self._pyo3_loader.load_order_book_deltas(str(path), pyo3_instrument_id)
+                    return self._pyo3_loader.load_order_book_deltas(
+                        path=str(path),
+                        instrument_id=pyo3_instrument_id,
+                        include_trades=include_trades,
+                    )
             case DatabentoSchema.MBP_1.value | DatabentoSchema.TBBO.value:
                 if as_legacy_cython:
                     capsule = self._pyo3_loader.load_quotes_as_pycapsule(
                         path=str(path),
                         instrument_id=pyo3_instrument_id,
+                        include_trades=include_trades,
                     )
                     data = capsule_to_list(capsule)
                     # Drop encapsulated `CVec` as data is now transferred
                     drop_cvec_pycapsule(capsule)
                     return data
                 else:
-                    return self._pyo3_loader.load_quotes(str(path), pyo3_instrument_id)
+                    return self._pyo3_loader.load_quotes(
+                        path=str(path),
+                        instrument_id=pyo3_instrument_id,
+                        include_trades=include_trades,
+                    )
             case DatabentoSchema.MBP_10.value:
                 if as_legacy_cython:
                     capsule = self._pyo3_loader.load_order_book_depth10_as_pycapsule(

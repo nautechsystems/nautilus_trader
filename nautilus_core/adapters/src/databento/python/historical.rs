@@ -213,11 +213,12 @@ impl DatabentoHistoricalClient {
                     instrument_id,
                     price_precision,
                     Some(ts_init),
+                    false, // Don't include trades
                 )
                 .map_err(to_pyvalue_err)?;
 
                 match data {
-                    Data::Quote(quote) => {
+                    Some(Data::Quote(quote)) => {
                         result.push(quote);
                     }
                     _ => panic!("Invalid data element not `QuoteTick`, was {data:?}"),
@@ -278,11 +279,12 @@ impl DatabentoHistoricalClient {
                     instrument_id,
                     price_precision,
                     Some(ts_init),
+                    false, // Not applicable (trade will be decoded regardless)
                 )
                 .map_err(to_pyvalue_err)?;
 
                 match data {
-                    Data::Trade(trade) => {
+                    Some(Data::Trade(trade)) => {
                         result.push(trade);
                     }
                     _ => panic!("Invalid data element not `TradeTick`, was {data:?}"),
@@ -352,11 +354,12 @@ impl DatabentoHistoricalClient {
                     instrument_id,
                     price_precision,
                     Some(ts_init),
+                    false, // Not applicable
                 )
                 .map_err(to_pyvalue_err)?;
 
                 match data {
-                    Data::Bar(bar) => {
+                    Some(Data::Bar(bar)) => {
                         result.push(bar);
                     }
                     _ => panic!("Invalid data element not `Bar`, was {data:?}"),
