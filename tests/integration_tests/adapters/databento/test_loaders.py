@@ -344,6 +344,20 @@ def test_loader_with_trades() -> None:
     assert trade.ts_init == 1609160400099150057
 
 
+@pytest.mark.skip("development_only")
+def test_loader_with_trades_large() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "temp" / "tsla-xnas-20240107-20240206.trades.dbn.zst"
+    instrument_id = InstrumentId.from_str("TSLA.XNAS")
+
+    # Act
+    data = loader.from_dbn_file(path, instrument_id=instrument_id, as_legacy_cython=True)
+
+    # Assert
+    assert len(data) == 6_885_435
+
+
 def test_loader_with_ohlcv_1s() -> None:
     # Arrange
     loader = DatabentoDataLoader()
