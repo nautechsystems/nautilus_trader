@@ -15,7 +15,10 @@
 
 use std::{any::Any, collections::HashMap, path::PathBuf};
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::{
+    ffi::cvec::CVec,
+    python::{to_pyruntime_err, to_pyvalue_err},
+};
 use nautilus_model::{
     data::{
         bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
@@ -27,9 +30,15 @@ use nautilus_model::{
         Instrument,
     },
 };
-use pyo3::{prelude::*, types::PyList};
+use pyo3::{
+    prelude::*,
+    types::{PyCapsule, PyList},
+};
 
-use crate::databento::{loader::DatabentoDataLoader, types::DatabentoPublisher};
+use crate::databento::{
+    loader::DatabentoDataLoader,
+    types::{DatabentoPublisher, PublisherId},
+};
 
 #[pymethods]
 impl DatabentoDataLoader {
@@ -49,6 +58,12 @@ impl DatabentoDataLoader {
     #[pyo3(name = "get_dataset_for_venue")]
     pub fn py_get_dataset_for_venue(&self, venue: &Venue) -> Option<String> {
         self.get_dataset_for_venue(venue).map(|d| d.to_string())
+    }
+
+    #[pyo3(name = "get_venue_for_publisher")]
+    pub fn py_get_venue_for_publisher(&self, publisher_id: PublisherId) -> Option<String> {
+        self.get_venue_for_publisher(publisher_id)
+            .map(|d| d.to_string())
     }
 
     #[pyo3(name = "schema_for_file")]
@@ -112,6 +127,21 @@ impl DatabentoDataLoader {
         Ok(data)
     }
 
+    #[pyo3(name = "load_order_book_deltas_as_pycapsule")]
+    pub fn py_load_order_book_deltas_as_pycapsule(
+        &self,
+        py: Python,
+        path: String,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<PyObject> {
+        let path_buf = PathBuf::from(path);
+        let iter = self
+            .read_records::<dbn::MboMsg>(path_buf, instrument_id)
+            .map_err(to_pyvalue_err)?;
+
+        exhaust_data_iter_to_pycapsule(py, iter)
+    }
+
     #[pyo3(name = "load_order_book_depth10")]
     pub fn py_load_order_book_depth10(
         &self,
@@ -138,8 +168,23 @@ impl DatabentoDataLoader {
         Ok(data)
     }
 
-    #[pyo3(name = "load_quote_ticks")]
-    pub fn py_load_quote_ticks(
+    #[pyo3(name = "load_order_book_depth10_as_pycapsule")]
+    pub fn py_load_order_book_depth10_as_pycapsule(
+        &self,
+        py: Python,
+        path: String,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<PyObject> {
+        let path_buf = PathBuf::from(path);
+        let iter = self
+            .read_records::<dbn::Mbp10Msg>(path_buf, instrument_id)
+            .map_err(to_pyvalue_err)?;
+
+        exhaust_data_iter_to_pycapsule(py, iter)
+    }
+
+    #[pyo3(name = "load_quotes")]
+    pub fn py_load_quotes(
         &self,
         path: String,
         instrument_id: Option<InstrumentId>,
@@ -164,15 +209,30 @@ impl DatabentoDataLoader {
         Ok(data)
     }
 
-    #[pyo3(name = "load_tbbo_trade_ticks")]
-    pub fn py_load_tbbo_trade_ticks(
+    #[pyo3(name = "load_quotes_as_pycapsule")]
+    pub fn py_load_quotes_as_pycapsule(
+        &self,
+        py: Python,
+        path: String,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<PyObject> {
+        let path_buf = PathBuf::from(path);
+        let iter = self
+            .read_records::<dbn::Mbp1Msg>(path_buf, instrument_id)
+            .map_err(to_pyvalue_err)?;
+
+        exhaust_data_iter_to_pycapsule(py, iter)
+    }
+
+    #[pyo3(name = "load_tbbo_trades")]
+    pub fn py_load_tbbo_trades(
         &self,
         path: String,
         instrument_id: Option<InstrumentId>,
     ) -> PyResult<Vec<TradeTick>> {
         let path_buf = PathBuf::from(path);
         let iter = self
-            .read_records::<dbn::Mbp1Msg>(path_buf, instrument_id)
+            .read_records::<dbn::TbboMsg>(path_buf, instrument_id)
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
@@ -190,8 +250,23 @@ impl DatabentoDataLoader {
         Ok(data)
     }
 
-    #[pyo3(name = "load_trade_ticks")]
-    pub fn py_load_trade_ticks(
+    #[pyo3(name = "load_tbbo_trades_as_pycapsule")]
+    pub fn py_load_tbbo_trades_as_pycapsule(
+        &self,
+        py: Python,
+        path: String,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<PyObject> {
+        let path_buf = PathBuf::from(path);
+        let iter = self
+            .read_records::<dbn::TbboMsg>(path_buf, instrument_id)
+            .map_err(to_pyvalue_err)?;
+
+        exhaust_data_iter_to_pycapsule(py, iter)
+    }
+
+    #[pyo3(name = "load_trades")]
+    pub fn py_load_trades(
         &self,
         path: String,
         instrument_id: Option<InstrumentId>,
@@ -214,6 +289,21 @@ impl DatabentoDataLoader {
         }
 
         Ok(data)
+    }
+
+    #[pyo3(name = "load_trades_as_pycapsule")]
+    pub fn py_load_trades_as_pycapsule(
+        &self,
+        py: Python,
+        path: String,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<PyObject> {
+        let path_buf = PathBuf::from(path);
+        let iter = self
+            .read_records::<dbn::TradeMsg>(path_buf, instrument_id)
+            .map_err(to_pyvalue_err)?;
+
+        exhaust_data_iter_to_pycapsule(py, iter)
     }
 
     #[pyo3(name = "load_bars")]
@@ -241,6 +331,21 @@ impl DatabentoDataLoader {
 
         Ok(data)
     }
+
+    #[pyo3(name = "load_bars_as_pycapsule")]
+    pub fn py_load_bars_as_pycapsule(
+        &self,
+        py: Python,
+        path: String,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<PyObject> {
+        let path_buf = PathBuf::from(path);
+        let iter = self
+            .read_records::<dbn::OhlcvMsg>(path_buf, instrument_id)
+            .map_err(to_pyvalue_err)?;
+
+        exhaust_data_iter_to_pycapsule(py, iter)
+    }
 }
 
 pub fn convert_instrument_to_pyobject(
@@ -261,4 +366,22 @@ pub fn convert_instrument_to_pyobject(
     Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
         "Unknown instrument type",
     ))
+}
+
+fn exhaust_data_iter_to_pycapsule(
+    py: Python,
+    iter: impl Iterator<Item = anyhow::Result<(Data, Option<Data>)>>,
+) -> PyResult<PyObject> {
+    let mut data = Vec::new();
+    for result in iter {
+        match result {
+            Ok((item1, _)) => data.push(item1),
+            Err(e) => return Err(to_pyvalue_err(e)),
+        }
+    }
+
+    let cvec: CVec = data.into();
+    let capsule = PyCapsule::new::<CVec>(py, cvec, None).map_err(to_pyruntime_err)?;
+
+    Ok(capsule.into_py(py))
 }

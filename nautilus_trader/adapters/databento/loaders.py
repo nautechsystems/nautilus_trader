@@ -20,11 +20,8 @@ from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
 from nautilus_trader.adapters.databento.enums import DatabentoSchema
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.data import Data
-from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import OrderBookDelta
-from nautilus_trader.model.data import OrderBookDepth10
-from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.data import TradeTick
+from nautilus_trader.core.nautilus_pyo3 import drop_cvec_pycapsule
+from nautilus_trader.model.data import capsule_to_list
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import instruments_from_pyo3
@@ -169,30 +166,58 @@ class DatabentoDataLoader:
 
         match schema:
             case DatabentoSchema.DEFINITION.value:
-                data = self._pyo3_loader.load_instruments(path)  # type: ignore
+                data = self._pyo3_loader.load_instruments(str(path))
                 if as_legacy_cython:
                     data = instruments_from_pyo3(data)
                 return data
             case DatabentoSchema.MBO.value:
-                data = self._pyo3_loader.load_order_book_deltas(path, pyo3_instrument_id)  # type: ignore
                 if as_legacy_cython:
-                    data = OrderBookDelta.from_pyo3_list(data)
-                return data
+                    capsule = self._pyo3_loader.load_order_book_deltas_as_pycapsule(
+                        path=str(path),
+                        instrument_id=pyo3_instrument_id,
+                    )
+                    data = capsule_to_list(capsule)
+                    # Drop encapsulated `CVec` as data is now transferred
+                    drop_cvec_pycapsule(capsule)
+                    return data
+                else:
+                    return self._pyo3_loader.load_order_book_deltas(str(path), pyo3_instrument_id)
             case DatabentoSchema.MBP_1.value | DatabentoSchema.TBBO.value:
-                data = self._pyo3_loader.load_quote_ticks(path, pyo3_instrument_id)  # type: ignore
                 if as_legacy_cython:
-                    data = QuoteTick.from_pyo3_list(data)
-                return data
+                    capsule = self._pyo3_loader.load_quotes_as_pycapsule(
+                        path=str(path),
+                        instrument_id=pyo3_instrument_id,
+                    )
+                    data = capsule_to_list(capsule)
+                    # Drop encapsulated `CVec` as data is now transferred
+                    drop_cvec_pycapsule(capsule)
+                    return data
+                else:
+                    return self._pyo3_loader.load_quotes(str(path), pyo3_instrument_id)
             case DatabentoSchema.MBP_10.value:
-                data = self._pyo3_loader.load_order_book_depth10(path)  # type: ignore
                 if as_legacy_cython:
-                    data = OrderBookDepth10.from_pyo3_list(data)
-                return data
+                    capsule = self._pyo3_loader.load_order_book_depth10_as_pycapsule(
+                        path=str(path),
+                        instrument_id=pyo3_instrument_id,
+                    )
+                    data = capsule_to_list(capsule)
+                    # Drop encapsulated `CVec` as data is now transferred
+                    drop_cvec_pycapsule(capsule)
+                    return data
+                else:
+                    return self._pyo3_loader.load_order_book_depth10(str(path), pyo3_instrument_id)
             case DatabentoSchema.TRADES.value:
-                data = self._pyo3_loader.load_trade_ticks(path, pyo3_instrument_id)  # type: ignore
                 if as_legacy_cython:
-                    data = TradeTick.from_pyo3_list(data)
-                return data
+                    capsule = self._pyo3_loader.load_trades_as_pycapsule(
+                        path=str(path),
+                        instrument_id=pyo3_instrument_id,
+                    )
+                    data = capsule_to_list(capsule)
+                    # Drop encapsulated `CVec` as data is now transferred
+                    drop_cvec_pycapsule(capsule)
+                    return data
+                else:
+                    return self._pyo3_loader.load_trades(str(path), pyo3_instrument_id)
             case (
                 DatabentoSchema.OHLCV_1S.value
                 | DatabentoSchema.OHLCV_1M.value
@@ -200,9 +225,16 @@ class DatabentoDataLoader:
                 | DatabentoSchema.OHLCV_1D.value
                 | DatabentoSchema.OHLCV_EOD
             ):
-                data = self._pyo3_loader.load_bars(path, pyo3_instrument_id)  # type: ignore
                 if as_legacy_cython:
-                    data = Bar.from_pyo3_list(data)
-                return data
+                    capsule = self._pyo3_loader.load_bars_as_pycapsule(
+                        path=str(path),
+                        instrument_id=pyo3_instrument_id,
+                    )
+                    data = capsule_to_list(capsule)
+                    # Drop encapsulated `CVec` as data is now transferred
+                    drop_cvec_pycapsule(capsule)
+                    return data
+                else:
+                    return self._pyo3_loader.load_bars(str(path), pyo3_instrument_id)
             case _:
                 raise RuntimeError(f"Loading schema {schema} not currently supported")
