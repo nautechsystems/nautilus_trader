@@ -37,7 +37,7 @@ cdef class Equity(Instrument):
     instrument_id : InstrumentId
         The instrument ID.
     raw_symbol : Symbol
-        The native/local/raw symbol for the instrument, assigned by the venue.
+        The raw/local/native symbol for the instrument, assigned by the venue.
     currency : Currency
         The futures contract currency.
     price_precision : int
@@ -163,7 +163,7 @@ cdef class Equity(Instrument):
         return Equity(
             instrument_id=InstrumentId.from_str_c(pyo3_instrument.id.value),
             raw_symbol=Symbol(pyo3_instrument.id.symbol.value),
-            currency=Currency.from_str_c(pyo3_instrument.currency.code),
+            currency=Currency.from_str_c(pyo3_instrument.quote_currency.code),
             price_precision=pyo3_instrument.price_precision,
             price_increment=Price.from_raw_c(pyo3_instrument.price_increment.raw, pyo3_instrument.price_precision),
             lot_size=Quantity.from_raw_c(pyo3_instrument.lot_size.raw, pyo3_instrument.lot_size.precision),

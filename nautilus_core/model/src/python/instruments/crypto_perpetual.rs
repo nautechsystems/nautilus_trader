@@ -88,11 +88,6 @@ impl CryptoPerpetual {
         .map_err(to_pyvalue_err)
     }
 
-    #[getter]
-    fn instrument_type(&self) -> &str {
-        "CryptoPerpetual"
-    }
-
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
             CompareOp::Eq => self.eq(other).into_py(py),
@@ -104,6 +99,126 @@ impl CryptoPerpetual {
         let mut hasher = DefaultHasher::new();
         self.hash(&mut hasher);
         hasher.finish() as isize
+    }
+
+    #[getter]
+    #[pyo3(name = "instrument_type")]
+    fn py_instrument_type(&self) -> &str {
+        stringify!(CryptoPerpetual)
+    }
+
+    #[getter]
+    #[pyo3(name = "id")]
+    fn py_id(&self) -> InstrumentId {
+        self.id
+    }
+
+    #[getter]
+    #[pyo3(name = "raw_symbol")]
+    fn py_raw_symbol(&self) -> Symbol {
+        self.raw_symbol
+    }
+
+    #[getter]
+    #[pyo3(name = "base_currency")]
+    fn py_base_currency(&self) -> Currency {
+        self.base_currency
+    }
+
+    #[getter]
+    #[pyo3(name = "quote_currency")]
+    fn py_quote_currency(&self) -> Currency {
+        self.quote_currency
+    }
+
+    #[getter]
+    #[pyo3(name = "settlement_currency")]
+    fn py_settlement_currency(&self) -> Currency {
+        self.settlement_currency
+    }
+
+    #[getter]
+    #[pyo3(name = "is_inverse")]
+    fn py_is_inverse(&self) -> bool {
+        self.is_inverse
+    }
+
+    #[getter]
+    #[pyo3(name = "price_precision")]
+    fn py_price_precision(&self) -> u8 {
+        self.price_precision
+    }
+
+    #[getter]
+    #[pyo3(name = "size_precision")]
+    fn py_size_precision(&self) -> u8 {
+        self.size_precision
+    }
+
+    #[getter]
+    #[pyo3(name = "price_increment")]
+    fn py_price_increment(&self) -> Price {
+        self.price_increment
+    }
+
+    #[getter]
+    #[pyo3(name = "size_increment")]
+    fn py_size_increment(&self) -> Quantity {
+        self.size_increment
+    }
+
+    #[getter]
+    #[pyo3(name = "lot_size")]
+    fn py_lot_size(&self) -> Option<Quantity> {
+        self.lot_size
+    }
+
+    #[getter]
+    #[pyo3(name = "max_quantity")]
+    fn py_max_quantity(&self) -> Option<Quantity> {
+        self.max_quantity
+    }
+
+    #[getter]
+    #[pyo3(name = "min_quantity")]
+    fn py_min_quantity(&self) -> Option<Quantity> {
+        self.min_quantity
+    }
+
+    #[getter]
+    #[pyo3(name = "max_notional")]
+    fn py_max_notional(&self) -> Option<Money> {
+        self.max_notional
+    }
+
+    #[getter]
+    #[pyo3(name = "min_notional")]
+    fn py_min_notional(&self) -> Option<Money> {
+        self.min_notional
+    }
+
+    #[getter]
+    #[pyo3(name = "max_price")]
+    fn py_max_price(&self) -> Option<Price> {
+        self.max_price
+    }
+
+    #[getter]
+    #[pyo3(name = "min_price")]
+    fn py_min_price(&self) -> Option<Price> {
+        self.min_price
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 
     #[staticmethod]
