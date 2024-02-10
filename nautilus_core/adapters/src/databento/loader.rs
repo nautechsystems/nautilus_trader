@@ -212,7 +212,8 @@ impl DatabentoDataLoader {
         &self,
         path: PathBuf,
         instrument_id: Option<InstrumentId>,
-    ) -> Result<impl Iterator<Item = Result<(Data, Option<Data>)>> + '_>
+        include_trades: bool,
+    ) -> Result<impl Iterator<Item = Result<(Option<Data>, Option<Data>)>> + '_>
     where
         T: dbn::Record + dbn::HasRType + 'static,
     {
@@ -242,7 +243,14 @@ impl DatabentoDataLoader {
                         }
                     };
 
-                    match parse_record(&rec_ref, rtype, instrument_id, price_precision, None) {
+                    match parse_record(
+                        &rec_ref,
+                        rtype,
+                        instrument_id,
+                        price_precision,
+                        None,
+                        include_trades,
+                    ) {
                         Ok(data) => Some(Ok(data)),
                         Err(e) => Some(Err(e)),
                     }
