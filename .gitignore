@@ -18,6 +18,9 @@
 *.tar.gz*
 *.zip
 
+*.dbn
+*.dbn.zst
+
 .benchmarks*
 .coverage*
 .history*
