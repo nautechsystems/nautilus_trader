@@ -9,7 +9,10 @@ None
 None
 
 ### Fixes
-None
+- Fixed `ActorFactory.create` JSON encoding (was missing the encoding hook)
+- Fixed `ImportableConfig.create` JSON encoding (was missing the encoding hook)
+- Fixed `ImportableStrategyConfig.create` JSON encoding (was missing the encoding hook)
+- Fixed `ExecAlgorithmFactory.create` JSON encoding (was missing the encoding hook)
 
 ---
 
