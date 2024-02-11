@@ -102,7 +102,7 @@ class OrderBookDeltaDataWranglerV2(WranglerBase):
         ts_init_delta: int = 0,
     ) -> list[nautilus_pyo3.OrderBookDelta]:
         """
-        Process the given pandas.DataFrame into Nautilus `OrderBookDelta` objects.
+        Process the given pandas DataFrame into Nautilus `OrderBookDelta` objects.
 
         Parameters
         ----------
@@ -138,7 +138,7 @@ class OrderBookDeltaDataWranglerV2(WranglerBase):
         df["ts_event"] = (
             pd.to_datetime(df["ts_event"], utc=True, format="mixed")
             .dt.tz_localize(None)
-            .view("int64")
+            .astype("int64")
             .astype("uint64")
         )
 
@@ -146,7 +146,7 @@ class OrderBookDeltaDataWranglerV2(WranglerBase):
             df["ts_init"] = (
                 pd.to_datetime(df["ts_init"], utc=True, format="mixed")
                 .dt.tz_localize(None)
-                .view("int64")
+                .astype("int64")
                 .astype("uint64")
             )
         else:
@@ -203,7 +203,7 @@ class QuoteTickDataWranglerV2(WranglerBase):
         ts_init_delta: int = 0,
     ) -> list[nautilus_pyo3.QuoteTick]:
         """
-        Process the given `data` into Nautilus `QuoteTick` objects.
+        Process the given pandas DataFrame into Nautilus `QuoteTick` objects.
 
         Expects columns ['bid_price', 'ask_price'] with 'timestamp' index.
         Note: The 'bid_size' and 'ask_size' columns are optional, will then use
@@ -255,7 +255,7 @@ class QuoteTickDataWranglerV2(WranglerBase):
         df["ts_event"] = (
             pd.to_datetime(df["ts_event"], utc=True, format="mixed")
             .dt.tz_localize(None)
-            .view("int64")
+            .astype("int64")
             .astype("uint64")
         )
 
@@ -263,7 +263,7 @@ class QuoteTickDataWranglerV2(WranglerBase):
             df["ts_init"] = (
                 pd.to_datetime(df["ts_init"], utc=True, format="mixed")
                 .dt.tz_localize(None)
-                .view("int64")
+                .astype("int64")
                 .astype("uint64")
             )
         else:
@@ -330,7 +330,7 @@ class TradeTickDataWranglerV2(WranglerBase):
         ts_init_delta: int = 0,
     ) -> list[nautilus_pyo3.TradeTick]:
         """
-        Process the given `data` into Nautilus `TradeTick` objects.
+        Process the given pandas DataFrame into Nautilus `TradeTick` objects.
 
         Parameters
         ----------
@@ -368,7 +368,7 @@ class TradeTickDataWranglerV2(WranglerBase):
         df["ts_event"] = (
             pd.to_datetime(df["ts_event"], utc=True, format="mixed")
             .dt.tz_localize(None)
-            .view("int64")
+            .astype("int64")
             .astype("uint64")
         )
 
@@ -376,7 +376,7 @@ class TradeTickDataWranglerV2(WranglerBase):
             df["ts_init"] = (
                 pd.to_datetime(df["ts_init"], utc=True, format="mixed")
                 .dt.tz_localize(None)
-                .view("int64")
+                .astype("int64")
                 .astype("uint64")
             )
         else:
@@ -449,7 +449,7 @@ class BarDataWranglerV2(WranglerBase):
         ts_init_delta: int = 0,
     ) -> list[nautilus_pyo3.Bar]:
         """
-        Process the given `data` into Nautilus `Bar` objects.
+        Process the given pandas DataFrame into Nautilus `Bar` objects.
 
         Parameters
         ----------
@@ -484,7 +484,7 @@ class BarDataWranglerV2(WranglerBase):
         df["ts_event"] = (
             pd.to_datetime(df["ts_event"], utc=True, format="mixed")
             .dt.tz_localize(None)
-            .view("int64")
+            .astype("int64")
             .astype("uint64")
         )
 
@@ -492,7 +492,7 @@ class BarDataWranglerV2(WranglerBase):
             df["ts_init"] = (
                 pd.to_datetime(df["ts_init"], utc=True, format="mixed")
                 .dt.tz_localize(None)
-                .view("int64")
+                .astype("int64")
                 .astype("uint64")
             )
         else:
