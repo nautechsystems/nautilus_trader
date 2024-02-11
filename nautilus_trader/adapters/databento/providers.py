@@ -135,7 +135,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         await live_client.subscribe(
             schema=DatabentoSchema.DEFINITION.value,
             symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
-            start=0,  # From start of current session (latest definition)
+            start=0,  # From start of current week (latest definitions)
         )
 
         try:
