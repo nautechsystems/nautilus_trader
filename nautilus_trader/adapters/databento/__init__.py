@@ -13,9 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
 from nautilus_trader.adapters.databento.constants import DATABENTO
 from nautilus_trader.adapters.databento.constants import DATABENTO_CLIENT_ID
+from nautilus_trader.adapters.databento.factories import DatabentoLiveDataClientFactory
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 
 
@@ -24,4 +26,6 @@ __all__ = [
     "DATABENTO_CLIENT_ID",
     "ALL_SYMBOLS",
     "DatabentoDataLoader",
+    "DatabentoDataClientConfig",
+    "DatabentoLiveDataClientFactory",
 ]
