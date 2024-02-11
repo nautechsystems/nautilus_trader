@@ -55,10 +55,6 @@ use super::{
 ///  - IMBALANCE -> `DatabentoImbalance`
 ///  - STATISTICS -> `DatabentoStatistics`
 ///
-/// For the loader to work correctly, you must first either:
-///  - Load Databento instrument definitions from a DBN file using `load_instruments(...)`
-///  - Manually add Nautilus instrument objects through `add_instruments(...)`
-///
 /// # Warnings
 /// The following Databento instrument classes are not supported:
 ///  - ``FUTURE_SPREAD``
@@ -194,9 +190,7 @@ impl DatabentoDataLoader {
             .get(instrument_id)
             .expect("No raw symbol found for {instrument_id}");
 
-        let symbol = Symbol {
-            value: Ustr::from(raw_symbol),
-        };
+        let symbol = Symbol::from_str_unchecked(raw_symbol);
 
         Ok(InstrumentId::new(symbol, venue))
     }

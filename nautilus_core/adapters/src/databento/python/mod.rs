@@ -20,12 +20,10 @@ pub mod loader;
 
 use pyo3::prelude::*;
 
-use super::types;
-
 /// Loaded as nautilus_pyo3.databento
 #[pymodule]
 pub fn databento(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<types::DatabentoPublisher>()?;
+    m.add_class::<super::types::DatabentoPublisher>()?;
     m.add_class::<super::loader::DatabentoDataLoader>()?;
     m.add_class::<live::DatabentoLiveClient>()?;
     m.add_class::<historical::DatabentoHistoricalClient>()?;
