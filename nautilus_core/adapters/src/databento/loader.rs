@@ -125,7 +125,6 @@ impl DatabentoDataLoader {
             .collect::<IndexMap<Venue, Ustr>>();
 
         self.publisher_venue_map = publishers
-            .clone()
             .into_iter()
             .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
             .collect::<IndexMap<u16, Venue>>();

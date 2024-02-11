@@ -47,6 +47,7 @@ impl DatabentoDataLoader {
         Self::new(path.map(PathBuf::from)).map_err(to_pyvalue_err)
     }
 
+    #[must_use]
     #[pyo3(name = "get_publishers")]
     pub fn py_get_publishers(&self) -> HashMap<u16, DatabentoPublisher> {
         self.get_publishers()
@@ -55,15 +56,18 @@ impl DatabentoDataLoader {
             .collect::<HashMap<u16, DatabentoPublisher>>()
     }
 
+    #[must_use]
     #[pyo3(name = "get_dataset_for_venue")]
     pub fn py_get_dataset_for_venue(&self, venue: &Venue) -> Option<String> {
-        self.get_dataset_for_venue(venue).map(|d| d.to_string())
+        self.get_dataset_for_venue(venue)
+            .map(std::string::ToString::to_string)
     }
 
+    #[must_use]
     #[pyo3(name = "get_venue_for_publisher")]
     pub fn py_get_venue_for_publisher(&self, publisher_id: PublisherId) -> Option<String> {
         self.get_venue_for_publisher(publisher_id)
-            .map(|d| d.to_string())
+            .map(std::string::ToString::to_string)
     }
 
     #[pyo3(name = "schema_for_file")]
@@ -388,7 +392,7 @@ fn exhaust_data_iter_to_pycapsule(
             Ok((None, Some(item2))) => data.push(item2),
             Ok((Some(item1), Some(item2))) => {
                 data.push(item1);
-                data.push(item2)
+                data.push(item2);
             }
             Ok((None, None)) => {
                 continue;
