@@ -17,7 +17,6 @@ use std::{fmt, fmt::Debug};
 
 use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 
-/// Indicator trait
 pub trait Indicator {
     fn name(&self) -> String;
     fn has_inputs(&self) -> bool;
@@ -28,7 +27,6 @@ pub trait Indicator {
     fn reset(&mut self);
 }
 
-/// Moving average trait
 pub trait MovingAverage: Indicator {
     fn value(&self) -> f64;
     fn count(&self) -> usize;
@@ -37,14 +35,14 @@ pub trait MovingAverage: Indicator {
 
 impl Debug for dyn Indicator + Send {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // Implement custom formatting for the Indicator trait object.
+        // Implement custom formatting for the Indicator trait object
         write!(f, "Indicator {{ ... }}")
     }
 }
 
 impl Debug for dyn MovingAverage + Send {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // Implement custom formatting for the Indicator trait object.
+        // Implement custom formatting for the Indicator trait object
         write!(f, "MovingAverage()")
     }
 }
