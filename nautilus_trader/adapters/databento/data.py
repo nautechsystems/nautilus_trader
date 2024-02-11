@@ -58,6 +58,9 @@ class DatabentoDataClient(LiveMarketDataClient):
     """
     Provides a data client for the `Databento` API.
 
+    Both Historical and Live APIs are leveraged to provide historical data
+    for requests, and live data feeds based on subscriptions.
+
     Parameters
     ----------
     loop : asyncio.AbstractEventLoop
@@ -485,11 +488,15 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_ids[0].venue)
             live_client = self._get_live_client_mbo(dataset)
+
+            # Subscribe from UTC midnight snapshot
+            start = self._clock.utcnow().normalize().value
+
             future = asyncio.ensure_future(
                 live_client.subscribe(
                     schema=DatabentoSchema.MBO.value,
                     symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
-                    start=0,  # Must subscribe from start of week to get 'Sunday snapshot' for now
+                    start=start,
                 ),
             )
             self._live_client_futures.add(future)
@@ -853,8 +860,9 @@ class DatabentoDataClient(LiveMarketDataClient):
         self,
         pycapsule: object,
     ) -> None:
-        # self._log.debug(f"Received {record}", LogColor.MAGENTA)
-
+        # The capsule will fall out of scope at the end of this method,
+        # and eventually be garbage collected. The contained pointer
+        # to `Data` is still owned and managed by the Rust memory model.
         data = capsule_to_data(pycapsule)
 
         if isinstance(data, OrderBookDelta):
