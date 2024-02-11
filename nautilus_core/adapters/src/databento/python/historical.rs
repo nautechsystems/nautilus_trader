@@ -16,7 +16,7 @@
 use std::{fs, num::NonZeroU64, sync::Arc};
 
 use databento::{self, historical::timeseries::GetRangeParams};
-use dbn::{self, Record, VersionUpgradePolicy};
+use dbn::{self, VersionUpgradePolicy};
 use indexmap::IndexMap;
 use nautilus_core::{
     python::to_pyvalue_err,
@@ -36,8 +36,8 @@ use tokio::sync::Mutex;
 
 use crate::databento::{
     common::get_date_time_range,
-    parsing::{parse_instrument_def_msg, parse_raw_ptr_to_ustr, parse_record},
-    symbology::parse_nautilus_instrument_id,
+    decode::{decode_instrument_def_msg, decode_record, raw_ptr_to_ustr},
+    symbology::decode_nautilus_instrument_id,
     types::{DatabentoPublisher, PublisherId},
 };
 
@@ -140,12 +140,12 @@ impl DatabentoHistoricalClient {
             let mut instruments = Vec::new();
 
             while let Ok(Some(rec)) = decoder.decode_record::<dbn::InstrumentDefMsg>().await {
-                let raw_symbol = unsafe { parse_raw_ptr_to_ustr(rec.raw_symbol.as_ptr()).unwrap() };
+                let raw_symbol = unsafe { raw_ptr_to_ustr(rec.raw_symbol.as_ptr()).unwrap() };
                 let symbol = Symbol { value: raw_symbol };
                 let venue = publisher_venue_map.get(&rec.hd.publisher_id).unwrap();
                 let instrument_id = InstrumentId::new(symbol, *venue);
 
-                let result = parse_instrument_def_msg(rec, instrument_id, ts_init);
+                let result = decode_instrument_def_msg(rec, instrument_id, ts_init);
                 match result {
                     Ok(instrument) => instruments.push(instrument),
                     Err(e) => eprintln!("{e:?}"),
@@ -201,15 +201,12 @@ impl DatabentoHistoricalClient {
 
             while let Ok(Some(rec)) = decoder.decode_record::<dbn::Mbp1Msg>().await {
                 let rec_ref = dbn::RecordRef::from(rec);
-                let rtype = rec_ref.rtype().expect("Invalid `rtype` for data loading");
-
                 let venue = publisher_venue_map.get(&rec.hd.publisher_id).unwrap();
-                let instrument_id = parse_nautilus_instrument_id(&rec_ref, &metadata, *venue)
+                let instrument_id = decode_nautilus_instrument_id(&rec_ref, &metadata, *venue)
                     .map_err(to_pyvalue_err)?;
 
-                let (data, _) = parse_record(
+                let (data, _) = decode_record(
                     &rec_ref,
-                    rtype,
                     instrument_id,
                     price_precision,
                     Some(ts_init),
@@ -267,15 +264,12 @@ impl DatabentoHistoricalClient {
 
             while let Ok(Some(rec)) = decoder.decode_record::<dbn::TradeMsg>().await {
                 let rec_ref = dbn::RecordRef::from(rec);
-                let rtype = rec_ref.rtype().expect("Invalid `rtype` for data loading");
-
                 let venue = publisher_venue_map.get(&rec.hd.publisher_id).unwrap();
-                let instrument_id = parse_nautilus_instrument_id(&rec_ref, &metadata, *venue)
+                let instrument_id = decode_nautilus_instrument_id(&rec_ref, &metadata, *venue)
                     .map_err(to_pyvalue_err)?;
 
-                let (data, _) = parse_record(
+                let (data, _) = decode_record(
                     &rec_ref,
-                    rtype,
                     instrument_id,
                     price_precision,
                     Some(ts_init),
@@ -342,15 +336,12 @@ impl DatabentoHistoricalClient {
 
             while let Ok(Some(rec)) = decoder.decode_record::<dbn::OhlcvMsg>().await {
                 let rec_ref = dbn::RecordRef::from(rec);
-                let rtype = rec_ref.rtype().expect("Invalid `rtype` for data loading");
-
                 let venue = publisher_venue_map.get(&rec.hd.publisher_id).unwrap();
-                let instrument_id = parse_nautilus_instrument_id(&rec_ref, &metadata, *venue)
+                let instrument_id = decode_nautilus_instrument_id(&rec_ref, &metadata, *venue)
                     .map_err(to_pyvalue_err)?;
 
-                let (data, _) = parse_record(
+                let (data, _) = decode_record(
                     &rec_ref,
-                    rtype,
                     instrument_id,
                     price_precision,
                     Some(ts_init),

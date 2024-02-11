@@ -22,6 +22,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Result};
 use databento::dbn;
+use dbn::Record;
 use itoa;
 use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, time::UnixNanos};
 use nautilus_model::{
@@ -142,7 +143,7 @@ pub fn parse_cfi_iso10926(value: &str) -> Result<(Option<AssetClass>, Option<Ins
     Ok((asset_class, instrument_class))
 }
 
-pub fn parse_min_price_increment(value: i64, currency: Currency) -> Result<Price> {
+pub fn decode_min_price_increment(value: i64, currency: Currency) -> Result<Price> {
     match value {
         0 | i64::MAX => Price::new(
             10f64.powi(-i32::from(currency.precision)),
@@ -155,7 +156,7 @@ pub fn parse_min_price_increment(value: i64, currency: Currency) -> Result<Price
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
-pub unsafe fn parse_raw_ptr_to_string(ptr: *const c_char) -> Result<String> {
+pub unsafe fn raw_ptr_to_string(ptr: *const c_char) -> Result<String> {
     let c_str: &CStr = unsafe { CStr::from_ptr(ptr) };
     let str_slice: &str = c_str.to_str().map_err(|e| anyhow!(e))?;
     Ok(str_slice.to_owned())
@@ -164,13 +165,13 @@ pub unsafe fn parse_raw_ptr_to_string(ptr: *const c_char) -> Result<String> {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
-pub unsafe fn parse_raw_ptr_to_ustr(ptr: *const c_char) -> Result<Ustr> {
+pub unsafe fn raw_ptr_to_ustr(ptr: *const c_char) -> Result<Ustr> {
     let c_str: &CStr = unsafe { CStr::from_ptr(ptr) };
     let str_slice: &str = c_str.to_str().map_err(|e| anyhow!(e))?;
     Ok(Ustr::from(str_slice))
 }
 
-pub fn parse_equity_v1(
+pub fn decode_equity_v1(
     record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
@@ -183,7 +184,7 @@ pub fn parse_equity_v1(
         None, // No ISIN available yet
         currency,
         currency.precision,
-        parse_min_price_increment(record.min_price_increment, currency)?,
+        decode_min_price_increment(record.min_price_increment, currency)?,
         Some(Quantity::new(record.min_lot_size_round_lot.into(), 0)?),
         None,           // TBD
         None,           // TBD
@@ -194,14 +195,14 @@ pub fn parse_equity_v1(
     )
 }
 
-pub fn parse_futures_contract_v1(
+pub fn decode_futures_contract_v1(
     record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<FuturesContract> {
     let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
-    let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
-    let underlying = unsafe { parse_raw_ptr_to_ustr(record.asset.as_ptr())? };
+    let cfi_str = unsafe { raw_ptr_to_string(record.cfi.as_ptr())? };
+    let underlying = unsafe { raw_ptr_to_ustr(record.asset.as_ptr())? };
     let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
 
     FuturesContract::new(
@@ -213,7 +214,7 @@ pub fn parse_futures_contract_v1(
         record.expiration,
         currency,
         currency.precision,
-        parse_min_price_increment(record.min_price_increment, currency)?,
+        decode_min_price_increment(record.min_price_increment, currency)?,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
@@ -225,13 +226,13 @@ pub fn parse_futures_contract_v1(
     )
 }
 
-pub fn parse_options_contract_v1(
+pub fn decode_options_contract_v1(
     record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<OptionsContract> {
-    let currency_str = unsafe { parse_raw_ptr_to_string(record.currency.as_ptr())? };
-    let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
+    let currency_str = unsafe { raw_ptr_to_string(record.currency.as_ptr())? };
+    let cfi_str = unsafe { raw_ptr_to_string(record.cfi.as_ptr())? };
     let asset_class_opt = match instrument_id.venue.value.as_str() {
         "OPRA" => Some(AssetClass::Equity),
         _ => {
@@ -239,7 +240,7 @@ pub fn parse_options_contract_v1(
             asset_class
         }
     };
-    let underlying = unsafe { parse_raw_ptr_to_ustr(record.underlying.as_ptr())? };
+    let underlying = unsafe { raw_ptr_to_ustr(record.underlying.as_ptr())? };
     let currency = Currency::from_str(&currency_str)?;
 
     OptionsContract::new(
@@ -253,7 +254,7 @@ pub fn parse_options_contract_v1(
         Price::from_raw(record.strike_price, currency.precision)?,
         currency,
         currency.precision,
-        parse_min_price_increment(record.min_price_increment, currency)?,
+        decode_min_price_increment(record.min_price_increment, currency)?,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
@@ -270,7 +271,7 @@ pub fn is_trade_msg(order_side: OrderSide, action: c_char) -> bool {
     order_side == OrderSide::NoOrderSide || action as u8 as char == 'T'
 }
 
-pub fn parse_mbo_msg(
+pub fn decode_mbo_msg(
     record: &dbn::MboMsg,
     instrument_id: InstrumentId,
     price_precision: u8,
@@ -315,7 +316,7 @@ pub fn parse_mbo_msg(
     Ok((Some(delta), None))
 }
 
-pub fn parse_trade_msg(
+pub fn decode_trade_msg(
     record: &dbn::TradeMsg,
     instrument_id: InstrumentId,
     price_precision: u8,
@@ -334,7 +335,7 @@ pub fn parse_trade_msg(
     Ok(trade)
 }
 
-pub fn parse_mbp1_msg(
+pub fn decode_mbp1_msg(
     record: &dbn::Mbp1Msg,
     instrument_id: InstrumentId,
     price_precision: u8,
@@ -369,7 +370,7 @@ pub fn parse_mbp1_msg(
     Ok((quote, maybe_trade))
 }
 
-pub fn parse_mbp10_msg(
+pub fn decode_mbp10_msg(
     record: &dbn::Mbp10Msg,
     instrument_id: InstrumentId,
     price_precision: u8,
@@ -421,7 +422,7 @@ pub fn parse_mbp10_msg(
     Ok(depth)
 }
 
-pub fn parse_bar_type(record: &dbn::OhlcvMsg, instrument_id: InstrumentId) -> Result<BarType> {
+pub fn decode_bar_type(record: &dbn::OhlcvMsg, instrument_id: InstrumentId) -> Result<BarType> {
     let bar_type = match record.hd.rtype {
         32 => {
             // ohlcv-1s
@@ -448,7 +449,7 @@ pub fn parse_bar_type(record: &dbn::OhlcvMsg, instrument_id: InstrumentId) -> Re
     Ok(bar_type)
 }
 
-pub fn parse_ts_event_adjustment(record: &dbn::OhlcvMsg) -> Result<UnixNanos> {
+pub fn decode_ts_event_adjustment(record: &dbn::OhlcvMsg) -> Result<UnixNanos> {
     let adjustment = match record.hd.rtype {
         32 => {
             // ohlcv-1s
@@ -475,14 +476,14 @@ pub fn parse_ts_event_adjustment(record: &dbn::OhlcvMsg) -> Result<UnixNanos> {
     Ok(adjustment)
 }
 
-pub fn parse_ohlcv_msg(
+pub fn decode_ohlcv_msg(
     record: &dbn::OhlcvMsg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> Result<Bar> {
-    let bar_type = parse_bar_type(record, instrument_id)?;
-    let ts_event_adjustment = parse_ts_event_adjustment(record)?;
+    let bar_type = decode_bar_type(record, instrument_id)?;
+    let ts_event_adjustment = decode_ts_event_adjustment(record)?;
 
     // Adjust `ts_event` from open to close of bar
     let ts_event = record.hd.ts_event;
@@ -502,14 +503,14 @@ pub fn parse_ohlcv_msg(
     Ok(bar)
 }
 
-pub fn parse_record(
+pub fn decode_record(
     record: &dbn::RecordRef,
-    rtype: dbn::RType,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: Option<UnixNanos>,
     include_trades: bool,
 ) -> Result<(Option<Data>, Option<Data>)> {
+    let rtype = record.rtype().expect("Invalid `rtype`");
     let result = match rtype {
         dbn::RType::Mbo => {
             let msg = record.get::<dbn::MboMsg>().unwrap(); // SAFETY: RType known
@@ -518,7 +519,7 @@ pub fn parse_record(
                 None => msg.ts_recv,
             };
             let result =
-                parse_mbo_msg(msg, instrument_id, price_precision, ts_init, include_trades)?;
+                decode_mbo_msg(msg, instrument_id, price_precision, ts_init, include_trades)?;
             match result {
                 (Some(delta), None) => (Some(Data::Delta(delta)), None),
                 (None, Some(trade)) => (Some(Data::Trade(trade)), None),
@@ -532,7 +533,7 @@ pub fn parse_record(
                 Some(ts_init) => ts_init,
                 None => msg.ts_recv,
             };
-            let trade = parse_trade_msg(msg, instrument_id, price_precision, ts_init)?;
+            let trade = decode_trade_msg(msg, instrument_id, price_precision, ts_init)?;
             (Some(Data::Trade(trade)), None)
         }
         dbn::RType::Mbp1 => {
@@ -542,7 +543,7 @@ pub fn parse_record(
                 None => msg.ts_recv,
             };
             let result =
-                parse_mbp1_msg(msg, instrument_id, price_precision, ts_init, include_trades)?;
+                decode_mbp1_msg(msg, instrument_id, price_precision, ts_init, include_trades)?;
             match result {
                 (quote, None) => (Some(Data::Quote(quote)), None),
                 (quote, Some(trade)) => (Some(Data::Quote(quote)), Some(Data::Trade(trade))),
@@ -554,7 +555,7 @@ pub fn parse_record(
                 Some(ts_init) => ts_init,
                 None => msg.ts_recv,
             };
-            let depth = parse_mbp10_msg(msg, instrument_id, price_precision, ts_init)?;
+            let depth = decode_mbp10_msg(msg, instrument_id, price_precision, ts_init)?;
             (Some(Data::Depth10(depth)), None)
         }
         dbn::RType::Ohlcv1S
@@ -567,7 +568,7 @@ pub fn parse_record(
                 Some(ts_init) => ts_init,
                 None => msg.hd.ts_event,
             };
-            let bar = parse_ohlcv_msg(msg, instrument_id, price_precision, ts_init)?;
+            let bar = decode_ohlcv_msg(msg, instrument_id, price_precision, ts_init)?;
             (Some(Data::Bar(bar)), None)
         }
         _ => bail!("RType {:?} is not currently supported", rtype),
@@ -576,19 +577,19 @@ pub fn parse_record(
     Ok(result)
 }
 
-pub fn parse_instrument_def_msg_v1(
+pub fn decode_instrument_def_msg_v1(
     record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<Box<dyn Instrument>> {
     match record.instrument_class as u8 as char {
-        'K' => Ok(Box::new(parse_equity_v1(record, instrument_id, ts_init)?)),
-        'F' => Ok(Box::new(parse_futures_contract_v1(
+        'K' => Ok(Box::new(decode_equity_v1(record, instrument_id, ts_init)?)),
+        'F' => Ok(Box::new(decode_futures_contract_v1(
             record,
             instrument_id,
             ts_init,
         )?)),
-        'C' | 'P' => Ok(Box::new(parse_options_contract_v1(
+        'C' | 'P' => Ok(Box::new(decode_options_contract_v1(
             record,
             instrument_id,
             ts_init,
@@ -605,19 +606,19 @@ pub fn parse_instrument_def_msg_v1(
     }
 }
 
-pub fn parse_instrument_def_msg(
+pub fn decode_instrument_def_msg(
     record: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<Box<dyn Instrument>> {
     match record.instrument_class as u8 as char {
-        'K' => Ok(Box::new(parse_equity(record, instrument_id, ts_init)?)),
-        'F' => Ok(Box::new(parse_futures_contract(
+        'K' => Ok(Box::new(decode_equity(record, instrument_id, ts_init)?)),
+        'F' => Ok(Box::new(decode_futures_contract(
             record,
             instrument_id,
             ts_init,
         )?)),
-        'C' | 'P' => Ok(Box::new(parse_options_contract(
+        'C' | 'P' => Ok(Box::new(decode_options_contract(
             record,
             instrument_id,
             ts_init,
@@ -634,7 +635,7 @@ pub fn parse_instrument_def_msg(
     }
 }
 
-pub fn parse_equity(
+pub fn decode_equity(
     record: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
@@ -647,7 +648,7 @@ pub fn parse_equity(
         None, // No ISIN available yet
         currency,
         currency.precision,
-        parse_min_price_increment(record.min_price_increment, currency)?,
+        decode_min_price_increment(record.min_price_increment, currency)?,
         Some(Quantity::new(record.min_lot_size_round_lot.into(), 0)?),
         None,           // TBD
         None,           // TBD
@@ -658,14 +659,14 @@ pub fn parse_equity(
     )
 }
 
-pub fn parse_futures_contract(
+pub fn decode_futures_contract(
     record: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<FuturesContract> {
     let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
-    let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
-    let underlying = unsafe { parse_raw_ptr_to_ustr(record.asset.as_ptr())? };
+    let cfi_str = unsafe { raw_ptr_to_string(record.cfi.as_ptr())? };
+    let underlying = unsafe { raw_ptr_to_ustr(record.asset.as_ptr())? };
     let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
 
     FuturesContract::new(
@@ -677,7 +678,7 @@ pub fn parse_futures_contract(
         record.expiration,
         currency,
         currency.precision,
-        parse_min_price_increment(record.min_price_increment, currency)?,
+        decode_min_price_increment(record.min_price_increment, currency)?,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
@@ -689,13 +690,13 @@ pub fn parse_futures_contract(
     )
 }
 
-pub fn parse_options_contract(
+pub fn decode_options_contract(
     record: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<OptionsContract> {
-    let currency_str = unsafe { parse_raw_ptr_to_string(record.currency.as_ptr())? };
-    let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
+    let currency_str = unsafe { raw_ptr_to_string(record.currency.as_ptr())? };
+    let cfi_str = unsafe { raw_ptr_to_string(record.cfi.as_ptr())? };
     let asset_class_opt = match instrument_id.venue.value.as_str() {
         "OPRA" => Some(AssetClass::Equity),
         _ => {
@@ -703,7 +704,7 @@ pub fn parse_options_contract(
             asset_class
         }
     };
-    let underlying = unsafe { parse_raw_ptr_to_ustr(record.underlying.as_ptr())? };
+    let underlying = unsafe { raw_ptr_to_ustr(record.underlying.as_ptr())? };
     let currency = Currency::from_str(&currency_str)?;
 
     OptionsContract::new(
@@ -717,7 +718,7 @@ pub fn parse_options_contract(
         Price::from_raw(record.strike_price, currency.precision)?,
         currency,
         currency.precision,
-        parse_min_price_increment(record.min_price_increment, currency)?,
+        decode_min_price_increment(record.min_price_increment, currency)?,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
