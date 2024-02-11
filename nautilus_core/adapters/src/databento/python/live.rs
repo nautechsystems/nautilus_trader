@@ -19,10 +19,11 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use databento::live::Subscription;
-use dbn::{PitSymbolMap, RType, Record, SymbolIndex, VersionUpgradePolicy};
+use dbn::{PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy};
 use indexmap::IndexMap;
 use log::{error, info};
 use nautilus_core::python::to_pyruntime_err;
+use nautilus_core::time::AtomicTime;
 use nautilus_core::{
     python::to_pyvalue_err,
     time::{get_atomic_clock_realtime, UnixNanos},
@@ -38,7 +39,7 @@ use time::OffsetDateTime;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 
-use crate::databento::parsing::{parse_instrument_def_msg, parse_raw_ptr_to_ustr, parse_record};
+use crate::databento::decode::{decode_instrument_def_msg, decode_record, raw_ptr_to_ustr};
 use crate::databento::types::{DatabentoPublisher, PublisherId};
 
 use super::loader::convert_instrument_to_pyobject;
@@ -188,83 +189,18 @@ impl DatabentoLiveClient {
                     }
                 };
 
-                let rtype = record.rtype().expect("Invalid `rtype`");
-
-                match rtype {
-                    RType::SymbolMapping => {
-                        symbol_map.on_record(record).unwrap_or_else(|_| {
-                            panic!("Error updating `symbol_map` with {record:?}")
-                        });
-                    }
-                    RType::Error => {
-                        eprintln!("{record:?}"); // TODO: Just print stderr for now
-                        error!("{:?}", record);
-                    }
-                    RType::System => {
-                        println!("{record:?}"); // TODO: Just print stdout for now
-                        info!("{:?}", record);
-                    }
-                    RType::InstrumentDef => {
-                        let msg = record
-                            .get::<dbn::InstrumentDefMsg>()
-                            .expect("Error converting record to `InstrumentDefMsg`");
-                        let raw_symbol =
-                            unsafe { parse_raw_ptr_to_ustr(msg.raw_symbol.as_ptr()).unwrap() };
-                        let symbol = Symbol { value: raw_symbol };
-                        let venue = publisher_venue_map.get(&msg.hd.publisher_id).unwrap();
-                        let instrument_id = InstrumentId::new(symbol, *venue);
-
-                        let ts_init = clock.get_time_ns();
-                        let result = parse_instrument_def_msg(msg, instrument_id, ts_init);
-
-                        match result {
-                            Ok(instrument) => {
-                                Python::with_gil(|py| {
-                                    let py_obj =
-                                        convert_instrument_to_pyobject(py, instrument).unwrap();
-                                    match callback.call1(py, (py_obj,)) {
-                                        Ok(_) => {}
-                                        Err(e) => eprintln!("Error on callback, {e:?}"), // Just print error for now
-                                    };
-                                });
-                            }
-                            Err(e) => eprintln!("{e:?}"),
-                        }
-                        continue;
-                    }
-                    _ => {
-                        let raw_symbol = symbol_map
-                            .get_for_rec(&record)
-                            .expect("Cannot resolve `raw_symbol` from `symbol_map`");
-                        let publisher_id = record.publisher().unwrap() as PublisherId;
-                        let symbol = Symbol::from_str_unchecked(raw_symbol);
-                        let venue = publisher_venue_map.get(&publisher_id).unwrap();
-                        let instrument_id = InstrumentId::new(symbol, *venue);
-
-                        let price_precision = 2; // Hard coded for now
-                        let ts_init = clock.get_time_ns();
-
-                        let (data, maybe_data) = parse_record(
-                            &record,
-                            rtype,
-                            instrument_id,
-                            price_precision,
-                            Some(ts_init),
-                            true, // Always include trades
-                        )
+                if let Some(msg) = record.get::<dbn::ErrorMsg>() {
+                    handle_error_msg(msg);
+                } else if let Some(msg) = record.get::<dbn::SystemMsg>() {
+                    handle_system_msg(msg);
+                } else if let Some(msg) = record.get::<dbn::SymbolMappingMsg>() {
+                    handle_symbol_mapping_msg(msg, &mut symbol_map);
+                } else if let Some(msg) = record.get::<dbn::InstrumentDefMsg>() {
+                    handle_instrument_def_msg(msg, &publisher_venue_map, clock, &callback);
+                } else {
+                    handle_record(record, &symbol_map, &publisher_venue_map, clock, &callback)
                         .map_err(to_pyvalue_err)?;
-
-                        Python::with_gil(|py| {
-                            if let Some(data) = data {
-                                call_python_with_data(py, &callback, data);
-                            }
-
-                            if let Some(data) = maybe_data {
-                                call_python_with_data(py, &callback, data);
-                            }
-                        });
-                    }
-                }
+                };
             }
             Ok(())
         })
@@ -286,6 +222,89 @@ impl DatabentoLiveClient {
             )),
         }
     }
+}
+
+fn handle_error_msg(msg: &dbn::ErrorMsg) {
+    eprintln!("{msg:?}"); // TODO: Just print stderr for now
+    error!("{:?}", msg);
+}
+
+fn handle_system_msg(msg: &dbn::SystemMsg) {
+    println!("{msg:?}"); // TODO: Just print stdout for now
+    info!("{:?}", msg);
+}
+
+fn handle_symbol_mapping_msg(msg: &dbn::SymbolMappingMsg, symbol_map: &mut PitSymbolMap) {
+    symbol_map
+        .on_symbol_mapping(msg)
+        .unwrap_or_else(|_| panic!("Error updating `symbol_map` with {msg:?}"));
+}
+
+fn handle_instrument_def_msg(
+    msg: &dbn::InstrumentDefMsg,
+    publisher_venue_map: &IndexMap<PublisherId, Venue>,
+    clock: &AtomicTime,
+    callback: &PyObject,
+) {
+    let raw_symbol = unsafe { raw_ptr_to_ustr(msg.raw_symbol.as_ptr()).unwrap() };
+    let symbol = Symbol { value: raw_symbol };
+    let venue = publisher_venue_map.get(&msg.hd.publisher_id).unwrap();
+    let instrument_id = InstrumentId::new(symbol, *venue);
+
+    let ts_init = clock.get_time_ns();
+    let result = decode_instrument_def_msg(msg, instrument_id, ts_init);
+
+    match result {
+        Ok(instrument) => {
+            Python::with_gil(|py| {
+                let py_obj = convert_instrument_to_pyobject(py, instrument).unwrap();
+                match callback.call1(py, (py_obj,)) {
+                    Ok(_) => {}
+                    Err(e) => eprintln!("Error on callback, {e:?}"), // Just print error for now
+                };
+            });
+        }
+        Err(e) => eprintln!("{e:?}"),
+    }
+}
+
+fn handle_record(
+    record: dbn::RecordRef,
+    symbol_map: &PitSymbolMap,
+    publisher_venue_map: &IndexMap<PublisherId, Venue>,
+    clock: &AtomicTime,
+    callback: &PyObject,
+) -> Result<()> {
+    let raw_symbol = symbol_map
+        .get_for_rec(&record)
+        .expect("Cannot resolve `raw_symbol` from `symbol_map`");
+    let publisher_id = record.publisher().unwrap() as PublisherId;
+    let symbol = Symbol::from_str_unchecked(raw_symbol);
+    let venue = publisher_venue_map.get(&publisher_id).unwrap();
+    let instrument_id = InstrumentId::new(symbol, *venue);
+
+    let price_precision = 2; // Hard coded for now
+    let ts_init = clock.get_time_ns();
+
+    let (data, maybe_data) = decode_record(
+        &record,
+        instrument_id,
+        price_precision,
+        Some(ts_init),
+        true, // Always include trades
+    )?;
+
+    Python::with_gil(|py| {
+        if let Some(data) = data {
+            call_python_with_data(py, callback, data);
+        }
+
+        if let Some(data) = maybe_data {
+            call_python_with_data(py, callback, data);
+        }
+    });
+
+    Ok(())
 }
 
 fn call_python_with_data(py: Python, callback: &PyObject, data: Data) {

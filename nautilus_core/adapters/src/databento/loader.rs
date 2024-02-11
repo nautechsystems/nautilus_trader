@@ -35,7 +35,7 @@ use time;
 use ustr::Ustr;
 
 use super::{
-    parsing::{parse_instrument_def_msg_v1, parse_raw_ptr_to_ustr, parse_record},
+    decode::{decode_instrument_def_msg_v1, decode_record, raw_ptr_to_ustr},
     types::{DatabentoPublisher, Dataset, PublisherId},
 };
 
@@ -228,7 +228,6 @@ impl DatabentoDataLoader {
             match dbn_stream.get() {
                 Some(record) => {
                     let rec_ref = dbn::RecordRef::from(record);
-                    let rtype = rec_ref.rtype().expect("Invalid `rtype` for data loading");
                     let instrument_id = match &instrument_id {
                         Some(id) => *id, // Copy
                         None => {
@@ -243,9 +242,8 @@ impl DatabentoDataLoader {
                         }
                     };
 
-                    match parse_record(
+                    match decode_record(
                         &rec_ref,
-                        rtype,
                         instrument_id,
                         price_precision,
                         None,
@@ -276,7 +274,7 @@ impl DatabentoDataLoader {
                     let msg = rec_ref.get::<InstrumentDefMsgV1>().unwrap();
 
                     let raw_symbol = unsafe {
-                        parse_raw_ptr_to_ustr(record.raw_symbol.as_ptr())
+                        raw_ptr_to_ustr(record.raw_symbol.as_ptr())
                             .expect("Error parsing `raw_symbol`")
                     };
                     let symbol = Symbol { value: raw_symbol };
@@ -286,7 +284,7 @@ impl DatabentoDataLoader {
                         .expect("`Venue` not found `publisher_id`");
                     let instrument_id = InstrumentId::new(symbol, *venue);
 
-                    match parse_instrument_def_msg_v1(record, instrument_id, msg.ts_recv) {
+                    match decode_instrument_def_msg_v1(record, instrument_id, msg.ts_recv) {
                         Ok(data) => Some(Ok(data)),
                         Err(e) => Some(Err(e)),
                     }

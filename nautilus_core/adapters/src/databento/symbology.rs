@@ -19,7 +19,7 @@ use dbn::Record;
 use nautilus_model::identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue};
 use ustr::Ustr;
 
-pub fn parse_nautilus_instrument_id(
+pub fn decode_nautilus_instrument_id(
     record: &dbn::RecordRef,
     metadata: &dbn::Metadata,
     venue: Venue,
