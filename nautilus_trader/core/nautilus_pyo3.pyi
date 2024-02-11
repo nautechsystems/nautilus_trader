@@ -497,6 +497,18 @@ class OrderBookDelta:
     def get_fields() -> dict[str, str]: ...
 
 class OrderBookDepth10:
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        bids: list[BookOrder],
+        asks: list[BookOrder],
+        bid_counts: list[int],
+        ask_counts: list[int],
+        flags: int,
+        sequence: int,
+        ts_event: int,
+        ts_init: int,
+    ) -> None: ...
     @property
     def ts_event(self) -> int: ...
     @property
