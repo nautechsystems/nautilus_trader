@@ -286,7 +286,7 @@ fn handle_record(
     let price_precision = 2; // Hard coded for now
     let ts_init = clock.get_time_ns();
 
-    let (data, maybe_data) = decode_record(
+    let (data1, data2) = decode_record(
         &record,
         instrument_id,
         price_precision,
@@ -295,11 +295,11 @@ fn handle_record(
     )?;
 
     Python::with_gil(|py| {
-        if let Some(data) = data {
+        if let Some(data) = data1 {
             call_python_with_data(py, callback, data);
         }
 
-        if let Some(data) = maybe_data {
+        if let Some(data) = data2 {
             call_python_with_data(py, callback, data);
         }
     });
