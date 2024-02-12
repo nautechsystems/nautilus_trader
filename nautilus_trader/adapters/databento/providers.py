@@ -25,6 +25,7 @@ from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
 from nautilus_trader.adapters.databento.enums import DatabentoSchema
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.common.component import LiveClock
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
@@ -123,13 +124,15 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             publishers_path=str(PUBLISHERS_PATH),
         )
 
+        parent_symbols = list(filters.get("parent_symbols", [])) if filters is not None else None
+
         pyo3_instruments = []
         success_msg = "All instruments received and decoded."
 
         def receive_instruments(pyo3_instrument: Any) -> None:
             pyo3_instruments.append(pyo3_instrument)
             instrument_ids_to_decode.discard(pyo3_instrument.id.value)
-            if not instrument_ids_to_decode:
+            if not parent_symbols and not instrument_ids_to_decode:
                 raise asyncio.CancelledError(success_msg)
 
         await live_client.subscribe(
@@ -137,6 +140,15 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
             start=0,  # From start of current week (latest definitions)
         )
+
+        if parent_symbols:
+            self._log.info(f"Requesting parent symbols {parent_symbols}.", LogColor.BLUE)
+            await live_client.subscribe(
+                schema=DatabentoSchema.DEFINITION.value,
+                stype_in="parent",
+                symbols=",".join(parent_symbols),
+                start=0,  # From start of current week (latest definitions)
+            )
 
         try:
             await asyncio.wait_for(live_client.start(callback=receive_instruments), timeout=5.0)
