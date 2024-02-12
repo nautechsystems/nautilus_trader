@@ -159,7 +159,12 @@ class DatabentoDataClient(LiveMarketDataClient):
         coros: list[Coroutine] = []
         for dataset, instrument_ids in self._instrument_ids.items():
             loading_ids: list[InstrumentId] = sorted(instrument_ids)
-            coros.append(self._instrument_provider.load_ids_async(instrument_ids=loading_ids))
+            filters = {"parent_symbols": list(self._parent_symbols.get(dataset, []))}
+            coro = self._instrument_provider.load_ids_async(
+                instrument_ids=loading_ids,
+                filters=filters,
+            )
+            coros.append(coro)
             await self._subscribe_instrument_ids(dataset, instrument_ids=loading_ids)
 
         try:
