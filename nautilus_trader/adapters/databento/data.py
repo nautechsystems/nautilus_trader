@@ -490,7 +490,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             live_client = self._get_live_client_mbo(dataset)
 
             # Subscribe from UTC midnight snapshot
-            start = self._clock.utcnow().normalize().value
+            start = self._clock.utc_now().normalize().value
 
             future = asyncio.ensure_future(
                 live_client.subscribe(
