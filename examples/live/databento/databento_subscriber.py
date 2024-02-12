@@ -45,6 +45,7 @@ from nautilus_trader.trading.strategy import Strategy
 instrument_ids = [
     InstrumentId.from_str("ESH4.GLBX"),
     # InstrumentId.from_str("ESM4.GLBX"),
+    # InstrumentId.from_str("ESU4.GLBX"),
     # InstrumentId.from_str("AAPL.XCHI"),
 ]
 

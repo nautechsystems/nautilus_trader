@@ -124,13 +124,13 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         )
 
         pyo3_instruments = []
+        success_msg = "All instruments received and decoded."
 
         def receive_instruments(pyo3_instrument: Any) -> None:
             pyo3_instruments.append(pyo3_instrument)
             instrument_ids_to_decode.discard(pyo3_instrument.id.value)
-            # TODO: Improve how to handle decode completion
-            # if not instrument_ids_to_decode:
-            #     raise asyncio.CancelledError("All instruments decoded")
+            if not instrument_ids_to_decode:
+                raise asyncio.CancelledError(success_msg)
 
         await live_client.subscribe(
             schema=DatabentoSchema.DEFINITION.value,
@@ -140,8 +140,13 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         try:
             await asyncio.wait_for(live_client.start(callback=receive_instruments), timeout=5.0)
-        except asyncio.CancelledError:
-            pass  # Expected on decode completion, continue
+            # TODO: Improve this so that `live_client.start` isn't raising a `ValueError`
+        except ValueError as e:
+            if success_msg in str(e):
+                # Expected on decode completion, continue
+                self._log.info(success_msg)
+            else:
+                self._log.error(repr(e))
 
         instruments = instruments_from_pyo3(pyo3_instruments)
 
