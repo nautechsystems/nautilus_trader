@@ -13,6 +13,7 @@ None
 - Fixed `ImportableConfig.create` JSON encoding (was missing the encoding hook)
 - Fixed `ImportableStrategyConfig.create` JSON encoding (was missing the encoding hook)
 - Fixed `ExecAlgorithmFactory.create` JSON encoding (was missing the encoding hook)
+- Fixed `ControllerConfig` base class and docstring
 
 ---
 
