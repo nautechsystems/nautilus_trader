@@ -17,7 +17,7 @@ use std::fs;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use databento::live::Subscription;
 use dbn::{PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy};
 use indexmap::IndexMap;
@@ -196,7 +196,8 @@ impl DatabentoLiveClient {
                 } else if let Some(msg) = record.get::<dbn::SymbolMappingMsg>() {
                     handle_symbol_mapping_msg(msg, &mut symbol_map);
                 } else if let Some(msg) = record.get::<dbn::InstrumentDefMsg>() {
-                    handle_instrument_def_msg(msg, &publisher_venue_map, clock, &callback);
+                    handle_instrument_def_msg(msg, &publisher_venue_map, clock, &callback)
+                        .map_err(to_pyvalue_err)?;
                 } else {
                     handle_record(record, &symbol_map, &publisher_venue_map, clock, &callback)
                         .map_err(to_pyvalue_err)?;
@@ -245,7 +246,7 @@ fn handle_instrument_def_msg(
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     clock: &AtomicTime,
     callback: &PyObject,
-) {
+) -> Result<()> {
     let raw_symbol = unsafe { raw_ptr_to_ustr(msg.raw_symbol.as_ptr()).unwrap() };
     let symbol = Symbol { value: raw_symbol };
     let venue = publisher_venue_map.get(&msg.hd.publisher_id).unwrap();
@@ -255,16 +256,14 @@ fn handle_instrument_def_msg(
     let result = decode_instrument_def_msg(msg, instrument_id, ts_init);
 
     match result {
-        Ok(instrument) => {
-            Python::with_gil(|py| {
-                let py_obj = convert_instrument_to_pyobject(py, instrument).unwrap();
-                match callback.call1(py, (py_obj,)) {
-                    Ok(_) => {}
-                    Err(e) => eprintln!("Error on callback, {e:?}"), // Just print error for now
-                };
-            });
-        }
-        Err(e) => eprintln!("{e:?}"),
+        Ok(instrument) => Python::with_gil(|py| {
+            let py_obj = convert_instrument_to_pyobject(py, instrument).unwrap();
+            match callback.call1(py, (py_obj,)) {
+                Ok(_) => Ok(()),
+                Err(e) => bail!(e),
+            }
+        }),
+        Err(e) => Err(e),
     }
 }
 

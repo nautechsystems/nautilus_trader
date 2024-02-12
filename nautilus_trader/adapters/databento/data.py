@@ -140,6 +140,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._is_buffering_mbo_subscriptions: bool = bool(config.mbo_subscriptions_delay)
         self._buffered_mbo_subscriptions: dict[Dataset, list[InstrumentId]] = defaultdict(list)
         self._buffered_deltas: dict[InstrumentId, list[OrderBookDelta]] = defaultdict(list)
+        self._buffering_replay: dict[InstrumentId, int] = {}
 
         # Tasks
         self._live_client_futures: set[asyncio.Future] = set()
@@ -486,17 +487,24 @@ class DatabentoDataClient(LiveMarketDataClient):
             ids_str = ",".join([i.value for i in instrument_ids])
             self._log.info(f"Subscribing to MBO/L3 for {ids_str}.", LogColor.BLUE)
 
+            # Setup buffered start times
+            now = self._clock.utc_now()
+            for instrument_id in instrument_ids:
+                self._buffering_replay[instrument_id] = now.value
+
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_ids[0].venue)
             live_client = self._get_live_client_mbo(dataset)
 
             # Subscribe from UTC midnight snapshot
-            start = self._clock.utc_now().normalize().value
+            start = self._clock.utc_now().normalize()
+
+            self._log.info(f"Replaying MBO/L3 feeds from {start}.", LogColor.BLUE)
 
             future = asyncio.ensure_future(
                 live_client.subscribe(
                     schema=DatabentoSchema.MBO.value,
                     symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
-                    start=start,
+                    start=start.value,
                 ),
             )
             self._live_client_futures.add(future)
@@ -866,15 +874,29 @@ class DatabentoDataClient(LiveMarketDataClient):
         data = capsule_to_data(pycapsule)
 
         if isinstance(data, OrderBookDelta):
+            # Assign instrument_id to avoid continually fetching the C string
             instrument_id = data.instrument_id
-            if DatabentoRecordFlags.F_LAST not in DatabentoRecordFlags(data.flags):
+
+            buffer_start_ns = self._buffering_replay.get(instrument_id, 0)
+            if buffer_start_ns or DatabentoRecordFlags.F_LAST in DatabentoRecordFlags(data.flags):
                 buffer = self._buffered_deltas[instrument_id]
                 buffer.append(data)
-                return  # We can rely on the F_LAST flag for an MBO feed
+
+                if buffer_start_ns > 0:
+                    if data.ts_event >= buffer_start_ns:
+                        self._buffering_replay.pop(instrument_id)
+                        self._log.info(f"MBO replay complete for {instrument_id}.", LogColor.BLUE)
+                    else:
+                        # Uncomment blow for debugging/development
+                        # latency = self._clock.timestamp_ns() - data.ts_init
+                        # self._log.warning(f"{len(buffer)} {instrument_id}: {latency}")
+                        return  # Still replaying start
+
+                data = OrderBookDeltas(instrument_id, deltas=buffer.copy())
+                buffer.clear()
             else:
                 buffer = self._buffered_deltas[instrument_id]
                 buffer.append(data)
-                data = OrderBookDeltas(instrument_id, deltas=buffer.copy())
-                buffer.clear()
+                return  # We can rely on the F_LAST flag for an MBO feed
 
         self._handle_data(data)
