@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Display, Formatter};
+use std::{
+    fmt::{Display, Formatter},
+    hash::{Hash, Hasher},
+};
 
 use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
@@ -63,6 +66,21 @@ impl OrderBookDeltas {
             ts_event,
             ts_init,
         }
+    }
+}
+
+impl PartialEq<Self> for OrderBookDeltas {
+    fn eq(&self, other: &Self) -> bool {
+        self.instrument_id == other.instrument_id && self.sequence == other.sequence
+    }
+}
+
+impl Eq for OrderBookDeltas {}
+
+impl Hash for OrderBookDeltas {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.instrument_id.hash(state);
+        self.sequence.hash(state);
     }
 }
 

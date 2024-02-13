@@ -32,6 +32,7 @@ use crate::{
 /// dereferenced to `OrderBookDeltas`, providing access to `OrderBookDeltas`'s methods without
 /// having to manually access the underlying `OrderBookDeltas` instance.
 #[repr(C)]
+#[derive(Debug, Clone)]
 #[allow(non_camel_case_types)]
 pub struct OrderBookDeltas_API(Box<OrderBookDeltas>);
 
