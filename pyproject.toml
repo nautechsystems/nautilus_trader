@@ -78,7 +78,7 @@ ib = ["nautilus_ibapi", "async-timeout", "defusedxml"]
 optional = true
 
 [tool.poetry.group.dev.dependencies]
-black = "^24.1.1"
+black = "^24.2.0"
 docformatter = "^1.7.5"
 mypy = "^1.8.0"
 pandas-stubs = "^2.1.4"

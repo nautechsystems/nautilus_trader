@@ -27,7 +27,7 @@ documentation = "https://docs.nautilustrader.io"
 anyhow = "1.0.79"
 chrono = "0.4.34"
 futures = "0.3.30"
-indexmap = "2.2.2"
+indexmap = "2.2.3"
 itoa = "1.0.10"
 once_cell = "1.19.0"
 log = { version = "0.4.20", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
