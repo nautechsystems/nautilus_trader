@@ -48,8 +48,8 @@ use crate::{
 /// It implements the `Deref` trait, allowing instances of `MessageBus_API` to be
 /// dereferenced to `MessageBus`, providing access to `TestClock`'s methods without
 /// having to manually access the underlying `MessageBus` instance.
-#[allow(non_camel_case_types)]
 #[repr(C)]
+#[allow(non_camel_case_types)]
 pub struct MessageBus_API(Box<MessageBus>);
 
 impl Deref for MessageBus_API {
