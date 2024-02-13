@@ -42,8 +42,8 @@ use crate::{
 /// It implements the `Deref` trait, allowing instances of `TestClock_API` to be
 /// dereferenced to `TestClock`, providing access to `TestClock`'s methods without
 /// having to manually access the underlying `TestClock` instance.
-#[allow(non_camel_case_types)]
 #[repr(C)]
+#[allow(non_camel_case_types)]
 pub struct TestClock_API(Box<TestClock>);
 
 impl Deref for TestClock_API {
@@ -251,8 +251,8 @@ pub extern "C" fn test_clock_cancel_timers(clock: &mut TestClock_API) {
 /// dereferenced to `LiveClock`, providing access to `LiveClock`'s methods without
 /// having to manually access the underlying `LiveClock` instance. This includes
 /// both mutable and immutable access.
-#[allow(non_camel_case_types)]
 #[repr(C)]
+#[allow(non_camel_case_types)]
 pub struct LiveClock_API(Box<LiveClock>);
 
 impl Deref for LiveClock_API {
