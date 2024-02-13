@@ -23,6 +23,8 @@ pub mod trade;
 
 use nautilus_core::time::UnixNanos;
 
+use crate::ffi::data::deltas::OrderBookDeltas_API;
+
 use self::{
     bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10,
     quote::QuoteTick, trade::TradeTick,
@@ -33,6 +35,7 @@ use self::{
 #[allow(clippy::large_enum_variant)] // TODO: Optimize this (largest variant 1008 vs 136 bytes)
 pub enum Data {
     Delta(OrderBookDelta),
+    Deltas(OrderBookDeltas_API),
     Depth10(OrderBookDepth10),
     Quote(QuoteTick),
     Trade(TradeTick),
@@ -47,6 +50,7 @@ impl HasTsInit for Data {
     fn get_ts_init(&self) -> UnixNanos {
         match self {
             Data::Delta(d) => d.ts_init,
+            Data::Deltas(d) => d.ts_init,
             Data::Depth10(d) => d.ts_init,
             Data::Quote(q) => q.ts_init,
             Data::Trade(t) => t.ts_init,
@@ -61,13 +65,13 @@ impl HasTsInit for OrderBookDelta {
     }
 }
 
-impl HasTsInit for OrderBookDepth10 {
+impl HasTsInit for OrderBookDeltas {
     fn get_ts_init(&self) -> UnixNanos {
         self.ts_init
     }
 }
 
-impl HasTsInit for OrderBookDeltas {
+impl HasTsInit for OrderBookDepth10 {
     fn get_ts_init(&self) -> UnixNanos {
         self.ts_init
     }
@@ -99,6 +103,12 @@ pub fn is_monotonically_increasing_by_init<T: HasTsInit>(data: &[T]) -> bool {
 impl From<OrderBookDelta> for Data {
     fn from(value: OrderBookDelta) -> Self {
         Self::Delta(value)
+    }
+}
+
+impl From<OrderBookDeltas_API> for Data {
+    fn from(value: OrderBookDeltas_API) -> Self {
+        Self::Deltas(value)
     }
 }
 

@@ -425,6 +425,17 @@ cdef extern from "../includes/model.h":
         # The UNIX timestamp (nanoseconds) when the data object was initialized.
         uint64_t ts_init;
 
+    # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
+    #
+    # This struct wraps `OrderBookDeltas` in a way that makes it compatible with C function
+    # calls, enabling interaction with `OrderBookDeltas` in a C environment.
+    #
+    # It implements the `Deref` trait, allowing instances of `OrderBookDeltas_API` to be
+    # dereferenced to `OrderBookDeltas`, providing access to `OrderBookDeltas`'s methods without
+    # having to manually access the underlying `OrderBookDeltas` instance.
+    cdef struct OrderBookDeltas_API:
+        OrderBookDeltas_t *_0;
+
     # Represents a self-contained order book update with a fixed depth of 10 levels per side.
     #
     # This struct is specifically designed for scenarios where a snapshot of the top 10 bid and
@@ -539,6 +550,7 @@ cdef extern from "../includes/model.h":
 
     cpdef enum Data_t_Tag:
         DELTA,
+        DELTAS,
         DEPTH10,
         QUOTE,
         TRADE,
@@ -547,21 +559,11 @@ cdef extern from "../includes/model.h":
     cdef struct Data_t:
         Data_t_Tag tag;
         OrderBookDelta_t delta;
+        OrderBookDeltas_API deltas;
         OrderBookDepth10_t depth10;
         QuoteTick_t quote;
         TradeTick_t trade;
         Bar_t bar;
-
-    # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
-    #
-    # This struct wraps `OrderBookDeltas` in a way that makes it compatible with C function
-    # calls, enabling interaction with `OrderBookDeltas` in a C environment.
-    #
-    # It implements the `Deref` trait, allowing instances of `OrderBookDeltas_API` to be
-    # dereferenced to `OrderBookDeltas`, providing access to `OrderBookDeltas`'s methods without
-    # having to manually access the underlying `OrderBookDeltas` instance.
-    cdef struct OrderBookDeltas_API:
-        OrderBookDeltas_t *_0;
 
     # Represents a valid trader ID.
     #

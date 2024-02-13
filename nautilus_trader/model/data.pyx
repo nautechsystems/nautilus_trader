@@ -2243,7 +2243,7 @@ cdef class OrderBookDeltas(Data):
     @property
     def flags(self) -> uint8_t:
         """
-        Return the flags for the delta.
+        Return the flags for the last delta.
 
         Returns
         -------
@@ -2255,7 +2255,7 @@ cdef class OrderBookDeltas(Data):
     @property
     def sequence(self) -> uint64_t:
         """
-        Return the sequence number for the delta.
+        Return the sequence number for the last delta.
 
         Returns
         -------

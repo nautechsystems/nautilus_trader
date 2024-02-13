@@ -781,6 +781,20 @@ typedef struct OrderBookDelta_t {
 } OrderBookDelta_t;
 
 /**
+ * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
+ *
+ * This struct wraps `OrderBookDeltas` in a way that makes it compatible with C function
+ * calls, enabling interaction with `OrderBookDeltas` in a C environment.
+ *
+ * It implements the `Deref` trait, allowing instances of `OrderBookDeltas_API` to be
+ * dereferenced to `OrderBookDeltas`, providing access to `OrderBookDeltas`'s methods without
+ * having to manually access the underlying `OrderBookDeltas` instance.
+ */
+typedef struct OrderBookDeltas_API {
+    struct OrderBookDeltas_t *_0;
+} OrderBookDeltas_API;
+
+/**
  * Represents a self-contained order book update with a fixed depth of 10 levels per side.
  *
  * This struct is specifically designed for scenarios where a snapshot of the top 10 bid and
@@ -991,6 +1005,7 @@ typedef struct Bar_t {
 
 typedef enum Data_t_Tag {
     DELTA,
+    DELTAS,
     DEPTH10,
     QUOTE,
     TRADE,
@@ -1002,6 +1017,9 @@ typedef struct Data_t {
     union {
         struct {
             struct OrderBookDelta_t delta;
+        };
+        struct {
+            struct OrderBookDeltas_API deltas;
         };
         struct {
             struct OrderBookDepth10_t depth10;
@@ -1017,20 +1035,6 @@ typedef struct Data_t {
         };
     };
 } Data_t;
-
-/**
- * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
- *
- * This struct wraps `OrderBookDeltas` in a way that makes it compatible with C function
- * calls, enabling interaction with `OrderBookDeltas` in a C environment.
- *
- * It implements the `Deref` trait, allowing instances of `OrderBookDeltas_API` to be
- * dereferenced to `OrderBookDeltas`, providing access to `OrderBookDeltas`'s methods without
- * having to manually access the underlying `OrderBookDeltas` instance.
- */
-typedef struct OrderBookDeltas_API {
-    struct OrderBookDeltas_t *_0;
-} OrderBookDeltas_API;
 
 /**
  * Represents a valid trader ID.

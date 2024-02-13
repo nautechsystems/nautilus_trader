@@ -13,13 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// use std::{
-//     collections::{hash_map::DefaultHasher, HashMap},
-//     hash::{Hash, Hasher},
-// };
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 use nautilus_core::time::UnixNanos;
-use pyo3::prelude::*;
+use pyo3::{prelude::*, pyclass::CompareOp};
 
 use crate::{
     data::{delta::OrderBookDelta, deltas::OrderBookDeltas},
@@ -34,21 +31,19 @@ impl OrderBookDeltas {
         Self::new(instrument_id, deltas)
     }
 
-    // TODO: Implement
-    // fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
-    //     match op {
-    //         CompareOp::Eq => self.eq(other).into_py(py),
-    //         CompareOp::Ne => self.ne(other).into_py(py),
-    //         _ => py.NotImplemented(),
-    //     }
-    // }
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+        match op {
+            CompareOp::Eq => self.eq(other).into_py(py),
+            CompareOp::Ne => self.ne(other).into_py(py),
+            _ => py.NotImplemented(),
+        }
+    }
 
-    // TODO: Implement
-    // fn __hash__(&self) -> isize {
-    //     let mut h = DefaultHasher::new();
-    //     self.hash(&mut h);
-    //     h.finish() as isize
-    // }
+    fn __hash__(&self) -> isize {
+        let mut h = DefaultHasher::new();
+        self.hash(&mut h);
+        h.finish() as isize
+    }
 
     fn __str__(&self) -> String {
         self.to_string()
