@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+};
 
 use nautilus_core::time::UnixNanos;
 use pyo3::{prelude::*, pyclass::CompareOp};
