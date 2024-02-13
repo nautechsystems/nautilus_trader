@@ -666,6 +666,13 @@ typedef struct Level Level;
 typedef struct OrderBook OrderBook;
 
 /**
+ * Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
+ *
+ * This type cannot be `repr(C)` due to the `deltas` vec.
+ */
+typedef struct OrderBookDeltas_t OrderBookDeltas_t;
+
+/**
  * Represents a synthetic instrument with prices derived from component instruments using a
  * formula.
  */
@@ -1010,6 +1017,20 @@ typedef struct Data_t {
         };
     };
 } Data_t;
+
+/**
+ * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
+ *
+ * This struct wraps `OrderBookDeltas` in a way that makes it compatible with C function
+ * calls, enabling interaction with `OrderBookDeltas` in a C environment.
+ *
+ * It implements the `Deref` trait, allowing instances of `OrderBookDeltas_API` to be
+ * dereferenced to `OrderBookDeltas`, providing access to `OrderBookDeltas`'s methods without
+ * having to manually access the underlying `OrderBookDeltas` instance.
+ */
+typedef struct OrderBookDeltas_API {
+    struct OrderBookDeltas_t *_0;
+} OrderBookDeltas_API;
 
 /**
  * Represents a valid trader ID.
@@ -1375,6 +1396,35 @@ struct OrderBookDelta_t orderbook_delta_new(struct InstrumentId_t instrument_id,
 uint8_t orderbook_delta_eq(const struct OrderBookDelta_t *lhs, const struct OrderBookDelta_t *rhs);
 
 uint64_t orderbook_delta_hash(const struct OrderBookDelta_t *delta);
+
+/**
+ * Creates a new `OrderBookDeltas` object from a CVec of `OrderBookDelta`.
+ *
+ * # Safety
+ * - The `deltas` must be a valid pointer to a `CVec` containing `OrderBookDelta` objects
+ * - This function clones the data pointed to by `deltas` into Rust-managed memory, then forgets the original `Vec` to prevent Rust from auto-deallocating it
+ * - The caller is responsible for managing the memory of `deltas` (including its deallocation) to avoid memory leaks
+ */
+struct OrderBookDeltas_API orderbook_deltas_new(struct InstrumentId_t instrument_id,
+                                                const CVec *deltas);
+
+void orderbook_deltas_drop(struct OrderBookDeltas_API deltas);
+
+struct InstrumentId_t orderbook_deltas_instrument_id(const struct OrderBookDeltas_API *deltas);
+
+CVec orderbook_deltas_vec_deltas(const struct OrderBookDeltas_API *deltas);
+
+uint8_t orderbook_deltas_is_snapshot(const struct OrderBookDeltas_API *deltas);
+
+uint8_t orderbook_deltas_flags(const struct OrderBookDeltas_API *deltas);
+
+uint64_t orderbook_deltas_sequence(const struct OrderBookDeltas_API *deltas);
+
+uint64_t orderbook_deltas_ts_event(const struct OrderBookDeltas_API *deltas);
+
+uint64_t orderbook_deltas_ts_init(const struct OrderBookDeltas_API *deltas);
+
+void orderbook_deltas_vec_drop(CVec v);
 
 /**
  * # Safety
