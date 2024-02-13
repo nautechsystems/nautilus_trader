@@ -78,6 +78,16 @@ from nautilus_trader.core.rust.model cimport instrument_id_from_cstr
 from nautilus_trader.core.rust.model cimport orderbook_delta_eq
 from nautilus_trader.core.rust.model cimport orderbook_delta_hash
 from nautilus_trader.core.rust.model cimport orderbook_delta_new
+from nautilus_trader.core.rust.model cimport orderbook_deltas_drop
+from nautilus_trader.core.rust.model cimport orderbook_deltas_flags
+from nautilus_trader.core.rust.model cimport orderbook_deltas_instrument_id
+from nautilus_trader.core.rust.model cimport orderbook_deltas_is_snapshot
+from nautilus_trader.core.rust.model cimport orderbook_deltas_new
+from nautilus_trader.core.rust.model cimport orderbook_deltas_sequence
+from nautilus_trader.core.rust.model cimport orderbook_deltas_ts_event
+from nautilus_trader.core.rust.model cimport orderbook_deltas_ts_init
+from nautilus_trader.core.rust.model cimport orderbook_deltas_vec_deltas
+from nautilus_trader.core.rust.model cimport orderbook_deltas_vec_drop
 from nautilus_trader.core.rust.model cimport orderbook_depth10_ask_counts_array
 from nautilus_trader.core.rust.model cimport orderbook_depth10_asks_array
 from nautilus_trader.core.rust.model cimport orderbook_depth10_bid_counts_array
@@ -2130,12 +2140,40 @@ cdef class OrderBookDeltas(Data):
     ) -> None:
         Condition.not_empty(deltas, "deltas")
 
-        self.instrument_id = instrument_id
-        self.deltas = deltas
-        self.is_snapshot = deltas[0].is_clear
-        self.sequence = deltas[-1].sequence
-        self.ts_event = deltas[-1].ts_event
-        self.ts_init = deltas[-1].ts_init
+        cdef uint64_t len_ = len(deltas)
+
+        # Create a C OrderBookDeltas_t buffer
+        cdef OrderBookDelta_t* data = <OrderBookDelta_t *>PyMem_Malloc(len_ * sizeof(OrderBookDelta_t))
+        if not data:
+            raise MemoryError()
+
+        cdef uint64_t i
+        cdef OrderBookDelta delta
+        for i in range(len_):
+            delta = deltas[i]
+            data[i] = <OrderBookDelta_t>delta._mem
+
+        # Create CVec
+        cdef CVec* cvec = <CVec *>PyMem_Malloc(1 * sizeof(CVec))
+        if not cvec:
+            raise MemoryError()
+
+        cvec.ptr = data
+        cvec.len = len_
+        cvec.cap = len_
+
+        # Transfer data to Rust
+        self._mem = orderbook_deltas_new(
+            instrument_id._mem,
+            cvec,
+        )
+
+        PyMem_Free(cvec.ptr) # De-allocate buffer
+        PyMem_Free(cvec) # De-allocate cvec
+
+    def __del__(self) -> None:
+        if self._mem._0 != NULL:
+            orderbook_deltas_drop(self._mem)
 
     def __eq__(self, OrderBookDeltas other) -> bool:
         return OrderBookDeltas.to_dict_c(self) == OrderBookDeltas.to_dict_c(other)
@@ -2154,6 +2192,102 @@ cdef class OrderBookDeltas(Data):
             f"ts_init={self.ts_init})"
         )
 
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        Return the deltas book instrument ID.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return InstrumentId.from_mem_c(orderbook_deltas_instrument_id(&self._mem))
+
+    @property
+    def deltas(self) -> list[OrderBookDelta]:
+        """
+        Return the contained deltas.
+
+        Returns
+        -------
+        list[OrderBookDeltas]
+
+        """
+        cdef CVec raw_deltas_vec = orderbook_deltas_vec_deltas(&self._mem)
+        cdef OrderBookDelta_t* raw_deltas = <OrderBookDelta_t*>raw_deltas_vec.ptr
+
+        cdef list[OrderBookDelta] deltas = []
+
+        cdef:
+            uint64_t i
+        for i in range(raw_deltas_vec.len):
+            deltas.append(delta_from_mem_c(raw_deltas[i]))
+
+        orderbook_deltas_vec_drop(raw_deltas_vec)
+
+        return deltas
+
+    @property
+    def is_snapshot(self) -> bool:
+        """
+        If the deltas is a snapshot.
+
+        Returns
+        -------
+        bool
+
+        """
+        return <bint>orderbook_deltas_is_snapshot(&self._mem)
+
+    @property
+    def flags(self) -> uint8_t:
+        """
+        Return the flags for the delta.
+
+        Returns
+        -------
+        uint8_t
+
+        """
+        return orderbook_deltas_flags(&self._mem)
+
+    @property
+    def sequence(self) -> uint64_t:
+        """
+        Return the sequence number for the delta.
+
+        Returns
+        -------
+        uint64_t
+
+        """
+        return orderbook_deltas_sequence(&self._mem)
+
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return orderbook_deltas_ts_event(&self._mem)
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return orderbook_deltas_ts_init(&self._mem)
+
     @staticmethod
     cdef OrderBookDeltas from_dict_c(dict values):
         Condition.not_none(values, "values")
@@ -2167,7 +2301,7 @@ cdef class OrderBookDeltas(Data):
         Condition.not_none(obj, "obj")
         return {
             "type": obj.__class__.__name__,
-            "instrument_id": obj.instrument_id.to_str(),
+            "instrument_id": obj.instrument_id.value,
             "deltas": [OrderBookDelta.to_dict_c(d) for d in obj.deltas],
         }
 

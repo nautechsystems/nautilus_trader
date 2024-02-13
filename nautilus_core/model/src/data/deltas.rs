@@ -22,7 +22,8 @@ use super::delta::OrderBookDelta;
 use crate::identifiers::instrument_id::InstrumentId;
 
 /// Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
-#[repr(C)]
+///
+/// This type cannot be `repr(C)` due to the `deltas` vec.
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
@@ -46,14 +47,14 @@ pub struct OrderBookDeltas {
 impl OrderBookDeltas {
     #[allow(clippy::too_many_arguments)]
     #[must_use]
-    pub fn new(
-        instrument_id: InstrumentId,
-        deltas: Vec<OrderBookDelta>,
-        flags: u8,
-        sequence: u64,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
+    pub fn new(instrument_id: InstrumentId, deltas: Vec<OrderBookDelta>) -> Self {
+        assert!(!deltas.is_empty(), "`deltas` cannot be empty");
+        // SAFETY: We asserted `deltas` is not empty
+        let last = deltas.last().unwrap();
+        let flags = last.flags;
+        let sequence = last.sequence;
+        let ts_event = last.ts_event;
+        let ts_init = last.ts_init;
         Self {
             instrument_id,
             deltas,
@@ -65,7 +66,7 @@ impl OrderBookDeltas {
     }
 }
 
-// TODO: Potentially implement later
+// TODO: Implement
 // impl Serializable for OrderBookDeltas {}
 
 // TODO: Exact format for Debug and Display TBD
@@ -195,7 +196,7 @@ pub mod stubs {
 
         let deltas = vec![delta0, delta1, delta2, delta3, delta4, delta5, delta6];
 
-        OrderBookDeltas::new(instrument_id, deltas, flags, sequence, ts_event, ts_init)
+        OrderBookDeltas::new(instrument_id, deltas)
     }
 }
 
@@ -310,10 +311,6 @@ mod tests {
         let deltas = OrderBookDeltas::new(
             instrument_id,
             vec![delta0, delta1, delta2, delta3, delta4, delta5, delta6],
-            flags,
-            sequence,
-            ts_event,
-            ts_init,
         );
 
         assert_eq!(deltas.instrument_id, instrument_id);
