@@ -815,14 +815,12 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         self.logAnswer(current_fn_name(), vars())
         if not (subscription := self._subscriptions.get(req_id=req_id)):
             return
-        if isinstance(subscription.handle, functools.partial):
-            handle_revised_bars = subscription.handle.keywords.get("handle_revised_bars", False)
-        else:
-            handle_revised_bars = False
+        if not isinstance(subscription.handle, functools.partial):
+            raise ValueError(f"Unexpected {subscription=}")
         if bar := self._process_bar_data(
             bar_type_str=str(subscription.name),
             bar=bar,
-            handle_revised_bars=handle_revised_bars,
+            handle_revised_bars=subscription.handle.keywords.get("handle_revised_bars", False),
         ):
             if bar.is_single_price() and bar.open.as_double() == 0:
                 self._log.debug(f"Ignoring Zero priced {bar=}")
