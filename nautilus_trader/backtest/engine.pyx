@@ -1156,8 +1156,6 @@ cdef class BacktestEngine:
             return self._data[cursor]
 
     cdef CVec _advance_time(self, uint64_t ts_now, list clocks):
-        set_logging_clock_static_time(ts_now)
-
         cdef TestClock clock
         for clock in clocks:
             time_event_accumulator_advance_clock(
@@ -1178,6 +1176,7 @@ cdef class BacktestEngine:
         )
 
         # Set all clocks to now
+        set_logging_clock_static_time(ts_now)
         for clock in clocks:
             clock.set_time(ts_now)
 
@@ -1206,8 +1205,12 @@ cdef class BacktestEngine:
             ts_event_init = raw_handler.event.ts_init
             if (only_now and ts_event_init < ts_now) or (not only_now and ts_event_init == ts_now):
                 continue
+
+            # Set all clocks to event timestamp
+            set_logging_clock_static_time(ts_event_init)
             for clock in clocks:
                 clock.set_time(ts_event_init)
+
             event = TimeEvent.from_mem_c(raw_handler.event)
 
             # Cast raw `PyObject *` to a `PyObject`
