@@ -816,7 +816,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         if not (subscription := self._subscriptions.get(req_id=req_id)):
             return
         if not isinstance(subscription.handle, functools.partial):
-            raise ValueError(f"Unexpected {subscription=}")
+            raise TypeError(f"Expecting partial type subscription method. {subscription=}")
         if bar := self._process_bar_data(
             bar_type_str=str(subscription.name),
             bar=bar,
