@@ -54,10 +54,15 @@ from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Event
+
+# from nautilus_trader.core.rust.common cimport logger_log
+# from nautilus_trader.core.nautilus_pyo3 import LogColor
+from nautilus_trader.core.nautilus_pyo3 import LogLevel
+
 from nautilus_trader.core.rust.common cimport ComponentState
 from nautilus_trader.core.rust.common cimport ComponentTrigger
-from nautilus_trader.core.rust.common cimport LogColor
-from nautilus_trader.core.rust.common cimport LogLevel
+# from nautilus_trader.core.rust.common cimport LogColor
+# from nautilus_trader.core.rust.common cimport LogLevel
 from nautilus_trader.core.rust.common cimport TimeEventHandler_t
 from nautilus_trader.core.rust.common cimport component_state_from_cstr
 from nautilus_trader.core.rust.common cimport component_state_to_cstr
@@ -74,7 +79,6 @@ from nautilus_trader.core.rust.common cimport log_color_to_cstr
 from nautilus_trader.core.rust.common cimport log_level_from_cstr
 from nautilus_trader.core.rust.common cimport log_level_to_cstr
 from nautilus_trader.core.rust.common cimport logger_flush
-from nautilus_trader.core.rust.common cimport logger_log
 from nautilus_trader.core.rust.common cimport logging_clock_set_realtime_mode
 from nautilus_trader.core.rust.common cimport logging_clock_set_static_mode
 from nautilus_trader.core.rust.common cimport logging_clock_set_static_time
@@ -1327,6 +1331,9 @@ cpdef void init_tracing():
     """
     tracing_init()
 
+from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.nautilus_pyo3 import logger_log
+
 
 cpdef void init_logging(
     TraderId trader_id = None,
@@ -1458,10 +1465,10 @@ cdef class Logger:
             return
 
         logger_log(
-            LogLevel.DEBUG,
-            color,
-            self._name_ptr,
-            pystr_to_cstr(message) if message is not None else NULL,
+            nautilus_pyo3.LogLevel.Debug,
+            nautilus_pyo3.LogColor.Normal,
+            self._name,
+            message,
         )
 
     cpdef void info(
@@ -1483,10 +1490,10 @@ cdef class Logger:
             return
 
         logger_log(
-            LogLevel.INFO,
-            color,
-            self._name_ptr,
-            pystr_to_cstr(message) if message is not None else NULL,
+            nautilus_pyo3.LogLevel.Info,
+            nautilus_pyo3.LogColor.Normal,
+            self._name,
+            message,
         )
 
     cpdef void warning(
@@ -1509,10 +1516,10 @@ cdef class Logger:
             return
 
         logger_log(
-            LogLevel.WARNING,
-            color,
-            self._name_ptr,
-            pystr_to_cstr(message) if message is not None else NULL,
+            nautilus_pyo3.LogLevel.Warning,
+            nautilus_pyo3.LogColor.Normal,
+            self._name,
+            message,
         )
 
     cpdef void error(
@@ -1535,10 +1542,10 @@ cdef class Logger:
             return
 
         logger_log(
-            LogLevel.ERROR,
-            color,
-            self._name_ptr,
-            pystr_to_cstr(message) if message is not None else NULL,
+            nautilus_pyo3.LogLevel.Error,
+            nautilus_pyo3.LogColor.Normal,
+            self._name,
+            message,
         )
 
     cpdef void exception(
