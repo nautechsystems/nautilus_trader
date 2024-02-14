@@ -27,6 +27,7 @@ use crate::{
         trade::TradeTick,
     },
     enums::{BookType, OrderSide},
+    ffi::data::deltas::OrderBookDeltas_API,
     identifiers::instrument_id::InstrumentId,
     orderbook::book::OrderBook,
     types::{price::Price, quantity::Quantity},
@@ -146,6 +147,12 @@ pub extern "C" fn orderbook_clear_asks(book: &mut OrderBook_API, ts_event: u64, 
 #[no_mangle]
 pub extern "C" fn orderbook_apply_delta(book: &mut OrderBook_API, delta: OrderBookDelta) {
     book.apply_delta(delta)
+}
+
+#[no_mangle]
+pub extern "C" fn orderbook_apply_deltas(book: &mut OrderBook_API, deltas: &OrderBookDeltas_API) {
+    // Clone will actually copy the contents of the `deltas` vec
+    book.apply_deltas(deltas.deref().clone())
 }
 
 #[no_mangle]

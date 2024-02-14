@@ -45,6 +45,7 @@ from nautilus_trader.core.rust.model cimport level_price
 from nautilus_trader.core.rust.model cimport level_size
 from nautilus_trader.core.rust.model cimport orderbook_add
 from nautilus_trader.core.rust.model cimport orderbook_apply_delta
+from nautilus_trader.core.rust.model cimport orderbook_apply_deltas
 from nautilus_trader.core.rust.model cimport orderbook_apply_depth
 from nautilus_trader.core.rust.model cimport orderbook_asks
 from nautilus_trader.core.rust.model cimport orderbook_best_ask_price
@@ -328,9 +329,7 @@ cdef class OrderBook(Data):
         """
         Condition.not_none(deltas, "deltas")
 
-        cdef OrderBookDelta delta
-        for delta in deltas.deltas:
-            self.apply_delta(delta)
+        orderbook_apply_deltas(&self._mem, &deltas._mem)
 
     cpdef void apply_depth(self, OrderBookDepth10 depth):
         """
