@@ -20,8 +20,8 @@ use thiserror::Error;
 use super::{ladder::BookPrice, level::Level};
 use crate::{
     data::{
-        delta::OrderBookDelta, depth::OrderBookDepth10, order::BookOrder, quote::QuoteTick,
-        trade::TradeTick,
+        delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10, order::BookOrder,
+        quote::QuoteTick, trade::TradeTick,
     },
     enums::{BookAction, BookType, OrderSide},
     identifiers::instrument_id::InstrumentId,
@@ -164,6 +164,12 @@ impl OrderBook {
             BookAction::Update => self.update(delta.order, delta.ts_event, delta.sequence),
             BookAction::Delete => self.delete(delta.order, delta.ts_event, delta.sequence),
             BookAction::Clear => self.clear(delta.ts_event, delta.sequence),
+        }
+    }
+
+    pub fn apply_deltas(&mut self, deltas: OrderBookDeltas) {
+        for delta in deltas.deltas {
+            self.apply_delta(delta)
         }
     }
 
