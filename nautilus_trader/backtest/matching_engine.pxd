@@ -23,6 +23,7 @@ from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport MarketStatus
@@ -95,6 +96,8 @@ cdef class OrderMatchingEngine:
     """The order book type for the matching engine.\n\n:returns: `BookType`"""
     cdef readonly OmsType oms_type
     """The order management system type for the matching engine.\n\n:returns: `OmsType`"""
+    cdef readonly AccountType account_type
+    """The account type for the matching engine.\n\n:returns: `AccountType`"""
     cdef readonly MarketStatus market_status
     """The market status for the matching engine.\n\n:returns: `MarketStatus`"""
     cdef readonly CacheFacade cache
