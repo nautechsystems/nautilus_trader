@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import functools
 from abc import ABC
 from abc import abstractmethod
 from collections.abc import Callable
@@ -70,7 +71,7 @@ class Subscription(msgspec.Struct, frozen=True):
 
     req_id: Annotated[int, msgspec.Meta(gt=0)]
     name: str | tuple
-    handle: Callable
+    handle: functools.partial | Callable
     cancel: Callable
     last: Any
 
