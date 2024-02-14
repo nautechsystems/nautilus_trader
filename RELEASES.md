@@ -9,6 +9,7 @@ None
 None
 
 ### Fixes
+- Fixed logging timestamps for backtesting (static clock was not being incrementally set to individual `TimeEvent` timestamps)
 - Fixed `Equity` short selling for `CASH` accounts (will now reject)
 - Fixed `ActorFactory.create` JSON encoding (was missing the encoding hook)
 - Fixed `ImportableConfig.create` JSON encoding (was missing the encoding hook)
