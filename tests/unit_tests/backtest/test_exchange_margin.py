@@ -572,6 +572,36 @@ class TestSimulatedExchangeMarginAccount:
         assert order.quantity == Quantity.from_int(1_000_000)
         assert order.filled_qty == Quantity.from_int(0)
 
+    def test_submit_limit_order_with_fok_time_in_force_cancels_immediately(self) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=_USDJPY_SIM,
+            bid_price=90.002,
+            ask_price=90.005,
+            bid_size=500_000,
+            ask_size=500_000,
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        # Create order
+        order = self.strategy.order_factory.limit(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000_000),
+            Price.from_str("90.000"),
+            time_in_force=TimeInForce.FOK,
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.CANCELED
+        assert order.quantity == Quantity.from_int(1_000_000)
+        assert order.filled_qty == Quantity.from_int(0)
+
     def test_submit_market_order_with_ioc_time_in_force_cancels_remaining_qty(self) -> None:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
@@ -796,6 +826,94 @@ class TestSimulatedExchangeMarginAccount:
         assert order.filled_qty == Quantity.from_int(1_000_000)
         assert order.leaves_qty == Quantity.from_int(1_000_000)
         assert len(self.exchange.get_open_orders()) == 1
+
+    def test_submit_market_order_ioc_cancels_remaining(self) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=_USDJPY_SIM,
+            bid_price=90.002,
+            ask_price=90.005,
+            bid_size=1_000_000,
+            ask_size=1_000_000,
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(2_000_000),
+            time_in_force=TimeInForce.IOC,
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.CANCELED
+        assert order.filled_qty == Quantity.from_int(1_000_000)
+        assert order.leaves_qty == Quantity.from_int(1_000_000)
+        assert len(self.exchange.get_open_orders()) == 0
+
+    def test_submit_market_order_fok_cancels_when_cannot_fill_full_size(self) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=_USDJPY_SIM,
+            bid_price=90.002,
+            ask_price=90.005,
+            bid_size=1_000_000,
+            ask_size=1_000_000,
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(2_000_000),
+            time_in_force=TimeInForce.FOK,
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.CANCELED
+        assert order.filled_qty == Quantity.from_int(0)
+        assert order.leaves_qty == Quantity.from_int(2_000_000)
+        assert len(self.exchange.get_open_orders()) == 0
+
+    def test_submit_limit_order_fok_cancels_when_cannot_fill_full_size(self) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=_USDJPY_SIM,
+            bid_price=90.002,
+            ask_price=90.005,
+            bid_size=1_000_000,
+            ask_size=1_000_000,
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.limit(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(2_000_000),
+            Price.from_str("90.005"),
+            time_in_force=TimeInForce.FOK,
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.CANCELED
+        assert order.filled_qty == Quantity.from_int(0)
+        assert order.leaves_qty == Quantity.from_int(2_000_000)
+        assert len(self.exchange.get_open_orders()) == 0
 
     def test_modify_market_to_limit_order_after_filling_initial_quantity(self) -> None:
         # Arrange: Prepare market
