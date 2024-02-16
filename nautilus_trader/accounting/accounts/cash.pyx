@@ -303,7 +303,7 @@ cdef class CashAccount(Account):
         cdef double fill_qty = fill.last_qty.as_f64_c()
         cdef double fill_px = fill.last_px.as_f64_c()
 
-        if position is not None:
+        if position is not None and position.quantity._mem.raw != 0:
             # Only book open quantity towards realized PnL
             fill_qty = fmin(fill_qty, position.quantity.as_f64_c())
 
