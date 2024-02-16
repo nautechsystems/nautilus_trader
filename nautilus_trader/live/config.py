@@ -203,8 +203,6 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
         The live risk engine configuration.
     exec_engine : LiveExecEngineConfig, optional
         The live execution engine configuration.
-    streaming : StreamingConfig, optional
-        The configuration for streaming to feather files.
     data_clients : dict[str, ImportableConfig | LiveDataClientConfig], optional
         The data client configurations.
     exec_clients : dict[str, ImportableConfig | LiveExecClientConfig], optional
