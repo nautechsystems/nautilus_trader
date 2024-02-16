@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
 use std::fs;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -29,7 +30,10 @@ use nautilus_core::{
     python::to_pyvalue_err,
     time::{get_atomic_clock_realtime, UnixNanos},
 };
+use nautilus_model::data::delta::OrderBookDelta;
+use nautilus_model::data::deltas::OrderBookDeltas;
 use nautilus_model::data::Data;
+use nautilus_model::ffi::data::deltas::OrderBookDeltas_API;
 use nautilus_model::identifiers::instrument_id::InstrumentId;
 use nautilus_model::identifiers::symbol::Symbol;
 use nautilus_model::identifiers::venue::Venue;
@@ -144,18 +148,30 @@ impl DatabentoLiveClient {
     }
 
     #[pyo3(name = "start")]
-    fn py_start<'py>(&mut self, py: Python<'py>, callback: PyObject) -> PyResult<&'py PyAny> {
+    fn py_start<'py>(
+        &mut self,
+        py: Python<'py>,
+        callback: PyObject,
+        replay: bool,
+    ) -> PyResult<&'py PyAny> {
         let arc_client = self.get_inner_client().map_err(to_pyruntime_err)?;
         let publisher_venue_map = self.publisher_venue_map.clone();
+        let clock = get_atomic_clock_realtime();
+
+        let buffering_start = match replay {
+            true => Some(clock.get_time_ns()),
+            false => None,
+        };
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            let clock = get_atomic_clock_realtime();
             let mut client = arc_client.lock().await;
             let mut symbol_map = PitSymbolMap::new();
 
             let timeout_duration = Duration::from_millis(10);
             let relock_interval = timeout_duration.as_nanos() as u64;
             let mut lock_last_dropped_ns = 0_u64;
+
+            let mut buffered_deltas: HashMap<InstrumentId, Vec<OrderBookDelta>> = HashMap::new();
 
             client.start().await.map_err(to_pyruntime_err)?;
 
@@ -198,8 +214,46 @@ impl DatabentoLiveClient {
                     handle_instrument_def_msg(msg, &publisher_venue_map, clock, &callback)
                         .map_err(to_pyvalue_err)?;
                 } else {
-                    handle_record(record, &symbol_map, &publisher_venue_map, clock, &callback)
-                        .map_err(to_pyvalue_err)?;
+                    let (mut data1, data2) =
+                        handle_record(record, &symbol_map, &publisher_venue_map, clock)
+                            .map_err(to_pyvalue_err)?;
+
+                    if let Some(msg) = record.get::<dbn::MboMsg>() {
+                        // SAFETY: An MBO message will always produce a delta
+                        if let Data::Delta(delta) = data1.clone().unwrap() {
+                            buffered_deltas
+                                .entry(delta.instrument_id)
+                                .or_default()
+                                .push(delta);
+
+                            // Check if this is the last message in the packet
+                            if msg.flags & dbn::flags::LAST != 0 {
+                                continue; // Not last message
+                            }
+
+                            // Check if we're currently buffering a replay
+                            if let Some(start_ns) = buffering_start {
+                                if delta.ts_event <= start_ns {
+                                    continue; // Continue buffering the replay
+                                }
+                            }
+
+                            // SAFETY: We can guarantee a deltas vec exists
+                            let deltas = buffered_deltas.remove(&delta.instrument_id).unwrap();
+                            let book_deltas = OrderBookDeltas::new(delta.instrument_id, deltas);
+                            data1 = Some(Data::Deltas(OrderBookDeltas_API::new(book_deltas)));
+                        }
+                    };
+
+                    Python::with_gil(|py| {
+                        if let Some(data) = data1 {
+                            call_python_with_data(py, &callback, data);
+                        }
+
+                        if let Some(data) = data2 {
+                            call_python_with_data(py, &callback, data);
+                        }
+                    });
                 };
             }
             Ok(())
@@ -271,8 +325,7 @@ fn handle_record(
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     clock: &AtomicTime,
-    callback: &PyObject,
-) -> Result<()> {
+) -> Result<(Option<Data>, Option<Data>)> {
     let raw_symbol = symbol_map
         .get_for_rec(&record)
         .expect("Cannot resolve `raw_symbol` from `symbol_map`");
@@ -284,25 +337,13 @@ fn handle_record(
     let price_precision = 2; // Hard coded for now
     let ts_init = clock.get_time_ns();
 
-    let (data1, data2) = decode_record(
+    decode_record(
         &record,
         instrument_id,
         price_precision,
         Some(ts_init),
         true, // Always include trades
-    )?;
-
-    Python::with_gil(|py| {
-        if let Some(data) = data1 {
-            call_python_with_data(py, callback, data);
-        }
-
-        if let Some(data) = data2 {
-            call_python_with_data(py, callback, data);
-        }
-    });
-
-    Ok(())
+    )
 }
 
 fn call_python_with_data(py: Python, callback: &PyObject, data: Data) {
