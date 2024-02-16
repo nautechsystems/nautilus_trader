@@ -22,6 +22,7 @@ use databento::live::Subscription;
 use dbn::{PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy};
 use indexmap::IndexMap;
 use log::{error, info};
+use nautilus_common::runtime::get_runtime;
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_core::time::AtomicTime;
 use nautilus_core::{
@@ -54,7 +55,6 @@ pub struct DatabentoLiveClient {
     #[pyo3(get)]
     pub dataset: String,
     inner: Option<Arc<Mutex<databento::LiveClient>>>,
-    runtime: tokio::runtime::Runtime,
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
 }
 
@@ -72,7 +72,7 @@ impl DatabentoLiveClient {
         match &self.inner {
             Some(client) => Ok(client.clone()),
             None => {
-                let client = self.runtime.block_on(self.initialize_client())?;
+                let client = get_runtime().block_on(self.initialize_client())?;
                 self.inner = Some(Arc::new(Mutex::new(client)));
                 Ok(self.inner.clone().unwrap())
             }
@@ -97,7 +97,6 @@ impl DatabentoLiveClient {
             key,
             dataset,
             inner: None,
-            runtime: tokio::runtime::Runtime::new()?,
             publisher_venue_map: Arc::new(publisher_venue_map),
         })
     }

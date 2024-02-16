@@ -13,25 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod clock;
-pub mod enums;
-pub mod factories;
-pub mod generators;
-pub mod handlers;
-pub mod logging;
-pub mod msgbus;
-pub mod runtime;
-pub mod testing;
-pub mod timer;
+use std::sync::OnceLock;
 
-#[cfg(feature = "stubs")]
-pub mod stubs;
+use tokio::runtime::Runtime;
 
-#[cfg(feature = "ffi")]
-pub mod ffi;
+static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
-#[cfg(feature = "python")]
-pub mod python;
-
-#[cfg(feature = "redis")]
-pub mod redis;
+pub fn get_runtime() -> &'static tokio::runtime::Runtime {
+    // Using default configuration values for now
+    RUNTIME.get_or_init(|| Runtime::new().expect("Failed to create tokio runtime"))
+}
