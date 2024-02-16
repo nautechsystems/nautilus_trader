@@ -178,6 +178,7 @@ class NautilusKernel:
                     component_levels=logging.log_component_levels,
                     colors=logging.log_colors,
                     bypass=logging.bypass_logging,
+                    print_config=logging.print_config,
                 )
             elif self._environment == Environment.LIVE:
                 raise InvalidConfiguration(
