@@ -14,24 +14,28 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::{
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
-};
+use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::prelude::*;
 
-use crate::{
-    average::MovingAverageType, indicator::Indicator, volatility::atr::AverageTrueRange,
-};
+use crate::{average::MovingAverageType, indicator::Indicator, volatility::atr::AverageTrueRange};
 
 #[pymethods]
 impl AverageTrueRange {
     #[new]
-    pub fn py_new(period: usize, ma_type: Option<MovingAverageType>, use_previous: Option<bool>, value_floor: Option<f64>) -> PyResult<Self> {
+    pub fn py_new(
+        period: usize,
+        ma_type: Option<MovingAverageType>,
+        use_previous: Option<bool>,
+        value_floor: Option<f64>,
+    ) -> PyResult<Self> {
         Self::new(period, ma_type, use_previous, value_floor).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
-        format!("AverageTrueRange({},{},{},{})", self.period, self.ma_type, self.use_previous, self.value_floor)
+        format!(
+            "AverageTrueRange({},{},{},{})",
+            self.period, self.ma_type, self.use_previous, self.value_floor,
+        )
     }
 
     #[getter]

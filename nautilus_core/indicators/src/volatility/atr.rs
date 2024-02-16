@@ -16,9 +16,7 @@
 use std::fmt::{Debug, Display};
 
 use anyhow::Result;
-use nautilus_model::{
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
-};
+use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::prelude::*;
 
 use crate::{
@@ -45,7 +43,15 @@ pub struct AverageTrueRange {
 
 impl Display for AverageTrueRange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}({},{},{},{})", self.name(), self.period, self.ma_type, self.use_previous, self.value_floor)
+        write!(
+            f,
+            "{}({},{},{},{})",
+            self.name(),
+            self.period,
+            self.ma_type,
+            self.use_previous,
+            self.value_floor,
+        )
     }
 }
 
@@ -84,7 +90,12 @@ impl Indicator for AverageTrueRange {
 }
 
 impl AverageTrueRange {
-    pub fn new(period: usize, ma_type: Option<MovingAverageType>, use_previous: Option<bool>, value_floor: Option<f64>) -> Result<Self> {
+    pub fn new(
+        period: usize,
+        ma_type: Option<MovingAverageType>,
+        use_previous: Option<bool>,
+        value_floor: Option<f64>,
+    ) -> Result<Self> {
         Ok(Self {
             period,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
@@ -104,7 +115,9 @@ impl AverageTrueRange {
             if !self.has_inputs {
                 self._previous_close = close;
             }
-            self._ma.update_raw(f64::max(self._previous_close, high) - f64::min(low, self._previous_close));
+            self._ma.update_raw(
+                f64::max(self._previous_close, high) - f64::min(low, self._previous_close),
+            );
             self._previous_close = close;
         } else {
             self._ma.update_raw(high - low);
