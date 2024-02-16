@@ -754,6 +754,14 @@ class TriggerType(Enum):
     MARK_PRICE = "MARK_PRICE"
     INDEX_PRICE = "INDEX_PRICE"
 
+class MovingAverageType(Enum):
+    SIMPLE = "SIMPLE"
+    EXPONENTIAL = "EXPONENTIAL"
+    DOUBLE_EXPONENTIAL = "DOUBLE_EXPONENTIAL"
+    WILDER = "WILDER"
+    HULL = "HULL"
+
+
 ### Identifiers
 
 class AccountId:
@@ -1970,6 +1978,29 @@ class AroonOscillator:
     def handle_bar(self, bar: Bar) -> None: ...
     def reset(self) -> None: ...
 
+class AverageTrueRange:
+    def __init__(
+        self,
+        period: int,
+        ma_type: MovingAverageType = ...,
+        use_previous: bool = True,
+        value_floor: float = 0.0,
+    ) -> None: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def period(self) -> int: ...
+    @property
+    def count(self) -> int: ...
+    @property
+    def initialized(self) -> bool: ...
+    @property
+    def has_inputs(self) -> bool: ...
+    @property
+    def value(self) -> float: ...
+    def update_raw(self, high: float, low: float, close: float) -> None: ...
+    def handle_bar(self, bar: Bar) -> None: ...
+    def reset(self) -> None: ...
 
 ###################################################################################################
 # Adapters
