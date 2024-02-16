@@ -151,7 +151,10 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             )
 
         try:
-            await asyncio.wait_for(live_client.start(callback=receive_instruments), timeout=5.0)
+            await asyncio.wait_for(
+                live_client.start(callback=receive_instruments, replay=False),
+                timeout=5.0,
+            )
             # TODO: Improve this so that `live_client.start` isn't raising a `ValueError`
         except ValueError as e:
             if success_msg in str(e):

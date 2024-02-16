@@ -26,7 +26,6 @@ from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
 from nautilus_trader.adapters.databento.constants import DATABENTO_CLIENT_ID
 from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
-from nautilus_trader.adapters.databento.enums import DatabentoRecordFlags
 from nautilus_trader.adapters.databento.enums import DatabentoSchema
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
@@ -43,7 +42,6 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDelta
-from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
@@ -276,7 +274,9 @@ class DatabentoDataClient(LiveMarketDataClient):
     ) -> None:
         if not self._has_subscribed.get(dataset):
             self._log.debug(f"Starting {dataset} live client...", LogColor.MAGENTA)
-            future = asyncio.ensure_future(live_client.start(callback=self._handle_record))
+            future = asyncio.ensure_future(
+                live_client.start(callback=self._handle_record, replay=False),
+            )
             self._live_client_futures.add(future)
             self._has_subscribed[dataset] = True
             self._log.info(f"Started {dataset} live feed.", LogColor.BLUE)
@@ -519,7 +519,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             for instrument_id in instrument_ids:
                 self._trade_tick_subscriptions.add(instrument_id)
 
-            future = asyncio.ensure_future(live_client.start(self._handle_record))
+            future = asyncio.ensure_future(live_client.start(self._handle_record, replay=True))
             self._live_client_futures.add(future)
         except asyncio.CancelledError:
             self._log.warning(
@@ -875,33 +875,6 @@ class DatabentoDataClient(LiveMarketDataClient):
     ) -> None:
         # The capsule will fall out of scope at the end of this method,
         # and eventually be garbage collected. The contained pointer
-        # to `Data` is still owned and managed by the Rust memory model.
+        # to `Data` is still owned and managed by Rust.
         data = capsule_to_data(pycapsule)
-
-        if isinstance(data, OrderBookDelta):
-            # Assign instrument_id to avoid continually fetching the C string
-            instrument_id = data.instrument_id
-
-            buffer_start_ns = self._buffering_replay.get(instrument_id, 0)
-            if buffer_start_ns or DatabentoRecordFlags.F_LAST in DatabentoRecordFlags(data.flags):
-                buffer = self._buffered_deltas[instrument_id]
-                buffer.append(data)
-
-                if buffer_start_ns > 0:
-                    if data.ts_event >= buffer_start_ns:
-                        self._buffering_replay.pop(instrument_id)
-                        self._log.info(f"MBO replay complete for {instrument_id}.", LogColor.BLUE)
-                    else:
-                        # Uncomment blow for debugging/development
-                        # latency = self._clock.timestamp_ns() - data.ts_init
-                        # self._log.warning(f"{len(buffer)} {instrument_id}: {latency}")
-                        return  # Still replaying start
-
-                data = OrderBookDeltas(instrument_id, deltas=buffer.copy())
-                buffer.clear()
-            else:
-                buffer = self._buffered_deltas[instrument_id]
-                buffer.append(data)
-                return  # We can rely on the F_LAST flag for an MBO feed
-
         self._handle_data(data)

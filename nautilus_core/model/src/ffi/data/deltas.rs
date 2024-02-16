@@ -36,6 +36,12 @@ use crate::{
 #[allow(non_camel_case_types)]
 pub struct OrderBookDeltas_API(Box<OrderBookDeltas>);
 
+impl OrderBookDeltas_API {
+    pub fn new(deltas: OrderBookDeltas) -> Self {
+        Self(Box::new(deltas))
+    }
+}
+
 impl Deref for OrderBookDeltas_API {
     type Target = OrderBookDeltas;
 
@@ -66,7 +72,7 @@ pub extern "C" fn orderbook_deltas_new(
         unsafe { Vec::from_raw_parts(ptr as *mut OrderBookDelta, len, cap) };
     let cloned_deltas = deltas.clone();
     std::mem::forget(deltas); // Prevents Rust from dropping `deltas`
-    OrderBookDeltas_API(Box::new(OrderBookDeltas::new(instrument_id, cloned_deltas)))
+    OrderBookDeltas_API::new(OrderBookDeltas::new(instrument_id, cloned_deltas))
 }
 
 #[no_mangle]

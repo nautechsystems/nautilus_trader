@@ -2103,5 +2103,6 @@ class DatabentoLiveClient:
     async def start(
         self,
         callback: Callable,
+        replay: bool,
     ) -> dict[str, str]: ...
     async def close(self) -> None: ...
