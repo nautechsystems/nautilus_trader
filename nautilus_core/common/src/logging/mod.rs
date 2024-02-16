@@ -417,7 +417,7 @@ impl Logger {
         let print_config = config.print_config;
         if print_config {
             println!("STATIC_MAX_LEVEL={STATIC_MAX_LEVEL}");
-            println!("Logger initialized with {:?}", config);
+            println!("Logger initialized with {:?} {:?}", config, file_config);
         }
 
         match set_boxed_logger(Box::new(logger)) {

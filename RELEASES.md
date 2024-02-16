@@ -11,6 +11,7 @@ None
 ### Fixes
 - Fixed FOK time in force behavior (allows fills beyond the top level, will cancel if cannot fill full size)
 - Fixed IOC time in force behavior (allows fills beyond the top level, will cancel any remaining after all fills are applied)
+- Fixed logging `print_config` config option (was not being passed through to the logging system)
 - Fixed logging timestamps for backtesting (static clock was not being incrementally set to individual `TimeEvent` timestamps)
 - Fixed account balance updates (fills from zero quantity `NETTING` positions will generate account balance updates)
 - Fixed `Equity` short selling for `CASH` accounts (will now reject)
