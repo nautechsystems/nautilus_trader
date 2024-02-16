@@ -18,6 +18,7 @@ use pyo3::{prelude::*, pymodule};
 pub mod average;
 pub mod momentum;
 pub mod ratio;
+pub mod volatility;
 
 #[pymodule]
 pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
@@ -33,5 +34,7 @@ pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     // momentum
     m.add_class::<crate::momentum::rsi::RelativeStrengthIndex>()?;
     m.add_class::<crate::momentum::aroon::AroonOscillator>()?;
+    // volatility
+    m.add_class::<crate::volatility::atr::AverageTrueRange>()?;
     Ok(())
 }
