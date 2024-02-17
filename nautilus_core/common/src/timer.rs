@@ -265,7 +265,7 @@ impl LiveTimer {
 
             loop {
                 tokio::select! {
-                    _ = tokio::time::sleep(Duration::from_nanos(next_time_ns - clock.get_time_ns())) => {
+                    _ = tokio::time::sleep(Duration::from_nanos(next_time_ns.saturating_sub(clock.get_time_ns()))) => {
                         Python::with_gil(|py| {
                             // Create new time event
                             let event = TimeEvent::new(
