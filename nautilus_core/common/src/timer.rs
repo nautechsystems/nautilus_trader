@@ -251,7 +251,7 @@ impl LiveTimer {
             .clone()
             .expect("No callback for event handler");
 
-        // Setup oneshot channel to be able to cancel timer task
+        // Setup oneshot channel for cancelling timer task
         let (cancel_tx, mut cancel_rx) = oneshot::channel();
         self.canceler = Some(cancel_tx);
 
