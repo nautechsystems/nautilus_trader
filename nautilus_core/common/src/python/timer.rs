@@ -29,13 +29,8 @@ use crate::timer::TimeEvent;
 #[pymethods]
 impl TimeEvent {
     #[new]
-    fn py_new(
-        name: &str,
-        event_id: UUID4,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> PyResult<Self> {
-        Self::new(Ustr::from(name), event_id, ts_event, ts_init).map_err(to_pyvalue_err)
+    fn py_new(name: &str, event_id: UUID4, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
+        Self::new(Ustr::from(name), event_id, ts_event, ts_init)
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -66,8 +61,8 @@ impl TimeEvent {
     }
 
     #[staticmethod]
-    fn _safe_constructor() -> PyResult<Self> {
-        Ok(Self::new(Ustr::from("NULL"), UUID4::new(), 0, 0).unwrap()) // Safe default
+    fn _safe_constructor() -> Self {
+        Self::new(Ustr::from("NULL"), UUID4::new(), 0, 0)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

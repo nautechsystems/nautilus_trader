@@ -3,7 +3,8 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Ported `LiveClock` and `LiveTimer` implementations to Rust
+- Implemented `AverageTrueRange` in Rust, thanks @rsmb7z
 
 ### Breaking Changes
 None

@@ -147,7 +147,7 @@ class NautilusKernel:
         if self._environment == Environment.BACKTEST:
             self._clock = TestClock()
         elif self.environment in (Environment.SANDBOX, Environment.LIVE):
-            self._clock = LiveClock(loop=loop)
+            self._clock = LiveClock()
         else:
             raise NotImplementedError(  # pragma: no cover (design-time error)
                 f"environment {self._environment} not recognized",  # pragma: no cover (design-time error)
