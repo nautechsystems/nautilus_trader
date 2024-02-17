@@ -63,8 +63,15 @@ from nautilus_trader.core.rust.common cimport component_state_from_cstr
 from nautilus_trader.core.rust.common cimport component_state_to_cstr
 from nautilus_trader.core.rust.common cimport component_trigger_from_cstr
 from nautilus_trader.core.rust.common cimport component_trigger_to_cstr
+from nautilus_trader.core.rust.common cimport live_clock_cancel_timer
 from nautilus_trader.core.rust.common cimport live_clock_drop
 from nautilus_trader.core.rust.common cimport live_clock_new
+from nautilus_trader.core.rust.common cimport live_clock_next_time
+from nautilus_trader.core.rust.common cimport live_clock_register_default_handler
+from nautilus_trader.core.rust.common cimport live_clock_set_time_alert
+from nautilus_trader.core.rust.common cimport live_clock_set_timer
+from nautilus_trader.core.rust.common cimport live_clock_timer_count
+from nautilus_trader.core.rust.common cimport live_clock_timer_names
 from nautilus_trader.core.rust.common cimport live_clock_timestamp
 from nautilus_trader.core.rust.common cimport live_clock_timestamp_ms
 from nautilus_trader.core.rust.common cimport live_clock_timestamp_ns
@@ -92,11 +99,11 @@ from nautilus_trader.core.rust.common cimport test_clock_cancel_timer
 from nautilus_trader.core.rust.common cimport test_clock_cancel_timers
 from nautilus_trader.core.rust.common cimport test_clock_drop
 from nautilus_trader.core.rust.common cimport test_clock_new
-from nautilus_trader.core.rust.common cimport test_clock_next_time_ns
+from nautilus_trader.core.rust.common cimport test_clock_next_time
 from nautilus_trader.core.rust.common cimport test_clock_register_default_handler
 from nautilus_trader.core.rust.common cimport test_clock_set_time
-from nautilus_trader.core.rust.common cimport test_clock_set_time_alert_ns
-from nautilus_trader.core.rust.common cimport test_clock_set_timer_ns
+from nautilus_trader.core.rust.common cimport test_clock_set_time_alert
+from nautilus_trader.core.rust.common cimport test_clock_set_timer
 from nautilus_trader.core.rust.common cimport test_clock_timer_count
 from nautilus_trader.core.rust.common cimport test_clock_timer_names
 from nautilus_trader.core.rust.common cimport test_clock_timestamp
@@ -534,7 +541,7 @@ cdef class TestClock(Clock):
         Condition.valid_string(name, "name")
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
 
-        test_clock_set_time_alert_ns(
+        test_clock_set_time_alert(
             &self._mem,
             pystr_to_cstr(name),
             alert_time_ns,
@@ -561,7 +568,7 @@ cdef class TestClock(Clock):
             Condition.true(stop_time_ns > ts_now, "`stop_time_ns` was < `ts_now`")
             Condition.true(start_time_ns + interval_ns <= stop_time_ns, "`start_time_ns` + `interval_ns` was > `stop_time_ns`")
 
-        test_clock_set_timer_ns(
+        test_clock_set_timer(
             &self._mem,
             pystr_to_cstr(name),
             interval_ns,
@@ -572,7 +579,7 @@ cdef class TestClock(Clock):
 
     cpdef uint64_t next_time_ns(self, str name):
         Condition.valid_string(name, "name")
-        return test_clock_next_time_ns(&self._mem, pystr_to_cstr(name))
+        return test_clock_next_time(&self._mem, pystr_to_cstr(name))
 
     cpdef void cancel_timer(self, str name):
         Condition.valid_string(name, "name")
@@ -659,17 +666,8 @@ cdef class LiveClock(Clock):
         The event loop for the clocks timers.
     """
 
-    def __init__(self, loop: asyncio.AbstractEventLoop | None = None):
+    def __init__(self):
         self._mem = live_clock_new()
-        self._default_handler = None
-        self._handlers: dict[str, Callable[[TimeEvent], None]] = {}
-
-        self._loop = loop
-        self._timers: dict[str, LiveTimer] = {}
-        self._stack = np.ascontiguousarray([], dtype=LiveTimer)
-
-        self._timer_count = 0
-        self._next_event_time_ns = 0
 
     def __del__(self) -> None:
         if self._mem._0 != NULL:
@@ -677,11 +675,24 @@ cdef class LiveClock(Clock):
 
     @property
     def timer_names(self) -> list[str]:
-        return list(self._timers.keys())
+        return sorted(<list>live_clock_timer_names(&self._mem))
 
     @property
     def timer_count(self) -> int:
-        return self._timer_count
+        return live_clock_timer_count(&self._mem)
+
+    @staticmethod
+    def create_pyo3_conversion_wrapper(callback) -> Callable:
+        # TODO: Improve efficiency of pyo3 object conversion
+        def wrapper(pyo3_event):
+            event = TimeEvent(
+                name=pyo3_event.name,
+                event_id=UUID4(pyo3_event.event_id.value),
+                ts_event=pyo3_event.ts_event,
+                ts_init=pyo3_event.ts_init,
+            )
+            callback(event)
+        return wrapper
 
     cpdef double timestamp(self):
         return live_clock_timestamp(&self._mem)
@@ -695,7 +706,9 @@ cdef class LiveClock(Clock):
     cpdef void register_default_handler(self, callback: Callable[[TimeEvent], None]):
         Condition.callable(callback, "callback")
 
-        self._default_handler = callback
+        callback = LiveClock.create_pyo3_conversion_wrapper(callback)
+
+        live_clock_register_default_handler(&self._mem, <PyObject *>callback)
 
     cpdef void set_time_alert_ns(
         self,
@@ -705,19 +718,16 @@ cdef class LiveClock(Clock):
     ):
         Condition.valid_string(name, "name")
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
-        if callback is None:
-            callback = self._default_handler
 
-        cdef uint64_t ts_now = self.timestamp_ns()
+        if callback is not None:
+            callback = LiveClock.create_pyo3_conversion_wrapper(callback)
 
-        cdef LiveTimer timer = self._create_timer(
-            name=name,
-            callback=callback,
-            interval_ns=alert_time_ns - ts_now,
-            start_time_ns=ts_now,
-            stop_time_ns=alert_time_ns,
+        live_clock_set_time_alert(
+            &self._mem,
+            pystr_to_cstr(name),
+            alert_time_ns,
+            <PyObject *>callback,
         )
-        self._add_timer(timer, callback)
 
     cpdef void set_timer_ns(
         self,
@@ -728,17 +738,13 @@ cdef class LiveClock(Clock):
         callback: Callable[[TimeEvent], None] | None = None,
     ):
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
+        Condition.not_in(name, self.timer_names, "name", "self.timer_names")
+        Condition.positive_int(interval_ns, "interval_ns")
+
+        if callback is not None:
+            callback = LiveClock.create_pyo3_conversion_wrapper(callback)
 
         cdef uint64_t ts_now = self.timestamp_ns()  # Call here for greater accuracy
-
-        Condition.valid_string(name, "name")
-        if callback is None:
-            callback = self._default_handler
-
-        Condition.not_in(name, self._timers, "name", "_timers")
-        Condition.not_in(name, self._handlers, "name", "_handlers")
-        Condition.true(interval_ns > 0, f"interval was {interval_ns}")
-        Condition.callable(callback, "callback")
 
         if start_time_ns == 0:
             start_time_ns = ts_now
@@ -746,54 +752,24 @@ cdef class LiveClock(Clock):
             Condition.true(stop_time_ns > ts_now, "stop_time was < ts_now")
             Condition.true(start_time_ns + interval_ns <= stop_time_ns, "start_time + interval was > stop_time")
 
-        cdef LiveTimer timer = self._create_timer(
-            name=name,
-            callback=callback,
-            interval_ns=interval_ns,
-            start_time_ns=start_time_ns,
-            stop_time_ns=stop_time_ns,
+        live_clock_set_timer(
+            &self._mem,
+            pystr_to_cstr(name),
+            interval_ns,
+            start_time_ns,
+            stop_time_ns,
+            <PyObject *>callback,
         )
-        self._add_timer(timer, callback)
-
-    cdef void _add_timer(self, LiveTimer timer, handler: Callable[[TimeEvent], None]):
-        self._timers[timer.name] = timer
-        self._handlers[timer.name] = handler
-        self._update_stack()
-        self._update_timing()
-
-    cdef void _remove_timer(self, LiveTimer timer):
-        self._timers.pop(timer.name, None)
-        self._handlers.pop(timer.name, None)
-        self._update_stack()
-        self._update_timing()
-
-    cdef void _update_stack(self):
-        self._timer_count = len(self._timers)
-
-        if self._timer_count > 0:
-            # The call to `np.ascontiguousarray` here looks inefficient, its
-            # only called when a timer is added or removed. This then allows the
-            # construction of an efficient Timer[:] memoryview.
-            timers = list(self._timers.values())
-            self._stack = np.ascontiguousarray(timers, dtype=LiveTimer)
-        else:
-            self._stack = None
 
     cpdef uint64_t next_time_ns(self, str name):
-        return self._timers[name].next_time_ns
+        Condition.valid_string(name, "name")
+        return live_clock_next_time(&self._mem, pystr_to_cstr(name))
 
     cpdef void cancel_timer(self, str name):
         Condition.valid_string(name, "name")
         Condition.is_in(name, self.timer_names, "name", "self.timer_names")
 
-        cdef LiveTimer timer = self._timers.pop(name, None)
-        if not timer:
-            # No timer with given name
-            return
-
-        timer.cancel()
-        self._handlers.pop(name, None)
-        self._remove_timer(timer)
+        live_clock_cancel_timer(&self._mem, pystr_to_cstr(name))
 
     cpdef void cancel_timers(self):
         cdef str name
@@ -802,84 +778,6 @@ cdef class LiveClock(Clock):
             # to cancel_timer() handles the clean removal of both the handler
             # and timer.
             self.cancel_timer(name)
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cdef void _update_timing(self):
-        if self._timer_count == 0:
-            self._next_event_time_ns = 0
-            return
-
-        cdef LiveTimer first_timer = self._stack[0]
-        if self._timer_count == 1:
-            self._next_event_time_ns = first_timer.next_time_ns
-            return
-
-        cdef uint64_t next_time_ns = first_timer.next_time_ns
-        cdef:
-            int i
-            LiveTimer timer
-            uint64_t observed_ns
-        for i in range(self._timer_count - 1):
-            timer = self._stack[i + 1]
-            observed_ns = timer.next_time_ns
-            if observed_ns < next_time_ns:
-                next_time_ns = observed_ns
-
-        self._next_event_time_ns = next_time_ns
-
-    cdef LiveTimer _create_timer(
-        self,
-        str name,
-        callback: Callable[[TimeEvent], None],
-        uint64_t interval_ns,
-        uint64_t start_time_ns,
-        uint64_t stop_time_ns,
-    ):
-        if self._loop is not None:
-            return LoopTimer(
-                loop=self._loop,
-                name=name,
-                callback=self._raise_time_event,
-                interval_ns=interval_ns,
-                ts_now=self.timestamp_ns(),  # Timestamp here for accuracy
-                start_time_ns=start_time_ns,
-                stop_time_ns=stop_time_ns,
-            )
-        else:
-            return ThreadTimer(
-                name=name,
-                callback=self._raise_time_event,
-                interval_ns=interval_ns,
-                ts_now=self.timestamp_ns(),  # Timestamp here for accuracy
-                start_time_ns=start_time_ns,
-                stop_time_ns=stop_time_ns,
-            )
-
-    cpdef void _raise_time_event(self, LiveTimer timer):
-        cdef uint64_t now = self.timestamp_ns()
-        cdef TimeEvent event = timer.pop_event(
-            event_id=UUID4(),
-            ts_init=now,
-        )
-
-        if now < timer.next_time_ns:
-            timer.iterate_next_time(timer.next_time_ns)
-        else:
-            timer.iterate_next_time(now)
-
-        self._handle_time_event(event)
-
-        if timer.is_expired:
-            self._remove_timer(timer)
-        else:  # Continue timing
-            timer.repeat(ts_now=self.timestamp_ns())
-            self._update_timing()
-
-    cdef void _handle_time_event(self, TimeEvent event):
-        handler = self._handlers.get(event.name)
-        if handler is not None:
-            handler(event)
 
 
 cdef class TimeEvent(Event):
@@ -1037,248 +935,6 @@ cdef class TimeEventHandler:
         return (
             f"{type(self).__name__}("
             f"event={repr(self.event)})"
-        )
-
-
-cdef class LiveTimer:
-    """
-    The base class for all live timers.
-
-    Parameters
-    ----------
-    name : str
-        The name for the timer.
-    callback : Callable[[TimeEvent], None]
-        The delegate to call at the next time.
-    interval_ns : uint64_t
-        The time interval for the timer.
-    ts_now : uint64_t
-        The current UNIX time (nanoseconds).
-    start_time_ns : uint64_t
-        The start datetime for the timer (UTC).
-    stop_time_ns : uint64_t, optional
-        The stop datetime for the timer (UTC) (if None then timer repeats).
-
-    Raises
-    ------
-    TypeError
-        If `callback` is not of type `Callable`.
-
-    Warnings
-    --------
-    This class should not be used directly, but through a concrete subclass.
-    """
-
-    def __init__(
-        self,
-        str name not None,
-        callback not None: Callable[[TimeEvent], None],
-        uint64_t interval_ns,
-        uint64_t ts_now,
-        uint64_t start_time_ns,
-        uint64_t stop_time_ns=0,
-    ):
-        Condition.valid_string(name, "name")
-        Condition.callable(callback, "callback")
-
-        self.name = name
-        self.callback = callback
-        self.interval_ns = interval_ns
-        self.start_time_ns = start_time_ns
-        self.next_time_ns = start_time_ns + interval_ns
-        self.stop_time_ns = stop_time_ns
-        self.is_expired = False
-
-        self._internal = self._start_timer(ts_now)
-
-    def __eq__(self, LiveTimer other) -> bool:
-        return self.name == other.name
-
-    def __hash__(self) -> int:
-        return hash(self.name)
-
-    def __repr__(self) -> str:
-        return (
-            f"{type(self).__name__}("
-            f"name={self.name}, "
-            f"interval_ns={self.interval_ns}, "
-            f"start_time_ns={self.start_time_ns}, "
-            f"next_time_ns={self.next_time_ns}, "
-            f"stop_time_ns={self.stop_time_ns}, "
-            f"is_expired={self.is_expired})"
-        )
-
-    cpdef TimeEvent pop_event(self, UUID4 event_id, uint64_t ts_init):
-        """
-        Return a generated time event with the given ID.
-
-        Parameters
-        ----------
-        event_id : UUID4
-            The ID for the time event.
-        ts_init : uint64_t
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        Returns
-        -------
-        TimeEvent
-
-        """
-        # Precondition: `event_id` validated in `TimeEvent`
-
-        return TimeEvent(
-            name=self.name,
-            event_id=event_id,
-            ts_event=self.next_time_ns,
-            ts_init=ts_init,
-        )
-
-    cpdef void iterate_next_time(self, uint64_t ts_now):
-        """
-        Iterates the timers next time and checks if the timer is now expired.
-
-        Parameters
-        ----------
-        ts_now : uint64_t
-            The current UNIX time (nanoseconds).
-
-        """
-        self.next_time_ns += self.interval_ns
-        if self.stop_time_ns and ts_now >= self.stop_time_ns:
-            self.is_expired = True
-
-    cpdef void repeat(self, uint64_t ts_now):
-        """
-        Continue the timer.
-
-        Parameters
-        ----------
-        ts_now : uint64_t
-            The current time to continue timing from.
-
-        """
-        self._internal = self._start_timer(ts_now)
-
-    cpdef void cancel(self):
-        """
-        Cancels the timer (the timer will not generate an event).
-        """
-        self._internal.cancel()
-
-    cdef object _start_timer(self, uint64_t ts_now):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method `_start_timer` must be implemented in the subclass")  # pragma: no cover
-
-
-cdef class ThreadTimer(LiveTimer):
-    """
-    Provides a thread based timer for live trading.
-
-    Parameters
-    ----------
-    name : str
-        The name for the timer.
-    callback : Callable[[TimeEvent], None]
-        The delegate to call at the next time.
-    interval_ns : uint64_t
-        The time interval for the timer.
-    ts_now : uint64_t
-        The current UNIX time (nanoseconds).
-    start_time_ns : uint64_t
-        The start datetime for the timer (UTC).
-    stop_time_ns : uint64_t, optional
-        The stop datetime for the timer (UTC) (if None then timer repeats).
-
-    Raises
-    ------
-    TypeError
-        If `callback` is not of type `Callable`.
-    """
-
-    def __init__(
-        self,
-        str name not None,
-        callback not None: Callable[[TimeEvent], None],
-        uint64_t interval_ns,
-        uint64_t ts_now,
-        uint64_t start_time_ns,
-        uint64_t stop_time_ns=0,
-    ):
-        super().__init__(
-            name=name,
-            callback=callback,
-            interval_ns=interval_ns,
-            ts_now=ts_now,
-            start_time_ns=start_time_ns,
-            stop_time_ns=stop_time_ns,
-        )
-
-    cdef object _start_timer(self, uint64_t ts_now):
-        timer = TimerThread(
-            interval=nanos_to_secs(self.next_time_ns - ts_now),
-            function=self.callback,
-            args=[self],
-        )
-        timer.daemon = True
-        timer.start()
-
-        return timer
-
-
-cdef class LoopTimer(LiveTimer):
-    """
-    Provides an event loop based timer for live trading.
-
-    Parameters
-    ----------
-    loop : asyncio.AbstractEventLoop
-        The event loop to run the timer on.
-    name : str
-        The name for the timer.
-    callback : Callable[[TimeEvent], None]
-        The delegate to call at the next time.
-    interval_ns : uint64_t
-        The time interval for the timer (nanoseconds).
-    ts_now : uint64_t
-        The current UNIX epoch (nanoseconds).
-    start_time_ns : uint64_t
-        The start datetime for the timer (UTC).
-    stop_time_ns : uint64_t, optional
-        The stop datetime for the timer (UTC) (if None then timer repeats).
-
-    Raises
-    ------
-    TypeError
-        If `callback` is not of type `Callable`.
-    """
-
-    def __init__(
-        self,
-        loop not None,
-        str name not None,
-        callback not None: Callable[[TimeEvent], None],
-        uint64_t interval_ns,
-        uint64_t ts_now,
-        uint64_t start_time_ns,
-        uint64_t stop_time_ns=0,
-    ):
-        Condition.valid_string(name, "name")
-
-        self._loop = loop  # Assign here as `super().__init__` will call it
-        super().__init__(
-            name=name,
-            callback=callback,
-            interval_ns=interval_ns,
-            ts_now=ts_now,
-            start_time_ns=start_time_ns,
-            stop_time_ns=stop_time_ns,
-        )
-
-    cdef object _start_timer(self, uint64_t ts_now):
-        return self._loop.call_later(
-            nanos_to_secs(self.next_time_ns - ts_now),
-            self.callback,
-            self,
         )
 
 

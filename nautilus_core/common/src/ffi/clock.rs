@@ -135,7 +135,7 @@ pub extern "C" fn test_clock_timer_count(clock: &mut TestClock_API) -> usize {
 /// - Assumes `name_ptr` is a valid C string pointer.
 /// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
 #[no_mangle]
-pub unsafe extern "C" fn test_clock_set_time_alert_ns(
+pub unsafe extern "C" fn test_clock_set_time_alert(
     clock: &mut TestClock_API,
     name_ptr: *const c_char,
     alert_time_ns: UnixNanos,
@@ -158,7 +158,7 @@ pub unsafe extern "C" fn test_clock_set_time_alert_ns(
 /// - Assumes `name_ptr` is a valid C string pointer.
 /// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
 #[no_mangle]
-pub unsafe extern "C" fn test_clock_set_timer_ns(
+pub unsafe extern "C" fn test_clock_set_timer(
     clock: &mut TestClock_API,
     name_ptr: *const c_char,
     interval_ns: u64,
@@ -217,7 +217,7 @@ pub extern "C" fn vec_time_event_handlers_drop(v: CVec) {
 ///
 /// - Assumes `name_ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn test_clock_next_time_ns(
+pub unsafe extern "C" fn test_clock_next_time(
     clock: &mut TestClock_API,
     name_ptr: *const c_char,
 ) -> UnixNanos {
@@ -279,6 +279,23 @@ pub extern "C" fn live_clock_drop(clock: LiveClock_API) {
     drop(clock); // Memory freed here
 }
 
+/// # Safety
+///
+/// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+#[no_mangle]
+pub unsafe extern "C" fn live_clock_register_default_handler(
+    clock: &mut LiveClock_API,
+    callback_ptr: *mut ffi::PyObject,
+) {
+    assert!(!callback_ptr.is_null());
+    assert!(ffi::Py_None() != callback_ptr);
+
+    let callback_py = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
+    let handler = EventHandler::new(Some(callback_py), None);
+
+    clock.register_default_handler(handler);
+}
+
 #[no_mangle]
 pub extern "C" fn live_clock_timestamp(clock: &mut LiveClock_API) -> f64 {
     clock.get_time()
@@ -297,4 +314,110 @@ pub extern "C" fn live_clock_timestamp_us(clock: &mut LiveClock_API) -> u64 {
 #[no_mangle]
 pub extern "C" fn live_clock_timestamp_ns(clock: &mut LiveClock_API) -> u64 {
     clock.get_time_ns()
+}
+
+#[no_mangle]
+pub extern "C" fn live_clock_timer_names(clock: &LiveClock_API) -> *mut ffi::PyObject {
+    Python::with_gil(|py| -> Py<PyList> {
+        let names: Vec<Py<PyString>> = clock
+            .get_timers()
+            .keys()
+            .map(|k| PyString::new(py, k).into())
+            .collect();
+        PyList::new(py, names).into()
+    })
+    .as_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn live_clock_timer_count(clock: &mut LiveClock_API) -> usize {
+    clock.timer_count()
+}
+
+/// # Safety
+///
+/// - Assumes `name_ptr` is a valid C string pointer.
+/// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+#[no_mangle]
+pub unsafe extern "C" fn live_clock_set_time_alert(
+    clock: &mut LiveClock_API,
+    name_ptr: *const c_char,
+    alert_time_ns: UnixNanos,
+    callback_ptr: *mut ffi::PyObject,
+) {
+    assert!(!callback_ptr.is_null());
+
+    let name = cstr_to_str(name_ptr);
+    let callback_py = Python::with_gil(|py| match callback_ptr {
+        ptr if ptr != ffi::Py_None() => Some(PyObject::from_borrowed_ptr(py, ptr)),
+        _ => None,
+    });
+    let handler = EventHandler::new(callback_py.clone(), None);
+
+    clock.set_time_alert_ns(name, alert_time_ns, callback_py.map(|_| handler));
+}
+
+/// # Safety
+///
+/// - Assumes `name_ptr` is a valid C string pointer.
+/// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+#[no_mangle]
+pub unsafe extern "C" fn live_clock_set_timer(
+    clock: &mut LiveClock_API,
+    name_ptr: *const c_char,
+    interval_ns: u64,
+    start_time_ns: UnixNanos,
+    stop_time_ns: UnixNanos,
+    callback_ptr: *mut ffi::PyObject,
+) {
+    assert!(!callback_ptr.is_null());
+
+    let name = cstr_to_str(name_ptr);
+    let stop_time_ns = match stop_time_ns {
+        0 => None,
+        _ => Some(stop_time_ns),
+    };
+    let callback_py = Python::with_gil(|py| match callback_ptr {
+        ptr if ptr != ffi::Py_None() => Some(PyObject::from_borrowed_ptr(py, ptr)),
+        _ => None,
+    });
+
+    let handler = EventHandler::new(callback_py.clone(), None);
+
+    clock.set_timer_ns(
+        name,
+        interval_ns,
+        start_time_ns,
+        stop_time_ns,
+        callback_py.map(|_| handler),
+    );
+}
+
+/// # Safety
+///
+/// - Assumes `name_ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn live_clock_next_time(
+    clock: &mut LiveClock_API,
+    name_ptr: *const c_char,
+) -> UnixNanos {
+    let name = cstr_to_str(name_ptr);
+    clock.next_time_ns(name)
+}
+
+/// # Safety
+///
+/// - Assumes `name_ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn live_clock_cancel_timer(
+    clock: &mut LiveClock_API,
+    name_ptr: *const c_char,
+) {
+    let name = cstr_to_str(name_ptr);
+    clock.cancel_timer(name);
+}
+
+#[no_mangle]
+pub extern "C" fn live_clock_cancel_timers(clock: &mut LiveClock_API) {
+    clock.cancel_timers();
 }
