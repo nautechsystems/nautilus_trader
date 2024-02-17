@@ -24,7 +24,7 @@ use nautilus_core::{
     time::{get_atomic_clock_realtime, TimedeltaNanos, UnixNanos},
     uuid::UUID4,
 };
-use pyo3::{ffi, IntoPy, Python};
+use pyo3::{ffi, types::PyCapsule, IntoPy, PyObject, Python};
 use tokio::sync::oneshot;
 use ustr::Ustr;
 
@@ -274,8 +274,9 @@ impl LiveTimer {
                                 next_time_ns,
                                 clock.get_time_ns()
                             );
-                            let py_event = event.into_py(py);
-                            match callback.call1(py, (py_event,)) {
+                            let capsule: PyObject = PyCapsule::new(py, event, None).expect("Error creating `PyCapsule`").into_py(py);
+
+                            match callback.call1(py, (capsule,)) {
                                 Ok(_) => {},
                                 Err(e) => eprintln!("Error on callback: {:?}", e),
                             };

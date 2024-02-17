@@ -43,6 +43,7 @@ from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
 from cpython.object cimport PyCallable_Check
 from cpython.object cimport PyObject
+from cpython.pycapsule cimport PyCapsule_GetPointer
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 from libc.stdio cimport printf
@@ -681,19 +682,6 @@ cdef class LiveClock(Clock):
     def timer_count(self) -> int:
         return live_clock_timer_count(&self._mem)
 
-    @staticmethod
-    def create_pyo3_conversion_wrapper(callback) -> Callable:
-        # TODO: Improve efficiency of pyo3 object conversion
-        def wrapper(pyo3_event):
-            event = TimeEvent(
-                name=pyo3_event.name,
-                event_id=UUID4(pyo3_event.event_id.value),
-                ts_event=pyo3_event.ts_event,
-                ts_init=pyo3_event.ts_init,
-            )
-            callback(event)
-        return wrapper
-
     cpdef double timestamp(self):
         return live_clock_timestamp(&self._mem)
 
@@ -706,7 +694,7 @@ cdef class LiveClock(Clock):
     cpdef void register_default_handler(self, callback: Callable[[TimeEvent], None]):
         Condition.callable(callback, "callback")
 
-        callback = LiveClock.create_pyo3_conversion_wrapper(callback)
+        callback = create_pyo3_conversion_wrapper(callback)
 
         live_clock_register_default_handler(&self._mem, <PyObject *>callback)
 
@@ -720,7 +708,7 @@ cdef class LiveClock(Clock):
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
 
         if callback is not None:
-            callback = LiveClock.create_pyo3_conversion_wrapper(callback)
+            callback = create_pyo3_conversion_wrapper(callback)
 
         live_clock_set_time_alert(
             &self._mem,
@@ -742,7 +730,7 @@ cdef class LiveClock(Clock):
         Condition.positive_int(interval_ns, "interval_ns")
 
         if callback is not None:
-            callback = LiveClock.create_pyo3_conversion_wrapper(callback)
+            callback = create_pyo3_conversion_wrapper(callback)
 
         cdef uint64_t ts_now = self.timestamp_ns()  # Call here for greater accuracy
 
@@ -778,6 +766,13 @@ cdef class LiveClock(Clock):
             # to cancel_timer() handles the clean removal of both the handler
             # and timer.
             self.cancel_timer(name)
+
+
+def create_pyo3_conversion_wrapper(callback) -> Callable:
+    def wrapper(capsule):
+        callback(capsule_to_time_event(capsule))
+
+    return wrapper
 
 
 cdef class TimeEvent(Event):
@@ -897,6 +892,13 @@ cdef class TimeEvent(Event):
         cdef TimeEvent event = TimeEvent.__new__(TimeEvent)
         event._mem = mem
         return event
+
+
+cdef inline TimeEvent capsule_to_time_event(capsule):
+    cdef TimeEvent_t* ptr = <TimeEvent_t*>PyCapsule_GetPointer(capsule, NULL)
+    cdef TimeEvent event = TimeEvent.__new__(TimeEvent)
+    event._mem = ptr[0]
+    return event
 
 
 cdef class TimeEventHandler:
