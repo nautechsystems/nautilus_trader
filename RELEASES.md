@@ -3,6 +3,9 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `managed` parameter to `subscribe_order_book_deltas`, default true to retain current behavior (if false then the data engine will not automatically manage a book)
+- Added `managed` parameter to `subscribe_order_book_snapshots`, default true to retain current behavior (if false then the data engine will not automatically manage a book)
+- Removed `interval_ms` 20 millisecond limitation for `subscribe_order_book_snapshots` (i.e. just needs to be positive), although we recommend you consider subscribing to deltas below 100 milliseconds
 - Ported `LiveClock` and `LiveTimer` implementations to Rust
 - Implemented `AverageTrueRange` in Rust, thanks @rsmb7z
 
