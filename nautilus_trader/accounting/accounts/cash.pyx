@@ -249,7 +249,7 @@ cdef class CashAccount(Account):
                 notional = quantity.as_f64_c()
             else:
                 return None  # No balance to lock
-        else:
+        else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
         # Add expected commission
@@ -264,7 +264,7 @@ cdef class CashAccount(Account):
             return Money(locked, quote_currency)
         elif side == OrderSide.SELL:
             return Money(locked, base_currency)
-        else:
+        else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
     cpdef list calculate_pnls(
@@ -315,7 +315,7 @@ cdef class CashAccount(Account):
             if base_currency and not self.base_currency:
                 pnls[base_currency] = Money(-fill_qty, base_currency)
             pnls[quote_currency] = Money(fill_px * fill_qty, quote_currency)
-        else:
+        else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid `OrderSide`, was {fill.order_side}")  # pragma: no cover (design-time error)
 
         return list(pnls.values())
@@ -327,10 +327,10 @@ cdef class CashAccount(Account):
         Price price,
         OrderSide order_side,
     ):
-        cdef object notional = instrument.notional_value(quantity, price)
+        cdef Money notional = instrument.notional_value(quantity, price)
         if order_side == OrderSide.BUY:
-            return Money(-notional, notional.currency)
+            return Money.from_raw_c(-notional._mem.raw, notional.currency)
         elif order_side == OrderSide.SELL:
-            return Money(notional, notional.currency)
-        else:
+            return Money.from_raw_c(notional._mem.raw, notional.currency)
+        else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid `OrderSide`, was {order_side}")  # pragma: no cover (design-time error)
