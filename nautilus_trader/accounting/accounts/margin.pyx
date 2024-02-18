@@ -648,7 +648,7 @@ cdef class MarginAccount(Account):
         cdef dict pnls = {}  # type: dict[Currency, Money]
 
         cdef Money pnl
-        if position is not None and position.entry != fill.order_side:
+        if position is not None and position.quantity._mem.raw != 0 and position.entry != fill.order_side:
             # Calculate and add PnL
             pnl = position.calculate_pnl(
                 avg_px_open=position.avg_px_open,

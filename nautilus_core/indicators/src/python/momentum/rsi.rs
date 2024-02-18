@@ -31,6 +31,10 @@ impl RelativeStrengthIndex {
         Self::new(period, ma_type).map_err(to_pyvalue_err)
     }
 
+    fn __repr__(&self) -> String {
+        format!("ExponentialMovingAverage({})", self.period)
+    }
+
     #[getter]
     #[pyo3(name = "name")]
     fn py_name(&self) -> String {
@@ -79,9 +83,5 @@ impl RelativeStrengthIndex {
     #[pyo3(name = "handle_trade_tick")]
     fn py_handle_trade_tick(&mut self, tick: &TradeTick) {
         self.update_raw((&tick.price).into());
-    }
-
-    fn __repr__(&self) -> String {
-        format!("ExponentialMovingAverage({})", self.period)
     }
 }

@@ -1,3 +1,5 @@
+#![allow(clippy::all)]
+
 //! Async `WebSocket` usage.
 //!
 //! This library is an implementation of `WebSocket` handshakes and streams. It

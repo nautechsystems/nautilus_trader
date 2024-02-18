@@ -23,6 +23,8 @@ pub mod trade;
 
 use nautilus_core::time::UnixNanos;
 
+use crate::ffi::data::deltas::OrderBookDeltas_API;
+
 use self::{
     bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10,
     quote::QuoteTick, trade::TradeTick,
@@ -30,10 +32,10 @@ use self::{
 
 #[repr(C)]
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "trivial_copy", derive(Copy))]
 #[allow(clippy::large_enum_variant)] // TODO: Optimize this (largest variant 1008 vs 136 bytes)
 pub enum Data {
     Delta(OrderBookDelta),
+    Deltas(OrderBookDeltas_API),
     Depth10(OrderBookDepth10),
     Quote(QuoteTick),
     Trade(TradeTick),
@@ -48,6 +50,7 @@ impl HasTsInit for Data {
     fn get_ts_init(&self) -> UnixNanos {
         match self {
             Data::Delta(d) => d.ts_init,
+            Data::Deltas(d) => d.ts_init,
             Data::Depth10(d) => d.ts_init,
             Data::Quote(q) => q.ts_init,
             Data::Trade(t) => t.ts_init,
@@ -62,13 +65,13 @@ impl HasTsInit for OrderBookDelta {
     }
 }
 
-impl HasTsInit for OrderBookDepth10 {
+impl HasTsInit for OrderBookDeltas {
     fn get_ts_init(&self) -> UnixNanos {
         self.ts_init
     }
 }
 
-impl HasTsInit for OrderBookDeltas {
+impl HasTsInit for OrderBookDepth10 {
     fn get_ts_init(&self) -> UnixNanos {
         self.ts_init
     }
@@ -103,6 +106,12 @@ impl From<OrderBookDelta> for Data {
     }
 }
 
+impl From<OrderBookDeltas_API> for Data {
+    fn from(value: OrderBookDeltas_API) -> Self {
+        Self::Deltas(value)
+    }
+}
+
 impl From<OrderBookDepth10> for Data {
     fn from(value: OrderBookDepth10) -> Self {
         Self::Depth10(value)
@@ -129,5 +138,5 @@ impl From<Bar> for Data {
 
 #[no_mangle]
 pub extern "C" fn data_clone(data: &Data) -> Data {
-    *data // Actually a copy
+    data.clone()
 }

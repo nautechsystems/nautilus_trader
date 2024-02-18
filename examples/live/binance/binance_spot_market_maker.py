@@ -43,7 +43,7 @@ config_node = TradingNodeConfig(
     logging=LoggingConfig(
         log_level="INFO",
         # log_level_file="DEBUG",
-        # log_colors=False,
+        # log_file_format="json",
     ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,

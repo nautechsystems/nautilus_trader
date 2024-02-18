@@ -16,16 +16,19 @@
 use std::{
     cmp::Ordering,
     fmt::{Display, Formatter},
+    time::Duration,
 };
 
-use anyhow::Result;
 use nautilus_core::{
     correctness::check_valid_string,
-    time::{TimedeltaNanos, UnixNanos},
+    time::{get_atomic_clock_realtime, TimedeltaNanos, UnixNanos},
     uuid::UUID4,
 };
-use pyo3::ffi;
+use pyo3::{ffi, types::PyCapsule, IntoPy, PyObject, Python};
+use tokio::sync::oneshot;
 use ustr::Ustr;
+
+use crate::{handlers::EventHandler, runtime::get_runtime};
 
 #[repr(C)]
 #[derive(Clone, Debug)]
@@ -46,19 +49,15 @@ pub struct TimeEvent {
     pub ts_init: UnixNanos,
 }
 
+/// Assumes `name` is a valid string.
 impl TimeEvent {
-    pub fn new(
-        name: Ustr,
-        event_id: UUID4,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Result<Self> {
-        Ok(Self {
+    pub fn new(name: Ustr, event_id: UUID4, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
+        Self {
             name,
             event_id,
             ts_event,
             ts_init,
-        })
+        }
     }
 }
 
@@ -120,7 +119,7 @@ pub trait Timer {
     fn cancel(&mut self);
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct TestTimer {
     pub name: Ustr,
     pub interval_ns: u64,
@@ -153,7 +152,7 @@ impl TestTimer {
     #[must_use]
     pub fn pop_event(&self, event_id: UUID4, ts_init: UnixNanos) -> TimeEvent {
         TimeEvent {
-            name: Ustr::from(&self.name),
+            name: self.name,
             event_id,
             ts_event: self.next_time_ns,
             ts_init,
@@ -206,6 +205,113 @@ impl Iterator for TestTimer {
     }
 }
 
+pub struct LiveTimer {
+    pub name: Ustr,
+    pub interval_ns: u64,
+    pub start_time_ns: UnixNanos,
+    pub stop_time_ns: Option<UnixNanos>,
+    pub next_time_ns: UnixNanos,
+    pub is_expired: bool,
+    callback: EventHandler,
+    canceler: Option<oneshot::Sender<()>>,
+}
+
+impl LiveTimer {
+    #[must_use]
+    pub fn new(
+        name: &str,
+        interval_ns: u64,
+        start_time_ns: UnixNanos,
+        stop_time_ns: Option<UnixNanos>,
+        callback: EventHandler,
+    ) -> Self {
+        check_valid_string(name, "`TestTimer` name").unwrap();
+
+        Self {
+            name: Ustr::from(name),
+            interval_ns,
+            start_time_ns,
+            stop_time_ns,
+            next_time_ns: start_time_ns + interval_ns,
+            is_expired: false,
+            callback,
+            canceler: None,
+        }
+    }
+
+    pub fn start(&mut self) {
+        let event_name = self.name;
+        let mut start_time_ns = self.start_time_ns;
+        let stop_time_ns = self.stop_time_ns;
+        let interval_ns = self.interval_ns;
+
+        let callback = self
+            .callback
+            .py_callback
+            .clone()
+            .expect("No callback for event handler");
+
+        // Setup oneshot channel for cancelling timer task
+        let (cancel_tx, mut cancel_rx) = oneshot::channel();
+        self.canceler = Some(cancel_tx);
+
+        get_runtime().spawn(async move {
+            let clock = get_atomic_clock_realtime();
+            if start_time_ns == 0 {
+                start_time_ns = clock.get_time_ns();
+            }
+
+            let mut next_time_ns = start_time_ns + interval_ns;
+
+            loop {
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_nanos(next_time_ns.saturating_sub(clock.get_time_ns()))) => {
+                        Python::with_gil(|py| {
+                            // Create new time event
+                            let event = TimeEvent::new(
+                                event_name,
+                                UUID4::new(),
+                                next_time_ns,
+                                clock.get_time_ns()
+                            );
+                            let capsule: PyObject = PyCapsule::new(py, event, None).expect("Error creating `PyCapsule`").into_py(py);
+
+                            match callback.call1(py, (capsule,)) {
+                                Ok(_) => {},
+                                Err(e) => eprintln!("Error on callback: {:?}", e),
+                            };
+                        });
+
+                        // Prepare next time interval
+                        next_time_ns += interval_ns;
+
+                        // Check if expired
+                        if let Some(stop_time_ns) = stop_time_ns {
+                            if next_time_ns >= stop_time_ns {
+                                break; // Timer expired
+                            }
+                        }
+                    },
+                    _ = (&mut cancel_rx) => {
+                        break; // Timer canceled
+                    },
+                }
+            }
+
+            Ok::<(), anyhow::Error>(())
+        });
+
+        self.is_expired = true;
+    }
+
+    /// Cancels the timer (the timer will not generate an event).
+    pub fn cancel(&mut self) {
+        if let Some(sender) = self.canceler.take() {
+            let _ = sender.send(());
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -216,7 +322,7 @@ mod tests {
     use super::{TestTimer, TimeEvent};
 
     #[rstest]
-    fn test_pop_event() {
+    fn test_test_timer_pop_event() {
         let mut timer = TestTimer::new("test_timer", 0, 1, None);
 
         assert!(timer.next().is_some());
@@ -226,7 +332,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_advance_within_next_time_ns() {
+    fn test_test_timer_advance_within_next_time_ns() {
         let mut timer = TestTimer::new("test_timer", 5, 0, None);
         let _: Vec<TimeEvent> = timer.advance(1).collect();
         let _: Vec<TimeEvent> = timer.advance(2).collect();
@@ -237,28 +343,28 @@ mod tests {
     }
 
     #[rstest]
-    fn test_advance_up_to_next_time_ns() {
+    fn test_test_timer_advance_up_to_next_time_ns() {
         let mut timer = TestTimer::new("test_timer", 1, 0, None);
         assert_eq!(timer.advance(1).count(), 1);
         assert!(!timer.is_expired);
     }
 
     #[rstest]
-    fn test_advance_up_to_next_time_ns_with_stop_time() {
+    fn test_test_timer_advance_up_to_next_time_ns_with_stop_time() {
         let mut timer = TestTimer::new("test_timer", 1, 0, Some(2));
         assert_eq!(timer.advance(2).count(), 2);
         assert!(timer.is_expired);
     }
 
     #[rstest]
-    fn test_advance_beyond_next_time_ns() {
+    fn test_test_timer_advance_beyond_next_time_ns() {
         let mut timer = TestTimer::new("test_timer", 1, 0, Some(5));
         assert_eq!(timer.advance(5).count(), 5);
         assert!(timer.is_expired);
     }
 
     #[rstest]
-    fn test_advance_beyond_stop_time() {
+    fn test_test_timer_advance_beyond_stop_time() {
         let mut timer = TestTimer::new("test_timer", 1, 0, Some(5));
         assert_eq!(timer.advance(10).count(), 5);
         assert!(timer.is_expired);

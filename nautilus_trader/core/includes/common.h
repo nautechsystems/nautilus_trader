@@ -372,10 +372,10 @@ uintptr_t test_clock_timer_count(struct TestClock_API *clock);
  * - Assumes `name_ptr` is a valid C string pointer.
  * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
  */
-void test_clock_set_time_alert_ns(struct TestClock_API *clock,
-                                  const char *name_ptr,
-                                  uint64_t alert_time_ns,
-                                  PyObject *callback_ptr);
+void test_clock_set_time_alert(struct TestClock_API *clock,
+                               const char *name_ptr,
+                               uint64_t alert_time_ns,
+                               PyObject *callback_ptr);
 
 /**
  * # Safety
@@ -383,12 +383,12 @@ void test_clock_set_time_alert_ns(struct TestClock_API *clock,
  * - Assumes `name_ptr` is a valid C string pointer.
  * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
  */
-void test_clock_set_timer_ns(struct TestClock_API *clock,
-                             const char *name_ptr,
-                             uint64_t interval_ns,
-                             uint64_t start_time_ns,
-                             uint64_t stop_time_ns,
-                             PyObject *callback_ptr);
+void test_clock_set_timer(struct TestClock_API *clock,
+                          const char *name_ptr,
+                          uint64_t interval_ns,
+                          uint64_t start_time_ns,
+                          uint64_t stop_time_ns,
+                          PyObject *callback_ptr);
 
 /**
  * # Safety
@@ -404,7 +404,7 @@ void vec_time_event_handlers_drop(CVec v);
  *
  * - Assumes `name_ptr` is a valid C string pointer.
  */
-uint64_t test_clock_next_time_ns(struct TestClock_API *clock, const char *name_ptr);
+uint64_t test_clock_next_time(struct TestClock_API *clock, const char *name_ptr);
 
 /**
  * # Safety
@@ -419,6 +419,13 @@ struct LiveClock_API live_clock_new(void);
 
 void live_clock_drop(struct LiveClock_API clock);
 
+/**
+ * # Safety
+ *
+ * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+ */
+void live_clock_register_default_handler(struct LiveClock_API *clock, PyObject *callback_ptr);
+
 double live_clock_timestamp(struct LiveClock_API *clock);
 
 uint64_t live_clock_timestamp_ms(struct LiveClock_API *clock);
@@ -426,6 +433,50 @@ uint64_t live_clock_timestamp_ms(struct LiveClock_API *clock);
 uint64_t live_clock_timestamp_us(struct LiveClock_API *clock);
 
 uint64_t live_clock_timestamp_ns(struct LiveClock_API *clock);
+
+PyObject *live_clock_timer_names(const struct LiveClock_API *clock);
+
+uintptr_t live_clock_timer_count(struct LiveClock_API *clock);
+
+/**
+ * # Safety
+ *
+ * - Assumes `name_ptr` is a valid C string pointer.
+ * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+ */
+void live_clock_set_time_alert(struct LiveClock_API *clock,
+                               const char *name_ptr,
+                               uint64_t alert_time_ns,
+                               PyObject *callback_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `name_ptr` is a valid C string pointer.
+ * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+ */
+void live_clock_set_timer(struct LiveClock_API *clock,
+                          const char *name_ptr,
+                          uint64_t interval_ns,
+                          uint64_t start_time_ns,
+                          uint64_t stop_time_ns,
+                          PyObject *callback_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `name_ptr` is a valid C string pointer.
+ */
+uint64_t live_clock_next_time(struct LiveClock_API *clock, const char *name_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `name_ptr` is a valid C string pointer.
+ */
+void live_clock_cancel_timer(struct LiveClock_API *clock, const char *name_ptr);
+
+void live_clock_cancel_timers(struct LiveClock_API *clock);
 
 const char *component_state_to_cstr(enum ComponentState value);
 

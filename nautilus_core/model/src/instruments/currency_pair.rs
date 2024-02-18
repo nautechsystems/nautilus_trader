@@ -28,7 +28,7 @@ use super::Instrument;
 use crate::{
     enums::{AssetClass, InstrumentClass},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
-    types::{currency::Currency, price::Price, quantity::Quantity},
+    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
 #[repr(C)]
@@ -39,43 +39,26 @@ use crate::{
 )]
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct CurrencyPair {
-    #[pyo3(get)]
     pub id: InstrumentId,
-    #[pyo3(get)]
     pub raw_symbol: Symbol,
-    #[pyo3(get)]
     pub base_currency: Currency,
-    #[pyo3(get)]
     pub quote_currency: Currency,
-    #[pyo3(get)]
     pub price_precision: u8,
-    #[pyo3(get)]
     pub size_precision: u8,
-    #[pyo3(get)]
     pub price_increment: Price,
-    #[pyo3(get)]
     pub size_increment: Quantity,
-    #[pyo3(get)]
     pub maker_fee: Decimal,
-    #[pyo3(get)]
     pub taker_fee: Decimal,
-    #[pyo3(get)]
     pub margin_init: Decimal,
-    #[pyo3(get)]
     pub margin_maint: Decimal,
-    #[pyo3(get)]
     pub lot_size: Option<Quantity>,
-    #[pyo3(get)]
     pub max_quantity: Option<Quantity>,
-    #[pyo3(get)]
     pub min_quantity: Option<Quantity>,
-    #[pyo3(get)]
+    pub max_notional: Option<Money>,
+    pub min_notional: Option<Money>,
     pub max_price: Option<Price>,
-    #[pyo3(get)]
     pub min_price: Option<Price>,
-    #[pyo3(get)]
     pub ts_event: UnixNanos,
-    #[pyo3(get)]
     pub ts_init: UnixNanos,
 }
 
@@ -97,6 +80,8 @@ impl CurrencyPair {
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
+        max_notional: Option<Money>,
+        min_notional: Option<Money>,
         max_price: Option<Price>,
         min_price: Option<Price>,
         ts_event: UnixNanos,
@@ -118,6 +103,8 @@ impl CurrencyPair {
             lot_size,
             max_quantity,
             min_quantity,
+            max_notional,
+            min_notional,
             max_price,
             min_price,
             ts_event,
@@ -225,15 +212,19 @@ impl Instrument for CurrencyPair {
     fn as_any(&self) -> &dyn Any {
         self
     }
+
     fn margin_init(&self) -> Decimal {
         self.margin_init
     }
+
     fn margin_maint(&self) -> Decimal {
         self.margin_maint
     }
+
     fn taker_fee(&self) -> Decimal {
         self.taker_fee
     }
+
     fn maker_fee(&self) -> Decimal {
         self.maker_fee
     }

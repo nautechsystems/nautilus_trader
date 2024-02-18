@@ -26,7 +26,6 @@ from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
 from nautilus_trader.adapters.databento.constants import DATABENTO_CLIENT_ID
 from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
-from nautilus_trader.adapters.databento.enums import DatabentoRecordFlags
 from nautilus_trader.adapters.databento.enums import DatabentoSchema
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
@@ -43,7 +42,6 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDelta
-from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
@@ -58,6 +56,9 @@ class DatabentoDataClient(LiveMarketDataClient):
     """
     Provides a data client for the `Databento` API.
 
+    Both Historical and Live APIs are leveraged to provide historical data
+    for requests, and live data feeds based on subscriptions.
+
     Parameters
     ----------
     loop : asyncio.AbstractEventLoop
@@ -70,14 +71,12 @@ class DatabentoDataClient(LiveMarketDataClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
+    instrument_provder : DatabentoInstrumentProvider
+        The instrument provider for the client.
     loader : DatabentoDataLoader, optional
         The loader for the client.
     config : DatabentoDataClientConfig, optional
         The configuration for the client.
-
-    Warnings
-    --------
-    This class should not be used directly, but through a concrete subclass.
 
     """
 
@@ -123,6 +122,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._loader = loader or DatabentoDataLoader()
         self._dataset_ranges: dict[Dataset, tuple[pd.Timestamp, pd.Timestamp]] = {}
         self._dataset_ranges_requested: set[Dataset] = set()
+        self._trade_tick_subscriptions: set[InstrumentId] = set()
 
         # Cache parent symbol index
         for dataset, parent_symbols in (config.parent_symbols or {}).items():
@@ -138,6 +138,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._is_buffering_mbo_subscriptions: bool = bool(config.mbo_subscriptions_delay)
         self._buffered_mbo_subscriptions: dict[Dataset, list[InstrumentId]] = defaultdict(list)
         self._buffered_deltas: dict[InstrumentId, list[OrderBookDelta]] = defaultdict(list)
+        self._buffering_replay: dict[InstrumentId, int] = {}
 
         # Tasks
         self._live_client_futures: set[asyncio.Future] = set()
@@ -156,7 +157,12 @@ class DatabentoDataClient(LiveMarketDataClient):
         coros: list[Coroutine] = []
         for dataset, instrument_ids in self._instrument_ids.items():
             loading_ids: list[InstrumentId] = sorted(instrument_ids)
-            coros.append(self._instrument_provider.load_ids_async(instrument_ids=loading_ids))
+            filters = {"parent_symbols": list(self._parent_symbols.get(dataset, []))}
+            coro = self._instrument_provider.load_ids_async(
+                instrument_ids=loading_ids,
+                filters=filters,
+            )
+            coros.append(coro)
             await self._subscribe_instrument_ids(dataset, instrument_ids=loading_ids)
 
         try:
@@ -219,6 +225,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _buffer_mbo_subscriptions(self) -> None:
         try:
+            self._log.debug("Buffering MBO subscriptions...", LogColor.MAGENTA)
             await asyncio.sleep(self._mbo_subscriptions_delay or 0.0)
             self._is_buffering_mbo_subscriptions = False
 
@@ -267,7 +274,9 @@ class DatabentoDataClient(LiveMarketDataClient):
     ) -> None:
         if not self._has_subscribed.get(dataset):
             self._log.debug(f"Starting {dataset} live client...", LogColor.MAGENTA)
-            future = asyncio.ensure_future(live_client.start(callback=self._handle_record))
+            future = asyncio.ensure_future(
+                live_client.start(callback=self._handle_record, replay=False),
+            )
             self._live_client_futures.add(future)
             self._has_subscribed[dataset] = True
             self._log.info(f"Started {dataset} live feed.", LogColor.BLUE)
@@ -445,7 +454,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 self._buffered_mbo_subscriptions[dataset].append(instrument_id)
                 return
 
-            if self._get_live_client_mbo(dataset) is not None:
+            if self._live_clients_mbo.get(dataset) is not None:
                 self._log.error(
                     f"Cannot subscribe to order book deltas for {instrument_id}, "
                     "MBO/L3 feed already started.",
@@ -480,20 +489,38 @@ class DatabentoDataClient(LiveMarketDataClient):
             if not instrument_ids:
                 return  # No subscribing instrument IDs were loaded in the cache
 
+            ids_str = ",".join([i.value for i in instrument_ids])
+            self._log.info(f"Subscribing to MBO/L3 for {ids_str}.", LogColor.BLUE)
+
+            # Setup buffered start times
+            now = self._clock.utc_now()
+            for instrument_id in instrument_ids:
+                self._buffering_replay[instrument_id] = now.value
+
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_ids[0].venue)
             live_client = self._get_live_client_mbo(dataset)
+
+            # Subscribe from UTC midnight snapshot
+            start = self._clock.utc_now().normalize()
+
+            self._log.info(f"Replaying MBO/L3 feeds from {start}.", LogColor.BLUE)
+
             future = asyncio.ensure_future(
                 live_client.subscribe(
                     schema=DatabentoSchema.MBO.value,
                     symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
-                    start=0,  # Must subscribe from start of week to get 'Sunday snapshot' for now
+                    start=start.value,
                 ),
             )
             self._live_client_futures.add(future)
             await future
-            future = asyncio.ensure_future(live_client.start(self._handle_record))
+
+            # Add trade tick subscriptions for all instruments (MBO data includes trades)
+            for instrument_id in instrument_ids:
+                self._trade_tick_subscriptions.add(instrument_id)
+
+            future = asyncio.ensure_future(live_client.start(self._handle_record, replay=True))
             self._live_client_futures.add(future)
-            await future
         except asyncio.CancelledError:
             self._log.warning(
                 "`_subscribe_order_book_deltas_batch` was canceled while still pending.",
@@ -548,14 +575,18 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             self._live_client_futures.add(future)
             await future
+
+            # Add trade tick subscriptions for instrument (MBP-1 data includes trades)
+            self._trade_tick_subscriptions.add(instrument_id)
+
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_quote_ticks` was canceled while still pending.")
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         try:
-            if instrument_id in self.subscribed_quote_ticks():
-                return  # Already subscribed for trades
+            if instrument_id in self._trade_tick_subscriptions:
+                return  # Already subscribed (this will save on data costs)
 
             await self._ensure_subscribed_for_instrument(instrument_id)
 
@@ -842,20 +873,8 @@ class DatabentoDataClient(LiveMarketDataClient):
         self,
         pycapsule: object,
     ) -> None:
-        # self._log.debug(f"Received {record}", LogColor.MAGENTA)
-
+        # The capsule will fall out of scope at the end of this method,
+        # and eventually be garbage collected. The contained pointer
+        # to `Data` is still owned and managed by Rust.
         data = capsule_to_data(pycapsule)
-
-        if isinstance(data, OrderBookDelta):
-            instrument_id = data.instrument_id
-            if DatabentoRecordFlags.F_LAST not in DatabentoRecordFlags(data.flags):
-                buffer = self._buffered_deltas[instrument_id]
-                buffer.append(data)
-                return  # We can rely on the F_LAST flag for an MBO feed
-            else:
-                buffer = self._buffered_deltas[instrument_id]
-                buffer.append(data)
-                data = OrderBookDeltas(instrument_id, deltas=buffer.copy())
-                buffer.clear()
-
         self._handle_data(data)

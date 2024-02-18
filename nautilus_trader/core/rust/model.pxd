@@ -359,6 +359,12 @@ cdef extern from "../includes/model.h":
     cdef struct OrderBook:
         pass
 
+    # Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
+    #
+    # This type cannot be `repr(C)` due to the `deltas` vec.
+    cdef struct OrderBookDeltas_t:
+        pass
+
     # Represents a synthetic instrument with prices derived from component instruments using a
     # formula.
     cdef struct SyntheticInstrument:
@@ -418,6 +424,17 @@ cdef extern from "../includes/model.h":
         uint64_t ts_event;
         # The UNIX timestamp (nanoseconds) when the data object was initialized.
         uint64_t ts_init;
+
+    # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
+    #
+    # This struct wraps `OrderBookDeltas` in a way that makes it compatible with C function
+    # calls, enabling interaction with `OrderBookDeltas` in a C environment.
+    #
+    # It implements the `Deref` trait, allowing instances of `OrderBookDeltas_API` to be
+    # dereferenced to `OrderBookDeltas`, providing access to `OrderBookDeltas`'s methods without
+    # having to manually access the underlying `OrderBookDeltas` instance.
+    cdef struct OrderBookDeltas_API:
+        OrderBookDeltas_t *_0;
 
     # Represents a self-contained order book update with a fixed depth of 10 levels per side.
     #
@@ -533,6 +550,7 @@ cdef extern from "../includes/model.h":
 
     cpdef enum Data_t_Tag:
         DELTA,
+        DELTAS,
         DEPTH10,
         QUOTE,
         TRADE,
@@ -541,6 +559,7 @@ cdef extern from "../includes/model.h":
     cdef struct Data_t:
         Data_t_Tag tag;
         OrderBookDelta_t delta;
+        OrderBookDeltas_API deltas;
         OrderBookDepth10_t depth10;
         QuoteTick_t quote;
         TradeTick_t trade;
@@ -826,6 +845,33 @@ cdef extern from "../includes/model.h":
     uint8_t orderbook_delta_eq(const OrderBookDelta_t *lhs, const OrderBookDelta_t *rhs);
 
     uint64_t orderbook_delta_hash(const OrderBookDelta_t *delta);
+
+    # Creates a new `OrderBookDeltas` object from a CVec of `OrderBookDelta`.
+    #
+    # # Safety
+    # - The `deltas` must be a valid pointer to a `CVec` containing `OrderBookDelta` objects
+    # - This function clones the data pointed to by `deltas` into Rust-managed memory, then forgets the original `Vec` to prevent Rust from auto-deallocating it
+    # - The caller is responsible for managing the memory of `deltas` (including its deallocation) to avoid memory leaks
+    OrderBookDeltas_API orderbook_deltas_new(InstrumentId_t instrument_id,
+                                             const CVec *deltas);
+
+    void orderbook_deltas_drop(OrderBookDeltas_API deltas);
+
+    InstrumentId_t orderbook_deltas_instrument_id(const OrderBookDeltas_API *deltas);
+
+    CVec orderbook_deltas_vec_deltas(const OrderBookDeltas_API *deltas);
+
+    uint8_t orderbook_deltas_is_snapshot(const OrderBookDeltas_API *deltas);
+
+    uint8_t orderbook_deltas_flags(const OrderBookDeltas_API *deltas);
+
+    uint64_t orderbook_deltas_sequence(const OrderBookDeltas_API *deltas);
+
+    uint64_t orderbook_deltas_ts_event(const OrderBookDeltas_API *deltas);
+
+    uint64_t orderbook_deltas_ts_init(const OrderBookDeltas_API *deltas);
+
+    void orderbook_deltas_vec_drop(CVec v);
 
     # # Safety
     #
@@ -1424,6 +1470,8 @@ cdef extern from "../includes/model.h":
     void orderbook_clear_asks(OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
 
     void orderbook_apply_delta(OrderBook_API *book, OrderBookDelta_t delta);
+
+    void orderbook_apply_deltas(OrderBook_API *book, const OrderBookDeltas_API *deltas);
 
     void orderbook_apply_depth(OrderBook_API *book, OrderBookDepth10_t depth);
 

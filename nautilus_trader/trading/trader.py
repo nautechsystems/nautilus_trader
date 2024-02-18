@@ -32,7 +32,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.component import Clock
 from nautilus_trader.common.component import Component
-from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.data.engine import DataEngine
@@ -299,17 +298,12 @@ class Trader(Component):
                 "try specifying a different actor ID.",
             )
 
-        if isinstance(self._clock, LiveClock):
-            clock = self._clock.__class__(loop=self._loop)
-        else:
-            clock = self._clock.__class__()
-
         # Wire component into trader
         actor.register_base(
             portfolio=self._portfolio,
             msgbus=self._msgbus,
             cache=self._cache,
-            clock=clock,  # Clock per component
+            clock=self._clock.__class__(),  # Clock per component
         )
 
         self._actors[actor.id] = actor
@@ -367,11 +361,6 @@ class Trader(Component):
                 "try specifying a different strategy ID.",
             )
 
-        if isinstance(self._clock, LiveClock):
-            clock = self._clock.__class__(loop=self._loop)
-        else:
-            clock = self._clock.__class__()
-
         # Confirm strategy ID
         order_id_tags: list[str] = [s.order_id_tag for s in self._strategies.values()]
         if strategy.order_id_tag in (None, str(None)):
@@ -394,7 +383,7 @@ class Trader(Component):
             portfolio=self._portfolio,
             msgbus=self._msgbus,
             cache=self._cache,
-            clock=clock,  # Clock per strategy
+            clock=self._clock.__class__(),  # Clock per strategy
         )
 
         self._exec_engine.register_oms_type(strategy)
@@ -454,18 +443,13 @@ class Trader(Component):
                 "try specifying a different `exec_algorithm_id`.",
             )
 
-        if isinstance(self._clock, LiveClock):
-            clock = self._clock.__class__(loop=self._loop)
-        else:
-            clock = self._clock.__class__()
-
         # Wire execution algorithm into trader
         exec_algorithm.register(
             trader_id=self.id,
             portfolio=self._portfolio,
             msgbus=self._msgbus,
             cache=self._cache,
-            clock=clock,  # Clock per algorithm
+            clock=self._clock.__class__(),  # Clock per algorithm
         )
 
         self._exec_algorithms[exec_algorithm.id] = exec_algorithm

@@ -42,8 +42,8 @@ use crate::{
 /// It implements the `Deref` trait, allowing instances of `SyntheticInstrument_API` to be
 /// dereferenced to `SyntheticInstrument`, providing access to `SyntheticInstruments`'s methods without
 /// having to manually access the underlying instance.
-#[allow(non_camel_case_types)]
 #[repr(C)]
+#[allow(non_camel_case_types)]
 pub struct SyntheticInstrument_API(Box<SyntheticInstrument>);
 
 impl Deref for SyntheticInstrument_API {
