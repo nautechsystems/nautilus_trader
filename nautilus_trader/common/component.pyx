@@ -496,6 +496,49 @@ cdef class Clock:
         raise NotImplementedError("method `cancel_timers` must be implemented in the subclass")  # pragma: no cover
 
 
+# Global map of clocks per kernel instance used when running a `BacktestEngine`
+_COMPONENT_CLOCKS = {}
+
+
+cdef list[TestClock] get_component_clocks(UUID4 instance_id):
+    # Create a shallow copy of the clocks list, in case a new
+    # clock is registered during iteration.
+    return _COMPONENT_CLOCKS[instance_id].copy()
+
+
+cpdef void register_component_clock(UUID4 instance_id, Clock clock):
+    Condition.not_none(instance_id, "instance_id")
+    Condition.not_none(clock, "clock")
+
+    cdef list[Clock] clocks = _COMPONENT_CLOCKS.get(instance_id)
+
+    if clocks is None:
+        clocks = []
+        _COMPONENT_CLOCKS[instance_id] = clocks
+
+    if clock not in clocks:
+        clocks.append(clock)
+
+
+cpdef void deregister_component_clock(UUID4 instance_id, Clock clock):
+    Condition.not_none(instance_id, "instance_id")
+    Condition.not_none(clock, "clock")
+
+    cdef list[Clock] clocks = _COMPONENT_CLOCKS.get(instance_id)
+
+    if clocks is None:
+        return
+
+    if clock in clocks:
+        clocks.remove(clock)
+
+
+cpdef void remove_instance_component_clocks(UUID4 instance_id):
+    Condition.not_none(instance_id, "instance_id")
+
+    _COMPONENT_CLOCKS.pop(instance_id, None)
+
+
 cdef class TestClock(Clock):
     """
     Provides a monotonic clock for backtesting and unit testing.
@@ -1271,7 +1314,7 @@ cpdef str component_trigger_to_str(ComponentTrigger value):
     return cstr_to_pystr(component_trigger_to_cstr(value))
 
 
-cdef dict _COMPONENT_STATE_TABLE = {
+cdef dict[tuple[ComponentState, ComponentTrigger], ComponentState] _COMPONENT_STATE_TABLE = {
     (ComponentState.PRE_INITIALIZED, ComponentTrigger.INITIALIZE): ComponentState.READY,
     (ComponentState.READY, ComponentTrigger.RESET): ComponentState.RESETTING,  # Transitional state
     (ComponentState.READY, ComponentTrigger.START): ComponentState.STARTING,  # Transitional state
