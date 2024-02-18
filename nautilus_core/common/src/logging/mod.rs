@@ -361,9 +361,9 @@ impl fmt::Display for LogLine {
 impl Log for Logger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
         !LOGGING_BYPASSED.load(Ordering::Relaxed)
-            && (metadata.level() <= self.config.stdout_level
-                || metadata.level() <= self.config.fileout_level
-                || metadata.level() == Level::Error)
+            && (metadata.level() == Level::Error
+                || metadata.level() <= self.config.stdout_level
+                || metadata.level() <= self.config.fileout_level)
     }
 
     fn log(&self, record: &log::Record) {
