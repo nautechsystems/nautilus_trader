@@ -67,8 +67,8 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class ExecAlgorithm(Actor):
-    cdef dict _exec_spawn_ids
-    cdef set _subscribed_strategies
+    cdef dict[ClientOrderId, int] _exec_spawn_ids
+    cdef set[StrategyId] _subscribed_strategies
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
