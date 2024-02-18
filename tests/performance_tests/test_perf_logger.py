@@ -34,7 +34,7 @@ def test_logging(benchmark: Any) -> None:
     init_logging(
         trader_id=TraderId("TRADER-000"),
         instance_id=UUID4._safe_constructor(),
-        level_stdout=LogLevel.Error,
+        level_stdout=LogLevel.Off,
     )
 
     logger = Logger(name="TEST_LOGGER")
@@ -77,6 +77,6 @@ def test_logging(benchmark: Any) -> None:
         for i in range(100_000):
             message = random.choice(messages)
             # unique log messages to prevent caching during string conversion
-            logger.info(f"{i}: {message}")
+            logger.error(f"{i}: {message}")
 
     benchmark.pedantic(run, rounds=10, iterations=2, warmup_rounds=1)
