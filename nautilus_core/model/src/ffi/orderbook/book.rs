@@ -20,7 +20,7 @@ use std::{
 
 use nautilus_core::ffi::{cvec::CVec, string::str_to_cstr};
 
-use super::level::Level_API;
+use super::{container::OrderBookContainer, level::Level_API};
 use crate::{
     data::{
         delta::OrderBookDelta, depth::OrderBookDepth10, order::BookOrder, quote::QuoteTick,
@@ -29,7 +29,6 @@ use crate::{
     enums::{BookType, OrderSide},
     ffi::data::deltas::OrderBookDeltas_API,
     identifiers::instrument_id::InstrumentId,
-    orderbook::book::OrderBook,
     types::{price::Price, quantity::Quantity},
 };
 
@@ -43,10 +42,10 @@ use crate::{
 /// having to manually access the underlying `OrderBook` instance.
 #[repr(C)]
 #[allow(non_camel_case_types)]
-pub struct OrderBook_API(Box<OrderBook>);
+pub struct OrderBook_API(Box<OrderBookContainer>);
 
 impl Deref for OrderBook_API {
-    type Target = OrderBook;
+    type Target = OrderBookContainer;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -61,7 +60,7 @@ impl DerefMut for OrderBook_API {
 
 #[no_mangle]
 pub extern "C" fn orderbook_new(instrument_id: InstrumentId, book_type: BookType) -> OrderBook_API {
-    OrderBook_API(Box::new(OrderBook::new(instrument_id, book_type)))
+    OrderBook_API(Box::new(OrderBookContainer::new(instrument_id, book_type)))
 }
 
 #[no_mangle]
@@ -86,17 +85,17 @@ pub extern "C" fn orderbook_book_type(book: &OrderBook_API) -> BookType {
 
 #[no_mangle]
 pub extern "C" fn orderbook_sequence(book: &OrderBook_API) -> u64 {
-    book.sequence
+    book.sequence()
 }
 
 #[no_mangle]
 pub extern "C" fn orderbook_ts_last(book: &OrderBook_API) -> u64 {
-    book.ts_last
+    book.ts_last()
 }
 
 #[no_mangle]
 pub extern "C" fn orderbook_count(book: &OrderBook_API) -> u64 {
-    book.count
+    book.count()
 }
 
 #[no_mangle]

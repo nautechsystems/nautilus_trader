@@ -23,7 +23,6 @@ use databento::live::Subscription;
 use dbn::{PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy};
 use indexmap::IndexMap;
 use log::{error, info};
-use nautilus_common::runtime::get_runtime;
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_core::time::AtomicTime;
 use nautilus_core::{
@@ -76,7 +75,8 @@ impl DatabentoLiveClient {
         match &self.inner {
             Some(client) => Ok(client.clone()),
             None => {
-                let client = get_runtime().block_on(self.initialize_client())?;
+                let rt = pyo3_asyncio::tokio::get_runtime();
+                let client = rt.block_on(self.initialize_client())?;
                 self.inner = Some(Arc::new(Mutex::new(client)));
                 Ok(self.inner.clone().unwrap())
             }

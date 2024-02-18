@@ -38,7 +38,7 @@ use crate::{
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct BarSpecification {
@@ -73,7 +73,7 @@ impl Display for BarSpecification {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct BarType {
     /// The bar types instrument ID.
@@ -206,7 +206,7 @@ impl<'de> Deserialize<'de> for BarType {
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Bar {
     /// The bar type for this bar.

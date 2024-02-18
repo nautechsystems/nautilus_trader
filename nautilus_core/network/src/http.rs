@@ -94,7 +94,7 @@ impl InnerHttpClient {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 pub enum HttpMethod {
     GET,
@@ -130,7 +130,7 @@ impl HttpMethod {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 pub struct HttpResponse {
     #[pyo3(get)]
@@ -169,7 +169,7 @@ impl HttpResponse {
 
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 pub struct HttpClient {
     rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,

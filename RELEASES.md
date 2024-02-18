@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added `managed` parameter to `subscribe_order_book_snapshots`, default true to retain current behavior (if false then the data engine will not automatically manage a book)
 - Removed `interval_ms` 20 millisecond limitation for `subscribe_order_book_snapshots` (i.e. just needs to be positive), although we recommend you consider subscribing to deltas below 100 milliseconds
 - Ported `LiveClock` and `LiveTimer` implementations to Rust
+- Implemented `OrderBookDeltas` pickling
 - Implemented `AverageTrueRange` in Rust, thanks @rsmb7z
 
 ### Breaking Changes
@@ -15,6 +16,8 @@ None
 ### Fixes
 - Fixed FOK time in force behavior (allows fills beyond the top level, will cancel if cannot fill full size)
 - Fixed IOC time in force behavior (allows fills beyond the top level, will cancel any remaining after all fills are applied)
+- Fixed `LiveClock` timer behavior for small intervals causing next time to be less than now (timer then would not run)
+- Fixed log level filtering for `log_level_file` (bug introduced in v1.187.0), thanks @twitu
 - Fixed logging `print_config` config option (was not being passed through to the logging system)
 - Fixed logging timestamps for backtesting (static clock was not being incrementally set to individual `TimeEvent` timestamps)
 - Fixed account balance updates (fills from zero quantity `NETTING` positions will generate account balance updates)

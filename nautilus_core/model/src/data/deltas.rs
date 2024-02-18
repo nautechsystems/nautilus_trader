@@ -19,7 +19,6 @@ use std::{
 };
 
 use nautilus_core::time::UnixNanos;
-use pyo3::prelude::*;
 
 use super::delta::OrderBookDelta;
 use crate::identifiers::instrument_id::InstrumentId;
@@ -30,7 +29,7 @@ use crate::identifiers::instrument_id::InstrumentId;
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct OrderBookDeltas {
     /// The instrument ID for the book.

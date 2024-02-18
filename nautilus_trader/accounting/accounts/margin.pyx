@@ -669,13 +669,10 @@ cdef class MarginAccount(Account):
         cdef:
             object leverage = self.leverage(instrument.id)
             double margin_impact = 1.0 / leverage
-            Money raw_money
+            Money notional = instrument.notional_value(quantity, price)
         if order_side == OrderSide.BUY:
-            raw_money = -instrument.notional_value(quantity, price)
-            return Money(raw_money * margin_impact, raw_money.currency)
+            return Money(-notional.as_f64_c() * margin_impact, notional.currency)
         elif order_side == OrderSide.SELL:
-            raw_money = instrument.notional_value(quantity, price)
-            return Money(raw_money * margin_impact, raw_money.currency)
-
-        else:
+            return Money(notional.as_f64_c() * margin_impact, notional.currency)
+        else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid `OrderSide`, was {order_side}")  # pragma: no cover (design-time error)

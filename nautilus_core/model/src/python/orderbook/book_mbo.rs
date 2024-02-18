@@ -12,14 +12,3 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
-use std::sync::OnceLock;
-
-use tokio::runtime::Runtime;
-
-static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-
-pub fn get_runtime() -> &'static tokio::runtime::Runtime {
-    // Using default configuration values for now
-    RUNTIME.get_or_init(|| Runtime::new().expect("Failed to create tokio runtime"))
-}
