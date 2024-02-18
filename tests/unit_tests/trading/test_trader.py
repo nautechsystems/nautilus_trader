@@ -28,6 +28,7 @@ from nautilus_trader.common.component import TestClock
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.config import ExecAlgorithmConfig
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.blank import MyStrategy
 from nautilus_trader.examples.strategies.blank import MyStrategyConfig
@@ -132,6 +133,7 @@ class TestTrader:
 
         self.trader = Trader(
             trader_id=self.trader_id,
+            instance_id=UUID4(),
             msgbus=self.msgbus,
             cache=self.cache,
             portfolio=self.portfolio,

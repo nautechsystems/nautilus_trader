@@ -16,6 +16,7 @@
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.core.data cimport Data
@@ -32,6 +33,7 @@ cdef class BacktestEngine:
     cdef TimeEventAccumulatorAPI _accumulator
 
     cdef object _kernel
+    cdef UUID4 _instance_id
     cdef DataEngine _data_engine
     cdef str _run_config_id
     cdef UUID4 _run_id
@@ -40,18 +42,17 @@ cdef class BacktestEngine:
     cdef datetime _backtest_start
     cdef datetime _backtest_end
 
-    cdef dict _venues
-    cdef list _data
+    cdef dict[Venue, SimulatedExchange] _venues
+    cdef list[Data] _data
     cdef uint64_t _data_len
     cdef uint64_t _index
     cdef uint64_t _iteration
 
     cdef Data _next(self)
-    cdef CVec _advance_time(self, uint64_t ts_now, list clocks)
+    cdef CVec _advance_time(self, uint64_t ts_now)
     cdef void _process_raw_time_event_handlers(
         self,
         CVec raw_handlers,
-        list clocks,
         uint64_t ts_now,
         bint only_now,
     )

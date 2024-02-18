@@ -39,6 +39,7 @@ from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.component import init_tracing
 from nautilus_trader.common.component import is_logging_initialized
 from nautilus_trader.common.component import log_header
+from nautilus_trader.common.component import register_component_clock
 from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
@@ -152,6 +153,8 @@ class NautilusKernel:
             raise NotImplementedError(  # pragma: no cover (design-time error)
                 f"environment {self._environment} not recognized",  # pragma: no cover (design-time error)
             )
+
+        register_component_clock(self._instance_id, self._clock)
 
         # Setup logging
         logging: LoggingConfig = config.logging or LoggingConfig()
@@ -382,6 +385,7 @@ class NautilusKernel:
         ########################################################################
         self._trader = Trader(
             trader_id=self._trader_id,
+            instance_id=self._instance_id,
             msgbus=self._msgbus,
             cache=self._cache,
             portfolio=self._portfolio,

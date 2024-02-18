@@ -48,6 +48,7 @@ from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport TestClock
 from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.common.component cimport TimeEventHandler
+from nautilus_trader.common.component cimport get_component_clocks
 from nautilus_trader.common.component cimport log_level_from_str
 from nautilus_trader.common.component cimport log_sysinfo
 from nautilus_trader.common.component cimport set_logging_clock_realtime_mode
@@ -137,6 +138,7 @@ cdef class BacktestEngine:
 
         # Build core system kernel
         self._kernel = NautilusKernel(name=type(self).__name__, config=config)
+        self._instance_id = self._kernel.instance_id
         self._log = Logger(type(self).__name__)
 
         self._data_engine: DataEngine = self._kernel.data_engine
@@ -1009,15 +1011,9 @@ cdef class BacktestEngine:
         Condition.true(start_ns < end_ns, "start was >= end")
         Condition.not_empty(self._data, "data")
 
-        # Gather clocks
-        cdef list clocks = [self.kernel.clock]
-        cdef Actor actor
-        for actor in self._kernel.trader.actors() + self._kernel.trader.strategies() + self._kernel.trader.exec_algorithms():
-            clocks.append(actor.clock)
-
         # Set clocks
         cdef TestClock clock
-        for clock in clocks:
+        for clock in get_component_clocks(self._instance_id):
             clock.set_time(start_ns)
 
         cdef SimulatedExchange exchange
@@ -1079,7 +1075,7 @@ cdef class BacktestEngine:
                     break
                 if data.ts_init > last_ns:
                     # Advance clocks to the next data time
-                    raw_handlers = self._advance_time(data.ts_init, clocks)
+                    raw_handlers = self._advance_time(data.ts_init)
                     raw_handlers_count = raw_handlers.len
 
                 # Process data through venue
@@ -1117,7 +1113,6 @@ cdef class BacktestEngine:
                     # Finally process the time events
                     self._process_raw_time_event_handlers(
                         raw_handlers,
-                        clocks,
                         last_ns,
                         only_now=True,
                     )
@@ -1143,7 +1138,6 @@ cdef class BacktestEngine:
         if raw_handlers_count > 0:
             self._process_raw_time_event_handlers(
                 raw_handlers,
-                clocks,
                 last_ns,
                 only_now=True,
             )
@@ -1155,7 +1149,9 @@ cdef class BacktestEngine:
         if cursor < self._data_len:
             return self._data[cursor]
 
-    cdef CVec _advance_time(self, uint64_t ts_now, list clocks):
+    cdef CVec _advance_time(self, uint64_t ts_now):
+        cdef list[TestClock] clocks = get_component_clocks(self._instance_id)
+
         cdef TestClock clock
         for clock in clocks:
             time_event_accumulator_advance_clock(
@@ -1170,7 +1166,6 @@ cdef class BacktestEngine:
         # Handle all events prior to the `ts_now`
         self._process_raw_time_event_handlers(
             raw_handlers,
-            clocks,
             ts_now,
             only_now=False,
         )
@@ -1186,7 +1181,6 @@ cdef class BacktestEngine:
     cdef void _process_raw_time_event_handlers(
         self,
         CVec raw_handler_vec,
-        list clocks,
         uint64_t ts_now,
         bint only_now,
     ):
@@ -1208,7 +1202,7 @@ cdef class BacktestEngine:
 
             # Set all clocks to event timestamp
             set_logging_clock_static_time(ts_event_init)
-            for clock in clocks:
+            for clock in get_component_clocks(self._instance_id):
                 clock.set_time(ts_event_init)
 
             event = TimeEvent.from_mem_c(raw_handler.event)

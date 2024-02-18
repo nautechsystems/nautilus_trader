@@ -80,6 +80,13 @@ cdef class Clock:
     cpdef void cancel_timers(self)
 
 
+cdef dict[UUID4, Clock] _COMPONENT_CLOCKS
+
+cdef list[TestClock] get_component_clocks(UUID4 instance_id)
+cpdef void register_component_clock(UUID4 instance_id, Clock clock)
+cpdef void deregister_component_clock(UUID4 instance_id, Clock clock)
+
+
 cdef class TestClock(Clock):
     cdef TestClock_API _mem
 
