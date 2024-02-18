@@ -17,13 +17,25 @@ import random
 from typing import Any
 
 from nautilus_trader.common.component import Logger
-from nautilus_trader.common.component import init_logging
-from nautilus_trader.common.enums import LogLevel
+from nautilus_trader.core.nautilus_pyo3 import UUID4
+
+# Cython
+# from nautilus_trader.common.component import init_logging
+# from nautilus_trader.common.enums import LogLevel
+from nautilus_trader.core.nautilus_pyo3 import LogLevel
+from nautilus_trader.core.nautilus_pyo3 import TraderId
+from nautilus_trader.core.nautilus_pyo3 import init_logging
 
 
 def test_logging(benchmark: Any) -> None:
     random.seed(45362718)
-    init_logging(level_stdout=LogLevel.ERROR, bypass=True)
+    # Cython
+    # init_logging(level_stdout=LogLevel.ERROR, bypass=True)
+    init_logging(
+        trader_id=TraderId("TRADER-000"),
+        instance_id=UUID4._safe_constructor(),
+        level_stdout=LogLevel.Error,
+    )
 
     logger = Logger(name="TEST_LOGGER")
 

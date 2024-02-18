@@ -151,7 +151,6 @@ cpdef bint is_logging_initialized()
 
 cdef class Logger:
     cdef str _name
-    cdef const char* _name_ptr
 
     cpdef void debug(self, str message, LogColor color=*)
     cpdef void info(self, str message, LogColor color=*)

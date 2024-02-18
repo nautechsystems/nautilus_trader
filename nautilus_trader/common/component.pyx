@@ -55,17 +55,6 @@ from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Event
-
-
-# from nautilus_trader.core.rust.common cimport logger_log
-# from nautilus_trader.core.nautilus_pyo3 import LogColor
-
-from nautilus_trader.core.nautilus_pyo3 import LogLevel
-
-
-# from nautilus_trader.core.rust.common cimport LogColor
-# from nautilus_trader.core.rust.common cimport LogLevel
-
 from nautilus_trader.core.rust.common cimport ComponentState
 from nautilus_trader.core.rust.common cimport ComponentTrigger
 from nautilus_trader.core.rust.common cimport TimeEventHandler_t
@@ -138,6 +127,17 @@ from nautilus_trader.model.identifiers cimport Identifier
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.serialization.base cimport _EXTERNAL_PUBLISHABLE_TYPES
 from nautilus_trader.serialization.base cimport Serializer
+
+
+# from nautilus_trader.core.rust.common cimport logger_log
+# from nautilus_trader.core.nautilus_pyo3 import LogColor
+
+# from nautilus_trader.core.nautilus_pyo3 import LogLevel
+
+
+# from nautilus_trader.core.rust.common cimport LogColor
+# from nautilus_trader.core.rust.common cimport LogLevel
+
 
 
 cdef class Clock:
@@ -1093,7 +1093,6 @@ cdef class Logger:
         Condition.valid_string(name, "name")
 
         self._name = name  # Reference to `name` needs to be kept alive
-        self._name_ptr = pystr_to_cstr(self._name)
 
     @property
     def name(self) -> str:
