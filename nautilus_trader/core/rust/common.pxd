@@ -235,21 +235,21 @@ cdef extern from "../includes/common.h":
     #
     # - Assumes `name_ptr` is a valid C string pointer.
     # - Assumes `callback_ptr` is a valid `PyCallable` pointer.
-    void test_clock_set_time_alert_ns(TestClock_API *clock,
-                                      const char *name_ptr,
-                                      uint64_t alert_time_ns,
-                                      PyObject *callback_ptr);
+    void test_clock_set_time_alert(TestClock_API *clock,
+                                   const char *name_ptr,
+                                   uint64_t alert_time_ns,
+                                   PyObject *callback_ptr);
 
     # # Safety
     #
     # - Assumes `name_ptr` is a valid C string pointer.
     # - Assumes `callback_ptr` is a valid `PyCallable` pointer.
-    void test_clock_set_timer_ns(TestClock_API *clock,
-                                 const char *name_ptr,
-                                 uint64_t interval_ns,
-                                 uint64_t start_time_ns,
-                                 uint64_t stop_time_ns,
-                                 PyObject *callback_ptr);
+    void test_clock_set_timer(TestClock_API *clock,
+                              const char *name_ptr,
+                              uint64_t interval_ns,
+                              uint64_t start_time_ns,
+                              uint64_t stop_time_ns,
+                              PyObject *callback_ptr);
 
     # # Safety
     #
@@ -261,7 +261,7 @@ cdef extern from "../includes/common.h":
     # # Safety
     #
     # - Assumes `name_ptr` is a valid C string pointer.
-    uint64_t test_clock_next_time_ns(TestClock_API *clock, const char *name_ptr);
+    uint64_t test_clock_next_time(TestClock_API *clock, const char *name_ptr);
 
     # # Safety
     #
@@ -274,6 +274,11 @@ cdef extern from "../includes/common.h":
 
     void live_clock_drop(LiveClock_API clock);
 
+    # # Safety
+    #
+    # - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+    void live_clock_register_default_handler(LiveClock_API *clock, PyObject *callback_ptr);
+
     double live_clock_timestamp(LiveClock_API *clock);
 
     uint64_t live_clock_timestamp_ms(LiveClock_API *clock);
@@ -281,6 +286,42 @@ cdef extern from "../includes/common.h":
     uint64_t live_clock_timestamp_us(LiveClock_API *clock);
 
     uint64_t live_clock_timestamp_ns(LiveClock_API *clock);
+
+    PyObject *live_clock_timer_names(const LiveClock_API *clock);
+
+    uintptr_t live_clock_timer_count(LiveClock_API *clock);
+
+    # # Safety
+    #
+    # - Assumes `name_ptr` is a valid C string pointer.
+    # - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+    void live_clock_set_time_alert(LiveClock_API *clock,
+                                   const char *name_ptr,
+                                   uint64_t alert_time_ns,
+                                   PyObject *callback_ptr);
+
+    # # Safety
+    #
+    # - Assumes `name_ptr` is a valid C string pointer.
+    # - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+    void live_clock_set_timer(LiveClock_API *clock,
+                              const char *name_ptr,
+                              uint64_t interval_ns,
+                              uint64_t start_time_ns,
+                              uint64_t stop_time_ns,
+                              PyObject *callback_ptr);
+
+    # # Safety
+    #
+    # - Assumes `name_ptr` is a valid C string pointer.
+    uint64_t live_clock_next_time(LiveClock_API *clock, const char *name_ptr);
+
+    # # Safety
+    #
+    # - Assumes `name_ptr` is a valid C string pointer.
+    void live_clock_cancel_timer(LiveClock_API *clock, const char *name_ptr);
+
+    void live_clock_cancel_timers(LiveClock_API *clock);
 
     const char *component_state_to_cstr(ComponentState value);
 

@@ -1184,6 +1184,7 @@ cdef class Actor(Component):
         int depth = 0,
         dict kwargs = None,
         ClientId client_id = None,
+        bint managed = True,
     ):
         """
         Subscribe to the order book data stream, being a snapshot then deltas
@@ -1202,6 +1203,8 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        managed : bool, default True
+            If an order book should be managed by the data engine based on the subscribed feed.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -1222,6 +1225,7 @@ cdef class Actor(Component):
                 "book_type": book_type,
                 "depth": depth,
                 "kwargs": kwargs,
+                "managed": managed,
             }),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
@@ -1237,6 +1241,7 @@ cdef class Actor(Component):
         int interval_ms = 1000,
         dict kwargs = None,
         ClientId client_id = None,
+        bint managed = True,
     ):
         """
         Subscribe to `OrderBook` snapshots at a specified interval, for the given instrument ID.
@@ -1254,28 +1259,30 @@ cdef class Actor(Component):
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
         interval_ms : int
-            The order book snapshot interval in milliseconds (not less than 20 milliseconds).
+            The order book snapshot interval in milliseconds (must be positive).
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        managed : bool, default True
+            If an order book should be managed by the data engine based on the subscribed feed.
 
         Raises
         ------
         ValueError
             If `depth` is negative (< 0).
         ValueError
-            If `interval_ms` is less than the minimum of 20.
+            If `interval_ms` is not positive (> 0).
 
         Warnings
         --------
-        Consider subscribing to order book deltas if you need intervals less than 20 milliseconds.
+        Consider subscribing to order book deltas if you need intervals less than 100 milliseconds.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_negative(depth, "depth")
-        Condition.true(interval_ms >= 20, f"`interval_ms` {interval_ms} was less than minimum 20")
+        Condition.positive_int(interval_ms, "interval_ms")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         if book_type == BookType.L1_MBP and depth > 1:
@@ -1302,6 +1309,7 @@ cdef class Actor(Component):
                 "depth": depth,
                 "interval_ms": interval_ms,
                 "kwargs": kwargs,
+                "managed": managed,
             }),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),

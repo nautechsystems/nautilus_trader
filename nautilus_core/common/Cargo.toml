@@ -24,6 +24,7 @@ serde_json = { workspace = true }
 strum = { workspace = true }
 ustr = { workspace = true }
 rstest = { workspace = true , optional = true}
+tokio = { workspace = true }
 tracing = { workspace = true }
 sysinfo = "0.30.5"
 # Disable default feature "tracing-log" since it interferes with custom logging

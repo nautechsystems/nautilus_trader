@@ -24,81 +24,87 @@ use nautilus_model::{
 };
 use pyo3::{exceptions::PyRuntimeError, prelude::*, types::PyTuple};
 
-use crate::databento::parsing::{
-    parse_equity_v1, parse_futures_contract_v1, parse_mbo_msg, parse_mbp10_msg, parse_mbp1_msg,
-    parse_options_contract_v1, parse_trade_msg,
+use crate::databento::decode::{
+    decode_equity_v1, decode_futures_contract_v1, decode_mbo_msg, decode_mbp10_msg,
+    decode_mbp1_msg, decode_options_contract_v1, decode_trade_msg,
 };
 
 #[pyfunction]
-#[pyo3(name = "parse_equity")]
-pub fn py_parse_equity(
+#[pyo3(name = "decode_equity")]
+pub fn py_decode_equity(
     record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> PyResult<Equity> {
-    parse_equity_v1(record, instrument_id, ts_init).map_err(to_pyvalue_err)
+    decode_equity_v1(record, instrument_id, ts_init).map_err(to_pyvalue_err)
 }
 
 #[pyfunction]
-#[pyo3(name = "parse_futures_contract")]
-pub fn py_parse_futures_contract(
+#[pyo3(name = "decode_futures_contract")]
+pub fn py_decode_futures_contract(
     record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> PyResult<FuturesContract> {
-    parse_futures_contract_v1(record, instrument_id, ts_init).map_err(to_pyvalue_err)
+    decode_futures_contract_v1(record, instrument_id, ts_init).map_err(to_pyvalue_err)
 }
 
 #[pyfunction]
-#[pyo3(name = "parse_options_contract")]
-pub fn py_parse_options_contract(
+#[pyo3(name = "decode_options_contract")]
+pub fn py_decode_options_contract(
     record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> PyResult<OptionsContract> {
-    parse_options_contract_v1(record, instrument_id, ts_init).map_err(to_pyvalue_err)
+    decode_options_contract_v1(record, instrument_id, ts_init).map_err(to_pyvalue_err)
 }
 
 #[pyfunction]
-#[pyo3(name = "parse_mbo_msg")]
-pub fn py_parse_mbo_msg(
+#[pyo3(name = "decode_mbo_msg")]
+pub fn py_decode_mbo_msg(
     py: Python,
     record: &dbn::MboMsg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> PyResult<PyObject> {
-    let result = parse_mbo_msg(record, instrument_id, price_precision, ts_init);
+    let result = decode_mbo_msg(record, instrument_id, price_precision, ts_init, false);
 
     match result {
-        Ok((Some(delta), None)) => Ok(delta.into_py(py)),
-        Ok((None, Some(trade))) => Ok(trade.into_py(py)),
+        Ok((Some(data), None)) => Ok(data.into_py(py)),
         Err(e) => Err(to_pyvalue_err(e)),
         _ => Err(PyRuntimeError::new_err("Error parsing MBO message")),
     }
 }
 
 #[pyfunction]
-#[pyo3(name = "parse_trade_msg")]
-pub fn py_parse_trade_msg(
+#[pyo3(name = "decode_trade_msg")]
+pub fn py_decode_trade_msg(
     record: &dbn::TradeMsg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> PyResult<TradeTick> {
-    parse_trade_msg(record, instrument_id, price_precision, ts_init).map_err(to_pyvalue_err)
+    decode_trade_msg(record, instrument_id, price_precision, ts_init).map_err(to_pyvalue_err)
 }
 
 #[pyfunction]
-#[pyo3(name = "parse_mbp1_msg")]
-pub fn py_parse_mbp1_msg(
+#[pyo3(name = "decode_mbp1_msg")]
+pub fn py_decode_mbp1_msg(
     py: Python,
     record: &dbn::Mbp1Msg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
+    include_trades: bool,
 ) -> PyResult<PyObject> {
-    let result = parse_mbp1_msg(record, instrument_id, price_precision, ts_init);
+    let result = decode_mbp1_msg(
+        record,
+        instrument_id,
+        price_precision,
+        ts_init,
+        include_trades,
+    );
 
     match result {
         Ok((quote, Some(trade))) => {
@@ -120,12 +126,12 @@ pub fn py_parse_mbp1_msg(
 }
 
 #[pyfunction]
-#[pyo3(name = "parse_mbp10_msg")]
-pub fn py_parse_mbp10_msg(
+#[pyo3(name = "decode_mbp10_msg")]
+pub fn py_decode_mbp10_msg(
     record: &dbn::Mbp10Msg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> PyResult<OrderBookDepth10> {
-    parse_mbp10_msg(record, instrument_id, price_precision, ts_init).map_err(to_pyvalue_err)
+    decode_mbp10_msg(record, instrument_id, price_precision, ts_init).map_err(to_pyvalue_err)
 }

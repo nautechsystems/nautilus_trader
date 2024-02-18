@@ -127,12 +127,9 @@ mod tests {
 
             let mut accumulator = TimeEventAccumulator::new();
 
-            let time_event1 =
-                TimeEvent::new(Ustr::from("TEST_EVENT_1"), UUID4::new(), 100, 100).unwrap();
-            let time_event2 =
-                TimeEvent::new(Ustr::from("TEST_EVENT_2"), UUID4::new(), 300, 300).unwrap();
-            let time_event3 =
-                TimeEvent::new(Ustr::from("TEST_EVENT_3"), UUID4::new(), 200, 200).unwrap();
+            let time_event1 = TimeEvent::new(Ustr::from("TEST_EVENT_1"), UUID4::new(), 100, 100);
+            let time_event2 = TimeEvent::new(Ustr::from("TEST_EVENT_2"), UUID4::new(), 300, 300);
+            let time_event3 = TimeEvent::new(Ustr::from("TEST_EVENT_3"), UUID4::new(), 200, 200);
 
             // Note: as_ptr returns a borrowed pointer. It is valid as long
             // as the object is in scope. In this case `callback_ptr` is valid

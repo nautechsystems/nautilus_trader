@@ -20,6 +20,7 @@ from typing import Any
 import msgspec
 
 from nautilus_trader.common.config import NautilusConfig
+from nautilus_trader.common.config import msgspec_encoding_hook
 from nautilus_trader.common.config import resolve_config_path
 from nautilus_trader.common.config import resolve_path
 from nautilus_trader.core.correctness import PyCondition
@@ -109,5 +110,6 @@ class ExecAlgorithmFactory:
         PyCondition.type(config, ImportableExecAlgorithmConfig, "config")
         exec_algorithm_cls = resolve_path(config.exec_algorithm_path)
         config_cls = resolve_config_path(config.config_path)
-        config = config_cls.parse(msgspec.json.encode(config.config))
+        json = msgspec.json.encode(config.config, enc_hook=msgspec_encoding_hook)
+        config = config_cls.parse(json)
         return exec_algorithm_cls(config=config)

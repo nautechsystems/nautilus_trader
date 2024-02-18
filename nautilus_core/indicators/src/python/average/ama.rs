@@ -43,6 +43,16 @@ impl AdaptiveMovingAverage {
         .map_err(to_pyvalue_err)
     }
 
+    fn __repr__(&self) -> String {
+        format!(
+            "WeightedMovingAverage({}({},{},{})",
+            self.name(),
+            self.period_efficiency_ratio,
+            self.period_fast,
+            self.period_slow
+        )
+    }
+
     #[getter]
     #[pyo3(name = "name")]
     fn py_name(&self) -> String {
@@ -90,15 +100,5 @@ impl AdaptiveMovingAverage {
     #[pyo3(name = "update_raw")]
     fn py_update_raw(&mut self, value: f64) {
         self.update_raw(value);
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "WeightedMovingAverage({}({},{},{})",
-            self.name(),
-            self.period_efficiency_ratio,
-            self.period_fast,
-            self.period_slow
-        )
     }
 }

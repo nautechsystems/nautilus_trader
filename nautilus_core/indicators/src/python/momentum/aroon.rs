@@ -26,6 +26,10 @@ impl AroonOscillator {
         Self::new(period).map_err(to_pyvalue_err)
     }
 
+    fn __repr__(&self) -> String {
+        format!("AroonOscillator({})", self.period)
+    }
+
     #[getter]
     #[pyo3(name = "name")]
     fn py_name(&self) -> String {
@@ -96,10 +100,6 @@ impl AroonOscillator {
 
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
-        self.reset()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("AroonOscillator({})", self.period)
+        self.reset();
     }
 }

@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    borrow::Cow,
     ffi::{c_char, CStr, CString},
     str,
 };
@@ -112,22 +111,6 @@ pub unsafe fn optional_cstr_to_str(ptr: *const c_char) -> Option<&'static str> {
     } else {
         Some(cstr_to_str(ptr))
     }
-}
-
-/// Convert a C string pointer into a static <code>[Cow]<[str]></code>.
-/// Invalid UTF-8 sequences will be replaced with a replacement character.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-///
-/// # Panics
-///
-/// - If `ptr` is null.
-#[must_use]
-pub unsafe fn cstr_to_lossy_cow(ptr: *const c_char) -> Cow<'static, str> {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    CStr::from_ptr(ptr).to_string_lossy()
 }
 
 /// Create a C string pointer to newly allocated memory from a [&str].

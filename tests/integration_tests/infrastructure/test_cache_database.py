@@ -1128,4 +1128,4 @@ class TestRedisCacheDatabaseIntegrity:
         await asyncio.sleep(0.5)
 
         # Assert
-        assert eventually(lambda: self.engine.cache.check_integrity())
+        await eventually(lambda: self.engine.cache.check_integrity())

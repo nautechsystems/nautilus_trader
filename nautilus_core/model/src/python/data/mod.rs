@@ -15,11 +15,13 @@
 
 pub mod bar;
 pub mod delta;
+pub mod deltas;
 pub mod depth;
 pub mod order;
 pub mod quote;
 pub mod trade;
 
+use nautilus_core::ffi::cvec::CVec;
 use pyo3::{prelude::*, types::PyCapsule};
 
 use crate::data::Data;
@@ -45,4 +47,29 @@ use crate::data::Data;
 pub fn data_to_pycapsule(py: Python, data: Data) -> PyObject {
     let capsule = PyCapsule::new(py, data, None).expect("Error creating `PyCapsule`");
     capsule.into_py(py)
+}
+
+/// Drops a `PyCapsule` containing a `CVec` structure.
+///
+/// This function safely extracts and drops the `CVec` instance encapsulated within
+/// a `PyCapsule` object. It is intended for cleaning up after the `Data` instances
+/// have been transferred into Python and are no longer needed.
+///
+/// # Panics
+///
+/// Panics if the capsule cannot be downcast to a `PyCapsule`, indicating a type mismatch
+/// or improper capsule handling.
+///
+/// # Safety
+///
+/// This function is unsafe as it involves raw pointer dereferencing and manual memory
+/// management. The caller must ensure the `PyCapsule` contains a valid `CVec` pointer.
+/// Incorrect usage can lead to memory corruption or undefined behavior.
+#[pyfunction]
+pub fn drop_cvec_pycapsule(capsule: &PyAny) {
+    let capsule: &PyCapsule = capsule.downcast().expect("Error on downcast to capsule");
+    let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
+    let data: Vec<Data> =
+        unsafe { Vec::from_raw_parts(cvec.ptr.cast::<Data>(), cvec.len, cvec.cap) };
+    drop(data);
 }

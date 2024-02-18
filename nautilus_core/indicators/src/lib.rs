@@ -17,6 +17,7 @@ pub mod average;
 pub mod indicator;
 pub mod momentum;
 pub mod ratio;
+pub mod volatility;
 
 #[cfg(test)]
 mod stubs;
