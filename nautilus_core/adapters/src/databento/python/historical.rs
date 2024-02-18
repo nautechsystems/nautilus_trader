@@ -48,11 +48,11 @@ use super::loader::convert_instrument_to_pyobject;
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
 )]
 pub struct DatabentoHistoricalClient {
+    #[pyo3(get)]
+    pub key: String,
     clock: &'static AtomicTime,
     inner: Arc<Mutex<databento::HistoricalClient>>,
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
-    #[pyo3(get)]
-    pub key: String,
 }
 
 #[pymethods]

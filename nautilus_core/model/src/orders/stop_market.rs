@@ -44,7 +44,6 @@ use crate::{
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct StopMarketOrder {
-    core: OrderCore,
     pub trigger_price: Price,
     pub trigger_type: TriggerType,
     pub expire_time: Option<UnixNanos>,
@@ -52,6 +51,7 @@ pub struct StopMarketOrder {
     pub trigger_instrument_id: Option<InstrumentId>,
     pub is_triggered: bool,
     pub ts_triggered: Option<UnixNanos>,
+    core: OrderCore,
 }
 
 impl StopMarketOrder {

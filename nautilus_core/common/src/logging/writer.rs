@@ -35,9 +35,9 @@ pub trait LogWriter {
 
 #[derive(Debug)]
 pub struct StdoutWriter {
+    pub is_colored: bool,
     buf: BufWriter<Stdout>,
     level: LevelFilter,
-    pub is_colored: bool,
 }
 
 impl StdoutWriter {
@@ -72,8 +72,8 @@ impl LogWriter for StdoutWriter {
 
 #[derive(Debug)]
 pub struct StderrWriter {
-    buf: BufWriter<Stderr>,
     pub is_colored: bool,
+    buf: BufWriter<Stderr>,
 }
 
 impl StderrWriter {
@@ -132,12 +132,12 @@ impl FileWriterConfig {
 
 #[derive(Debug)]
 pub struct FileWriter {
+    pub json_format: bool,
     buf: BufWriter<File>,
     path: PathBuf,
     file_config: FileWriterConfig,
     trader_id: String,
     instance_id: String,
-    pub json_format: bool,
     level: LevelFilter,
 }
 
@@ -169,12 +169,12 @@ impl FileWriter {
             .open(file_path.clone())
         {
             Ok(file) => Some(Self {
+                json_format,
                 buf: BufWriter::new(file),
                 path: file_path,
                 file_config,
                 trader_id,
                 instance_id,
-                json_format,
                 level: fileout_level,
             }),
             Err(e) => {

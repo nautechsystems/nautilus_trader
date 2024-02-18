@@ -272,10 +272,10 @@ pub fn init_logging(
 /// channel.
 #[derive(Debug)]
 pub struct Logger {
-    /// Send log events to a different thread.
-    tx: Sender<LogEvent>,
     /// Configure maximum levels for components and IO.
     pub config: LoggerConfig,
+    /// Send log events to a different thread.
+    tx: Sender<LogEvent>,
 }
 
 /// Represents a type of log event.

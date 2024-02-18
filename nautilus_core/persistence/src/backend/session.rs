@@ -61,10 +61,10 @@ pub type QueryResult = KMerge<EagerStream<std::vec::IntoIter<Data>>, Data, TsIni
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.persistence")
 )]
 pub struct DataBackendSession {
-    session_ctx: SessionContext,
-    batch_streams: Vec<EagerStream<IntoIter<Data>>>,
     pub chunk_size: usize,
     pub runtime: Arc<tokio::runtime::Runtime>,
+    session_ctx: SessionContext,
+    batch_streams: Vec<EagerStream<IntoIter<Data>>>,
 }
 
 impl DataBackendSession {
