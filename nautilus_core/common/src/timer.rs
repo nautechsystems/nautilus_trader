@@ -28,7 +28,7 @@ use pyo3::{ffi, types::PyCapsule, IntoPy, PyObject, Python};
 use tokio::sync::oneshot;
 use ustr::Ustr;
 
-use crate::{handlers::EventHandler, runtime::get_runtime};
+use crate::handlers::EventHandler;
 
 #[repr(C)]
 #[derive(Clone, Debug)]
@@ -255,7 +255,7 @@ impl LiveTimer {
         let (cancel_tx, mut cancel_rx) = oneshot::channel();
         self.canceler = Some(cancel_tx);
 
-        get_runtime().spawn(async move {
+        pyo3_asyncio::tokio::get_runtime().spawn(async move {
             let clock = get_atomic_clock_realtime();
             if start_time_ns == 0 {
                 start_time_ns = clock.get_time_ns();

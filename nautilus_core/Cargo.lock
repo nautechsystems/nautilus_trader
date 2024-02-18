@@ -2484,6 +2484,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-model",
  "pyo3",
+ "pyo3-asyncio",
  "redis",
  "rstest",
  "serde",
