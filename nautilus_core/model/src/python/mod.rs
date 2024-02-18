@@ -108,6 +108,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     // Order book
     m.add_class::<crate::orderbook::book_mbo::OrderBookMbo>()?;
     m.add_class::<crate::orderbook::book_mbp::OrderBookMbp>()?;
+    m.add_class::<crate::orderbook::level::Level>()?;
     // Events - order
     m.add_class::<crate::events::order::denied::OrderDenied>()?;
     m.add_class::<crate::events::order::filled::OrderFilled>()?;
