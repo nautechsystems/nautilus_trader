@@ -30,7 +30,7 @@ from nautilus_trader.core.nautilus_pyo3 import init_logging
 def test_logging(benchmark: Any) -> None:
     random.seed(45362718)
     # Cython
-    # init_logging(level_stdout=LogLevel.ERROR, bypass=True)
+    # init_logging(level_stdout=LogLevel.OFF, bypass=True)
     init_logging(
         trader_id=TraderId("TRADER-000"),
         instance_id=UUID4._safe_constructor(),
