@@ -22,6 +22,10 @@ use crate::{
 };
 
 #[derive(Clone, Debug, Eq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct Level {
     pub price: BookPrice,
     pub orders: BTreeMap<OrderId, BookOrder>,

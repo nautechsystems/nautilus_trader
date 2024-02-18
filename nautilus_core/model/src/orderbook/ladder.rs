@@ -29,6 +29,10 @@ use crate::{
 
 /// Represents a price level with a specified side in an order books ladder.
 #[derive(Clone, Copy, Debug, Eq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct BookPrice {
     pub value: Price,
     pub side: OrderSide,
