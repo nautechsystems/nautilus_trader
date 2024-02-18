@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::time::UnixNanos;
+use pyo3;
 
 use super::{
     book::{get_avg_px_for_quantity, get_quantity_for_price},
@@ -31,6 +32,11 @@ use crate::{
 };
 
 /// Provides an order book which can handle MBO/L3 granularity data.
+#[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct OrderBookMbo {
     pub instrument_id: InstrumentId,
     pub sequence: u64,

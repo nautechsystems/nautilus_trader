@@ -27,7 +27,7 @@ use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 use crate::{
     data::order::{BookOrder, OrderId},
     enums::OrderSide,
-    python::PY_MODULE_MODEL,
+    python::common::PY_MODULE_MODEL,
     types::{price::Price, quantity::Quantity},
 };
 

@@ -32,6 +32,11 @@ use crate::{
 };
 
 /// Provides an order book which can handle MBP/L2 or L1 (top only) granularity data.
+#[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct OrderBookMbp {
     pub instrument_id: InstrumentId,
     pub top_only: bool,

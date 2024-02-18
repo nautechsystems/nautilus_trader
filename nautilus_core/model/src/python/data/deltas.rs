@@ -24,7 +24,7 @@ use pyo3::{prelude::*, pyclass::CompareOp};
 use crate::{
     data::{delta::OrderBookDelta, deltas::OrderBookDeltas},
     identifiers::instrument_id::InstrumentId,
-    python::PY_MODULE_MODEL,
+    python::common::PY_MODULE_MODEL,
 };
 
 #[pymethods]

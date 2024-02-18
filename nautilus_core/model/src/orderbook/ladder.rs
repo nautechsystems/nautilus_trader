@@ -70,6 +70,7 @@ impl Display for BookPrice {
 }
 
 /// Represents one side of an order book as a ladder of price levels.
+#[derive(Clone, Debug)]
 pub struct Ladder {
     pub side: OrderSide,
     pub levels: BTreeMap<BookPrice, Level>,
@@ -164,12 +165,12 @@ impl Ladder {
 
     #[must_use]
     pub fn sizes(&self) -> f64 {
-        return self.levels.values().map(|l| l.size()).sum();
+        self.levels.values().map(|l| l.size()).sum()
     }
 
     #[must_use]
     pub fn exposures(&self) -> f64 {
-        return self.levels.values().map(|l| l.exposure()).sum();
+        self.levels.values().map(|l| l.exposure()).sum()
     }
 
     #[must_use]
@@ -203,11 +204,11 @@ impl Ladder {
                         fills.push((book_order.price, remainder));
                     }
                     return fills;
-                } else {
-                    // Add this fill and continue
-                    fills.push((book_order.price, current));
-                    cumulative_denominator += current;
                 }
+
+                // Add this fill and continue
+                fills.push((book_order.price, current));
+                cumulative_denominator += current;
             }
         }
 

@@ -33,7 +33,7 @@ use crate::{
     },
     enums::OrderSide,
     identifiers::instrument_id::InstrumentId,
-    python::PY_MODULE_MODEL,
+    python::common::PY_MODULE_MODEL,
     types::{price::Price, quantity::Quantity},
 };
 
