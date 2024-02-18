@@ -2171,6 +2171,48 @@ cdef class OrderBookDeltas(Data):
         PyMem_Free(cvec.ptr) # De-allocate buffer
         PyMem_Free(cvec) # De-allocate cvec
 
+    def __getstate__(self):
+        return (
+            self.instrument_id.value,
+            pickle.dumps(self.deltas),
+        )
+
+    def __setstate__(self, state):
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
+
+        cdef list deltas = pickle.loads(state[1])
+
+        cdef uint64_t len_ = len(deltas)
+
+        # Create a C OrderBookDeltas_t buffer
+        cdef OrderBookDelta_t* data = <OrderBookDelta_t *>PyMem_Malloc(len_ * sizeof(OrderBookDelta_t))
+        if not data:
+            raise MemoryError()
+
+        cdef uint64_t i
+        cdef OrderBookDelta delta
+        for i in range(len_):
+            delta = deltas[i]
+            data[i] = <OrderBookDelta_t>delta._mem
+
+        # Create CVec
+        cdef CVec* cvec = <CVec *>PyMem_Malloc(1 * sizeof(CVec))
+        if not cvec:
+            raise MemoryError()
+
+        cvec.ptr = data
+        cvec.len = len_
+        cvec.cap = len_
+
+        # Transfer data to Rust
+        self._mem = orderbook_deltas_new(
+            instrument_id._mem,
+            cvec,
+        )
+
+        PyMem_Free(cvec.ptr) # De-allocate buffer
+        PyMem_Free(cvec) # De-allocate cvec
+
     def __del__(self) -> None:
         if self._mem._0 != NULL:
             orderbook_deltas_drop(self._mem)
