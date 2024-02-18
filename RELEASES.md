@@ -21,6 +21,7 @@ None
 - Fixed logging `print_config` config option (was not being passed through to the logging system)
 - Fixed logging timestamps for backtesting (static clock was not being incrementally set to individual `TimeEvent` timestamps)
 - Fixed account balance updates (fills from zero quantity `NETTING` positions will generate account balance updates)
+- Fixed `MessageBus` publishable types collection type (needed to be `tuple` not `set`)
 - Fixed `Controller` registration of components to ensure all active clocks are iterated correctly during backtests
 - Fixed `Equity` short selling for `CASH` accounts (will now reject)
 - Fixed `ActorFactory.create` JSON encoding (was missing the encoding hook)
