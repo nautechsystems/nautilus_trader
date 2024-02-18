@@ -55,6 +55,8 @@ class InstrumentProvider:
         self._loaded = False
         self._loading = False
 
+        self._tasks: set[asyncio.Task] = set()
+
         self._log.info("READY.")
 
     @property
@@ -172,7 +174,8 @@ class InstrumentProvider:
         """
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            loop.create_task(self.load_all_async(filters))
+            task = loop.create_task(self.load_all_async(filters))
+            self._tasks.add(task)
         else:
             loop.run_until_complete(self.load_all_async(filters))
 
@@ -197,7 +200,8 @@ class InstrumentProvider:
 
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            loop.create_task(self.load_ids_async(instrument_ids, filters))
+            task = loop.create_task(self.load_ids_async(instrument_ids, filters))
+            self._tasks.add(task)
         else:
             loop.run_until_complete(self.load_ids_async(instrument_ids, filters))
 
@@ -222,7 +226,8 @@ class InstrumentProvider:
 
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            loop.create_task(self.load_async(instrument_id, filters))
+            task = loop.create_task(self.load_async(instrument_id, filters))
+            self._tasks.add(task)
         else:
             loop.run_until_complete(self.load_async(instrument_id, filters))
 
