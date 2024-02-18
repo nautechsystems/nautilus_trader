@@ -660,10 +660,7 @@ typedef enum TriggerType {
 
 typedef struct Level Level;
 
-/**
- * Provides an order book which can handle L1/L2/L3 granularity data.
- */
-typedef struct OrderBook OrderBook;
+typedef struct OrderBookContainer OrderBookContainer;
 
 /**
  * Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
@@ -1254,7 +1251,7 @@ typedef struct SyntheticInstrument_API {
  * having to manually access the underlying `OrderBook` instance.
  */
 typedef struct OrderBook_API {
-    struct OrderBook *_0;
+    struct OrderBookContainer *_0;
 } OrderBook_API;
 
 /**
