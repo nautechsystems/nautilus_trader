@@ -355,7 +355,7 @@ cdef class OrderEmulator(Actor):
         cdef Order order = command.order
         cdef TriggerType emulation_trigger = command.order.emulation_trigger
         Condition.not_equal(emulation_trigger, TriggerType.NO_TRIGGER, "command.order.emulation_trigger", "TriggerType.NO_TRIGGER")
-        Condition.not_in(command.order.client_order_id, self._manager.get_submit_order_commands(), "command.order.client_order_id", "self._commands_submit_order")
+        Condition.not_in(command.order.client_order_id, self._manager.get_submit_order_commands(), "command.order.client_order_id", "manager.submit_order_commands")
 
         if emulation_trigger not in SUPPORTED_TRIGGERS:
             self._log.error(
