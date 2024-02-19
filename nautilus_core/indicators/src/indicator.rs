@@ -15,15 +15,45 @@
 
 use std::{fmt, fmt::Debug};
 
-use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
+use nautilus_model::{
+    data::{
+        bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10,
+        quote::QuoteTick, trade::TradeTick,
+    },
+    orderbook::{book_mbo::OrderBookMbo, book_mbp::OrderBookMbp},
+};
 
+const IMPL_ERR: &str = "is not implemented for";
+
+#[allow(unused_variables)]
 pub trait Indicator {
     fn name(&self) -> String;
     fn has_inputs(&self) -> bool;
     fn is_initialized(&self) -> bool;
-    fn handle_quote_tick(&mut self, tick: &QuoteTick);
-    fn handle_trade_tick(&mut self, tick: &TradeTick);
-    fn handle_bar(&mut self, bar: &Bar);
+    fn handle_delta(&mut self, delta: &OrderBookDelta) {
+        panic!("`handle_delta` {} `{}`", IMPL_ERR, self.name());
+    }
+    fn handle_deltas(&mut self, deltas: &OrderBookDeltas) {
+        panic!("`handle_deltas` {} `{}`", IMPL_ERR, self.name());
+    }
+    fn handle_depth(&mut self, depth: &OrderBookDepth10) {
+        panic!("`handle_depth` {} `{}`", IMPL_ERR, self.name());
+    }
+    fn handle_order_book_mbo(&mut self, book: &OrderBookMbo) {
+        panic!("`handle_order_book_mbo` {} `{}`", IMPL_ERR, self.name());
+    }
+    fn handle_order_book_mbp(&mut self, book: &OrderBookMbp) {
+        panic!("`handle_order_book_mbp` {} `{}`", IMPL_ERR, self.name());
+    }
+    fn handle_quote_tick(&mut self, quote: &QuoteTick) {
+        panic!("`handle_quote_tick` {} `{}`", IMPL_ERR, self.name());
+    }
+    fn handle_trade_tick(&mut self, trade: &TradeTick) {
+        panic!("`handle_trade_tick` {} `{}`", IMPL_ERR, self.name());
+    }
+    fn handle_bar(&mut self, bar: &Bar) {
+        panic!("`handle_bar` {} `{}`", IMPL_ERR, self.name());
+    }
     fn reset(&mut self);
 }
 

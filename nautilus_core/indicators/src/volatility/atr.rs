@@ -16,7 +16,7 @@
 use std::fmt::{Debug, Display};
 
 use anyhow::Result;
-use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
+use nautilus_model::data::bar::Bar;
 use pyo3::prelude::*;
 
 use crate::{
@@ -66,14 +66,6 @@ impl Indicator for AverageTrueRange {
 
     fn is_initialized(&self) -> bool {
         self.is_initialized
-    }
-
-    fn handle_quote_tick(&mut self, _tick: &QuoteTick) {
-        // Function body intentionally left blank.
-    }
-
-    fn handle_trade_tick(&mut self, _tick: &TradeTick) {
-        // Function body intentionally left blank.
     }
 
     fn handle_bar(&mut self, bar: &Bar) {
