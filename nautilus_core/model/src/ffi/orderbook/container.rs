@@ -33,9 +33,9 @@ pub struct OrderBookContainer {
     mbp: Option<OrderBookMbp>,
 }
 
-const L3_MBO_NOT_INITILIZED: &str = "L3 MBO book not initialized";
-const L2_MBP_NOT_INITILIZED: &str = "L2 MBP book not initialized";
-const L1_MBP_NOT_INITILIZED: &str = "L1 MBP book not initialized";
+const L3_MBO_NOT_INITILIZED: &str = "L3_MBO book not initialized";
+const L2_MBP_NOT_INITILIZED: &str = "L2_MBP book not initialized";
+const L1_MBP_NOT_INITILIZED: &str = "L1_MBP book not initialized";
 
 impl OrderBookContainer {
     #[must_use]
@@ -184,17 +184,17 @@ impl OrderBookContainer {
 
     pub fn bids(&self) -> Vec<&Level> {
         match self.book_type {
-            BookType::L3_MBO => self.get_mbo().bids(),
-            BookType::L2_MBP => self.get_mbp().bids(),
-            BookType::L1_MBP => self.get_mbp().bids(),
+            BookType::L3_MBO => self.get_mbo().bids().collect(),
+            BookType::L2_MBP => self.get_mbp().bids().collect(),
+            BookType::L1_MBP => self.get_mbp().bids().collect(),
         }
     }
 
     pub fn asks(&self) -> Vec<&Level> {
         match self.book_type {
-            BookType::L3_MBO => self.get_mbo().asks(),
-            BookType::L2_MBP => self.get_mbp().asks(),
-            BookType::L1_MBP => self.get_mbp().asks(),
+            BookType::L3_MBO => self.get_mbo().asks().collect(),
+            BookType::L2_MBP => self.get_mbp().asks().collect(),
+            BookType::L1_MBP => self.get_mbp().asks().collect(),
         }
     }
 

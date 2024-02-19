@@ -185,12 +185,12 @@ impl OrderBookMbp {
         }
     }
 
-    pub fn bids(&self) -> Vec<&Level> {
-        self.bids.levels.values().collect()
+    pub fn bids(&self) -> impl Iterator<Item = &Level> {
+        self.bids.levels.values()
     }
 
-    pub fn asks(&self) -> Vec<&Level> {
-        self.asks.levels.values().collect()
+    pub fn asks(&self) -> impl Iterator<Item = &Level> {
+        self.asks.levels.values()
     }
 
     pub fn has_bid(&self) -> bool {
@@ -391,5 +391,95 @@ impl OrderBookMbp {
             false => order.order_id = order.price.raw as u64,
         };
         order
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::{
+        enums::AggressorSide,
+        identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    };
+
+    #[rstest]
+    fn test_orderbook_creation() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let book = OrderBookMbp::new(instrument_id, false);
+
+        assert_eq!(book.instrument_id, instrument_id);
+        assert!(!book.top_only);
+        assert_eq!(book.sequence, 0);
+        assert_eq!(book.ts_last, 0);
+        assert_eq!(book.count, 0);
+    }
+
+    #[rstest]
+    fn test_orderbook_reset() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OrderBookMbp::new(instrument_id, true);
+        book.sequence = 10;
+        book.ts_last = 100;
+        book.count = 3;
+
+        book.reset();
+
+        assert!(book.top_only);
+        assert_eq!(book.sequence, 0);
+        assert_eq!(book.ts_last, 0);
+        assert_eq!(book.count, 0);
+    }
+
+    #[rstest]
+    fn test_update_quote_tick_l1() {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let mut book = OrderBookMbp::new(instrument_id, true);
+        let quote = QuoteTick::new(
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            Price::from("5000.000"),
+            Price::from("5100.000"),
+            Quantity::from("100.00000000"),
+            Quantity::from("99.00000000"),
+            0,
+            0,
+        )
+        .unwrap();
+
+        book.update_quote_tick(&quote);
+
+        assert_eq!(book.best_bid_price().unwrap(), quote.bid_price);
+        assert_eq!(book.best_ask_price().unwrap(), quote.ask_price);
+        assert_eq!(book.best_bid_size().unwrap(), quote.bid_size);
+        assert_eq!(book.best_ask_size().unwrap(), quote.ask_size);
+    }
+
+    #[rstest]
+    fn test_update_trade_tick_l1() {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let mut book = OrderBookMbp::new(instrument_id, true);
+
+        let price = Price::from("15000.000");
+        let size = Quantity::from("10.00000000");
+        let trade = TradeTick::new(
+            instrument_id,
+            price,
+            size,
+            AggressorSide::Buyer,
+            TradeId::new("123456789").unwrap(),
+            0,
+            0,
+        );
+
+        book.update_trade_tick(&trade);
+
+        assert_eq!(book.best_bid_price().unwrap(), price);
+        assert_eq!(book.best_ask_price().unwrap(), price);
+        assert_eq!(book.best_bid_size().unwrap(), size);
+        assert_eq!(book.best_ask_size().unwrap(), size);
     }
 }

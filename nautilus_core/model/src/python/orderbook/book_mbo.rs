@@ -142,19 +142,13 @@ impl OrderBookMbo {
     #[pyo3(name = "bids")]
     fn py_bids(&self) -> Vec<Level> {
         // TODO: Improve efficiency
-        self.bids()
-            .iter()
-            .map(|level_ref| (*level_ref).clone())
-            .collect()
+        self.bids().map(|level_ref| (*level_ref).clone()).collect()
     }
 
     #[pyo3(name = "asks")]
     fn py_asks(&self) -> Vec<Level> {
         // TODO: Improve efficiency
-        self.asks()
-            .iter()
-            .map(|level_ref| (*level_ref).clone())
-            .collect()
+        self.asks().map(|level_ref| (*level_ref).clone()).collect()
     }
 
     #[pyo3(name = "best_bid_price")]

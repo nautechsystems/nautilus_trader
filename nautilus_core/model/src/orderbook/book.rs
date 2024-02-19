@@ -108,40 +108,12 @@ mod tests {
         data::{
             depth::{stubs::stub_depth10, OrderBookDepth10},
             order::BookOrder,
-            quote::QuoteTick,
-            trade::TradeTick,
         },
-        enums::{AggressorSide, OrderSide},
-        identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+        enums::OrderSide,
+        identifiers::instrument_id::InstrumentId,
         orderbook::{book_mbo::OrderBookMbo, book_mbp::OrderBookMbp},
         types::{price::Price, quantity::Quantity},
     };
-
-    #[rstest]
-    fn test_orderbook_creation() {
-        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
-        let book = OrderBookMbp::new(instrument_id, false);
-
-        assert_eq!(book.instrument_id, instrument_id);
-        assert_eq!(book.sequence, 0);
-        assert_eq!(book.ts_last, 0);
-        assert_eq!(book.count, 0);
-    }
-
-    #[rstest]
-    fn test_orderbook_reset() {
-        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
-        let mut book = OrderBookMbp::new(instrument_id, false);
-        book.sequence = 10;
-        book.ts_last = 100;
-        book.count = 3;
-
-        book.reset();
-
-        assert_eq!(book.sequence, 0);
-        assert_eq!(book.ts_last, 0);
-        assert_eq!(book.count, 0);
-    }
 
     #[rstest]
     fn test_best_bid_and_ask_when_nothing_in_book() {
@@ -189,6 +161,7 @@ mod tests {
         assert_eq!(book.best_ask_size(), Some(Quantity::from("2.0")));
         assert!(book.has_ask());
     }
+
     #[rstest]
     fn test_spread_with_no_bids_or_asks() {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
@@ -386,54 +359,6 @@ mod tests {
         assert_eq!(book.best_ask_price().unwrap().as_f64(), 100.00);
         assert_eq!(book.best_bid_size().unwrap().as_f64(), 100.0);
         assert_eq!(book.best_ask_size().unwrap().as_f64(), 100.0);
-    }
-
-    #[rstest]
-    fn test_update_quote_tick_l1() {
-        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
-        let mut book = OrderBookMbp::new(instrument_id, true);
-        let quote = QuoteTick::new(
-            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            Price::from("5000.000"),
-            Price::from("5100.000"),
-            Quantity::from("100.00000000"),
-            Quantity::from("99.00000000"),
-            0,
-            0,
-        )
-        .unwrap();
-
-        book.update_quote_tick(&quote);
-
-        assert_eq!(book.best_bid_price().unwrap(), quote.bid_price);
-        assert_eq!(book.best_ask_price().unwrap(), quote.ask_price);
-        assert_eq!(book.best_bid_size().unwrap(), quote.bid_size);
-        assert_eq!(book.best_ask_size().unwrap(), quote.ask_size);
-    }
-
-    #[rstest]
-    fn test_update_trade_tick_l1() {
-        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
-        let mut book = OrderBookMbp::new(instrument_id, true);
-
-        let price = Price::from("15000.000");
-        let size = Quantity::from("10.00000000");
-        let trade = TradeTick::new(
-            instrument_id,
-            price,
-            size,
-            AggressorSide::Buyer,
-            TradeId::new("123456789").unwrap(),
-            0,
-            0,
-        );
-
-        book.update_trade_tick(&trade);
-
-        assert_eq!(book.best_bid_price().unwrap(), price);
-        assert_eq!(book.best_ask_price().unwrap(), price);
-        assert_eq!(book.best_bid_size().unwrap(), size);
-        assert_eq!(book.best_ask_size().unwrap(), size);
     }
 
     #[rstest]
