@@ -43,8 +43,8 @@ pub struct DoubleExponentialMovingAverage {
     pub count: usize,
     pub is_initialized: bool,
     has_inputs: bool,
-    _ema1: ExponentialMovingAverage,
-    _ema2: ExponentialMovingAverage,
+    ema1: ExponentialMovingAverage,
+    ema2: ExponentialMovingAverage,
 }
 
 impl Display for DoubleExponentialMovingAverage {
@@ -94,8 +94,8 @@ impl DoubleExponentialMovingAverage {
             count: 0,
             has_inputs: false,
             is_initialized: false,
-            _ema1: ExponentialMovingAverage::new(period, price_type)?,
-            _ema2: ExponentialMovingAverage::new(period, price_type)?,
+            ema1: ExponentialMovingAverage::new(period, price_type)?,
+            ema2: ExponentialMovingAverage::new(period, price_type)?,
         })
     }
 }
@@ -113,10 +113,10 @@ impl MovingAverage for DoubleExponentialMovingAverage {
             self.has_inputs = true;
             self.value = value;
         }
-        self._ema1.update_raw(value);
-        self._ema2.update_raw(self._ema1.value);
+        self.ema1.update_raw(value);
+        self.ema2.update_raw(self.ema1.value);
 
-        self.value = 2.0f64.mul_add(self._ema1.value, -self._ema2.value);
+        self.value = 2.0f64.mul_add(self.ema1.value, -self.ema2.value);
         self.count += 1;
 
         if !self.is_initialized && self.count >= self.period {
