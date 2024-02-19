@@ -22,32 +22,32 @@ from nautilus_trader.test_kit.rust.data_pyo3 import TestDataProviderPyo3
 
 
 @pytest.fixture(scope="function")
-def atr():
+def atr() -> AverageTrueRange:
     return AverageTrueRange(10)
 
 
-def test_name_returns_expected_string(atr):
+def test_name_returns_expected_string(atr: AverageTrueRange) -> None:
     # Arrange, Act, Assert
     assert atr.name == "AverageTrueRange"
 
 
-def test_str_repr_returns_expected_string(atr):
+def test_str_repr_returns_expected_string(atr: AverageTrueRange) -> None:
     # Arrange, Act, Assert
     assert str(atr) == "AverageTrueRange(10,SIMPLE,true,0)"
     assert repr(atr) == "AverageTrueRange(10,SIMPLE,true,0)"
 
 
-def test_period(atr):
+def test_period(atr: AverageTrueRange) -> None:
     # Arrange, Act, Assert
     assert atr.period == 10
 
 
-def test_initialized_without_inputs_returns_false(atr):
+def test_initialized_without_inputs_returns_false(atr: AverageTrueRange) -> None:
     # Arrange, Act, Assert
     assert atr.initialized is False
 
 
-def test_initialized_with_required_inputs_returns_true(atr):
+def test_initialized_with_required_inputs_returns_true(atr: AverageTrueRange) -> None:
     # Arrange, Act
     for _i in range(10):
         atr.update_raw(1.00000, 1.00000, 1.00000)
@@ -56,7 +56,7 @@ def test_initialized_with_required_inputs_returns_true(atr):
     assert atr.initialized is True
 
 
-def test_handle_bar_updates_indicator(atr):
+def test_handle_bar_updates_indicator(atr: AverageTrueRange) -> None:
     # Arrange
     bar = TestDataProviderPyo3.bar_5decimal()
 
@@ -68,12 +68,12 @@ def test_handle_bar_updates_indicator(atr):
     assert atr.value == 2.999999999997449e-05
 
 
-def test_value_with_no_inputs_returns_zero(atr):
+def test_value_with_no_inputs_returns_zero(atr: AverageTrueRange) -> None:
     # Arrange, Act, Assert
     assert atr.value == 0.0
 
 
-def test_value_with_epsilon_input(atr):
+def test_value_with_epsilon_input(atr: AverageTrueRange) -> None:
     # Arrange
     epsilon = sys.float_info.epsilon
     atr.update_raw(epsilon, epsilon, epsilon)
@@ -82,7 +82,7 @@ def test_value_with_epsilon_input(atr):
     assert atr.value == 0.0
 
 
-def test_value_with_one_ones_input(atr):
+def test_value_with_one_ones_input(atr: AverageTrueRange) -> None:
     # Arrange
     atr.update_raw(1.00000, 1.00000, 1.00000)
 
@@ -90,7 +90,7 @@ def test_value_with_one_ones_input(atr):
     assert atr.value == 0.0
 
 
-def test_value_with_one_input(atr):
+def test_value_with_one_input(atr: AverageTrueRange) -> None:
     # Arrange
     atr.update_raw(1.00020, 1.00000, 1.00010)
 
@@ -98,7 +98,7 @@ def test_value_with_one_input(atr):
     assert atr.value == pytest.approx(0.00020)
 
 
-def test_value_with_three_inputs(atr):
+def test_value_with_three_inputs(atr: AverageTrueRange) -> None:
     # Arrange
     atr.update_raw(1.00020, 1.00000, 1.00010)
     atr.update_raw(1.00020, 1.00000, 1.00010)
@@ -108,7 +108,7 @@ def test_value_with_three_inputs(atr):
     assert atr.value == pytest.approx(0.00020)
 
 
-def test_value_with_close_on_high(atr):
+def test_value_with_close_on_high(atr: AverageTrueRange) -> None:
     # Arrange
     high = 1.00010
     low = 1.00000
@@ -124,7 +124,7 @@ def test_value_with_close_on_high(atr):
     assert atr.value == pytest.approx(0.00010, 2)
 
 
-def test_value_with_close_on_low(atr):
+def test_value_with_close_on_low(atr: AverageTrueRange) -> None:
     # Arrange
     high = 1.00010
     low = 1.00000
@@ -140,7 +140,7 @@ def test_value_with_close_on_low(atr):
     assert atr.value == pytest.approx(0.00010)
 
 
-def test_floor_with_ten_ones_inputs():
+def test_floor_with_ten_ones_inputs() -> None:
     # Arrange
     floor = 0.00005
     floored_atr = AverageTrueRange(10, value_floor=floor)
@@ -152,7 +152,7 @@ def test_floor_with_ten_ones_inputs():
     assert floored_atr.value == 5e-05
 
 
-def test_floor_with_exponentially_decreasing_high_inputs():
+def test_floor_with_exponentially_decreasing_high_inputs() -> None:
     # Arrange
     floor = 0.00005
     floored_atr = AverageTrueRange(10, value_floor=floor)
@@ -169,7 +169,7 @@ def test_floor_with_exponentially_decreasing_high_inputs():
     assert floored_atr.value == 5e-05
 
 
-def test_reset_successfully_returns_indicator_to_fresh_state(atr):
+def test_reset_successfully_returns_indicator_to_fresh_state(atr: AverageTrueRange) -> None:
     # Arrange
     for _i in range(1000):
         atr.update_raw(1.00010, 1.00000, 1.00005)
