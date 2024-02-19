@@ -31,16 +31,21 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-/// Provides an order book which can handle MBO/L3 granularity data.
+/// Provides an order book which can handle MBO (market by order, a.k.a L3)
+/// granularity data.
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct OrderBookMbo {
+    /// The instrument ID for the order book.
     pub instrument_id: InstrumentId,
+    /// The last event sequence number for the order book.
     pub sequence: u64,
+    /// The timestamp of the last event applied to the order book.
     pub ts_last: UnixNanos,
+    /// The current count of events applied to the order book.
     pub count: u64,
     bids: Ladder,
     asks: Ladder,

@@ -31,17 +31,24 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-/// Provides an order book which can handle MBP/L2 or L1 (top only) granularity data.
+/// Provides an order book which can handle MBP (market by price, a.k.a. L2)
+/// granularity data. The book can also be specified as being 'top only', meaning
+/// it will only maintain the state of the top most level of the bid and ask side.
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct OrderBookMbp {
+    /// The instrument ID for the order book.
     pub instrument_id: InstrumentId,
+    /// If the order book will only maintain state for the top bid and ask levels.
     pub top_only: bool,
+    /// The last event sequence number for the order book.
     pub sequence: u64,
+    /// The timestamp of the last event applied to the order book.
     pub ts_last: UnixNanos,
+    /// The current count of events applied to the order book.
     pub count: u64,
     bids: Ladder,
     asks: Ladder,

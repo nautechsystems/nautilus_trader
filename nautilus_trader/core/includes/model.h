@@ -658,6 +658,12 @@ typedef enum TriggerType {
     INDEX_PRICE = 9,
 } TriggerType;
 
+/**
+ * Represents a discrete price level in an order book.
+ *
+ * The level maintains a collection of orders as well as tracking insertion order
+ * to preserve FIFO queue dynamics.
+ */
 typedef struct Level Level;
 
 typedef struct OrderBookContainer OrderBookContainer;
