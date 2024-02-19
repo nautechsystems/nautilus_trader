@@ -4083,7 +4083,7 @@ cdef class TradeTick(Data):
             if pyo3_instrument_id is None:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(trade.instrument_id.value)
                 price_prec = trade.price.precision
-                size_prec = trade.price.precision
+                size_prec = trade.size.precision
 
             pyo3_trade = nautilus_pyo3.TradeTick(
                 pyo3_instrument_id,
