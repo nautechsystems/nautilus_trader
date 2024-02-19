@@ -1545,10 +1545,11 @@ cdef class DataEngine(Component):
     cpdef void _update_order_book(self, Data data):
         cdef OrderBook order_book = self._cache.order_book(data.instrument_id)
         if order_book is None:
-            self._log.error(
-                "Cannot update order book: "
-                f"no book found for {data.instrument_id}.",
-            )
+            # TODO: Silence error for now (book may be managed manually)
+            # self._log.error(
+            #     "Cannot update order book: "
+            #     f"no book found for {data.instrument_id}.",
+            # )
             return
 
         order_book.apply(data)
