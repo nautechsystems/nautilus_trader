@@ -15,6 +15,7 @@
 
 from os import PathLike
 from typing import Any
+
 import pandas as pd
 
 
@@ -61,7 +62,12 @@ class CSVBarDataLoader:
     """
 
     @staticmethod
-    def load(file_path: PathLike[str] | str, index_col: Any = None, parse_dates: Any = False, **kwargs: Any) -> pd.DataFrame:
+    def load(
+        file_path: PathLike[str] | str,
+        index_col: Any = None,
+        parse_dates: Any = False,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
         """
         Return the bar `pandas.DataFrame` loaded from the given CSV `file_path`.
 
