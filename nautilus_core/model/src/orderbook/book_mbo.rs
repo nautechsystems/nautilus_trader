@@ -146,12 +146,12 @@ impl OrderBookMbo {
         }
     }
 
-    pub fn bids(&self) -> Vec<&Level> {
-        self.bids.levels.values().collect()
+    pub fn bids(&self) -> impl Iterator<Item = &Level> {
+        self.bids.levels.values()
     }
 
-    pub fn asks(&self) -> Vec<&Level> {
-        self.asks.levels.values().collect()
+    pub fn asks(&self) -> impl Iterator<Item = &Level> {
+        self.asks.levels.values()
     }
 
     pub fn has_bid(&self) -> bool {
@@ -260,5 +260,42 @@ impl OrderBookMbo {
         self.ts_last = ts_event;
         self.sequence = sequence;
         self.count += 1;
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::identifiers::instrument_id::InstrumentId;
+
+    #[rstest]
+    fn test_orderbook_creation() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let book = OrderBookMbo::new(instrument_id);
+
+        assert_eq!(book.instrument_id, instrument_id);
+        assert_eq!(book.sequence, 0);
+        assert_eq!(book.ts_last, 0);
+        assert_eq!(book.count, 0);
+    }
+
+    #[rstest]
+    fn test_orderbook_reset() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut book = OrderBookMbo::new(instrument_id);
+        book.sequence = 10;
+        book.ts_last = 100;
+        book.count = 3;
+
+        book.reset();
+
+        assert_eq!(book.sequence, 0);
+        assert_eq!(book.ts_last, 0);
+        assert_eq!(book.count, 0);
     }
 }
