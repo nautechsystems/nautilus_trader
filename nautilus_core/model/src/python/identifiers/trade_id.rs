@@ -27,7 +27,7 @@ use pyo3::{
     types::{PyString, PyTuple},
 };
 
-use crate::identifiers::{instrument_id::InstrumentId, trade_id::TradeId};
+use crate::identifiers::trade_id::TradeId;
 
 #[pymethods]
 impl TradeId {
@@ -88,7 +88,7 @@ impl TradeId {
     }
 
     fn __repr__(&self) -> String {
-        format!("{}('{}')", stringify!(InstrumentId), self)
+        format!("{}('{}')", stringify!(TradeId), self)
     }
 
     #[getter]
@@ -98,8 +98,8 @@ impl TradeId {
 
     #[staticmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(value: &str) -> PyResult<InstrumentId> {
-        InstrumentId::from_str(value).map_err(to_pyvalue_err)
+    fn py_from_str(value: &str) -> PyResult<TradeId> {
+        TradeId::new(value).map_err(to_pyvalue_err)
     }
 }
 

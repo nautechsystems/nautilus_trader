@@ -42,6 +42,9 @@ typedef struct CVec {
  * version 4 based on a 128-bit label as specified in RFC 4122.
  */
 typedef struct UUID4_t {
+    /**
+     * The UUID v4 C string value as a fixed-length byte array.
+     */
     uint8_t value[37];
 } UUID4_t;
 
