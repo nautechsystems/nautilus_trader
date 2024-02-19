@@ -63,12 +63,12 @@ impl Indicator for RelativeStrengthIndex {
         self.is_initialized
     }
 
-    fn handle_quote_tick(&mut self, tick: &QuoteTick) {
-        self.update_raw(tick.extract_price(PriceType::Mid).into());
+    fn handle_quote_tick(&mut self, quote: &QuoteTick) {
+        self.update_raw(quote.extract_price(PriceType::Mid).into());
     }
 
-    fn handle_trade_tick(&mut self, tick: &TradeTick) {
-        self.update_raw((tick.price).into());
+    fn handle_trade_tick(&mut self, trade: &TradeTick) {
+        self.update_raw((trade.price).into());
     }
 
     fn handle_bar(&mut self, bar: &Bar) {

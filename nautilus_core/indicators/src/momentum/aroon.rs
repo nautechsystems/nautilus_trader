@@ -16,7 +16,10 @@
 use std::fmt::{Debug, Display};
 
 use anyhow::Result;
-use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
+use nautilus_model::{
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
+    enums::PriceType,
+};
 use pyo3::prelude::*;
 use std::collections::VecDeque;
 
@@ -58,12 +61,14 @@ impl Indicator for AroonOscillator {
         self.is_initialized
     }
 
-    fn handle_quote_tick(&mut self, _tick: &QuoteTick) {
-        // Function body intentionally left blank.
+    fn handle_quote_tick(&mut self, tick: &QuoteTick) {
+        let price = tick.extract_price(PriceType::Mid).into();
+        self.update_raw(price, price);
     }
 
-    fn handle_trade_tick(&mut self, _tick: &TradeTick) {
-        // Function body intentionally left blank.
+    fn handle_trade_tick(&mut self, tick: &TradeTick) {
+        let price = tick.price.into();
+        self.update_raw(price, price);
     }
 
     fn handle_bar(&mut self, bar: &Bar) {
