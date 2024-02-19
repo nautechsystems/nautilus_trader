@@ -35,7 +35,7 @@ pub struct AverageTrueRange {
     pub value_floor: f64,
     pub value: f64,
     pub count: usize,
-    pub is_initialized: bool,
+    pub initialized: bool,
     ma: Box<dyn MovingAverage + Send + 'static>,
     has_inputs: bool,
     previous_close: f64,
@@ -64,8 +64,8 @@ impl Indicator for AverageTrueRange {
         self.has_inputs
     }
 
-    fn is_initialized(&self) -> bool {
-        self.is_initialized
+    fn initialized(&self) -> bool {
+        self.initialized
     }
 
     fn handle_bar(&mut self, bar: &Bar) {
@@ -77,7 +77,7 @@ impl Indicator for AverageTrueRange {
         self.value = 0.0;
         self.count = 0;
         self.has_inputs = false;
-        self.is_initialized = false;
+        self.initialized = false;
     }
 }
 
@@ -98,7 +98,7 @@ impl AverageTrueRange {
             previous_close: 0.0,
             ma: MovingAverageFactory::create(MovingAverageType::Simple, period),
             has_inputs: false,
-            is_initialized: false,
+            initialized: false,
         })
     }
 
@@ -131,10 +131,10 @@ impl AverageTrueRange {
     fn increment_count(&mut self) {
         self.count += 1;
 
-        if !self.is_initialized {
+        if !self.initialized {
             self.has_inputs = true;
             if self.count >= self.period {
-                self.is_initialized = true;
+                self.initialized = true;
             }
         }
     }

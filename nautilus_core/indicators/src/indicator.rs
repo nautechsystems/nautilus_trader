@@ -29,7 +29,7 @@ const IMPL_ERR: &str = "is not implemented for";
 pub trait Indicator {
     fn name(&self) -> String;
     fn has_inputs(&self) -> bool;
-    fn is_initialized(&self) -> bool;
+    fn initialized(&self) -> bool;
     fn handle_delta(&mut self, delta: &OrderBookDelta) {
         // Eventually change this to log an error
         panic!("`handle_delta` {} `{}`", IMPL_ERR, self.name());

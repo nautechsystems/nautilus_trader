@@ -42,7 +42,7 @@ def test_period_returns_expected_value(sma: SimpleMovingAverage) -> None:
 
 def test_initialized_without_inputs_returns_false(sma: SimpleMovingAverage) -> None:
     # Arrange, Act, Assert
-    assert sma.initialized is False
+    assert not sma.initialized
 
 
 def test_initialized_with_required_inputs_returns_true(sma: SimpleMovingAverage) -> None:
@@ -59,7 +59,7 @@ def test_initialized_with_required_inputs_returns_true(sma: SimpleMovingAverage)
     sma.update_raw(10.0)
 
     # Act, Assert
-    assert sma.initialized is True
+    assert sma.initialized
     assert sma.count == 10
     assert sma.value == 5.5
 

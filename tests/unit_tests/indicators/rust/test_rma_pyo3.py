@@ -48,7 +48,7 @@ def test_multiplier_returns_expected_value(rma: WilderMovingAverage) -> None:
 
 def test_initialized_without_inputs_returns_false(rma: WilderMovingAverage) -> None:
     # Arrange, Act, Assert
-    assert rma.initialized is False
+    assert not rma.initialized
 
 
 def test_initialized_with_required_inputs_returns_true(rma: WilderMovingAverage) -> None:
@@ -67,7 +67,7 @@ def test_initialized_with_required_inputs_returns_true(rma: WilderMovingAverage)
     # Act
 
     # Assert
-    assert rma.initialized is True
+    assert rma.initialized
 
 
 def test_handle_quote_tick_updates_indicator() -> None:

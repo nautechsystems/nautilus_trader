@@ -36,7 +36,7 @@ pub struct RelativeStrengthIndex {
     pub ma_type: MovingAverageType,
     pub value: f64,
     pub count: usize,
-    pub is_initialized: bool,
+    pub initialized: bool,
     has_inputs: bool,
     last_value: f64,
     average_gain: Box<dyn MovingAverage + Send + 'static>,
@@ -59,8 +59,8 @@ impl Indicator for RelativeStrengthIndex {
         self.has_inputs
     }
 
-    fn is_initialized(&self) -> bool {
-        self.is_initialized
+    fn initialized(&self) -> bool {
+        self.initialized
     }
 
     fn handle_quote_tick(&mut self, quote: &QuoteTick) {
@@ -80,7 +80,7 @@ impl Indicator for RelativeStrengthIndex {
         self.last_value = 0.0;
         self.count = 0;
         self.has_inputs = false;
-        self.is_initialized = false;
+        self.initialized = false;
     }
 }
 
@@ -97,7 +97,7 @@ impl RelativeStrengthIndex {
             average_gain: MovingAverageFactory::create(MovingAverageType::Exponential, period),
             average_loss: MovingAverageFactory::create(MovingAverageType::Exponential, period),
             rsi_max: 1.0,
-            is_initialized: false,
+            initialized: false,
         })
     }
 
@@ -119,11 +119,8 @@ impl RelativeStrengthIndex {
         }
         // init count from average gain MA
         self.count = self.average_gain.count();
-        if !self.is_initialized
-            && self.average_loss.is_initialized()
-            && self.average_gain.is_initialized()
-        {
-            self.is_initialized = true;
+        if !self.initialized && self.average_loss.initialized() && self.average_gain.initialized() {
+            self.initialized = true;
         }
 
         if self.average_loss.value() == 0.0 {
@@ -135,8 +132,8 @@ impl RelativeStrengthIndex {
         self.value = self.rsi_max - (self.rsi_max / (1.0 + rs));
         self.last_value = value;
 
-        if !self.is_initialized && self.count >= self.period {
-            self.is_initialized = true;
+        if !self.initialized && self.count >= self.period {
+            self.initialized = true;
         }
     }
 }
@@ -156,7 +153,7 @@ mod tests {
         let display_str = format!("{rsi_10}");
         assert_eq!(display_str, "RelativeStrengthIndex(10,EXPONENTIAL)");
         assert_eq!(rsi_10.period, 10);
-        assert!(!rsi_10.is_initialized);
+        assert!(!rsi_10.initialized);
     }
 
     #[rstest]
@@ -164,7 +161,7 @@ mod tests {
         for i in 0..12 {
             rsi_10.update_raw(f64::from(i));
         }
-        assert!(rsi_10.is_initialized);
+        assert!(rsi_10.initialized);
     }
 
     #[rstest]
@@ -220,7 +217,7 @@ mod tests {
         rsi_10.update_raw(1.0);
         rsi_10.update_raw(2.0);
         rsi_10.reset();
-        assert!(!rsi_10.is_initialized());
+        assert!(!rsi_10.initialized());
         assert_eq!(rsi_10.count, 0);
     }
 

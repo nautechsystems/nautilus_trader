@@ -48,7 +48,7 @@ def test_multiplier_returns_expected_value(ema: ExponentialMovingAverage) -> Non
 
 def test_initialized_without_inputs_returns_false(ema: ExponentialMovingAverage) -> None:
     # Arrange, Act, Assert
-    assert ema.initialized is False
+    assert not ema.initialized
 
 
 def test_initialized_with_required_inputs_returns_true(ema: ExponentialMovingAverage) -> None:
@@ -67,7 +67,7 @@ def test_initialized_with_required_inputs_returns_true(ema: ExponentialMovingAve
     # Act
 
     # Assert
-    assert ema.initialized is True
+    assert ema.initialized
 
 
 def test_handle_quote_tick_updates_indicator() -> None:

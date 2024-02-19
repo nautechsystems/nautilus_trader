@@ -30,7 +30,7 @@ use crate::indicator::Indicator;
 pub struct BookImbalanceRatio {
     pub value: f64,
     pub count: usize,
-    pub is_initialized: bool,
+    pub initialized: bool,
     has_inputs: bool,
 }
 
@@ -49,8 +49,8 @@ impl Indicator for BookImbalanceRatio {
         self.has_inputs
     }
 
-    fn is_initialized(&self) -> bool {
-        self.is_initialized
+    fn initialized(&self) -> bool {
+        self.initialized
     }
 
     fn handle_book_mbo(&mut self, book: &OrderBookMbo) {
@@ -65,7 +65,7 @@ impl Indicator for BookImbalanceRatio {
         self.value = 0.0;
         self.count = 0;
         self.has_inputs = false;
-        self.is_initialized = false;
+        self.initialized = false;
     }
 }
 
@@ -77,7 +77,7 @@ impl BookImbalanceRatio {
             value: 0.0,
             count: 0,
             has_inputs: false,
-            is_initialized: false,
+            initialized: false,
         })
     }
 
@@ -92,7 +92,7 @@ impl BookImbalanceRatio {
             let ratio = smaller.as_f64() / larger.as_f64();
             self.value = ratio;
 
-            self.is_initialized = true;
+            self.initialized = true;
         }
         // No market yet
     }
@@ -121,7 +121,7 @@ mod tests {
         assert_eq!(imbalance.value, 0.0);
         assert_eq!(imbalance.count, 0);
         assert!(!imbalance.has_inputs);
-        assert!(!imbalance.is_initialized);
+        assert!(!imbalance.initialized);
     }
 
     #[rstest]
@@ -132,7 +132,7 @@ mod tests {
 
         assert_eq!(imbalance.count, 1);
         assert_eq!(imbalance.value, 1.0);
-        assert!(imbalance.is_initialized);
+        assert!(imbalance.initialized);
         assert!(imbalance.has_inputs);
     }
 
@@ -145,7 +145,7 @@ mod tests {
 
         assert_eq!(imbalance.count, 0);
         assert_eq!(imbalance.value, 0.0);
-        assert!(!imbalance.is_initialized);
+        assert!(!imbalance.initialized);
         assert!(!imbalance.has_inputs);
     }
 
@@ -168,7 +168,7 @@ mod tests {
 
         assert_eq!(imbalance.count, 1);
         assert_eq!(imbalance.value, 0.5);
-        assert!(imbalance.is_initialized);
+        assert!(imbalance.initialized);
         assert!(imbalance.has_inputs);
     }
 
@@ -191,7 +191,7 @@ mod tests {
 
         assert_eq!(imbalance.count, 1);
         assert_eq!(imbalance.value, 0.5);
-        assert!(imbalance.is_initialized);
+        assert!(imbalance.initialized);
         assert!(imbalance.has_inputs);
     }
 
@@ -216,7 +216,7 @@ mod tests {
 
         assert_eq!(imbalance.count, 3);
         assert_eq!(imbalance.value, 0.5);
-        assert!(imbalance.is_initialized);
+        assert!(imbalance.initialized);
         assert!(imbalance.has_inputs);
     }
 }

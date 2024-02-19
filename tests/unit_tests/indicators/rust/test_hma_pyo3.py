@@ -42,7 +42,7 @@ def test_period_returns_expected_value(hma: HullMovingAverage) -> None:
 
 def test_initialized_without_inputs_returns_false(hma: HullMovingAverage) -> None:
     # Arrange, Act, Assert
-    assert hma.initialized is False
+    assert not hma.initialized
 
 
 def test_initialized_with_required_inputs_returns_true(hma: HullMovingAverage) -> None:
@@ -60,7 +60,7 @@ def test_initialized_with_required_inputs_returns_true(hma: HullMovingAverage) -
     hma.update_raw(1.00000)
 
     # Act, Assert
-    assert hma.initialized is True
+    assert hma.initialized
     assert hma.count == 11
     assert hma.value == 1.0001403928170598
 

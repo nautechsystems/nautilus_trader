@@ -51,7 +51,7 @@ impl EfficiencyRatio {
     #[getter]
     #[pyo3(name = "initialized")]
     fn py_initialized(&self) -> bool {
-        self.is_initialized
+        self.initialized
     }
 
     #[pyo3(name = "has_inputs")]

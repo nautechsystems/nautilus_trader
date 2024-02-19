@@ -33,7 +33,7 @@ pub struct WilderMovingAverage {
     pub alpha: f64,
     pub value: f64,
     pub count: usize,
-    pub is_initialized: bool,
+    pub initialized: bool,
     has_inputs: bool,
 }
 
@@ -52,8 +52,8 @@ impl Indicator for WilderMovingAverage {
         self.has_inputs
     }
 
-    fn is_initialized(&self) -> bool {
-        self.is_initialized
+    fn initialized(&self) -> bool {
+        self.initialized
     }
 
     fn handle_quote_tick(&mut self, quote: &QuoteTick) {
@@ -72,7 +72,7 @@ impl Indicator for WilderMovingAverage {
         self.value = 0.0;
         self.count = 0;
         self.has_inputs = false;
-        self.is_initialized = false;
+        self.initialized = false;
     }
 }
 
@@ -90,7 +90,7 @@ impl WilderMovingAverage {
             value: 0.0,
             count: 0,
             has_inputs: false,
-            is_initialized: false,
+            initialized: false,
         })
     }
 }
@@ -114,8 +114,8 @@ impl MovingAverage for WilderMovingAverage {
         self.count += 1;
 
         // Initialization logic
-        if !self.is_initialized && self.count >= self.period {
-            self.is_initialized = true;
+        if !self.initialized && self.count >= self.period {
+            self.initialized = true;
         }
     }
 }
@@ -145,7 +145,7 @@ mod tests {
         assert_eq!(rma.period, 10);
         assert_eq!(rma.price_type, PriceType::Mid);
         assert_eq!(rma.alpha, 0.1);
-        assert!(!rma.is_initialized);
+        assert!(!rma.initialized);
     }
 
     #[rstest]
@@ -171,7 +171,7 @@ mod tests {
         rma.update_raw(10.0);
 
         assert!(rma.has_inputs());
-        assert!(rma.is_initialized());
+        assert!(rma.initialized());
         assert_eq!(rma.count, 10);
         assert_eq!(rma.value, 4.486_784_401);
     }
@@ -184,7 +184,7 @@ mod tests {
         rma.reset();
         assert_eq!(rma.count, 0);
         assert_eq!(rma.value, 0.0);
-        assert!(!rma.is_initialized);
+        assert!(!rma.initialized);
     }
 
     #[rstest]
@@ -221,7 +221,7 @@ mod tests {
     ) {
         indicator_rma_10.handle_bar(&bar_ethusdt_binance_minute_bid);
         assert!(indicator_rma_10.has_inputs);
-        assert!(!indicator_rma_10.is_initialized);
+        assert!(!indicator_rma_10.initialized);
         assert_eq!(indicator_rma_10.value, 1522.0);
     }
 }

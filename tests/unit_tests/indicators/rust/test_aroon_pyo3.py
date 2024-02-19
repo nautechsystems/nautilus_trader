@@ -35,7 +35,7 @@ def test_period(aroon: AroonOscillator) -> None:
 
 def test_initialized_without_inputs_returns_false(aroon: AroonOscillator) -> None:
     # Arrange, Act, Assert
-    assert aroon.initialized is False
+    assert not aroon.initialized
 
 
 def test_initialized_with_required_inputs_returns_true(aroon: AroonOscillator) -> None:
@@ -44,7 +44,7 @@ def test_initialized_with_required_inputs_returns_true(aroon: AroonOscillator) -
         aroon.update_raw(110.08, 109.61)
 
     # Assert
-    assert aroon.initialized is True
+    assert aroon.initialized
 
 
 def test_handle_bar_updates_indicator(aroon: AroonOscillator) -> None:
