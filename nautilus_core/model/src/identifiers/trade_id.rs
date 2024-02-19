@@ -36,7 +36,8 @@ use serde::{Deserialize, Deserializer, Serialize};
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct TradeId {
-    pub value: [u8; 65],
+    /// The trade match ID C string value as a fixed-length byte array.
+    pub(crate) value: [u8; 65],
 }
 
 impl TradeId {

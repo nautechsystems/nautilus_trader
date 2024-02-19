@@ -492,6 +492,7 @@ cdef extern from "../includes/model.h":
     # The unique ID assigned to the trade entity once it is received or matched by
     # the exchange or central counterparty.
     cdef struct TradeId_t:
+        # The trade match ID C string value as a fixed-length byte array.
         uint8_t value[65];
 
     # Represents a single trade tick in a financial market.

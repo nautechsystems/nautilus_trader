@@ -890,6 +890,9 @@ typedef struct QuoteTick_t {
  * the exchange or central counterparty.
  */
 typedef struct TradeId_t {
+    /**
+     * The trade match ID C string value as a fixed-length byte array.
+     */
     uint8_t value[65];
 } TradeId_t;
 
