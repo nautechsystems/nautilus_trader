@@ -45,6 +45,8 @@ pub enum BookIntegrityError {
     TooManyLevels(OrderSide, usize),
 }
 
+/// Calculates the estimated average price for a specified quantity from a set of
+/// order book levels.
 pub fn get_avg_px_for_quantity(qty: Quantity, levels: &BTreeMap<BookPrice, Level>) -> f64 {
     let mut cumulative_size_raw = 0u64;
     let mut cumulative_value = 0.0;
@@ -66,6 +68,8 @@ pub fn get_avg_px_for_quantity(qty: Quantity, levels: &BTreeMap<BookPrice, Level
     }
 }
 
+/// Calculates the estimated fill quantity for a specified price from a set of
+/// order book levels and order side.
 pub fn get_quantity_for_price(
     price: Price,
     order_side: OrderSide,

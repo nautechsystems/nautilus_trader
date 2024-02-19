@@ -352,6 +352,10 @@ cdef extern from "../includes/model.h":
         # Based on the index price for the instrument.
         INDEX_PRICE # = 9,
 
+    # Represents a discrete price level in an order book.
+    #
+    # The level maintains a collection of orders as well as tracking insertion order
+    # to preserve FIFO queue dynamics.
     cdef struct Level:
         pass
 
