@@ -14,13 +14,14 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
+    ffi::{CStr, CString},
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use nautilus_core::correctness::check_valid_string;
-use ustr::Ustr;
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// Represents a valid trade match ID (assigned by a trading venue).
 ///
@@ -29,49 +30,79 @@ use ustr::Ustr;
 /// The unique ID assigned to the trade entity once it is received or matched by
 /// the exchange or central counterparty.
 #[repr(C)]
-#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct TradeId {
-    /// The trade match ID value.
-    pub value: Ustr,
+    pub value: [u8; 65],
 }
 
 impl TradeId {
     pub fn new(s: &str) -> Result<Self> {
-        check_valid_string(s, "`TradeId` value")?;
+        let cstr = CString::new(s).expect("`CString` conversion failed");
 
-        Ok(Self {
-            value: Ustr::from(s),
-        })
+        Self::from_cstr(cstr)
+    }
+
+    pub fn from_cstr(cstr: CString) -> Result<Self> {
+        check_valid_string(cstr.to_str()?, "`TradeId` value")?;
+
+        // TODO: Temporarily make this 65 to accommodate Betfair trade IDs
+        // TODO: Extract this to single function
+        let bytes = cstr.as_bytes_with_nul();
+        if bytes.len() > 65 {
+            bail!("Condition failed: value exceeds maximum trade ID length of 36");
+        }
+        let mut value = [0; 65];
+        value[..bytes.len()].copy_from_slice(bytes);
+
+        Ok(Self { value })
+    }
+
+    #[must_use]
+    pub fn to_cstr(&self) -> &CStr {
+        // SAFETY: Unwrap safe as we always store valid C strings
+        // We use until nul because the values array may be padded with nul bytes
+        CStr::from_bytes_until_nul(&self.value).unwrap()
     }
 }
 
 impl Default for TradeId {
     fn default() -> Self {
-        Self {
-            value: Ustr::from("1"),
-        }
-    }
-}
-
-impl Debug for TradeId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value)
+        Self::from("1")
     }
 }
 
 impl Display for TradeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        write!(f, "{}", self.to_cstr().to_str().unwrap())
     }
 }
 
 impl From<&str> for TradeId {
     fn from(input: &str) -> Self {
         Self::new(input).unwrap()
+    }
+}
+
+impl Serialize for TradeId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for TradeId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value_str = String::deserialize(deserializer)?;
+        TradeId::new(&value_str).map_err(|err| serde::de::Error::custom(err.to_string()))
     }
 }
 

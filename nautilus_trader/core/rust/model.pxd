@@ -492,8 +492,7 @@ cdef extern from "../includes/model.h":
     # The unique ID assigned to the trade entity once it is received or matched by
     # the exchange or central counterparty.
     cdef struct TradeId_t:
-        # The trade match ID value.
-        char* value;
+        uint8_t value[65];
 
     # Represents a single trade tick in a financial market.
     cdef struct TradeTick_t:
@@ -1362,6 +1361,8 @@ cdef extern from "../includes/model.h":
     TradeId_t trade_id_new(const char *ptr);
 
     uint64_t trade_id_hash(const TradeId_t *id);
+
+    const char *trade_id_to_cstr(const TradeId_t *trade_id);
 
     # Returns a Nautilus identifier from a C string pointer.
     #
