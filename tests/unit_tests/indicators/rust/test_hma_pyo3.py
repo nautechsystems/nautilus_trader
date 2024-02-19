@@ -21,31 +21,31 @@ from nautilus_trader.test_kit.rust.data_pyo3 import TestDataProviderPyo3
 
 
 @pytest.fixture(scope="function")
-def hma():
+def hma() -> HullMovingAverage:
     return HullMovingAverage(10)
 
 
-def test_hma(hma: HullMovingAverage):
+def test_hma(hma: HullMovingAverage) -> None:
     assert hma.name == "HullMovingAverage"
 
 
-def test_str_repr_returns_expected_string(hma: HullMovingAverage):
+def test_str_repr_returns_expected_string(hma: HullMovingAverage) -> None:
     # Arrange, Act, Assert
     assert str(hma) == "HullMovingAverage(10)"
     assert repr(hma) == "HullMovingAverage(10)"
 
 
-def test_period_returns_expected_value(hma: HullMovingAverage):
+def test_period_returns_expected_value(hma: HullMovingAverage) -> None:
     # Arrange, Act, Assert
     assert hma.period == 10
 
 
-def test_initialized_without_inputs_returns_false(hma: HullMovingAverage):
+def test_initialized_without_inputs_returns_false(hma: HullMovingAverage) -> None:
     # Arrange, Act, Assert
     assert hma.initialized is False
 
 
-def test_initialized_with_required_inputs_returns_true(hma: HullMovingAverage):
+def test_initialized_with_required_inputs_returns_true(hma: HullMovingAverage) -> None:
     # Arrange
     hma.update_raw(1.00000)
     hma.update_raw(1.00010)
@@ -65,7 +65,7 @@ def test_initialized_with_required_inputs_returns_true(hma: HullMovingAverage):
     assert hma.value == 1.0001403928170598
 
 
-def test_handle_quote_tick_updates_indicator(hma: HullMovingAverage):
+def test_handle_quote_tick_updates_indicator() -> None:
     # Arrange
     indicator = HullMovingAverage(10, PriceType.MID)
 
@@ -79,7 +79,7 @@ def test_handle_quote_tick_updates_indicator(hma: HullMovingAverage):
     assert indicator.value == 1987.5
 
 
-def test_handle_trade_tick_updates_indicator(hma: HullMovingAverage):
+def test_handle_trade_tick_updates_indicator() -> None:
     # Arrange
     indicator = HullMovingAverage(10)
 
@@ -93,7 +93,7 @@ def test_handle_trade_tick_updates_indicator(hma: HullMovingAverage):
     assert indicator.value == 1987.0
 
 
-def test_handle_bar_updates_indicator(hma: HullMovingAverage):
+def test_handle_bar_updates_indicator() -> None:
     # Arrange
     indicator = HullMovingAverage(10)
 
@@ -107,7 +107,7 @@ def test_handle_bar_updates_indicator(hma: HullMovingAverage):
     assert indicator.value == 1.00003
 
 
-def test_value_with_one_input_returns_expected_value(hma: HullMovingAverage):
+def test_value_with_one_input_returns_expected_value(hma: HullMovingAverage) -> None:
     # Arrange
     hma.update_raw(1.0)
 
@@ -115,7 +115,7 @@ def test_value_with_one_input_returns_expected_value(hma: HullMovingAverage):
     assert hma.value == 1.0
 
 
-def test_value_with_three_inputs_returns_expected_value(hma: HullMovingAverage):
+def test_value_with_three_inputs_returns_expected_value(hma: HullMovingAverage) -> None:
     # Arrange
     hma.update_raw(1.0)
     hma.update_raw(2.0)
@@ -125,7 +125,7 @@ def test_value_with_three_inputs_returns_expected_value(hma: HullMovingAverage):
     assert hma.value == 1.824561403508772
 
 
-def test_handle_quote_tick_updates_with_expected_value(hma: HullMovingAverage):
+def test_handle_quote_tick_updates_with_expected_value() -> None:
     # Arrange
     hma_for_ticks1 = HullMovingAverage(10, PriceType.ASK)
     hma_for_ticks2 = HullMovingAverage(10, PriceType.MID)
@@ -150,7 +150,7 @@ def test_handle_quote_tick_updates_with_expected_value(hma: HullMovingAverage):
     assert hma_for_ticks3.value == 1.00001
 
 
-def test_handle_trade_tick_updates_with_expected_value(hma: HullMovingAverage):
+def test_handle_trade_tick_updates_with_expected_value() -> None:
     # Arrange
     hma_for_ticks = HullMovingAverage(10)
 
@@ -164,7 +164,7 @@ def test_handle_trade_tick_updates_with_expected_value(hma: HullMovingAverage):
     assert hma_for_ticks.value == 1987.0
 
 
-def test_reset_successfully_returns_indicator_to_fresh_state(hma: HullMovingAverage):
+def test_reset_successfully_returns_indicator_to_fresh_state(hma: HullMovingAverage) -> None:
     # Arrange
     for _i in range(10):
         hma.update_raw(1.0)
