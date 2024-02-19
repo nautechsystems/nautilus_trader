@@ -890,10 +890,7 @@ typedef struct QuoteTick_t {
  * the exchange or central counterparty.
  */
 typedef struct TradeId_t {
-    /**
-     * The trade match ID value.
-     */
-    char* value;
+    uint8_t value[65];
 } TradeId_t;
 
 /**
@@ -2010,6 +2007,8 @@ uint64_t symbol_hash(const struct Symbol_t *id);
 struct TradeId_t trade_id_new(const char *ptr);
 
 uint64_t trade_id_hash(const struct TradeId_t *id);
+
+const char *trade_id_to_cstr(const struct TradeId_t *trade_id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
