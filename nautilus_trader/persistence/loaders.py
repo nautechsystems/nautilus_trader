@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from os import PathLike
-
+from typing import Any
 import pandas as pd
 
 
@@ -61,7 +61,7 @@ class CSVBarDataLoader:
     """
 
     @staticmethod
-    def load(file_path: PathLike[str] | str) -> pd.DataFrame:
+    def load(file_path: PathLike[str] | str, index_col: Any = None, parse_dates: Any = False, **kwargs: Any) -> pd.DataFrame:
         """
         Return the bar `pandas.DataFrame` loaded from the given CSV `file_path`.
 
@@ -69,6 +69,12 @@ class CSVBarDataLoader:
         ----------
         file_path : str, path object or file-like object
             The path to the CSV file.
+        index_col : Any, optional
+            Column to use as the row labels of the DataFrame.
+        parse_dates : Any, optional
+            If True, attempt to parse the index.
+        **kwargs : Any
+            Additional parameters to be passed to pd.read_csv
 
         Returns
         -------
@@ -77,8 +83,9 @@ class CSVBarDataLoader:
         """
         df = pd.read_csv(
             file_path,
-            index_col="timestamp",
-            parse_dates=True,
+            index_col=index_col,
+            parse_dates=parse_dates,
+            **kwargs,
         )
         df.index = pd.to_datetime(df.index, format="mixed")
         return df
