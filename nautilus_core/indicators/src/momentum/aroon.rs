@@ -38,7 +38,7 @@ pub struct AroonOscillator {
     pub aroon_down: f64,
     pub value: f64,
     pub count: usize,
-    pub is_initialized: bool,
+    pub initialized: bool,
     has_inputs: bool,
 }
 
@@ -57,8 +57,8 @@ impl Indicator for AroonOscillator {
         self.has_inputs
     }
 
-    fn is_initialized(&self) -> bool {
-        self.is_initialized
+    fn initialized(&self) -> bool {
+        self.initialized
     }
 
     fn handle_quote_tick(&mut self, tick: &QuoteTick) {
@@ -83,7 +83,7 @@ impl Indicator for AroonOscillator {
         self.value = 0.0;
         self.count = 0;
         self.has_inputs = false;
-        self.is_initialized = false;
+        self.initialized = false;
     }
 }
 
@@ -98,7 +98,7 @@ impl AroonOscillator {
             value: 0.0,
             count: 0,
             has_inputs: false,
-            is_initialized: false,
+            initialized: false,
         })
     }
 
@@ -114,7 +114,7 @@ impl AroonOscillator {
         self.low_inputs.push_front(low);
 
         self.increment_count();
-        if self.is_initialized {
+        if self.initialized {
             // Makes sure we calculate with stable period
             self.calculate_aroon();
         }
@@ -155,10 +155,10 @@ impl AroonOscillator {
     fn increment_count(&mut self) {
         self.count += 1;
 
-        if !self.is_initialized {
+        if !self.initialized {
             self.has_inputs = true;
             if self.count >= self.period {
-                self.is_initialized = true;
+                self.initialized = true;
             }
         }
     }

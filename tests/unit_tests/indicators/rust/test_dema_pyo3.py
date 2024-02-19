@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import pytest
 
 from nautilus_trader.core.nautilus_pyo3 import DoubleExponentialMovingAverage
@@ -44,7 +43,7 @@ def test_period_returns_expected_value(dema: DoubleExponentialMovingAverage) -> 
 
 def test_initialized_without_inputs_returns_false(dema: DoubleExponentialMovingAverage) -> None:
     # Arrange, Act, Assert
-    assert dema.initialized is False
+    assert not dema.initialized
 
 
 def test_initialized_with_required_inputs_returns_true(
@@ -65,7 +64,7 @@ def test_initialized_with_required_inputs_returns_true(
     # Act
 
     # Assert
-    assert dema.initialized is True
+    assert dema.initialized
 
 
 def test_handle_quote_tick_updates_indicator() -> None:

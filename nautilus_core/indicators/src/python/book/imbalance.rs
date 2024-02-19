@@ -60,7 +60,7 @@ impl BookImbalanceRatio {
     #[getter]
     #[pyo3(name = "initialized")]
     fn py_initialized(&self) -> bool {
-        self.is_initialized
+        self.initialized
     }
 
     #[pyo3(name = "handle_book_mbo")]

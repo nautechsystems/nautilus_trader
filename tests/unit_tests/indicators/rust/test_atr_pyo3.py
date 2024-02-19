@@ -44,7 +44,7 @@ def test_period(atr: AverageTrueRange) -> None:
 
 def test_initialized_without_inputs_returns_false(atr: AverageTrueRange) -> None:
     # Arrange, Act, Assert
-    assert atr.initialized is False
+    assert not atr.initialized
 
 
 def test_initialized_with_required_inputs_returns_true(atr: AverageTrueRange) -> None:
@@ -53,7 +53,7 @@ def test_initialized_with_required_inputs_returns_true(atr: AverageTrueRange) ->
         atr.update_raw(1.00000, 1.00000, 1.00000)
 
     # Assert
-    assert atr.initialized is True
+    assert atr.initialized
 
 
 def test_handle_bar_updates_indicator(atr: AverageTrueRange) -> None:

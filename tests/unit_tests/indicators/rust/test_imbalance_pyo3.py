@@ -36,7 +36,7 @@ def test_str_repr_returns_expected_string(imbalance: BookImbalanceRatio) -> None
 
 def test_initialized_without_inputs_returns_false(imbalance: BookImbalanceRatio) -> None:
     # Arrange, Act, Assert
-    assert imbalance.initialized is False
+    assert not imbalance.initialized
 
 
 def test_initialized_with_required_inputs(imbalance: BookImbalanceRatio) -> None:
@@ -53,6 +53,7 @@ def test_initialized_with_required_inputs(imbalance: BookImbalanceRatio) -> None
 def test_reset(imbalance: BookImbalanceRatio) -> None:
     # Arrange
     imbalance.update(Quantity.from_int(100), Quantity.from_int(100))
+    imbalance.reset()
 
     # Act, Assert
     assert not imbalance.initialized

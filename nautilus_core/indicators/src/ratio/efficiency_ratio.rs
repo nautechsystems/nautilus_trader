@@ -36,7 +36,7 @@ pub struct EfficiencyRatio {
     pub price_type: PriceType,
     pub value: f64,
     pub inputs: Vec<f64>,
-    pub is_initialized: bool,
+    pub initialized: bool,
     deltas: Vec<f64>,
 }
 
@@ -54,8 +54,8 @@ impl Indicator for EfficiencyRatio {
     fn has_inputs(&self) -> bool {
         !self.inputs.is_empty()
     }
-    fn is_initialized(&self) -> bool {
-        self.is_initialized
+    fn initialized(&self) -> bool {
+        self.initialized
     }
 
     fn handle_quote_tick(&mut self, quote: &QuoteTick) {
@@ -73,7 +73,7 @@ impl Indicator for EfficiencyRatio {
     fn reset(&mut self) {
         self.value = 0.0;
         self.inputs.clear();
-        self.is_initialized = false;
+        self.initialized = false;
     }
 }
 
@@ -85,7 +85,7 @@ impl EfficiencyRatio {
             value: 0.0,
             inputs: Vec::with_capacity(period),
             deltas: Vec::with_capacity(period),
-            is_initialized: false,
+            initialized: false,
         })
     }
 
@@ -94,8 +94,8 @@ impl EfficiencyRatio {
         if self.inputs.len() < 2 {
             self.value = 0.0;
             return;
-        } else if !self.is_initialized && self.inputs.len() >= self.period {
-            self.is_initialized = true;
+        } else if !self.initialized && self.inputs.len() >= self.period {
+            self.initialized = true;
         }
         let last_diff =
             (self.inputs[self.inputs.len() - 1] - self.inputs[self.inputs.len() - 2]).abs();
@@ -125,7 +125,7 @@ mod tests {
         let display_str = format!("{efficiency_ratio_10}");
         assert_eq!(display_str, "EfficiencyRatio(10)");
         assert_eq!(efficiency_ratio_10.period, 10);
-        assert!(!efficiency_ratio_10.is_initialized);
+        assert!(!efficiency_ratio_10.initialized);
     }
 
     #[rstest]
@@ -134,10 +134,10 @@ mod tests {
             efficiency_ratio_10.update_raw(f64::from(i));
         }
         assert_eq!(efficiency_ratio_10.inputs.len(), 9);
-        assert!(!efficiency_ratio_10.is_initialized);
+        assert!(!efficiency_ratio_10.initialized);
         efficiency_ratio_10.update_raw(1.0);
         assert_eq!(efficiency_ratio_10.inputs.len(), 10);
-        assert!(efficiency_ratio_10.is_initialized);
+        assert!(efficiency_ratio_10.initialized);
     }
 
     #[rstest]
@@ -203,9 +203,9 @@ mod tests {
         for i in 1..=10 {
             efficiency_ratio_10.update_raw(f64::from(i));
         }
-        assert!(efficiency_ratio_10.is_initialized);
+        assert!(efficiency_ratio_10.initialized);
         efficiency_ratio_10.reset();
-        assert!(!efficiency_ratio_10.is_initialized);
+        assert!(!efficiency_ratio_10.initialized);
         assert_eq!(efficiency_ratio_10.value, 0.0);
     }
 

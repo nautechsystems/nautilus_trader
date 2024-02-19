@@ -38,7 +38,7 @@ pub struct HullMovingAverage {
     pub price_type: PriceType,
     pub value: f64,
     pub count: usize,
-    pub is_initialized: bool,
+    pub initialized: bool,
     has_inputs: bool,
     ma1: WeightedMovingAverage,
     ma2: WeightedMovingAverage,
@@ -60,8 +60,8 @@ impl Indicator for HullMovingAverage {
         self.has_inputs
     }
 
-    fn is_initialized(&self) -> bool {
-        self.is_initialized
+    fn initialized(&self) -> bool {
+        self.initialized
     }
 
     fn handle_quote_tick(&mut self, quote: &QuoteTick) {
@@ -83,7 +83,7 @@ impl Indicator for HullMovingAverage {
         self.ma3.reset();
         self.count = 0;
         self.has_inputs = false;
-        self.is_initialized = false;
+        self.initialized = false;
     }
 }
 
@@ -113,7 +113,7 @@ impl HullMovingAverage {
             value: 0.0,
             count: 0,
             has_inputs: false,
-            is_initialized: false,
+            initialized: false,
             ma1: _ma1,
             ma2: _ma2,
             ma3: _ma3,
@@ -144,8 +144,8 @@ impl MovingAverage for HullMovingAverage {
         self.value = self.ma3.value;
         self.count += 1;
 
-        if !self.is_initialized && self.count >= self.period {
-            self.is_initialized = true;
+        if !self.initialized && self.count >= self.period {
+            self.initialized = true;
         }
     }
 }
@@ -169,7 +169,7 @@ mod tests {
         let display_str = format!("{indicator_hma_10}");
         assert_eq!(display_str, "HullMovingAverage(10)");
         assert_eq!(indicator_hma_10.period, 10);
-        assert!(!indicator_hma_10.is_initialized);
+        assert!(!indicator_hma_10.initialized);
         assert!(!indicator_hma_10.has_inputs);
     }
 
@@ -178,9 +178,9 @@ mod tests {
         for i in 1..10 {
             indicator_hma_10.update_raw(f64::from(i));
         }
-        assert!(!indicator_hma_10.is_initialized);
+        assert!(!indicator_hma_10.initialized);
         indicator_hma_10.update_raw(10.0);
-        assert!(indicator_hma_10.is_initialized);
+        assert!(indicator_hma_10.initialized);
     }
 
     #[rstest]
@@ -233,7 +233,7 @@ mod tests {
         indicator_hma_10.handle_bar(&bar_ethusdt_binance_minute_bid);
         assert_eq!(indicator_hma_10.value, 1522.0);
         assert!(indicator_hma_10.has_inputs);
-        assert!(!indicator_hma_10.is_initialized);
+        assert!(!indicator_hma_10.initialized);
     }
 
     #[rstest]
@@ -251,6 +251,6 @@ mod tests {
         assert_eq!(indicator_hma_10.ma2.value, 0.0);
         assert_eq!(indicator_hma_10.ma3.value, 0.0);
         assert!(!indicator_hma_10.has_inputs);
-        assert!(!indicator_hma_10.is_initialized);
+        assert!(!indicator_hma_10.initialized);
     }
 }

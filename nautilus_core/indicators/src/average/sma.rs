@@ -33,7 +33,7 @@ pub struct SimpleMovingAverage {
     pub value: f64,
     pub count: usize,
     pub inputs: Vec<f64>,
-    pub is_initialized: bool,
+    pub initialized: bool,
 }
 
 impl Display for SimpleMovingAverage {
@@ -51,8 +51,8 @@ impl Indicator for SimpleMovingAverage {
         !self.inputs.is_empty()
     }
 
-    fn is_initialized(&self) -> bool {
-        self.is_initialized
+    fn initialized(&self) -> bool {
+        self.initialized
     }
 
     fn handle_quote_tick(&mut self, quote: &QuoteTick) {
@@ -71,7 +71,7 @@ impl Indicator for SimpleMovingAverage {
         self.value = 0.0;
         self.count = 0;
         self.inputs.clear();
-        self.is_initialized = false;
+        self.initialized = false;
     }
 }
 
@@ -85,7 +85,7 @@ impl SimpleMovingAverage {
             value: 0.0,
             count: 0,
             inputs: Vec::with_capacity(period),
-            is_initialized: false,
+            initialized: false,
         })
     }
 }
@@ -108,8 +108,8 @@ impl MovingAverage for SimpleMovingAverage {
         let sum = self.inputs.iter().sum::<f64>();
         self.value = sum / self.count as f64;
 
-        if !self.is_initialized && self.count >= self.period {
-            self.is_initialized = true;
+        if !self.initialized && self.count >= self.period {
+            self.initialized = true;
         }
     }
 }
@@ -156,7 +156,7 @@ mod tests {
         sma.update_raw(10.0);
 
         assert!(sma.has_inputs());
-        assert!(sma.is_initialized());
+        assert!(sma.initialized());
         assert_eq!(sma.count, 10);
         assert_eq!(sma.value, 5.5);
     }
@@ -169,7 +169,7 @@ mod tests {
         sma.reset();
         assert_eq!(sma.count, 0);
         assert_eq!(sma.value, 0.0);
-        assert!(!sma.is_initialized);
+        assert!(!sma.initialized);
     }
 
     #[rstest]
