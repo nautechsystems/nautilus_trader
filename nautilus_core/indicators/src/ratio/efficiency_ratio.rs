@@ -37,7 +37,7 @@ pub struct EfficiencyRatio {
     pub value: f64,
     pub inputs: Vec<f64>,
     pub is_initialized: bool,
-    _deltas: Vec<f64>,
+    deltas: Vec<f64>,
 }
 
 impl Display for EfficiencyRatio {
@@ -84,7 +84,7 @@ impl EfficiencyRatio {
             price_type: price_type.unwrap_or(PriceType::Last),
             value: 0.0,
             inputs: Vec::with_capacity(period),
-            _deltas: Vec::with_capacity(period),
+            deltas: Vec::with_capacity(period),
             is_initialized: false,
         })
     }
@@ -99,8 +99,8 @@ impl EfficiencyRatio {
         }
         let last_diff =
             (self.inputs[self.inputs.len() - 1] - self.inputs[self.inputs.len() - 2]).abs();
-        self._deltas.push(last_diff);
-        let sum_deltas = self._deltas.iter().sum::<f64>().abs();
+        self.deltas.push(last_diff);
+        let sum_deltas = self.deltas.iter().sum::<f64>().abs();
         let net_diff = (self.inputs[self.inputs.len() - 1] - self.inputs[0]).abs();
         self.value = if sum_deltas == 0.0 {
             0.0

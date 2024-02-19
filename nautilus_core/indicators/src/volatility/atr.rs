@@ -36,9 +36,9 @@ pub struct AverageTrueRange {
     pub value: f64,
     pub count: usize,
     pub is_initialized: bool,
+    ma: Box<dyn MovingAverage + Send + 'static>,
     has_inputs: bool,
-    _previous_close: f64,
-    _ma: Box<dyn MovingAverage + Send + 'static>,
+    previous_close: f64,
 }
 
 impl Display for AverageTrueRange {
@@ -81,7 +81,7 @@ impl Indicator for AverageTrueRange {
     }
 
     fn reset(&mut self) {
-        self._previous_close = 0.0;
+        self.previous_close = 0.0;
         self.value = 0.0;
         self.count = 0;
         self.has_inputs = false;
@@ -103,8 +103,8 @@ impl AverageTrueRange {
             value_floor: value_floor.unwrap_or(0.0),
             value: 0.0,
             count: 0,
-            _previous_close: 0.0,
-            _ma: MovingAverageFactory::create(MovingAverageType::Simple, period),
+            previous_close: 0.0,
+            ma: MovingAverageFactory::create(MovingAverageType::Simple, period),
             has_inputs: false,
             is_initialized: false,
         })
@@ -113,14 +113,14 @@ impl AverageTrueRange {
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {
         if self.use_previous {
             if !self.has_inputs {
-                self._previous_close = close;
+                self.previous_close = close;
             }
-            self._ma.update_raw(
-                f64::max(self._previous_close, high) - f64::min(low, self._previous_close),
+            self.ma.update_raw(
+                f64::max(self.previous_close, high) - f64::min(low, self.previous_close),
             );
-            self._previous_close = close;
+            self.previous_close = close;
         } else {
-            self._ma.update_raw(high - low);
+            self.ma.update_raw(high - low);
         }
 
         self._floor_value();
@@ -128,8 +128,8 @@ impl AverageTrueRange {
     }
 
     fn _floor_value(&mut self) {
-        if self.value_floor == 0.0 || self.value_floor < self._ma.value() {
-            self.value = self._ma.value();
+        if self.value_floor == 0.0 || self.value_floor < self.ma.value() {
+            self.value = self.ma.value();
         } else {
             // Floor the value
             self.value = self.value_floor;
