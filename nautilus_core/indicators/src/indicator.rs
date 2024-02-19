@@ -42,13 +42,13 @@ pub trait Indicator {
         // Eventually change this to log an error
         panic!("`handle_depth` {} `{}`", IMPL_ERR, self.name());
     }
-    fn handle_order_book_mbo(&mut self, book: &OrderBookMbo) {
+    fn handle_book_mbo(&mut self, book: &OrderBookMbo) {
         // Eventually change this to log an error
-        panic!("`handle_order_book_mbo` {} `{}`", IMPL_ERR, self.name());
+        panic!("`handle_book_mbo` {} `{}`", IMPL_ERR, self.name());
     }
-    fn handle_order_book_mbp(&mut self, book: &OrderBookMbp) {
+    fn handle_book_mbp(&mut self, book: &OrderBookMbp) {
         // Eventually change this to log an error
-        panic!("`handle_order_book_mbp` {} `{}`", IMPL_ERR, self.name());
+        panic!("`handle_book_mbp` {} `{}`", IMPL_ERR, self.name());
     }
     fn handle_quote_tick(&mut self, quote: &QuoteTick) {
         // Eventually change this to log an error
