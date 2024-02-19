@@ -119,6 +119,7 @@ pub trait Timer {
     fn cancel(&mut self);
 }
 
+/// Provides a test timer for user with a [`TestClock`].
 #[derive(Clone, Copy, Debug)]
 pub struct TestTimer {
     pub name: Ustr,
@@ -205,6 +206,10 @@ impl Iterator for TestTimer {
     }
 }
 
+/// Provides a live timer for use with a [`LiveClock`].
+///
+/// Note: `next_time_ns` is only accurate when initially starting the timer
+/// and will not incrementally update as the timer runs.
 pub struct LiveTimer {
     pub name: Ustr,
     pub interval_ns: u64,
