@@ -146,6 +146,12 @@ cdef inline OrderBookDelta delta_from_mem_c(OrderBookDelta_t mem):
     return delta
 
 
+cdef inline OrderBookDeltas deltas_from_mem_c(OrderBookDeltas_API mem):
+    cdef OrderBookDeltas deltas = OrderBookDeltas.__new__(OrderBookDeltas)
+    deltas._mem = mem
+    return deltas
+
+
 cdef inline OrderBookDepth10 depth10_from_mem_c(OrderBookDepth10_t mem):
     cdef OrderBookDepth10 depth10 = OrderBookDepth10.__new__(OrderBookDepth10)
     depth10._mem = mem
@@ -180,6 +186,8 @@ cpdef list capsule_to_list(capsule):
     for i in range(0, data.len):
         if ptr[i].tag == Data_t_Tag.DELTA:
             objects.append(delta_from_mem_c(ptr[i].delta))
+        elif ptr[i].tag == Data_t_Tag.DELTAS:
+            objects.append(deltas_from_mem_c(ptr[i].deltas))
         elif ptr[i].tag == Data_t_Tag.DEPTH10:
             objects.append(depth10_from_mem_c(ptr[i].depth10))
         elif ptr[i].tag == Data_t_Tag.QUOTE:
@@ -198,6 +206,8 @@ cpdef Data capsule_to_data(capsule):
 
     if ptr.tag == Data_t_Tag.DELTA:
         return delta_from_mem_c(ptr.delta)
+    elif ptr.tag == Data_t_Tag.DELTAS:
+        return deltas_from_mem_c(ptr.deltas)
     elif ptr.tag == Data_t_Tag.DEPTH10:
         return depth10_from_mem_c(ptr.depth10)
     elif ptr.tag == Data_t_Tag.QUOTE:
