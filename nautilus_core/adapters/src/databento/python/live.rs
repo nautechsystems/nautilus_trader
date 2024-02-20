@@ -24,6 +24,7 @@ use databento::live::Subscription;
 use dbn::{PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy};
 use indexmap::IndexMap;
 use log::{error, info};
+use nautilus_core::ffi::cvec::CVec;
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_core::time::AtomicTime;
 use nautilus_core::{
@@ -33,7 +34,7 @@ use nautilus_core::{
 use nautilus_model::data::delta::OrderBookDelta;
 use nautilus_model::data::deltas::OrderBookDeltas;
 use nautilus_model::data::Data;
-use nautilus_model::ffi::data::deltas::OrderBookDeltas_API;
+use nautilus_model::ffi::data::deltas::orderbook_deltas_new;
 use nautilus_model::identifiers::instrument_id::InstrumentId;
 use nautilus_model::identifiers::symbol::Symbol;
 use nautilus_model::identifiers::venue::Venue;
@@ -271,9 +272,12 @@ impl DatabentoLiveClient {
                             }
 
                             // SAFETY: We can guarantee a deltas vec exists
-                            let deltas = buffered_deltas.remove(&delta.instrument_id).unwrap();
-                            let book_deltas = OrderBookDeltas::new(delta.instrument_id, deltas);
-                            data1 = Some(Data::Deltas(OrderBookDeltas_API::new(book_deltas)));
+                            let instrument_id = delta.instrument_id;
+                            let buffer = buffered_deltas.remove(&delta.instrument_id).unwrap();
+                            let deltas = OrderBookDeltas::new(delta.instrument_id, buffer);
+                            let deltas_cvec: CVec = deltas.deltas.into();
+                            let deltas = orderbook_deltas_new(instrument_id, &deltas_cvec);
+                            data1 = Some(Data::Deltas(deltas));
                         }
                     };
 
