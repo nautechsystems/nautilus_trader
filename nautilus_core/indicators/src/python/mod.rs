@@ -33,5 +33,6 @@ pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     // momentum
     m.add_class::<crate::momentum::rsi::RelativeStrengthIndex>()?;
     m.add_class::<crate::momentum::aroon::AroonOscillator>()?;
+    m.add_class::<crate::momentum::cmo::ChandeMomentumOscillator>()?;
     Ok(())
 }
