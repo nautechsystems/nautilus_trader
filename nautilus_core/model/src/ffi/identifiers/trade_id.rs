@@ -14,8 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
+    collections::hash_map::DefaultHasher,
     ffi::{c_char, CStr},
-    hash::{DefaultHasher, Hash, Hasher},
+    hash::{Hash, Hasher},
 };
 
 use crate::identifiers::trade_id::TradeId;
