@@ -14,11 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::collections::HashMap;
+use std::ffi::CStr;
 use std::fs;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use databento::live::Subscription;
 use dbn::{PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy};
 use indexmap::IndexMap;
@@ -42,8 +43,9 @@ use pyo3::prelude::*;
 use time::OffsetDateTime;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
+use ustr::Ustr;
 
-use crate::databento::decode::{decode_instrument_def_msg, decode_record, raw_ptr_to_ustr};
+use crate::databento::decode::{decode_instrument_def_msg, decode_record};
 use crate::databento::types::{DatabentoPublisher, PublisherId};
 
 use super::loader::convert_instrument_to_pyobject;
@@ -158,7 +160,7 @@ impl DatabentoLiveClient {
         let publisher_venue_map = self.publisher_venue_map.clone();
         let clock = get_atomic_clock_realtime();
 
-        let buffering_start = match replay {
+        let mut buffering_start = match replay {
             true => Some(clock.get_time_ns()),
             false => None,
         };
@@ -166,6 +168,7 @@ impl DatabentoLiveClient {
         pyo3_asyncio::tokio::future_into_py(py, async move {
             let mut client = arc_client.lock().await;
             let mut symbol_map = PitSymbolMap::new();
+            let mut instrument_id_map: HashMap<u32, InstrumentId> = HashMap::new();
 
             let timeout_duration = Duration::from_millis(10);
             let relock_interval = timeout_duration.as_nanos() as u64;
@@ -174,6 +177,8 @@ impl DatabentoLiveClient {
             let mut buffered_deltas: HashMap<InstrumentId, Vec<OrderBookDelta>> = HashMap::new();
 
             client.start().await.map_err(to_pyruntime_err)?;
+
+            let mut deltas_count = 0_u64;
 
             loop {
                 // Check if need to drop then re-aquire lock
@@ -209,33 +214,60 @@ impl DatabentoLiveClient {
                 } else if let Some(msg) = record.get::<dbn::SystemMsg>() {
                     handle_system_msg(msg);
                 } else if let Some(msg) = record.get::<dbn::SymbolMappingMsg>() {
+                    // Remove instrument ID index as the raw symbol may have changed
+                    instrument_id_map.remove(&msg.hd.instrument_id);
                     handle_symbol_mapping_msg(msg, &mut symbol_map);
                 } else if let Some(msg) = record.get::<dbn::InstrumentDefMsg>() {
-                    handle_instrument_def_msg(msg, &publisher_venue_map, clock, &callback)
-                        .map_err(to_pyvalue_err)?;
+                    handle_instrument_def_msg(
+                        msg,
+                        &publisher_venue_map,
+                        &mut instrument_id_map,
+                        clock,
+                        &callback,
+                    )
+                    .map_err(to_pyvalue_err)?;
                 } else {
-                    let (mut data1, data2) =
-                        handle_record(record, &symbol_map, &publisher_venue_map, clock)
-                            .map_err(to_pyvalue_err)?;
+                    let (mut data1, data2) = handle_record(
+                        record,
+                        &symbol_map,
+                        &publisher_venue_map,
+                        &mut instrument_id_map,
+                        clock,
+                    )
+                    .map_err(to_pyvalue_err)?;
 
                     if let Some(msg) = record.get::<dbn::MboMsg>() {
                         // SAFETY: An MBO message will always produce a delta
                         if let Data::Delta(delta) = data1.clone().unwrap() {
-                            buffered_deltas
-                                .entry(delta.instrument_id)
-                                .or_default()
-                                .push(delta);
+                            let buffer = buffered_deltas.entry(delta.instrument_id).or_default();
+                            buffer.push(delta);
 
-                            // Check if this is the last message in the packet
-                            if msg.flags & dbn::flags::LAST != 0 {
-                                continue; // Not last message
+                            deltas_count += 1;
+                            println!(
+                                "Buffering delta: {} {} {:?} flags={}, buffer_len={}",
+                                deltas_count,
+                                delta.ts_event,
+                                buffering_start,
+                                msg.flags,
+                                buffer.len()
+                            );
+
+                            // Check if last message in the packet
+                            if msg.flags & dbn::flags::LAST == 0 {
+                                continue; // NOT last message
                             }
 
-                            // Check if we're currently buffering a replay
+                            // Check if snapshot
+                            if msg.flags & dbn::flags::SNAPSHOT != 0 {
+                                continue; // Buffer snapshot
+                            }
+
+                            // Check if buffering a replay
                             if let Some(start_ns) = buffering_start {
                                 if delta.ts_event <= start_ns {
-                                    continue; // Continue buffering the replay
+                                    continue; // Continue buffering replay
                                 }
+                                buffering_start = None;
                             }
 
                             // SAFETY: We can guarantee a deltas vec exists
@@ -294,16 +326,43 @@ fn handle_symbol_mapping_msg(msg: &dbn::SymbolMappingMsg, symbol_map: &mut PitSy
         .unwrap_or_else(|_| panic!("Error updating `symbol_map` with {msg:?}"));
 }
 
+fn update_instrument_id_map(
+    header: &dbn::RecordHeader,
+    raw_symbol: &str,
+    publisher_venue_map: &IndexMap<PublisherId, Venue>,
+    instrument_id_map: &mut HashMap<u32, InstrumentId>,
+) -> InstrumentId {
+    // Check if instrument ID is already in the map
+    if let Some(&instrument_id) = instrument_id_map.get(&header.instrument_id) {
+        return instrument_id;
+    }
+
+    let symbol = Symbol {
+        value: Ustr::from(raw_symbol),
+    };
+    let venue = publisher_venue_map.get(&header.publisher_id).unwrap();
+    let instrument_id = InstrumentId::new(symbol, *venue);
+
+    instrument_id_map.insert(header.instrument_id, instrument_id);
+    instrument_id
+}
+
 fn handle_instrument_def_msg(
     msg: &dbn::InstrumentDefMsg,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
+    instrument_id_map: &mut HashMap<u32, InstrumentId>,
     clock: &AtomicTime,
     callback: &PyObject,
 ) -> Result<()> {
-    let raw_symbol = unsafe { raw_ptr_to_ustr(msg.raw_symbol.as_ptr()).unwrap() };
-    let symbol = Symbol { value: raw_symbol };
-    let venue = publisher_venue_map.get(&msg.hd.publisher_id).unwrap();
-    let instrument_id = InstrumentId::new(symbol, *venue);
+    let c_str: &CStr = unsafe { CStr::from_ptr(msg.raw_symbol.as_ptr()) };
+    let raw_symbol: &str = c_str.to_str().map_err(|e| anyhow!(e))?;
+
+    let instrument_id = update_instrument_id_map(
+        msg.header(),
+        raw_symbol,
+        publisher_venue_map,
+        instrument_id_map,
+    );
 
     let ts_init = clock.get_time_ns();
     let result = decode_instrument_def_msg(msg, instrument_id, ts_init);
@@ -324,15 +383,19 @@ fn handle_record(
     record: dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
+    instrument_id_map: &mut HashMap<u32, InstrumentId>,
     clock: &AtomicTime,
 ) -> Result<(Option<Data>, Option<Data>)> {
     let raw_symbol = symbol_map
         .get_for_rec(&record)
         .expect("Cannot resolve `raw_symbol` from `symbol_map`");
-    let publisher_id = record.publisher().unwrap() as PublisherId;
-    let symbol = Symbol::from_str_unchecked(raw_symbol);
-    let venue = publisher_venue_map.get(&publisher_id).unwrap();
-    let instrument_id = InstrumentId::new(symbol, *venue);
+
+    let instrument_id = update_instrument_id_map(
+        record.header(),
+        raw_symbol,
+        publisher_venue_map,
+        instrument_id_map,
+    );
 
     let price_precision = 2; // Hard coded for now
     let ts_init = clock.get_time_ns();
