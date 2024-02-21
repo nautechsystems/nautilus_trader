@@ -56,4 +56,4 @@ def check_value(v: Any) -> Any:
 
 
 def freeze_dict(dict_like: dict) -> tuple:
-    return tuple(sorted(dict_like.items()))
+    return tuple(sorted((k, check_value(v)) for k, v in dict_like.items()))
