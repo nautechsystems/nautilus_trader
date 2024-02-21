@@ -30,6 +30,7 @@ cdef extern from "../includes/core.h":
     # Represents a pseudo-random UUID (universally unique identifier)
     # version 4 based on a 128-bit label as specified in RFC 4122.
     cdef struct UUID4_t:
+        # The UUID v4 C string value as a fixed-length byte array.
         uint8_t value[37];
 
     # Converts seconds to nanoseconds (ns).

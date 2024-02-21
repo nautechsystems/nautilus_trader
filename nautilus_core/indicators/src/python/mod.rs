@@ -16,8 +16,10 @@
 use pyo3::{prelude::*, pymodule};
 
 pub mod average;
+pub mod book;
 pub mod momentum;
 pub mod ratio;
+pub mod volatility;
 
 #[pymodule]
 pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
@@ -28,11 +30,15 @@ pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::average::dema::DoubleExponentialMovingAverage>()?;
     m.add_class::<crate::average::hma::HullMovingAverage>()?;
     m.add_class::<crate::average::rma::WilderMovingAverage>()?;
+    // book
+    m.add_class::<crate::book::imbalance::BookImbalanceRatio>()?;
     // ratio
     m.add_class::<crate::ratio::efficiency_ratio::EfficiencyRatio>()?;
     // momentum
     m.add_class::<crate::momentum::rsi::RelativeStrengthIndex>()?;
     m.add_class::<crate::momentum::aroon::AroonOscillator>()?;
     m.add_class::<crate::momentum::cmo::ChandeMomentumOscillator>()?;
+    // volatility
+    m.add_class::<crate::volatility::atr::AverageTrueRange>()?;
     Ok(())
 }

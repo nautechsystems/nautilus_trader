@@ -29,7 +29,7 @@ class Controller(Actor):
     trader : Trader
         The reference to the trader instance to control.
     config : ActorConfig, optional
-        The configuratuon for the controller
+        The configuration for the controller
 
     Raises
     ------

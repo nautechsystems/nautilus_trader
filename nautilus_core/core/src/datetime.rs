@@ -18,7 +18,7 @@ use std::time::{Duration, UNIX_EPOCH};
 use anyhow::{anyhow, Result};
 use chrono::{
     prelude::{DateTime, Utc},
-    Datelike, NaiveDate, SecondsFormat, Weekday,
+    Datelike, NaiveDate, SecondsFormat, TimeDelta, Weekday,
 };
 
 use crate::time::UnixNanos;
@@ -105,7 +105,7 @@ pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> Result<UnixNanos> 
     });
 
     // Calculate last closest weekday
-    let last_closest = date - chrono::Duration::days(offset);
+    let last_closest = date - TimeDelta::days(offset);
 
     // Convert to UNIX nanoseconds
     let unix_timestamp_ns = last_closest
@@ -124,7 +124,7 @@ pub fn is_within_last_24_hours(timestamp_ns: UnixNanos) -> Result<bool> {
         .ok_or_else(|| anyhow!("Invalid timestamp {timestamp_ns}"))?;
     let now = Utc::now();
 
-    Ok(now.signed_duration_since(timestamp) <= chrono::Duration::days(1))
+    Ok(now.signed_duration_since(timestamp) <= TimeDelta::days(1))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -261,7 +261,7 @@ mod tests {
 
     #[rstest]
     fn test_is_within_last_24_hours_when_two_days_ago() {
-        let past_ns = (Utc::now() - chrono::Duration::days(2))
+        let past_ns = (Utc::now() - TimeDelta::days(2))
             .timestamp_nanos_opt()
             .unwrap();
         assert!(!is_within_last_24_hours(past_ns as UnixNanos).unwrap());

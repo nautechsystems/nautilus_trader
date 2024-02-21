@@ -20,7 +20,6 @@ use std::{
 
 use indexmap::IndexMap;
 use nautilus_core::{serialization::Serializable, time::UnixNanos};
-use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::order::BookOrder;
@@ -41,7 +40,7 @@ pub const DEPTH10_LEN: usize = 10;
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct OrderBookDepth10 {

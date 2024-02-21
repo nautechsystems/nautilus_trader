@@ -23,6 +23,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.core.message import Event
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
@@ -69,6 +70,11 @@ def live_clock():
 @pytest.fixture()
 def trader_id():
     return TestIdStubs.trader_id()
+
+
+@pytest.fixture()
+def instance_id():
+    return UUID4()
 
 
 @pytest.fixture()
@@ -145,6 +151,7 @@ def risk_engine(portfolio, msgbus, cache, clock):
 @pytest.fixture(autouse=True)
 def trader(
     trader_id,
+    instance_id,
     msgbus,
     cache,
     portfolio,
@@ -156,6 +163,7 @@ def trader(
 ):
     return Trader(
         trader_id=trader_id,
+        instance_id=instance_id,
         msgbus=msgbus,
         cache=cache,
         portfolio=portfolio,

@@ -43,6 +43,7 @@ from nautilus_trader.core.rust.model cimport symbol_hash
 from nautilus_trader.core.rust.model cimport symbol_new
 from nautilus_trader.core.rust.model cimport trade_id_hash
 from nautilus_trader.core.rust.model cimport trade_id_new
+from nautilus_trader.core.rust.model cimport trade_id_to_cstr
 from nautilus_trader.core.rust.model cimport trader_id_hash
 from nautilus_trader.core.rust.model cimport trader_id_new
 from nautilus_trader.core.rust.model cimport venue_hash
@@ -933,7 +934,7 @@ cdef class TradeId(Identifier):
     def __eq__(self, TradeId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return strcmp(self._mem.value, other._mem.value) == 0
+        return strcmp(trade_id_to_cstr(&self._mem), trade_id_to_cstr(&other._mem)) == 0
 
     def __hash__(self) -> int:
         return hash(self.to_str())
@@ -945,4 +946,4 @@ cdef class TradeId(Identifier):
         return trade_id
 
     cdef str to_str(self):
-        return ustr_to_pystr(self._mem.value)
+        return cstr_to_pystr(trade_id_to_cstr(&self._mem), False)

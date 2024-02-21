@@ -48,12 +48,12 @@ pub struct AdaptiveMovingAverage {
     pub value: f64,
     /// The input count for the indicator.
     pub count: usize,
-    pub is_initialized: bool,
-    _efficiency_ratio: EfficiencyRatio,
-    _prior_value: Option<f64>,
-    _alpha_fast: f64,
-    _alpha_slow: f64,
+    pub initialized: bool,
     has_inputs: bool,
+    efficiency_ratio: EfficiencyRatio,
+    prior_value: Option<f64>,
+    alpha_fast: f64,
+    alpha_slow: f64,
 }
 
 impl Display for AdaptiveMovingAverage {
@@ -78,8 +78,8 @@ impl Indicator for AdaptiveMovingAverage {
         self.has_inputs
     }
 
-    fn is_initialized(&self) -> bool {
-        self.is_initialized
+    fn initialized(&self) -> bool {
+        self.initialized
     }
 
     fn handle_quote_tick(&mut self, tick: &QuoteTick) {
@@ -98,7 +98,7 @@ impl Indicator for AdaptiveMovingAverage {
         self.value = 0.0;
         self.count = 0;
         self.has_inputs = false;
-        self.is_initialized = false;
+        self.initialized = false;
     }
 }
 
@@ -118,26 +118,26 @@ impl AdaptiveMovingAverage {
             price_type: price_type.unwrap_or(PriceType::Last),
             value: 0.0,
             count: 0,
-            _alpha_fast: 2.0 / (period_fast + 1) as f64,
-            _alpha_slow: 2.0 / (period_slow + 1) as f64,
-            _prior_value: None,
+            alpha_fast: 2.0 / (period_fast + 1) as f64,
+            alpha_slow: 2.0 / (period_slow + 1) as f64,
+            prior_value: None,
             has_inputs: false,
-            is_initialized: false,
-            _efficiency_ratio: EfficiencyRatio::new(period_efficiency_ratio, price_type)?,
+            initialized: false,
+            efficiency_ratio: EfficiencyRatio::new(period_efficiency_ratio, price_type)?,
         })
     }
 
     #[must_use]
     pub fn alpha_diff(&self) -> f64 {
-        self._alpha_fast - self._alpha_slow
+        self.alpha_fast - self.alpha_slow
     }
 
     pub fn reset(&mut self) {
         self.value = 0.0;
-        self._prior_value = None;
+        self.prior_value = None;
         self.count = 0;
         self.has_inputs = false;
-        self.is_initialized = false;
+        self.initialized = false;
     }
 }
 
@@ -152,29 +152,27 @@ impl MovingAverage for AdaptiveMovingAverage {
 
     fn update_raw(&mut self, value: f64) {
         if !self.has_inputs {
-            self._prior_value = Some(value);
-            self._efficiency_ratio.update_raw(value);
+            self.prior_value = Some(value);
+            self.efficiency_ratio.update_raw(value);
             self.value = value;
             self.has_inputs = true;
             return;
         }
-        self._efficiency_ratio.update_raw(value);
-        self._prior_value = Some(self.value);
+        self.efficiency_ratio.update_raw(value);
+        self.prior_value = Some(self.value);
 
         // Calculate the smoothing constant
         let smoothing_constant = self
-            ._efficiency_ratio
+            .efficiency_ratio
             .value
-            .mul_add(self.alpha_diff(), self._alpha_slow)
+            .mul_add(self.alpha_diff(), self.alpha_slow)
             .powi(2);
 
         // Calculate the AMA
-        self.value = smoothing_constant.mul_add(
-            value - self._prior_value.unwrap(),
-            self._prior_value.unwrap(),
-        );
-        if self._efficiency_ratio.is_initialized() {
-            self.is_initialized = true;
+        self.value = smoothing_constant
+            .mul_add(value - self.prior_value.unwrap(), self.prior_value.unwrap());
+        if self.efficiency_ratio.initialized() {
+            self.initialized = true;
         }
     }
 }
@@ -199,7 +197,7 @@ mod tests {
         assert_eq!(display_str, "AdaptiveMovingAverage(10,2,30)");
         assert_eq!(indicator_ama_10.name(), "AdaptiveMovingAverage");
         assert!(!indicator_ama_10.has_inputs());
-        assert!(!indicator_ama_10.is_initialized());
+        assert!(!indicator_ama_10.initialized());
     }
 
     #[rstest]
@@ -228,9 +226,9 @@ mod tests {
         for _ in 0..10 {
             indicator_ama_10.update_raw(1.0);
         }
-        assert!(indicator_ama_10.is_initialized);
+        assert!(indicator_ama_10.initialized);
         indicator_ama_10.reset();
-        assert!(!indicator_ama_10.is_initialized);
+        assert!(!indicator_ama_10.initialized);
         assert!(!indicator_ama_10.has_inputs);
         assert_eq!(indicator_ama_10.value, 0.0);
     }
@@ -241,16 +239,16 @@ mod tests {
         for _ in 0..9 {
             ama.update_raw(1.0);
         }
-        assert!(!ama.is_initialized);
+        assert!(!ama.initialized);
         ama.update_raw(1.0);
-        assert!(ama.is_initialized);
+        assert!(ama.initialized);
     }
 
     #[rstest]
     fn test_handle_quote_tick(mut indicator_ama_10: AdaptiveMovingAverage, quote_tick: QuoteTick) {
         indicator_ama_10.handle_quote_tick(&quote_tick);
         assert!(indicator_ama_10.has_inputs);
-        assert!(!indicator_ama_10.is_initialized);
+        assert!(!indicator_ama_10.initialized);
         assert_eq!(indicator_ama_10.value, 1501.0);
     }
 
@@ -261,7 +259,7 @@ mod tests {
     ) {
         indicator_ama_10.handle_trade_tick(&trade_tick);
         assert!(indicator_ama_10.has_inputs);
-        assert!(!indicator_ama_10.is_initialized);
+        assert!(!indicator_ama_10.initialized);
         assert_eq!(indicator_ama_10.value, 1500.0);
     }
 
@@ -272,7 +270,7 @@ mod tests {
     ) {
         indicator_ama_10.handle_bar(&bar_ethusdt_binance_minute_bid);
         assert!(indicator_ama_10.has_inputs);
-        assert!(!indicator_ama_10.is_initialized);
+        assert!(!indicator_ama_10.initialized);
         assert_eq!(indicator_ama_10.value, 1522.0);
     }
 }

@@ -382,6 +382,19 @@ def test_deltas_fully_qualified_name() -> None:
     assert OrderBookDeltas.fully_qualified_name() == "nautilus_trader.model.data:OrderBookDeltas"
 
 
+def test_deltas_pickle_round_trip() -> None:
+    # Arrange
+    deltas = TestDataStubs.order_book_deltas()
+
+    # Act
+    pickled = pickle.dumps(deltas)
+    unpickled = pickle.loads(pickled)  # noqa
+
+    # Assert
+    assert deltas == unpickled
+    assert len(deltas.deltas) == len(unpickled.deltas)
+
+
 def test_deltas_hash_str_and_repr() -> None:
     # Arrange
     order1 = BookOrder(

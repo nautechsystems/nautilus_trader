@@ -272,10 +272,10 @@ pub fn init_logging(
 /// channel.
 #[derive(Debug)]
 pub struct Logger {
-    /// Send log events to a different thread.
-    tx: Sender<LogEvent>,
     /// Configure maximum levels for components and IO.
     pub config: LoggerConfig,
+    /// Send log events to a different thread.
+    tx: Sender<LogEvent>,
 }
 
 /// Represents a type of log event.
@@ -361,8 +361,9 @@ impl fmt::Display for LogLine {
 impl Log for Logger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
         !LOGGING_BYPASSED.load(Ordering::Relaxed)
-            && (metadata.level() >= self.config.stdout_level
-                || metadata.level() >= self.config.fileout_level)
+            && (metadata.level() == Level::Error
+                || metadata.level() <= self.config.stdout_level
+                || metadata.level() <= self.config.fileout_level)
     }
 
     fn log(&self, record: &log::Record) {
@@ -417,7 +418,7 @@ impl Logger {
         let print_config = config.print_config;
         if print_config {
             println!("STATIC_MAX_LEVEL={STATIC_MAX_LEVEL}");
-            println!("Logger initialized with {:?}", config);
+            println!("Logger initialized with {:?} {:?}", config, file_config);
         }
 
         match set_boxed_logger(Box::new(logger)) {

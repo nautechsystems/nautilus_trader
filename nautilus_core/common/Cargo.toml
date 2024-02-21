@@ -18,12 +18,14 @@ chrono = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
+pyo3-asyncio = { workspace = true, optional = true }
 redis = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
 ustr = { workspace = true }
 rstest = { workspace = true , optional = true}
+tokio = { workspace = true }
 tracing = { workspace = true }
 sysinfo = "0.30.5"
 # Disable default feature "tracing-log" since it interferes with custom logging
@@ -39,7 +41,7 @@ extension-module = [
     "nautilus-model/extension-module",
 ]
 ffi = ["cbindgen"]
-python = ["pyo3"]
+python = ["pyo3", "pyo3-asyncio"]
 stubs = ["rstest"]
 redis = ["dep:redis"]
 default = ["ffi", "python", "redis"]

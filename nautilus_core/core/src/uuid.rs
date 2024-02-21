@@ -32,7 +32,8 @@ use uuid::Uuid;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.core")
 )]
 pub struct UUID4 {
-    pub value: [u8; 37],
+    /// The UUID v4 C string value as a fixed-length byte array.
+    pub(crate) value: [u8; 37],
 }
 
 impl UUID4 {

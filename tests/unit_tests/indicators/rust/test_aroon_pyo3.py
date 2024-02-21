@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 import pytest
 
 from nautilus_trader.core.nautilus_pyo3 import AroonOscillator
@@ -5,34 +20,34 @@ from nautilus_trader.test_kit.rust.data_pyo3 import TestDataProviderPyo3
 
 
 @pytest.fixture(scope="function")
-def aroon():
+def aroon() -> AroonOscillator:
     return AroonOscillator(10)
 
 
-def test_name_returns_expected_string(aroon: AroonOscillator):
+def test_name_returns_expected_string(aroon: AroonOscillator) -> None:
     assert aroon.name == "AroonOscillator"
 
 
-def test_period(aroon: AroonOscillator):
+def test_period(aroon: AroonOscillator) -> None:
     # Arrange, Act, Assert
     assert aroon.period == 10
 
 
-def test_initialized_without_inputs_returns_false(aroon: AroonOscillator):
+def test_initialized_without_inputs_returns_false(aroon: AroonOscillator) -> None:
     # Arrange, Act, Assert
-    assert aroon.initialized is False
+    assert not aroon.initialized
 
 
-def test_initialized_with_required_inputs_returns_true(aroon: AroonOscillator):
+def test_initialized_with_required_inputs_returns_true(aroon: AroonOscillator) -> None:
     # Arrange, Act
     for _i in range(20):
         aroon.update_raw(110.08, 109.61)
 
     # Assert
-    assert aroon.initialized is True
+    assert aroon.initialized
 
 
-def test_handle_bar_updates_indicator(aroon: AroonOscillator):
+def test_handle_bar_updates_indicator(aroon: AroonOscillator) -> None:
     # Arrange
     indicator = AroonOscillator(1)
     bar = TestDataProviderPyo3.bar_5decimal()
@@ -47,7 +62,7 @@ def test_handle_bar_updates_indicator(aroon: AroonOscillator):
     assert indicator.value == 0
 
 
-def test_value_with_one_input(aroon: AroonOscillator):
+def test_value_with_one_input(aroon: AroonOscillator) -> None:
     # Arrange
     aroon = AroonOscillator(1)
 
@@ -60,7 +75,7 @@ def test_value_with_one_input(aroon: AroonOscillator):
     assert aroon.value == 0
 
 
-def test_value_with_twenty_inputs(aroon: AroonOscillator):
+def test_value_with_twenty_inputs(aroon: AroonOscillator) -> None:
     # Arrange, Act
     aroon.update_raw(110.08, 109.61)
     aroon.update_raw(110.15, 109.91)
@@ -89,7 +104,7 @@ def test_value_with_twenty_inputs(aroon: AroonOscillator):
     assert aroon.value == -10.0
 
 
-def test_reset_successfully_returns_indicator_to_fresh_state(aroon: AroonOscillator):
+def test_reset_successfully_returns_indicator_to_fresh_state(aroon: AroonOscillator) -> None:
     # Arrange
     for _i in range(1000):
         aroon.update_raw(110.08, 109.61)

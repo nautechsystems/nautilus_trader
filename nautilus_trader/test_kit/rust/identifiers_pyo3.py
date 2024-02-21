@@ -77,6 +77,10 @@ class TestIdProviderPyo3:
         return InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
 
     @staticmethod
+    def aapl_xnas_id() -> InstrumentId:
+        return InstrumentId(Symbol("AAPL"), Venue("XNAS"))
+
+    @staticmethod
     def betting_instrument_id():
         from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 

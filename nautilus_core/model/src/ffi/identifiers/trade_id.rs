@@ -13,9 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::c_char;
-
-use nautilus_core::ffi::string::cstr_to_str;
+use std::{
+    collections::hash_map::DefaultHasher,
+    ffi::{c_char, CStr},
+    hash::{Hash, Hasher},
+};
 
 use crate::identifiers::trade_id::TradeId;
 
@@ -26,10 +28,17 @@ use crate::identifiers::trade_id::TradeId;
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn trade_id_new(ptr: *const c_char) -> TradeId {
-    TradeId::from(cstr_to_str(ptr))
+    TradeId::from_cstr(CStr::from_ptr(ptr).to_owned()).unwrap()
 }
 
 #[no_mangle]
 pub extern "C" fn trade_id_hash(id: &TradeId) -> u64 {
-    id.value.precomputed_hash()
+    let mut hasher = DefaultHasher::new();
+    id.value.hash(&mut hasher);
+    hasher.finish()
+}
+
+#[no_mangle]
+pub extern "C" fn trade_id_to_cstr(trade_id: &TradeId) -> *const c_char {
+    trade_id.to_cstr().as_ptr()
 }

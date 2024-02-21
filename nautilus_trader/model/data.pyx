@@ -78,6 +78,16 @@ from nautilus_trader.core.rust.model cimport instrument_id_from_cstr
 from nautilus_trader.core.rust.model cimport orderbook_delta_eq
 from nautilus_trader.core.rust.model cimport orderbook_delta_hash
 from nautilus_trader.core.rust.model cimport orderbook_delta_new
+from nautilus_trader.core.rust.model cimport orderbook_deltas_drop
+from nautilus_trader.core.rust.model cimport orderbook_deltas_flags
+from nautilus_trader.core.rust.model cimport orderbook_deltas_instrument_id
+from nautilus_trader.core.rust.model cimport orderbook_deltas_is_snapshot
+from nautilus_trader.core.rust.model cimport orderbook_deltas_new
+from nautilus_trader.core.rust.model cimport orderbook_deltas_sequence
+from nautilus_trader.core.rust.model cimport orderbook_deltas_ts_event
+from nautilus_trader.core.rust.model cimport orderbook_deltas_ts_init
+from nautilus_trader.core.rust.model cimport orderbook_deltas_vec_deltas
+from nautilus_trader.core.rust.model cimport orderbook_deltas_vec_drop
 from nautilus_trader.core.rust.model cimport orderbook_depth10_ask_counts_array
 from nautilus_trader.core.rust.model cimport orderbook_depth10_asks_array
 from nautilus_trader.core.rust.model cimport orderbook_depth10_bid_counts_array
@@ -136,6 +146,12 @@ cdef inline OrderBookDelta delta_from_mem_c(OrderBookDelta_t mem):
     return delta
 
 
+cdef inline OrderBookDeltas deltas_from_mem_c(OrderBookDeltas_API mem):
+    cdef OrderBookDeltas deltas = OrderBookDeltas.__new__(OrderBookDeltas)
+    deltas._mem = mem
+    return deltas
+
+
 cdef inline OrderBookDepth10 depth10_from_mem_c(OrderBookDepth10_t mem):
     cdef OrderBookDepth10 depth10 = OrderBookDepth10.__new__(OrderBookDepth10)
     depth10._mem = mem
@@ -170,6 +186,8 @@ cpdef list capsule_to_list(capsule):
     for i in range(0, data.len):
         if ptr[i].tag == Data_t_Tag.DELTA:
             objects.append(delta_from_mem_c(ptr[i].delta))
+        elif ptr[i].tag == Data_t_Tag.DELTAS:
+            objects.append(deltas_from_mem_c(ptr[i].deltas))
         elif ptr[i].tag == Data_t_Tag.DEPTH10:
             objects.append(depth10_from_mem_c(ptr[i].depth10))
         elif ptr[i].tag == Data_t_Tag.QUOTE:
@@ -188,6 +206,8 @@ cpdef Data capsule_to_data(capsule):
 
     if ptr.tag == Data_t_Tag.DELTA:
         return delta_from_mem_c(ptr.delta)
+    elif ptr.tag == Data_t_Tag.DELTAS:
+        return deltas_from_mem_c(ptr.deltas)
     elif ptr.tag == Data_t_Tag.DEPTH10:
         return depth10_from_mem_c(ptr.depth10)
     elif ptr.tag == Data_t_Tag.QUOTE:
@@ -2130,12 +2150,82 @@ cdef class OrderBookDeltas(Data):
     ) -> None:
         Condition.not_empty(deltas, "deltas")
 
-        self.instrument_id = instrument_id
-        self.deltas = deltas
-        self.is_snapshot = deltas[0].is_clear
-        self.sequence = deltas[-1].sequence
-        self.ts_event = deltas[-1].ts_event
-        self.ts_init = deltas[-1].ts_init
+        cdef uint64_t len_ = len(deltas)
+
+        # Create a C OrderBookDeltas_t buffer
+        cdef OrderBookDelta_t* data = <OrderBookDelta_t *>PyMem_Malloc(len_ * sizeof(OrderBookDelta_t))
+        if not data:
+            raise MemoryError()
+
+        cdef uint64_t i
+        cdef OrderBookDelta delta
+        for i in range(len_):
+            delta = deltas[i]
+            data[i] = <OrderBookDelta_t>delta._mem
+
+        # Create CVec
+        cdef CVec* cvec = <CVec *>PyMem_Malloc(1 * sizeof(CVec))
+        if not cvec:
+            raise MemoryError()
+
+        cvec.ptr = data
+        cvec.len = len_
+        cvec.cap = len_
+
+        # Transfer data to Rust
+        self._mem = orderbook_deltas_new(
+            instrument_id._mem,
+            cvec,
+        )
+
+        PyMem_Free(cvec.ptr) # De-allocate buffer
+        PyMem_Free(cvec) # De-allocate cvec
+
+    def __getstate__(self):
+        return (
+            self.instrument_id.value,
+            pickle.dumps(self.deltas),
+        )
+
+    def __setstate__(self, state):
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
+
+        cdef list deltas = pickle.loads(state[1])
+
+        cdef uint64_t len_ = len(deltas)
+
+        # Create a C OrderBookDeltas_t buffer
+        cdef OrderBookDelta_t* data = <OrderBookDelta_t *>PyMem_Malloc(len_ * sizeof(OrderBookDelta_t))
+        if not data:
+            raise MemoryError()
+
+        cdef uint64_t i
+        cdef OrderBookDelta delta
+        for i in range(len_):
+            delta = deltas[i]
+            data[i] = <OrderBookDelta_t>delta._mem
+
+        # Create CVec
+        cdef CVec* cvec = <CVec *>PyMem_Malloc(1 * sizeof(CVec))
+        if not cvec:
+            raise MemoryError()
+
+        cvec.ptr = data
+        cvec.len = len_
+        cvec.cap = len_
+
+        # Transfer data to Rust
+        self._mem = orderbook_deltas_new(
+            instrument_id._mem,
+            cvec,
+        )
+
+        PyMem_Free(cvec.ptr) # De-allocate buffer
+        PyMem_Free(cvec) # De-allocate cvec
+
+    def __del__(self) -> None:
+        if self._mem._0 != NULL:
+            orderbook_deltas_drop(self._mem)
 
     def __eq__(self, OrderBookDeltas other) -> bool:
         return OrderBookDeltas.to_dict_c(self) == OrderBookDeltas.to_dict_c(other)
@@ -2154,6 +2244,102 @@ cdef class OrderBookDeltas(Data):
             f"ts_init={self.ts_init})"
         )
 
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        Return the deltas book instrument ID.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return InstrumentId.from_mem_c(orderbook_deltas_instrument_id(&self._mem))
+
+    @property
+    def deltas(self) -> list[OrderBookDelta]:
+        """
+        Return the contained deltas.
+
+        Returns
+        -------
+        list[OrderBookDeltas]
+
+        """
+        cdef CVec raw_deltas_vec = orderbook_deltas_vec_deltas(&self._mem)
+        cdef OrderBookDelta_t* raw_deltas = <OrderBookDelta_t*>raw_deltas_vec.ptr
+
+        cdef list[OrderBookDelta] deltas = []
+
+        cdef:
+            uint64_t i
+        for i in range(raw_deltas_vec.len):
+            deltas.append(delta_from_mem_c(raw_deltas[i]))
+
+        orderbook_deltas_vec_drop(raw_deltas_vec)
+
+        return deltas
+
+    @property
+    def is_snapshot(self) -> bool:
+        """
+        If the deltas is a snapshot.
+
+        Returns
+        -------
+        bool
+
+        """
+        return <bint>orderbook_deltas_is_snapshot(&self._mem)
+
+    @property
+    def flags(self) -> uint8_t:
+        """
+        Return the flags for the last delta.
+
+        Returns
+        -------
+        uint8_t
+
+        """
+        return orderbook_deltas_flags(&self._mem)
+
+    @property
+    def sequence(self) -> uint64_t:
+        """
+        Return the sequence number for the last delta.
+
+        Returns
+        -------
+        uint64_t
+
+        """
+        return orderbook_deltas_sequence(&self._mem)
+
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return orderbook_deltas_ts_event(&self._mem)
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return orderbook_deltas_ts_init(&self._mem)
+
     @staticmethod
     cdef OrderBookDeltas from_dict_c(dict values):
         Condition.not_none(values, "values")
@@ -2167,7 +2353,7 @@ cdef class OrderBookDeltas(Data):
         Condition.not_none(obj, "obj")
         return {
             "type": obj.__class__.__name__,
-            "instrument_id": obj.instrument_id.to_str(),
+            "instrument_id": obj.instrument_id.value,
             "deltas": [OrderBookDelta.to_dict_c(d) for d in obj.deltas],
         }
 
@@ -3907,7 +4093,7 @@ cdef class TradeTick(Data):
             if pyo3_instrument_id is None:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(trade.instrument_id.value)
                 price_prec = trade.price.precision
-                size_prec = trade.price.precision
+                size_prec = trade.size.precision
 
             pyo3_trade = nautilus_pyo3.TradeTick(
                 pyo3_instrument_id,

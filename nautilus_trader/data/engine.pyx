@@ -638,14 +638,14 @@ cdef class DataEngine(Component):
                 client,
                 command.data_type.metadata.get("instrument_id"),
             )
-        elif command.data_type.type == OrderBook:
-            self._handle_subscribe_order_book_snapshots(
+        elif command.data_type.type == OrderBookDelta:
+            self._handle_subscribe_order_book_deltas(
                 client,
                 command.data_type.metadata.get("instrument_id"),
                 command.data_type.metadata,
             )
-        elif command.data_type.type == OrderBookDelta:
-            self._handle_subscribe_order_book_deltas(
+        elif command.data_type.type == OrderBook:
+            self._handle_subscribe_order_book_snapshots(
                 client,
                 command.data_type.metadata.get("instrument_id"),
                 command.data_type.metadata,
@@ -757,6 +757,7 @@ cdef class DataEngine(Component):
             instrument_id,
             metadata,
             only_deltas=True,
+            managed=metadata["managed"]
         )
 
     cpdef void _handle_subscribe_order_book_snapshots(
@@ -803,6 +804,7 @@ cdef class DataEngine(Component):
             instrument_id,
             metadata,
             only_deltas=False,
+            managed=metadata["managed"]
         )
 
     cpdef void _setup_order_book(
@@ -811,13 +813,14 @@ cdef class DataEngine(Component):
         InstrumentId instrument_id,
         dict metadata,
         bint only_deltas,
+        bint managed,
     ):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(metadata, "metadata")
 
         # Create order book
-        if not self._cache.has_order_book(instrument_id):
+        if managed and not self._cache.has_order_book(instrument_id):
             instrument = self._cache.instrument(instrument_id)
             if instrument is None:
                 self._log.error(
@@ -1542,10 +1545,11 @@ cdef class DataEngine(Component):
     cpdef void _update_order_book(self, Data data):
         cdef OrderBook order_book = self._cache.order_book(data.instrument_id)
         if order_book is None:
-            self._log.error(
-                "Cannot update order book: "
-                f"no book found for {data.instrument_id}.",
-            )
+            # TODO: Silence error for now (book may be managed manually)
+            # self._log.error(
+            #     "Cannot update order book: "
+            #     f"no book found for {data.instrument_id}.",
+            # )
             return
 
         order_book.apply(data)

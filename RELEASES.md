@@ -1,3 +1,40 @@
+# NautilusTrader 1.188.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+- Added `managed` parameter to `subscribe_order_book_deltas`, default true to retain current behavior (if false then the data engine will not automatically manage a book)
+- Added `managed` parameter to `subscribe_order_book_snapshots`, default true to retain current behavior (if false then the data engine will not automatically manage a book)
+- Removed `interval_ms` 20 millisecond limitation for `subscribe_order_book_snapshots` (i.e. just needs to be positive), although we recommend you consider subscribing to deltas below 100 milliseconds
+- Ported `LiveClock` and `LiveTimer` implementations to Rust
+- Implemented `OrderBookDeltas` pickling
+- Implemented `AverageTrueRange` in Rust, thanks @rsmb7z
+
+### Breaking Changes
+None
+
+### Fixes
+- Fixed `TradeId` memory leak due assigning unique values to the `Ustr` global string cache (which are never freed for the lifetime of the program)
+- Fixed `TradeTick` size precision for pyo3 conversion (size precision was incorrectly price precision)
+- Fixed FOK time in force behavior (allows fills beyond the top level, will cancel if cannot fill full size)
+- Fixed IOC time in force behavior (allows fills beyond the top level, will cancel any remaining after all fills are applied)
+- Fixed `LiveClock` timer behavior for small intervals causing next time to be less than now (timer then would not run)
+- Fixed log level filtering for `log_level_file` (bug introduced in v1.187.0), thanks @twitu
+- Fixed logging `print_config` config option (was not being passed through to the logging system)
+- Fixed logging timestamps for backtesting (static clock was not being incrementally set to individual `TimeEvent` timestamps)
+- Fixed account balance updates (fills from zero quantity `NETTING` positions will generate account balance updates)
+- Fixed `MessageBus` publishable types collection type (needed to be `tuple` not `set`)
+- Fixed `Controller` registration of components to ensure all active clocks are iterated correctly during backtests
+- Fixed `Equity` short selling for `CASH` accounts (will now reject)
+- Fixed `ActorFactory.create` JSON encoding (was missing the encoding hook)
+- Fixed `ImportableConfig.create` JSON encoding (was missing the encoding hook)
+- Fixed `ImportableStrategyConfig.create` JSON encoding (was missing the encoding hook)
+- Fixed `ExecAlgorithmFactory.create` JSON encoding (was missing the encoding hook)
+- Fixed `ControllerConfig` base class and docstring
+- Fixed Interactive Brokers historical bar data bug, thanks @benjaminsingleton
+
+---
+
 # NautilusTrader 1.187.0 Beta
 
 Released on 9th February 2024 (UTC).

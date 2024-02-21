@@ -32,6 +32,7 @@ from nautilus_trader.core.rust.model cimport HaltReason
 from nautilus_trader.core.rust.model cimport InstrumentCloseType
 from nautilus_trader.core.rust.model cimport MarketStatus
 from nautilus_trader.core.rust.model cimport OrderBookDelta_t
+from nautilus_trader.core.rust.model cimport OrderBookDeltas_API
 from nautilus_trader.core.rust.model cimport OrderBookDepth10_t
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PriceType
@@ -235,18 +236,7 @@ cdef class OrderBookDelta(Data):
 
 
 cdef class OrderBookDeltas(Data):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the order book.\n\n:returns: `InstrumentId`"""
-    cdef readonly list deltas
-    """The order book deltas.\n\n:returns: `list[OrderBookDelta]`"""
-    cdef readonly bint is_snapshot
-    """If the deltas represent a snapshot (an initial CLEAR then deltas).\n\n:returns: `bool`"""
-    cdef readonly uint64_t sequence
-    """If the sequence number for the last delta.\n\n:returns: `bool`"""
-    cdef readonly uint64_t ts_event
-    """The UNIX timestamp (nanoseconds) when the last delta event occurred.\n\n:returns: `uint64_t`"""
-    cdef readonly uint64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the last delta event was initialized.\n\n:returns: `uint64_t`"""
+    cdef OrderBookDeltas_API _mem
 
     @staticmethod
     cdef OrderBookDeltas from_dict_c(dict values)

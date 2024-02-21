@@ -142,7 +142,8 @@ cdef class Actor(Component):
         BookType book_type=*,
         int depth=*,
         dict kwargs=*,
-        ClientId client_id=*
+        ClientId client_id=*,
+        bint managed=*,
     )
     cpdef void subscribe_order_book_snapshots(
         self,
@@ -151,7 +152,8 @@ cdef class Actor(Component):
         int depth=*,
         int interval_ms=*,
         dict kwargs=*,
-        ClientId client_id=*
+        ClientId client_id=*,
+        bint managed=*,
     )
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id=*)

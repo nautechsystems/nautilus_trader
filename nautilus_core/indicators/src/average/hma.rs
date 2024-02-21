@@ -38,11 +38,11 @@ pub struct HullMovingAverage {
     pub price_type: PriceType,
     pub value: f64,
     pub count: usize,
-    pub is_initialized: bool,
+    pub initialized: bool,
     has_inputs: bool,
-    _ma1: WeightedMovingAverage,
-    _ma2: WeightedMovingAverage,
-    _ma3: WeightedMovingAverage,
+    ma1: WeightedMovingAverage,
+    ma2: WeightedMovingAverage,
+    ma3: WeightedMovingAverage,
 }
 
 impl Display for HullMovingAverage {
@@ -60,16 +60,16 @@ impl Indicator for HullMovingAverage {
         self.has_inputs
     }
 
-    fn is_initialized(&self) -> bool {
-        self.is_initialized
+    fn initialized(&self) -> bool {
+        self.initialized
     }
 
-    fn handle_quote_tick(&mut self, tick: &QuoteTick) {
-        self.update_raw(tick.extract_price(self.price_type).into());
+    fn handle_quote_tick(&mut self, quote: &QuoteTick) {
+        self.update_raw(quote.extract_price(self.price_type).into());
     }
 
-    fn handle_trade_tick(&mut self, tick: &TradeTick) {
-        self.update_raw((&tick.price).into());
+    fn handle_trade_tick(&mut self, trade: &TradeTick) {
+        self.update_raw((&trade.price).into());
     }
 
     fn handle_bar(&mut self, bar: &Bar) {
@@ -78,12 +78,12 @@ impl Indicator for HullMovingAverage {
 
     fn reset(&mut self) {
         self.value = 0.0;
-        self._ma1.reset();
-        self._ma2.reset();
-        self._ma3.reset();
+        self.ma1.reset();
+        self.ma2.reset();
+        self.ma3.reset();
         self.count = 0;
         self.has_inputs = false;
-        self.is_initialized = false;
+        self.initialized = false;
     }
 }
 
@@ -113,10 +113,10 @@ impl HullMovingAverage {
             value: 0.0,
             count: 0,
             has_inputs: false,
-            is_initialized: false,
-            _ma1,
-            _ma2,
-            _ma3,
+            initialized: false,
+            ma1: _ma1,
+            ma2: _ma2,
+            ma3: _ma3,
         })
     }
 }
@@ -136,16 +136,16 @@ impl MovingAverage for HullMovingAverage {
             self.value = value;
         }
 
-        self._ma1.update_raw(value);
-        self._ma2.update_raw(value);
-        self._ma3
-            .update_raw(2.0f64.mul_add(self._ma1.value, -self._ma2.value));
+        self.ma1.update_raw(value);
+        self.ma2.update_raw(value);
+        self.ma3
+            .update_raw(2.0f64.mul_add(self.ma1.value, -self.ma2.value));
 
-        self.value = self._ma3.value;
+        self.value = self.ma3.value;
         self.count += 1;
 
-        if !self.is_initialized && self.count >= self.period {
-            self.is_initialized = true;
+        if !self.initialized && self.count >= self.period {
+            self.initialized = true;
         }
     }
 }
@@ -169,7 +169,7 @@ mod tests {
         let display_str = format!("{indicator_hma_10}");
         assert_eq!(display_str, "HullMovingAverage(10)");
         assert_eq!(indicator_hma_10.period, 10);
-        assert!(!indicator_hma_10.is_initialized);
+        assert!(!indicator_hma_10.initialized);
         assert!(!indicator_hma_10.has_inputs);
     }
 
@@ -178,9 +178,9 @@ mod tests {
         for i in 1..10 {
             indicator_hma_10.update_raw(f64::from(i));
         }
-        assert!(!indicator_hma_10.is_initialized);
+        assert!(!indicator_hma_10.initialized);
         indicator_hma_10.update_raw(10.0);
-        assert!(indicator_hma_10.is_initialized);
+        assert!(indicator_hma_10.initialized);
     }
 
     #[rstest]
@@ -233,7 +233,7 @@ mod tests {
         indicator_hma_10.handle_bar(&bar_ethusdt_binance_minute_bid);
         assert_eq!(indicator_hma_10.value, 1522.0);
         assert!(indicator_hma_10.has_inputs);
-        assert!(!indicator_hma_10.is_initialized);
+        assert!(!indicator_hma_10.initialized);
     }
 
     #[rstest]
@@ -241,16 +241,16 @@ mod tests {
         indicator_hma_10.update_raw(1.0);
         assert_eq!(indicator_hma_10.count, 1);
         assert_eq!(indicator_hma_10.value, 1.0);
-        assert_eq!(indicator_hma_10._ma1.value, 1.0);
-        assert_eq!(indicator_hma_10._ma2.value, 1.0);
-        assert_eq!(indicator_hma_10._ma3.value, 1.0);
+        assert_eq!(indicator_hma_10.ma1.value, 1.0);
+        assert_eq!(indicator_hma_10.ma2.value, 1.0);
+        assert_eq!(indicator_hma_10.ma3.value, 1.0);
         indicator_hma_10.reset();
         assert_eq!(indicator_hma_10.value, 0.0);
         assert_eq!(indicator_hma_10.count, 0);
-        assert_eq!(indicator_hma_10._ma1.value, 0.0);
-        assert_eq!(indicator_hma_10._ma2.value, 0.0);
-        assert_eq!(indicator_hma_10._ma3.value, 0.0);
+        assert_eq!(indicator_hma_10.ma1.value, 0.0);
+        assert_eq!(indicator_hma_10.ma2.value, 0.0);
+        assert_eq!(indicator_hma_10.ma3.value, 0.0);
         assert!(!indicator_hma_10.has_inputs);
-        assert!(!indicator_hma_10.is_initialized);
+        assert!(!indicator_hma_10.initialized);
     }
 }

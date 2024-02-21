@@ -699,8 +699,6 @@ class TestOrderBook:
         )
 
         for delta in data:
-            if not isinstance(delta, OrderBookDelta):
-                continue
             book.apply_delta(delta)
 
         # Assert

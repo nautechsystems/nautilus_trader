@@ -46,6 +46,8 @@ def test_to_dict():
         "lot_size": None,
         "max_quantity": "9000",
         "min_quantity": "0.00001",
+        "max_notional": None,
+        "min_notional": None,
         "min_price": "0.01",
         "max_price": "1000000",
         "maker_fee": 0.001,

@@ -29,7 +29,7 @@ use crate::{
     data::{delta::OrderBookDelta, order::BookOrder, Data},
     enums::BookAction,
     identifiers::instrument_id::InstrumentId,
-    python::PY_MODULE_MODEL,
+    python::common::PY_MODULE_MODEL,
 };
 
 use super::data_to_pycapsule;

@@ -40,13 +40,12 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class OrderEmulator(Actor):
     cdef OrderManager _manager
-    cdef dict _matching_cores
-    cdef dict _commands_submit_order
+    cdef dict[InstrumentId, MatchingCore] _matching_cores
 
-    cdef set _subscribed_quotes
-    cdef set _subscribed_trades
-    cdef set _subscribed_strategies
-    cdef set _monitored_positions
+    cdef set[InstrumentId] _subscribed_quotes
+    cdef set[InstrumentId] _subscribed_trades
+    cdef set[StrategyId] _subscribed_strategies
+    cdef set[PositionId] _monitored_positions
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""

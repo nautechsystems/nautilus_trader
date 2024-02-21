@@ -19,7 +19,6 @@ use std::{
 };
 
 use nautilus_core::serialization::Serializable;
-use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::{quote::QuoteTick, trade::TradeTick};
@@ -49,7 +48,7 @@ pub const NULL_ORDER: BookOrder = BookOrder {
 #[derive(Clone, Eq, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct BookOrder {

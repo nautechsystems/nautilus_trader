@@ -13,21 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+use std::ffi::CStr;
 use std::fs;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{anyhow, bail, Result};
 use databento::live::Subscription;
-use dbn::{PitSymbolMap, RType, Record, SymbolIndex, VersionUpgradePolicy};
+use dbn::{PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy};
 use indexmap::IndexMap;
 use log::{error, info};
+use nautilus_core::ffi::cvec::CVec;
 use nautilus_core::python::to_pyruntime_err;
+use nautilus_core::time::AtomicTime;
 use nautilus_core::{
     python::to_pyvalue_err,
     time::{get_atomic_clock_realtime, UnixNanos},
 };
+use nautilus_model::data::delta::OrderBookDelta;
+use nautilus_model::data::deltas::OrderBookDeltas;
 use nautilus_model::data::Data;
+use nautilus_model::ffi::data::deltas::orderbook_deltas_new;
 use nautilus_model::identifiers::instrument_id::InstrumentId;
 use nautilus_model::identifiers::symbol::Symbol;
 use nautilus_model::identifiers::venue::Venue;
@@ -37,8 +44,9 @@ use pyo3::prelude::*;
 use time::OffsetDateTime;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
+use ustr::Ustr;
 
-use crate::databento::parsing::{parse_instrument_def_msg, parse_record};
+use crate::databento::decode::{decode_instrument_def_msg, decode_record};
 use crate::databento::types::{DatabentoPublisher, PublisherId};
 
 use super::loader::convert_instrument_to_pyobject;
@@ -53,8 +61,7 @@ pub struct DatabentoLiveClient {
     #[pyo3(get)]
     pub dataset: String,
     inner: Option<Arc<Mutex<databento::LiveClient>>>,
-    runtime: tokio::runtime::Runtime,
-    publishers: Arc<IndexMap<PublisherId, DatabentoPublisher>>,
+    publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
 }
 
 impl DatabentoLiveClient {
@@ -71,7 +78,8 @@ impl DatabentoLiveClient {
         match &self.inner {
             Some(client) => Ok(client.clone()),
             None => {
-                let client = self.runtime.block_on(self.initialize_client())?;
+                let rt = pyo3_asyncio::tokio::get_runtime();
+                let client = rt.block_on(self.initialize_client())?;
                 self.inner = Some(Arc::new(Mutex::new(client)));
                 Ok(self.inner.clone().unwrap())
             }
@@ -86,17 +94,17 @@ impl DatabentoLiveClient {
         let file_content = fs::read_to_string(publishers_path)?;
         let publishers_vec: Vec<DatabentoPublisher> =
             serde_json::from_str(&file_content).map_err(to_pyvalue_err)?;
-        let publishers = publishers_vec
+
+        let publisher_venue_map = publishers_vec
             .into_iter()
-            .map(|p| (p.publisher_id, p))
-            .collect::<IndexMap<u16, DatabentoPublisher>>();
+            .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
+            .collect::<IndexMap<u16, Venue>>();
 
         Ok(Self {
             key,
             dataset,
             inner: None,
-            runtime: tokio::runtime::Runtime::new()?,
-            publishers: Arc::new(publishers),
+            publisher_venue_map: Arc::new(publisher_venue_map),
         })
     }
 
@@ -143,20 +151,35 @@ impl DatabentoLiveClient {
     }
 
     #[pyo3(name = "start")]
-    fn py_start<'py>(&mut self, py: Python<'py>, callback: PyObject) -> PyResult<&'py PyAny> {
+    fn py_start<'py>(
+        &mut self,
+        py: Python<'py>,
+        callback: PyObject,
+        replay: bool,
+    ) -> PyResult<&'py PyAny> {
         let arc_client = self.get_inner_client().map_err(to_pyruntime_err)?;
-        let publishers = self.publishers.clone();
+        let publisher_venue_map = self.publisher_venue_map.clone();
+        let clock = get_atomic_clock_realtime();
+
+        let mut buffering_start = match replay {
+            true => Some(clock.get_time_ns()),
+            false => None,
+        };
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            let clock = get_atomic_clock_realtime();
             let mut client = arc_client.lock().await;
             let mut symbol_map = PitSymbolMap::new();
+            let mut instrument_id_map: HashMap<u32, InstrumentId> = HashMap::new();
 
             let timeout_duration = Duration::from_millis(10);
             let relock_interval = timeout_duration.as_nanos() as u64;
             let mut lock_last_dropped_ns = 0_u64;
 
+            let mut buffered_deltas: HashMap<InstrumentId, Vec<OrderBookDelta>> = HashMap::new();
+
             client.start().await.map_err(to_pyruntime_err)?;
+
+            let mut deltas_count = 0_u64;
 
             loop {
                 // Check if need to drop then re-aquire lock
@@ -187,72 +210,87 @@ impl DatabentoLiveClient {
                     }
                 };
 
-                let rtype = record.rtype().expect("Invalid `rtype`");
+                if let Some(msg) = record.get::<dbn::ErrorMsg>() {
+                    handle_error_msg(msg);
+                } else if let Some(msg) = record.get::<dbn::SystemMsg>() {
+                    handle_system_msg(msg);
+                } else if let Some(msg) = record.get::<dbn::SymbolMappingMsg>() {
+                    // Remove instrument ID index as the raw symbol may have changed
+                    instrument_id_map.remove(&msg.hd.instrument_id);
+                    handle_symbol_mapping_msg(msg, &mut symbol_map);
+                } else if let Some(msg) = record.get::<dbn::InstrumentDefMsg>() {
+                    handle_instrument_def_msg(
+                        msg,
+                        &publisher_venue_map,
+                        &mut instrument_id_map,
+                        clock,
+                        &callback,
+                    )
+                    .map_err(to_pyvalue_err)?;
+                } else {
+                    let (mut data1, data2) = handle_record(
+                        record,
+                        &symbol_map,
+                        &publisher_venue_map,
+                        &mut instrument_id_map,
+                        clock,
+                    )
+                    .map_err(to_pyvalue_err)?;
 
-                match rtype {
-                    RType::SymbolMapping => {
-                        symbol_map.on_record(record).unwrap_or_else(|_| {
-                            panic!("Error updating `symbol_map` with {record:?}")
-                        });
-                    }
-                    RType::Error => {
-                        eprintln!("{record:?}"); // TODO: Just print stderr for now
-                        error!("{:?}", record);
-                    }
-                    RType::System => {
-                        println!("{record:?}"); // TODO: Just print stdout for now
-                        info!("{:?}", record);
-                    }
-                    RType::InstrumentDef => {
-                        let msg = record
-                            .get::<dbn::InstrumentDefMsg>()
-                            .expect("Error converting record to `InstrumentDefMsg`");
-                        let publisher_id = record.publisher().unwrap() as PublisherId;
-                        let publisher = publishers.get(&publisher_id).unwrap();
-                        let ts_init = clock.get_time_ns();
-                        let result = parse_instrument_def_msg(msg, publisher, ts_init);
+                    if let Some(msg) = record.get::<dbn::MboMsg>() {
+                        // SAFETY: An MBO message will always produce a delta
+                        if let Data::Delta(delta) = data1.clone().unwrap() {
+                            let buffer = buffered_deltas.entry(delta.instrument_id).or_default();
+                            buffer.push(delta);
 
-                        match result {
-                            Ok(instrument) => {
-                                Python::with_gil(|py| {
-                                    let py_obj =
-                                        convert_instrument_to_pyobject(py, instrument).unwrap();
-                                    match callback.call1(py, (py_obj,)) {
-                                        Ok(_) => {}
-                                        Err(e) => eprintln!("Error on callback, {e:?}"), // Just print error for now
-                                    };
-                                });
+                            deltas_count += 1;
+                            println!(
+                                "Buffering delta: {} {} {:?} flags={}, buffer_len={}",
+                                deltas_count,
+                                delta.ts_event,
+                                buffering_start,
+                                msg.flags,
+                                buffer.len()
+                            );
+
+                            // Check if last message in the packet
+                            if msg.flags & dbn::flags::LAST == 0 {
+                                continue; // NOT last message
                             }
-                            Err(e) => eprintln!("{e:?}"),
+
+                            // Check if snapshot
+                            if msg.flags & dbn::flags::SNAPSHOT != 0 {
+                                continue; // Buffer snapshot
+                            }
+
+                            // Check if buffering a replay
+                            if let Some(start_ns) = buffering_start {
+                                if delta.ts_event <= start_ns {
+                                    continue; // Continue buffering replay
+                                }
+                                buffering_start = None;
+                            }
+
+                            // SAFETY: We can guarantee a deltas vec exists
+                            let instrument_id = delta.instrument_id;
+                            let buffer = buffered_deltas.remove(&delta.instrument_id).unwrap();
+                            let deltas = OrderBookDeltas::new(delta.instrument_id, buffer);
+                            let deltas_cvec: CVec = deltas.deltas.into();
+                            let deltas = orderbook_deltas_new(instrument_id, &deltas_cvec);
+                            data1 = Some(Data::Deltas(deltas));
                         }
-                        continue;
-                    }
-                    _ => {
-                        let raw_symbol = symbol_map
-                            .get_for_rec(&record)
-                            .expect("Cannot resolve raw_symbol from `symbol_map`");
+                    };
 
-                        let symbol = Symbol::from_str_unchecked(raw_symbol);
-                        let publisher_id = record.publisher().unwrap() as PublisherId;
-                        let venue_str = publishers.get(&publisher_id).unwrap().venue.as_str();
-                        let venue = Venue::from_str_unchecked(venue_str);
-
-                        let instrument_id = InstrumentId::new(symbol, venue);
-                        let ts_init = clock.get_time_ns();
-
-                        let (data, maybe_data) =
-                            parse_record(&record, rtype, instrument_id, 2, Some(ts_init))
-                                .map_err(to_pyvalue_err)?;
-
-                        Python::with_gil(|py| {
+                    Python::with_gil(|py| {
+                        if let Some(data) = data1 {
                             call_python_with_data(py, &callback, data);
+                        }
 
-                            if let Some(data) = maybe_data {
-                                call_python_with_data(py, &callback, data);
-                            }
-                        });
-                    }
-                }
+                        if let Some(data) = data2 {
+                            call_python_with_data(py, &callback, data);
+                        }
+                    });
+                };
             }
             Ok(())
         })
@@ -274,6 +312,105 @@ impl DatabentoLiveClient {
             )),
         }
     }
+}
+
+fn handle_error_msg(msg: &dbn::ErrorMsg) {
+    eprintln!("{msg:?}"); // TODO: Just print stderr for now
+    error!("{:?}", msg);
+}
+
+fn handle_system_msg(msg: &dbn::SystemMsg) {
+    println!("{msg:?}"); // TODO: Just print stdout for now
+    info!("{:?}", msg);
+}
+
+fn handle_symbol_mapping_msg(msg: &dbn::SymbolMappingMsg, symbol_map: &mut PitSymbolMap) {
+    symbol_map
+        .on_symbol_mapping(msg)
+        .unwrap_or_else(|_| panic!("Error updating `symbol_map` with {msg:?}"));
+}
+
+fn update_instrument_id_map(
+    header: &dbn::RecordHeader,
+    raw_symbol: &str,
+    publisher_venue_map: &IndexMap<PublisherId, Venue>,
+    instrument_id_map: &mut HashMap<u32, InstrumentId>,
+) -> InstrumentId {
+    // Check if instrument ID is already in the map
+    if let Some(&instrument_id) = instrument_id_map.get(&header.instrument_id) {
+        return instrument_id;
+    }
+
+    let symbol = Symbol {
+        value: Ustr::from(raw_symbol),
+    };
+    let venue = publisher_venue_map.get(&header.publisher_id).unwrap();
+    let instrument_id = InstrumentId::new(symbol, *venue);
+
+    instrument_id_map.insert(header.instrument_id, instrument_id);
+    instrument_id
+}
+
+fn handle_instrument_def_msg(
+    msg: &dbn::InstrumentDefMsg,
+    publisher_venue_map: &IndexMap<PublisherId, Venue>,
+    instrument_id_map: &mut HashMap<u32, InstrumentId>,
+    clock: &AtomicTime,
+    callback: &PyObject,
+) -> Result<()> {
+    let c_str: &CStr = unsafe { CStr::from_ptr(msg.raw_symbol.as_ptr()) };
+    let raw_symbol: &str = c_str.to_str().map_err(|e| anyhow!(e))?;
+
+    let instrument_id = update_instrument_id_map(
+        msg.header(),
+        raw_symbol,
+        publisher_venue_map,
+        instrument_id_map,
+    );
+
+    let ts_init = clock.get_time_ns();
+    let result = decode_instrument_def_msg(msg, instrument_id, ts_init);
+
+    match result {
+        Ok(instrument) => Python::with_gil(|py| {
+            let py_obj = convert_instrument_to_pyobject(py, instrument).unwrap();
+            match callback.call1(py, (py_obj,)) {
+                Ok(_) => Ok(()),
+                Err(e) => bail!(e),
+            }
+        }),
+        Err(e) => Err(e),
+    }
+}
+
+fn handle_record(
+    record: dbn::RecordRef,
+    symbol_map: &PitSymbolMap,
+    publisher_venue_map: &IndexMap<PublisherId, Venue>,
+    instrument_id_map: &mut HashMap<u32, InstrumentId>,
+    clock: &AtomicTime,
+) -> Result<(Option<Data>, Option<Data>)> {
+    let raw_symbol = symbol_map
+        .get_for_rec(&record)
+        .expect("Cannot resolve `raw_symbol` from `symbol_map`");
+
+    let instrument_id = update_instrument_id_map(
+        record.header(),
+        raw_symbol,
+        publisher_venue_map,
+        instrument_id_map,
+    );
+
+    let price_precision = 2; // Hard coded for now
+    let ts_init = clock.get_time_ns();
+
+    decode_record(
+        &record,
+        instrument_id,
+        price_precision,
+        Some(ts_init),
+        true, // Always include trades
+    )
 }
 
 fn call_python_with_data(py: Python, callback: &PyObject, data: Data) {

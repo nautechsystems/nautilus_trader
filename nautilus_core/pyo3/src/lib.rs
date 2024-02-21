@@ -13,39 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_adapters::databento::{
-    loader, python::historical, python::live, python::parsing, types,
-};
 use pyo3::{
     prelude::*,
     types::{PyDict, PyString},
 };
 
-/// This currently works around an issue where `databento` couldn't be recognised
-/// by the pyo3 `wrap_pymodule!` macro.
-///
-/// Loaded as nautilus_pyo3.databento
-#[pymodule]
-pub fn databento(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<types::DatabentoPublisher>()?;
-    m.add_class::<loader::DatabentoDataLoader>()?;
-    m.add_class::<live::DatabentoLiveClient>()?;
-    m.add_class::<historical::DatabentoHistoricalClient>()?;
-    m.add_function(wrap_pyfunction!(parsing::py_parse_equity, m)?)?;
-    m.add_function(wrap_pyfunction!(parsing::py_parse_futures_contract, m)?)?;
-    m.add_function(wrap_pyfunction!(parsing::py_parse_options_contract, m)?)?;
-    m.add_function(wrap_pyfunction!(parsing::py_parse_mbo_msg, m)?)?;
-    m.add_function(wrap_pyfunction!(parsing::py_parse_trade_msg, m)?)?;
-    m.add_function(wrap_pyfunction!(parsing::py_parse_mbp1_msg, m)?)?;
-    m.add_function(wrap_pyfunction!(parsing::py_parse_mbp10_msg, m)?)?;
-
-    Ok(())
-}
-
-/// Need to modify sys modules so that submodule can be loaded directly as
+/// We modify sys modules so that submodule can be loaded directly as
 /// import supermodule.submodule
 ///
-/// Also re-exports all submodule attributes so they can be imported directly from `nautilus_pyo3`.
+/// Also re-exports all submodule attributes so they can be imported directly from `nautilus_pyo3`
 /// refer: https://github.com/PyO3/pyo3/issues/2644
 #[pymodule]
 fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
@@ -63,7 +39,7 @@ fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     re_export_module_attributes(m, n)?;
 
     let n = "databento";
-    let submodule = pyo3::wrap_pymodule!(databento);
+    let submodule = pyo3::wrap_pymodule!(nautilus_adapters::databento::python::databento);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     re_export_module_attributes(m, n)?;

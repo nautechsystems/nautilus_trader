@@ -428,7 +428,8 @@ class ActorFactory:
         PyCondition.type(config, ImportableActorConfig, "config")
         actor_cls = resolve_path(config.actor_path)
         config_cls = resolve_config_path(config.config_path)
-        config = config_cls.parse(msgspec.json.encode(config.config))
+        json = msgspec.json.encode(config.config, enc_hook=msgspec_encoding_hook)
+        config = config_cls.parse(json)
         return actor_cls(config)
 
 
@@ -505,5 +506,5 @@ class ImportableConfig(NautilusConfig, frozen=True):
     def create(self):
         assert ":" in self.path, "`path` variable should be of the form `path.to.module:class`"
         cls = resolve_path(self.path)
-        cfg = msgspec.json.encode(self.config)
+        cfg = msgspec.json.encode(self.config, enc_hook=msgspec_encoding_hook)
         return msgspec.json.decode(cfg, type=cls)

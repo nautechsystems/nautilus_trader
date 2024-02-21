@@ -21,37 +21,37 @@ from nautilus_trader.test_kit.rust.data_pyo3 import TestDataProviderPyo3
 
 
 @pytest.fixture(scope="function")
-def rma():
+def rma() -> WilderMovingAverage:
     return WilderMovingAverage(10)
 
 
-def test_name_returns_expected_string(rma: WilderMovingAverage):
+def test_name_returns_expected_string(rma: WilderMovingAverage) -> None:
     # Arrange, Act, Assert
     assert rma.name == "WilderMovingAverage"
 
 
-def test_str_repr_returns_expected_string(rma: WilderMovingAverage):
+def test_str_repr_returns_expected_string(rma: WilderMovingAverage) -> None:
     # Arrange, Act, Assert
     assert str(rma) == "WilderMovingAverage(10)"
     assert repr(rma) == "WilderMovingAverage(10)"
 
 
-def test_period_returns_expected_value(rma: WilderMovingAverage):
+def test_period_returns_expected_value(rma: WilderMovingAverage) -> None:
     # Arrange, Act, Assert
     assert rma.period == 10
 
 
-def test_multiplier_returns_expected_value(rma: WilderMovingAverage):
+def test_multiplier_returns_expected_value(rma: WilderMovingAverage) -> None:
     # Arrange, Act, Assert
     assert rma.alpha == 0.1
 
 
-def test_initialized_without_inputs_returns_false(rma: WilderMovingAverage):
+def test_initialized_without_inputs_returns_false(rma: WilderMovingAverage) -> None:
     # Arrange, Act, Assert
-    assert rma.initialized is False
+    assert not rma.initialized
 
 
-def test_initialized_with_required_inputs_returns_true(rma: WilderMovingAverage):
+def test_initialized_with_required_inputs_returns_true(rma: WilderMovingAverage) -> None:
     # Arrange
     rma.update_raw(1.00000)
     rma.update_raw(2.00000)
@@ -67,10 +67,10 @@ def test_initialized_with_required_inputs_returns_true(rma: WilderMovingAverage)
     # Act
 
     # Assert
-    assert rma.initialized is True
+    assert rma.initialized
 
 
-def test_handle_quote_tick_updates_indicator():
+def test_handle_quote_tick_updates_indicator() -> None:
     # Arrange
     indicator = WilderMovingAverage(10, PriceType.MID)
 
@@ -84,7 +84,7 @@ def test_handle_quote_tick_updates_indicator():
     assert indicator.value == 1987.5
 
 
-def test_handle_trade_tick_updates_indicator(rma: WilderMovingAverage):
+def test_handle_trade_tick_updates_indicator(rma: WilderMovingAverage) -> None:
     # Arrange
 
     tick = TestDataProviderPyo3.trade_tick()
@@ -97,7 +97,7 @@ def test_handle_trade_tick_updates_indicator(rma: WilderMovingAverage):
     assert rma.value == 1987.0
 
 
-def test_handle_bar_updates_indicator(rma: WilderMovingAverage):
+def test_handle_bar_updates_indicator(rma: WilderMovingAverage) -> None:
     # Arrange
     bar = TestDataProviderPyo3.bar_5decimal()
 
@@ -109,7 +109,7 @@ def test_handle_bar_updates_indicator(rma: WilderMovingAverage):
     assert rma.value == 1.00003
 
 
-def test_value_with_one_input_returns_expected_value(rma: WilderMovingAverage):
+def test_value_with_one_input_returns_expected_value(rma: WilderMovingAverage) -> None:
     # Arrange
     rma.update_raw(1.00000)
 
@@ -117,7 +117,7 @@ def test_value_with_one_input_returns_expected_value(rma: WilderMovingAverage):
     assert rma.value == 1.0
 
 
-def test_value_with_three_inputs_returns_expected_value(rma: WilderMovingAverage):
+def test_value_with_three_inputs_returns_expected_value(rma: WilderMovingAverage) -> None:
     # Arrange
     rma.update_raw(1.00000)
     rma.update_raw(2.00000)
@@ -127,7 +127,7 @@ def test_value_with_three_inputs_returns_expected_value(rma: WilderMovingAverage
     assert rma.value == 1.29
 
 
-def test_value_with_ten_inputs_returns_expected_value(rma: WilderMovingAverage):
+def test_value_with_ten_inputs_returns_expected_value(rma: WilderMovingAverage) -> None:
     # Arrange
     rma.update_raw(1.0)
     rma.update_raw(2.0)
@@ -144,7 +144,7 @@ def test_value_with_ten_inputs_returns_expected_value(rma: WilderMovingAverage):
     assert rma.value == 4.486784401
 
 
-def test_reset_successfully_returns_indicator_to_fresh_state(rma: WilderMovingAverage):
+def test_reset_successfully_returns_indicator_to_fresh_state(rma: WilderMovingAverage) -> None:
     # Arrange
     for _i in range(10):
         rma.update_raw(1.00000)

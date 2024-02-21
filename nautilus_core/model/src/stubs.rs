@@ -13,10 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use crate::data::order::BookOrder;
 use crate::enums::{LiquiditySide, OrderSide};
+use crate::identifiers::instrument_id::InstrumentId;
 use crate::instruments::currency_pair::CurrencyPair;
 use crate::instruments::stubs::*;
 use crate::instruments::Instrument;
+use crate::orderbook::book_mbp::OrderBookMbp;
 use crate::orders::market::MarketOrder;
 use crate::orders::stubs::{TestOrderEventStubs, TestOrderStubs};
 use crate::position::Position;
@@ -96,4 +99,73 @@ pub fn test_position_short(audusd_sim: CurrencyPair) -> Position {
         None,
     );
     Position::new(audusd_sim, order_filled).unwrap()
+}
+
+pub fn stub_order_book_mbp_appl_xnas() -> OrderBookMbp {
+    stub_order_book_mbp(
+        InstrumentId::from("AAPL.XNAS"),
+        101.0,
+        100.0,
+        100.0,
+        100.0,
+        2,
+        0.01,
+        0,
+        100.0,
+        10,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn stub_order_book_mbp(
+    instrument_id: InstrumentId,
+    top_ask_price: f64,
+    top_bid_price: f64,
+    top_ask_size: f64,
+    top_bid_size: f64,
+    price_precision: u8,
+    price_increment: f64,
+    size_precision: u8,
+    size_increment: f64,
+    num_levels: usize,
+) -> OrderBookMbp {
+    let mut book = OrderBookMbp::new(instrument_id, false);
+
+    // Generate bids
+    for i in 0..num_levels {
+        let price = Price::new(
+            top_bid_price - (price_increment * i as f64),
+            price_precision,
+        )
+        .unwrap();
+        let size =
+            Quantity::new(top_bid_size + (size_increment * i as f64), size_precision).unwrap();
+        let order = BookOrder::new(
+            OrderSide::Buy,
+            price,
+            size,
+            0, // order_id not applicable for MBP (market by price) books
+        );
+        book.add(order, 0, 1);
+    }
+
+    // Generate asks
+    for i in 0..num_levels {
+        let price = Price::new(
+            top_ask_price + (price_increment * i as f64),
+            price_precision,
+        )
+        .unwrap();
+        let size =
+            Quantity::new(top_ask_size + (size_increment * i as f64), size_precision).unwrap();
+        let order = BookOrder::new(
+            OrderSide::Sell,
+            price,
+            size,
+            0, // order_id not applicable for MBP (market by price) books
+        );
+        book.add(order, 0, 1);
+    }
+
+    book
 }

@@ -29,6 +29,7 @@ from nautilus_trader.common.component cimport TestClock
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.common cimport logging_is_initialized
+from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport ContingencyType
@@ -78,6 +79,7 @@ from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.equity cimport Equity
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -111,6 +113,9 @@ cdef class OrderMatchingEngine:
     oms_type : OmsType
         The order management system type for the matching engine. Determines
         the generation and handling of venue position IDs.
+    account_type : AccountType
+        The account type for the matching engine. Determines allowable
+        executions based on the instrument.
     msgbus : MessageBus
         The message bus for the matching engine.
     cache : CacheFacade
@@ -145,6 +150,7 @@ cdef class OrderMatchingEngine:
         FillModel fill_model not None,
         BookType book_type,
         OmsType oms_type,
+        AccountType account_type,
         MessageBus msgbus not None,
         CacheFacade cache not None,
         TestClock clock not None,
@@ -156,7 +162,7 @@ cdef class OrderMatchingEngine:
         bint use_random_ids = False,
         bint use_reduce_only = True,
         # auction_match_algo = default_auction_match
-    ):
+    ) -> None:
         self._clock = clock
         self._log = Logger(name=f"{type(self).__name__}({instrument.id.venue})")
         self.msgbus = msgbus
@@ -167,6 +173,7 @@ cdef class OrderMatchingEngine:
         self.raw_id = raw_id
         self.book_type = book_type
         self.oms_type = oms_type
+        self.account_type = account_type
         self.market_status = MarketStatus.OPEN
 
         self._bar_execution = bar_execution
@@ -663,10 +670,23 @@ cdef class OrderMatchingEngine:
                             self._generate_order_rejected(order, f"Contingent order {client_order_id} already closed")
                             return  # Order rejected
 
+        cdef Position position = self.cache.position_for_order(order.client_order_id)
+
+        # Check not shorting an equity without a MARGIN account
+        if (
+            order.side == OrderSide.SELL
+            and self.account_type != AccountType.MARGIN
+            and isinstance(self.instrument, Equity)
+            and (position is None or not order.would_reduce_only(position.side, position.quantity))
+        ):
+            self._generate_order_rejected(
+                order,
+                f"SHORT SELLING not permitted on a CASH account with order {repr(order)}."
+            )
+            return  # Cannot short sell
+
         # Check reduce-only instruction
-        cdef Position position
         if self._use_reduce_only and order.is_reduce_only and not order.is_closed_c():
-            position = self.cache.position_for_order(order.client_order_id)
             if (
                 not position
                 or position.is_closed_c()
@@ -1496,6 +1516,20 @@ cdef class OrderMatchingEngine:
 
         order.liquidity_side = liquidity_side
 
+        cdef:
+            Price fill_px
+            Quantity fill_qty
+            uint64_t total_size_raw = 0
+        if order.time_in_force == TimeInForce.FOK:
+            # Check FOK requirement
+            for fill in fills:
+                fill_px, fill_qty = fill
+                total_size_raw += fill_qty._mem.raw
+
+            if order.leaves_qty._mem.raw > total_size_raw:
+                self.cancel_order(order)
+                return  # Cannot fill full size - so kill/cancel
+
         if not fills:
             self._log.error(
                 "Cannot fill order: no fills from book when fills were expected (check sizes in data).",
@@ -1514,8 +1548,6 @@ cdef class OrderMatchingEngine:
             )
 
         cdef:
-            Price fill_px
-            Quantity fill_qty
             bint initial_market_to_limit_fill = False
             Price last_fill_px = None
         for fill_px, fill_qty in fills:
@@ -1528,14 +1560,6 @@ cdef class OrderMatchingEngine:
                         trigger_price=None,
                     )
                     initial_market_to_limit_fill = True
-                if order.time_in_force == TimeInForce.FOK and fill_qty._mem.raw < order.quantity._mem.raw:
-                    # FOK order cannot fill the entire quantity - cancel
-                    self.cancel_order(order)
-                    return
-            elif order.time_in_force == TimeInForce.IOC:
-                # IOC order has already filled at one price - cancel remaining
-                self.cancel_order(order)
-                return
 
             if self.book_type == BookType.L1_MBP and self._fill_model.is_slipped():
                 if order.side == OrderSide.BUY:
@@ -1578,6 +1602,11 @@ cdef class OrderMatchingEngine:
 
             last_fill_px = fill_px
 
+        if order.time_in_force == TimeInForce.IOC and order.is_open_c():
+            # IOC order has filled all available size
+            self.cancel_order(order)
+            return
+
         if (
             order.is_open_c()
             and self.book_type == BookType.L1_MBP
@@ -1587,11 +1616,6 @@ cdef class OrderMatchingEngine:
             or order.order_type == OrderType.STOP_MARKET
         )
         ):
-            if order.time_in_force == TimeInForce.IOC:
-                # IOC order has already filled at one price - cancel remaining
-                self.cancel_order(order)
-                return
-
             # Exhausted simulated book volume (continue aggressive filling into next level)
             # This is a very basic implementation of slipping by a single tick, in the future
             # we will implement more detailed fill modeling.
@@ -1612,6 +1636,7 @@ cdef class OrderMatchingEngine:
                 venue_position_id=venue_position_id,
                 position=position,
             )
+
 
     cpdef void fill_order(
         self,

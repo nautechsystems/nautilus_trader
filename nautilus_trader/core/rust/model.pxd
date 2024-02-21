@@ -352,11 +352,20 @@ cdef extern from "../includes/model.h":
         # Based on the index price for the instrument.
         INDEX_PRICE # = 9,
 
+    # Represents a discrete price level in an order book.
+    #
+    # The level maintains a collection of orders as well as tracking insertion order
+    # to preserve FIFO queue dynamics.
     cdef struct Level:
         pass
 
-    # Provides an order book which can handle L1/L2/L3 granularity data.
-    cdef struct OrderBook:
+    cdef struct OrderBookContainer:
+        pass
+
+    # Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
+    #
+    # This type cannot be `repr(C)` due to the `deltas` vec.
+    cdef struct OrderBookDeltas_t:
         pass
 
     # Represents a synthetic instrument with prices derived from component instruments using a
@@ -419,6 +428,17 @@ cdef extern from "../includes/model.h":
         # The UNIX timestamp (nanoseconds) when the data object was initialized.
         uint64_t ts_init;
 
+    # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
+    #
+    # This struct wraps `OrderBookDeltas` in a way that makes it compatible with C function
+    # calls, enabling interaction with `OrderBookDeltas` in a C environment.
+    #
+    # It implements the `Deref` trait, allowing instances of `OrderBookDeltas_API` to be
+    # dereferenced to `OrderBookDeltas`, providing access to `OrderBookDeltas`'s methods without
+    # having to manually access the underlying `OrderBookDeltas` instance.
+    cdef struct OrderBookDeltas_API:
+        OrderBookDeltas_t *_0;
+
     # Represents a self-contained order book update with a fixed depth of 10 levels per side.
     #
     # This struct is specifically designed for scenarios where a snapshot of the top 10 bid and
@@ -472,8 +492,8 @@ cdef extern from "../includes/model.h":
     # The unique ID assigned to the trade entity once it is received or matched by
     # the exchange or central counterparty.
     cdef struct TradeId_t:
-        # The trade match ID value.
-        char* value;
+        # The trade match ID C string value as a fixed-length byte array.
+        uint8_t value[65];
 
     # Represents a single trade tick in a financial market.
     cdef struct TradeTick_t:
@@ -533,6 +553,7 @@ cdef extern from "../includes/model.h":
 
     cpdef enum Data_t_Tag:
         DELTA,
+        DELTAS,
         DEPTH10,
         QUOTE,
         TRADE,
@@ -541,6 +562,7 @@ cdef extern from "../includes/model.h":
     cdef struct Data_t:
         Data_t_Tag tag;
         OrderBookDelta_t delta;
+        OrderBookDeltas_API deltas;
         OrderBookDepth10_t depth10;
         QuoteTick_t quote;
         TradeTick_t trade;
@@ -703,7 +725,7 @@ cdef extern from "../includes/model.h":
     # dereferenced to `OrderBook`, providing access to `OrderBook`'s methods without
     # having to manually access the underlying `OrderBook` instance.
     cdef struct OrderBook_API:
-        OrderBook *_0;
+        OrderBookContainer *_0;
 
     # Provides a C compatible Foreign Function Interface (FFI) for an underlying order book[`Level`].
     #
@@ -826,6 +848,33 @@ cdef extern from "../includes/model.h":
     uint8_t orderbook_delta_eq(const OrderBookDelta_t *lhs, const OrderBookDelta_t *rhs);
 
     uint64_t orderbook_delta_hash(const OrderBookDelta_t *delta);
+
+    # Creates a new `OrderBookDeltas` object from a CVec of `OrderBookDelta`.
+    #
+    # # Safety
+    # - The `deltas` must be a valid pointer to a `CVec` containing `OrderBookDelta` objects
+    # - This function clones the data pointed to by `deltas` into Rust-managed memory, then forgets the original `Vec` to prevent Rust from auto-deallocating it
+    # - The caller is responsible for managing the memory of `deltas` (including its deallocation) to avoid memory leaks
+    OrderBookDeltas_API orderbook_deltas_new(InstrumentId_t instrument_id,
+                                             const CVec *deltas);
+
+    void orderbook_deltas_drop(OrderBookDeltas_API deltas);
+
+    InstrumentId_t orderbook_deltas_instrument_id(const OrderBookDeltas_API *deltas);
+
+    CVec orderbook_deltas_vec_deltas(const OrderBookDeltas_API *deltas);
+
+    uint8_t orderbook_deltas_is_snapshot(const OrderBookDeltas_API *deltas);
+
+    uint8_t orderbook_deltas_flags(const OrderBookDeltas_API *deltas);
+
+    uint64_t orderbook_deltas_sequence(const OrderBookDeltas_API *deltas);
+
+    uint64_t orderbook_deltas_ts_event(const OrderBookDeltas_API *deltas);
+
+    uint64_t orderbook_deltas_ts_init(const OrderBookDeltas_API *deltas);
+
+    void orderbook_deltas_vec_drop(CVec v);
 
     # # Safety
     #
@@ -1314,6 +1363,8 @@ cdef extern from "../includes/model.h":
 
     uint64_t trade_id_hash(const TradeId_t *id);
 
+    const char *trade_id_to_cstr(const TradeId_t *trade_id);
+
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
@@ -1424,6 +1475,8 @@ cdef extern from "../includes/model.h":
     void orderbook_clear_asks(OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
 
     void orderbook_apply_delta(OrderBook_API *book, OrderBookDelta_t delta);
+
+    void orderbook_apply_deltas(OrderBook_API *book, const OrderBookDeltas_API *deltas);
 
     void orderbook_apply_depth(OrderBook_API *book, OrderBookDepth10_t depth);
 

@@ -21,7 +21,15 @@ use crate::{
     types::fixed::FIXED_SCALAR,
 };
 
+/// Represents a discrete price level in an order book.
+///
+/// The level maintains a collection of orders as well as tracking insertion order
+/// to preserve FIFO queue dynamics.
 #[derive(Clone, Debug, Eq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct Level {
     pub price: BookPrice,
     pub orders: BTreeMap<OrderId, BookOrder>,
@@ -66,6 +74,42 @@ impl Level {
             .and_then(|&id| self.orders.get(&id))
     }
 
+    /// Returns the orders in the insertion order.
+    #[must_use]
+    pub fn get_orders(&self) -> Vec<BookOrder> {
+        self.insertion_order
+            .iter()
+            .filter_map(|id| self.orders.get(id))
+            .cloned()
+            .collect()
+    }
+
+    #[must_use]
+    pub fn size(&self) -> f64 {
+        self.orders.values().map(|o| o.size.as_f64()).sum()
+    }
+
+    #[must_use]
+    pub fn size_raw(&self) -> u64 {
+        self.orders.values().map(|o| o.size.raw).sum()
+    }
+
+    #[must_use]
+    pub fn exposure(&self) -> f64 {
+        self.orders
+            .values()
+            .map(|o| o.price.as_f64() * o.size.as_f64())
+            .sum()
+    }
+
+    #[must_use]
+    pub fn exposure_raw(&self) -> u64 {
+        self.orders
+            .values()
+            .map(|o| ((o.price.as_f64() * o.size.as_f64()) * FIXED_SCALAR) as u64)
+            .sum()
+    }
+
     pub fn add_bulk(&mut self, orders: Vec<BookOrder>) {
         self.insertion_order
             .extend(orders.iter().map(|o| o.order_id));
@@ -107,32 +151,6 @@ impl Level {
             );
         }
         self.update_insertion_order();
-    }
-
-    #[must_use]
-    pub fn size(&self) -> f64 {
-        self.orders.values().map(|o| o.size.as_f64()).sum()
-    }
-
-    #[must_use]
-    pub fn size_raw(&self) -> u64 {
-        self.orders.values().map(|o| o.size.raw).sum()
-    }
-
-    #[must_use]
-    pub fn exposure(&self) -> f64 {
-        self.orders
-            .values()
-            .map(|o| o.price.as_f64() * o.size.as_f64())
-            .sum()
-    }
-
-    #[must_use]
-    pub fn exposure_raw(&self) -> u64 {
-        self.orders
-            .values()
-            .map(|o| ((o.price.as_f64() * o.size.as_f64()) * FIXED_SCALAR) as u64)
-            .sum()
     }
 
     fn check_order_for_this_level(&self, order: &BookOrder) {
