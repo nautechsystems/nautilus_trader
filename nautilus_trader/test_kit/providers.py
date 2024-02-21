@@ -105,6 +105,43 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
+    def adausdt_binance() -> CurrencyPair:
+        """
+        Return the Binance Spot ADA/USDT instrument for backtesting.
+
+        Returns
+        -------
+        CurrencyPair
+
+        """
+        return CurrencyPair(
+            instrument_id=InstrumentId(
+                symbol=Symbol("ADAUSDT"),
+                venue=Venue("BINANCE"),
+            ),
+            raw_symbol=Symbol("ADAUSDT"),
+            base_currency=ADA,
+            quote_currency=USDT,
+            price_precision=4,
+            size_precision=1,
+            price_increment=Price(0.0001, precision=4),
+            size_increment=Quantity(0.1, precision=1),
+            lot_size=Quantity(0.1, precision=1),
+            max_quantity=Quantity(900_000, precision=1),
+            min_quantity=Quantity(0.1, precision=1),
+            max_notional=None,
+            min_notional=Money(0.00010000, BTC),
+            max_price=Price(1000, precision=4),
+            min_price=Price(1e-8, precision=4),
+            margin_init=Decimal("0"),
+            margin_maint=Decimal("0"),
+            maker_fee=Decimal("0.0010"),
+            taker_fee=Decimal("0.0010"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
     def btcusdt_binance() -> CurrencyPair:
         """
         Return the Binance Spot BTCUSDT instrument for backtesting.
