@@ -32,7 +32,7 @@ pub struct ChandeMomentumOscillator {
     pub ma_type: MovingAverageType,
     pub value: f64,
     pub count: usize,
-    pub is_initialized: bool,
+    pub initialized: bool,
     _previous_close: f64,
     _average_gain: Box<dyn MovingAverage + Send + 'static>,
     _average_loss: Box<dyn MovingAverage + Send + 'static>,
@@ -54,8 +54,8 @@ impl Indicator for ChandeMomentumOscillator {
         self._has_inputs
     }
 
-    fn is_initialized(&self) -> bool {
-        self.is_initialized
+    fn initialized(&self) -> bool {
+        self.initialized
     }
 
     fn handle_quote_tick(&mut self, _tick: &QuoteTick) {
@@ -74,7 +74,7 @@ impl Indicator for ChandeMomentumOscillator {
         self.value = 0.0;
         self.count = 0;
         self._has_inputs = false;
-        self.is_initialized = false;
+        self.initialized = false;
         self._previous_close = 0.0;
     }
 }
@@ -89,7 +89,7 @@ impl ChandeMomentumOscillator {
             _previous_close: 0.0,
             value: 0.0,
             count: 0,
-            is_initialized: false,
+            initialized: false,
             _has_inputs: false,
         })
     }
@@ -112,13 +112,11 @@ impl ChandeMomentumOscillator {
             self._average_loss.update_raw(0.0);
         }
 
-        if !self.is_initialized
-            && self._average_gain.is_initialized()
-            && self._average_loss.is_initialized()
+        if !self.initialized && self._average_gain.initialized() && self._average_loss.initialized()
         {
-            self.is_initialized = true;
+            self.initialized = true;
         }
-        if self.is_initialized {
+        if self.initialized {
             self.value = 100.0 * (self._average_gain.value() - self._average_loss.value())
                 / (self._average_gain.value() + self._average_loss.value());
         }
@@ -141,7 +139,7 @@ mod tests {
         let display_str = format!("{cmo_10}");
         assert_eq!(display_str, "ChandeMomentumOscillator(10)");
         assert_eq!(cmo_10.period, 10);
-        assert!(!cmo_10.is_initialized);
+        assert!(!cmo_10.initialized);
     }
 
     #[rstest]
@@ -149,7 +147,7 @@ mod tests {
         for i in 0..12 {
             cmo_10.update_raw(f64::from(i));
         }
-        assert!(cmo_10.is_initialized);
+        assert!(cmo_10.initialized);
     }
 
     #[rstest]
@@ -189,7 +187,7 @@ mod tests {
         cmo_10.update_raw(1.00030);
         cmo_10.update_raw(1.00050);
         cmo_10.reset();
-        assert!(!cmo_10.is_initialized());
+        assert!(!cmo_10.initialized());
         assert_eq!(cmo_10.count, 0);
     }
 
