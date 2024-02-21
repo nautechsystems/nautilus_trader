@@ -32,6 +32,7 @@ None
 - Fixed `ExecAlgorithmFactory.create` JSON encoding (was missing the encoding hook)
 - Fixed `ControllerConfig` base class and docstring
 - Fixed Interactive Brokers historical bar data bug, thanks @benjaminsingleton
+- Fixed persistence `freeze_dict` function to handle `fs_storage_options`, thanks @dimitar-petrov
 
 ---
 
