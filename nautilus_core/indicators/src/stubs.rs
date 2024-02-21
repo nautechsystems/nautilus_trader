@@ -31,7 +31,7 @@ use crate::{
         ema::ExponentialMovingAverage, hma::HullMovingAverage, rma::WilderMovingAverage,
         sma::SimpleMovingAverage, wma::WeightedMovingAverage, MovingAverageType,
     },
-    momentum::rsi::RelativeStrengthIndex,
+    momentum::{cmo::ChandeMomentumOscillator, rsi::RelativeStrengthIndex},
     ratio::efficiency_ratio::EfficiencyRatio,
 };
 
@@ -148,4 +148,9 @@ pub fn efficiency_ratio_10() -> EfficiencyRatio {
 #[fixture]
 pub fn rsi_10() -> RelativeStrengthIndex {
     RelativeStrengthIndex::new(10, Some(MovingAverageType::Exponential)).unwrap()
+}
+
+#[fixture]
+pub fn cmo_10() -> ChandeMomentumOscillator {
+    ChandeMomentumOscillator::new(10, Some(MovingAverageType::Wilder)).unwrap()
 }
