@@ -29,13 +29,14 @@ use crate::{
 #[pyclass(module = "nautilus_trader.core.nautilus.pyo3.indicators")]
 pub struct ChandeMomentumOscillator {
     pub period: usize,
-    pub average_gain: Box<dyn MovingAverage + Send + 'static>,
-    pub average_loss: Box<dyn MovingAverage + Send + 'static>,
-    pub previous_close: f64,
+    pub ma_type: MovingAverageType,
     pub value: f64,
     pub count: usize,
     pub is_initialized: bool,
-    has_inputs: bool,
+    _previous_close: f64,
+    _average_gain: Box<dyn MovingAverage + Send + 'static>,
+    _average_loss: Box<dyn MovingAverage + Send + 'static>,
+    _has_inputs: bool,
 }
 
 impl Display for ChandeMomentumOscillator {
@@ -50,7 +51,7 @@ impl Indicator for ChandeMomentumOscillator {
     }
 
     fn has_inputs(&self) -> bool {
-        self.has_inputs
+        self._has_inputs
     }
 
     fn is_initialized(&self) -> bool {
@@ -72,54 +73,137 @@ impl Indicator for ChandeMomentumOscillator {
     fn reset(&mut self) {
         self.value = 0.0;
         self.count = 0;
-        self.has_inputs = false;
+        self._has_inputs = false;
         self.is_initialized = false;
-        self.previous_close = 0.0;
+        self._previous_close = 0.0;
     }
 }
 
 impl ChandeMomentumOscillator {
-    pub fn new(period: usize) -> Result<Self> {
+    pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Result<Self> {
         Ok(Self {
             period,
-            average_gain: MovingAverageFactory::create(MovingAverageType::Wilder, period),
-            average_loss: MovingAverageFactory::create(MovingAverageType::Wilder, period),
-            previous_close: 0.0,
+            ma_type: ma_type.unwrap_or(MovingAverageType::Wilder),
+            _average_gain: MovingAverageFactory::create(MovingAverageType::Wilder, period),
+            _average_loss: MovingAverageFactory::create(MovingAverageType::Wilder, period),
+            _previous_close: 0.0,
             value: 0.0,
             count: 0,
             is_initialized: false,
-            has_inputs: false,
+            _has_inputs: false,
         })
     }
 
     pub fn update_raw(&mut self, close: f64) {
-        if !self.has_inputs {
-            self.previous_close = close;
-            self.has_inputs = true;
+        if !self._has_inputs {
+            self._previous_close = close;
+            self._has_inputs = true;
         }
 
-        let gain: f64 = close - self.previous_close;
+        let gain: f64 = close - self._previous_close;
         if gain > 0.0 {
-            self.average_gain.update_raw(gain);
-            self.average_loss.update_raw(0.0);
+            self._average_gain.update_raw(gain);
+            self._average_loss.update_raw(0.0);
         } else if gain < 0.0 {
-            self.average_gain.update_raw(0.0);
-            self.average_loss.update_raw(-gain);
+            self._average_gain.update_raw(0.0);
+            self._average_loss.update_raw(-gain);
         } else {
-            self.average_gain.update_raw(0.0);
-            self.average_loss.update_raw(0.0);
+            self._average_gain.update_raw(0.0);
+            self._average_loss.update_raw(0.0);
         }
 
         if !self.is_initialized
-            && self.average_gain.is_initialized()
-            && self.average_loss.is_initialized()
+            && self._average_gain.is_initialized()
+            && self._average_loss.is_initialized()
         {
             self.is_initialized = true;
         }
         if self.is_initialized {
-            self.value = 100.0 * (self.average_gain.value() - self.average_loss.value())
-                / (self.average_gain.value() + self.average_loss.value());
+            self.value = 100.0 * (self._average_gain.value() - self._average_loss.value())
+                / (self._average_gain.value() + self._average_loss.value());
         }
-        self.previous_close = close;
+        self._previous_close = close;
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use nautilus_model::data::{bar::Bar, quote::QuoteTick};
+    use rstest::rstest;
+
+    use crate::{indicator::Indicator, momentum::cmo::ChandeMomentumOscillator, stubs::*};
+
+    #[rstest]
+    fn test_cmo_initialized(cmo_10: ChandeMomentumOscillator) {
+        let display_str = format!("{cmo_10}");
+        assert_eq!(display_str, "ChandeMomentumOscillator(10)");
+        assert_eq!(cmo_10.period, 10);
+        assert!(!cmo_10.is_initialized);
+    }
+
+    #[rstest]
+    fn test_initialized_with_required_inputs_returns_true(mut cmo_10: ChandeMomentumOscillator) {
+        for i in 0..12 {
+            cmo_10.update_raw(f64::from(i));
+        }
+        assert!(cmo_10.is_initialized);
+    }
+
+    #[rstest]
+    fn test_value_all_higher_inputs_returns_expected_value(mut cmo_10: ChandeMomentumOscillator) {
+        cmo_10.update_raw(109.93);
+        cmo_10.update_raw(110.0);
+        cmo_10.update_raw(109.77);
+        cmo_10.update_raw(109.96);
+        cmo_10.update_raw(110.29);
+        cmo_10.update_raw(110.53);
+        cmo_10.update_raw(110.27);
+        cmo_10.update_raw(110.21);
+        cmo_10.update_raw(110.06);
+        cmo_10.update_raw(110.19);
+        cmo_10.update_raw(109.83);
+        cmo_10.update_raw(109.9);
+        cmo_10.update_raw(110.0);
+        cmo_10.update_raw(110.03);
+        cmo_10.update_raw(110.13);
+        cmo_10.update_raw(109.95);
+        cmo_10.update_raw(109.75);
+        cmo_10.update_raw(110.15);
+        cmo_10.update_raw(109.9);
+        cmo_10.update_raw(110.04);
+        assert_eq!(cmo_10.value, 2.089_629_456_238_705_4);
+    }
+
+    #[rstest]
+    fn test_value_with_one_input_returns_expected_value(mut cmo_10: ChandeMomentumOscillator) {
+        cmo_10.update_raw(1.00000);
+        assert_eq!(cmo_10.value, 0.0);
+    }
+
+    #[rstest]
+    fn test_reset(mut cmo_10: ChandeMomentumOscillator) {
+        cmo_10.update_raw(1.00020);
+        cmo_10.update_raw(1.00030);
+        cmo_10.update_raw(1.00050);
+        cmo_10.reset();
+        assert!(!cmo_10.is_initialized());
+        assert_eq!(cmo_10.count, 0);
+    }
+
+    #[rstest]
+    fn test_handle_quote_tick(mut cmo_10: ChandeMomentumOscillator, quote_tick: QuoteTick) {
+        cmo_10.handle_quote_tick(&quote_tick);
+        assert_eq!(cmo_10.count, 0);
+        assert_eq!(cmo_10.value, 0.0);
+    }
+
+    #[rstest]
+    fn test_handle_bar(mut cmo_10: ChandeMomentumOscillator, bar_ethusdt_binance_minute_bid: Bar) {
+        cmo_10.handle_bar(&bar_ethusdt_binance_minute_bid);
+        assert_eq!(cmo_10.count, 0);
+        assert_eq!(cmo_10.value, 0.0);
     }
 }

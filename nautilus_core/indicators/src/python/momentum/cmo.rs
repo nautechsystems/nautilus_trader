@@ -17,13 +17,15 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::prelude::*;
 
-use crate::{indicator::Indicator, momentum::cmo::ChandeMomentumOscillator};
+use crate::{
+    average::MovingAverageType, indicator::Indicator, momentum::cmo::ChandeMomentumOscillator,
+};
 
 #[pymethods]
 impl ChandeMomentumOscillator {
     #[new]
-    pub fn py_new(period: usize) -> PyResult<Self> {
-        Self::new(period).map_err(to_pyvalue_err)
+    pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> PyResult<Self> {
+        Self::new(period, ma_type).map_err(to_pyvalue_err)
     }
 
     #[getter]
