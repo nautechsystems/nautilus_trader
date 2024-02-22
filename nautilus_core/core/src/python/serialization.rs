@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use pyo3::{prelude::*, types::PyDict, Py, PyErr, Python};
+use pyo3::{prelude::*, types::PyDict};
 use serde::de::DeserializeOwned;
 
 pub fn from_dict_pyo3<T>(py: Python<'_>, values: Py<PyDict>) -> Result<T, PyErr>
