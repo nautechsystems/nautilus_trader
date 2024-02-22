@@ -195,6 +195,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             account_detail=account_details,
             account_funds=account_funds,
             event_id=UUID4(),
+            reported=True,
             ts_event=timestamp,
             ts_init=timestamp,
         )
