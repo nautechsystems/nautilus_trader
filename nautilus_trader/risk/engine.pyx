@@ -729,7 +729,7 @@ cdef class RiskEngine(Component):
                         )
                         return False  # Denied
                 elif base_currency is not None:
-                    cash_value = Money(order.quantity.as_f64_c(), instrument.base_currency)
+                    cash_value = Money(order.quantity.as_f64_c(), base_currency)
                     free = account.balance_free(base_currency)
                     if cum_notional_sell is None:
                         cum_notional_sell = cash_value
