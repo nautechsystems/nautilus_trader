@@ -24,8 +24,6 @@ from nautilus_trader.core.nautilus_pyo3 import BookImbalanceRatio
 from nautilus_trader.core.nautilus_pyo3 import OrderBookMbp
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.model.book import OrderBook
-from nautilus_trader.model.data import OrderBookDelta
-from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
@@ -138,18 +136,16 @@ class OrderBookImbalance(Strategy):
                 self.instrument.id,
                 self.book_type,
                 managed=False,  # <-- Manually applying deltas to book
+                pyo3_conversion=True,  # <--- Will automatically convert to pyo3 objects
             )
 
         self._last_trigger_timestamp = self.clock.utc_now()
 
-    def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
+    def on_order_book_deltas(self, pyo3_deltas: nautilus_pyo3.OrderBookDeltas) -> None:
         """
         Actions to be performed when order book deltas are received.
         """
-        # Convert to pyo3 objects (the efficiency of this can improve)
-        pyo3_deltas = OrderBookDelta.to_pyo3_list(deltas.deltas)
-        for pyo3_delta in pyo3_deltas:
-            self.book.apply_delta(pyo3_delta)
+        self.book.apply_deltas(pyo3_deltas)
         self.imbalance.handle_book_mbp(self.book)
         self.check_trigger()
 

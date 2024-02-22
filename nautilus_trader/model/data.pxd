@@ -52,7 +52,7 @@ cpdef list capsule_to_list(capsule)
 cpdef Data capsule_to_data(capsule)
 
 cdef inline void capsule_destructor(object capsule):
-    cdef CVec* cvec = <CVec*>PyCapsule_GetPointer(capsule, NULL)
+    cdef CVec *cvec = <CVec *>PyCapsule_GetPointer(capsule, NULL)
     PyMem_Free(cvec[0].ptr) # de-allocate buffer
     PyMem_Free(cvec) # de-allocate cvec
 
@@ -243,6 +243,8 @@ cdef class OrderBookDeltas(Data):
 
     @staticmethod
     cdef dict to_dict_c(OrderBookDeltas obj)
+
+    cpdef to_pyo3(self)
 
 
 cdef class OrderBookDepth10(Data):

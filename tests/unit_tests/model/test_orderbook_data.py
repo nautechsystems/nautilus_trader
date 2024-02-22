@@ -395,6 +395,18 @@ def test_deltas_pickle_round_trip() -> None:
     assert len(deltas.deltas) == len(unpickled.deltas)
 
 
+def test_deltas_to_pyo3() -> None:
+    # Arrange
+    deltas = TestDataStubs.order_book_deltas()
+
+    # Act
+    pyo3_deltas = deltas.to_pyo3()
+
+    # Assert
+    assert isinstance(pyo3_deltas, nautilus_pyo3.OrderBookDeltas)
+    assert len(pyo3_deltas.deltas) == len(deltas.deltas)
+
+
 def test_deltas_hash_str_and_repr() -> None:
     # Arrange
     order1 = BookOrder(

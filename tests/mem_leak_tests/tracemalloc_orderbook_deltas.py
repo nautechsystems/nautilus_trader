@@ -20,11 +20,20 @@ from tests.mem_leak_tests.conftest import snapshot_memory
 
 
 @snapshot_memory(4000)
-def run_repr(*args, **kwargs):
+def run_to_pyo3(*args, **kwargs):
     delta = TestDataStubs.order_book_delta()
     deltas = OrderBookDeltas(delta.instrument_id, deltas=[delta] * 1024)
-    repr(deltas.deltas)
+    pyo3_deltas = deltas.to_pyo3()
+    repr(pyo3_deltas)
     repr(deltas)
+
+
+# @snapshot_memory(4000)
+# def run_repr(*args, **kwargs):
+#     delta = TestDataStubs.order_book_delta()
+#     deltas = OrderBookDeltas(delta.instrument_id, deltas=[delta] * 1024)
+#     repr(deltas.deltas)
+#     repr(deltas)
 
 
 # @snapshot_memory(4000)
@@ -34,5 +43,6 @@ def run_repr(*args, **kwargs):
 
 
 if __name__ == "__main__":
-    run_repr()
+    run_to_pyo3()
+    # run_repr()
     # run_from_pyo3()

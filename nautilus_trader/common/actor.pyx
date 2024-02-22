@@ -125,6 +125,8 @@ cdef class Actor(Component):
         self._indicators_for_trades: dict[InstrumentId, list[Indicator]] = {}
         self._indicators_for_bars: dict[BarType, list[Indicator]] = {}
 
+        self._pyo3_conversion_types = set()
+
         # Configuration
         self.config = config
 
@@ -382,13 +384,13 @@ cdef class Actor(Component):
         """
         # Optionally override in subclass
 
-    cpdef void on_order_book_deltas(self, OrderBookDeltas deltas):
+    cpdef void on_order_book_deltas(self, deltas):
         """
         Actions to be performed when running and receives order book deltas.
 
         Parameters
         ----------
-        deltas : OrderBookDeltas
+        deltas : OrderBookDeltas or nautilus_pyo3.OrderBookDeltas
             The order book deltas received.
 
         Warnings
@@ -1185,6 +1187,7 @@ cdef class Actor(Component):
         dict kwargs = None,
         ClientId client_id = None,
         bint managed = True,
+        bint pyo3_conversion = False,
     ):
         """
         Subscribe to the order book data stream, being a snapshot then deltas
@@ -1205,10 +1208,16 @@ cdef class Actor(Component):
             If ``None`` then will be inferred from the venue in the instrument ID.
         managed : bool, default True
             If an order book should be managed by the data engine based on the subscribed feed.
+        pyo3_conversion : bool, default False
+            If received deltas should be converted to `nautilus_pyo3.OrderBookDeltas`
+            prior to being passed to the `on_order_book_deltas` handler.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
+
+        if pyo3_conversion:
+            self._pyo3_conversion_types.add(OrderBookDeltas)
 
         self._msgbus.subscribe(
             topic=f"data.book.deltas"
@@ -2396,15 +2405,17 @@ cdef class Actor(Component):
         for i in range(length):
             self.handle_instrument(instruments[i])
 
-    cpdef void handle_order_book_deltas(self, OrderBookDeltas deltas):
+    cpdef void handle_order_book_deltas(self, deltas):
         """
         Handle the given order book deltas.
 
-        Passes to `on_order_book_delta` if state is ``RUNNING``.
+        Passes to `on_order_book_deltas` if state is ``RUNNING``.
+        The `deltas` will be `nautilus_pyo3.OrderBookDeltas` if the
+        pyo3_conversion flag was set for the subscription.
 
         Parameters
         ----------
-        deltas : OrderBookDeltas
+        deltas : OrderBookDeltas or nautilus_pyo3.OrderBookDeltas
             The order book deltas received.
 
         Warnings
@@ -2413,6 +2424,9 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(deltas, "deltas")
+
+        if OrderBookDeltas in self._pyo3_conversion_types:
+            deltas = deltas.to_pyo3()
 
         if self._fsm.state == ComponentState.RUNNING:
             try:

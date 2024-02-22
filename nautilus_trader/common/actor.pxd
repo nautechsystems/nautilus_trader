@@ -51,13 +51,14 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 cdef class Actor(Component):
     cdef object _executor
-    cdef set _warning_events
-    cdef dict _signal_classes
-    cdef dict _pending_requests
-    cdef list _indicators
-    cdef dict _indicators_for_quotes
-    cdef dict _indicators_for_trades
-    cdef dict _indicators_for_bars
+    cdef set[type] _warning_events
+    cdef dict[str, type] _signal_classes
+    cdef dict[UUID4, object] _pending_requests
+    cdef list[Indicator] _indicators
+    cdef dict[InstrumentId, list[Indicator]] _indicators_for_quotes
+    cdef dict[InstrumentId, list[Indicator]] _indicators_for_trades
+    cdef dict[BarType, list[Indicator]] _indicators_for_bars
+    cdef set[type] _pyo3_conversion_types
 
     cdef readonly PortfolioFacade portfolio
     """The read-only portfolio for the actor.\n\n:returns: `PortfolioFacade`"""
@@ -89,7 +90,7 @@ cdef class Actor(Component):
     cpdef void on_instrument_status(self, InstrumentStatus data)
     cpdef void on_instrument_close(self, InstrumentClose data)
     cpdef void on_instrument(self, Instrument instrument)
-    cpdef void on_order_book_deltas(self, OrderBookDeltas deltas)
+    cpdef void on_order_book_deltas(self, deltas)
     cpdef void on_order_book(self, OrderBook order_book)
     cpdef void on_quote_tick(self, QuoteTick tick)
     cpdef void on_trade_tick(self, TradeTick tick)
@@ -144,6 +145,7 @@ cdef class Actor(Component):
         dict kwargs=*,
         ClientId client_id=*,
         bint managed=*,
+        bint pyo3_conversion=*,
     )
     cpdef void subscribe_order_book_snapshots(
         self,
@@ -231,7 +233,7 @@ cdef class Actor(Component):
     cpdef void handle_instrument(self, Instrument instrument)
     cpdef void handle_instruments(self, list instruments)
     cpdef void handle_order_book(self, OrderBook order_book)
-    cpdef void handle_order_book_deltas(self, OrderBookDeltas deltas)
+    cpdef void handle_order_book_deltas(self, deltas)
     cpdef void handle_quote_tick(self, QuoteTick tick)
     cpdef void handle_quote_ticks(self, list ticks)
     cpdef void handle_trade_tick(self, TradeTick tick)
