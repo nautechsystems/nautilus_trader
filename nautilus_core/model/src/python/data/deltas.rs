@@ -16,13 +16,15 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
+    ops::Deref,
 };
 
 use nautilus_core::time::UnixNanos;
-use pyo3::{prelude::*, pyclass::CompareOp};
+use pyo3::{prelude::*, pyclass::CompareOp, types::PyCapsule};
 
 use crate::{
     data::{delta::OrderBookDelta, deltas::OrderBookDeltas},
+    ffi::data::deltas::OrderBookDeltas_API,
     identifiers::instrument_id::InstrumentId,
     python::common::PY_MODULE_MODEL,
 };
@@ -97,6 +99,17 @@ impl OrderBookDeltas {
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(OrderBookDeltas))
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_pycapsule")]
+    pub fn py_from_pycapsule(capsule: &PyAny) -> OrderBookDeltas {
+        let capsule: &PyCapsule = capsule
+            .downcast()
+            .expect("Error on downcast to `&PyCapsule`");
+        let data: &OrderBookDeltas_API =
+            unsafe { &*(capsule.pointer() as *const OrderBookDeltas_API) };
+        data.deref().clone()
     }
 
     // /// Creates a `PyCapsule` containing a raw pointer to a `Data::Delta` object.
