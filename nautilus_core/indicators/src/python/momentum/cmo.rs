@@ -86,7 +86,7 @@ impl ChandeMomentumOscillator {
 
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
-        self.reset()
+        self.reset();
     }
 
     fn __repr__(&self) -> String {
