@@ -54,14 +54,17 @@ impl OrderBookContainer {
         }
     }
 
+    #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
         self.instrument_id
     }
 
+    #[must_use]
     pub fn book_type(&self) -> BookType {
         self.book_type
     }
 
+    #[must_use]
     pub fn sequence(&self) -> u64 {
         match self.book_type {
             BookType::L3_MBO => self.mbo.as_ref().expect(L3_MBO_NOT_INITILIZED).sequence,
@@ -70,6 +73,7 @@ impl OrderBookContainer {
         }
     }
 
+    #[must_use]
     pub fn ts_last(&self) -> u64 {
         match self.book_type {
             BookType::L3_MBO => self.mbo.as_ref().expect(L3_MBO_NOT_INITILIZED).ts_last,
@@ -78,6 +82,7 @@ impl OrderBookContainer {
         }
     }
 
+    #[must_use]
     pub fn count(&self) -> u64 {
         match self.book_type {
             BookType::L3_MBO => self.mbo.as_ref().expect(L3_MBO_NOT_INITILIZED).count,
@@ -182,6 +187,7 @@ impl OrderBookContainer {
         };
     }
 
+    #[must_use]
     pub fn bids(&self) -> Vec<&Level> {
         match self.book_type {
             BookType::L3_MBO => self.get_mbo().bids().collect(),
@@ -190,6 +196,7 @@ impl OrderBookContainer {
         }
     }
 
+    #[must_use]
     pub fn asks(&self) -> Vec<&Level> {
         match self.book_type {
             BookType::L3_MBO => self.get_mbo().asks().collect(),
@@ -198,6 +205,7 @@ impl OrderBookContainer {
         }
     }
 
+    #[must_use]
     pub fn has_bid(&self) -> bool {
         match self.book_type {
             BookType::L3_MBO => self.get_mbo().has_bid(),
@@ -206,6 +214,7 @@ impl OrderBookContainer {
         }
     }
 
+    #[must_use]
     pub fn has_ask(&self) -> bool {
         match self.book_type {
             BookType::L3_MBO => self.get_mbo().has_ask(),
@@ -214,6 +223,7 @@ impl OrderBookContainer {
         }
     }
 
+    #[must_use]
     pub fn best_bid_price(&self) -> Option<Price> {
         match self.book_type {
             BookType::L3_MBO => self.get_mbo().best_bid_price(),
@@ -222,6 +232,7 @@ impl OrderBookContainer {
         }
     }
 
+    #[must_use]
     pub fn best_ask_price(&self) -> Option<Price> {
         match self.book_type {
             BookType::L3_MBO => self.get_mbo().best_ask_price(),
@@ -230,6 +241,7 @@ impl OrderBookContainer {
         }
     }
 
+    #[must_use]
     pub fn best_bid_size(&self) -> Option<Quantity> {
         match self.book_type {
             BookType::L3_MBO => self.get_mbo().best_bid_size(),
@@ -238,6 +250,7 @@ impl OrderBookContainer {
         }
     }
 
+    #[must_use]
     pub fn best_ask_size(&self) -> Option<Quantity> {
         match self.book_type {
             BookType::L3_MBO => self.get_mbo().best_ask_size(),
@@ -246,6 +259,7 @@ impl OrderBookContainer {
         }
     }
 
+    #[must_use]
     pub fn spread(&self) -> Option<f64> {
         match self.book_type {
             BookType::L3_MBO => self.get_mbo().spread(),
@@ -254,6 +268,7 @@ impl OrderBookContainer {
         }
     }
 
+    #[must_use]
     pub fn midpoint(&self) -> Option<f64> {
         match self.book_type {
             BookType::L3_MBO => self.get_mbo().midpoint(),
@@ -262,6 +277,7 @@ impl OrderBookContainer {
         }
     }
 
+    #[must_use]
     pub fn get_avg_px_for_quantity(&self, qty: Quantity, order_side: OrderSide) -> f64 {
         match self.book_type {
             BookType::L3_MBO => self.get_mbo().get_avg_px_for_quantity(qty, order_side),
@@ -270,6 +286,7 @@ impl OrderBookContainer {
         }
     }
 
+    #[must_use]
     pub fn get_quantity_for_price(&self, price: Price, order_side: OrderSide) -> f64 {
         match self.book_type {
             BookType::L3_MBO => self.get_mbo().get_quantity_for_price(price, order_side),
@@ -278,6 +295,7 @@ impl OrderBookContainer {
         }
     }
 
+    #[must_use]
     pub fn simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
         match self.book_type {
             BookType::L3_MBO => self.get_mbo().simulate_fills(order),
@@ -294,6 +312,7 @@ impl OrderBookContainer {
         }
     }
 
+    #[must_use]
     pub fn pprint(&self, num_levels: usize) -> String {
         match self.book_type {
             BookType::L3_MBO => self.get_mbo().pprint(num_levels),

@@ -44,6 +44,7 @@ use crate::data::Data;
 /// `PyCapsule` in Python must ensure they understand how to extract and use the
 /// encapsulated `Data` safely, especially when converting the capsule back to a
 /// Rust data structure.
+#[must_use]
 pub fn data_to_pycapsule(py: Python, data: Data) -> PyObject {
     let capsule = PyCapsule::new(py, data, None).expect("Error creating `PyCapsule`");
     capsule.into_py(py)

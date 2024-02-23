@@ -33,7 +33,7 @@ use crate::identifiers::trade_id::TradeId;
 impl TradeId {
     #[new]
     fn py_new(value: &str) -> PyResult<Self> {
-        TradeId::new(value).map_err(to_pyvalue_err)
+        Self::new(value).map_err(to_pyvalue_err)
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -62,11 +62,11 @@ impl TradeId {
 
     #[staticmethod]
     fn _safe_constructor() -> PyResult<Self> {
-        Ok(TradeId::from_str("NULL").unwrap()) // Safe default
+        Ok(Self::from_str("NULL").unwrap()) // Safe default
     }
 
     fn __richcmp__(&self, other: PyObject, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
-        if let Ok(other) = other.extract::<TradeId>(py) {
+        if let Ok(other) = other.extract::<Self>(py) {
             match op {
                 CompareOp::Eq => self.eq(&other).into_py(py),
                 CompareOp::Ne => self.ne(&other).into_py(py),
@@ -98,8 +98,8 @@ impl TradeId {
 
     #[staticmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(value: &str) -> PyResult<TradeId> {
-        TradeId::new(value).map_err(to_pyvalue_err)
+    fn py_from_str(value: &str) -> PyResult<Self> {
+        Self::new(value).map_err(to_pyvalue_err)
     }
 }
 

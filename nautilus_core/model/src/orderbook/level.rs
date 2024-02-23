@@ -80,7 +80,7 @@ impl Level {
         self.insertion_order
             .iter()
             .filter_map(|id| self.orders.get(id))
-            .cloned()
+            .copied()
             .collect()
     }
 
@@ -144,12 +144,11 @@ impl Level {
     }
 
     pub fn remove_by_id(&mut self, order_id: OrderId, ts_event: u64, sequence: u64) {
-        if self.orders.remove(&order_id).is_none() {
-            panic!(
-                "{}",
-                &BookIntegrityError::OrderNotFound(order_id, ts_event, sequence)
-            );
-        }
+        assert!(
+            self.orders.remove(&order_id).is_some(),
+            "{}",
+            &BookIntegrityError::OrderNotFound(order_id, ts_event, sequence)
+        );
         self.update_insertion_order();
     }
 

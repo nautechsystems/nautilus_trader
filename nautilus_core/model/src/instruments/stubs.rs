@@ -217,6 +217,7 @@ pub fn currency_pair_ethusdt() -> CurrencyPair {
     .unwrap()
 }
 
+#[must_use]
 pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
     let target_venue = venue.unwrap_or(Venue::from("SIM"));
     let instrument_id = InstrumentId::new(symbol, target_venue);

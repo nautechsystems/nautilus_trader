@@ -33,7 +33,7 @@ use crate::{
 /// Provides a default [`LimitOrder`] used for testing.
 impl Default for LimitOrder {
     fn default() -> Self {
-        LimitOrder::new(
+        Self::new(
             TraderId::default(),
             StrategyId::default(),
             InstrumentId::default(),
@@ -66,7 +66,7 @@ impl Default for LimitOrder {
 /// Provides a default [`LimitIfTouchedOrder`] used for testing.
 impl Default for LimitIfTouchedOrder {
     fn default() -> Self {
-        LimitIfTouchedOrder::new(
+        Self::new(
             TraderId::default(),
             StrategyId::default(),
             InstrumentId::default(),
@@ -101,7 +101,7 @@ impl Default for LimitIfTouchedOrder {
 /// Provides a default [`MarketOrder`] used for testing.
 impl Default for MarketOrder {
     fn default() -> Self {
-        MarketOrder::new(
+        Self::new(
             TraderId::default(),
             StrategyId::default(),
             InstrumentId::default(),
@@ -129,7 +129,7 @@ impl Default for MarketOrder {
 /// Provides a default [`MarketIfTouchedOrder`] used for testing.
 impl Default for MarketIfTouchedOrder {
     fn default() -> Self {
-        MarketIfTouchedOrder::new(
+        Self::new(
             TraderId::default(),
             StrategyId::default(),
             InstrumentId::default(),
@@ -162,7 +162,7 @@ impl Default for MarketIfTouchedOrder {
 /// Provides a default [`MarketToLimitOrder`] used for testing.
 impl Default for MarketToLimitOrder {
     fn default() -> Self {
-        MarketToLimitOrder::new(
+        Self::new(
             TraderId::default(),
             StrategyId::default(),
             InstrumentId::default(),
@@ -192,7 +192,7 @@ impl Default for MarketToLimitOrder {
 /// Provides a default [`StopLimitOrder`] used for testing.
 impl Default for StopLimitOrder {
     fn default() -> Self {
-        StopLimitOrder::new(
+        Self::new(
             TraderId::default(),
             StrategyId::default(),
             InstrumentId::default(),
@@ -227,7 +227,7 @@ impl Default for StopLimitOrder {
 /// Provides a default [`StopMarketOrder`] used for testing.
 impl Default for StopMarketOrder {
     fn default() -> Self {
-        StopMarketOrder::new(
+        Self::new(
             TraderId::default(),
             StrategyId::default(),
             InstrumentId::default(),
@@ -260,7 +260,7 @@ impl Default for StopMarketOrder {
 /// Provides a default [`TrailingStopLimitOrder`] used for testing.
 impl Default for TrailingStopLimitOrder {
     fn default() -> Self {
-        TrailingStopLimitOrder::new(
+        Self::new(
             TraderId::default(),
             StrategyId::default(),
             InstrumentId::default(),
@@ -298,7 +298,7 @@ impl Default for TrailingStopLimitOrder {
 /// Provides a default [`TrailingStopMarketOrder`] used for testing.
 impl Default for TrailingStopMarketOrder {
     fn default() -> Self {
-        TrailingStopMarketOrder::new(
+        Self::new(
             TraderId::default(),
             StrategyId::default(),
             InstrumentId::default(),

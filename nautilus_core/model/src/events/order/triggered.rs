@@ -60,8 +60,8 @@ impl OrderTriggered {
         reconciliation: bool,
         venue_order_id: Option<VenueOrderId>,
         account_id: Option<AccountId>,
-    ) -> Result<OrderTriggered> {
-        Ok(OrderTriggered {
+    ) -> Result<Self> {
+        Ok(Self {
             trader_id,
             strategy_id,
             instrument_id,
@@ -69,7 +69,7 @@ impl OrderTriggered {
             event_id,
             ts_event,
             ts_init,
-            reconciliation: reconciliation as u8,
+            reconciliation: u8::from(reconciliation),
             venue_order_id,
             account_id,
         })
@@ -84,12 +84,12 @@ impl Display for OrderTriggered {
             stringify!(OrderTriggered),
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id
-                .map(|venue_order_id| format!("{}", venue_order_id))
-                .unwrap_or_else(|| "None".to_string()),
+            self.venue_order_id.map_or_else(
+                || "None".to_string(),
+                |venue_order_id| format!("{venue_order_id}")
+            ),
             self.account_id
-                .map(|account_id| format!("{}", account_id))
-                .unwrap_or_else(|| "None".to_string())
+                .map_or_else(|| "None".to_string(), |account_id| format!("{account_id}"))
         )
     }
 }
@@ -105,8 +105,8 @@ mod tests {
 
     #[rstest]
     fn test_order_triggered_display(order_triggered: OrderTriggered) {
-        let display = format!("{}", order_triggered);
+        let display = format!("{order_triggered}");
         assert_eq!(display, "OrderTriggered(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, \
-        venue_order_id=001, account_id=SIM-001)")
+        venue_order_id=001, account_id=SIM-001)");
     }
 }

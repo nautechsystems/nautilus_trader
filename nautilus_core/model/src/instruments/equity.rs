@@ -201,7 +201,7 @@ mod tests {
 
     #[rstest]
     fn test_equality(equity_aapl: Equity) {
-        let cloned = equity_aapl.clone();
-        assert_eq!(equity_aapl, cloned)
+        let cloned = equity_aapl;
+        assert_eq!(equity_aapl, cloned);
     }
 }

@@ -221,7 +221,7 @@ mod tests {
 
     #[rstest]
     fn test_equality(crypto_future_btcusdt: CryptoFuture) {
-        let cloned = crypto_future_btcusdt.clone();
+        let cloned = crypto_future_btcusdt;
         assert_eq!(crypto_future_btcusdt, cloned);
     }
 }

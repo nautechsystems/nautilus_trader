@@ -66,7 +66,7 @@ impl Level {
 
     #[pyo3(name = "first")]
     fn py_fist(&self) -> Option<BookOrder> {
-        self.first().cloned()
+        self.first().copied()
     }
 
     #[pyo3(name = "get_orders")]

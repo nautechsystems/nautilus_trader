@@ -45,6 +45,7 @@ impl Venue {
         })
     }
 
+    #[must_use]
     pub fn from_str_unchecked(s: &str) -> Self {
         Self {
             value: Ustr::from(s),
@@ -57,6 +58,7 @@ impl Venue {
         Self::new(SYNTHETIC_VENUE).unwrap()
     }
 
+    #[must_use]
     pub fn is_synthetic(&self) -> bool {
         self.value.as_str() == SYNTHETIC_VENUE
     }

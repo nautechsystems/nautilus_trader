@@ -155,8 +155,8 @@ impl OrderInitialized {
         exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Ustr>,
-    ) -> Result<OrderInitialized> {
-        Ok(OrderInitialized {
+    ) -> Result<Self> {
+        Ok(Self {
             trader_id,
             strategy_id,
             instrument_id,
@@ -229,45 +229,48 @@ impl Display for OrderInitialized {
             self.reduce_only,
             self.quote_quantity,
             self.price
-                .map(|price| format!("{}", price))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |price| format!("{price}")),
             self.emulation_trigger
-                .map(|trigger| format!("{}", trigger))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |trigger| format!("{trigger}")),
             self.trigger_instrument_id
-                .map(|instrument_id| format!("{}", instrument_id))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |instrument_id| format!(
+                    "{instrument_id}"
+                )),
             self.contingency_type
-                .map(|contingency_type| format!("{}", contingency_type))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |contingency_type| format!(
+                    "{contingency_type}"
+                )),
             self.order_list_id
-                .map(|order_list_id| format!("{}", order_list_id))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |order_list_id| format!(
+                    "{order_list_id}"
+                )),
             self.linked_order_ids
                 .as_ref()
-                .map(|linked_order_ids| linked_order_ids
+                .map_or("None".to_string(), |linked_order_ids| linked_order_ids
                     .iter()
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
-                    .join(", "))
-                .unwrap_or("None".to_string()),
+                    .join(", ")),
             self.parent_order_id
-                .map(|parent_order_id| format!("{}", parent_order_id))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |parent_order_id| format!(
+                    "{parent_order_id}"
+                )),
             self.exec_algorithm_id
-                .map(|exec_algorithm_id| format!("{}", exec_algorithm_id))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |exec_algorithm_id| format!(
+                    "{exec_algorithm_id}"
+                )),
             self.exec_algorithm_params
                 .as_ref()
-                .map(|exec_algorithm_params| format!("{:?}", exec_algorithm_params))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |exec_algorithm_params| format!(
+                    "{exec_algorithm_params:?}"
+                )),
             self.exec_spawn_id
-                .map(|exec_spawn_id| format!("{}", exec_spawn_id))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |exec_spawn_id| format!(
+                    "{exec_spawn_id}"
+                )),
             self.tags
                 .as_ref()
-                .map(|tags| format!("{}", tags))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |tags| format!("{tags}")),
         )
     }
 }
@@ -282,7 +285,7 @@ mod test {
     use crate::events::order::{initialized::OrderInitialized, stubs::*};
     #[rstest]
     fn test_order_initialized(order_initialized_buy_limit: OrderInitialized) {
-        let display = format!("{}", order_initialized_buy_limit);
+        let display = format!("{order_initialized_buy_limit}");
         assert_eq!(
             display,
             "OrderInitialized(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, \

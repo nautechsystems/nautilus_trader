@@ -47,6 +47,7 @@ pub enum BookIntegrityError {
 
 /// Calculates the estimated average price for a specified quantity from a set of
 /// order book levels.
+#[must_use]
 pub fn get_avg_px_for_quantity(qty: Quantity, levels: &BTreeMap<BookPrice, Level>) -> f64 {
     let mut cumulative_size_raw = 0u64;
     let mut cumulative_value = 0.0;
@@ -70,6 +71,7 @@ pub fn get_avg_px_for_quantity(qty: Quantity, levels: &BTreeMap<BookPrice, Level
 
 /// Calculates the estimated fill quantity for a specified price from a set of
 /// order book levels and order side.
+#[must_use]
 pub fn get_quantity_for_price(
     price: Price,
     order_side: OrderSide,
@@ -89,7 +91,7 @@ pub fn get_quantity_for_price(
                     break;
                 }
             }
-            _ => panic!("Invalid `OrderSide` {}", order_side),
+            _ => panic!("Invalid `OrderSide` {order_side}"),
         }
         matched_size += level.size();
     }
@@ -281,11 +283,11 @@ mod tests {
 
         assert_eq!(
             book.get_avg_px_for_quantity(qty, OrderSide::Buy),
-            2.0033333333333334
+            2.003_333_333_333_333_4
         );
         assert_eq!(
             book.get_avg_px_for_quantity(qty, OrderSide::Sell),
-            0.9966666666666667
+            0.996_666_666_666_666_7
         );
     }
 
@@ -423,7 +425,7 @@ mod tests {
                                │ [1.0] │ 1.000 │       │\n\
                                ╰───────┴───────┴───────╯";
 
-        println!("{}", pprint_output);
+        println!("{pprint_output}");
         assert_eq!(pprint_output, expected_output);
     }
 }

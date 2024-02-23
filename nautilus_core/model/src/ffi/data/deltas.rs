@@ -37,6 +37,7 @@ use crate::{
 pub struct OrderBookDeltas_API(Box<OrderBookDeltas>);
 
 impl OrderBookDeltas_API {
+    #[must_use]
     pub fn new(deltas: OrderBookDeltas) -> Self {
         Self(Box::new(deltas))
     }
@@ -56,7 +57,7 @@ impl DerefMut for OrderBookDeltas_API {
     }
 }
 
-/// Creates a new `OrderBookDeltas` object from a CVec of `OrderBookDelta`.
+/// Creates a new `OrderBookDeltas` object from a `CVec` of `OrderBookDelta`.
 ///
 /// # Safety
 /// - The `deltas` must be a valid pointer to a `CVec` containing `OrderBookDelta` objects
@@ -69,7 +70,7 @@ pub extern "C" fn orderbook_deltas_new(
 ) -> OrderBookDeltas_API {
     let CVec { ptr, len, cap } = *deltas;
     let deltas: Vec<OrderBookDelta> =
-        unsafe { Vec::from_raw_parts(ptr as *mut OrderBookDelta, len, cap) };
+        unsafe { Vec::from_raw_parts(ptr.cast::<OrderBookDelta>(), len, cap) };
     let cloned_deltas = deltas.clone();
     std::mem::forget(deltas); // Prevents Rust from dropping `deltas`
     OrderBookDeltas_API::new(OrderBookDeltas::new(instrument_id, cloned_deltas))
@@ -120,6 +121,6 @@ pub extern "C" fn orderbook_deltas_ts_init(deltas: &OrderBookDeltas_API) -> Unix
 pub extern "C" fn orderbook_deltas_vec_drop(v: CVec) {
     let CVec { ptr, len, cap } = v;
     let deltas: Vec<OrderBookDelta> =
-        unsafe { Vec::from_raw_parts(ptr as *mut OrderBookDelta, len, cap) };
+        unsafe { Vec::from_raw_parts(ptr.cast::<OrderBookDelta>(), len, cap) };
     drop(deltas); // Memory freed here
 }

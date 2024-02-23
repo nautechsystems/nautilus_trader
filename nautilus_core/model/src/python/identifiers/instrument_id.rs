@@ -32,7 +32,7 @@ use crate::identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Ven
 impl InstrumentId {
     #[new]
     fn py_new(symbol: Symbol, venue: Venue) -> PyResult<Self> {
-        Ok(InstrumentId::new(symbol, venue))
+        Ok(Self::new(symbol, venue))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -54,11 +54,11 @@ impl InstrumentId {
 
     #[staticmethod]
     fn _safe_constructor() -> PyResult<Self> {
-        Ok(InstrumentId::from_str("NULL.NULL").unwrap()) // Safe default
+        Ok(Self::from_str("NULL.NULL").unwrap()) // Safe default
     }
 
     fn __richcmp__(&self, other: PyObject, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
-        if let Ok(other) = other.extract::<InstrumentId>(py) {
+        if let Ok(other) = other.extract::<Self>(py) {
             match op {
                 CompareOp::Eq => self.eq(&other).into_py(py),
                 CompareOp::Ne => self.ne(&other).into_py(py),
@@ -102,8 +102,8 @@ impl InstrumentId {
 
     #[staticmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(value: &str) -> PyResult<InstrumentId> {
-        InstrumentId::from_str(value).map_err(to_pyvalue_err)
+    fn py_from_str(value: &str) -> PyResult<Self> {
+        Self::from_str(value).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "is_synthetic")]

@@ -849,7 +849,7 @@ cdef extern from "../includes/model.h":
 
     uint64_t orderbook_delta_hash(const OrderBookDelta_t *delta);
 
-    # Creates a new `OrderBookDeltas` object from a CVec of `OrderBookDelta`.
+    # Creates a new `OrderBookDeltas` object from a `CVec` of `OrderBookDelta`.
     #
     # # Safety
     # - The `deltas` must be a valid pointer to a `CVec` containing `OrderBookDelta` objects

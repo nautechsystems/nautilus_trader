@@ -70,7 +70,7 @@ impl OrderPendingCancel {
             event_id,
             ts_event,
             ts_init,
-            reconciliation: reconciliation as u8,
+            reconciliation: u8::from(reconciliation),
             venue_order_id,
         })
     }
@@ -83,9 +83,7 @@ impl Display for OrderPendingCancel {
             "OrderPendingCancel(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, ts_event={})",
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id
-                .map(|venue_order_id| format!("{}", venue_order_id))
-                .unwrap_or_else(|| "None".to_string()),
+            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}")),
             self.account_id,
             self.ts_event
         )
@@ -103,7 +101,7 @@ mod tests {
 
     #[rstest]
     fn test_order_pending_cancel_display(order_pending_cancel: OrderPendingCancel) {
-        let display = format!("{}", order_pending_cancel);
+        let display = format!("{order_pending_cancel}");
         assert_eq!(
             display,
             "OrderPendingCancel(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, venue_order_id=001, account_id=SIM-001, ts_event=0)"

@@ -92,6 +92,7 @@ impl OrderBookDepth10 {
     }
 
     /// Returns the metadata for the type, for use with serialization formats.
+    #[must_use]
     pub fn get_metadata(
         instrument_id: &InstrumentId,
         price_precision: u8,
@@ -105,6 +106,7 @@ impl OrderBookDepth10 {
     }
 
     /// Returns the field map for the type, for use with Arrow schemas.
+    #[must_use]
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
         metadata.insert("bid_price_0".to_string(), "Int64".to_string());
@@ -196,7 +198,7 @@ impl Serializable for OrderBookDepth10 {}
 pub mod stubs {
     use rstest::fixture;
 
-    use super::*;
+    use super::{OrderBookDepth10, DEPTH10_LEN};
     use crate::{
         data::order::BookOrder,
         enums::OrderSide,
@@ -312,7 +314,7 @@ mod tests {
     fn test_display(stub_depth10: OrderBookDepth10) {
         let depth = stub_depth10;
         assert_eq!(
-            format!("{}", depth),
+            format!("{depth}"),
             "AAPL.XNAS,flags=0,sequence=0,ts_event=1,ts_init=2".to_string()
         );
     }

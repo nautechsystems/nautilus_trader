@@ -42,11 +42,13 @@ macro_rules! enum_for_python {
             }
 
             #[getter]
+            #[must_use]
             pub fn name(&self) -> String {
                 self.to_string()
             }
 
             #[getter]
+            #[must_use]
             pub fn value(&self) -> u8 {
                 *self as u8
             }

@@ -125,7 +125,7 @@ pub extern "C" fn synthetic_instrument_components_to_cstr(
     let components_vec = synth
         .components
         .iter()
-        .map(|c| c.to_string())
+        .map(std::string::ToString::to_string)
         .collect::<Vec<String>>();
 
     string_vec_to_bytes(components_vec)
@@ -155,7 +155,7 @@ pub unsafe extern "C" fn synthetic_instrument_is_valid_formula(
     formula_ptr: *const c_char,
 ) -> u8 {
     if formula_ptr.is_null() {
-        return false as u8;
+        return u8::from(false);
     }
     let formula = cstr_to_str(formula_ptr);
     u8::from(synth.is_valid_formula(formula))
@@ -179,7 +179,7 @@ pub extern "C" fn synthetic_instrument_calculate(
     inputs_ptr: &CVec,
 ) -> Price {
     let CVec { ptr, len, .. } = inputs_ptr;
-    let inputs: &[f64] = unsafe { std::slice::from_raw_parts(*ptr as *mut f64, *len) };
+    let inputs: &[f64] = unsafe { std::slice::from_raw_parts((*ptr).cast::<f64>(), *len) };
 
     match synth.calculate(inputs) {
         Ok(price) => price,

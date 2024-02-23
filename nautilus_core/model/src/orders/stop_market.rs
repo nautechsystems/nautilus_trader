@@ -331,16 +331,14 @@ impl Order for StopMarketOrder {
         self.core.apply(event)?;
 
         if is_order_filled {
-            self.core.set_slippage(self.trigger_price)
+            self.core.set_slippage(self.trigger_price);
         };
 
         Ok(())
     }
 
     fn update(&mut self, event: &OrderUpdated) {
-        if event.price.is_some() {
-            panic!("{}", OrderError::InvalidOrderEvent);
-        }
+        assert!(event.price.is_none(), "{}", OrderError::InvalidOrderEvent);
 
         if let Some(trigger_price) = event.trigger_price {
             self.trigger_price = trigger_price;
@@ -353,7 +351,7 @@ impl Order for StopMarketOrder {
 
 impl From<OrderInitialized> for StopMarketOrder {
     fn from(event: OrderInitialized) -> Self {
-        StopMarketOrder::new(
+        Self::new(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,

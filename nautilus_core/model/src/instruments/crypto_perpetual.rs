@@ -246,7 +246,7 @@ mod tests {
 
     #[rstest]
     fn test_equality(crypto_perpetual_ethusdt: CryptoPerpetual) {
-        let cloned = crypto_perpetual_ethusdt.clone();
-        assert_eq!(crypto_perpetual_ethusdt, cloned)
+        let cloned = crypto_perpetual_ethusdt;
+        assert_eq!(crypto_perpetual_ethusdt, cloned);
     }
 }

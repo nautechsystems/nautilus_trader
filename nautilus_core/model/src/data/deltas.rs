@@ -109,7 +109,7 @@ impl Display for OrderBookDeltas {
 pub mod stubs {
     use rstest::fixture;
 
-    use super::*;
+    use super::OrderBookDeltas;
     use crate::{
         data::{delta::OrderBookDelta, order::BookOrder},
         enums::{BookAction, OrderSide},
@@ -343,7 +343,7 @@ mod tests {
     fn test_display(stub_deltas: OrderBookDeltas) {
         let deltas = stub_deltas;
         assert_eq!(
-            format!("{}", deltas),
+            format!("{deltas}"),
             "AAPL.XNAS,len=7,flags=32,sequence=0,ts_event=1,ts_init=2".to_string()
         );
     }

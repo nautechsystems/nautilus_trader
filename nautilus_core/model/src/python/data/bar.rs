@@ -126,7 +126,7 @@ impl BarType {
     #[staticmethod]
     #[pyo3(name = "from_str")]
     fn py_from_str(value: &str) -> PyResult<Self> {
-        BarType::from_str(value).map_err(to_pyvalue_err)
+        Self::from_str(value).map_err(to_pyvalue_err)
     }
 }
 
@@ -332,7 +332,7 @@ mod tests {
 
         Python::with_gil(|py| {
             let dict_string = bar.py_as_dict(py).unwrap().to_string();
-            let expected_string = r#"{'type': 'Bar', 'bar_type': 'AUDUSD.SIM-1-MINUTE-BID-EXTERNAL', 'open': '1.00001', 'high': '1.00004', 'low': '1.00002', 'close': '1.00003', 'volume': '100000', 'ts_event': 0, 'ts_init': 1}"#;
+            let expected_string = r"{'type': 'Bar', 'bar_type': 'AUDUSD.SIM-1-MINUTE-BID-EXTERNAL', 'open': '1.00001', 'high': '1.00004', 'low': '1.00002', 'close': '1.00003', 'volume': '100000', 'ts_event': 0, 'ts_init': 1}";
             assert_eq!(dict_string, expected_string);
         });
     }
