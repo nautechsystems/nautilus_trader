@@ -69,12 +69,12 @@ impl SyntheticInstrument {
         // Extract variables from the component instruments
         let variables: Vec<String> = components
             .iter()
-            .map(|component| component.to_string())
+            .map(std::string::ToString::to_string)
             .collect();
 
         let operator_tree = evalexpr::build_operator_tree(&formula)?;
 
-        Ok(SyntheticInstrument {
+        Ok(Self {
             id: InstrumentId::new(symbol, Venue::synthetic()),
             price_precision,
             price_increment,
@@ -88,6 +88,7 @@ impl SyntheticInstrument {
         })
     }
 
+    #[must_use]
     pub fn is_valid_formula(&self, formula: &str) -> bool {
         evalexpr::build_operator_tree(formula).is_ok()
     }
@@ -111,7 +112,7 @@ impl SyntheticInstrument {
                 self.context
                     .set_value(variable.clone(), Value::from(value))?;
             } else {
-                panic!("Missing price for component: {}", variable);
+                panic!("Missing price for component: {variable}");
             }
         }
 
@@ -218,7 +219,7 @@ mod tests {
             Symbol::new("BTC-LTC").unwrap(),
             2,
             vec![btc_binance, ltc_binance],
-            formula.clone(),
+            formula,
             0,
             0,
         )

@@ -163,52 +163,55 @@ impl OrderInitialized {
             self.reduce_only,
             self.quote_quantity,
             self.price
-                .map(|price| format!("{}", price))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |price| format!("{price}")),
             self.emulation_trigger
-                .map(|trigger| format!("{}", trigger))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |trigger| format!("{trigger}")),
             self.trigger_instrument_id
-                .map(|instrument_id| format!("{}", instrument_id))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |instrument_id| format!(
+                    "{instrument_id}"
+                )),
             self.contingency_type
-                .map(|contingency_type| format!("{}", contingency_type))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |contingency_type| format!(
+                    "{contingency_type}"
+                )),
             self.order_list_id
-                .map(|order_list_id| format!("{}", order_list_id))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |order_list_id| format!(
+                    "{order_list_id}"
+                )),
             self.linked_order_ids
                 .as_ref()
-                .map(|linked_order_ids| linked_order_ids
+                .map_or("None".to_string(), |linked_order_ids| linked_order_ids
                     .iter()
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
-                    .join(", "))
-                .unwrap_or("None".to_string()),
+                    .join(", ")),
             self.parent_order_id
-                .map(|parent_order_id| format!("{}", parent_order_id))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |parent_order_id| format!(
+                    "{parent_order_id}"
+                )),
             self.exec_algorithm_id
-                .map(|exec_algorithm_id| format!("{}", exec_algorithm_id))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |exec_algorithm_id| format!(
+                    "{exec_algorithm_id}"
+                )),
             self.exec_algorithm_params
                 .as_ref()
-                .map(|exec_algorithm_params| format!("{:?}", exec_algorithm_params))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |exec_algorithm_params| format!(
+                    "{exec_algorithm_params:?}"
+                )),
             self.exec_spawn_id
-                .map(|exec_spawn_id| format!("{}", exec_spawn_id))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |exec_spawn_id| format!(
+                    "{exec_spawn_id}"
+                )),
             self.tags
                 .as_ref()
-                .map(|tags| format!("{}", tags))
-                .unwrap_or("None".to_string()),
+                .map_or("None".to_string(), |tags| format!("{tags}")),
             self.event_id,
             self.ts_init
         )
     }
 
     fn __str__(&self) -> String {
-        format!("{}", self)
+        format!("{self}")
     }
 
     #[staticmethod]
@@ -253,13 +256,13 @@ impl OrderInitialized {
         }
         match self.trailing_offset {
             Some(trailing_offset) => {
-                dict.set_item("trailing_offset", trailing_offset.to_string())?
+                dict.set_item("trailing_offset", trailing_offset.to_string())?;
             }
             None => dict.set_item("trailing_offset", py.None())?,
         }
         match self.trailing_offset_type {
             Some(trailing_offset_type) => {
-                dict.set_item("trailing_offset_type", trailing_offset_type.to_string())?
+                dict.set_item("trailing_offset_type", trailing_offset_type.to_string())?;
             }
             None => dict.set_item("trailing_offset_type", py.None())?,
         }
@@ -273,19 +276,19 @@ impl OrderInitialized {
         }
         match self.emulation_trigger {
             Some(emulation_trigger) => {
-                dict.set_item("emulation_trigger", emulation_trigger.to_string())?
+                dict.set_item("emulation_trigger", emulation_trigger.to_string())?;
             }
             None => dict.set_item("emulation_trigger", py.None())?,
         }
         match self.trigger_instrument_id {
             Some(trigger_instrument_id) => {
-                dict.set_item("trigger_instrument_id", trigger_instrument_id.to_string())?
+                dict.set_item("trigger_instrument_id", trigger_instrument_id.to_string())?;
             }
             None => dict.set_item("trigger_instrument_id", py.None())?,
         }
         match self.contingency_type {
             Some(contingency_type) => {
-                dict.set_item("contingency_type", contingency_type.to_string())?
+                dict.set_item("contingency_type", contingency_type.to_string())?;
             }
             None => dict.set_item("contingency_type", py.None())?,
         }
@@ -305,13 +308,13 @@ impl OrderInitialized {
         }
         match self.parent_order_id {
             Some(parent_order_id) => {
-                dict.set_item("parent_order_id", parent_order_id.to_string())?
+                dict.set_item("parent_order_id", parent_order_id.to_string())?;
             }
             None => dict.set_item("parent_order_id", py.None())?,
         }
         match self.exec_algorithm_id {
             Some(exec_algorithm_id) => {
-                dict.set_item("exec_algorithm_id", exec_algorithm_id.to_string())?
+                dict.set_item("exec_algorithm_id", exec_algorithm_id.to_string())?;
             }
             None => dict.set_item("exec_algorithm_id", py.None())?,
         }

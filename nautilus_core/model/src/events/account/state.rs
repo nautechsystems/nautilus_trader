@@ -59,8 +59,8 @@ impl AccountState {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
         base_currency: Option<Currency>,
-    ) -> Result<AccountState> {
-        Ok(AccountState {
+    ) -> Result<Self> {
+        Ok(Self {
             account_id,
             account_type,
             base_currency,
@@ -81,12 +81,10 @@ impl Display for AccountState {
             "AccountState(account_id={}, account_type={}, base_currency={}, is_reported={}, balances=[{}], margins=[{}], event_id={})",
             self.account_id,
             self.account_type,
-            self.base_currency
-                .map(|base_currency | format!("{}", base_currency.code))
-                .unwrap_or_else(|| "None".to_string()),
+            self.base_currency.map_or_else(|| "None".to_string(), |base_currency | format!("{}", base_currency.code)),
             self.is_reported,
-            self.balances.iter().map(|b| format!("{}", b)).collect::<Vec<String>>().join(","),
-            self.margins.iter().map(|m| format!("{}", m)).collect::<Vec<String>>().join(","),
+            self.balances.iter().map(|b| format!("{b}")).collect::<Vec<String>>().join(","),
+            self.margins.iter().map(|m| format!("{m}")).collect::<Vec<String>>().join(","),
             self.event_id
         )
     }
@@ -121,7 +119,7 @@ mod tests {
 
     #[rstest]
     fn test_display_cash_account_state(cash_account_state: AccountState) {
-        let display = format!("{}", cash_account_state);
+        let display = format!("{cash_account_state}");
         assert_eq!(
             display,
             "AccountState(account_id=SIM-001, account_type=CASH, base_currency=USD, is_reported=true, \
@@ -132,7 +130,7 @@ mod tests {
 
     #[rstest]
     fn test_display_margin_account_state(margin_account_state: AccountState) {
-        let display = format!("{}", margin_account_state);
+        let display = format!("{margin_account_state}");
         assert_eq!(
             display,
             "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=true, \

@@ -336,7 +336,7 @@ impl Order for LimitIfTouchedOrder {
         self.core.apply(event)?;
 
         if is_order_filled {
-            self.core.set_slippage(self.price)
+            self.core.set_slippage(self.price);
         };
 
         Ok(())
@@ -358,7 +358,7 @@ impl Order for LimitIfTouchedOrder {
 
 impl From<OrderInitialized> for LimitIfTouchedOrder {
     fn from(event: OrderInitialized) -> Self {
-        LimitIfTouchedOrder::new(
+        Self::new(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,

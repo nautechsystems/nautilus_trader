@@ -80,6 +80,7 @@ impl TradeTick {
     }
 
     /// Returns the metadata for the type, for use with serialization formats.
+    #[must_use]
     pub fn get_metadata(
         instrument_id: &InstrumentId,
         price_precision: u8,
@@ -93,6 +94,7 @@ impl TradeTick {
     }
 
     /// Returns the field map for the type, for use with Arrow schemas.
+    #[must_use]
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
         metadata.insert("price".to_string(), "Int64".to_string());

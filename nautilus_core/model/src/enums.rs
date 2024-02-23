@@ -133,9 +133,9 @@ pub enum AggressorSide {
 impl FromU8 for AggressorSide {
     fn from_u8(value: u8) -> Option<Self> {
         match value {
-            0 => Some(AggressorSide::NoAggressor),
-            1 => Some(AggressorSide::Buyer),
-            2 => Some(AggressorSide::Seller),
+            0 => Some(Self::NoAggressor),
+            1 => Some(Self::Buyer),
+            2 => Some(Self::Seller),
             _ => None,
         }
     }
@@ -357,10 +357,10 @@ pub enum BookAction {
 impl FromU8 for BookAction {
     fn from_u8(value: u8) -> Option<Self> {
         match value {
-            1 => Some(BookAction::Add),
-            2 => Some(BookAction::Update),
-            3 => Some(BookAction::Delete),
-            4 => Some(BookAction::Clear),
+            1 => Some(Self::Add),
+            2 => Some(Self::Update),
+            3 => Some(Self::Delete),
+            4 => Some(Self::Clear),
             _ => None,
         }
     }
@@ -402,9 +402,9 @@ pub enum BookType {
 impl FromU8 for BookType {
     fn from_u8(value: u8) -> Option<Self> {
         match value {
-            1 => Some(BookType::L1_MBP),
-            2 => Some(BookType::L2_MBP),
-            3 => Some(BookType::L3_MBO),
+            1 => Some(Self::L1_MBP),
+            2 => Some(Self::L2_MBP),
+            3 => Some(Self::L3_MBO),
             _ => None,
         }
     }
@@ -741,9 +741,9 @@ pub enum OrderSide {
 impl FromU8 for OrderSide {
     fn from_u8(value: u8) -> Option<Self> {
         match value {
-            0 => Some(OrderSide::NoOrderSide),
-            1 => Some(OrderSide::Buy),
-            2 => Some(OrderSide::Sell),
+            0 => Some(Self::NoOrderSide),
+            1 => Some(Self::Buy),
+            2 => Some(Self::Sell),
             _ => None,
         }
     }

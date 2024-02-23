@@ -102,8 +102,8 @@ impl OrderFilled {
         reconciliation: bool,
         position_id: Option<PositionId>,
         commission: Option<Money>,
-    ) -> Result<OrderFilled> {
-        Ok(OrderFilled {
+    ) -> Result<Self> {
+        Ok(Self {
             trader_id,
             strategy_id,
             instrument_id,
@@ -126,10 +126,12 @@ impl OrderFilled {
         })
     }
 
+    #[must_use]
     pub fn is_buy(&self) -> bool {
         self.order_side == OrderSide::Buy
     }
 
+    #[must_use]
     pub fn is_sell(&self) -> bool {
         self.order_side == OrderSide::Sell
     }
@@ -207,13 +209,13 @@ mod tests {
 
     #[rstest]
     fn test_order_filled_display(order_filled: OrderFilled) {
-        let display = format!("{}", order_filled);
+        let display = format!("{order_filled}");
         assert_eq!(
             display,
             "OrderFilled(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, \
             venue_order_id=123456, account_id=SIM-001, trade_id=1, position_id=P-001, \
             order_side=BUY, order_type=LIMIT, last_qty=0.561, last_px=22000, \
-            commission=12.20000000 USDT ,liquidity_side=TAKER, ts_event=0)")
+            commission=12.20000000 USDT ,liquidity_side=TAKER, ts_event=0)");
     }
 
     #[rstest]

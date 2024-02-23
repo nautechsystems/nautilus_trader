@@ -93,7 +93,7 @@ mod tests {
     use crate::events::order::{released::OrderReleased, stubs::*};
     #[rstest]
     fn test_order_released_display(order_released: OrderReleased) {
-        let display = format!("{}", order_released);
+        let display = format!("{order_released}");
         assert_eq!(
             display,
             "OrderReleased(BTCUSDT.COINBASE, O-20200814-102234-001-001-1, 22000)"

@@ -60,8 +60,8 @@ impl OrderAccepted {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
         reconciliation: bool,
-    ) -> Result<OrderAccepted> {
-        Ok(OrderAccepted {
+    ) -> Result<Self> {
+        Ok(Self {
             trader_id,
             strategy_id,
             instrument_id,
@@ -71,7 +71,7 @@ impl OrderAccepted {
             event_id,
             ts_event,
             ts_init,
-            reconciliation: reconciliation as u8,
+            reconciliation: u8::from(reconciliation),
         })
     }
 }
@@ -102,7 +102,7 @@ mod tests {
 
     #[rstest]
     fn test_order_accepted_display(order_accepted: OrderAccepted) {
-        let display = format!("{}", order_accepted);
+        let display = format!("{order_accepted}");
         assert_eq!(
             display,
             "OrderAccepted(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, venue_order_id=001, account_id=SIM-001, ts_event=0)"

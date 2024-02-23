@@ -267,7 +267,7 @@ impl QuoteTick {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> PyResult<Self> {
-        QuoteTick::new(
+        Self::new(
             instrument_id,
             Price::from_raw(bid_price_raw, bid_price_prec).map_err(to_pyvalue_err)?,
             Price::from_raw(ask_price_raw, ask_price_prec).map_err(to_pyvalue_err)?,
@@ -355,7 +355,7 @@ mod tests {
 
         Python::with_gil(|py| {
             let dict_string = tick.py_as_dict(py).unwrap().to_string();
-            let expected_string = r#"{'type': 'QuoteTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'bid_price': '10000.0000', 'ask_price': '10001.0000', 'bid_size': '1.00000000', 'ask_size': '1.00000000', 'ts_event': 0, 'ts_init': 1}"#;
+            let expected_string = r"{'type': 'QuoteTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'bid_price': '10000.0000', 'ask_price': '10001.0000', 'bid_size': '1.00000000', 'ask_size': '1.00000000', 'ts_event': 0, 'ts_init': 1}";
             assert_eq!(dict_string, expected_string);
         });
     }

@@ -1405,7 +1405,7 @@ uint8_t orderbook_delta_eq(const struct OrderBookDelta_t *lhs, const struct Orde
 uint64_t orderbook_delta_hash(const struct OrderBookDelta_t *delta);
 
 /**
- * Creates a new `OrderBookDeltas` object from a CVec of `OrderBookDelta`.
+ * Creates a new `OrderBookDeltas` object from a `CVec` of `OrderBookDelta`.
  *
  * # Safety
  * - The `deltas` must be a valid pointer to a `CVec` containing `OrderBookDelta` objects

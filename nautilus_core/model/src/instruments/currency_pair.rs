@@ -90,14 +90,14 @@ impl CurrencyPair {
         Ok(Self {
             id,
             raw_symbol,
-            quote_currency,
             base_currency,
+            quote_currency,
             price_precision,
             size_precision,
             price_increment,
             size_increment,
-            taker_fee,
             maker_fee,
+            taker_fee,
             margin_init,
             margin_maint,
             lot_size,
@@ -241,7 +241,7 @@ mod tests {
 
     #[rstest]
     fn test_equality(currency_pair_btcusdt: CurrencyPair) {
-        let cloned = currency_pair_btcusdt.clone();
-        assert_eq!(currency_pair_btcusdt, cloned)
+        let cloned = currency_pair_btcusdt;
+        assert_eq!(currency_pair_btcusdt, cloned);
     }
 }

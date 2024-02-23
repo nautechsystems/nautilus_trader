@@ -17,7 +17,7 @@ use crate::data::order::BookOrder;
 use crate::enums::{LiquiditySide, OrderSide};
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::instruments::currency_pair::CurrencyPair;
-use crate::instruments::stubs::*;
+use crate::instruments::stubs::audusd_sim;
 use crate::instruments::Instrument;
 use crate::orderbook::book_mbp::OrderBookMbp;
 use crate::orders::market::MarketOrder;
@@ -101,6 +101,7 @@ pub fn test_position_short(audusd_sim: CurrencyPair) -> Position {
     Position::new(audusd_sim, order_filled).unwrap()
 }
 
+#[must_use]
 pub fn stub_order_book_mbp_appl_xnas() -> OrderBookMbp {
     stub_order_book_mbp(
         InstrumentId::from("AAPL.XNAS"),
@@ -117,6 +118,7 @@ pub fn stub_order_book_mbp_appl_xnas() -> OrderBookMbp {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[must_use]
 pub fn stub_order_book_mbp(
     instrument_id: InstrumentId,
     top_ask_price: f64,
@@ -134,12 +136,15 @@ pub fn stub_order_book_mbp(
     // Generate bids
     for i in 0..num_levels {
         let price = Price::new(
-            top_bid_price - (price_increment * i as f64),
+            price_increment.mul_add(-(i as f64), top_bid_price),
             price_precision,
         )
         .unwrap();
-        let size =
-            Quantity::new(top_bid_size + (size_increment * i as f64), size_precision).unwrap();
+        let size = Quantity::new(
+            size_increment.mul_add(i as f64, top_bid_size),
+            size_precision,
+        )
+        .unwrap();
         let order = BookOrder::new(
             OrderSide::Buy,
             price,
@@ -152,12 +157,15 @@ pub fn stub_order_book_mbp(
     // Generate asks
     for i in 0..num_levels {
         let price = Price::new(
-            top_ask_price + (price_increment * i as f64),
+            price_increment.mul_add(i as f64, top_ask_price),
             price_precision,
         )
         .unwrap();
-        let size =
-            Quantity::new(top_ask_size + (size_increment * i as f64), size_precision).unwrap();
+        let size = Quantity::new(
+            size_increment.mul_add(i as f64, top_ask_size),
+            size_precision,
+        )
+        .unwrap();
         let order = BookOrder::new(
             OrderSide::Sell,
             price,

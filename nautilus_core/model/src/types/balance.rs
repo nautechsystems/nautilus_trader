@@ -38,12 +38,9 @@ pub struct AccountBalance {
 
 impl AccountBalance {
     pub fn new(total: Money, locked: Money, free: Money) -> Result<Self> {
-        if total != locked + free {
-            panic!(
-                "Total balance is not equal to the sum of locked and free balances: {} != {} + {}",
-                total, locked, free
+        assert!(total == locked + free,
+                "Total balance is not equal to the sum of locked and free balances: {total} != {locked} + {free}"
             );
-        }
         Ok(Self {
             currency: total.currency,
             total,
@@ -131,11 +128,11 @@ mod tests {
 
     #[rstest]
     fn test_account_balance_display(account_balance_test: AccountBalance) {
-        let display = format!("{}", account_balance_test);
+        let display = format!("{account_balance_test}");
         assert_eq!(
             "AccountBalance(total=1525000.00 USD, locked=25000.00 USD, free=1500000.00 USD)",
             display
-        )
+        );
     }
 
     #[rstest]
@@ -147,10 +144,10 @@ mod tests {
 
     #[rstest]
     fn test_margin_balance_display(margin_balance_test: MarginBalance) {
-        let display = format!("{}", margin_balance_test);
+        let display = format!("{margin_balance_test}");
         assert_eq!(
             "MarginBalance(initial=5000.00 USD, maintenance=20000.00 USD, instrument_id=BTCUSDT.COINBASE)",
             display
-        )
+        );
     }
 }

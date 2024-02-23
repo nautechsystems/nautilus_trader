@@ -76,9 +76,7 @@ impl OrderPendingCancel {
             self.strategy_id,
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id
-                .map(|venue_order_id| format!("{}", venue_order_id))
-                .unwrap_or_else(|| "None".to_string()),
+            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}")),
             self.account_id,
             self.event_id,
             self.ts_event,
@@ -92,9 +90,7 @@ impl OrderPendingCancel {
             stringify!(OrderPendingCancel),
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id
-                .map(|venue_order_id| format!("{}", venue_order_id))
-                .unwrap_or_else(|| "None".to_string()),
+            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}")),
             self.account_id,
             self.ts_event,
         )

@@ -41,10 +41,12 @@ pub struct InstrumentId {
 }
 
 impl InstrumentId {
+    #[must_use]
     pub fn new(symbol: Symbol, venue: Venue) -> Self {
         Self { symbol, venue }
     }
 
+    #[must_use]
     pub fn is_synthetic(&self) -> bool {
         self.venue.is_synthetic()
     }
@@ -104,8 +106,7 @@ impl<'de> Deserialize<'de> for InstrumentId {
         D: Deserializer<'de>,
     {
         let instrument_id_str = String::deserialize(deserializer)?;
-        InstrumentId::from_str(&instrument_id_str)
-            .map_err(|err| serde::de::Error::custom(err.to_string()))
+        Self::from_str(&instrument_id_str).map_err(|err| serde::de::Error::custom(err.to_string()))
     }
 }
 

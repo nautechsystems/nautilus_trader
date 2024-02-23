@@ -104,19 +104,18 @@ pub trait Instrument: Any + 'static + Send {
         let use_quote_for_inverse = use_quote_for_inverse.unwrap_or(false);
         let (amount, currency) = if self.is_inverse() {
             if use_quote_for_inverse {
-                (quantity.as_f64(), self.quote_currency().to_owned())
+                (quantity.as_f64(), self.quote_currency())
             } else {
                 let amount =
                     quantity.as_f64() * self.multiplier().as_f64() * (1.0 / price.as_f64());
                 let currency = self
                     .base_currency()
-                    .expect("Error: no base currency for notional calculation")
-                    .to_owned();
+                    .expect("Error: no base currency for notional calculation");
                 (amount, currency)
             }
         } else {
             let amount = quantity.as_f64() * self.multiplier().as_f64() * price.as_f64();
-            let currency = self.quote_currency().to_owned();
+            let currency = self.quote_currency();
             (amount, currency)
         };
 

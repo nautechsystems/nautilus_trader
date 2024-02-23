@@ -103,7 +103,7 @@ impl OrderBookDeltas {
 
     #[staticmethod]
     #[pyo3(name = "from_pycapsule")]
-    pub fn py_from_pycapsule(capsule: &PyAny) -> OrderBookDeltas {
+    pub fn py_from_pycapsule(capsule: &PyAny) -> Self {
         let capsule: &PyCapsule = capsule
             .downcast()
             .expect("Error on downcast to `&PyCapsule`");

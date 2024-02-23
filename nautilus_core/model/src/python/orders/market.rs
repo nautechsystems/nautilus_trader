@@ -82,7 +82,7 @@ impl MarketOrder {
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<String>,
     ) -> PyResult<Self> {
-        MarketOrder::new(
+        Self::new(
             trader_id,
             strategy_id,
             instrument_id,

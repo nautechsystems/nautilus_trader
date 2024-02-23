@@ -92,5 +92,5 @@ pub extern "C" fn interned_string_stats() {
     dbg!(ustr::total_allocated());
     dbg!(ustr::total_capacity());
 
-    ustr::string_cache_iter().for_each(|s| println!("{}", s));
+    ustr::string_cache_iter().for_each(|s| println!("{s}"));
 }

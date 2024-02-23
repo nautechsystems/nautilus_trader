@@ -86,7 +86,7 @@ impl OrderBookMbo {
 
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
-        self.reset()
+        self.reset();
     }
 
     #[pyo3(signature = (order, ts_event, sequence=0))]

@@ -212,7 +212,7 @@ mod tests {
 
     #[rstest]
     fn test_equality(futures_contract_es: FuturesContract) {
-        let cloned = futures_contract_es.clone();
+        let cloned = futures_contract_es;
         assert_eq!(futures_contract_es, cloned);
     }
 }

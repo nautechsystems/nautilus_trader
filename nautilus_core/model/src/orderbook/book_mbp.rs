@@ -168,7 +168,7 @@ impl OrderBookMbp {
 
     pub fn apply_deltas(&mut self, deltas: OrderBookDeltas) {
         for delta in deltas.deltas {
-            self.apply_delta(delta)
+            self.apply_delta(delta);
         }
     }
 
@@ -193,6 +193,7 @@ impl OrderBookMbp {
         self.asks.levels.values()
     }
 
+    #[must_use]
     pub fn has_bid(&self) -> bool {
         match self.bids.top() {
             Some(top) => !top.orders.is_empty(),
@@ -200,6 +201,7 @@ impl OrderBookMbp {
         }
     }
 
+    #[must_use]
     pub fn has_ask(&self) -> bool {
         match self.asks.top() {
             Some(top) => !top.orders.is_empty(),
@@ -207,14 +209,17 @@ impl OrderBookMbp {
         }
     }
 
+    #[must_use]
     pub fn best_bid_price(&self) -> Option<Price> {
         self.bids.top().map(|top| top.price.value)
     }
 
+    #[must_use]
     pub fn best_ask_price(&self) -> Option<Price> {
         self.asks.top().map(|top| top.price.value)
     }
 
+    #[must_use]
     pub fn best_bid_size(&self) -> Option<Quantity> {
         match self.bids.top() {
             Some(top) => top.first().map(|order| order.size),
@@ -222,6 +227,7 @@ impl OrderBookMbp {
         }
     }
 
+    #[must_use]
     pub fn best_ask_size(&self) -> Option<Quantity> {
         match self.asks.top() {
             Some(top) => top.first().map(|order| order.size),
@@ -229,6 +235,7 @@ impl OrderBookMbp {
         }
     }
 
+    #[must_use]
     pub fn spread(&self) -> Option<f64> {
         match (self.best_ask_price(), self.best_bid_price()) {
             (Some(ask), Some(bid)) => Some(ask.as_f64() - bid.as_f64()),
@@ -236,6 +243,7 @@ impl OrderBookMbp {
         }
     }
 
+    #[must_use]
     pub fn midpoint(&self) -> Option<f64> {
         match (self.best_ask_price(), self.best_bid_price()) {
             (Some(ask), Some(bid)) => Some((ask.as_f64() + bid.as_f64()) / 2.0),
@@ -243,26 +251,29 @@ impl OrderBookMbp {
         }
     }
 
+    #[must_use]
     pub fn get_avg_px_for_quantity(&self, qty: Quantity, order_side: OrderSide) -> f64 {
         let levels = match order_side {
             OrderSide::Buy => &self.asks.levels,
             OrderSide::Sell => &self.bids.levels,
-            _ => panic!("Invalid `OrderSide` {}", order_side),
+            _ => panic!("Invalid `OrderSide` {order_side}"),
         };
 
         get_avg_px_for_quantity(qty, levels)
     }
 
+    #[must_use]
     pub fn get_quantity_for_price(&self, price: Price, order_side: OrderSide) -> f64 {
         let levels = match order_side {
             OrderSide::Buy => &self.asks.levels,
             OrderSide::Sell => &self.bids.levels,
-            _ => panic!("Invalid `OrderSide` {}", order_side),
+            _ => panic!("Invalid `OrderSide` {order_side}"),
         };
 
         get_quantity_for_price(price, order_side, levels)
     }
 
+    #[must_use]
     pub fn simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
         match order.side {
             OrderSide::Buy => self.asks.simulate_fills(order),
@@ -272,6 +283,7 @@ impl OrderBookMbp {
     }
 
     /// Return a [`String`] representation of the order book in a human-readable table format.
+    #[must_use]
     pub fn pprint(&self, num_levels: usize) -> String {
         pprint_book(&self.bids, &self.asks, num_levels)
     }
@@ -293,7 +305,7 @@ impl OrderBookMbp {
                 }
             }
             false => {
-                for (_, bid_level) in self.bids.levels.iter() {
+                for bid_level in self.bids.levels.values() {
                     let num_orders = bid_level.orders.len();
                     if num_orders > 1 {
                         return Err(BookIntegrityError::TooManyOrders(
@@ -303,7 +315,7 @@ impl OrderBookMbp {
                     }
                 }
 
-                for (_, ask_level) in self.asks.levels.iter() {
+                for ask_level in self.asks.levels.values() {
                     let num_orders = ask_level.orders.len();
                     if num_orders > 1 {
                         return Err(BookIntegrityError::TooManyOrders(

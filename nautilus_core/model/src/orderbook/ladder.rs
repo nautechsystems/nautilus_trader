@@ -103,7 +103,7 @@ impl Ladder {
 
     pub fn add_bulk(&mut self, orders: Vec<BookOrder>) {
         for order in orders {
-            self.add(order)
+            self.add(order);
         }
     }
 
@@ -169,12 +169,15 @@ impl Ladder {
 
     #[must_use]
     pub fn sizes(&self) -> f64 {
-        self.levels.values().map(|l| l.size()).sum()
+        self.levels.values().map(super::level::Level::size).sum()
     }
 
     #[must_use]
     pub fn exposures(&self) -> f64 {
-        self.levels.values().map(|l| l.exposure()).sum()
+        self.levels
+            .values()
+            .map(super::level::Level::exposure)
+            .sum()
     }
 
     #[must_use]
@@ -185,6 +188,7 @@ impl Ladder {
         }
     }
 
+    #[must_use]
     pub fn simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
         let is_reversed = self.side == OrderSide::Buy;
 
@@ -268,7 +272,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 20.0);
         assert_eq!(ladder.exposures(), 200.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0);
     }
 
     #[rstest]
@@ -283,7 +287,7 @@ mod tests {
         assert_eq!(ladder.len(), 3);
         assert_eq!(ladder.sizes(), 300.0);
         assert_eq!(ladder.exposures(), 2520.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0);
     }
 
     #[rstest]
@@ -303,7 +307,7 @@ mod tests {
         assert_eq!(ladder.len(), 3);
         assert_eq!(ladder.sizes(), 300.0);
         assert_eq!(ladder.exposures(), 3780.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0);
     }
 
     #[rstest]
@@ -356,7 +360,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 20.0);
         assert_eq!(ladder.exposures(), 222.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.1)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.1);
     }
 
     #[rstest]
@@ -372,7 +376,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 20.0);
         assert_eq!(ladder.exposures(), 222.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.1)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.1);
     }
 
     #[rstest]
@@ -388,7 +392,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 10.0);
         assert_eq!(ladder.exposures(), 110.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0);
     }
 
     #[rstest]
@@ -404,7 +408,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 10.0);
         assert_eq!(ladder.exposures(), 110.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0);
     }
 
     #[rstest]
@@ -430,7 +434,7 @@ mod tests {
         assert_eq!(ladder.len(), 0);
         assert_eq!(ladder.sizes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);
-        assert_eq!(ladder.top(), None)
+        assert_eq!(ladder.top(), None);
     }
 
     #[rstest]
@@ -446,7 +450,7 @@ mod tests {
         assert_eq!(ladder.len(), 0);
         assert_eq!(ladder.sizes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);
-        assert_eq!(ladder.top(), None)
+        assert_eq!(ladder.top(), None);
     }
 
     #[rstest]

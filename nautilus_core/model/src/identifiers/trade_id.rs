@@ -103,7 +103,7 @@ impl<'de> Deserialize<'de> for TradeId {
         D: Deserializer<'de>,
     {
         let value_str = String::deserialize(deserializer)?;
-        TradeId::new(&value_str).map_err(|err| serde::de::Error::custom(err.to_string()))
+        Self::new(&value_str).map_err(|err| serde::de::Error::custom(err.to_string()))
     }
 }
 

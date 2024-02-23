@@ -118,7 +118,7 @@ impl FromStr for BarType {
         if rev_pieces.len() != 5 {
             return Err(BarTypeParseError {
                 input: s.to_string(),
-                token: "".to_string(),
+                token: String::new(),
                 position: 0,
             });
         }
@@ -153,7 +153,7 @@ impl FromStr for BarType {
                 position: 4,
             })?;
 
-        Ok(BarType {
+        Ok(Self {
             instrument_id,
             spec: BarSpecification {
                 step,
@@ -196,7 +196,7 @@ impl<'de> Deserialize<'de> for BarType {
         D: Deserializer<'de>,
     {
         let s: String = Deserialize::deserialize(deserializer)?;
-        BarType::from_str(&s).map_err(serde::de::Error::custom)
+        Self::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
 
@@ -253,6 +253,7 @@ impl Bar {
     }
 
     /// Returns the metadata for the type, for use with serialization formats.
+    #[must_use]
     pub fn get_metadata(
         bar_type: &BarType,
         price_precision: u8,
@@ -268,6 +269,7 @@ impl Bar {
     }
 
     /// Returns the field map for the type, for use with Arrow schemas.
+    #[must_use]
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
         metadata.insert("open".to_string(), "Int64".to_string());

@@ -63,8 +63,8 @@ impl OrderCancelRejected {
         reconciliation: bool,
         venue_order_id: Option<VenueOrderId>,
         account_id: Option<AccountId>,
-    ) -> Result<OrderCancelRejected> {
-        Ok(OrderCancelRejected {
+    ) -> Result<Self> {
+        Ok(Self {
             trader_id,
             strategy_id,
             instrument_id,
@@ -73,7 +73,7 @@ impl OrderCancelRejected {
             event_id,
             ts_event,
             ts_init,
-            reconciliation: reconciliation as u8,
+            reconciliation: u8::from(reconciliation),
             venue_order_id,
             account_id,
         })
@@ -87,12 +87,8 @@ impl Display for OrderCancelRejected {
             "OrderCancelRejected(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, reason={}, ts_event={})",
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id
-                .map(|venue_order_id| format!("{}", venue_order_id))
-                .unwrap_or_else(|| "None".to_string()),
-            self.account_id
-                .map(|account_id| format!("{}", account_id))
-                .unwrap_or_else(|| "None".to_string()),
+            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}")),
+            self.account_id.map_or_else(|| "None".to_string(), |account_id| format!("{account_id}")),
             self.reason,
             self.ts_event
         )
@@ -111,7 +107,7 @@ mod tests {
 
     #[rstest]
     fn test_order_cancel_rejected(order_cancel_rejected: OrderCancelRejected) {
-        let display = format!("{}", order_cancel_rejected);
+        let display = format!("{order_cancel_rejected}");
         assert_eq!(
             display,
             "OrderCancelRejected(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, venue_order_id=001, account_id=SIM-001, reason=ORDER_DOES_NOT_EXISTS, ts_event=0)"

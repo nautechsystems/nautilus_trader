@@ -43,6 +43,7 @@ impl EnumIterator {
 }
 
 impl EnumIterator {
+    #[must_use]
     pub fn new<E>(py: Python<'_>) -> Self
     where
         E: strum::IntoEnumIterator + IntoPy<Py<PyAny>>,
@@ -65,7 +66,7 @@ pub fn value_to_pydict(py: Python<'_>, val: &Value) -> PyResult<Py<PyDict>> {
 
     match val {
         Value::Object(map) => {
-            for (key, value) in map.iter() {
+            for (key, value) in map {
                 let py_value = value_to_pyobject(py, value)?;
                 dict.set_item(key, py_value)?;
             }
@@ -93,7 +94,7 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
         }
         Value::Array(arr) => {
             let py_list = PyList::new(py, &[] as &[PyObject]);
-            for item in arr.iter() {
+            for item in arr {
                 let py_item = value_to_pyobject(py, item)?;
                 py_list.append(py_item)?;
             }
@@ -156,16 +157,13 @@ mod tests {
                     .unwrap(),
                 42
             );
-            assert_eq!(
-                py_dict
-                    .get_item("is_reconciliation")
-                    .unwrap()
-                    .unwrap()
-                    .downcast::<PyBool>()
-                    .unwrap()
-                    .is_true(),
-                false
-            );
+            assert!(!py_dict
+                .get_item("is_reconciliation")
+                .unwrap()
+                .unwrap()
+                .downcast::<PyBool>()
+                .unwrap()
+                .is_true());
         });
     }
 
@@ -187,7 +185,7 @@ mod tests {
             let val = Value::Bool(true);
             let py_obj = value_to_pyobject(py, &val).unwrap();
 
-            assert_eq!(py_obj.extract::<bool>(py).unwrap(), true);
+            assert!(py_obj.extract::<bool>(py).unwrap());
         });
     }
 

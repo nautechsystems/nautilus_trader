@@ -26,6 +26,7 @@ struct OrderLevelDisplay {
 }
 
 /// Return a [`String`] representation of the order book in a human-readable table format.
+#[must_use]
 pub fn pprint_book(bids: &Ladder, asks: &Ladder, num_levels: usize) -> String {
     let ask_levels: Vec<(&BookPrice, &Level)> = asks.levels.iter().take(num_levels).rev().collect();
     let bid_levels: Vec<(&BookPrice, &Level)> = bids.levels.iter().take(num_levels).collect();
@@ -53,13 +54,13 @@ pub fn pprint_book(bids: &Ladder, asks: &Ladder, num_levels: usize) -> String {
 
             OrderLevelDisplay {
                 bids: if bid_sizes.is_empty() {
-                    String::from("")
+                    String::new()
                 } else {
                     format!("[{}]", bid_sizes.join(", "))
                 },
                 price: format!("{}", level.price),
                 asks: if ask_sizes.is_empty() {
-                    String::from("")
+                    String::new()
                 } else {
                     format!("[{}]", ask_sizes.join(", "))
                 },

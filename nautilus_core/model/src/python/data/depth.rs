@@ -266,7 +266,7 @@ impl OrderBookDepth10 {
         let bid_counts: [u32; 10] = [1; 10];
         let ask_counts: [u32; 10] = [1; 10];
 
-        OrderBookDepth10::new(
+        Self::new(
             instrument_id,
             bids,
             asks,

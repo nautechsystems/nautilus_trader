@@ -49,12 +49,12 @@ pub trait HasTsInit {
 impl HasTsInit for Data {
     fn get_ts_init(&self) -> UnixNanos {
         match self {
-            Data::Delta(d) => d.ts_init,
-            Data::Deltas(d) => d.ts_init,
-            Data::Depth10(d) => d.ts_init,
-            Data::Quote(q) => q.ts_init,
-            Data::Trade(t) => t.ts_init,
-            Data::Bar(b) => b.ts_init,
+            Self::Delta(d) => d.ts_init,
+            Self::Deltas(d) => d.ts_init,
+            Self::Depth10(d) => d.ts_init,
+            Self::Quote(q) => q.ts_init,
+            Self::Trade(t) => t.ts_init,
+            Self::Bar(b) => b.ts_init,
         }
     }
 }

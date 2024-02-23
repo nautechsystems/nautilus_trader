@@ -218,7 +218,7 @@ mod tests {
 
     #[rstest]
     fn test_equality(options_contract_appl: OptionsContract) {
-        let options_contract_appl2 = options_contract_appl.clone();
+        let options_contract_appl2 = options_contract_appl;
         assert_eq!(options_contract_appl, options_contract_appl2);
     }
 }

@@ -91,7 +91,7 @@ impl OrderBookMbp {
 
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
-        self.reset()
+        self.reset();
     }
 
     #[pyo3(signature = (order, ts_event, sequence=0))]
@@ -102,12 +102,12 @@ impl OrderBookMbp {
 
     #[pyo3(name = "update_quote_tick")]
     fn py_update_quote_tick(&mut self, quote: &QuoteTick) {
-        self.update_quote_tick(quote)
+        self.update_quote_tick(quote);
     }
 
     #[pyo3(name = "update_trade_tick")]
     fn py_update_trade_tick(&mut self, trade: &TradeTick) {
-        self.update_trade_tick(trade)
+        self.update_trade_tick(trade);
     }
 
     #[pyo3(signature = (order, ts_event, sequence=0))]
