@@ -15,7 +15,6 @@
 
 use std::{fs, num::NonZeroU64, sync::Arc};
 
-use databento::dbn;
 use databento::historical::timeseries::GetRangeParams;
 use indexmap::IndexMap;
 use nautilus_core::{
