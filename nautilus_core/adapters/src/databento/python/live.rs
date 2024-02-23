@@ -21,13 +21,12 @@ use dbn::{PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy};
 use indexmap::IndexMap;
 use log::{error, info};
 use nautilus_core::{
-    ffi::cvec::CVec,
     python::{to_pyruntime_err, to_pyvalue_err},
     time::{get_atomic_clock_realtime, AtomicTime, UnixNanos},
 };
 use nautilus_model::{
     data::{delta::OrderBookDelta, deltas::OrderBookDeltas, Data},
-    ffi::data::deltas::orderbook_deltas_new,
+    ffi::data::deltas::OrderBookDeltas_API,
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
     python::data::data_to_pycapsule,
 };
@@ -237,14 +236,11 @@ impl DatabentoLiveClient {
                             let buffer = buffered_deltas.entry(delta.instrument_id).or_default();
                             buffer.push(delta);
 
+                            // TODO: Temporary for debugging
                             deltas_count += 1;
                             println!(
-                                "Buffering delta: {} {} {:?} flags={}, buffer_len={}",
-                                deltas_count,
-                                delta.ts_event,
-                                buffering_start,
-                                msg.flags,
-                                buffer.len()
+                                "Buffering delta: {} {} {:?} flags={}",
+                                deltas_count, delta.ts_event, buffering_start, msg.flags,
                             );
 
                             // Check if last message in the packet
@@ -266,11 +262,9 @@ impl DatabentoLiveClient {
                             }
 
                             // SAFETY: We can guarantee a deltas vec exists
-                            let instrument_id = delta.instrument_id;
                             let buffer = buffered_deltas.remove(&delta.instrument_id).unwrap();
                             let deltas = OrderBookDeltas::new(delta.instrument_id, buffer);
-                            let deltas_cvec: CVec = deltas.deltas.into();
-                            let deltas = orderbook_deltas_new(instrument_id, &deltas_cvec);
+                            let deltas = OrderBookDeltas_API::new(deltas);
                             data1 = Some(Data::Deltas(deltas));
                         }
                     };
