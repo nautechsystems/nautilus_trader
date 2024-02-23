@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::time::UnixNanos;
-use pyo3;
 
 use super::{
     book::{get_avg_px_for_quantity, get_quantity_for_price},

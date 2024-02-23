@@ -16,7 +16,7 @@
 use std::fmt::Display;
 
 use anyhow::Result;
-use derive_builder::{self, Builder};
+use derive_builder::Builder;
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
