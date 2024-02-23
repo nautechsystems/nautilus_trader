@@ -15,6 +15,7 @@
 
 use std::{any::Any, collections::HashMap, path::PathBuf};
 
+use databento::dbn;
 use nautilus_core::{
     ffi::cvec::CVec,
     python::{to_pyruntime_err, to_pyvalue_err},

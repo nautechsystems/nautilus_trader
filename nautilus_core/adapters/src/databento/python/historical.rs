@@ -15,8 +15,8 @@
 
 use std::{fs, num::NonZeroU64, sync::Arc};
 
+use databento::dbn;
 use databento::historical::timeseries::GetRangeParams;
-use dbn::VersionUpgradePolicy;
 use indexmap::IndexMap;
 use nautilus_core::{
     python::to_pyvalue_err,
@@ -134,7 +134,7 @@ impl DatabentoHistoricalClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            decoder.set_upgrade_policy(VersionUpgradePolicy::Upgrade);
+            decoder.set_upgrade_policy(dbn::VersionUpgradePolicy::Upgrade);
 
             let mut instruments = Vec::new();
 

@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use anyhow::{bail, Result};
-use dbn::Record;
+use databento::dbn::{self, Record};
 use nautilus_model::identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue};
 use ustr::Ustr;
 
