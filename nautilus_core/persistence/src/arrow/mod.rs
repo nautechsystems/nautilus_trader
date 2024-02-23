@@ -33,7 +33,6 @@ use datafusion::arrow::{
 };
 use nautilus_model::data::Data;
 use pyo3::prelude::*;
-use thiserror;
 
 // Define metadata key constants constants
 const KEY_BAR_TYPE: &str = "bar_type";

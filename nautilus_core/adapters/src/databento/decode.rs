@@ -21,9 +21,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Result};
-use databento::dbn;
 use dbn::Record;
-use itoa;
 use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, time::UnixNanos};
 use nautilus_model::{
     data::{

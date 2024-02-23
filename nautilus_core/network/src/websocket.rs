@@ -21,7 +21,7 @@ use futures_util::{
 };
 use hyper::header::HeaderName;
 use nautilus_core::python::to_pyruntime_err;
-use pyo3::{exceptions::PyException, prelude::*, types::PyBytes, PyObject, Python};
+use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
 use tokio::{net::TcpStream, sync::Mutex, task, time::sleep};
 use tokio_tungstenite::{
     connect_async,

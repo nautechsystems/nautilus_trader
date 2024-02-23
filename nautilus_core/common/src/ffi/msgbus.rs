@@ -32,7 +32,6 @@ use pyo3::{
     ffi,
     prelude::*,
     types::{PyList, PyString},
-    Python,
 };
 
 use crate::{

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use pyo3::{prelude::*, PyResult};
+use pyo3::prelude::*;
 
 use crate::enums;
 

@@ -25,7 +25,6 @@ use indexmap::IndexMap;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde::{Deserialize, Serialize};
-use serde_json;
 use ustr::Ustr;
 
 use crate::{handlers::MessageHandler, redis::handle_messages_with_redis};
