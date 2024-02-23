@@ -41,7 +41,6 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
@@ -137,8 +136,6 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._buffer_mbo_subscriptions_task: asyncio.Task | None = None
         self._is_buffering_mbo_subscriptions: bool = bool(config.mbo_subscriptions_delay)
         self._buffered_mbo_subscriptions: dict[Dataset, list[InstrumentId]] = defaultdict(list)
-        self._buffered_deltas: dict[InstrumentId, list[OrderBookDelta]] = defaultdict(list)
-        self._buffering_replay: dict[InstrumentId, int] = {}
 
         # Tasks
         self._live_client_futures: set[asyncio.Future] = set()
@@ -491,11 +488,6 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             ids_str = ",".join([i.value for i in instrument_ids])
             self._log.info(f"Subscribing to MBO/L3 for {ids_str}.", LogColor.BLUE)
-
-            # Setup buffered start times
-            now = self._clock.utc_now()
-            for instrument_id in instrument_ids:
-                self._buffering_replay[instrument_id] = now.value
 
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_ids[0].venue)
             live_client = self._get_live_client_mbo(dataset)
