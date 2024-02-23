@@ -54,11 +54,11 @@ impl Indicator for BookImbalanceRatio {
     }
 
     fn handle_book_mbo(&mut self, book: &OrderBookMbo) {
-        self.update(book.best_bid_size(), book.best_ask_size())
+        self.update(book.best_bid_size(), book.best_ask_size());
     }
 
     fn handle_book_mbp(&mut self, book: &OrderBookMbp) {
-        self.update(book.best_bid_size(), book.best_ask_size())
+        self.update(book.best_bid_size(), book.best_ask_size());
     }
 
     fn reset(&mut self) {
