@@ -57,6 +57,11 @@ cdef inline void capsule_destructor(object capsule):
     PyMem_Free(cvec) # de-allocate cvec
 
 
+cdef inline void capsule_destructor_deltas(object capsule):
+    cdef OrderBookDeltas_API *data = <OrderBookDeltas_API *>PyCapsule_GetPointer(capsule, NULL)
+    PyMem_Free(data)
+
+
 cdef class DataType:
     cdef frozenset _key
     cdef int _hash
@@ -244,6 +249,7 @@ cdef class OrderBookDeltas(Data):
     @staticmethod
     cdef dict to_dict_c(OrderBookDeltas obj)
 
+    cpdef to_capsule(self)
     cpdef to_pyo3(self)
 
 

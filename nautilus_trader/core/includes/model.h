@@ -1417,6 +1417,8 @@ struct OrderBookDeltas_API orderbook_deltas_new(struct InstrumentId_t instrument
 
 void orderbook_deltas_drop(struct OrderBookDeltas_API deltas);
 
+struct OrderBookDeltas_API orderbook_deltas_clone(const struct OrderBookDeltas_API *deltas);
+
 struct InstrumentId_t orderbook_deltas_instrument_id(const struct OrderBookDeltas_API *deltas);
 
 CVec orderbook_deltas_vec_deltas(const struct OrderBookDeltas_API *deltas);

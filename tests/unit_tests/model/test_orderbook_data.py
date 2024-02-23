@@ -23,6 +23,7 @@ from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
+from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
@@ -401,6 +402,20 @@ def test_deltas_to_pyo3() -> None:
 
     # Act
     pyo3_deltas = deltas.to_pyo3()
+
+    # Assert
+    assert isinstance(pyo3_deltas, nautilus_pyo3.OrderBookDeltas)
+    assert len(pyo3_deltas.deltas) == len(deltas.deltas)
+
+
+def test_deltas_capsule_round_trip() -> None:
+    # Arrange
+    deltas = TestDataStubs.order_book_deltas()
+
+    # Act
+    pyo3_deltas = deltas.to_pyo3()
+    capsule = pyo3_deltas.as_pycapsule()
+    deltas = capsule_to_data(capsule)
 
     # Assert
     assert isinstance(pyo3_deltas, nautilus_pyo3.OrderBookDeltas)

@@ -78,6 +78,7 @@ from nautilus_trader.core.rust.model cimport instrument_id_from_cstr
 from nautilus_trader.core.rust.model cimport orderbook_delta_eq
 from nautilus_trader.core.rust.model cimport orderbook_delta_hash
 from nautilus_trader.core.rust.model cimport orderbook_delta_new
+from nautilus_trader.core.rust.model cimport orderbook_deltas_clone
 from nautilus_trader.core.rust.model cimport orderbook_deltas_drop
 from nautilus_trader.core.rust.model cimport orderbook_deltas_flags
 from nautilus_trader.core.rust.model cimport orderbook_deltas_instrument_id
@@ -148,7 +149,7 @@ cdef inline OrderBookDelta delta_from_mem_c(OrderBookDelta_t mem):
 
 cdef inline OrderBookDeltas deltas_from_mem_c(OrderBookDeltas_API mem):
     cdef OrderBookDeltas deltas = OrderBookDeltas.__new__(OrderBookDeltas)
-    deltas._mem = mem
+    deltas._mem = orderbook_deltas_clone(&mem)
     return deltas
 
 
@@ -430,7 +431,6 @@ cdef class BarSpecification:
             return True
         else:
             return False
-
 
     @staticmethod
     def from_str(str value) -> BarSpecification:
@@ -2386,12 +2386,15 @@ cdef class OrderBookDeltas(Data):
         """
         return OrderBookDeltas.to_dict_c(obj)
 
-    cpdef to_pyo3(self):
+    cpdef to_capsule(self):
         cdef OrderBookDeltas_API *data = <OrderBookDeltas_API *>PyMem_Malloc(sizeof(OrderBookDeltas_API))
         data[0] = self._mem
-        capsule = PyCapsule_New(data, NULL, NULL)
+        capsule = PyCapsule_New(data, NULL, <PyCapsule_Destructor>capsule_destructor_deltas)
+        return capsule
+
+    cpdef to_pyo3(self):
+        capsule = self.to_capsule()
         deltas = nautilus_pyo3.OrderBookDeltas.from_pycapsule(capsule)
-        PyMem_Free(data)
         return deltas
 
 
