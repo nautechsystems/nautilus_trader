@@ -17,7 +17,6 @@ use pyo3::{
     exceptions::PyValueError,
     prelude::*,
     types::{PyDict, PyList},
-    PyResult,
 };
 use serde_json::Value;
 use strum::IntoEnumIterator;

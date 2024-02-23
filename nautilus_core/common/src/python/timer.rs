@@ -20,7 +20,6 @@ use pyo3::{
     basic::CompareOp,
     prelude::*,
     types::{PyLong, PyString, PyTuple},
-    IntoPy, Py, PyAny, PyObject, PyResult, Python, ToPyObject,
 };
 use ustr::Ustr;
 

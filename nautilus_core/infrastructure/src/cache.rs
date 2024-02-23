@@ -18,7 +18,6 @@ use std::{collections::HashMap, sync::mpsc::Receiver};
 use anyhow::Result;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
-use serde_json;
 
 /// A type of database operation.
 #[derive(Clone, Debug)]

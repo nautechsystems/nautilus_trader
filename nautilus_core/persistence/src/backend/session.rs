@@ -17,10 +17,7 @@ use std::{collections::HashMap, sync::Arc, vec::IntoIter};
 
 use compare::Compare;
 use datafusion::{
-    error::Result,
-    logical_expr::{col, expr::Sort},
-    physical_plan::SendableRecordBatchStream,
-    prelude::*,
+    error::Result, logical_expr::expr::Sort, physical_plan::SendableRecordBatchStream, prelude::*,
 };
 use futures::StreamExt;
 use nautilus_core::ffi::cvec::CVec;

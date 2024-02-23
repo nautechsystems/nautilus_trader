@@ -20,8 +20,7 @@ use nautilus_core::{
     uuid::UUID4,
 };
 use nautilus_model::identifiers::trader_id::TraderId;
-use pyo3::{prelude::*, types::PyBytes, PyResult};
-use serde_json;
+use pyo3::{prelude::*, types::PyBytes};
 
 use crate::{cache::CacheDatabase, redis::RedisCacheDatabase};
 

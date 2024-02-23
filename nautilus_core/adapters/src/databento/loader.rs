@@ -16,7 +16,6 @@
 use std::{env, fs, path::PathBuf};
 
 use anyhow::{bail, Result};
-use databento::dbn;
 use dbn::{
     compat::InstrumentDefMsgV1,
     decode::{dbn::Decoder, DbnMetadata, DecodeStream},
@@ -31,7 +30,6 @@ use nautilus_model::{
 };
 use pyo3::prelude::*;
 use streaming_iterator::StreamingIterator;
-use time;
 use ustr::Ustr;
 
 use super::{
