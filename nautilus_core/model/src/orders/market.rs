@@ -367,10 +367,12 @@ impl From<OrderInitialized> for MarketOrder {
 mod tests {
     use rstest::rstest;
 
-    use crate::enums::OrderSide;
-    use crate::instruments::currency_pair::CurrencyPair;
-    use crate::instruments::stubs::*;
-    use crate::{enums::TimeInForce, orders::stubs::*, types::quantity::Quantity};
+    use crate::{
+        enums::{OrderSide, TimeInForce},
+        instruments::{currency_pair::CurrencyPair, stubs::*},
+        orders::stubs::*,
+        types::quantity::Quantity,
+    };
 
     #[rstest]
     #[should_panic(expected = "Condition failed: invalid `Quantity`, should be positive and was 0")]

@@ -23,12 +23,11 @@ pub mod trade;
 
 use nautilus_core::time::UnixNanos;
 
-use crate::ffi::data::deltas::OrderBookDeltas_API;
-
 use self::{
     bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10,
     quote::QuoteTick, trade::TradeTick,
 };
+use crate::ffi::data::deltas::OrderBookDeltas_API;
 
 #[repr(C)]
 #[derive(Clone, Debug)]

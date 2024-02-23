@@ -13,17 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_common::factories::OrderFactory;
-use nautilus_common::stubs::*;
-use nautilus_model::enums::OrderSide;
-use nautilus_model::identifiers::instrument_id::InstrumentId;
-use nautilus_model::instruments::currency_pair::CurrencyPair;
-use nautilus_model::instruments::stubs::audusd_sim;
-use nautilus_model::orders::market::MarketOrder;
-use nautilus_model::orders::stubs::TestOrderEventStubs;
-use nautilus_model::position::Position;
-use nautilus_model::types::price::Price;
-use nautilus_model::types::quantity::Quantity;
+use nautilus_common::{factories::OrderFactory, stubs::*};
+use nautilus_model::{
+    enums::OrderSide,
+    identifiers::instrument_id::InstrumentId,
+    instruments::{currency_pair::CurrencyPair, stubs::audusd_sim},
+    orders::{market::MarketOrder, stubs::TestOrderEventStubs},
+    position::Position,
+    types::{price::Price, quantity::Quantity},
+};
 use rstest::fixture;
 
 #[fixture]

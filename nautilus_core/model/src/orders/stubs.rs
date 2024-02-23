@@ -17,13 +17,13 @@ use std::str::FromStr;
 
 use nautilus_core::uuid::UUID4;
 
-use crate::identifiers::client_order_id::ClientOrderId;
-use crate::identifiers::instrument_id::InstrumentId;
 use crate::{
     enums::{LiquiditySide, OrderSide, TimeInForce},
     events::order::filled::OrderFilled,
     identifiers::{
         account_id::AccountId,
+        client_order_id::ClientOrderId,
+        instrument_id::InstrumentId,
         position_id::PositionId,
         strategy_id::StrategyId,
         stubs::{strategy_id_ema_cross, trader_id},

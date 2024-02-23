@@ -24,7 +24,6 @@ use indexmap::IndexMap;
 use nautilus_core::{serialization::Serializable, time::UnixNanos};
 use pyo3::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use thiserror;
 
 use crate::{
     enums::{AggregationSource, BarAggregation, PriceType},

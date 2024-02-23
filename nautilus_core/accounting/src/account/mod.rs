@@ -13,18 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use anyhow::Result;
-use nautilus_model::enums::{LiquiditySide, OrderSide};
-use nautilus_model::events::account::state::AccountState;
-use nautilus_model::events::order::filled::OrderFilled;
-use nautilus_model::instruments::Instrument;
-use nautilus_model::position::Position;
-use nautilus_model::types::balance::AccountBalance;
-use nautilus_model::types::currency::Currency;
-use nautilus_model::types::money::Money;
-use nautilus_model::types::price::Price;
-use nautilus_model::types::quantity::Quantity;
 use std::collections::HashMap;
+
+use anyhow::Result;
+use nautilus_model::{
+    enums::{LiquiditySide, OrderSide},
+    events::{account::state::AccountState, order::filled::OrderFilled},
+    instruments::Instrument,
+    position::Position,
+    types::{
+        balance::AccountBalance, currency::Currency, money::Money, price::Price, quantity::Quantity,
+    },
+};
 
 pub trait Account {
     fn balance_total(&self, currency: Option<Currency>) -> Option<Money>;
