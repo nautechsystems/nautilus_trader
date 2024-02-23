@@ -68,7 +68,9 @@ pub fn data_to_pycapsule(py: Python, data: Data) -> PyObject {
 /// Incorrect usage can lead to memory corruption or undefined behavior.
 #[pyfunction]
 pub fn drop_cvec_pycapsule(capsule: &PyAny) {
-    let capsule: &PyCapsule = capsule.downcast().expect("Error on downcast to capsule");
+    let capsule: &PyCapsule = capsule
+        .downcast()
+        .expect("Error on downcast to `&PyCapsule`");
     let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
     let data: Vec<Data> =
         unsafe { Vec::from_raw_parts(cvec.ptr.cast::<Data>(), cvec.len, cvec.cap) };
