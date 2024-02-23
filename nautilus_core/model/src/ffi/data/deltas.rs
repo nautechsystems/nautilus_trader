@@ -82,6 +82,11 @@ pub extern "C" fn orderbook_deltas_drop(deltas: OrderBookDeltas_API) {
 }
 
 #[no_mangle]
+pub extern "C" fn orderbook_deltas_clone(deltas: &OrderBookDeltas_API) -> OrderBookDeltas_API {
+    deltas.clone()
+}
+
+#[no_mangle]
 pub extern "C" fn orderbook_deltas_instrument_id(deltas: &OrderBookDeltas_API) -> InstrumentId {
     deltas.instrument_id
 }

@@ -860,6 +860,8 @@ cdef extern from "../includes/model.h":
 
     void orderbook_deltas_drop(OrderBookDeltas_API deltas);
 
+    OrderBookDeltas_API orderbook_deltas_clone(const OrderBookDeltas_API *deltas);
+
     InstrumentId_t orderbook_deltas_instrument_id(const OrderBookDeltas_API *deltas);
 
     CVec orderbook_deltas_vec_deltas(const OrderBookDeltas_API *deltas);
