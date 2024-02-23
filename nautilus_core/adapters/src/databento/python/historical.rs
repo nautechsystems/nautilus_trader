@@ -34,14 +34,13 @@ use pyo3::{
 };
 use tokio::sync::Mutex;
 
+use super::loader::convert_instrument_to_pyobject;
 use crate::databento::{
     common::get_date_time_range,
     decode::{decode_instrument_def_msg, decode_record, raw_ptr_to_ustr},
     symbology::decode_nautilus_instrument_id,
     types::{DatabentoPublisher, PublisherId},
 };
-
-use super::loader::convert_instrument_to_pyobject;
 
 #[cfg_attr(
     feature = "python",

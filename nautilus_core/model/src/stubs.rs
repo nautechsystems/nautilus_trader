@@ -13,22 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::data::order::BookOrder;
-use crate::enums::{LiquiditySide, OrderSide};
-use crate::identifiers::instrument_id::InstrumentId;
-use crate::instruments::currency_pair::CurrencyPair;
-use crate::instruments::stubs::audusd_sim;
-use crate::instruments::Instrument;
-use crate::orderbook::book_mbp::OrderBookMbp;
-use crate::orders::market::MarketOrder;
-use crate::orders::stubs::{TestOrderEventStubs, TestOrderStubs};
-use crate::position::Position;
-use crate::types::money::Money;
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
 use anyhow::Result;
 use rstest::fixture;
 use rust_decimal::prelude::ToPrimitive;
+
+use crate::{
+    data::order::BookOrder,
+    enums::{LiquiditySide, OrderSide},
+    identifiers::instrument_id::InstrumentId,
+    instruments::{currency_pair::CurrencyPair, stubs::audusd_sim, Instrument},
+    orderbook::book_mbp::OrderBookMbp,
+    orders::{
+        market::MarketOrder,
+        stubs::{TestOrderEventStubs, TestOrderStubs},
+    },
+    position::Position,
+    types::{money::Money, price::Price, quantity::Quantity},
+};
 
 /// Calculate commission for testing
 pub fn calculate_commission<T: Instrument>(

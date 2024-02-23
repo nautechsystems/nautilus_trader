@@ -16,17 +16,16 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use nautilus_model::enums::{AccountType, LiquiditySide, OrderSide};
-use nautilus_model::events::account::state::AccountState;
-use nautilus_model::events::order::filled::OrderFilled;
-use nautilus_model::identifiers::account_id::AccountId;
-use nautilus_model::instruments::Instrument;
-use nautilus_model::position::Position;
-use nautilus_model::types::balance::AccountBalance;
-use nautilus_model::types::currency::Currency;
-use nautilus_model::types::money::Money;
-use nautilus_model::types::price::Price;
-use nautilus_model::types::quantity::Quantity;
+use nautilus_model::{
+    enums::{AccountType, LiquiditySide, OrderSide},
+    events::{account::state::AccountState, order::filled::OrderFilled},
+    identifiers::account_id::AccountId,
+    instruments::Instrument,
+    position::Position,
+    types::{
+        balance::AccountBalance, currency::Currency, money::Money, price::Price, quantity::Quantity,
+    },
+};
 use pyo3::prelude::*;
 use rust_decimal::prelude::ToPrimitive;
 

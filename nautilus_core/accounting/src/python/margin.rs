@@ -14,18 +14,16 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::events::account::state::AccountState;
-use nautilus_model::identifiers::account_id::AccountId;
-use nautilus_model::identifiers::instrument_id::InstrumentId;
-use nautilus_model::instruments::crypto_future::CryptoFuture;
-use nautilus_model::instruments::crypto_perpetual::CryptoPerpetual;
-use nautilus_model::instruments::currency_pair::CurrencyPair;
-use nautilus_model::instruments::equity::Equity;
-use nautilus_model::instruments::futures_contract::FuturesContract;
-use nautilus_model::instruments::options_contract::OptionsContract;
-use nautilus_model::types::money::Money;
-use nautilus_model::types::price::Price;
-use nautilus_model::types::quantity::Quantity;
+use nautilus_model::{
+    events::account::state::AccountState,
+    identifiers::{account_id::AccountId, instrument_id::InstrumentId},
+    instruments::{
+        crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
+        currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
+        options_contract::OptionsContract,
+    },
+    types::{money::Money, price::Price, quantity::Quantity},
+};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::account::margin::MarginAccount;

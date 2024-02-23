@@ -13,25 +13,25 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-use std::fmt::Display;
-use std::ops::{Deref, DerefMut};
+use std::{
+    collections::HashMap,
+    fmt::Display,
+    ops::{Deref, DerefMut},
+};
 
 use anyhow::Result;
-use nautilus_model::enums::{AccountType, LiquiditySide, OrderSide};
-use nautilus_model::events::account::state::AccountState;
-use nautilus_model::events::order::filled::OrderFilled;
-use nautilus_model::instruments::Instrument;
-use nautilus_model::position::Position;
-use nautilus_model::types::balance::AccountBalance;
-use nautilus_model::types::currency::Currency;
-use nautilus_model::types::money::Money;
-use nautilus_model::types::price::Price;
-use nautilus_model::types::quantity::Quantity;
+use nautilus_model::{
+    enums::{AccountType, LiquiditySide, OrderSide},
+    events::{account::state::AccountState, order::filled::OrderFilled},
+    instruments::Instrument,
+    position::Position,
+    types::{
+        balance::AccountBalance, currency::Currency, money::Money, price::Price, quantity::Quantity,
+    },
+};
 use pyo3::prelude::*;
 
-use crate::account::base::BaseAccount;
-use crate::account::Account;
+use crate::account::{base::BaseAccount, Account};
 
 #[derive(Debug)]
 #[cfg_attr(
@@ -185,31 +185,24 @@ impl Display for CashAccount {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::account::cash::CashAccount;
-    use crate::account::stubs::*;
-    use crate::account::Account;
-    use nautilus_common::factories::OrderFactory;
-    use nautilus_common::stubs::*;
-    use nautilus_model::enums::{AccountType, LiquiditySide, OrderSide};
-    use nautilus_model::events::account::state::AccountState;
-    use nautilus_model::events::account::stubs::*;
-    use nautilus_model::identifiers::account_id::AccountId;
-    use nautilus_model::identifiers::position_id::PositionId;
-    use nautilus_model::identifiers::strategy_id::StrategyId;
-    use nautilus_model::instruments::crypto_perpetual::CryptoPerpetual;
-    use nautilus_model::instruments::currency_pair::CurrencyPair;
-    use nautilus_model::instruments::equity::Equity;
-    use nautilus_model::instruments::stubs::*;
-    use nautilus_model::orders::market::MarketOrder;
-    use nautilus_model::orders::stubs::TestOrderEventStubs;
-    use nautilus_model::position::Position;
-    use nautilus_model::types::currency::Currency;
-    use nautilus_model::types::money::Money;
-    use nautilus_model::types::price::Price;
-    use nautilus_model::types::quantity::Quantity;
+    use std::collections::{HashMap, HashSet};
+
+    use nautilus_common::{factories::OrderFactory, stubs::*};
+    use nautilus_model::{
+        enums::{AccountType, LiquiditySide, OrderSide},
+        events::account::{state::AccountState, stubs::*},
+        identifiers::{account_id::AccountId, position_id::PositionId, strategy_id::StrategyId},
+        instruments::{
+            crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, equity::Equity,
+            stubs::*,
+        },
+        orders::{market::MarketOrder, stubs::TestOrderEventStubs},
+        position::Position,
+        types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    };
     use rstest::rstest;
-    use std::collections::HashMap;
-    use std::collections::HashSet;
+
+    use crate::account::{cash::CashAccount, stubs::*, Account};
 
     #[rstest]
     fn test_display(cash_account: CashAccount) {

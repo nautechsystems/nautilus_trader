@@ -15,14 +15,14 @@
 
 use rstest::fixture;
 
-use crate::types::balance::AccountBalance;
-use crate::types::money::Money;
 use crate::{
     enums::AccountType,
     events::account::state::AccountState,
     identifiers::stubs::{account_id, uuid4},
     types::{
+        balance::AccountBalance,
         currency::Currency,
+        money::Money,
         stubs::{account_balance_test, margin_balance_test},
     },
 };

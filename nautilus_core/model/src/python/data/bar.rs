@@ -26,6 +26,7 @@ use nautilus_core::{
 };
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 
+use super::data_to_pycapsule;
 use crate::{
     data::{
         bar::{Bar, BarSpecification, BarType},
@@ -36,8 +37,6 @@ use crate::{
     python::common::PY_MODULE_MODEL,
     types::{price::Price, quantity::Quantity},
 };
-
-use super::data_to_pycapsule;
 
 #[pymethods]
 impl BarSpecification {

@@ -13,43 +13,37 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-use std::ffi::CStr;
-use std::fs;
-use std::str::FromStr;
-use std::sync::Arc;
+use std::{collections::HashMap, ffi::CStr, fs, str::FromStr, sync::Arc};
 
 use anyhow::{anyhow, bail, Result};
 use databento::live::Subscription;
 use dbn::{PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy};
 use indexmap::IndexMap;
 use log::{error, info};
-use nautilus_core::ffi::cvec::CVec;
-use nautilus_core::python::to_pyruntime_err;
-use nautilus_core::time::AtomicTime;
 use nautilus_core::{
-    python::to_pyvalue_err,
-    time::{get_atomic_clock_realtime, UnixNanos},
+    ffi::cvec::CVec,
+    python::{to_pyruntime_err, to_pyvalue_err},
+    time::{get_atomic_clock_realtime, AtomicTime, UnixNanos},
 };
-use nautilus_model::data::delta::OrderBookDelta;
-use nautilus_model::data::deltas::OrderBookDeltas;
-use nautilus_model::data::Data;
-use nautilus_model::ffi::data::deltas::orderbook_deltas_new;
-use nautilus_model::identifiers::instrument_id::InstrumentId;
-use nautilus_model::identifiers::symbol::Symbol;
-use nautilus_model::identifiers::venue::Venue;
-use nautilus_model::python::data::data_to_pycapsule;
-use pyo3::exceptions::PyRuntimeError;
-use pyo3::prelude::*;
+use nautilus_model::{
+    data::{delta::OrderBookDelta, deltas::OrderBookDeltas, Data},
+    ffi::data::deltas::orderbook_deltas_new,
+    identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
+    python::data::data_to_pycapsule,
+};
+use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use time::OffsetDateTime;
-use tokio::sync::Mutex;
-use tokio::time::{timeout, Duration};
+use tokio::{
+    sync::Mutex,
+    time::{timeout, Duration},
+};
 use ustr::Ustr;
 
-use crate::databento::decode::{decode_instrument_def_msg, decode_record};
-use crate::databento::types::{DatabentoPublisher, PublisherId};
-
 use super::loader::convert_instrument_to_pyobject;
+use crate::databento::{
+    decode::{decode_instrument_def_msg, decode_record},
+    types::{DatabentoPublisher, PublisherId},
+};
 
 #[cfg_attr(
     feature = "python",

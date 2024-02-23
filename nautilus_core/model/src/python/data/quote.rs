@@ -30,6 +30,7 @@ use pyo3::{
     types::{PyDict, PyLong, PyString, PyTuple},
 };
 
+use super::data_to_pycapsule;
 use crate::{
     data::{quote::QuoteTick, Data},
     enums::PriceType,
@@ -37,8 +38,6 @@ use crate::{
     python::common::PY_MODULE_MODEL,
     types::{price::Price, quantity::Quantity},
 };
-
-use super::data_to_pycapsule;
 
 #[pymethods]
 impl QuoteTick {

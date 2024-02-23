@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Debug, Display};
+use std::{
+    collections::VecDeque,
+    fmt::{Debug, Display},
+};
 
 use anyhow::Result;
 use nautilus_model::{
@@ -21,7 +24,6 @@ use nautilus_model::{
     enums::PriceType,
 };
 use pyo3::prelude::*;
-use std::collections::VecDeque;
 
 use crate::indicator::Indicator;
 
