@@ -16,7 +16,7 @@
 use std::{collections::HashMap, ffi::CStr, fs, str::FromStr, sync::Arc};
 
 use anyhow::{anyhow, bail, Result};
-use databento::dbn::{self, PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy};
+use databento::dbn::{PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy};
 use databento::live::Subscription;
 use indexmap::IndexMap;
 use log::{error, info};
