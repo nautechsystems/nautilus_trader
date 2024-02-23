@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use databento::dbn;
 use pyo3::prelude::*;
 use serde::Deserialize;
 use ustr::Ustr;
