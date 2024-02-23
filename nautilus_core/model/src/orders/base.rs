@@ -18,7 +18,6 @@ use std::collections::HashMap;
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use thiserror;
 use ustr::Ustr;
 
 use crate::{
