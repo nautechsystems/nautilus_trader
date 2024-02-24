@@ -23,7 +23,9 @@ use ustr::Ustr;
 
 use crate::{enums::CurrencyType, types::currency::Currency};
 
-// Fiat currency static locks
+///////////////////////////////////////////////////////////////////////////////
+// Fiat currencies
+///////////////////////////////////////////////////////////////////////////////
 static AUD_LOCK: OnceLock<Currency> = OnceLock::new();
 static BRL_LOCK: OnceLock<Currency> = OnceLock::new();
 static CAD_LOCK: OnceLock<Currency> = OnceLock::new();
@@ -54,12 +56,16 @@ static TWD_LOCK: OnceLock<Currency> = OnceLock::new();
 static USD_LOCK: OnceLock<Currency> = OnceLock::new();
 static ZAR_LOCK: OnceLock<Currency> = OnceLock::new();
 
-// Commodity backed currency static locks
+///////////////////////////////////////////////////////////////////////////////
+// Commodity backed currencies
+///////////////////////////////////////////////////////////////////////////////
 static XAG_LOCK: OnceLock<Currency> = OnceLock::new();
 static XAU_LOCK: OnceLock<Currency> = OnceLock::new();
 static XPT_LOCK: OnceLock<Currency> = OnceLock::new();
 
-// Crypto currency static locks
+///////////////////////////////////////////////////////////////////////////////
+// Crypto currencies
+///////////////////////////////////////////////////////////////////////////////
 static ONEINCH_LOCK: OnceLock<Currency> = OnceLock::new();
 static AAVE_LOCK: OnceLock<Currency> = OnceLock::new();
 static ACA_LOCK: OnceLock<Currency> = OnceLock::new();
@@ -103,7 +109,9 @@ static USDT_LOCK: OnceLock<Currency> = OnceLock::new();
 static ZEC_LOCK: OnceLock<Currency> = OnceLock::new();
 
 impl Currency {
+    ///////////////////////////////////////////////////////////////////////////
     // Crypto currencies
+    ///////////////////////////////////////////////////////////////////////////
     #[allow(non_snake_case)]
     #[must_use]
     pub fn AUD() -> Self {
@@ -980,7 +988,9 @@ impl Currency {
 
 pub static CURRENCY_MAP: Lazy<Mutex<HashMap<String, Currency>>> = Lazy::new(|| {
     let mut map = HashMap::new();
+    ///////////////////////////////////////////////////////////////////////////
     // Fiat currencies
+    ///////////////////////////////////////////////////////////////////////////
     map.insert(Currency::AUD().code.to_string(), Currency::AUD());
     map.insert(Currency::BRL().code.to_string(), Currency::BRL());
     map.insert(Currency::CAD().code.to_string(), Currency::CAD());
@@ -1012,7 +1022,9 @@ pub static CURRENCY_MAP: Lazy<Mutex<HashMap<String, Currency>>> = Lazy::new(|| {
     map.insert(Currency::XAU().code.to_string(), Currency::XAU());
     map.insert(Currency::XPT().code.to_string(), Currency::XPT());
     map.insert(Currency::ZAR().code.to_string(), Currency::ZAR());
+    ///////////////////////////////////////////////////////////////////////////
     // Crypto currencies
+    ///////////////////////////////////////////////////////////////////////////
     map.insert(Currency::AAVE().code.to_string(), Currency::AAVE());
     map.insert(Currency::ACA().code.to_string(), Currency::ACA());
     map.insert(Currency::ADA().code.to_string(), Currency::ADA());
