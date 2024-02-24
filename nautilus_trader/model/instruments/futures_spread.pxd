@@ -12,3 +12,27 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from libc.stdint cimport uint64_t
+
+from nautilus_trader.model.instruments.base cimport Instrument
+
+
+cdef class FuturesSpread(Instrument):
+    cdef readonly str underlying
+    """The underlying asset for the contract.\n\n:returns: `str`"""
+    cdef readonly str strategy_type
+    """The strategy type of the spread.\n\n:returns: `str`"""
+    cdef readonly uint64_t activation_ns
+    """The UNIX timestamp (nanoseconds) for contract activation.\n\n:returns: `unit64_t`"""
+    cdef readonly uint64_t expiration_ns
+    """The UNIX timestamp (nanoseconds) for contract expiration.\n\n:returns: `unit64_t`"""
+
+    @staticmethod
+    cdef FuturesSpread from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(FuturesSpread obj)
+
+    @staticmethod
+    cdef FuturesSpread from_pyo3_c(pyo3_instrument)

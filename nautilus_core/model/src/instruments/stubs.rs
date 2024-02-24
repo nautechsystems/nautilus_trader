@@ -30,6 +30,8 @@ use crate::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
+use super::futures_spread::FuturesSpread;
+
 ////////////////////////////////////////////////////////////////////////////////
 // CryptoFuture
 ////////////////////////////////////////////////////////////////////////////////
@@ -293,10 +295,41 @@ pub fn futures_contract_es() -> FuturesContract {
     let activation = Utc.with_ymd_and_hms(2021, 4, 8, 0, 0, 0).unwrap();
     let expiration = Utc.with_ymd_and_hms(2021, 7, 8, 0, 0, 0).unwrap();
     FuturesContract::new(
-        InstrumentId::new(Symbol::from("ESZ1"), Venue::from("GLBX")),
+        InstrumentId::new(Symbol::from("ESZ1"), Venue::from("XCME")),
         Symbol::from("ESZ1"),
         AssetClass::Index,
         Ustr::from("ES"),
+        activation.timestamp_nanos_opt().unwrap() as UnixNanos,
+        expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
+        Currency::USD(),
+        2,
+        Price::from("0.01"),
+        Quantity::from(1),
+        Quantity::from(1),
+        None,
+        None,
+        None,
+        None,
+        0,
+        0,
+    )
+    .unwrap()
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// FuturesSpread
+////////////////////////////////////////////////////////////////////////////////
+
+#[fixture]
+pub fn futures_spread_es() -> FuturesSpread {
+    let activation = Utc.with_ymd_and_hms(2022, 6, 21, 13, 30, 0).unwrap();
+    let expiration = Utc.with_ymd_and_hms(2024, 6, 21, 13, 30, 0).unwrap();
+    FuturesSpread::new(
+        InstrumentId::new(Symbol::from("ESM4-ESU4"), Venue::from("XCME")),
+        Symbol::from("ESM4-ESU4"),
+        AssetClass::Index,
+        Ustr::from("ES"),
+        Ustr::from("EQ"),
         activation.timestamp_nanos_opt().unwrap() as UnixNanos,
         expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
         Currency::USD(),

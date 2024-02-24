@@ -25,6 +25,7 @@ from nautilus_trader.core.nautilus_pyo3 import Currency
 from nautilus_trader.core.nautilus_pyo3 import CurrencyPair
 from nautilus_trader.core.nautilus_pyo3 import Equity
 from nautilus_trader.core.nautilus_pyo3 import FuturesContract
+from nautilus_trader.core.nautilus_pyo3 import FuturesSpread
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 from nautilus_trader.core.nautilus_pyo3 import Money
 from nautilus_trader.core.nautilus_pyo3 import OptionKind
@@ -279,6 +280,36 @@ class TestInstrumentProviderPyo3:
             raw_symbol=Symbol("ESZ1"),
             asset_class=AssetClass.INDEX,
             underlying="ES",
+            activation_ns=activation.value,
+            expiration_ns=expiration.value,
+            currency=_USD,
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(1),
+            lot_size=Quantity.from_int(1),
+            max_quantity=None,
+            min_quantity=None,
+            max_price=None,
+            min_price=None,
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def futures_spread_es(
+        activation: pd.Timestamp | None = None,
+        expiration: pd.Timestamp | None = None,
+    ) -> FuturesSpread:
+        if activation is None:
+            activation = pd.Timestamp("2022-6-21T13:30:00", tz=pytz.utc)
+        if expiration is None:
+            expiration = pd.Timestamp("2024-6-21T13:30:00", tz=pytz.utc)
+        return FuturesSpread(
+            id=InstrumentId.from_str("ESM4-ESU4.XCME"),
+            raw_symbol=Symbol("ESM4-ESU4"),
+            asset_class=AssetClass.INDEX,
+            underlying="ES",
+            strategy_type="EQ",
             activation_ns=activation.value,
             expiration_ns=expiration.value,
             currency=_USD,

@@ -1217,6 +1217,46 @@ class FuturesContract:
     def size_increment(self) -> Quantity: ...
     def to_dict(self) -> dict[str, Any]: ...
 
+class FuturesSpread:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        asset_class: AssetClass,
+        underlying: str,
+        strategy_type: str,
+        activation_ns: int,
+        expiration_ns: int,
+        currency: Currency,
+        price_precision: int,
+        price_increment: Price,
+        multiplier: Quantity,
+        lot_size: Quantity,
+        ts_event: int,
+        ts_init: int,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+    @property
+    def id(self) -> InstrumentId: ...
+    @property
+    def raw_symbol(self) -> Symbol: ...
+    @property
+    def base_currency(self) -> Currency: ...
+    @property
+    def quote_currency(self) -> Currency: ...
+    @property
+    def price_precision(self) -> int: ...
+    @property
+    def size_precision(self) -> int: ...
+    @property
+    def price_increment(self) -> Price: ...
+    @property
+    def size_increment(self) -> Quantity: ...
+    def to_dict(self) -> dict[str, Any]: ...
+
 class OptionsContract:
     def __init__(
         self,

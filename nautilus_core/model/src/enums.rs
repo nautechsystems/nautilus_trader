@@ -222,24 +222,30 @@ pub enum InstrumentClass {
     /// A futures contract instrument class. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
     #[pyo3(name = "FUTURE")]
     Future = 3,
+    /// A futures spread instrument class. A strategy involving the use of futures contracts to take advantage of price differentials between different contract months, underlying assets, or marketplaces.
+    #[pyo3(name = "FUTURE_SPREAD")]
+    FutureSpread = 4,
     /// A forward derivative instrument class. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
     #[pyo3(name = "FORWARD")]
-    Forward = 4,
+    Forward = 5,
     /// A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
     #[pyo3(name = "CFD")]
-    Cfd = 5,
+    Cfd = 6,
     /// A bond instrument class. A type of debt investment where an investor loans money to an entity (typically corporate or governmental) which borrows the funds for a defined period of time at a variable or fixed interest rate.
     #[pyo3(name = "BOND")]
-    Bond = 6,
+    Bond = 7,
     /// An options contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
     #[pyo3(name = "OPTION")]
-    Option = 7,
+    Option = 8,
+    /// An option spread instrument class. A strategy involving the purchase and/or sale of options on the same underlying asset with different strike prices or expiration dates to capitalize on expected market moves in a controlled cost environment.
+    #[pyo3(name = "OPTION_SPREAD")]
+    OptionSpread = 9,
     /// A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
     #[pyo3(name = "WARRANT")]
-    Warrant = 8,
+    Warrant = 10,
     /// A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
     #[pyo3(name = "SPORTS_BETTING")]
-    SportsBetting = 9,
+    SportsBetting = 11,
 }
 
 /// The aggregation method through which a bar is generated and closed.
