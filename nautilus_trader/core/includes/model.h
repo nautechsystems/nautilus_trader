@@ -2040,6 +2040,20 @@ uint64_t venue_hash(const struct Venue_t *id);
 uint8_t venue_is_synthetic(const struct Venue_t *venue);
 
 /**
+ * # Safety
+ *
+ * - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+uint8_t venue_code_exists(const char *code_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+struct Venue_t venue_from_cstr_code(const char *code_ptr);
+
+/**
  * Returns a Nautilus identifier from a C string pointer.
  *
  * # Safety

@@ -45,6 +45,8 @@ cdef class Venue(Identifier):
 
     @staticmethod
     cdef Venue from_mem_c(Venue_t mem)
+    @staticmethod
+    cdef Venue from_code_c(str code)
     cpdef bint is_synthetic(self)
 
 

@@ -24,6 +24,7 @@ pub mod orderbook;
 pub mod orders;
 pub mod position;
 pub mod types;
+pub mod venues;
 
 #[cfg(feature = "ffi")]
 pub mod ffi;

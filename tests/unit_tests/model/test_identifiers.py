@@ -108,6 +108,23 @@ def test_venue_str() -> None:
     assert str(venue) == "NYMEX"
 
 
+def test_venue_from_code_when_not_found() -> None:
+    # Arrange, Act
+    result = Venue.from_code("UNKNOWN")
+
+    # Assert
+    assert result is None
+
+
+def test_venue_from_code() -> None:
+    # Arrange, Act
+    result = Venue.from_code("XCME")
+
+    # Assert
+    assert isinstance(result, Venue)
+    assert result.value == "XCME"
+
+
 def test_venue_repr() -> None:
     # Arrange
     venue = Venue("NYMEX")
