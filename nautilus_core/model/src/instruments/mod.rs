@@ -21,6 +21,7 @@ pub mod equity;
 pub mod futures_contract;
 pub mod futures_spread;
 pub mod options_contract;
+pub mod options_spread;
 pub mod synthetic;
 
 #[cfg(feature = "stubs")]

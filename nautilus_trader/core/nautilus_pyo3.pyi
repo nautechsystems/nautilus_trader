@@ -591,6 +591,7 @@ class AggressorSide(Enum):
     SELLER = "SELLER"
 
 class AssetClass(Enum):
+    FX = "FX"
     EQUITY = "EQUITY"
     COMMODITY = "COMMODITY"
     DEBT = "DEBT"
@@ -602,10 +603,12 @@ class InstrumentClass(Enum):
     SPOT = "SPOT"
     SWAP = "SWAP"
     FUTURE = "FUTURE"
+    FUTURE_SPREAD = "FUTURE_SPREAD"
     FORWARD = "FORWARD"
     CFD = "CFD"
     BOND = "BOND"
     OPTION = "OPTION"
+    OPTION_SPREAD = "OPTION_SPEAD"
     WARRANT = "WARRANT"
     SPORTS_BETTING = "SPORTS_BETTING"
 
@@ -1268,6 +1271,46 @@ class OptionsContract:
         activation_ns: int,
         expiration_ns: int,
         strike_price: Price,
+        currency: Currency,
+        price_precision: int,
+        price_increment: Price,
+        multiplier: Quantity,
+        lot_size: Quantity,
+        ts_event: int,
+        ts_init: int,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None : ...
+    @property
+    def id(self) -> InstrumentId: ...
+    @property
+    def raw_symbol(self) -> Symbol: ...
+    @property
+    def base_currency(self) -> Currency: ...
+    @property
+    def quote_currency(self) -> Currency: ...
+    @property
+    def price_precision(self) -> int: ...
+    @property
+    def size_precision(self) -> int: ...
+    @property
+    def price_increment(self) -> Price: ...
+    @property
+    def size_increment(self) -> Quantity: ...
+    def to_dict(self) -> dict[str, Any]: ...
+
+class OptionsSpread:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        asset_class: AssetClass,
+        underlying: str,
+        strategy_type: str,
+        activation_ns: int,
+        expiration_ns: int,
         currency: Currency,
         price_precision: int,
         price_increment: Price,

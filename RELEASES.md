@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `FuturesSpread` instrument type
+- Added `OptionsSpread` instrument type
 - Added `InstrumentClass.FUTURE_SPREAD`
 - Added `InstrumentClass.OPTION_SPREAD`
 - Added `managed` parameter to `subscribe_order_book_deltas`, default true to retain current behavior (if false then the data engine will not automatically manage a book)

@@ -13,50 +13,51 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.nautilus_pyo3 import FuturesContract
-from nautilus_trader.model.instruments import FuturesContract as LegacyFuturesContract
+from nautilus_trader.core.nautilus_pyo3 import OptionsSpread
+from nautilus_trader.model.instruments import OptionsSpread as LegacyOptionsSpread
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
-_ES_FUTURE = TestInstrumentProviderPyo3.futures_contract_es()
+_OPTIONS_SPREAD = TestInstrumentProviderPyo3.options_spread()
 
 
 def test_equality():
-    item_1 = TestInstrumentProviderPyo3.futures_contract_es()
-    item_2 = TestInstrumentProviderPyo3.futures_contract_es()
+    item_1 = TestInstrumentProviderPyo3.options_spread()
+    item_2 = TestInstrumentProviderPyo3.options_spread()
     assert item_1 == item_2
 
 
 def test_hash():
-    assert hash(_ES_FUTURE) == hash(_ES_FUTURE)
+    assert hash(_OPTIONS_SPREAD) == hash(_OPTIONS_SPREAD)
 
 
 def test_to_dict():
-    result = _ES_FUTURE.to_dict()
-    assert FuturesContract.from_dict(result) == _ES_FUTURE
+    result = _OPTIONS_SPREAD.to_dict()
+    assert OptionsSpread.from_dict(result) == _OPTIONS_SPREAD
     assert result == {
-        "type": "FuturesContract",
-        "id": "ESZ1.XCME",
-        "raw_symbol": "ESZ1",
-        "asset_class": "INDEX",
-        "underlying": "ES",
-        "activation_ns": 1631836800000000000,
-        "expiration_ns": 1639699200000000000,
-        "currency": "USD",
+        "type": "OptionsSpread",
+        "id": "UD:U$: GN 2534559.XCME",
+        "raw_symbol": "UD:U$: GN 2534559",
+        "asset_class": "FX",
+        "underlying": "SR3",
+        "strategy_type": "GN",
+        "activation_ns": 1699304047000000000,
+        "expiration_ns": 1708729140000000000,
+        "currency": "USDT",
         "price_precision": 2,
         "price_increment": "0.01",
         "multiplier": "1",
         "lot_size": "1",
-        "max_price": None,
         "max_quantity": None,
-        "min_price": None,
         "min_quantity": None,
+        "max_price": None,
+        "min_price": None,
         "ts_event": 0,
         "ts_init": 0,
     }
 
 
-def test_legacy_futures_contract_from_pyo3():
-    future = LegacyFuturesContract.from_pyo3(_ES_FUTURE)
+def test_legacy_options_contract_from_pyo3():
+    option = LegacyOptionsSpread.from_pyo3(_OPTIONS_SPREAD)
 
-    assert future.id.value == "ESZ1.XCME"
+    assert option.id.value == "UD:U$: GN 2534559.XCME"

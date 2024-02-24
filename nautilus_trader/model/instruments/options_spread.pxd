@@ -15,12 +15,14 @@
 
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.core.rust.model cimport OptionKind
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Price
 
 
-cdef class FuturesSpread(Instrument):
+cdef class OptionsSpread(Instrument):
     cdef readonly str underlying
-    """The underlying asset for the spread.\n\n:returns: `str`"""
+    """The underlying asset for the contract.\n\n:returns: `str`"""
     cdef readonly str strategy_type
     """The strategy type of the spread.\n\n:returns: `str`"""
     cdef readonly uint64_t activation_ns
@@ -29,10 +31,10 @@ cdef class FuturesSpread(Instrument):
     """The UNIX timestamp (nanoseconds) for contract expiration.\n\n:returns: `unit64_t`"""
 
     @staticmethod
-    cdef FuturesSpread from_dict_c(dict values)
+    cdef OptionsSpread from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(FuturesSpread obj)
+    cdef dict to_dict_c(OptionsSpread obj)
 
     @staticmethod
-    cdef FuturesSpread from_pyo3_c(pyo3_instrument)
+    cdef OptionsSpread from_pyo3_c(pyo3_instrument)
