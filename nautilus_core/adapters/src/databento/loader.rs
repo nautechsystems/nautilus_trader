@@ -122,9 +122,13 @@ impl DatabentoDataLoader {
 
         // Insert CME Globex exchanges
         let glbx = Dataset::from("GLBX");
-        self.venue_dataset_map.insert(Venue::CBTS(), glbx);
+        self.venue_dataset_map.insert(Venue::CBCM(), glbx);
+        self.venue_dataset_map.insert(Venue::GLBX(), glbx);
+        self.venue_dataset_map.insert(Venue::NYUM(), glbx);
+        self.venue_dataset_map.insert(Venue::XCBT(), glbx);
         self.venue_dataset_map.insert(Venue::XCEC(), glbx);
         self.venue_dataset_map.insert(Venue::XCME(), glbx);
+        self.venue_dataset_map.insert(Venue::XFXS(), glbx);
         self.venue_dataset_map.insert(Venue::XNYM(), glbx);
 
         self.publisher_venue_map = publishers

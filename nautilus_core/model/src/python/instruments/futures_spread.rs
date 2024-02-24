@@ -28,12 +28,12 @@ use rust_decimal::prelude::ToPrimitive;
 use crate::{
     enums::AssetClass,
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
-    instruments::futures_contract::FuturesContract,
+    instruments::futures_spread::FuturesSpread,
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
 
 #[pymethods]
-impl FuturesContract {
+impl FuturesSpread {
     #[allow(clippy::too_many_arguments)]
     #[new]
     fn py_new(
@@ -41,6 +41,7 @@ impl FuturesContract {
         raw_symbol: Symbol,
         asset_class: AssetClass,
         underlying: String,
+        strategy_type: String,
         activation_ns: UnixNanos,
         expiration_ns: UnixNanos,
         currency: Currency,
@@ -60,6 +61,7 @@ impl FuturesContract {
             raw_symbol,
             asset_class,
             underlying.into(),
+            strategy_type.into(),
             activation_ns,
             expiration_ns,
             currency,
@@ -93,7 +95,7 @@ impl FuturesContract {
     #[getter]
     #[pyo3(name = "instrument_type")]
     fn py_instrument_type(&self) -> &str {
-        stringify!(FuturesContract)
+        stringify!(FuturesSpread)
     }
 
     #[getter]
@@ -118,6 +120,12 @@ impl FuturesContract {
     #[pyo3(name = "underlying")]
     fn py_underlying(&self) -> &str {
         self.underlying.as_str()
+    }
+
+    #[getter]
+    #[pyo3(name = "strategy_type")]
+    fn py_strategy_type(&self) -> &str {
+        self.strategy_type.as_str()
     }
 
     #[getter]
@@ -207,11 +215,12 @@ impl FuturesContract {
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
-        dict.set_item("type", stringify!(FuturesContract))?;
+        dict.set_item("type", stringify!(FuturesSpread))?;
         dict.set_item("id", self.id.to_string())?;
         dict.set_item("raw_symbol", self.raw_symbol.to_string())?;
         dict.set_item("asset_class", self.asset_class.to_string())?;
         dict.set_item("underlying", self.underlying.to_string())?;
+        dict.set_item("strategy_type", self.strategy_type.to_string())?;
         dict.set_item("activation_ns", self.activation_ns.to_u64())?;
         dict.set_item("expiration_ns", self.expiration_ns.to_u64())?;
         dict.set_item("currency", self.currency.code.to_string())?;

@@ -23,16 +23,38 @@ use ustr::Ustr;
 
 use crate::identifiers::venue::Venue;
 
-static CBTS_LOCK: OnceLock<Venue> = OnceLock::new();
+static CBCM_LOCK: OnceLock<Venue> = OnceLock::new();
+static GLBX_LOCK: OnceLock<Venue> = OnceLock::new();
+static NYUM_LOCK: OnceLock<Venue> = OnceLock::new();
+static XCBT_LOCK: OnceLock<Venue> = OnceLock::new();
 static XCEC_LOCK: OnceLock<Venue> = OnceLock::new();
 static XCME_LOCK: OnceLock<Venue> = OnceLock::new();
+static XFXS_LOCK: OnceLock<Venue> = OnceLock::new();
 static XNYM_LOCK: OnceLock<Venue> = OnceLock::new();
 
 impl Venue {
     #[allow(non_snake_case)]
-    pub fn CBTS() -> Self {
-        *CBTS_LOCK.get_or_init(|| Self {
-            value: Ustr::from("CBTS"),
+    pub fn CBCM() -> Self {
+        *CBCM_LOCK.get_or_init(|| Self {
+            value: Ustr::from("CBCM"),
+        })
+    }
+    #[allow(non_snake_case)]
+    pub fn GLBX() -> Self {
+        *GLBX_LOCK.get_or_init(|| Self {
+            value: Ustr::from("GLBX"),
+        })
+    }
+    #[allow(non_snake_case)]
+    pub fn NYUM() -> Self {
+        *NYUM_LOCK.get_or_init(|| Self {
+            value: Ustr::from("NYUM"),
+        })
+    }
+    #[allow(non_snake_case)]
+    pub fn XCBT() -> Self {
+        *XCBT_LOCK.get_or_init(|| Self {
+            value: Ustr::from("XCBT"),
         })
     }
     #[allow(non_snake_case)]
@@ -48,6 +70,12 @@ impl Venue {
         })
     }
     #[allow(non_snake_case)]
+    pub fn XFXS() -> Self {
+        *XFXS_LOCK.get_or_init(|| Self {
+            value: Ustr::from("XFXS"),
+        })
+    }
+    #[allow(non_snake_case)]
     pub fn XNYM() -> Self {
         *XNYM_LOCK.get_or_init(|| Self {
             value: Ustr::from("XNYM"),
@@ -57,9 +85,13 @@ impl Venue {
 
 pub static VENUE_MAP: Lazy<Mutex<HashMap<&str, Venue>>> = Lazy::new(|| {
     let mut map = HashMap::new();
-    map.insert(Venue::CBTS().value.as_str(), Venue::CBTS());
+    map.insert(Venue::CBCM().value.as_str(), Venue::CBCM());
+    map.insert(Venue::GLBX().value.as_str(), Venue::GLBX());
+    map.insert(Venue::NYUM().value.as_str(), Venue::NYUM());
+    map.insert(Venue::XCBT().value.as_str(), Venue::XCBT());
     map.insert(Venue::XCEC().value.as_str(), Venue::XCEC());
     map.insert(Venue::XCME().value.as_str(), Venue::XCME());
+    map.insert(Venue::XFXS().value.as_str(), Venue::XFXS());
     map.insert(Venue::XNYM().value.as_str(), Venue::XNYM());
     Mutex::new(map)
 });

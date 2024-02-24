@@ -19,6 +19,7 @@ pub mod crypto_perpetual;
 pub mod currency_pair;
 pub mod equity;
 pub mod futures_contract;
+pub mod futures_spread;
 pub mod options_contract;
 pub mod synthetic;
 
