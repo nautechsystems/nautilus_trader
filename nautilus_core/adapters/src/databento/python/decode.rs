@@ -72,7 +72,7 @@ pub fn py_decode_mbo_msg(
     match result {
         Ok((Some(data), None)) => Ok(data.into_py(py)),
         Err(e) => Err(to_pyvalue_err(e)),
-        _ => Err(PyRuntimeError::new_err("Error parsing MBO message")),
+        _ => Err(PyRuntimeError::new_err("Error decoding MBO message")),
     }
 }
 
@@ -118,7 +118,7 @@ pub fn py_decode_mbp1_msg(
         Err(e) => {
             // Convert the Rust error to a Python exception
             Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                "Error parsing MBP1 message: {e}"
+                "Error decoding MBP1 message: {e}"
             )))
         }
     }

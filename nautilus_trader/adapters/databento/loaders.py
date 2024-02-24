@@ -64,6 +64,33 @@ class DatabentoDataLoader:
             str(PUBLISHERS_PATH),
         )
 
+    def load_publishers(self, path: PathLike[str] | str) -> None:
+        """
+        Load publisher details from the JSON file at the given path.
+
+        Parameters
+        ----------
+        path : PathLike[str] | str
+            The path for the publishers data to load.
+
+        """
+        self._pyo3_loader.load_publishers(str(path))
+
+    def load_glbx_exchange_map(
+        self,
+        map: dict[nautilus_pyo3.Symbol, nautilus_pyo3.Venue],
+    ) -> None:
+        """
+        Load the given CME Globex symbol to exchange venue map.
+
+        Parameters
+        ----------
+        map : dict[nautilus_pyo3.Symbol, nautilus_pyo3.Venue]
+            The map to load.
+
+        """
+        self._pyo3_loader.load_glbx_exchange_map(map)
+
     def get_publishers(self) -> dict[int, nautilus_pyo3.DatabentoPublisher]:
         """
         Return the internal Databento publishers currently held by the loader.
@@ -100,17 +127,16 @@ class DatabentoDataLoader:
 
         return dataset
 
-    def load_publishers(self, path: PathLike[str] | str) -> None:
+    def get_glbx_exchange_map(self) -> dict[nautilus_pyo3.Symbol, nautilus_pyo3.Venue]:
         """
-        Load publisher details from the JSON file at the given path.
+        Return the internal CME Globex exchange venue map.
 
-        Parameters
-        ----------
-        path : PathLike[str] | str
-            The path for the publishers data to load.
+        Returns
+        -------
+        dict[nautilus_pyo3.Symbol, nautilus_pyo3.Venue]
 
         """
-        self._pyo3_loader.load_publishers(str(path))
+        return self._pyo3_loader.get_glbx_exchange_map()
 
     def from_dbn_file(
         self,

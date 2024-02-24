@@ -54,7 +54,7 @@ impl Venue {
         }
     }
 
-    pub fn from_code(code: &Ustr) -> Result<Self> {
+    pub fn from_code(code: &str) -> Result<Self> {
         let map_guard = VENUE_MAP
             .lock()
             .map_err(|e| anyhow!("Failed to acquire lock on `VENUE_MAP`: {e}"))?;

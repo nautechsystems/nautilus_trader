@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{fs, num::NonZeroU64, sync::Arc};
+use std::{collections::HashMap, fs, num::NonZeroU64, sync::Arc};
 
 use databento::historical::timeseries::GetRangeParams;
+use dbn::Publisher;
 use indexmap::IndexMap;
 use nautilus_core::{
     python::to_pyvalue_err,
@@ -51,12 +52,13 @@ pub struct DatabentoHistoricalClient {
     clock: &'static AtomicTime,
     inner: Arc<Mutex<databento::HistoricalClient>>,
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
+    glbx_exchange_map: Arc<HashMap<Symbol, Venue>>,
 }
 
 #[pymethods]
 impl DatabentoHistoricalClient {
     #[new]
-    pub fn py_new(key: String, publishers_path: &str) -> PyResult<Self> {
+    fn py_new(key: String, publishers_path: &str) -> PyResult<Self> {
         let client = databento::HistoricalClient::builder()
             .key(key.clone())
             .map_err(to_pyvalue_err)?
@@ -76,8 +78,19 @@ impl DatabentoHistoricalClient {
             clock: get_atomic_clock_realtime(),
             inner: Arc::new(Mutex::new(client)),
             publisher_venue_map: Arc::new(publisher_venue_map),
+            glbx_exchange_map: Arc::new(HashMap::new()),
             key,
         })
+    }
+
+    #[pyo3(name = "load_glbx_exchange_map")]
+    fn py_load_glbx_exchange_map(&mut self, map: HashMap<Symbol, Venue>) {
+        self.glbx_exchange_map = Arc::new(map);
+    }
+
+    #[pyo3(name = "get_glbx_exchange_map")]
+    fn py_get_glbx_exchange_map(&self) -> HashMap<Symbol, Venue> {
+        self.glbx_exchange_map.as_ref().clone()
     }
 
     #[pyo3(name = "get_dataset_range")]
@@ -137,13 +150,25 @@ impl DatabentoHistoricalClient {
 
             let mut instruments = Vec::new();
 
-            while let Ok(Some(rec)) = decoder.decode_record::<dbn::InstrumentDefMsg>().await {
-                let raw_symbol = unsafe { raw_ptr_to_ustr(rec.raw_symbol.as_ptr()).unwrap() };
+            while let Ok(Some(msg)) = decoder.decode_record::<dbn::InstrumentDefMsg>().await {
+                let raw_symbol = unsafe { raw_ptr_to_ustr(msg.raw_symbol.as_ptr()).unwrap() };
                 let symbol = Symbol { value: raw_symbol };
-                let venue = publisher_venue_map.get(&rec.hd.publisher_id).unwrap();
-                let instrument_id = InstrumentId::new(symbol, *venue);
 
-                let result = decode_instrument_def_msg(rec, instrument_id, ts_init);
+                let publisher = msg.hd.publisher().expect("Invalid `publisher` for record");
+                let venue = match publisher {
+                    Publisher::GlbxMdp3Glbx => {
+                        // SAFETY: GLBX instruments have a valid `exchange` field
+                        let exchange = msg.exchange().unwrap();
+                        Venue::from_code(exchange)
+                            .unwrap_or_else(|_| panic!("`Venue` not found for exchange {exchange}"))
+                    }
+                    _ => *publisher_venue_map
+                        .get(&msg.hd.publisher_id)
+                        .unwrap_or_else(|| panic!("`Venue` not found for `publisher` {publisher}")),
+                };
+                let instrument_id = InstrumentId::new(symbol, venue);
+
+                let result = decode_instrument_def_msg(msg, instrument_id, ts_init);
                 match result {
                     Ok(instrument) => instruments.push(instrument),
                     Err(e) => eprintln!("{e:?}"),
@@ -184,6 +209,7 @@ impl DatabentoHistoricalClient {
 
         let price_precision = 2; // TODO: Hard coded for now
         let publisher_venue_map = self.publisher_venue_map.clone();
+        let glbx_exchange_map = self.glbx_exchange_map.clone();
         let ts_init = self.clock.get_time_ns();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
@@ -197,11 +223,16 @@ impl DatabentoHistoricalClient {
             let metadata = decoder.metadata().clone();
             let mut result: Vec<QuoteTick> = Vec::new();
 
-            while let Ok(Some(rec)) = decoder.decode_record::<dbn::Mbp1Msg>().await {
-                let rec_ref = dbn::RecordRef::from(rec);
-                let venue = publisher_venue_map.get(&rec.hd.publisher_id).unwrap();
-                let instrument_id = decode_nautilus_instrument_id(&rec_ref, &metadata, *venue)
-                    .map_err(to_pyvalue_err)?;
+            while let Ok(Some(msg)) = decoder.decode_record::<dbn::Mbp1Msg>().await {
+                let rec_ref = dbn::RecordRef::from(msg);
+                let instrument_id = decode_nautilus_instrument_id(
+                    &rec_ref,
+                    msg.hd.publisher_id,
+                    &metadata,
+                    &publisher_venue_map,
+                    &glbx_exchange_map,
+                )
+                .map_err(to_pyvalue_err)?;
 
                 let (data, _) = decode_record(
                     &rec_ref,
@@ -247,6 +278,7 @@ impl DatabentoHistoricalClient {
 
         let price_precision = 2; // TODO: Hard coded for now
         let publisher_venue_map = self.publisher_venue_map.clone();
+        let glbx_exchange_map = self.glbx_exchange_map.clone();
         let ts_init = self.clock.get_time_ns();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
@@ -260,11 +292,16 @@ impl DatabentoHistoricalClient {
             let metadata = decoder.metadata().clone();
             let mut result: Vec<TradeTick> = Vec::new();
 
-            while let Ok(Some(rec)) = decoder.decode_record::<dbn::TradeMsg>().await {
-                let rec_ref = dbn::RecordRef::from(rec);
-                let venue = publisher_venue_map.get(&rec.hd.publisher_id).unwrap();
-                let instrument_id = decode_nautilus_instrument_id(&rec_ref, &metadata, *venue)
-                    .map_err(to_pyvalue_err)?;
+            while let Ok(Some(msg)) = decoder.decode_record::<dbn::TradeMsg>().await {
+                let rec_ref = dbn::RecordRef::from(msg);
+                let instrument_id = decode_nautilus_instrument_id(
+                    &rec_ref,
+                    msg.hd.publisher_id,
+                    &metadata,
+                    &publisher_venue_map,
+                    &glbx_exchange_map,
+                )
+                .map_err(to_pyvalue_err)?;
 
                 let (data, _) = decode_record(
                     &rec_ref,
@@ -319,6 +356,7 @@ impl DatabentoHistoricalClient {
 
         let price_precision = 2; // TODO: Hard coded for now
         let publisher_venue_map = self.publisher_venue_map.clone();
+        let glbx_exchange_map = self.glbx_exchange_map.clone();
         let ts_init = self.clock.get_time_ns();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
@@ -332,11 +370,16 @@ impl DatabentoHistoricalClient {
             let metadata = decoder.metadata().clone();
             let mut result: Vec<Bar> = Vec::new();
 
-            while let Ok(Some(rec)) = decoder.decode_record::<dbn::OhlcvMsg>().await {
-                let rec_ref = dbn::RecordRef::from(rec);
-                let venue = publisher_venue_map.get(&rec.hd.publisher_id).unwrap();
-                let instrument_id = decode_nautilus_instrument_id(&rec_ref, &metadata, *venue)
-                    .map_err(to_pyvalue_err)?;
+            while let Ok(Some(msg)) = decoder.decode_record::<dbn::OhlcvMsg>().await {
+                let rec_ref = dbn::RecordRef::from(msg);
+                let instrument_id = decode_nautilus_instrument_id(
+                    &rec_ref,
+                    msg.hd.publisher_id,
+                    &metadata,
+                    &publisher_venue_map,
+                    &glbx_exchange_map,
+                )
+                .map_err(to_pyvalue_err)?;
 
                 let (data, _) = decode_record(
                     &rec_ref,

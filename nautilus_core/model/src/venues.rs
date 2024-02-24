@@ -55,11 +55,11 @@ impl Venue {
     }
 }
 
-pub static VENUE_MAP: Lazy<Mutex<HashMap<Ustr, Venue>>> = Lazy::new(|| {
+pub static VENUE_MAP: Lazy<Mutex<HashMap<&str, Venue>>> = Lazy::new(|| {
     let mut map = HashMap::new();
-    map.insert(Venue::CBTS().value, Venue::CBTS());
-    map.insert(Venue::XCEC().value, Venue::XCEC());
-    map.insert(Venue::XCME().value, Venue::XCME());
-    map.insert(Venue::XNYM().value, Venue::XNYM());
+    map.insert(Venue::CBTS().value.as_str(), Venue::CBTS());
+    map.insert(Venue::XCEC().value.as_str(), Venue::XCEC());
+    map.insert(Venue::XCME().value.as_str(), Venue::XCME());
+    map.insert(Venue::XNYM().value.as_str(), Venue::XNYM());
     Mutex::new(map)
 });

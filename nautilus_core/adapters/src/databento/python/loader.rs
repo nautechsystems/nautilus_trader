@@ -24,7 +24,7 @@ use nautilus_model::{
         bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
         trade::TradeTick, Data,
     },
-    identifiers::{instrument_id::InstrumentId, venue::Venue},
+    identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
     instruments::{
         equity::Equity, futures_contract::FuturesContract, options_contract::OptionsContract,
         Instrument,
@@ -45,6 +45,17 @@ impl DatabentoDataLoader {
     #[new]
     pub fn py_new(path: Option<String>) -> PyResult<Self> {
         Self::new(path.map(PathBuf::from)).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "load_publishers")]
+    pub fn py_load_publishers(&mut self, path: String) -> PyResult<()> {
+        let path_buf = PathBuf::from(path);
+        self.load_publishers(path_buf).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "load_glbx_exchange_map")]
+    fn py_load_glbx_exchange_map(&mut self, map: HashMap<Symbol, Venue>) {
+        self.load_glbx_exchange_map(map);
     }
 
     #[must_use]
@@ -70,20 +81,19 @@ impl DatabentoDataLoader {
             .map(std::string::ToString::to_string)
     }
 
+    #[pyo3(name = "get_glbx_exchange_map")]
+    fn py_get_glbx_exchange_map(&self) -> HashMap<Symbol, Venue> {
+        self.get_glbx_exchange_map()
+    }
+
     #[pyo3(name = "schema_for_file")]
     pub fn py_schema_for_file(&self, path: String) -> PyResult<Option<String>> {
         self.schema_from_file(PathBuf::from(path))
             .map_err(to_pyvalue_err)
     }
 
-    #[pyo3(name = "load_publishers")]
-    pub fn py_load_publishers(&mut self, path: String) -> PyResult<()> {
-        let path_buf = PathBuf::from(path);
-        self.load_publishers(path_buf).map_err(to_pyvalue_err)
-    }
-
     #[pyo3(name = "load_instruments")]
-    pub fn py_load_instruments(&self, py: Python, path: String) -> PyResult<PyObject> {
+    pub fn py_load_instruments(&mut self, py: Python, path: String) -> PyResult<PyObject> {
         let path_buf = PathBuf::from(path);
         let iter = self
             .read_definition_records(path_buf)
