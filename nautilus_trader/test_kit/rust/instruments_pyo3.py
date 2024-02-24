@@ -30,6 +30,7 @@ from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 from nautilus_trader.core.nautilus_pyo3 import Money
 from nautilus_trader.core.nautilus_pyo3 import OptionKind
 from nautilus_trader.core.nautilus_pyo3 import OptionsContract
+from nautilus_trader.core.nautilus_pyo3 import OptionsSpread
 from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import Quantity
 from nautilus_trader.core.nautilus_pyo3 import Symbol
@@ -44,6 +45,48 @@ _ETH = TestTypesProviderPyo3.currency_eth()
 
 
 class TestInstrumentProviderPyo3:
+    @staticmethod
+    def default_fx_ccy(
+        symbol: str,
+        venue: Venue | None = None,
+    ) -> CurrencyPair:
+        if venue is None:
+            venue = Venue("SIM")
+        instrument_id = InstrumentId(Symbol(symbol), venue)
+        base_currency = symbol[:3]
+        quote_currency = symbol[-3:]
+
+        if quote_currency == "JPY":
+            price_precision = 3
+        else:
+            price_precision = 5
+
+        return CurrencyPair(
+            id=instrument_id,
+            raw_symbol=Symbol(symbol),
+            base_currency=Currency.from_str(base_currency),
+            quote_currency=Currency.from_str(quote_currency),
+            price_precision=price_precision,
+            size_precision=0,
+            price_increment=Price(1 / 10**price_precision, price_precision),
+            size_increment=Quantity.from_int(1),
+            lot_size=Quantity.from_str("1000"),
+            max_quantity=Quantity.from_str("1e7"),
+            min_quantity=Quantity.from_str("1000"),
+            max_price=None,
+            min_price=None,
+            margin_init=Decimal("0.03"),
+            margin_maint=Decimal("0.03"),
+            maker_fee=Decimal("0.00002"),
+            taker_fee=Decimal("0.00002"),
+            ts_init=0,
+            ts_event=0,
+        )
+
+    @staticmethod
+    def audusd_sim():
+        return TestInstrumentProviderPyo3.default_fx_ccy("AUD/USD")
+
     @staticmethod
     def ethusdt_perp_binance() -> CryptoPerpetual:
         return CryptoPerpetual(
@@ -326,43 +369,31 @@ class TestInstrumentProviderPyo3:
         )
 
     @staticmethod
-    def audusd_sim():
-        return TestInstrumentProviderPyo3.default_fx_ccy("AUD/USD")
-
-    @staticmethod
-    def default_fx_ccy(
-        symbol: str,
-        venue: Venue | None = None,
-    ) -> CurrencyPair:
-        if venue is None:
-            venue = Venue("SIM")
-        instrument_id = InstrumentId(Symbol(symbol), venue)
-        base_currency = symbol[:3]
-        quote_currency = symbol[-3:]
-
-        if quote_currency == "JPY":
-            price_precision = 3
-        else:
-            price_precision = 5
-
-        return CurrencyPair(
-            id=instrument_id,
-            raw_symbol=Symbol(symbol),
-            base_currency=Currency.from_str(base_currency),
-            quote_currency=Currency.from_str(quote_currency),
-            price_precision=price_precision,
-            size_precision=0,
-            price_increment=Price(1 / 10**price_precision, price_precision),
-            size_increment=Quantity.from_int(1),
-            lot_size=Quantity.from_str("1000"),
-            max_quantity=Quantity.from_str("1e7"),
-            min_quantity=Quantity.from_str("1000"),
+    def options_spread(
+        activation: pd.Timestamp | None = None,
+        expiration: pd.Timestamp | None = None,
+    ) -> OptionsSpread:
+        if activation is None:
+            activation = pd.Timestamp("2023-11-06T20:54:07", tz=pytz.utc)
+        if expiration is None:
+            expiration = pd.Timestamp("2024-02-23T22:59:00", tz=pytz.utc)
+        return OptionsSpread(
+            id=InstrumentId.from_str("UD:U$: GN 2534559.XCME"),
+            raw_symbol=Symbol("UD:U$: GN 2534559"),
+            asset_class=AssetClass.FX,
+            underlying="SR3",
+            strategy_type="GN",
+            activation_ns=activation.value,
+            expiration_ns=expiration.value,
+            currency=_USDT,
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(1),
+            lot_size=Quantity.from_int(1),
+            max_quantity=None,
+            min_quantity=None,
             max_price=None,
             min_price=None,
-            margin_init=Decimal("0.03"),
-            margin_maint=Decimal("0.03"),
-            maker_fee=Decimal("0.00002"),
-            taker_fee=Decimal("0.00002"),
-            ts_init=0,
             ts_event=0,
+            ts_init=0,
         )

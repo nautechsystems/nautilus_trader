@@ -21,24 +21,22 @@ import pytz
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.rust.model cimport AssetClass
 from nautilus_trader.core.rust.model cimport InstrumentClass
+from nautilus_trader.core.rust.model cimport OptionKind
 from nautilus_trader.model.functions cimport asset_class_from_str
 from nautilus_trader.model.functions cimport asset_class_to_str
-from nautilus_trader.model.functions cimport instrument_class_from_str
-from nautilus_trader.model.functions cimport instrument_class_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.base cimport Price
 from nautilus_trader.model.objects cimport Currency
-from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class FuturesSpread(Instrument):
+cdef class OptionsSpread(Instrument):
     """
-    Represents a generic deliverable futures spread instrument.
+    Represents a generic options spread instrument.
 
     Parameters
     ----------
@@ -47,21 +45,21 @@ cdef class FuturesSpread(Instrument):
     raw_symbol : Symbol
         The raw/local/native symbol for the instrument, assigned by the venue.
     asset_class : AssetClass
-        The futures spread asset class.
+        The options contract asset class.
     currency : Currency
-        The futures spread currency.
+        The options contract currency.
     price_precision : int
         The price decimal precision.
-    price_increment : Decimal
+    price_increment : Price
         The minimum price increment (tick size).
     multiplier : Quantity
-        The contract multiplier.
+        The option multiplier.
     lot_size : Quantity
         The rounded lot unit size (standard/board).
     underlying : str
         The underlying asset.
     strategy_type : str
-        The strategy type for the spread.
+        The strategy type of the spread.
     activation_ns : uint64_t
         The UNIX timestamp (nanoseconds) for contract activation.
     expiration_ns : uint64_t
@@ -97,7 +95,7 @@ cdef class FuturesSpread(Instrument):
         Currency currency not None,
         int price_precision,
         Price price_increment not None,
-        Quantity multiplier,
+        Quantity multiplier not None,
         Quantity lot_size not None,
         str underlying,
         str strategy_type,
@@ -114,11 +112,11 @@ cdef class FuturesSpread(Instrument):
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
             asset_class=asset_class,
-            instrument_class=InstrumentClass.FUTURE_SPREAD,
+            instrument_class=InstrumentClass.OPTION_SPREAD,
             quote_currency=currency,
             is_inverse=False,
             price_precision=price_precision,
-            size_precision=0,  # No fractional units
+            size_precision=0,  # No fractional contracts
             price_increment=price_increment,
             size_increment=Quantity.from_int_c(1),
             multiplier=multiplier,
@@ -141,29 +139,6 @@ cdef class FuturesSpread(Instrument):
         self.strategy_type = strategy_type
         self.activation_ns = activation_ns
         self.expiration_ns = expiration_ns
-
-    def __repr__(self) -> str:
-        return (
-            f"{type(self).__name__}"
-            f"(id={self.id.to_str()}, "
-            f"raw_symbol={self.raw_symbol}, "
-            f"asset_class={asset_class_to_str(self.asset_class)}, "
-            f"instrument_class={instrument_class_to_str(self.instrument_class)}, "
-            f"quote_currency={self.quote_currency}, "
-            f"underlying={self.underlying}, "
-            f"strategy_type={self.strategy_type}, "
-            f"activation={format_iso8601(self.activation_utc)}, "
-            f"expiration={format_iso8601(self.expiration_utc)}, "
-            f"price_precision={self.price_precision}, "
-            f"price_increment={self.price_increment}, "
-            f"multiplier={self.multiplier}, "
-            f"lot_size={self.lot_size}, "
-            f"margin_init={self.margin_init}, "
-            f"margin_maint={self.margin_maint}, "
-            f"maker_fee={self.maker_fee}, "
-            f"taker_fee={self.taker_fee}, "
-            f"info={self.info})"
-        )
 
     @property
     def activation_utc(self) -> pd.Timestamp:
@@ -191,10 +166,12 @@ cdef class FuturesSpread(Instrument):
         """
         return pd.Timestamp(self.expiration_ns, tz=pytz.utc)
 
+
+
     @staticmethod
-    cdef FuturesSpread from_dict_c(dict values):
+    cdef OptionsSpread from_dict_c(dict values):
         Condition.not_none(values, "values")
-        return FuturesSpread(
+        return OptionsSpread(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
             asset_class=asset_class_from_str(values["asset_class"]),
@@ -212,10 +189,10 @@ cdef class FuturesSpread(Instrument):
         )
 
     @staticmethod
-    cdef dict to_dict_c(FuturesSpread obj):
+    cdef dict to_dict_c(OptionsSpread obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "FuturesSpread",
+            "type": "OptionsSpread",
             "id": obj.id.to_str(),
             "raw_symbol": obj.raw_symbol.to_str(),
             "asset_class": asset_class_to_str(obj.asset_class),
@@ -226,8 +203,7 @@ cdef class FuturesSpread(Instrument):
             "size_increment": str(obj.size_increment),
             "multiplier": str(obj.multiplier),
             "lot_size": str(obj.lot_size),
-            "underlying": obj.underlying,
-            "strategy_type": obj.strategy_type,
+            "underlying": str(obj.underlying),
             "activation_ns": obj.activation_ns,
             "expiration_ns": obj.expiration_ns,
             "margin_init": str(obj.margin_init),
@@ -237,8 +213,9 @@ cdef class FuturesSpread(Instrument):
         }
 
     @staticmethod
-    cdef FuturesSpread from_pyo3_c(pyo3_instrument):
-        return FuturesSpread(
+    cdef OptionsSpread from_pyo3_c(pyo3_instrument):
+        Condition.not_none(pyo3_instrument, "pyo3_instrument")
+        return OptionsSpread(
             instrument_id=InstrumentId.from_str_c(pyo3_instrument.id.value),
             raw_symbol=Symbol(pyo3_instrument.raw_symbol.value),
             asset_class=asset_class_from_str(str(pyo3_instrument.asset_class)),
@@ -256,7 +233,7 @@ cdef class FuturesSpread(Instrument):
         )
 
     @staticmethod
-    def from_dict(dict values) -> FuturesSpread:
+    def from_dict(dict values) -> OptionsSpread:
         """
         Return an instrument from the given initialization values.
 
@@ -267,13 +244,13 @@ cdef class FuturesSpread(Instrument):
 
         Returns
         -------
-        FuturesSpread
+        OptionsSpread
 
         """
-        return FuturesSpread.from_dict_c(values)
+        return OptionsSpread.from_dict_c(values)
 
     @staticmethod
-    def to_dict(FuturesSpread obj) -> dict[str, object]:
+    def to_dict(OptionsSpread obj) -> dict[str, object]:
         """
         Return a dictionary representation of this object.
 
@@ -282,21 +259,21 @@ cdef class FuturesSpread(Instrument):
         dict[str, object]
 
         """
-        return FuturesSpread.to_dict_c(obj)
+        return OptionsSpread.to_dict_c(obj)
 
     @staticmethod
-    def from_pyo3(pyo3_instrument) -> FuturesSpread:
+    def from_pyo3(pyo3_instrument) -> OptionsSpread:
         """
-        Return legacy Cython futures spread instrument converted from the given pyo3 Rust object.
+        Return legacy Cython options contract instrument converted from the given pyo3 Rust object.
 
         Parameters
         ----------
-        pyo3_instrument : nautilus_pyo3.FuturesSpread
-            The pyo3 Rust futures spread instrument to convert from.
+        pyo3_instrument : nautilus_pyo3.OptionsSpread
+            The pyo3 Rust options contract instrument to convert from.
 
         Returns
         -------
-        FuturesSpread
+        OptionsSpread
 
         """
-        return FuturesSpread.from_pyo3_c(pyo3_instrument)
+        return OptionsSpread.from_pyo3_c(pyo3_instrument)

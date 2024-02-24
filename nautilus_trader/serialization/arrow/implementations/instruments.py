@@ -25,6 +25,7 @@ from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import FuturesSpread
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionsContract
+from nautilus_trader.model.instruments import OptionsSpread
 
 
 SCHEMAS = {
@@ -208,6 +209,26 @@ SCHEMAS = {
             "expiration_ns": pa.uint64(),
             "strike_price": pa.dictionary(pa.int64(), pa.string()),
             "option_kind": pa.dictionary(pa.int8(), pa.string()),
+            "ts_event": pa.uint64(),
+            "ts_init": pa.uint64(),
+        },
+    ),
+    OptionsSpread: pa.schema(
+        {
+            "id": pa.dictionary(pa.int64(), pa.string()),
+            "raw_symbol": pa.string(),
+            "underlying": pa.dictionary(pa.int16(), pa.string()),
+            "strategy_type": pa.dictionary(pa.int16(), pa.string()),
+            "asset_class": pa.dictionary(pa.int8(), pa.string()),
+            "currency": pa.dictionary(pa.int16(), pa.string()),
+            "price_precision": pa.uint8(),
+            "size_precision": pa.uint8(),
+            "price_increment": pa.dictionary(pa.int16(), pa.string()),
+            "size_increment": pa.dictionary(pa.int16(), pa.string()),
+            "multiplier": pa.dictionary(pa.int16(), pa.string()),
+            "lot_size": pa.dictionary(pa.int16(), pa.string()),
+            "activation_ns": pa.uint64(),
+            "expiration_ns": pa.uint64(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         },

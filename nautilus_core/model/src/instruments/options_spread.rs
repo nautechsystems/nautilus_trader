@@ -38,7 +38,7 @@ use crate::{
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
-pub struct FuturesSpread {
+pub struct OptionsSpread {
     pub id: InstrumentId,
     pub raw_symbol: Symbol,
     pub asset_class: AssetClass,
@@ -59,7 +59,7 @@ pub struct FuturesSpread {
     pub ts_init: UnixNanos,
 }
 
-impl FuturesSpread {
+impl OptionsSpread {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
@@ -104,21 +104,21 @@ impl FuturesSpread {
     }
 }
 
-impl PartialEq<Self> for FuturesSpread {
+impl PartialEq<Self> for OptionsSpread {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl Eq for FuturesSpread {}
+impl Eq for OptionsSpread {}
 
-impl Hash for FuturesSpread {
+impl Hash for OptionsSpread {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.id.hash(state);
     }
 }
 
-impl Instrument for FuturesSpread {
+impl Instrument for OptionsSpread {
     fn id(&self) -> InstrumentId {
         self.id
     }
@@ -132,7 +132,7 @@ impl Instrument for FuturesSpread {
     }
 
     fn instrument_class(&self) -> InstrumentClass {
-        InstrumentClass::FutureSpread
+        InstrumentClass::OptionSpread
     }
 
     fn quote_currency(&self) -> Currency {
@@ -211,10 +211,10 @@ impl Instrument for FuturesSpread {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{futures_spread::FuturesSpread, stubs::*};
+    use crate::instruments::{options_spread::OptionsSpread, stubs::*};
 
     #[rstest]
-    fn test_equality(futures_spread_es: FuturesSpread) {
-        assert_eq!(futures_spread_es, futures_spread_es.clone());
+    fn test_equality(options_spread: OptionsSpread) {
+        assert_eq!(options_spread, options_spread.clone());
     }
 }

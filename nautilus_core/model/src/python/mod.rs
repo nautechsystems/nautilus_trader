@@ -105,6 +105,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::instruments::futures_contract::FuturesContract>()?;
     m.add_class::<crate::instruments::futures_spread::FuturesSpread>()?;
     m.add_class::<crate::instruments::options_contract::OptionsContract>()?;
+    m.add_class::<crate::instruments::options_spread::OptionsSpread>()?;
     m.add_class::<crate::instruments::synthetic::SyntheticInstrument>()?;
     // Order book
     m.add_class::<crate::orderbook::book_mbo::OrderBookMbo>()?;
