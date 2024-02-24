@@ -18,6 +18,8 @@ from nautilus_trader.adapters.databento import DATABENTO
 from nautilus_trader.adapters.databento import DATABENTO_CLIENT_ID
 from nautilus_trader.adapters.databento import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento import DatabentoLiveDataClientFactory
+from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.common.config import DatabaseConfig
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
@@ -43,9 +45,9 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 instrument_ids = [
-    InstrumentId.from_str("ESH4.GLBX"),
-    # InstrumentId.from_str("ESM4.GLBX"),
-    # InstrumentId.from_str("ESU4.GLBX"),
+    InstrumentId.from_str("ESH4.XCME"),
+    # InstrumentId.from_str("ESM4.XCME"),
+    # InstrumentId.from_str("ESU4.XCME"),
     # InstrumentId.from_str("AAPL.XCHI"),
 ]
 
@@ -57,12 +59,12 @@ config_node = TradingNodeConfig(
         reconciliation=False,  # Not applicable
         inflight_check_interval_ms=0,  # Not applicable
     ),
-    # cache=CacheConfig(
-    #     database=DatabaseConfig(),
-    #     encoding="json",
-    #     timestamps_as_iso8601=True,
-    #     buffer_interval_ms=100,
-    # ),
+    cache=CacheConfig(
+        database=DatabaseConfig(),
+        encoding="msgpack",
+        timestamps_as_iso8601=True,
+        buffer_interval_ms=100,
+    ),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),
     #     encoding="json",

@@ -155,7 +155,6 @@ class DatabentoInstrumentProvider(InstrumentProvider):
                 live_client.start(callback=receive_instruments, replay=False),
                 timeout=5.0,
             )
-            # TODO: Improve this so that `live_client.start` isn't raising a `ValueError`
         except ValueError as e:
             if success_msg in str(e):
                 # Expected on decode completion, continue
@@ -168,6 +167,10 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         for instrument in instruments:
             self.add(instrument=instrument)
             self._log.debug(f"Added instrument {instrument.id}.")
+
+        # Update the CME Globex exchange venue map
+        glbx_exchange_map = live_client.get_glbx_exchange_map()
+        self._loader.load_glbx_exchange_map(glbx_exchange_map)
 
     async def load_async(
         self,

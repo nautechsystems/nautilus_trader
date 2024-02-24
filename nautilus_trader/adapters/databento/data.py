@@ -246,6 +246,8 @@ class DatabentoDataClient(LiveMarketDataClient):
                 dataset=dataset,
                 publishers_path=str(PUBLISHERS_PATH),
             )
+            glbx_exchange_map = self._loader.get_glbx_exchange_map()
+            live_client.load_glbx_exchange_map(glbx_exchange_map)
             self._live_clients[dataset] = live_client
 
         return live_client
@@ -260,6 +262,8 @@ class DatabentoDataClient(LiveMarketDataClient):
                 dataset=dataset,
                 publishers_path=str(PUBLISHERS_PATH),
             )
+            glbx_exchange_map = self._loader.get_glbx_exchange_map()
+            live_client.load_glbx_exchange_map(glbx_exchange_map)
             self._live_clients_mbo[dataset] = live_client
 
         return live_client

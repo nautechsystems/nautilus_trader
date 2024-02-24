@@ -55,6 +55,7 @@ pub struct DatabentoLiveClient {
     pub dataset: String,
     inner: Option<Arc<Mutex<databento::LiveClient>>>,
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
+    glbx_exchange_map: Arc<HashMap<Symbol, Venue>>,
 }
 
 impl DatabentoLiveClient {
@@ -98,7 +99,18 @@ impl DatabentoLiveClient {
             dataset,
             inner: None,
             publisher_venue_map: Arc::new(publisher_venue_map),
+            glbx_exchange_map: Arc::new(HashMap::new()),
         })
+    }
+
+    #[pyo3(name = "load_glbx_exchange_map")]
+    fn py_load_glbx_exchange_map(&mut self, map: HashMap<Symbol, Venue>) {
+        self.glbx_exchange_map = Arc::new(map);
+    }
+
+    #[pyo3(name = "get_glbx_exchange_map")]
+    fn py_get_glbx_exchange_map(&self) -> HashMap<Symbol, Venue> {
+        self.glbx_exchange_map.as_ref().clone()
     }
 
     #[pyo3(name = "subscribe")]
@@ -152,6 +164,7 @@ impl DatabentoLiveClient {
     ) -> PyResult<&'py PyAny> {
         let arc_client = self.get_inner_client().map_err(to_pyruntime_err)?;
         let publisher_venue_map = self.publisher_venue_map.clone();
+        let glbx_exchange_map = self.glbx_exchange_map.clone();
         let clock = get_atomic_clock_realtime();
 
         let mut buffering_start = match replay {
@@ -215,6 +228,7 @@ impl DatabentoLiveClient {
                     handle_instrument_def_msg(
                         msg,
                         &publisher_venue_map,
+                        &glbx_exchange_map,
                         &mut instrument_id_map,
                         clock,
                         &callback,
@@ -225,6 +239,7 @@ impl DatabentoLiveClient {
                         record,
                         &symbol_map,
                         &publisher_venue_map,
+                        &glbx_exchange_map,
                         &mut instrument_id_map,
                         clock,
                     )
@@ -322,6 +337,7 @@ fn update_instrument_id_map(
     header: &dbn::RecordHeader,
     raw_symbol: &str,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
+    glbx_exchange_map: &HashMap<Symbol, Venue>,
     instrument_id_map: &mut HashMap<u32, InstrumentId>,
 ) -> InstrumentId {
     // Check if instrument ID is already in the map
@@ -332,7 +348,14 @@ fn update_instrument_id_map(
     let symbol = Symbol {
         value: Ustr::from(raw_symbol),
     };
-    let venue = publisher_venue_map.get(&header.publisher_id).unwrap();
+
+    let publisher_id = header.publisher_id;
+    let venue = match glbx_exchange_map.get(&symbol) {
+        Some(venue) => venue,
+        None => publisher_venue_map
+            .get(&publisher_id)
+            .unwrap_or_else(|| panic!("No venue found for `publisher_id` {publisher_id}")),
+    };
     let instrument_id = InstrumentId::new(symbol, *venue);
 
     instrument_id_map.insert(header.instrument_id, instrument_id);
@@ -342,6 +365,7 @@ fn update_instrument_id_map(
 fn handle_instrument_def_msg(
     msg: &dbn::InstrumentDefMsg,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
+    glbx_exchange_map: &HashMap<Symbol, Venue>,
     instrument_id_map: &mut HashMap<u32, InstrumentId>,
     clock: &AtomicTime,
     callback: &PyObject,
@@ -353,6 +377,7 @@ fn handle_instrument_def_msg(
         msg.header(),
         raw_symbol,
         publisher_venue_map,
+        glbx_exchange_map,
         instrument_id_map,
     );
 
@@ -372,20 +397,22 @@ fn handle_instrument_def_msg(
 }
 
 fn handle_record(
-    record: dbn::RecordRef,
+    rec_ref: dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
+    glbx_exchange_map: &HashMap<Symbol, Venue>,
     instrument_id_map: &mut HashMap<u32, InstrumentId>,
     clock: &AtomicTime,
 ) -> Result<(Option<Data>, Option<Data>)> {
     let raw_symbol = symbol_map
-        .get_for_rec(&record)
+        .get_for_rec(&rec_ref)
         .expect("Cannot resolve `raw_symbol` from `symbol_map`");
 
     let instrument_id = update_instrument_id_map(
-        record.header(),
+        rec_ref.header(),
         raw_symbol,
         publisher_venue_map,
+        glbx_exchange_map,
         instrument_id_map,
     );
 
@@ -393,7 +420,7 @@ fn handle_record(
     let ts_init = clock.get_time_ns();
 
     decode_record(
-        &record,
+        &rec_ref,
         instrument_id,
         price_precision,
         Some(ts_init),
