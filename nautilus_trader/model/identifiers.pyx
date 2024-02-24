@@ -46,6 +46,8 @@ from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_id_to_cstr
 from nautilus_trader.core.rust.model cimport trader_id_hash
 from nautilus_trader.core.rust.model cimport trader_id_new
+from nautilus_trader.core.rust.model cimport venue_code_exists
+from nautilus_trader.core.rust.model cimport venue_from_cstr_code
 from nautilus_trader.core.rust.model cimport venue_hash
 from nautilus_trader.core.rust.model cimport venue_is_synthetic
 from nautilus_trader.core.rust.model cimport venue_new
@@ -185,14 +187,23 @@ cdef class Venue(Identifier):
     def __hash__(self) -> int:
         return hash(self.to_str())
 
+    cdef str to_str(self):
+        return ustr_to_pystr(self._mem.value)
+
     @staticmethod
     cdef Venue from_mem_c(Venue_t mem):
         cdef Venue venue = Venue.__new__(Venue)
         venue._mem = mem
         return venue
 
-    cdef str to_str(self):
-        return ustr_to_pystr(self._mem.value)
+    @staticmethod
+    cdef Venue from_code_c(str code):
+        cdef const char* code_ptr = pystr_to_cstr(code)
+        if not venue_code_exists(code_ptr):
+            return None
+        cdef Venue venue = Venue.__new__(Venue)
+        venue._mem = venue_from_cstr_code(code_ptr)
+        return venue
 
     cpdef bint is_synthetic(self):
         """
@@ -204,6 +215,28 @@ cdef class Venue(Identifier):
 
         """
         return <bint>venue_is_synthetic(&self._mem)
+
+    @staticmethod
+    def from_code(str code):
+        """
+        Return the venue with the given `code` from the built-in internal map (if found).
+
+        Currency only supports CME Globex exchange ISO 10383 MIC codes.
+
+        Parameters
+        ----------
+        code : str
+            The code of the venue.
+
+        Returns
+        -------
+        Venue or ``None``
+
+        """
+        Condition.not_none(code, "code")
+
+        return Venue.from_code_c(code)
+
 
 
 cdef class InstrumentId(Identifier):
