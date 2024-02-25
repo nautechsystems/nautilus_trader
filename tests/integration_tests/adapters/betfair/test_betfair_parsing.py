@@ -211,7 +211,7 @@ class TestBetfairParsingStreaming:
                 "price": "3.95",
                 "size": "46.950000",
                 "aggressor_side": "NO_AGGRESSOR",
-                "trade_id": "3.9546.95",
+                "trade_id": "358e633f2969dc2f12e77c0cacce8c224a54",
                 "ts_event": 0,
                 "ts_init": 0,
             },
@@ -438,6 +438,7 @@ class TestBetfairParsing:
             account_detail=detail,
             account_funds=funds,
             event_id=self.uuid,
+            reported=True,
             ts_event=0,
             ts_init=0,
         )
