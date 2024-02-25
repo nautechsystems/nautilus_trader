@@ -100,8 +100,9 @@ async def _setup_order_state(
                         cache.add_instrument(instrument)
                     if not cache.order(client_order_id):
                         assert strategy is not None, "strategy can't be none if accepting order"
+                        instrument = cache.instrument(instrument_id)
                         order = TestExecStubs.limit_order(
-                            instrument_id=instrument_id,
+                            instrument=instrument,
                             price=betfair_float_to_price(order_update.p),
                             client_order_id=client_order_id,
                         )
@@ -219,7 +220,7 @@ def fill_order(
 @pytest.fixture()
 def test_order(instrument, strategy_id):
     return TestExecStubs.limit_order(
-        instrument_id=instrument.id,
+        instrument=instrument,
         price=betfair_float_to_price(2.0),
         quantity=Quantity.from_str("100"),
         strategy_id=strategy_id,
@@ -698,7 +699,7 @@ async def test_betfair_back_order_reduces_balance(
 ):
     # Arrange
     order = TestExecStubs.limit_order(
-        instrument_id=instrument.id,
+        instrument=instrument,
         order_side=side,
         price=price,
         quantity=quantity,
@@ -938,11 +939,10 @@ async def test_fok_order_found_in_cache(exec_client, setup_order_state, strategy
         selection_handicap=0.0,
     )
     cache.add_instrument(instrument)
-    instrument_id = instrument.id
     client_order_id = ClientOrderId("O-20231004-0354-001-61288616-1")
     venue_order_id = VenueOrderId("323421338057")
     limit_order = TestExecStubs.limit_order(
-        instrument_id=instrument_id,
+        instrument=instrument,
         order_side=OrderSide.SELL,
         price=Price(9.6000000, BETFAIR_PRICE_PRECISION),
         quantity=Quantity(2.8000, 4),

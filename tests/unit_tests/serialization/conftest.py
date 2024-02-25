@@ -40,7 +40,7 @@ def nautilus_objects() -> list[Any]:
     """
     instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
     position_id = PositionId("P-001")
-    buy = TestExecStubs.limit_order()
+    buy = TestExecStubs.limit_order(instrument)
     buy_submitted, buy_accepted, buy_filled = _make_order_events(
         buy,
         instrument=instrument,

@@ -50,7 +50,7 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 SIM = Venue("SIM")
-USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+_USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
 class TestL2OrderBookExchange:
@@ -99,7 +99,7 @@ class TestL2OrderBookExchange:
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(50),
             leverages={},
-            instruments=[USDJPY_SIM],
+            instruments=[_USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
             portfolio=self.portfolio,
@@ -118,10 +118,10 @@ class TestL2OrderBookExchange:
         )
 
         # Prepare components
-        self.cache.add_instrument(USDJPY_SIM)
+        self.cache.add_instrument(_USDJPY_SIM)
         self.cache.add_order_book(
             OrderBook(
-                instrument_id=USDJPY_SIM.id,
+                instrument_id=_USDJPY_SIM.id,
                 book_type=BookType.L2_MBP,  # <-- L2 MBP book
             ),
         )
@@ -145,12 +145,12 @@ class TestL2OrderBookExchange:
 
     def test_submit_limit_order_aggressive_multiple_levels(self):
         # Arrange: Prepare market
-        self.cache.add_instrument(USDJPY_SIM)
+        self.cache.add_instrument(_USDJPY_SIM)
 
         quote = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid_price=Price.from_str("110.000"),
-            ask_price=Price.from_str("110.010"),
+            instrument_id=_USDJPY_SIM.id,
+            bid_price=_USDJPY_SIM.make_price(110.000),
+            ask_price=_USDJPY_SIM.make_price(110.010),
             bid_size=Quantity.from_int(1_500_000),
             ask_size=Quantity.from_int(1_500_000),
             ts_event=0,
@@ -158,7 +158,7 @@ class TestL2OrderBookExchange:
         )
         self.data_engine.process(quote)
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=USDJPY_SIM.id,
+            instrument_id=_USDJPY_SIM.id,
             bid_size=10000,
             ask_size=10000,
         )
@@ -167,10 +167,10 @@ class TestL2OrderBookExchange:
 
         # Create order
         order = self.strategy.order_factory.limit(
-            instrument_id=USDJPY_SIM.id,
+            instrument_id=_USDJPY_SIM.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(20_000),
-            price=Price.from_int(20),
+            price=_USDJPY_SIM.make_price(20.000),
             post_only=False,
         )
 
@@ -186,10 +186,10 @@ class TestL2OrderBookExchange:
 
     def test_aggressive_partial_fill(self):
         # Arrange: Prepare market
-        self.cache.add_instrument(USDJPY_SIM)
+        self.cache.add_instrument(_USDJPY_SIM)
 
         quote = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
+            instrument_id=_USDJPY_SIM.id,
             bid_price=Price.from_str("110.000"),
             ask_price=Price.from_str("110.010"),
             bid_size=Quantity.from_int(1_500_000),
@@ -199,7 +199,7 @@ class TestL2OrderBookExchange:
         )
         self.data_engine.process(quote)
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=USDJPY_SIM.id,
+            instrument_id=_USDJPY_SIM.id,
             bid_size=10_000,
             ask_size=10_000,
         )
@@ -209,10 +209,10 @@ class TestL2OrderBookExchange:
 
         # Act
         order = self.strategy.order_factory.limit(
-            instrument_id=USDJPY_SIM.id,
+            instrument_id=_USDJPY_SIM.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(70_000),
-            price=Price.from_int(20),
+            price=_USDJPY_SIM.make_price(20.000),
             post_only=False,
         )
         self.strategy.submit_order(order)
@@ -226,10 +226,10 @@ class TestL2OrderBookExchange:
 
     def test_post_only_insert(self):
         # Arrange: Prepare market
-        self.cache.add_instrument(USDJPY_SIM)
+        self.cache.add_instrument(_USDJPY_SIM)
         # Market is 10 @ 15
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=USDJPY_SIM.id,
+            instrument_id=_USDJPY_SIM.id,
             bid_size=1000,
             ask_size=1000,
         )
@@ -238,10 +238,10 @@ class TestL2OrderBookExchange:
 
         # Act
         order = self.strategy.order_factory.limit(
-            instrument_id=USDJPY_SIM.id,
+            instrument_id=_USDJPY_SIM.id,
             order_side=OrderSide.SELL,
             quantity=Quantity.from_int(2_000),
-            price=Price.from_str("14"),
+            price=_USDJPY_SIM.make_price(14.000),
             post_only=True,
         )
         self.strategy.submit_order(order)
@@ -254,10 +254,10 @@ class TestL2OrderBookExchange:
     @pytest.mark.skip()
     def test_passive_partial_fill(self):
         # Arrange: Prepare market
-        self.cache.add_instrument(USDJPY_SIM)
+        self.cache.add_instrument(_USDJPY_SIM)
         # Market is 10 @ 15
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=USDJPY_SIM.id,
+            instrument_id=_USDJPY_SIM.id,
             bid_size=1000,
             ask_size=1000,
         )
@@ -265,7 +265,7 @@ class TestL2OrderBookExchange:
         self.exchange.process_order_book_deltas(snapshot)
 
         order = self.strategy.order_factory.limit(
-            instrument_id=USDJPY_SIM.id,
+            instrument_id=_USDJPY_SIM.id,
             order_side=OrderSide.SELL,
             quantity=Quantity.from_int(1_000),
             price=Price.from_str("14"),
@@ -275,7 +275,7 @@ class TestL2OrderBookExchange:
 
         # Act
         tick = TestDataStubs.quote_tick(
-            instrument=USDJPY_SIM,
+            instrument=_USDJPY_SIM,
             bid_price=15.0,
             ask_price=16.0,
             bid_size=1_000,
@@ -295,7 +295,7 @@ class TestL2OrderBookExchange:
         # Arrange: Prepare market
         # Market is 10 @ 15
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=USDJPY_SIM.id,
+            instrument_id=_USDJPY_SIM.id,
             bid_size=1000,
             ask_size=1000,
         )
@@ -303,7 +303,7 @@ class TestL2OrderBookExchange:
         self.exchange.process_order_book_deltas(snapshot)
 
         order = self.strategy.order_factory.limit(
-            instrument_id=USDJPY_SIM.id,
+            instrument_id=_USDJPY_SIM.id,
             order_side=OrderSide.SELL,
             quantity=Quantity.from_int(2_000),
             price=Price.from_str("14"),
@@ -313,7 +313,7 @@ class TestL2OrderBookExchange:
 
         # Act
         tick1 = TradeTick(
-            instrument_id=USDJPY_SIM.id,
+            instrument_id=_USDJPY_SIM.id,
             price=Price.from_str("14.0"),
             size=Quantity.from_int(1_000),
             aggressor_side=AggressorSide.SELLER,

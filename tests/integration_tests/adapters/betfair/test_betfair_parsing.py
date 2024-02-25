@@ -94,9 +94,9 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
-from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
@@ -530,7 +530,7 @@ class TestBetfairParsing:
         order = TestExecStubs.limit_order(
             price=betfair_float_to_price(3.05),
             quantity=betfair_float_to_quantity(10),
-            instrument_id=TestIdStubs.betting_instrument_id(),
+            instrument=TestInstrumentProvider.betting_instrument(),
             time_in_force=TimeInForce.AT_THE_OPEN,
             order_side=OrderSide.SELL,
         )
@@ -745,7 +745,7 @@ class TestBetfairParsing:
     def test_customer_order_ref(self):
         # Arrange
         order = TestExecStubs.limit_order(
-            instrument_id=self.instrument.id,
+            instrument=self.instrument,
         )
         client_order_id = order.client_order_id
 

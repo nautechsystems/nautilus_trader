@@ -292,7 +292,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             side,
             Quantity.from_int(100_000),
-            Price.from_str("110.000"),
+            _USDJPY_SIM.make_price(110.000),
         )
 
         # Act
@@ -455,7 +455,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.005"),  # Price at ask
+            _USDJPY_SIM.make_price(90.005),  # Price at ask
         )
 
         # Act
@@ -589,7 +589,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(1_000_000),
-            Price.from_str("90.000"),
+            _USDJPY_SIM.make_price(90.000),
             time_in_force=TimeInForce.FOK,
         )
 
@@ -645,7 +645,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.000"),
+            _USDJPY_SIM.make_price(90.000),
         )
 
         # Act
@@ -671,7 +671,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.005"),
+            _USDJPY_SIM.make_price(90.005),
             post_only=True,
         )
 
@@ -697,7 +697,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.001"),
+            _USDJPY_SIM.make_price(90.001),
         )
 
         # Act
@@ -726,7 +726,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(1_000_000),
-            Price.from_int(1),
+            _USDJPY_SIM.make_price(1.000),
             time_in_force=TimeInForce.IOC,
         )
 
@@ -758,7 +758,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(1_000_000),
-            Price.from_int(1),
+            _USDJPY_SIM.make_price(1.000),
             time_in_force=TimeInForce.FOK,
         )
 
@@ -901,7 +901,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(2_000_000),
-            Price.from_str("90.005"),
+            _USDJPY_SIM.make_price(90.005),
             time_in_force=TimeInForce.FOK,
         )
 
@@ -940,7 +940,7 @@ class TestSimulatedExchangeMarginAccount:
         self.strategy.modify_order(
             order,
             quantity=Quantity.from_int(1_500_000),
-            price=Price.from_str("90.000"),
+            price=_USDJPY_SIM.make_price(90.000),
         )
         self.exchange.process(0)
 
@@ -1004,7 +1004,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.000"),
+            _USDJPY_SIM.make_price(90.000),
         )
 
         # Act
@@ -1030,8 +1030,8 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.010"),
-            Price.from_str("90.000"),
+            _USDJPY_SIM.make_price(90.010),
+            _USDJPY_SIM.make_price(90.000),
         )
 
         # Act
@@ -1057,7 +1057,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.010"),
+            _USDJPY_SIM.make_price(90.010),
             post_only=False,  # <-- Can be liquidity TAKER
         )
 
@@ -1085,7 +1085,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.000"),  # <-- Limit price above the ask
+            _USDJPY_SIM.make_price(90.000),  # <-- Limit price above the ask
             post_only=False,  # <-- Can be liquidity TAKER
         )
 
@@ -1122,7 +1122,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(2_000_000),  # <-- Order volume greater than available ask volume
-            Price.from_str("90.010"),
+            _USDJPY_SIM.make_price(90.010),
             post_only=False,  # <-- Can be liquidity TAKER
         )
 
@@ -1148,7 +1148,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(10_000),  # <-- Order volume greater than available ask volume
-            Price.from_str("90.000"),
+            _USDJPY_SIM.make_price(90.000),
         )
 
         # Act
@@ -1582,7 +1582,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.010"),
+            _USDJPY_SIM.make_price(90.010),
         )
 
         self.strategy.submit_order(order)
@@ -1629,14 +1629,14 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.000"),
+            _USDJPY_SIM.make_price(90.000),
         )
 
         order2 = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.000"),
+            _USDJPY_SIM.make_price(90.000),
         )
 
         self.strategy.submit_order(order1)
@@ -1666,21 +1666,21 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.000"),
+            _USDJPY_SIM.make_price(90.000),
         )
 
         order2 = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.000"),
+            _USDJPY_SIM.make_price(90.000),
         )
 
         order3 = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
             OrderSide.SELL,
             Quantity.from_int(100_000),
-            Price.from_str("90.010"),
+            _USDJPY_SIM.make_price(90.010),
         )
 
         self.strategy.submit_order(order1)
@@ -1715,21 +1715,21 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.SELL,
             Quantity.from_int(100_000),
-            Price.from_str("90.010"),
+            _USDJPY_SIM.make_price(90.010),
         )
 
         order2 = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
             OrderSide.SELL,
             Quantity.from_int(100_000),
-            Price.from_str("90.010"),
+            _USDJPY_SIM.make_price(90.010),
         )
 
         order3 = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.000"),
+            _USDJPY_SIM.make_price(90.000),
         )
 
         self.strategy.submit_order(order1)
@@ -1764,28 +1764,28 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.SELL,
             Quantity.from_int(100_000),
-            Price.from_str("90.030"),
+            _USDJPY_SIM.make_price(90.030),
         )
 
         order2 = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
             OrderSide.SELL,
             Quantity.from_int(100_000),
-            Price.from_str("90.020"),
+            _USDJPY_SIM.make_price(90.020),
         )
 
         order3 = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
             OrderSide.SELL,
             Quantity.from_int(100_000),
-            Price.from_str("90.010"),
+            _USDJPY_SIM.make_price(90.010),
         )
 
         order4 = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
             OrderSide.SELL,
             Quantity.from_int(100_000),
-            Price.from_str("90.010"),
+            _USDJPY_SIM.make_price(90.010),
         )
 
         self.strategy.submit_order(order1)
@@ -1817,8 +1817,8 @@ class TestSimulatedExchangeMarginAccount:
             instrument_id=_USDJPY_SIM.id,
             client_order_id=ClientOrderId("O-123456"),
             venue_order_id=VenueOrderId("001"),
-            quantity=Quantity.from_int(100_000),
-            price=Price.from_str("110.000"),
+            quantity=_USDJPY_SIM.make_qty(100_000),
+            price=_USDJPY_SIM.make_price(110.000),
             trigger_price=None,
             command_id=UUID4(),
             ts_init=0,
@@ -1845,7 +1845,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.001"),
+            _USDJPY_SIM.make_price(90.001),
             post_only=True,  # default value
         )
 
@@ -1875,7 +1875,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.001"),
+            _USDJPY_SIM.make_price(90.001),
             post_only=True,  # default value
         )
 
@@ -1905,7 +1905,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.001"),
+            _USDJPY_SIM.make_price(90.001),
             post_only=False,  # Ensures marketable on amendment
         )
 
@@ -1927,8 +1927,8 @@ class TestSimulatedExchangeMarginAccount:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
-            bid_price=Price.from_str("90.002"),
-            ask_price=Price.from_str("90.005"),
+            bid_price=_USDJPY_SIM.make_price(90.002),
+            ask_price=_USDJPY_SIM.make_price(90.005),
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1937,7 +1937,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.010"),
+            _USDJPY_SIM.make_price(90.010),
         )
 
         self.strategy.submit_order(order)
@@ -1970,7 +1970,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.010"),
+            _USDJPY_SIM.make_price(90.010),
         )
 
         self.strategy.submit_order(order)
@@ -2073,7 +2073,7 @@ class TestSimulatedExchangeMarginAccount:
         self.strategy.modify_order(
             order,
             order.quantity,
-            Price.from_str("90.005"),
+            _USDJPY_SIM.make_price(90.005),
         )
         self.exchange.process(0)
 
@@ -2096,8 +2096,8 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            price=Price.from_str("90.000"),
-            trigger_price=Price.from_str("90.010"),
+            price=_USDJPY_SIM.make_price(90.000),
+            trigger_price=_USDJPY_SIM.make_price(90.010),
         )
 
         self.strategy.submit_order(order)
@@ -2107,7 +2107,7 @@ class TestSimulatedExchangeMarginAccount:
         self.strategy.modify_order(
             order,
             order.quantity,
-            Price.from_str("90.011"),
+            _USDJPY_SIM.make_price(90.011),
         )
         self.exchange.process(0)
 
@@ -2133,8 +2133,8 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            price=Price.from_str("90.000"),
-            trigger_price=Price.from_str("90.010"),
+            price=_USDJPY_SIM.make_price(90.000),
+            trigger_price=_USDJPY_SIM.make_price(90.010),
             post_only=True,
         )
 
@@ -2154,7 +2154,7 @@ class TestSimulatedExchangeMarginAccount:
         self.strategy.modify_order(
             order,
             order.quantity,
-            Price.from_str("90.010"),
+            _USDJPY_SIM.make_price(90.010),
         )
         self.exchange.process(0)
 
@@ -2180,8 +2180,8 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            price=Price.from_str("90.000"),
-            trigger_price=Price.from_str("90.010"),
+            price=_USDJPY_SIM.make_price(90.000),
+            trigger_price=_USDJPY_SIM.make_price(90.010),
             post_only=False,
         )
 
@@ -2198,11 +2198,7 @@ class TestSimulatedExchangeMarginAccount:
         self.exchange.process_quote_tick(tick2)
 
         # Act
-        self.strategy.modify_order(
-            order,
-            order.quantity,
-            Price.from_str("90.010"),
-        )
+        self.strategy.modify_order(order, order.quantity, _USDJPY_SIM.make_price(90.010))
         self.exchange.process(0)
 
         # Assert
@@ -2225,8 +2221,8 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            price=Price.from_str("90.000"),
-            trigger_price=Price.from_str("90.010"),
+            price=_USDJPY_SIM.make_price(90.000),
+            trigger_price=_USDJPY_SIM.make_price(90.010),
         )
 
         self.strategy.submit_order(order)
@@ -2245,7 +2241,7 @@ class TestSimulatedExchangeMarginAccount:
         self.strategy.modify_order(
             order,
             order.quantity,
-            Price.from_str("90.005"),
+            _USDJPY_SIM.make_price(90.005),
         )
         self.exchange.process(0)
 
@@ -2318,7 +2314,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("96.711"),
+            _USDJPY_SIM.make_price(96.711),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH + timedelta(minutes=1),
         )
@@ -2357,7 +2353,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("96.711"),
+            _USDJPY_SIM.make_price(96.711),
         )
 
         self.strategy.submit_order(order)
@@ -2394,8 +2390,8 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("96.500"),  # LimitPx
-            Price.from_str("96.710"),  # StopPx
+            _USDJPY_SIM.make_price(96.500),  # LimitPx
+            _USDJPY_SIM.make_price(96.710),  # StopPx
         )
 
         self.strategy.submit_order(order)
@@ -2885,7 +2881,7 @@ class TestSimulatedExchangeMarginAccount:
         entry = self.strategy.order_factory.limit(
             instrument_id=_USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            price=Price.from_int(100),
+            price=Price.from_str("100.000"),
             quantity=Quantity.from_int(200_000),
         )
 
@@ -2904,7 +2900,7 @@ class TestSimulatedExchangeMarginAccount:
         entry = self.strategy.order_factory.limit(
             instrument_id=_USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            price=Price.from_int(100),
+            price=Price.from_str("100.000"),
             quantity=Quantity.from_int(200_000),
         )
 
@@ -2924,8 +2920,8 @@ class TestSimulatedExchangeMarginAccount:
         entry = self.strategy.order_factory.limit(
             instrument_id=_USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            price=Price.from_int(100),
-            quantity=Quantity.from_int(200_000),
+            price=_USDJPY_SIM.make_price(100),
+            quantity=_USDJPY_SIM.make_qty(200_000),
         )
 
         # Act
@@ -2944,8 +2940,8 @@ class TestSimulatedExchangeMarginAccount:
         entry = self.strategy.order_factory.limit(
             instrument_id=_USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            price=Price.from_int(100),
-            quantity=Quantity.from_int(200_000),
+            price=_USDJPY_SIM.make_price(100),
+            quantity=_USDJPY_SIM.make_qty(200_000),
         )
 
         # Act
@@ -2954,7 +2950,7 @@ class TestSimulatedExchangeMarginAccount:
 
         # Assert
         assert entry.status == OrderStatus.ACCEPTED
-        assert entry.quantity == 200000
+        assert entry.quantity == 200_000
 
 
 class TestSimulatedExchangeL2:

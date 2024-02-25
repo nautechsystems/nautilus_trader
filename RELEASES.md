@@ -9,6 +9,7 @@ Released on TBD (UTC).
 - Added `InstrumentClass.OPTION_SPREAD`
 - Added `managed` parameter to `subscribe_order_book_deltas`, default true to retain current behavior (if false then the data engine will not automatically manage a book)
 - Added `managed` parameter to `subscribe_order_book_snapshots`, default true to retain current behavior (if false then the data engine will not automatically manage a book)
+- Added additional validations for `OrderMatchingEngine` (will now reject orders with incorrect price or quantity precisions)
 - Removed `interval_ms` 20 millisecond limitation for `subscribe_order_book_snapshots` (i.e. just needs to be positive), although we recommend you consider subscribing to deltas below 100 milliseconds
 - Ported `LiveClock` and `LiveTimer` implementations to Rust
 - Implemented `OrderBookDeltas` pickling

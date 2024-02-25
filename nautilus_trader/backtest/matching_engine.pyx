@@ -670,6 +670,42 @@ cdef class OrderMatchingEngine:
                             self._generate_order_rejected(order, f"Contingent order {client_order_id} already closed")
                             return  # Order rejected
 
+        # Check order quantity precision
+        if order.quantity._mem.precision != self.instrument.size_precision:
+            self._generate_order_rejected(
+                order,
+                f"Invalid size precision for order {order.client_order_id}, "
+                f"was {order.quantity.precision} "
+                f"when {self.instrument.id} size precision is {self.instrument.size_precision}"
+            )
+            return  # Invalid order
+
+        cdef Price price
+        if order.has_price_c():
+            # Check order price precision
+            price = order.price
+            if price._mem.precision != self.instrument.price_precision:
+                self._generate_order_rejected(
+                    order,
+                    f"Invalid price precision for order {order.client_order_id}, "
+                    f"was {price.precision} "
+                    f"when {self.instrument.id} price precision is {self.instrument.price_precision}"
+                )
+                return  # Invalid order
+
+        cdef Price trigger_price
+        if order.has_trigger_price_c():
+            # Check order trigger price precision
+            trigger_price = order.trigger_price
+            if trigger_price._mem.precision != self.instrument.price_precision:
+                self._generate_order_rejected(
+                    order,
+                    f"Invalid trigger price precision for order {order.client_order_id}, "
+                    f"was {trigger_price.precision} "
+                    f"when {self.instrument.id} price precision is {self.instrument.price_precision}"
+                )
+                return  # Invalid order
+
         cdef Position position = self.cache.position_for_order(order.client_order_id)
 
         # Check not shorting an equity without a MARGIN account
