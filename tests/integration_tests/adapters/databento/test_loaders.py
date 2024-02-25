@@ -581,11 +581,11 @@ def test_load_instruments() -> None:
     path = DATABENTO_TEST_DATA_DIR / "temp" / "glbx-mdp3-20240101.definition.dbn.zst"
 
     # Act
-    instruments = loader.from_dbn_file(path, as_legacy_cython=True)
+    instruments = loader.from_dbn_file(path, as_legacy_cython=False)
 
     # Assert
-    expected_id = nautilus_pyo3.InstrumentId.from_str("LNEV6 C12500.XCME")
-    assert len(instruments) == 491_037
+    expected_id = nautilus_pyo3.InstrumentId.from_str("A8IU5-A8IV5.XNYM")
+    assert len(instruments) == 586_156
     assert instruments[0].id == expected_id
 
 
