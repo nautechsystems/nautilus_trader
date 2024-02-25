@@ -26,8 +26,8 @@ use nautilus_model::{
     },
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
     instruments::{
-        equity::Equity, futures_contract::FuturesContract, options_contract::OptionsContract,
-        Instrument,
+        equity::Equity, futures_contract::FuturesContract, futures_spread::FuturesSpread,
+        options_contract::OptionsContract, options_spread::OptionsSpread, Instrument,
     },
 };
 use pyo3::{
@@ -382,8 +382,14 @@ pub fn convert_instrument_to_pyobject(
     if let Some(future) = any_ref.downcast_ref::<FuturesContract>() {
         return Ok(future.into_py(py));
     }
+    if let Some(spread) = any_ref.downcast_ref::<FuturesSpread>() {
+        return Ok(spread.into_py(py));
+    }
     if let Some(option) = any_ref.downcast_ref::<OptionsContract>() {
         return Ok(option.into_py(py));
+    }
+    if let Some(spread) = any_ref.downcast_ref::<OptionsSpread>() {
+        return Ok(spread.into_py(py));
     }
 
     Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
