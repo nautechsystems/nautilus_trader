@@ -258,6 +258,7 @@ class TestInstrumentClass:
         [
             ["SPOT", InstrumentClass.SPOT],
             ["SWAP", InstrumentClass.SWAP],
+            ["FUTURE", InstrumentClass.FUTURE],
             ["FUTURE_SPREAD", InstrumentClass.FUTURE_SPREAD],
             ["FORWARD", InstrumentClass.FORWARD],
             ["CFD", InstrumentClass.CFD],
