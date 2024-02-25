@@ -39,8 +39,8 @@ use nautilus_model::{
     },
     identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
     instruments::{
-        equity::Equity, futures_contract::FuturesContract, options_contract::OptionsContract,
-        Instrument,
+        equity::Equity, futures_contract::FuturesContract, futures_spread::FuturesSpread,
+        options_contract::OptionsContract, options_spread::OptionsSpread, Instrument,
     },
     types::{currency::Currency, fixed::FIXED_SCALAR, price::Price, quantity::Quantity},
 };
@@ -224,6 +224,39 @@ pub fn decode_futures_contract_v1(
     )
 }
 
+pub fn decode_futures_spread_v1(
+    msg: &dbn::compat::InstrumentDefMsgV1,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> Result<FuturesSpread> {
+    let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
+    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
+    let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
+    let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
+    let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+
+    FuturesSpread::new(
+        instrument_id,
+        instrument_id.symbol,
+        asset_class.unwrap_or(AssetClass::Commodity),
+        underlying,
+        strategy_type,
+        msg.activation,
+        msg.expiration,
+        currency,
+        currency.precision,
+        decode_min_price_increment(msg.min_price_increment, currency)?,
+        Quantity::new(1.0, 0)?, // TBD
+        Quantity::new(1.0, 0)?, // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        msg.ts_recv,            // More accurate and reliable timestamp
+        ts_init,
+    )
+}
+
 pub fn decode_options_contract_v1(
     msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
@@ -250,6 +283,46 @@ pub fn decode_options_contract_v1(
         msg.activation,
         msg.expiration,
         Price::from_raw(msg.strike_price, currency.precision)?,
+        currency,
+        currency.precision,
+        decode_min_price_increment(msg.min_price_increment, currency)?,
+        Quantity::new(1.0, 0)?, // TBD
+        Quantity::new(1.0, 0)?, // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        msg.ts_recv,            // More accurate and reliable timestamp
+        ts_init,
+    )
+}
+
+pub fn decode_options_spread_v1(
+    msg: &dbn::compat::InstrumentDefMsgV1,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> Result<OptionsSpread> {
+    let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
+    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
+    let asset_class_opt = match instrument_id.venue.value.as_str() {
+        "OPRA" => Some(AssetClass::Equity),
+        _ => {
+            let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+            asset_class
+        }
+    };
+    let underlying = unsafe { raw_ptr_to_ustr(msg.underlying.as_ptr())? };
+    let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
+    let currency = Currency::from_str(&currency_str)?;
+
+    OptionsSpread::new(
+        instrument_id,
+        instrument_id.symbol,
+        asset_class_opt.unwrap_or(AssetClass::Commodity),
+        underlying,
+        strategy_type,
+        msg.activation,
+        msg.expiration,
         currency,
         currency.precision,
         decode_min_price_increment(msg.min_price_increment, currency)?,
@@ -587,15 +660,23 @@ pub fn decode_instrument_def_msg_v1(
             instrument_id,
             ts_init,
         )?)),
+        'S' => Ok(Box::new(decode_futures_spread_v1(
+            msg,
+            instrument_id,
+            ts_init,
+        )?)),
         'C' | 'P' => Ok(Box::new(decode_options_contract_v1(
+            msg,
+            instrument_id,
+            ts_init,
+        )?)),
+        'T' => Ok(Box::new(decode_options_spread_v1(
             msg,
             instrument_id,
             ts_init,
         )?)),
         'B' => bail!("Unsupported `instrument_class` 'B' (BOND)"),
         'M' => bail!("Unsupported `instrument_class` 'M' (MIXEDSPREAD)"),
-        'S' => bail!("Unsupported `instrument_class` 'S' (FUTURESPREAD)"),
-        'T' => bail!("Unsupported `instrument_class` 'T' (OPTIONSPREAD)"),
         'X' => bail!("Unsupported `instrument_class` 'X' (FX_SPOT)"),
         _ => bail!(
             "Unsupported `instrument_class` '{}'",
@@ -616,15 +697,23 @@ pub fn decode_instrument_def_msg(
             instrument_id,
             ts_init,
         )?)),
+        'S' => Ok(Box::new(decode_futures_spread(
+            msg,
+            instrument_id,
+            ts_init,
+        )?)),
         'C' | 'P' => Ok(Box::new(decode_options_contract(
+            msg,
+            instrument_id,
+            ts_init,
+        )?)),
+        'T' => Ok(Box::new(decode_options_spread(
             msg,
             instrument_id,
             ts_init,
         )?)),
         'B' => bail!("Unsupported `instrument_class` 'B' (BOND)"),
         'M' => bail!("Unsupported `instrument_class` 'M' (MIXEDSPREAD)"),
-        'S' => bail!("Unsupported `instrument_class` 'S' (FUTURESPREAD)"),
-        'T' => bail!("Unsupported `instrument_class` 'T' (OPTIONSPREAD)"),
         'X' => bail!("Unsupported `instrument_class` 'X' (FX_SPOT)"),
         _ => bail!(
             "Unsupported `instrument_class` '{}'",
@@ -688,6 +777,39 @@ pub fn decode_futures_contract(
     )
 }
 
+pub fn decode_futures_spread(
+    msg: &dbn::InstrumentDefMsg,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> Result<FuturesSpread> {
+    let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
+    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
+    let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
+    let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
+    let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+
+    FuturesSpread::new(
+        instrument_id,
+        instrument_id.symbol,
+        asset_class.unwrap_or(AssetClass::Commodity),
+        underlying,
+        strategy_type,
+        msg.activation,
+        msg.expiration,
+        currency,
+        currency.precision,
+        decode_min_price_increment(msg.min_price_increment, currency)?,
+        Quantity::new(1.0, 0)?, // TBD
+        Quantity::new(1.0, 0)?, // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        msg.ts_recv,            // More accurate and reliable timestamp
+        ts_init,
+    )
+}
+
 pub fn decode_options_contract(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
@@ -714,6 +836,46 @@ pub fn decode_options_contract(
         msg.activation,
         msg.expiration,
         Price::from_raw(msg.strike_price, currency.precision)?,
+        currency,
+        currency.precision,
+        decode_min_price_increment(msg.min_price_increment, currency)?,
+        Quantity::new(1.0, 0)?, // TBD
+        Quantity::new(1.0, 0)?, // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        msg.ts_recv,            // More accurate and reliable timestamp
+        ts_init,
+    )
+}
+
+pub fn decode_options_spread(
+    msg: &dbn::InstrumentDefMsg,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> Result<OptionsSpread> {
+    let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
+    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
+    let asset_class_opt = match instrument_id.venue.value.as_str() {
+        "OPRA" => Some(AssetClass::Equity),
+        _ => {
+            let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+            asset_class
+        }
+    };
+    let underlying = unsafe { raw_ptr_to_ustr(msg.underlying.as_ptr())? };
+    let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
+    let currency = Currency::from_str(&currency_str)?;
+
+    OptionsSpread::new(
+        instrument_id,
+        instrument_id.symbol,
+        asset_class_opt.unwrap_or(AssetClass::Commodity),
+        underlying,
+        strategy_type,
+        msg.activation,
+        msg.expiration,
         currency,
         currency.precision,
         decode_min_price_increment(msg.min_price_increment, currency)?,
