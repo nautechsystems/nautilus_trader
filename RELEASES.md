@@ -1,6 +1,6 @@
 # NautilusTrader 1.188.0 Beta
 
-Released on TBD (UTC).
+Released on 25th February 2024 (UTC).
 
 ### Enhancements
 - Added `FuturesSpread` instrument type
