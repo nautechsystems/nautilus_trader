@@ -670,13 +670,12 @@ pub fn decode_instrument_def_msg_v1(
             instrument_id,
             ts_init,
         )?)),
-        'T' => Ok(Box::new(decode_options_spread_v1(
+        'T' | 'M' => Ok(Box::new(decode_options_spread_v1(
             msg,
             instrument_id,
             ts_init,
         )?)),
         'B' => bail!("Unsupported `instrument_class` 'B' (BOND)"),
-        'M' => bail!("Unsupported `instrument_class` 'M' (MIXEDSPREAD)"),
         'X' => bail!("Unsupported `instrument_class` 'X' (FX_SPOT)"),
         _ => bail!(
             "Unsupported `instrument_class` '{}'",
@@ -707,13 +706,12 @@ pub fn decode_instrument_def_msg(
             instrument_id,
             ts_init,
         )?)),
-        'T' => Ok(Box::new(decode_options_spread(
+        'T' | 'M' => Ok(Box::new(decode_options_spread(
             msg,
             instrument_id,
             ts_init,
         )?)),
         'B' => bail!("Unsupported `instrument_class` 'B' (BOND)"),
-        'M' => bail!("Unsupported `instrument_class` 'M' (MIXEDSPREAD)"),
         'X' => bail!("Unsupported `instrument_class` 'X' (FX_SPOT)"),
         _ => bail!(
             "Unsupported `instrument_class` '{}'",
