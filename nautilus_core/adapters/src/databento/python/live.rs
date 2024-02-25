@@ -16,8 +16,10 @@
 use std::{collections::HashMap, ffi::CStr, fs, str::FromStr, sync::Arc};
 
 use anyhow::{anyhow, bail, Result};
-use databento::dbn::{PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy};
-use databento::live::Subscription;
+use databento::{
+    dbn::{PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy},
+    live::Subscription,
+};
 use indexmap::IndexMap;
 use log::{error, info};
 use nautilus_core::{
