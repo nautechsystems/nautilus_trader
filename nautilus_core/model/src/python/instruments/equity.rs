@@ -25,7 +25,6 @@ use nautilus_core::{
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use ustr::Ustr;
 
-use crate::instruments::Instrument;
 use crate::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     instruments::equity::Equity,
@@ -69,11 +68,6 @@ impl Equity {
         .map_err(to_pyvalue_err)
     }
 
-    #[getter]
-    fn instrument_type(&self) -> &str {
-        "Equity"
-    }
-
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
             CompareOp::Eq => self.eq(other).into_py(py),
@@ -88,7 +82,26 @@ impl Equity {
     }
 
     #[getter]
-    fn isin(&self) -> Option<&str> {
+    #[pyo3(name = "instrument_type")]
+    fn py_instrument_type(&self) -> &str {
+        stringify!(Equity)
+    }
+
+    #[getter]
+    #[pyo3(name = "id")]
+    fn py_id(&self) -> InstrumentId {
+        self.id
+    }
+
+    #[getter]
+    #[pyo3(name = "raw_symbol")]
+    fn py_raw_symbol(&self) -> Symbol {
+        self.raw_symbol
+    }
+
+    #[getter]
+    #[pyo3(name = "isin")]
+    fn py_isin(&self) -> Option<&str> {
         match self.isin {
             Some(isin) => Some(isin.as_str()),
             None => None,
@@ -96,15 +109,63 @@ impl Equity {
     }
 
     #[getter]
-    #[pyo3(name = "quote_currency")]
+    #[pyo3(name = "quote_currency")] // TODO: Currency property standardization
     fn py_quote_currency(&self) -> Currency {
-        self.quote_currency()
+        self.currency
     }
 
     #[getter]
-    #[pyo3(name = "base_currency")]
-    fn py_base_currenct(&self) -> u8 {
+    #[pyo3(name = "price_precision")]
+    fn py_price_precision(&self) -> u8 {
         self.price_precision
+    }
+
+    #[getter]
+    #[pyo3(name = "price_increment")]
+    fn py_price_increment(&self) -> Price {
+        self.price_increment
+    }
+
+    #[getter]
+    #[pyo3(name = "lot_size")]
+    fn py_lot_size(&self) -> Option<Quantity> {
+        self.lot_size
+    }
+
+    #[getter]
+    #[pyo3(name = "max_quantity")]
+    fn py_max_quantity(&self) -> Option<Quantity> {
+        self.max_quantity
+    }
+
+    #[getter]
+    #[pyo3(name = "min_quantity")]
+    fn py_min_quantity(&self) -> Option<Quantity> {
+        self.min_quantity
+    }
+
+    #[getter]
+    #[pyo3(name = "max_price")]
+    fn py_max_price(&self) -> Option<Price> {
+        self.max_price
+    }
+
+    #[getter]
+    #[pyo3(name = "min_price")]
+    fn py_min_price(&self) -> Option<Price> {
+        self.min_price
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 
     #[staticmethod]

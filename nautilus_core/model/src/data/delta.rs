@@ -38,7 +38,7 @@ use crate::{
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct OrderBookDelta {
@@ -100,6 +100,7 @@ impl OrderBookDelta {
     }
 
     /// Returns the metadata for the type, for use with serialization formats.
+    #[must_use]
     pub fn get_metadata(
         instrument_id: &InstrumentId,
         price_precision: u8,
@@ -113,6 +114,7 @@ impl OrderBookDelta {
     }
 
     /// Returns the field map for the type, for use with Arrow schemas.
+    #[must_use]
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
         metadata.insert("action".to_string(), "UInt8".to_string());
@@ -208,7 +210,7 @@ impl Serializable for OrderBookDelta {}
 pub mod stubs {
     use rstest::fixture;
 
-    use super::*;
+    use super::{BookAction, BookOrder, OrderBookDelta, OrderSide};
     use crate::{
         identifiers::instrument_id::InstrumentId,
         types::{price::Price, quantity::Quantity},
@@ -221,7 +223,7 @@ pub mod stubs {
         let price = Price::from("100.00");
         let size = Quantity::from("10");
         let side = OrderSide::Buy;
-        let order_id = 123456;
+        let order_id = 123_456;
         let flags = 0;
         let sequence = 1;
         let ts_event = 1;
@@ -260,7 +262,7 @@ mod tests {
         let price = Price::from("100.00");
         let size = Quantity::from("10");
         let side = OrderSide::Buy;
-        let order_id = 123456;
+        let order_id = 123_456;
         let flags = 0;
         let sequence = 1;
         let ts_event = 1;
@@ -315,7 +317,7 @@ mod tests {
     fn test_display(stub_delta: OrderBookDelta) {
         let delta = stub_delta;
         assert_eq!(
-            format!("{}", delta),
+            format!("{delta}"),
             "AAPL.XNAS,ADD,100.00,10,BUY,123456,0,1,1,2".to_string()
         );
     }

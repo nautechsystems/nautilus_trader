@@ -94,12 +94,11 @@ impl fmt::Debug for MessageHandler {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
 pub struct EventHandler {
-    py_callback: Option<PyObject>,
+    pub py_callback: Option<PyObject>,
     _callback: Option<SafeTimeEventCallback>,
 }
 
 impl EventHandler {
-    // TODO: Validate exactly one of these is `Some`
     #[must_use]
     pub fn new(py_callback: Option<PyObject>, callback: Option<SafeTimeEventCallback>) -> Self {
         Self {

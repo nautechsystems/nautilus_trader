@@ -13,32 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::{HashMap, HashSet};
-use std::fmt::Display;
-use std::hash::{Hash, Hasher};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+    hash::{Hash, Hasher},
+};
 
 use anyhow::Result;
 use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::enums::{OrderSide, PositionSide};
-use crate::events::order::filled::OrderFilled;
-use crate::identifiers::account_id::AccountId;
-use crate::identifiers::client_order_id::ClientOrderId;
-use crate::identifiers::instrument_id::InstrumentId;
-use crate::identifiers::position_id::PositionId;
-use crate::identifiers::strategy_id::StrategyId;
-use crate::identifiers::symbol::Symbol;
-use crate::identifiers::trade_id::TradeId;
-use crate::identifiers::trader_id::TraderId;
-use crate::identifiers::venue::Venue;
-use crate::identifiers::venue_order_id::VenueOrderId;
-use crate::instruments::Instrument;
-use crate::types::currency::Currency;
-use crate::types::money::Money;
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
+use crate::{
+    enums::{OrderSide, PositionSide},
+    events::order::filled::OrderFilled,
+    identifiers::{
+        account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
+        position_id::PositionId, strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId,
+        trader_id::TraderId, venue::Venue, venue_order_id::VenueOrderId,
+    },
+    instruments::Instrument,
+    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+};
 
 /// Represents a position in a financial market.
 ///
@@ -525,26 +521,26 @@ impl Display for Position {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::enums::{LiquiditySide, OrderSide, OrderType, PositionSide};
-    use crate::events::order::filled::OrderFilled;
-    use crate::identifiers::account_id::AccountId;
-    use crate::identifiers::position_id::PositionId;
-    use crate::identifiers::strategy_id::StrategyId;
-    use crate::identifiers::stubs::uuid4;
-    use crate::identifiers::trade_id::TradeId;
-    use crate::identifiers::venue_order_id::VenueOrderId;
-    use crate::instruments::crypto_perpetual::CryptoPerpetual;
-    use crate::instruments::currency_pair::CurrencyPair;
-    use crate::instruments::stubs::*;
-    use crate::orders::market::MarketOrder;
-    use crate::orders::stubs::{TestOrderEventStubs, TestOrderStubs};
-    use crate::position::Position;
-    use crate::stubs::*;
-    use crate::types::money::Money;
-    use crate::types::price::Price;
-    use crate::types::quantity::Quantity;
-    use rstest::rstest;
     use std::str::FromStr;
+
+    use rstest::rstest;
+
+    use crate::{
+        enums::{LiquiditySide, OrderSide, OrderType, PositionSide},
+        events::order::filled::OrderFilled,
+        identifiers::{
+            account_id::AccountId, position_id::PositionId, strategy_id::StrategyId, stubs::uuid4,
+            trade_id::TradeId, venue_order_id::VenueOrderId,
+        },
+        instruments::{crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, stubs::*},
+        orders::{
+            market::MarketOrder,
+            stubs::{TestOrderEventStubs, TestOrderStubs},
+        },
+        position::Position,
+        stubs::*,
+        types::{money::Money, price::Price, quantity::Quantity},
+    };
 
     #[rstest]
     fn test_position_long_display(test_position_long: Position) {

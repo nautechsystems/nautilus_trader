@@ -43,8 +43,11 @@ from nautilus_trader.core.rust.model cimport symbol_hash
 from nautilus_trader.core.rust.model cimport symbol_new
 from nautilus_trader.core.rust.model cimport trade_id_hash
 from nautilus_trader.core.rust.model cimport trade_id_new
+from nautilus_trader.core.rust.model cimport trade_id_to_cstr
 from nautilus_trader.core.rust.model cimport trader_id_hash
 from nautilus_trader.core.rust.model cimport trader_id_new
+from nautilus_trader.core.rust.model cimport venue_code_exists
+from nautilus_trader.core.rust.model cimport venue_from_cstr_code
 from nautilus_trader.core.rust.model cimport venue_hash
 from nautilus_trader.core.rust.model cimport venue_is_synthetic
 from nautilus_trader.core.rust.model cimport venue_new
@@ -184,14 +187,23 @@ cdef class Venue(Identifier):
     def __hash__(self) -> int:
         return hash(self.to_str())
 
+    cdef str to_str(self):
+        return ustr_to_pystr(self._mem.value)
+
     @staticmethod
     cdef Venue from_mem_c(Venue_t mem):
         cdef Venue venue = Venue.__new__(Venue)
         venue._mem = mem
         return venue
 
-    cdef str to_str(self):
-        return ustr_to_pystr(self._mem.value)
+    @staticmethod
+    cdef Venue from_code_c(str code):
+        cdef const char* code_ptr = pystr_to_cstr(code)
+        if not venue_code_exists(code_ptr):
+            return None
+        cdef Venue venue = Venue.__new__(Venue)
+        venue._mem = venue_from_cstr_code(code_ptr)
+        return venue
 
     cpdef bint is_synthetic(self):
         """
@@ -203,6 +215,28 @@ cdef class Venue(Identifier):
 
         """
         return <bint>venue_is_synthetic(&self._mem)
+
+    @staticmethod
+    def from_code(str code):
+        """
+        Return the venue with the given `code` from the built-in internal map (if found).
+
+        Currency only supports CME Globex exchange ISO 10383 MIC codes.
+
+        Parameters
+        ----------
+        code : str
+            The code of the venue.
+
+        Returns
+        -------
+        Venue or ``None``
+
+        """
+        Condition.not_none(code, "code")
+
+        return Venue.from_code_c(code)
+
 
 
 cdef class InstrumentId(Identifier):
@@ -900,6 +934,7 @@ cdef class TradeId(Identifier):
     """
     Represents a valid trade match ID (assigned by a trading venue).
 
+    Maximum length is 36 characters.
     Can correspond to the `TradeID <1003> field` of the FIX protocol.
 
     The unique ID assigned to the trade entity once it is received or matched by
@@ -914,6 +949,8 @@ cdef class TradeId(Identifier):
     ------
     ValueError
         If `value` is not a valid string.
+    ValueError
+        If `value` length exceeds maximum 36 characters.
 
     References
     ----------
@@ -922,6 +959,9 @@ cdef class TradeId(Identifier):
 
     def __init__(self, str value not None) -> None:
         Condition.valid_string(value, "value")
+        if len(value) > 36:
+            Condition.in_range_int(len(value), 1, 36, "value")
+
         self._mem = trade_id_new(pystr_to_cstr(value))
 
     def __getstate__(self):
@@ -933,7 +973,7 @@ cdef class TradeId(Identifier):
     def __eq__(self, TradeId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return strcmp(self._mem.value, other._mem.value) == 0
+        return strcmp(trade_id_to_cstr(&self._mem), trade_id_to_cstr(&other._mem)) == 0
 
     def __hash__(self) -> int:
         return hash(self.to_str())
@@ -945,4 +985,4 @@ cdef class TradeId(Identifier):
         return trade_id
 
     cdef str to_str(self):
-        return ustr_to_pystr(self._mem.value)
+        return cstr_to_pystr(trade_id_to_cstr(&self._mem), False)

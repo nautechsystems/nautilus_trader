@@ -25,7 +25,6 @@ use indexmap::IndexMap;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde::{Deserialize, Serialize};
-use serde_json;
 use ustr::Ustr;
 
 use crate::{handlers::MessageHandler, redis::handle_messages_with_redis};
@@ -131,21 +130,6 @@ impl fmt::Display for BusMessage {
 /// For example, `c??p` would match both of the above examples and `coop`.
 #[derive(Clone)]
 pub struct MessageBus {
-    tx: Option<Sender<BusMessage>>,
-    /// mapping from topic to the corresponding handler
-    /// a topic can be a string with wildcards
-    /// * '?' - any character
-    /// * '*' - any number of any characters
-    subscriptions: IndexMap<Subscription, Vec<Ustr>>,
-    /// maps a pattern to all the handlers registered for it
-    /// this is updated whenever a new subscription is created.
-    patterns: IndexMap<Ustr, Vec<Subscription>>,
-    /// handles a message or a request destined for a specific endpoint.
-    endpoints: IndexMap<Ustr, MessageHandler>,
-    /// Relates a request with a response
-    /// a request maps it's id to a handler so that a response
-    /// with the same id can later be handled.
-    correlation_index: IndexMap<UUID4, MessageHandler>,
     /// The trader ID associated with the message bus.
     pub trader_id: TraderId,
     /// The instance ID associated with the message bus.
@@ -162,6 +146,21 @@ pub struct MessageBus {
     pub pub_count: u64,
     /// If the message bus is backed by a database.
     pub has_backing: bool,
+    tx: Option<Sender<BusMessage>>,
+    /// mapping from topic to the corresponding handler
+    /// a topic can be a string with wildcards
+    /// * '?' - any character
+    /// * '*' - any number of any characters
+    subscriptions: IndexMap<Subscription, Vec<Ustr>>,
+    /// maps a pattern to all the handlers registered for it
+    /// this is updated whenever a new subscription is created.
+    patterns: IndexMap<Ustr, Vec<Subscription>>,
+    /// handles a message or a request destined for a specific endpoint.
+    endpoints: IndexMap<Ustr, MessageHandler>,
+    /// Relates a request with a response
+    /// a request maps it's id to a handler so that a response
+    /// with the same id can later be handled.
+    correlation_index: IndexMap<UUID4, MessageHandler>,
 }
 
 impl MessageBus {

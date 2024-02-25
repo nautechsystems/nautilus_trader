@@ -16,26 +16,21 @@
 use std::collections::HashMap;
 
 use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::enums::{LiquiditySide, OrderSide};
-use nautilus_model::events::account::state::AccountState;
-use nautilus_model::events::order::filled::OrderFilled;
-use nautilus_model::identifiers::account_id::AccountId;
-use nautilus_model::instruments::crypto_future::CryptoFuture;
-use nautilus_model::instruments::crypto_perpetual::CryptoPerpetual;
-use nautilus_model::instruments::currency_pair::CurrencyPair;
-use nautilus_model::instruments::equity::Equity;
-use nautilus_model::instruments::futures_contract::FuturesContract;
-use nautilus_model::instruments::options_contract::OptionsContract;
-use nautilus_model::position::Position;
-use nautilus_model::types::currency::Currency;
-use nautilus_model::types::money::Money;
-use nautilus_model::types::price::Price;
-use nautilus_model::types::quantity::Quantity;
-use pyo3::basic::CompareOp;
-use pyo3::prelude::*;
+use nautilus_model::{
+    enums::{LiquiditySide, OrderSide},
+    events::{account::state::AccountState, order::filled::OrderFilled},
+    identifiers::account_id::AccountId,
+    instruments::{
+        crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
+        currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
+        options_contract::OptionsContract,
+    },
+    position::Position,
+    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+};
+use pyo3::{basic::CompareOp, prelude::*};
 
-use crate::account::cash::CashAccount;
-use crate::account::Account;
+use crate::account::{cash::CashAccount, Account};
 
 #[pymethods]
 impl CashAccount {

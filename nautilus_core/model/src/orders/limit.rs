@@ -327,16 +327,18 @@ impl Order for LimitOrder {
         self.core.apply(event)?;
 
         if is_order_filled {
-            self.core.set_slippage(self.price)
+            self.core.set_slippage(self.price);
         };
 
         Ok(())
     }
 
     fn update(&mut self, event: &OrderUpdated) {
-        if event.trigger_price.is_some() {
-            panic!("{}", OrderError::InvalidOrderEvent);
-        }
+        assert!(
+            event.trigger_price.is_none(),
+            "{}",
+            OrderError::InvalidOrderEvent
+        );
 
         if let Some(price) = event.price {
             self.price = price;
@@ -349,7 +351,7 @@ impl Order for LimitOrder {
 
 impl From<OrderInitialized> for LimitOrder {
     fn from(event: OrderInitialized) -> Self {
-        LimitOrder::new(
+        Self::new(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,

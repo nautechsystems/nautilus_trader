@@ -22,6 +22,7 @@ from nautilus_trader.core.nautilus_pyo3 import BookAction
 from nautilus_trader.core.nautilus_pyo3 import BookOrder
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 from nautilus_trader.core.nautilus_pyo3 import OrderBookDelta
+from nautilus_trader.core.nautilus_pyo3 import OrderBookDepth10
 from nautilus_trader.core.nautilus_pyo3 import OrderSide
 from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import PriceType
@@ -58,24 +59,65 @@ class TestDataProviderPyo3:
     @staticmethod
     def order_book_depth10(
         instrument_id: InstrumentId | None = None,
-        price: float = 100.0,
-        size: float = 10,
+        flags: int = 0,
+        sequence: int = 0,
         ts_event: int = 0,
         ts_init: int = 0,
-    ) -> OrderBookDelta:
-        return OrderBookDelta(
-            instrument_id=instrument_id or TestIdProviderPyo3.ethusdt_binance_id(),
-            action=BookAction.ADD,
-            order=BookOrder(
-                side=OrderSide.BUY,
-                price=Price.from_str(str(price)),
-                size=Quantity.from_str(str(size)),
-                order_id=0,
-            ),
-            flags=0,
-            sequence=0,
-            ts_init=ts_init,
+    ) -> OrderBookDepth10:
+        bids: list[BookOrder] = []
+        asks: list[BookOrder] = []
+
+        # Create bids
+        price = 99.00
+        quantity = 100.0
+        order_id = 1
+
+        for _ in range(10):
+            order = BookOrder(
+                OrderSide.BUY,
+                Price(price, 2),
+                Quantity(quantity, 0),
+                order_id,
+            )
+
+            bids.append(order)
+
+            price -= 1.0
+            quantity += 100.0
+            order_id += 1
+
+        # Create asks
+        price = 100.00
+        quantity = 100.0
+        order_id = 11
+
+        for _ in range(10):
+            order = BookOrder(
+                OrderSide.SELL,
+                Price(price, 2),
+                Quantity(quantity, 0),
+                order_id,
+            )
+
+            asks.append(order)
+
+            price += 1.0
+            quantity += 100.0
+            order_id += 1
+
+        bid_counts = [1] * 10
+        ask_counts = [1] * 10
+
+        return OrderBookDepth10(
+            instrument_id=instrument_id or TestIdProviderPyo3.aapl_xnas_id(),
+            bids=bids,
+            asks=asks,
+            bid_counts=bid_counts,
+            ask_counts=ask_counts,
+            flags=flags,
+            sequence=sequence,
             ts_event=ts_event,
+            ts_init=ts_init,
         )
 
     @staticmethod

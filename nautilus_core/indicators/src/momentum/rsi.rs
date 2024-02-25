@@ -36,12 +36,12 @@ pub struct RelativeStrengthIndex {
     pub ma_type: MovingAverageType,
     pub value: f64,
     pub count: usize,
-    pub is_initialized: bool,
-    _has_inputs: bool,
-    _last_value: f64,
-    _average_gain: Box<dyn MovingAverage + Send + 'static>,
-    _average_loss: Box<dyn MovingAverage + Send + 'static>,
-    _rsi_max: f64,
+    pub initialized: bool,
+    has_inputs: bool,
+    last_value: f64,
+    average_gain: Box<dyn MovingAverage + Send + 'static>,
+    average_loss: Box<dyn MovingAverage + Send + 'static>,
+    rsi_max: f64,
 }
 
 impl Display for RelativeStrengthIndex {
@@ -56,19 +56,19 @@ impl Indicator for RelativeStrengthIndex {
     }
 
     fn has_inputs(&self) -> bool {
-        self._has_inputs
+        self.has_inputs
     }
 
-    fn is_initialized(&self) -> bool {
-        self.is_initialized
+    fn initialized(&self) -> bool {
+        self.initialized
     }
 
-    fn handle_quote_tick(&mut self, tick: &QuoteTick) {
-        self.update_raw(tick.extract_price(PriceType::Mid).into());
+    fn handle_quote_tick(&mut self, quote: &QuoteTick) {
+        self.update_raw(quote.extract_price(PriceType::Mid).into());
     }
 
-    fn handle_trade_tick(&mut self, tick: &TradeTick) {
-        self.update_raw((tick.price).into());
+    fn handle_trade_tick(&mut self, trade: &TradeTick) {
+        self.update_raw((trade.price).into());
     }
 
     fn handle_bar(&mut self, bar: &Bar) {
@@ -77,10 +77,10 @@ impl Indicator for RelativeStrengthIndex {
 
     fn reset(&mut self) {
         self.value = 0.0;
-        self._last_value = 0.0;
+        self.last_value = 0.0;
         self.count = 0;
-        self._has_inputs = false;
-        self.is_initialized = false;
+        self.has_inputs = false;
+        self.initialized = false;
     }
 }
 
@@ -90,53 +90,50 @@ impl RelativeStrengthIndex {
             period,
             ma_type: ma_type.unwrap_or(MovingAverageType::Exponential),
             value: 0.0,
-            _last_value: 0.0,
+            last_value: 0.0,
             count: 0,
             // inputs: Vec::new(),
-            _has_inputs: false,
-            _average_gain: MovingAverageFactory::create(MovingAverageType::Exponential, period),
-            _average_loss: MovingAverageFactory::create(MovingAverageType::Exponential, period),
-            _rsi_max: 1.0,
-            is_initialized: false,
+            has_inputs: false,
+            average_gain: MovingAverageFactory::create(MovingAverageType::Exponential, period),
+            average_loss: MovingAverageFactory::create(MovingAverageType::Exponential, period),
+            rsi_max: 1.0,
+            initialized: false,
         })
     }
 
     pub fn update_raw(&mut self, value: f64) {
-        if !self._has_inputs {
-            self._last_value = value;
-            self._has_inputs = true;
+        if !self.has_inputs {
+            self.last_value = value;
+            self.has_inputs = true;
         }
-        let gain = value - self._last_value;
+        let gain = value - self.last_value;
         if gain > 0.0 {
-            self._average_gain.update_raw(gain);
-            self._average_loss.update_raw(0.0);
+            self.average_gain.update_raw(gain);
+            self.average_loss.update_raw(0.0);
         } else if gain < 0.0 {
-            self._average_loss.update_raw(-gain);
-            self._average_gain.update_raw(0.0);
+            self.average_loss.update_raw(-gain);
+            self.average_gain.update_raw(0.0);
         } else {
-            self._average_loss.update_raw(0.0);
-            self._average_gain.update_raw(0.0);
+            self.average_loss.update_raw(0.0);
+            self.average_gain.update_raw(0.0);
         }
         // init count from average gain MA
-        self.count = self._average_gain.count();
-        if !self.is_initialized
-            && self._average_loss.is_initialized()
-            && self._average_gain.is_initialized()
-        {
-            self.is_initialized = true;
+        self.count = self.average_gain.count();
+        if !self.initialized && self.average_loss.initialized() && self.average_gain.initialized() {
+            self.initialized = true;
         }
 
-        if self._average_loss.value() == 0.0 {
-            self.value = self._rsi_max;
+        if self.average_loss.value() == 0.0 {
+            self.value = self.rsi_max;
             return;
         }
 
-        let rs = self._average_gain.value() / self._average_loss.value();
-        self.value = self._rsi_max - (self._rsi_max / (1.0 + rs));
-        self._last_value = value;
+        let rs = self.average_gain.value() / self.average_loss.value();
+        self.value = self.rsi_max - (self.rsi_max / (1.0 + rs));
+        self.last_value = value;
 
-        if !self.is_initialized && self.count >= self.period {
-            self.is_initialized = true;
+        if !self.initialized && self.count >= self.period {
+            self.initialized = true;
         }
     }
 }
@@ -156,7 +153,7 @@ mod tests {
         let display_str = format!("{rsi_10}");
         assert_eq!(display_str, "RelativeStrengthIndex(10,EXPONENTIAL)");
         assert_eq!(rsi_10.period, 10);
-        assert!(!rsi_10.is_initialized);
+        assert!(!rsi_10.initialized);
     }
 
     #[rstest]
@@ -164,7 +161,7 @@ mod tests {
         for i in 0..12 {
             rsi_10.update_raw(f64::from(i));
         }
-        assert!(rsi_10.is_initialized);
+        assert!(rsi_10.initialized);
     }
 
     #[rstest]
@@ -220,7 +217,7 @@ mod tests {
         rsi_10.update_raw(1.0);
         rsi_10.update_raw(2.0);
         rsi_10.reset();
-        assert!(!rsi_10.is_initialized());
+        assert!(!rsi_10.initialized());
         assert_eq!(rsi_10.count, 0);
     }
 

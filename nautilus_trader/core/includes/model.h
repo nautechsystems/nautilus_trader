@@ -224,29 +224,37 @@ typedef enum InstrumentClass {
      */
     FUTURE = 3,
     /**
+     * A futures spread instrument class. A strategy involving the use of futures contracts to take advantage of price differentials between different contract months, underlying assets, or marketplaces.
+     */
+    FUTURE_SPREAD = 4,
+    /**
      * A forward derivative instrument class. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
      */
-    FORWARD = 4,
+    FORWARD = 5,
     /**
      * A contract-for-difference (CFD) instrument class. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
      */
-    CFD = 5,
+    CFD = 6,
     /**
      * A bond instrument class. A type of debt investment where an investor loans money to an entity (typically corporate or governmental) which borrows the funds for a defined period of time at a variable or fixed interest rate.
      */
-    BOND = 6,
+    BOND = 7,
     /**
      * An options contract instrument class. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
      */
-    OPTION = 7,
+    OPTION = 8,
+    /**
+     * An option spread instrument class. A strategy involving the purchase and/or sale of options on the same underlying asset with different strike prices or expiration dates to capitalize on expected market moves in a controlled cost environment.
+     */
+    OPTION_SPREAD = 9,
     /**
      * A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
      */
-    WARRANT = 8,
+    WARRANT = 10,
     /**
      * A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
      */
-    SPORTS_BETTING = 9,
+    SPORTS_BETTING = 11,
 } InstrumentClass;
 
 /**
@@ -658,12 +666,22 @@ typedef enum TriggerType {
     INDEX_PRICE = 9,
 } TriggerType;
 
+/**
+ * Represents a discrete price level in an order book.
+ *
+ * The level maintains a collection of orders as well as tracking insertion order
+ * to preserve FIFO queue dynamics.
+ */
 typedef struct Level Level;
 
+typedef struct OrderBookContainer OrderBookContainer;
+
 /**
- * Provides an order book which can handle L1/L2/L3 granularity data.
+ * Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
+ *
+ * This type cannot be `repr(C)` due to the `deltas` vec.
  */
-typedef struct OrderBook OrderBook;
+typedef struct OrderBookDeltas_t OrderBookDeltas_t;
 
 /**
  * Represents a synthetic instrument with prices derived from component instruments using a
@@ -774,6 +792,20 @@ typedef struct OrderBookDelta_t {
 } OrderBookDelta_t;
 
 /**
+ * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
+ *
+ * This struct wraps `OrderBookDeltas` in a way that makes it compatible with C function
+ * calls, enabling interaction with `OrderBookDeltas` in a C environment.
+ *
+ * It implements the `Deref` trait, allowing instances of `OrderBookDeltas_API` to be
+ * dereferenced to `OrderBookDeltas`, providing access to `OrderBookDeltas`'s methods without
+ * having to manually access the underlying `OrderBookDeltas` instance.
+ */
+typedef struct OrderBookDeltas_API {
+    struct OrderBookDeltas_t *_0;
+} OrderBookDeltas_API;
+
+/**
  * Represents a self-contained order book update with a fixed depth of 10 levels per side.
  *
  * This struct is specifically designed for scenarios where a snapshot of the top 10 bid and
@@ -860,6 +892,7 @@ typedef struct QuoteTick_t {
 /**
  * Represents a valid trade match ID (assigned by a trading venue).
  *
+ * Maximum length is 36 characters.
  * Can correspond to the `TradeID <1003> field` of the FIX protocol.
  *
  * The unique ID assigned to the trade entity once it is received or matched by
@@ -867,9 +900,9 @@ typedef struct QuoteTick_t {
  */
 typedef struct TradeId_t {
     /**
-     * The trade match ID value.
+     * The trade match ID C string value as a fixed-length byte array.
      */
-    char* value;
+    uint8_t value[37];
 } TradeId_t;
 
 /**
@@ -984,6 +1017,7 @@ typedef struct Bar_t {
 
 typedef enum Data_t_Tag {
     DELTA,
+    DELTAS,
     DEPTH10,
     QUOTE,
     TRADE,
@@ -995,6 +1029,9 @@ typedef struct Data_t {
     union {
         struct {
             struct OrderBookDelta_t delta;
+        };
+        struct {
+            struct OrderBookDeltas_API deltas;
         };
         struct {
             struct OrderBookDepth10_t depth10;
@@ -1229,7 +1266,7 @@ typedef struct SyntheticInstrument_API {
  * having to manually access the underlying `OrderBook` instance.
  */
 typedef struct OrderBook_API {
-    struct OrderBook *_0;
+    struct OrderBookContainer *_0;
 } OrderBook_API;
 
 /**
@@ -1375,6 +1412,37 @@ struct OrderBookDelta_t orderbook_delta_new(struct InstrumentId_t instrument_id,
 uint8_t orderbook_delta_eq(const struct OrderBookDelta_t *lhs, const struct OrderBookDelta_t *rhs);
 
 uint64_t orderbook_delta_hash(const struct OrderBookDelta_t *delta);
+
+/**
+ * Creates a new `OrderBookDeltas` object from a `CVec` of `OrderBookDelta`.
+ *
+ * # Safety
+ * - The `deltas` must be a valid pointer to a `CVec` containing `OrderBookDelta` objects
+ * - This function clones the data pointed to by `deltas` into Rust-managed memory, then forgets the original `Vec` to prevent Rust from auto-deallocating it
+ * - The caller is responsible for managing the memory of `deltas` (including its deallocation) to avoid memory leaks
+ */
+struct OrderBookDeltas_API orderbook_deltas_new(struct InstrumentId_t instrument_id,
+                                                const CVec *deltas);
+
+void orderbook_deltas_drop(struct OrderBookDeltas_API deltas);
+
+struct OrderBookDeltas_API orderbook_deltas_clone(const struct OrderBookDeltas_API *deltas);
+
+struct InstrumentId_t orderbook_deltas_instrument_id(const struct OrderBookDeltas_API *deltas);
+
+CVec orderbook_deltas_vec_deltas(const struct OrderBookDeltas_API *deltas);
+
+uint8_t orderbook_deltas_is_snapshot(const struct OrderBookDeltas_API *deltas);
+
+uint8_t orderbook_deltas_flags(const struct OrderBookDeltas_API *deltas);
+
+uint64_t orderbook_deltas_sequence(const struct OrderBookDeltas_API *deltas);
+
+uint64_t orderbook_deltas_ts_event(const struct OrderBookDeltas_API *deltas);
+
+uint64_t orderbook_deltas_ts_init(const struct OrderBookDeltas_API *deltas);
+
+void orderbook_deltas_vec_drop(CVec v);
 
 /**
  * # Safety
@@ -1954,6 +2022,8 @@ struct TradeId_t trade_id_new(const char *ptr);
 
 uint64_t trade_id_hash(const struct TradeId_t *id);
 
+const char *trade_id_to_cstr(const struct TradeId_t *trade_id);
+
 /**
  * Returns a Nautilus identifier from a C string pointer.
  *
@@ -1977,6 +2047,20 @@ struct Venue_t venue_new(const char *ptr);
 uint64_t venue_hash(const struct Venue_t *id);
 
 uint8_t venue_is_synthetic(const struct Venue_t *venue);
+
+/**
+ * # Safety
+ *
+ * - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+uint8_t venue_code_exists(const char *code_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+struct Venue_t venue_from_cstr_code(const char *code_ptr);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -2077,6 +2161,8 @@ void orderbook_clear_bids(struct OrderBook_API *book, uint64_t ts_event, uint64_
 void orderbook_clear_asks(struct OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
 
 void orderbook_apply_delta(struct OrderBook_API *book, struct OrderBookDelta_t delta);
+
+void orderbook_apply_deltas(struct OrderBook_API *book, const struct OrderBookDeltas_API *deltas);
 
 void orderbook_apply_depth(struct OrderBook_API *book, struct OrderBookDepth10_t depth);
 

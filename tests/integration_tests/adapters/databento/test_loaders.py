@@ -68,7 +68,7 @@ def test_loader_definition_glbx_futures() -> None:
     assert isinstance(data[0], FuturesContract)
     assert isinstance(data[1], FuturesContract)
     instrument = data[0]
-    assert instrument.id == InstrumentId.from_str("ESM3.GLBX")
+    assert instrument.id == InstrumentId.from_str("ESM3.XCME")
     assert instrument.raw_symbol == Symbol("ESM3")
     assert instrument.asset_class == AssetClass.INDEX
     assert instrument.instrument_class == InstrumentClass.FUTURE
@@ -129,7 +129,7 @@ def test_loader_definition_glbx_options() -> None:
     assert isinstance(data[0], OptionsContract)
     assert isinstance(data[1], OptionsContract)
     instrument = data[0]
-    assert instrument.id == InstrumentId.from_str("ESM4 C4250.GLBX")
+    assert instrument.id == InstrumentId.from_str("ESM4 C4250.XCME")
     assert instrument.raw_symbol == Symbol("ESM4 C4250")
     assert instrument.asset_class == AssetClass.COMMODITY  # <-- TODO: This should be EQUITY
     assert instrument.instrument_class == InstrumentClass.OPTION
@@ -209,7 +209,7 @@ def test_loader_with_xnasitch_definition() -> None:
     assert instrument.ts_init == 1633331241618029519
 
 
-def test_loader_with_xnasitch_mbo() -> None:
+def test_loader_with_mbo() -> None:
     # Arrange
     loader = DatabentoDataLoader()
     path = DATABENTO_TEST_DATA_DIR / "mbo.dbn.zst"
@@ -342,6 +342,20 @@ def test_loader_with_trades() -> None:
     assert trade.trade_id == TradeId("1170380")
     assert trade.ts_event == 1609160400099150057
     assert trade.ts_init == 1609160400099150057
+
+
+@pytest.mark.skip("development_only")
+def test_loader_with_trades_large() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "temp" / "tsla-xnas-20240107-20240206.trades.dbn.zst"
+    instrument_id = InstrumentId.from_str("TSLA.XNAS")
+
+    # Act
+    data = loader.from_dbn_file(path, instrument_id=instrument_id, as_legacy_cython=True)
+
+    # Assert
+    assert len(data) == 6_885_435
 
 
 def test_loader_with_ohlcv_1s() -> None:
@@ -567,11 +581,11 @@ def test_load_instruments() -> None:
     path = DATABENTO_TEST_DATA_DIR / "temp" / "glbx-mdp3-20240101.definition.dbn.zst"
 
     # Act
-    instruments = loader.from_dbn_file(path, as_legacy_cython=True)
+    instruments = loader.from_dbn_file(path, as_legacy_cython=False)
 
     # Assert
-    expected_id = nautilus_pyo3.InstrumentId.from_str("LNEV6 C12500.GLBX")
-    assert len(instruments) == 491_037
+    expected_id = nautilus_pyo3.InstrumentId.from_str("A8IU5-A8IV5.XNYM")
+    assert len(instruments) == 586_156
     assert instruments[0].id == expected_id
 
 
@@ -579,7 +593,7 @@ def test_load_instruments() -> None:
 def test_load_order_book_deltas_pyo3_spy_large() -> None:
     loader = DatabentoDataLoader()
     path = DATABENTO_TEST_DATA_DIR / "temp" / "spy-xnas-itch-20231127.mbo.dbn.zst"
-    instrument_id = InstrumentId.from_str("ESH1.GLBX")
+    instrument_id = InstrumentId.from_str("SPY.XNAS")
 
     # Act
     data = loader.from_dbn_file(path, instrument_id, as_legacy_cython=True)

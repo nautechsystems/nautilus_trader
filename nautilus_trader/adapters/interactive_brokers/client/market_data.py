@@ -78,7 +78,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
     async def _subscribe(
         self,
         name: str | tuple,
-        subscription_method: Callable,
+        subscription_method: Callable | functools.partial,
         cancellation_method: Callable,
         *args: Any,
         **kwargs: Any,
@@ -274,10 +274,10 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             name,
             self.subscribe_historical_bars,
             self._eclient.cancelHistoricalData,
-            bar_type,
-            contract,
-            use_rth,
-            handle_revised_bars,
+            bar_type=bar_type,
+            contract=contract,
+            use_rth=use_rth,
+            handle_revised_bars=handle_revised_bars,
         )
         if not subscription:
             return
@@ -815,10 +815,12 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         self.logAnswer(current_fn_name(), vars())
         if not (subscription := self._subscriptions.get(req_id=req_id)):
             return
+        if not isinstance(subscription.handle, functools.partial):
+            raise TypeError(f"Expecting partial type subscription method. {subscription=}")
         if bar := self._process_bar_data(
             bar_type_str=str(subscription.name),
             bar=bar,
-            handle_revised_bars=subscription.handle().keywords.get("handle_revised_bars", False),
+            handle_revised_bars=subscription.handle.keywords.get("handle_revised_bars", False),
         ):
             if bar.is_single_price() and bar.open.as_double() == 0:
                 self._log.debug(f"Ignoring Zero priced {bar=}")

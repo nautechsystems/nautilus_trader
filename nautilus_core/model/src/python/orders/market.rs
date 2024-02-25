@@ -20,12 +20,10 @@ use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-use crate::enums::OrderType;
-use crate::identifiers::account_id::AccountId;
 use crate::{
-    enums::{ContingencyType, OrderSide, PositionSide, TimeInForce},
+    enums::{ContingencyType, OrderSide, OrderType, PositionSide, TimeInForce},
     identifiers::{
-        client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
+        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
         trader_id::TraderId,
     },
@@ -82,7 +80,7 @@ impl MarketOrder {
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<String>,
     ) -> PyResult<Self> {
-        MarketOrder::new(
+        Self::new(
             trader_id,
             strategy_id,
             instrument_id,

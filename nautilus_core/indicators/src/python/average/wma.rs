@@ -36,6 +36,10 @@ impl WeightedMovingAverage {
         Self::new(period, weights, price_type).map_err(to_pyvalue_err)
     }
 
+    fn __repr__(&self) -> String {
+        format!("WeightedMovingAverage({},{:?})", self.period, self.weights)
+    }
+
     #[getter]
     #[pyo3(name = "name")]
     fn py_name(&self) -> String {
@@ -63,7 +67,7 @@ impl WeightedMovingAverage {
     #[getter]
     #[pyo3(name = "initialized")]
     fn py_initialized(&self) -> bool {
-        self.is_initialized
+        self.initialized
     }
 
     #[pyo3(name = "handle_quote_tick")]
@@ -89,9 +93,5 @@ impl WeightedMovingAverage {
     #[pyo3(name = "update_raw")]
     fn py_update_raw(&mut self, value: f64) {
         self.update_raw(value);
-    }
-
-    fn __repr__(&self) -> String {
-        format!("WeightedMovingAverage({},{:?})", self.period, self.weights)
     }
 }

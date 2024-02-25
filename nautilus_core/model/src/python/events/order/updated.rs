@@ -84,19 +84,11 @@ impl OrderUpdated {
             self.strategy_id,
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id
-                .map(|venue_order_id| format!("{}", venue_order_id))
-                .unwrap_or_else(|| "None".to_string()),
-            self.account_id
-                .map(|account_id| format!("{}", account_id))
-                .unwrap_or_else(|| "None".to_string()),
+            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}")),
+            self.account_id.map_or_else(|| "None".to_string(), |account_id| format!("{account_id}")),
             self.quantity,
-            self.price
-                .map(|price| format!("{}", price))
-                .unwrap_or_else(|| "None".to_string()),
-            self.trigger_price
-                .map(|trigger_price| format!("{}", trigger_price))
-                .unwrap_or_else(|| "None".to_string()),
+            self.price.map_or_else(|| "None".to_string(), |price| format!("{price}")),
+            self.trigger_price.map_or_else(|| "None".to_string(), |trigger_price| format!("{trigger_price}")),
             self.event_id,
             self.ts_event,
             self.ts_init
@@ -109,19 +101,11 @@ impl OrderUpdated {
             stringify!(OrderUpdated),
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id
-                .map(|venue_order_id| format!("{}", venue_order_id))
-                .unwrap_or_else(|| "None".to_string()),
-            self.account_id
-                .map(|account_id| format!("{}", account_id))
-                .unwrap_or_else(|| "None".to_string()),
+            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}")),
+            self.account_id.map_or_else(|| "None".to_string(), |account_id| format!("{account_id}")),
             self.quantity,
-            self.price
-                .map(|price| format!("{}", price))
-                .unwrap_or_else(|| "None".to_string()),
-            self.trigger_price
-                .map(|trigger_price| format!("{}", trigger_price))
-                .unwrap_or_else(|| "None".to_string()),
+            self.price.map_or_else(|| "None".to_string(), |price| format!("{price}")),
+            self.trigger_price.map_or_else(|| "None".to_string(), |trigger_price| format!("{trigger_price}")),
             self.ts_event,
         )
     }

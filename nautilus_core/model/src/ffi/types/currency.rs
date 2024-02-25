@@ -126,7 +126,7 @@ mod tests {
     fn test_currency_to_cstr() {
         let currency = Currency::USD();
         let cstr = unsafe { CStr::from_ptr(currency_to_cstr(&currency)) };
-        let expected_output = format!("{:?}", currency);
+        let expected_output = format!("{currency:?}");
         assert_eq!(cstr.to_str().unwrap(), expected_output);
     }
 

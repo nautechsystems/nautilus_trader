@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import asyncio
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -21,6 +20,8 @@ from unittest.mock import Mock
 from unittest.mock import patch
 
 import pytest
+
+from nautilus_trader.test_kit.functions import eventually
 
 
 def test_start(ib_client):
@@ -196,10 +197,9 @@ async def test_run_tws_incoming_msg_reader(ib_client):
         ib_client._tws_incoming_msg_reader_task = ib_client._create_task(
             ib_client._run_tws_incoming_msg_reader(),
         )
-        await asyncio.sleep(0.1)
+        await eventually(lambda: ib_client._internal_msg_queue.qsize() == len(test_messages))
 
     # Assert
-    assert ib_client._internal_msg_queue.qsize() == len(test_messages)
     for msg in test_messages:
         assert await ib_client._internal_msg_queue.get() == msg
 
@@ -216,8 +216,7 @@ async def test_run_internal_msg_queue(ib_client):
     ib_client._internal_msg_queue_task = ib_client._create_task(
         ib_client._run_internal_msg_queue(),
     )
-    await asyncio.sleep(0.1)
 
     # Assert
-    assert ib_client._process_message.call_count == len(test_messages)
+    await eventually(lambda: ib_client._process_message.call_count == len(test_messages))
     assert ib_client._internal_msg_queue.qsize() == 0

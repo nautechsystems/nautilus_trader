@@ -17,10 +17,7 @@ use std::{collections::HashMap, sync::Arc, vec::IntoIter};
 
 use compare::Compare;
 use datafusion::{
-    error::Result,
-    logical_expr::{col, expr::Sort},
-    physical_plan::SendableRecordBatchStream,
-    prelude::*,
+    error::Result, logical_expr::expr::Sort, physical_plan::SendableRecordBatchStream, prelude::*,
 };
 use futures::StreamExt;
 use nautilus_core::ffi::cvec::CVec;
@@ -61,10 +58,10 @@ pub type QueryResult = KMerge<EagerStream<std::vec::IntoIter<Data>>, Data, TsIni
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.persistence")
 )]
 pub struct DataBackendSession {
-    session_ctx: SessionContext,
-    batch_streams: Vec<EagerStream<IntoIter<Data>>>,
     pub chunk_size: usize,
     pub runtime: Arc<tokio::runtime::Runtime>,
+    session_ctx: SessionContext,
+    batch_streams: Vec<EagerStream<IntoIter<Data>>>,
 }
 
 impl DataBackendSession {

@@ -38,7 +38,7 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
         The instrument IDs to request instrument definitions for on start.
     timeout_initial_load : float, default 5.0
         The timeout (seconds) to wait for instruments to load (concurrently per dataset).
-    mbo_subscriptions_delay : float, default 2.0
+    mbo_subscriptions_delay : float, default 3.0
         The timeout (seconds) to wait for MBO/L3 subscriptions (concurrently per dataset).
         After the timeout the MBO order book feed will start and replay messages from the start of
         the week which encompasses the initial snapshot and then all deltas.
@@ -51,4 +51,4 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
     instrument_ids: list[InstrumentId] | None = None
     parent_symbols: dict[str, set[str]] | None = None
     timeout_initial_load: float | None = 5.0
-    mbo_subscriptions_delay: float | None = 3.0
+    mbo_subscriptions_delay: float | None = 3.0  # Need to have received all definitions

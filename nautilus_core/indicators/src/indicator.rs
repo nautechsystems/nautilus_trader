@@ -15,20 +15,56 @@
 
 use std::{fmt, fmt::Debug};
 
-use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
+use nautilus_model::{
+    data::{
+        bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10,
+        quote::QuoteTick, trade::TradeTick,
+    },
+    orderbook::{book_mbo::OrderBookMbo, book_mbp::OrderBookMbp},
+};
 
-/// Indicator trait
+const IMPL_ERR: &str = "is not implemented for";
+
+#[allow(unused_variables)]
 pub trait Indicator {
     fn name(&self) -> String;
     fn has_inputs(&self) -> bool;
-    fn is_initialized(&self) -> bool;
-    fn handle_quote_tick(&mut self, tick: &QuoteTick);
-    fn handle_trade_tick(&mut self, tick: &TradeTick);
-    fn handle_bar(&mut self, bar: &Bar);
+    fn initialized(&self) -> bool;
+    fn handle_delta(&mut self, delta: &OrderBookDelta) {
+        // Eventually change this to log an error
+        panic!("`handle_delta` {} `{}`", IMPL_ERR, self.name());
+    }
+    fn handle_deltas(&mut self, deltas: &OrderBookDeltas) {
+        // Eventually change this to log an error
+        panic!("`handle_deltas` {} `{}`", IMPL_ERR, self.name());
+    }
+    fn handle_depth(&mut self, depth: &OrderBookDepth10) {
+        // Eventually change this to log an error
+        panic!("`handle_depth` {} `{}`", IMPL_ERR, self.name());
+    }
+    fn handle_book_mbo(&mut self, book: &OrderBookMbo) {
+        // Eventually change this to log an error
+        panic!("`handle_book_mbo` {} `{}`", IMPL_ERR, self.name());
+    }
+    fn handle_book_mbp(&mut self, book: &OrderBookMbp) {
+        // Eventually change this to log an error
+        panic!("`handle_book_mbp` {} `{}`", IMPL_ERR, self.name());
+    }
+    fn handle_quote_tick(&mut self, quote: &QuoteTick) {
+        // Eventually change this to log an error
+        panic!("`handle_quote_tick` {} `{}`", IMPL_ERR, self.name());
+    }
+    fn handle_trade_tick(&mut self, trade: &TradeTick) {
+        // Eventually change this to log an error
+        panic!("`handle_trade_tick` {} `{}`", IMPL_ERR, self.name());
+    }
+    fn handle_bar(&mut self, bar: &Bar) {
+        // Eventually change this to log an error
+        panic!("`handle_bar` {} `{}`", IMPL_ERR, self.name());
+    }
     fn reset(&mut self);
 }
 
-/// Moving average trait
 pub trait MovingAverage: Indicator {
     fn value(&self) -> f64;
     fn count(&self) -> usize;
@@ -37,14 +73,14 @@ pub trait MovingAverage: Indicator {
 
 impl Debug for dyn Indicator + Send {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // Implement custom formatting for the Indicator trait object.
+        // Implement custom formatting for the Indicator trait object
         write!(f, "Indicator {{ ... }}")
     }
 }
 
 impl Debug for dyn MovingAverage + Send {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // Implement custom formatting for the Indicator trait object.
+        // Implement custom formatting for the Indicator trait object
         write!(f, "MovingAverage()")
     }
 }

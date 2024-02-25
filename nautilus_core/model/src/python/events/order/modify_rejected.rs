@@ -82,12 +82,8 @@ impl OrderModifyRejected {
             self.strategy_id,
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id
-                .map(|venue_order_id| format!("{}", venue_order_id))
-                .unwrap_or_else(|| "None".to_string()),
-            self.account_id
-                .map(|account_id| format!("{}", account_id))
-                .unwrap_or_else(|| "None".to_string()),
+            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}")),
+            self.account_id.map_or_else(|| "None".to_string(), |account_id| format!("{account_id}")),
             self.reason,
             self.event_id,
             self.ts_event,
@@ -102,12 +98,8 @@ impl OrderModifyRejected {
             stringify!(OrderModifyRejected),
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id
-                .map(|venue_order_id| format!("{}", venue_order_id))
-                .unwrap_or_else(|| "None".to_string()),
-            self.account_id
-                .map(|account_id| format!("{}", account_id))
-                .unwrap_or_else(|| "None".to_string()),
+            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}")),
+            self.account_id.map_or_else(|| "None".to_string(), |account_id| format!("{account_id}")),
             self.reason,
             self.ts_event,
         )
@@ -128,15 +120,15 @@ impl OrderModifyRejected {
         dict.set_item("client_order_id", self.client_order_id.to_string())?;
         dict.set_item(
             "venue_order_id",
-            self.venue_order_id
-                .map(|venue_order_id| format!("{}", venue_order_id))
-                .unwrap_or_else(|| "None".to_string()),
+            self.venue_order_id.map_or_else(
+                || "None".to_string(),
+                |venue_order_id| format!("{venue_order_id}"),
+            ),
         )?;
         dict.set_item(
             "account_id",
             self.account_id
-                .map(|account_id| format!("{}", account_id))
-                .unwrap_or_else(|| "None".to_string()),
+                .map_or_else(|| "None".to_string(), |account_id| format!("{account_id}")),
         )?;
         dict.set_item("reason", self.reason.to_string())?;
         dict.set_item("event_id", self.event_id.to_string())?;

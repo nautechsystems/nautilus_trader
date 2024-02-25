@@ -18,9 +18,11 @@ use std::{
     hash::Hash,
 };
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use nautilus_core::correctness::check_valid_string;
 use ustr::Ustr;
+
+use crate::venues::VENUE_MAP;
 
 pub const SYNTHETIC_VENUE: &str = "SYNTH";
 
@@ -45,10 +47,21 @@ impl Venue {
         })
     }
 
+    #[must_use]
     pub fn from_str_unchecked(s: &str) -> Self {
         Self {
             value: Ustr::from(s),
         }
+    }
+
+    pub fn from_code(code: &str) -> Result<Self> {
+        let map_guard = VENUE_MAP
+            .lock()
+            .map_err(|e| anyhow!("Failed to acquire lock on `VENUE_MAP`: {e}"))?;
+        map_guard
+            .get(code)
+            .copied()
+            .ok_or_else(|| anyhow!("Unknown venue code: {code}"))
     }
 
     #[must_use]
@@ -57,6 +70,7 @@ impl Venue {
         Self::new(SYNTHETIC_VENUE).unwrap()
     }
 
+    #[must_use]
     pub fn is_synthetic(&self) -> bool {
         self.value.as_str() == SYNTHETIC_VENUE
     }

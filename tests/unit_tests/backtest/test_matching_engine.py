@@ -21,6 +21,7 @@ from nautilus_trader.backtest.matching_engine import OrderMatchingEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OmsType
@@ -35,7 +36,7 @@ from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
+_ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
 
 
 class TestOrderMatchingEngine:
@@ -48,7 +49,7 @@ class TestOrderMatchingEngine:
             trader_id=self.trader_id,
             clock=self.clock,
         )
-        self.instrument = ETHUSDT_PERP_BINANCE
+        self.instrument = _ETHUSDT_PERP_BINANCE
         self.instrument_id = self.instrument.id
         self.account_id = TestIdStubs.account_id()
         self.cache = TestComponentStubs.cache()
@@ -60,6 +61,7 @@ class TestOrderMatchingEngine:
             fill_model=FillModel(),
             book_type=BookType.L1_MBP,
             oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
             reject_stop_orders=True,
             msgbus=self.msgbus,
             cache=self.cache,
@@ -91,7 +93,7 @@ class TestOrderMatchingEngine:
 
     def test_process_market_on_close_order(self) -> None:
         order: MarketOrder = TestExecStubs.market_order(
-            instrument_id=self.instrument.id,
+            instrument=self.instrument,
             time_in_force=TimeInForce.AT_THE_CLOSE,
         )
         self.matching_engine.process_order(order, self.account_id)
@@ -107,7 +109,7 @@ class TestOrderMatchingEngine:
         self.matching_engine.process_order_book(snapshot)
 
         client_order: MarketOrder = TestExecStubs.market_order(
-            instrument_id=self.instrument.id,
+            instrument=self.instrument,
             order_side=OrderSide.BUY,
             time_in_force=TimeInForce.AT_THE_CLOSE,
         )

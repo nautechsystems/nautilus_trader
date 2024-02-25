@@ -15,30 +15,32 @@
 
 #![allow(dead_code)]
 
-use std::ops::{Deref, DerefMut};
 use std::{
     collections::HashMap,
     fmt::Display,
     hash::{Hash, Hasher},
+    ops::{Deref, DerefMut},
 };
 
 use anyhow::Result;
-use nautilus_model::enums::{AccountType, LiquiditySide, OrderSide};
-use nautilus_model::events::account::state::AccountState;
-use nautilus_model::events::order::filled::OrderFilled;
-use nautilus_model::identifiers::instrument_id::InstrumentId;
-use nautilus_model::instruments::Instrument;
-use nautilus_model::position::Position;
-use nautilus_model::types::balance::{AccountBalance, MarginBalance};
-use nautilus_model::types::currency::Currency;
-use nautilus_model::types::money::Money;
-use nautilus_model::types::price::Price;
-use nautilus_model::types::quantity::Quantity;
+use nautilus_model::{
+    enums::{AccountType, LiquiditySide, OrderSide},
+    events::{account::state::AccountState, order::filled::OrderFilled},
+    identifiers::instrument_id::InstrumentId,
+    instruments::Instrument,
+    position::Position,
+    types::{
+        balance::{AccountBalance, MarginBalance},
+        currency::Currency,
+        money::Money,
+        price::Price,
+        quantity::Quantity,
+    },
+};
 use pyo3::prelude::*;
 use rust_decimal::prelude::ToPrimitive;
 
-use crate::account::base::BaseAccount;
-use crate::account::Account;
+use crate::account::{base::BaseAccount, Account};
 
 #[derive(Debug)]
 #[cfg_attr(
@@ -384,22 +386,17 @@ impl Hash for MarginAccount {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::account::margin::MarginAccount;
-    use crate::account::stubs::*;
-    use crate::account::Account;
-    use nautilus_model::events::account::state::AccountState;
-    use nautilus_model::events::account::stubs::*;
-    use nautilus_model::identifiers::instrument_id::InstrumentId;
-    use nautilus_model::identifiers::stubs::*;
-    use nautilus_model::instruments::crypto_perpetual::CryptoPerpetual;
-    use nautilus_model::instruments::currency_pair::CurrencyPair;
-    use nautilus_model::instruments::stubs::*;
-    use nautilus_model::types::currency::Currency;
-    use nautilus_model::types::money::Money;
-    use nautilus_model::types::price::Price;
-    use nautilus_model::types::quantity::Quantity;
-    use rstest::rstest;
     use std::collections::HashMap;
+
+    use nautilus_model::{
+        events::account::{state::AccountState, stubs::*},
+        identifiers::{instrument_id::InstrumentId, stubs::*},
+        instruments::{crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, stubs::*},
+        types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    };
+    use rstest::rstest;
+
+    use crate::account::{margin::MarginAccount, stubs::*, Account};
 
     #[rstest]
     fn test_display(margin_account: MarginAccount) {

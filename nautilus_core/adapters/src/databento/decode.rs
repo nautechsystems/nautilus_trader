@@ -21,8 +21,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Result};
-use databento::dbn;
-use itoa;
+use databento::dbn::Record;
 use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, time::UnixNanos};
 use nautilus_model::{
     data::{
@@ -40,14 +39,12 @@ use nautilus_model::{
     },
     identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
     instruments::{
-        equity::Equity, futures_contract::FuturesContract, options_contract::OptionsContract,
-        Instrument,
+        equity::Equity, futures_contract::FuturesContract, futures_spread::FuturesSpread,
+        options_contract::OptionsContract, options_spread::OptionsSpread, Instrument,
     },
     types::{currency::Currency, fixed::FIXED_SCALAR, price::Price, quantity::Quantity},
 };
 use ustr::Ustr;
-
-use super::{common::nautilus_instrument_id_from_databento, types::DatabentoPublisher};
 
 const BAR_SPEC_1S: BarSpecification = BarSpecification {
     step: 1,
@@ -144,7 +141,7 @@ pub fn parse_cfi_iso10926(value: &str) -> Result<(Option<AssetClass>, Option<Ins
     Ok((asset_class, instrument_class))
 }
 
-pub fn parse_min_price_increment(value: i64, currency: Currency) -> Result<Price> {
+pub fn decode_min_price_increment(value: i64, currency: Currency) -> Result<Price> {
     match value {
         0 | i64::MAX => Price::new(
             10f64.powi(-i32::from(currency.precision)),
@@ -157,7 +154,7 @@ pub fn parse_min_price_increment(value: i64, currency: Currency) -> Result<Price
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
-pub unsafe fn parse_raw_ptr_to_string(ptr: *const c_char) -> Result<String> {
+pub unsafe fn raw_ptr_to_string(ptr: *const c_char) -> Result<String> {
     let c_str: &CStr = unsafe { CStr::from_ptr(ptr) };
     let str_slice: &str = c_str.to_str().map_err(|e| anyhow!(e))?;
     Ok(str_slice.to_owned())
@@ -166,14 +163,14 @@ pub unsafe fn parse_raw_ptr_to_string(ptr: *const c_char) -> Result<String> {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
-pub unsafe fn parse_raw_ptr_to_ustr(ptr: *const c_char) -> Result<Ustr> {
+pub unsafe fn raw_ptr_to_ustr(ptr: *const c_char) -> Result<Ustr> {
     let c_str: &CStr = unsafe { CStr::from_ptr(ptr) };
     let str_slice: &str = c_str.to_str().map_err(|e| anyhow!(e))?;
     Ok(Ustr::from(str_slice))
 }
 
-pub fn parse_equity_v1(
-    record: &dbn::compat::InstrumentDefMsgV1,
+pub fn decode_equity_v1(
+    msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<Equity> {
@@ -185,25 +182,25 @@ pub fn parse_equity_v1(
         None, // No ISIN available yet
         currency,
         currency.precision,
-        parse_min_price_increment(record.min_price_increment, currency)?,
-        Some(Quantity::new(record.min_lot_size_round_lot.into(), 0)?),
-        None,           // TBD
-        None,           // TBD
-        None,           // TBD
-        None,           // TBD
-        record.ts_recv, // More accurate and reliable timestamp
+        decode_min_price_increment(msg.min_price_increment, currency)?,
+        Some(Quantity::new(msg.min_lot_size_round_lot.into(), 0)?),
+        None,        // TBD
+        None,        // TBD
+        None,        // TBD
+        None,        // TBD
+        msg.ts_recv, // More accurate and reliable timestamp
         ts_init,
     )
 }
 
-pub fn parse_futures_contract_v1(
-    record: &dbn::compat::InstrumentDefMsgV1,
+pub fn decode_futures_contract_v1(
+    msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<FuturesContract> {
     let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
-    let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
-    let underlying = unsafe { parse_raw_ptr_to_ustr(record.asset.as_ptr())? };
+    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
+    let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
     let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
 
     FuturesContract::new(
@@ -211,29 +208,62 @@ pub fn parse_futures_contract_v1(
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
         underlying,
-        record.activation,
-        record.expiration,
+        msg.activation,
+        msg.expiration,
         currency,
         currency.precision,
-        parse_min_price_increment(record.min_price_increment, currency)?,
+        decode_min_price_increment(msg.min_price_increment, currency)?,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
         None,                   // TBD
         None,                   // TBD
         None,                   // TBD
-        record.ts_recv,         // More accurate and reliable timestamp
+        msg.ts_recv,            // More accurate and reliable timestamp
         ts_init,
     )
 }
 
-pub fn parse_options_contract_v1(
-    record: &dbn::compat::InstrumentDefMsgV1,
+pub fn decode_futures_spread_v1(
+    msg: &dbn::compat::InstrumentDefMsgV1,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> Result<FuturesSpread> {
+    let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
+    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
+    let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
+    let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
+    let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+
+    FuturesSpread::new(
+        instrument_id,
+        instrument_id.symbol,
+        asset_class.unwrap_or(AssetClass::Commodity),
+        underlying,
+        strategy_type,
+        msg.activation,
+        msg.expiration,
+        currency,
+        currency.precision,
+        decode_min_price_increment(msg.min_price_increment, currency)?,
+        Quantity::new(1.0, 0)?, // TBD
+        Quantity::new(1.0, 0)?, // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        msg.ts_recv,            // More accurate and reliable timestamp
+        ts_init,
+    )
+}
+
+pub fn decode_options_contract_v1(
+    msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<OptionsContract> {
-    let currency_str = unsafe { parse_raw_ptr_to_string(record.currency.as_ptr())? };
-    let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
+    let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
+    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
     let asset_class_opt = match instrument_id.venue.value.as_str() {
         "OPRA" => Some(AssetClass::Equity),
         _ => {
@@ -241,7 +271,7 @@ pub fn parse_options_contract_v1(
             asset_class
         }
     };
-    let underlying = unsafe { parse_raw_ptr_to_ustr(record.underlying.as_ptr())? };
+    let underlying = unsafe { raw_ptr_to_ustr(msg.underlying.as_ptr())? };
     let currency = Currency::from_str(&currency_str)?;
 
     OptionsContract::new(
@@ -249,20 +279,60 @@ pub fn parse_options_contract_v1(
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
         underlying,
-        parse_option_kind(record.instrument_class)?,
-        record.activation,
-        record.expiration,
-        Price::from_raw(record.strike_price, currency.precision)?,
+        parse_option_kind(msg.instrument_class)?,
+        msg.activation,
+        msg.expiration,
+        Price::from_raw(msg.strike_price, currency.precision)?,
         currency,
         currency.precision,
-        parse_min_price_increment(record.min_price_increment, currency)?,
+        decode_min_price_increment(msg.min_price_increment, currency)?,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
         None,                   // TBD
         None,                   // TBD
         None,                   // TBD
-        record.ts_recv,         // More accurate and reliable timestamp
+        msg.ts_recv,            // More accurate and reliable timestamp
+        ts_init,
+    )
+}
+
+pub fn decode_options_spread_v1(
+    msg: &dbn::compat::InstrumentDefMsgV1,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> Result<OptionsSpread> {
+    let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
+    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
+    let asset_class_opt = match instrument_id.venue.value.as_str() {
+        "OPRA" => Some(AssetClass::Equity),
+        _ => {
+            let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+            asset_class
+        }
+    };
+    let underlying = unsafe { raw_ptr_to_ustr(msg.underlying.as_ptr())? };
+    let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
+    let currency = Currency::from_str(&currency_str)?;
+
+    OptionsSpread::new(
+        instrument_id,
+        instrument_id.symbol,
+        asset_class_opt.unwrap_or(AssetClass::Commodity),
+        underlying,
+        strategy_type,
+        msg.activation,
+        msg.expiration,
+        currency,
+        currency.precision,
+        decode_min_price_increment(msg.min_price_increment, currency)?,
+        Quantity::new(1.0, 0)?, // TBD
+        Quantity::new(1.0, 0)?, // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        msg.ts_recv,            // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -272,100 +342,107 @@ pub fn is_trade_msg(order_side: OrderSide, action: c_char) -> bool {
     order_side == OrderSide::NoOrderSide || action as u8 as char == 'T'
 }
 
-pub fn parse_mbo_msg(
-    record: &dbn::MboMsg,
+pub fn decode_mbo_msg(
+    msg: &dbn::MboMsg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
+    include_trades: bool,
 ) -> Result<(Option<OrderBookDelta>, Option<TradeTick>)> {
-    let side = parse_order_side(record.side);
-    if is_trade_msg(side, record.action) {
-        let trade = TradeTick::new(
-            instrument_id,
-            Price::from_raw(record.price, price_precision)?,
-            Quantity::from_raw(u64::from(record.size) * FIXED_SCALAR as u64, 0)?,
-            parse_aggressor_side(record.side),
-            TradeId::new(itoa::Buffer::new().format(record.sequence))?,
-            record.ts_recv,
-            ts_init,
-        );
-        return Ok((None, Some(trade)));
+    let side = parse_order_side(msg.side);
+    if is_trade_msg(side, msg.action) {
+        if include_trades {
+            let trade = TradeTick::new(
+                instrument_id,
+                Price::from_raw(msg.price, price_precision)?,
+                Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0)?,
+                parse_aggressor_side(msg.side),
+                TradeId::new(itoa::Buffer::new().format(msg.sequence))?,
+                msg.ts_recv,
+                ts_init,
+            );
+            return Ok((None, Some(trade)));
+        } else {
+            return Ok((None, None));
+        }
     };
 
     let order = BookOrder::new(
         side,
-        Price::from_raw(record.price, price_precision)?,
-        Quantity::from_raw(u64::from(record.size) * FIXED_SCALAR as u64, 0)?,
-        record.order_id,
+        Price::from_raw(msg.price, price_precision)?,
+        Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0)?,
+        msg.order_id,
     );
 
     let delta = OrderBookDelta::new(
         instrument_id,
-        parse_book_action(record.action)?,
+        parse_book_action(msg.action)?,
         order,
-        record.flags,
-        record.sequence.into(),
-        record.ts_recv,
+        msg.flags,
+        msg.sequence.into(),
+        msg.ts_recv,
         ts_init,
     );
 
     Ok((Some(delta), None))
 }
 
-pub fn parse_trade_msg(
-    record: &dbn::TradeMsg,
+pub fn decode_trade_msg(
+    msg: &dbn::TradeMsg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> Result<TradeTick> {
     let trade = TradeTick::new(
         instrument_id,
-        Price::from_raw(record.price, price_precision)?,
-        Quantity::from_raw(u64::from(record.size) * FIXED_SCALAR as u64, 0)?,
-        parse_aggressor_side(record.side),
-        TradeId::new(itoa::Buffer::new().format(record.sequence))?,
-        record.ts_recv,
+        Price::from_raw(msg.price, price_precision)?,
+        Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0)?,
+        parse_aggressor_side(msg.side),
+        TradeId::new(itoa::Buffer::new().format(msg.sequence))?,
+        msg.ts_recv,
         ts_init,
     );
 
     Ok(trade)
 }
 
-pub fn parse_mbp1_msg(
-    record: &dbn::Mbp1Msg,
+pub fn decode_mbp1_msg(
+    msg: &dbn::Mbp1Msg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
+    include_trades: bool,
 ) -> Result<(QuoteTick, Option<TradeTick>)> {
-    let top_level = &record.levels[0];
+    let top_level = &msg.levels[0];
     let quote = QuoteTick::new(
         instrument_id,
         Price::from_raw(top_level.bid_px, price_precision)?,
         Price::from_raw(top_level.ask_px, price_precision)?,
         Quantity::from_raw(u64::from(top_level.bid_sz) * FIXED_SCALAR as u64, 0)?,
         Quantity::from_raw(u64::from(top_level.ask_sz) * FIXED_SCALAR as u64, 0)?,
-        record.ts_recv,
+        msg.ts_recv,
         ts_init,
     )?;
 
-    let trade = match record.action as u8 as char {
-        'T' => Some(TradeTick::new(
+    let maybe_trade = if include_trades && msg.action as u8 as char == 'T' {
+        Some(TradeTick::new(
             instrument_id,
-            Price::from_raw(record.price, price_precision)?,
-            Quantity::from_raw(u64::from(record.size) * FIXED_SCALAR as u64, 0)?,
-            parse_aggressor_side(record.side),
-            TradeId::new(itoa::Buffer::new().format(record.sequence))?,
-            record.ts_recv,
+            Price::from_raw(msg.price, price_precision)?,
+            Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0)?,
+            parse_aggressor_side(msg.side),
+            TradeId::new(itoa::Buffer::new().format(msg.sequence))?,
+            msg.ts_recv,
             ts_init,
-        )),
-        _ => None,
+        ))
+    } else {
+        None
     };
 
-    Ok((quote, trade))
+    Ok((quote, maybe_trade))
 }
 
-pub fn parse_mbp10_msg(
-    record: &dbn::Mbp10Msg,
+pub fn decode_mbp10_msg(
+    msg: &dbn::Mbp10Msg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
@@ -375,7 +452,7 @@ pub fn parse_mbp10_msg(
     let mut bid_counts = Vec::with_capacity(DEPTH10_LEN);
     let mut ask_counts = Vec::with_capacity(DEPTH10_LEN);
 
-    for level in &record.levels {
+    for level in &msg.levels {
         let bid_order = BookOrder::new(
             OrderSide::Buy,
             Price::from_raw(level.bid_px, price_precision)?,
@@ -407,17 +484,17 @@ pub fn parse_mbp10_msg(
         asks,
         bid_counts,
         ask_counts,
-        record.flags,
-        record.sequence.into(),
-        record.ts_recv,
+        msg.flags,
+        msg.sequence.into(),
+        msg.ts_recv,
         ts_init,
     );
 
     Ok(depth)
 }
 
-pub fn parse_bar_type(record: &dbn::OhlcvMsg, instrument_id: InstrumentId) -> Result<BarType> {
-    let bar_type = match record.hd.rtype {
+pub fn decode_bar_type(msg: &dbn::OhlcvMsg, instrument_id: InstrumentId) -> Result<BarType> {
+    let bar_type = match msg.hd.rtype {
         32 => {
             // ohlcv-1s
             BarType::new(instrument_id, BAR_SPEC_1S, AggregationSource::External)
@@ -436,15 +513,15 @@ pub fn parse_bar_type(record: &dbn::OhlcvMsg, instrument_id: InstrumentId) -> Re
         }
         _ => bail!(
             "`rtype` is not a supported bar aggregation, was {}",
-            record.hd.rtype
+            msg.hd.rtype
         ),
     };
 
     Ok(bar_type)
 }
 
-pub fn parse_ts_event_adjustment(record: &dbn::OhlcvMsg) -> Result<UnixNanos> {
-    let adjustment = match record.hd.rtype {
+pub fn decode_ts_event_adjustment(msg: &dbn::OhlcvMsg) -> Result<UnixNanos> {
+    let adjustment = match msg.hd.rtype {
         32 => {
             // ohlcv-1s
             BAR_CLOSE_ADJUSTMENT_1S
@@ -463,33 +540,33 @@ pub fn parse_ts_event_adjustment(record: &dbn::OhlcvMsg) -> Result<UnixNanos> {
         }
         _ => bail!(
             "`rtype` is not a supported bar aggregation, was {}",
-            record.hd.rtype
+            msg.hd.rtype
         ),
     };
 
     Ok(adjustment)
 }
 
-pub fn parse_ohlcv_msg(
-    record: &dbn::OhlcvMsg,
+pub fn decode_ohlcv_msg(
+    msg: &dbn::OhlcvMsg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> Result<Bar> {
-    let bar_type = parse_bar_type(record, instrument_id)?;
-    let ts_event_adjustment = parse_ts_event_adjustment(record)?;
+    let bar_type = decode_bar_type(msg, instrument_id)?;
+    let ts_event_adjustment = decode_ts_event_adjustment(msg)?;
 
     // Adjust `ts_event` from open to close of bar
-    let ts_event = record.hd.ts_event;
+    let ts_event = msg.hd.ts_event;
     let ts_init = cmp::max(ts_init, ts_event) + ts_event_adjustment;
 
     let bar = Bar::new(
         bar_type,
-        Price::from_raw(record.open / 100, price_precision)?, // TODO(adjust for display factor)
-        Price::from_raw(record.high / 100, price_precision)?, // TODO(adjust for display factor)
-        Price::from_raw(record.low / 100, price_precision)?,  // TODO(adjust for display factor)
-        Price::from_raw(record.close / 100, price_precision)?, // TODO(adjust for display factor)
-        Quantity::from_raw(record.volume * FIXED_SCALAR as u64, 0)?, // TODO(adjust for display factor)
+        Price::from_raw(msg.open / 100, price_precision)?, // TODO(adjust for display factor)
+        Price::from_raw(msg.high / 100, price_precision)?, // TODO(adjust for display factor)
+        Price::from_raw(msg.low / 100, price_precision)?,  // TODO(adjust for display factor)
+        Price::from_raw(msg.close / 100, price_precision)?, // TODO(adjust for display factor)
+        Quantity::from_raw(msg.volume * FIXED_SCALAR as u64, 0)?, // TODO(adjust for display factor)
         ts_event,
         ts_init,
     );
@@ -497,69 +574,73 @@ pub fn parse_ohlcv_msg(
     Ok(bar)
 }
 
-pub fn parse_record(
-    record: &dbn::RecordRef,
-    rtype: dbn::RType,
+pub fn decode_record(
+    rec_ref: &dbn::RecordRef,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: Option<UnixNanos>,
-) -> Result<(Data, Option<Data>)> {
+    include_trades: bool,
+) -> Result<(Option<Data>, Option<Data>)> {
+    let rtype = rec_ref.rtype().expect("Invalid `rtype`");
     let result = match rtype {
         dbn::RType::Mbo => {
-            let msg = record.get::<dbn::MboMsg>().unwrap(); // SAFETY: RType known
+            let msg = rec_ref.get::<dbn::MboMsg>().unwrap(); // SAFETY: RType known
             let ts_init = match ts_init {
                 Some(ts_init) => ts_init,
                 None => msg.ts_recv,
             };
-            let result = parse_mbo_msg(msg, instrument_id, price_precision, ts_init)?;
+            let result =
+                decode_mbo_msg(msg, instrument_id, price_precision, ts_init, include_trades)?;
             match result {
-                (Some(delta), None) => (Data::Delta(delta), None),
-                (None, Some(trade)) => (Data::Trade(trade), None),
+                (Some(delta), None) => (Some(Data::Delta(delta)), None),
+                (None, Some(trade)) => (Some(Data::Trade(trade)), None),
+                (None, None) => (None, None),
                 _ => bail!("Invalid `MboMsg` parsing combination"),
             }
         }
         dbn::RType::Mbp0 => {
-            let msg = record.get::<dbn::TradeMsg>().unwrap(); // SAFETY: RType known
+            let msg = rec_ref.get::<dbn::TradeMsg>().unwrap(); // SAFETY: RType known
             let ts_init = match ts_init {
                 Some(ts_init) => ts_init,
                 None => msg.ts_recv,
             };
-            let trade = parse_trade_msg(msg, instrument_id, price_precision, ts_init)?;
-            (Data::Trade(trade), None)
+            let trade = decode_trade_msg(msg, instrument_id, price_precision, ts_init)?;
+            (Some(Data::Trade(trade)), None)
         }
         dbn::RType::Mbp1 => {
-            let msg = record.get::<dbn::Mbp1Msg>().unwrap(); // SAFETY: RType known
+            let msg = rec_ref.get::<dbn::Mbp1Msg>().unwrap(); // SAFETY: RType known
             let ts_init = match ts_init {
                 Some(ts_init) => ts_init,
                 None => msg.ts_recv,
             };
-            let result = parse_mbp1_msg(msg, instrument_id, price_precision, ts_init)?;
+            let result =
+                decode_mbp1_msg(msg, instrument_id, price_precision, ts_init, include_trades)?;
             match result {
-                (quote, None) => (Data::Quote(quote), None),
-                (quote, Some(trade)) => (Data::Quote(quote), Some(Data::Trade(trade))),
+                (quote, None) => (Some(Data::Quote(quote)), None),
+                (quote, Some(trade)) => (Some(Data::Quote(quote)), Some(Data::Trade(trade))),
             }
         }
         dbn::RType::Mbp10 => {
-            let msg = record.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
+            let msg = rec_ref.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
             let ts_init = match ts_init {
                 Some(ts_init) => ts_init,
                 None => msg.ts_recv,
             };
-            let depth = parse_mbp10_msg(msg, instrument_id, price_precision, ts_init)?;
-            (Data::Depth10(depth), None)
+            let depth = decode_mbp10_msg(msg, instrument_id, price_precision, ts_init)?;
+            (Some(Data::Depth10(depth)), None)
         }
         dbn::RType::Ohlcv1S
         | dbn::RType::Ohlcv1M
         | dbn::RType::Ohlcv1H
         | dbn::RType::Ohlcv1D
         | dbn::RType::OhlcvEod => {
-            let msg = record.get::<dbn::OhlcvMsg>().unwrap(); // SAFETY: RType known
+            let msg = rec_ref.get::<dbn::OhlcvMsg>().unwrap(); // SAFETY: RType known
             let ts_init = match ts_init {
                 Some(ts_init) => ts_init,
                 None => msg.hd.ts_event,
             };
-            let bar = parse_ohlcv_msg(msg, instrument_id, price_precision, ts_init)?;
-            (Data::Bar(bar), None)
+            let bar = decode_ohlcv_msg(msg, instrument_id, price_precision, ts_init)?;
+            (Some(Data::Bar(bar)), None)
         }
         _ => bail!("RType {:?} is not currently supported", rtype),
     };
@@ -567,72 +648,80 @@ pub fn parse_record(
     Ok(result)
 }
 
-pub fn parse_instrument_def_msg_v1(
-    record: &dbn::compat::InstrumentDefMsgV1,
-    publisher: &DatabentoPublisher,
+pub fn decode_instrument_def_msg_v1(
+    msg: &dbn::compat::InstrumentDefMsgV1,
+    instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<Box<dyn Instrument>> {
-    let raw_symbol = unsafe { parse_raw_ptr_to_ustr(record.raw_symbol.as_ptr())? };
-    let instrument_id = nautilus_instrument_id_from_databento(raw_symbol, publisher);
-
-    match record.instrument_class as u8 as char {
-        'K' => Ok(Box::new(parse_equity_v1(record, instrument_id, ts_init)?)),
-        'F' => Ok(Box::new(parse_futures_contract_v1(
-            record,
+    match msg.instrument_class as u8 as char {
+        'K' => Ok(Box::new(decode_equity_v1(msg, instrument_id, ts_init)?)),
+        'F' => Ok(Box::new(decode_futures_contract_v1(
+            msg,
             instrument_id,
             ts_init,
         )?)),
-        'C' | 'P' => Ok(Box::new(parse_options_contract_v1(
-            record,
+        'S' => Ok(Box::new(decode_futures_spread_v1(
+            msg,
+            instrument_id,
+            ts_init,
+        )?)),
+        'C' | 'P' => Ok(Box::new(decode_options_contract_v1(
+            msg,
+            instrument_id,
+            ts_init,
+        )?)),
+        'T' | 'M' => Ok(Box::new(decode_options_spread_v1(
+            msg,
             instrument_id,
             ts_init,
         )?)),
         'B' => bail!("Unsupported `instrument_class` 'B' (BOND)"),
-        'M' => bail!("Unsupported `instrument_class` 'M' (MIXEDSPREAD)"),
-        'S' => bail!("Unsupported `instrument_class` 'S' (FUTURESPREAD)"),
-        'T' => bail!("Unsupported `instrument_class` 'T' (OPTIONSPREAD)"),
         'X' => bail!("Unsupported `instrument_class` 'X' (FX_SPOT)"),
         _ => bail!(
             "Unsupported `instrument_class` '{}'",
-            record.instrument_class as u8 as char
+            msg.instrument_class as u8 as char
         ),
     }
 }
 
-pub fn parse_instrument_def_msg(
-    record: &dbn::InstrumentDefMsg,
-    publisher: &DatabentoPublisher,
+pub fn decode_instrument_def_msg(
+    msg: &dbn::InstrumentDefMsg,
+    instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<Box<dyn Instrument>> {
-    let raw_symbol = unsafe { parse_raw_ptr_to_ustr(record.raw_symbol.as_ptr())? };
-    let instrument_id = nautilus_instrument_id_from_databento(raw_symbol, publisher);
-
-    match record.instrument_class as u8 as char {
-        'K' => Ok(Box::new(parse_equity(record, instrument_id, ts_init)?)),
-        'F' => Ok(Box::new(parse_futures_contract(
-            record,
+    match msg.instrument_class as u8 as char {
+        'K' => Ok(Box::new(decode_equity(msg, instrument_id, ts_init)?)),
+        'F' => Ok(Box::new(decode_futures_contract(
+            msg,
             instrument_id,
             ts_init,
         )?)),
-        'C' | 'P' => Ok(Box::new(parse_options_contract(
-            record,
+        'S' => Ok(Box::new(decode_futures_spread(
+            msg,
+            instrument_id,
+            ts_init,
+        )?)),
+        'C' | 'P' => Ok(Box::new(decode_options_contract(
+            msg,
+            instrument_id,
+            ts_init,
+        )?)),
+        'T' | 'M' => Ok(Box::new(decode_options_spread(
+            msg,
             instrument_id,
             ts_init,
         )?)),
         'B' => bail!("Unsupported `instrument_class` 'B' (BOND)"),
-        'M' => bail!("Unsupported `instrument_class` 'M' (MIXEDSPREAD)"),
-        'S' => bail!("Unsupported `instrument_class` 'S' (FUTURESPREAD)"),
-        'T' => bail!("Unsupported `instrument_class` 'T' (OPTIONSPREAD)"),
         'X' => bail!("Unsupported `instrument_class` 'X' (FX_SPOT)"),
         _ => bail!(
             "Unsupported `instrument_class` '{}'",
-            record.instrument_class as u8 as char
+            msg.instrument_class as u8 as char
         ),
     }
 }
 
-pub fn parse_equity(
-    record: &dbn::InstrumentDefMsg,
+pub fn decode_equity(
+    msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<Equity> {
@@ -644,25 +733,25 @@ pub fn parse_equity(
         None, // No ISIN available yet
         currency,
         currency.precision,
-        parse_min_price_increment(record.min_price_increment, currency)?,
-        Some(Quantity::new(record.min_lot_size_round_lot.into(), 0)?),
-        None,           // TBD
-        None,           // TBD
-        None,           // TBD
-        None,           // TBD
-        record.ts_recv, // More accurate and reliable timestamp
+        decode_min_price_increment(msg.min_price_increment, currency)?,
+        Some(Quantity::new(msg.min_lot_size_round_lot.into(), 0)?),
+        None,        // TBD
+        None,        // TBD
+        None,        // TBD
+        None,        // TBD
+        msg.ts_recv, // More accurate and reliable timestamp
         ts_init,
     )
 }
 
-pub fn parse_futures_contract(
-    record: &dbn::InstrumentDefMsg,
+pub fn decode_futures_contract(
+    msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<FuturesContract> {
     let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
-    let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
-    let underlying = unsafe { parse_raw_ptr_to_ustr(record.asset.as_ptr())? };
+    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
+    let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
     let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
 
     FuturesContract::new(
@@ -670,29 +759,62 @@ pub fn parse_futures_contract(
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
         underlying,
-        record.activation,
-        record.expiration,
+        msg.activation,
+        msg.expiration,
         currency,
         currency.precision,
-        parse_min_price_increment(record.min_price_increment, currency)?,
+        decode_min_price_increment(msg.min_price_increment, currency)?,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
         None,                   // TBD
         None,                   // TBD
         None,                   // TBD
-        record.ts_recv,         // More accurate and reliable timestamp
+        msg.ts_recv,            // More accurate and reliable timestamp
         ts_init,
     )
 }
 
-pub fn parse_options_contract(
-    record: &dbn::InstrumentDefMsg,
+pub fn decode_futures_spread(
+    msg: &dbn::InstrumentDefMsg,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> Result<FuturesSpread> {
+    let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
+    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
+    let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
+    let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
+    let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+
+    FuturesSpread::new(
+        instrument_id,
+        instrument_id.symbol,
+        asset_class.unwrap_or(AssetClass::Commodity),
+        underlying,
+        strategy_type,
+        msg.activation,
+        msg.expiration,
+        currency,
+        currency.precision,
+        decode_min_price_increment(msg.min_price_increment, currency)?,
+        Quantity::new(1.0, 0)?, // TBD
+        Quantity::new(1.0, 0)?, // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        msg.ts_recv,            // More accurate and reliable timestamp
+        ts_init,
+    )
+}
+
+pub fn decode_options_contract(
+    msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> Result<OptionsContract> {
-    let currency_str = unsafe { parse_raw_ptr_to_string(record.currency.as_ptr())? };
-    let cfi_str = unsafe { parse_raw_ptr_to_string(record.cfi.as_ptr())? };
+    let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
+    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
     let asset_class_opt = match instrument_id.venue.value.as_str() {
         "OPRA" => Some(AssetClass::Equity),
         _ => {
@@ -700,7 +822,7 @@ pub fn parse_options_contract(
             asset_class
         }
     };
-    let underlying = unsafe { parse_raw_ptr_to_ustr(record.underlying.as_ptr())? };
+    let underlying = unsafe { raw_ptr_to_ustr(msg.underlying.as_ptr())? };
     let currency = Currency::from_str(&currency_str)?;
 
     OptionsContract::new(
@@ -708,20 +830,60 @@ pub fn parse_options_contract(
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
         underlying,
-        parse_option_kind(record.instrument_class)?,
-        record.activation,
-        record.expiration,
-        Price::from_raw(record.strike_price, currency.precision)?,
+        parse_option_kind(msg.instrument_class)?,
+        msg.activation,
+        msg.expiration,
+        Price::from_raw(msg.strike_price, currency.precision)?,
         currency,
         currency.precision,
-        parse_min_price_increment(record.min_price_increment, currency)?,
+        decode_min_price_increment(msg.min_price_increment, currency)?,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
         None,                   // TBD
         None,                   // TBD
         None,                   // TBD
-        record.ts_recv,         // More accurate and reliable timestamp
+        msg.ts_recv,            // More accurate and reliable timestamp
+        ts_init,
+    )
+}
+
+pub fn decode_options_spread(
+    msg: &dbn::InstrumentDefMsg,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> Result<OptionsSpread> {
+    let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
+    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
+    let asset_class_opt = match instrument_id.venue.value.as_str() {
+        "OPRA" => Some(AssetClass::Equity),
+        _ => {
+            let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+            asset_class
+        }
+    };
+    let underlying = unsafe { raw_ptr_to_ustr(msg.underlying.as_ptr())? };
+    let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
+    let currency = Currency::from_str(&currency_str)?;
+
+    OptionsSpread::new(
+        instrument_id,
+        instrument_id.symbol,
+        asset_class_opt.unwrap_or(AssetClass::Commodity),
+        underlying,
+        strategy_type,
+        msg.activation,
+        msg.expiration,
+        currency,
+        currency.precision,
+        decode_min_price_increment(msg.min_price_increment, currency)?,
+        Quantity::new(1.0, 0)?, // TBD
+        Quantity::new(1.0, 0)?, // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        None,                   // TBD
+        msg.ts_recv,            // More accurate and reliable timestamp
         ts_init,
     )
 }

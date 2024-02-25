@@ -52,6 +52,7 @@ impl StrategyId {
         })
     }
 
+    #[must_use]
     pub fn get_tag(&self) -> &str {
         // SAFETY: Unwrap safe as value previously validated
         self.value.split('-').last().unwrap()

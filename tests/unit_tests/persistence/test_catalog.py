@@ -21,6 +21,7 @@ import pandas as pd
 import pyarrow.dataset as ds
 import pytest
 
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.rust.model import AggressorSide
 from nautilus_trader.core.rust.model import BookAction
 from nautilus_trader.model.currencies import USD
@@ -40,6 +41,7 @@ from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWranglerV2
 from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWranglerV2
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.rust.data_pyo3 import TestDataProviderPyo3
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests import TEST_DATA_DIR
@@ -245,17 +247,20 @@ def test_catalog_bars(catalog: ParquetDataCatalog) -> None:
     assert len(bars) == len(stub_bars) == 10
 
 
-@pytest.mark.skip(reason="WIP, currently failing value: MissingMetadata('instrument_id')")
-def test_catalog_write_order_book_depth10(catalog: ParquetDataCatalog) -> None:
+def test_catalog_write_pyo3_order_book_depth10(catalog: ParquetDataCatalog) -> None:
     # Arrange
-    instrument = TestInstrumentProvider.equity()
-    depth = TestDataStubs.order_book_depth10(instrument_id=instrument.id)
+    instrument = TestInstrumentProvider.ethusdt_binance()
+    instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument.id.value)
+    depth10 = TestDataProviderPyo3.order_book_depth10(instrument_id=instrument_id)
 
     # Act
-    catalog.write_data([depth])
+    catalog.write_data([depth10] * 100)
 
     # Assert
-    assert len(catalog.order_book_depth10()) == 1
+    depths = catalog.order_book_depth10(instrument_ids=[instrument.id])
+    all_depths = catalog.order_book_depth10()
+    assert len(depths) == 100
+    assert len(all_depths) == 100
 
 
 def test_catalog_write_pyo3_quote_ticks(catalog: ParquetDataCatalog) -> None:
@@ -273,8 +278,8 @@ def test_catalog_write_pyo3_quote_ticks(catalog: ParquetDataCatalog) -> None:
     # Assert
     quotes = catalog.quote_ticks(instrument_ids=[instrument.id])
     all_quotes = catalog.quote_ticks()
-    assert len(all_quotes) == 100_000
     assert len(quotes) == 100_000
+    assert len(all_quotes) == 100_000
 
 
 def test_catalog_write_pyo3_trade_ticks(catalog: ParquetDataCatalog) -> None:
@@ -291,8 +296,8 @@ def test_catalog_write_pyo3_trade_ticks(catalog: ParquetDataCatalog) -> None:
     # Assert
     trades = catalog.trade_ticks(instrument_ids=[instrument.id])
     all_trades = catalog.trade_ticks()
-    assert len(all_trades) == 69_806
     assert len(trades) == 69_806
+    assert len(all_trades) == 69_806
 
 
 def test_catalog_multiple_bar_types(catalog: ParquetDataCatalog) -> None:
@@ -321,9 +326,9 @@ def test_catalog_multiple_bar_types(catalog: ParquetDataCatalog) -> None:
     bars1 = catalog.bars(bar_types=[str(bar_type1)])
     bars2 = catalog.bars(bar_types=[str(bar_type2)])
     all_bars = catalog.bars()
-    assert len(all_bars) == 20
     assert len(bars1) == 10
     assert len(bars2) == 10
+    assert len(all_bars) == 20
 
 
 def test_catalog_bar_query_instrument_id(

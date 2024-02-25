@@ -32,7 +32,7 @@ pub unsafe extern "C" fn time_event_new(
     ts_event: u64,
     ts_init: u64,
 ) -> TimeEvent {
-    TimeEvent::new(cstr_to_ustr(name_ptr), event_id, ts_event, ts_init).unwrap()
+    TimeEvent::new(cstr_to_ustr(name_ptr), event_id, ts_event, ts_init)
 }
 
 /// Returns a [`TimeEvent`] as a C string pointer.

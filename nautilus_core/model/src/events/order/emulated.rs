@@ -16,7 +16,7 @@
 use std::fmt::{Display, Formatter};
 
 use anyhow::Result;
-use derive_builder::{self, Builder};
+use derive_builder::Builder;
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -54,8 +54,8 @@ impl OrderEmulated {
         event_id: UUID4,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> Result<OrderEmulated> {
-        Ok(OrderEmulated {
+    ) -> Result<Self> {
+        Ok(Self {
             trader_id,
             strategy_id,
             instrument_id,
@@ -88,7 +88,7 @@ mod tests {
 
     #[rstest]
     fn test_order_emulated(order_emulated: OrderEmulated) {
-        let display = format!("{}", order_emulated);
+        let display = format!("{order_emulated}");
         assert_eq!(
             display,
             "OrderEmulated(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1)"

@@ -18,6 +18,7 @@ from __future__ import annotations
 import msgspec
 
 from nautilus_trader.common import Environment
+from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.common.config import NonNegativeInt
@@ -161,9 +162,9 @@ class LiveExecClientConfig(NautilusConfig, frozen=True):
     routing: RoutingConfig = RoutingConfig()
 
 
-class ControllerConfig(NautilusConfig, kw_only=True, frozen=True):
+class ControllerConfig(ActorConfig, kw_only=True, frozen=True):
     """
-    The base model for all trading strategy configurations.
+    The base model for all controller configurations.
     """
 
 
@@ -202,8 +203,6 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
         The live risk engine configuration.
     exec_engine : LiveExecEngineConfig, optional
         The live execution engine configuration.
-    streaming : StreamingConfig, optional
-        The configuration for streaming to feather files.
     data_clients : dict[str, ImportableConfig | LiveDataClientConfig], optional
         The data client configurations.
     exec_clients : dict[str, ImportableConfig | LiveExecClientConfig], optional

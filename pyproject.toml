@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.187.0"
+version = "1.188.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -57,10 +57,10 @@ toml = "^0.10.2"  # Build dependency
 click = "^8.1.7"
 fsspec = "==2023.6.0"  # Pinned for stability
 msgspec = "^0.18.6"
-pandas = "^2.2.0"
+pandas = "^2.2.1"
 pyarrow = ">=15.0.0"
 pytz = ">=2023.4.0"
-tqdm = "^4.66.1"
+tqdm = "^4.66.2"
 uvloop = {version = "^0.19.0", markers = "sys_platform != 'win32'"}
 
 async-timeout = {version = "^4.0.3", optional = true}
@@ -78,12 +78,12 @@ ib = ["nautilus_ibapi", "async-timeout", "defusedxml"]
 optional = true
 
 [tool.poetry.group.dev.dependencies]
-black = "^24.1.1"
+black = "^24.2.0"
 docformatter = "^1.7.5"
 mypy = "^1.8.0"
 pandas-stubs = "^2.1.4"
-pre-commit = "^3.6.0"
-ruff = "^0.2.1"
+pre-commit = "^3.6.2"
+ruff = "^0.2.2"
 types-pytz = "^2023.3"
 types-requests = "^2.31"
 types-toml = "^0.10.2"
@@ -92,7 +92,7 @@ types-toml = "^0.10.2"
 optional = true
 
 [tool.poetry.group.test.dependencies]
-coverage = "^7.4.1"
+coverage = "^7.4.3"
 pytest = "^7.4.4"
 pytest-aiohttp = "^1.0.5"
 pytest-asyncio = "==0.21.1"  # Pinned due Cython: cannot set '__pytest_asyncio_scoped_event_loop' attribute of immutable type

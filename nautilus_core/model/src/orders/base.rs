@@ -18,7 +18,6 @@ use std::collections::HashMap;
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use thiserror;
 use ustr::Ustr;
 
 use crate::{
@@ -69,12 +68,14 @@ const VALID_LIMIT_ORDER_TYPES: &[OrderType] = &[
     OrderType::MarketIfTouched,
 ];
 
+#[must_use]
 pub fn ustr_hashmap_to_str(h: HashMap<Ustr, Ustr>) -> HashMap<String, String> {
     h.into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect()
 }
 
+#[must_use]
 pub fn str_hashmap_to_ustr(h: HashMap<String, String>) -> HashMap<Ustr, Ustr> {
     h.into_iter()
         .map(|(k, v)| (Ustr::from(&k), Ustr::from(&v)))
@@ -83,69 +84,69 @@ pub fn str_hashmap_to_ustr(h: HashMap<String, String>) -> HashMap<Ustr, Ustr> {
 
 impl OrderStatus {
     #[rustfmt::skip]
-    pub fn transition(&mut self, event: &OrderEvent) -> Result<OrderStatus, OrderError> {
+    pub fn transition(&mut self, event: &OrderEvent) -> Result<Self, OrderError> {
         let new_state = match (self, event) {
-            (OrderStatus::Initialized, OrderEvent::OrderDenied(_)) => OrderStatus::Denied,
-            (OrderStatus::Initialized, OrderEvent::OrderEmulated(_)) => OrderStatus::Emulated,  // Emulated orders
-            (OrderStatus::Initialized, OrderEvent::OrderReleased(_)) => OrderStatus::Released,  // Emulated orders
-            (OrderStatus::Initialized, OrderEvent::OrderSubmitted(_)) => OrderStatus::Submitted,
-            (OrderStatus::Initialized, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,  // External orders
-            (OrderStatus::Initialized, OrderEvent::OrderAccepted(_)) => OrderStatus::Accepted,  // External orders
-            (OrderStatus::Initialized, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,  // External orders
-            (OrderStatus::Initialized, OrderEvent::OrderExpired(_)) => OrderStatus::Expired,  // External orders
-            (OrderStatus::Initialized, OrderEvent::OrderTriggered(_)) => OrderStatus::Triggered, // External orders
-            (OrderStatus::Emulated, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,  // Emulated orders
-            (OrderStatus::Emulated, OrderEvent::OrderExpired(_)) => OrderStatus::Expired,  // Emulated orders
-            (OrderStatus::Emulated, OrderEvent::OrderReleased(_)) => OrderStatus::Released,  // Emulated orders
-            (OrderStatus::Released, OrderEvent::OrderSubmitted(_)) => OrderStatus::Submitted,  // Emulated orders
-            (OrderStatus::Released, OrderEvent::OrderDenied(_)) => OrderStatus::Denied,  // Emulated orders
-            (OrderStatus::Released, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,  // Execution algo
-            (OrderStatus::Submitted, OrderEvent::OrderPendingUpdate(_)) => OrderStatus::PendingUpdate,
-            (OrderStatus::Submitted, OrderEvent::OrderPendingCancel(_)) => OrderStatus::PendingCancel,
-            (OrderStatus::Submitted, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,
-            (OrderStatus::Submitted, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,  // FOK and IOC cases
-            (OrderStatus::Submitted, OrderEvent::OrderAccepted(_)) => OrderStatus::Accepted,
-            (OrderStatus::Submitted, OrderEvent::OrderPartiallyFilled(_)) => OrderStatus::PartiallyFilled,
-            (OrderStatus::Submitted, OrderEvent::OrderFilled(_)) => OrderStatus::Filled,
-            (OrderStatus::Accepted, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,  // StopLimit order
-            (OrderStatus::Accepted, OrderEvent::OrderPendingUpdate(_)) => OrderStatus::PendingUpdate,
-            (OrderStatus::Accepted, OrderEvent::OrderPendingCancel(_)) => OrderStatus::PendingCancel,
-            (OrderStatus::Accepted, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,
-            (OrderStatus::Accepted, OrderEvent::OrderTriggered(_)) => OrderStatus::Triggered,
-            (OrderStatus::Accepted, OrderEvent::OrderExpired(_)) => OrderStatus::Expired,
-            (OrderStatus::Accepted, OrderEvent::OrderPartiallyFilled(_)) => OrderStatus::PartiallyFilled,
-            (OrderStatus::Accepted, OrderEvent::OrderFilled(_)) => OrderStatus::Filled,
-            (OrderStatus::Canceled, OrderEvent::OrderPartiallyFilled(_)) => OrderStatus::PartiallyFilled,  // Real world possibility
-            (OrderStatus::Canceled, OrderEvent::OrderFilled(_)) => OrderStatus::Filled,  // Real world possibility
-            (OrderStatus::PendingUpdate, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,
-            (OrderStatus::PendingUpdate, OrderEvent::OrderAccepted(_)) => OrderStatus::Accepted,
-            (OrderStatus::PendingUpdate, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,
-            (OrderStatus::PendingUpdate, OrderEvent::OrderExpired(_)) => OrderStatus::Expired,
-            (OrderStatus::PendingUpdate, OrderEvent::OrderTriggered(_)) => OrderStatus::Triggered,
-            (OrderStatus::PendingUpdate, OrderEvent::OrderPendingUpdate(_)) => OrderStatus::PendingUpdate,  // Allow multiple requests
-            (OrderStatus::PendingUpdate, OrderEvent::OrderPendingCancel(_)) => OrderStatus::PendingCancel,
-            (OrderStatus::PendingUpdate, OrderEvent::OrderPartiallyFilled(_)) => OrderStatus::PartiallyFilled,
-            (OrderStatus::PendingUpdate, OrderEvent::OrderFilled(_)) => OrderStatus::Filled,
-            (OrderStatus::PendingCancel, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,
-            (OrderStatus::PendingCancel, OrderEvent::OrderPendingCancel(_)) => OrderStatus::PendingCancel,  // Allow multiple requests
-            (OrderStatus::PendingCancel, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,
-            (OrderStatus::PendingCancel, OrderEvent::OrderExpired(_)) => OrderStatus::Expired,
-            (OrderStatus::PendingCancel, OrderEvent::OrderAccepted(_)) => OrderStatus::Accepted,  // Allow failed cancel requests
-            (OrderStatus::PendingCancel, OrderEvent::OrderPartiallyFilled(_)) => OrderStatus::PartiallyFilled,
-            (OrderStatus::PendingCancel, OrderEvent::OrderFilled(_)) => OrderStatus::Filled,
-            (OrderStatus::Triggered, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,
-            (OrderStatus::Triggered, OrderEvent::OrderPendingUpdate(_)) => OrderStatus::PendingUpdate,
-            (OrderStatus::Triggered, OrderEvent::OrderPendingCancel(_)) => OrderStatus::PendingCancel,
-            (OrderStatus::Triggered, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,
-            (OrderStatus::Triggered, OrderEvent::OrderExpired(_)) => OrderStatus::Expired,
-            (OrderStatus::Triggered, OrderEvent::OrderPartiallyFilled(_)) => OrderStatus::PartiallyFilled,
-            (OrderStatus::Triggered, OrderEvent::OrderFilled(_)) => OrderStatus::Filled,
-            (OrderStatus::PartiallyFilled, OrderEvent::OrderPendingUpdate(_)) => OrderStatus::PendingUpdate,
-            (OrderStatus::PartiallyFilled, OrderEvent::OrderPendingCancel(_)) => OrderStatus::PendingCancel,
-            (OrderStatus::PartiallyFilled, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,
-            (OrderStatus::PartiallyFilled, OrderEvent::OrderExpired(_)) => OrderStatus::Expired,
-            (OrderStatus::PartiallyFilled, OrderEvent::OrderPartiallyFilled(_)) => OrderStatus::PartiallyFilled,
-            (OrderStatus::PartiallyFilled, OrderEvent::OrderFilled(_)) => OrderStatus::Filled,
+            (Self::Initialized, OrderEvent::OrderDenied(_)) => Self::Denied,
+            (Self::Initialized, OrderEvent::OrderEmulated(_)) => Self::Emulated,  // Emulated orders
+            (Self::Initialized, OrderEvent::OrderReleased(_)) => Self::Released,  // Emulated orders
+            (Self::Initialized, OrderEvent::OrderSubmitted(_)) => Self::Submitted,
+            (Self::Initialized, OrderEvent::OrderRejected(_)) => Self::Rejected,  // External orders
+            (Self::Initialized, OrderEvent::OrderAccepted(_)) => Self::Accepted,  // External orders
+            (Self::Initialized, OrderEvent::OrderCanceled(_)) => Self::Canceled,  // External orders
+            (Self::Initialized, OrderEvent::OrderExpired(_)) => Self::Expired,  // External orders
+            (Self::Initialized, OrderEvent::OrderTriggered(_)) => Self::Triggered, // External orders
+            (Self::Emulated, OrderEvent::OrderCanceled(_)) => Self::Canceled,  // Emulated orders
+            (Self::Emulated, OrderEvent::OrderExpired(_)) => Self::Expired,  // Emulated orders
+            (Self::Emulated, OrderEvent::OrderReleased(_)) => Self::Released,  // Emulated orders
+            (Self::Released, OrderEvent::OrderSubmitted(_)) => Self::Submitted,  // Emulated orders
+            (Self::Released, OrderEvent::OrderDenied(_)) => Self::Denied,  // Emulated orders
+            (Self::Released, OrderEvent::OrderCanceled(_)) => Self::Canceled,  // Execution algo
+            (Self::Submitted, OrderEvent::OrderPendingUpdate(_)) => Self::PendingUpdate,
+            (Self::Submitted, OrderEvent::OrderPendingCancel(_)) => Self::PendingCancel,
+            (Self::Submitted, OrderEvent::OrderRejected(_)) => Self::Rejected,
+            (Self::Submitted, OrderEvent::OrderCanceled(_)) => Self::Canceled,  // FOK and IOC cases
+            (Self::Submitted, OrderEvent::OrderAccepted(_)) => Self::Accepted,
+            (Self::Submitted, OrderEvent::OrderPartiallyFilled(_)) => Self::PartiallyFilled,
+            (Self::Submitted, OrderEvent::OrderFilled(_)) => Self::Filled,
+            (Self::Accepted, OrderEvent::OrderRejected(_)) => Self::Rejected,  // StopLimit order
+            (Self::Accepted, OrderEvent::OrderPendingUpdate(_)) => Self::PendingUpdate,
+            (Self::Accepted, OrderEvent::OrderPendingCancel(_)) => Self::PendingCancel,
+            (Self::Accepted, OrderEvent::OrderCanceled(_)) => Self::Canceled,
+            (Self::Accepted, OrderEvent::OrderTriggered(_)) => Self::Triggered,
+            (Self::Accepted, OrderEvent::OrderExpired(_)) => Self::Expired,
+            (Self::Accepted, OrderEvent::OrderPartiallyFilled(_)) => Self::PartiallyFilled,
+            (Self::Accepted, OrderEvent::OrderFilled(_)) => Self::Filled,
+            (Self::Canceled, OrderEvent::OrderPartiallyFilled(_)) => Self::PartiallyFilled,  // Real world possibility
+            (Self::Canceled, OrderEvent::OrderFilled(_)) => Self::Filled,  // Real world possibility
+            (Self::PendingUpdate, OrderEvent::OrderRejected(_)) => Self::Rejected,
+            (Self::PendingUpdate, OrderEvent::OrderAccepted(_)) => Self::Accepted,
+            (Self::PendingUpdate, OrderEvent::OrderCanceled(_)) => Self::Canceled,
+            (Self::PendingUpdate, OrderEvent::OrderExpired(_)) => Self::Expired,
+            (Self::PendingUpdate, OrderEvent::OrderTriggered(_)) => Self::Triggered,
+            (Self::PendingUpdate, OrderEvent::OrderPendingUpdate(_)) => Self::PendingUpdate,  // Allow multiple requests
+            (Self::PendingUpdate, OrderEvent::OrderPendingCancel(_)) => Self::PendingCancel,
+            (Self::PendingUpdate, OrderEvent::OrderPartiallyFilled(_)) => Self::PartiallyFilled,
+            (Self::PendingUpdate, OrderEvent::OrderFilled(_)) => Self::Filled,
+            (Self::PendingCancel, OrderEvent::OrderRejected(_)) => Self::Rejected,
+            (Self::PendingCancel, OrderEvent::OrderPendingCancel(_)) => Self::PendingCancel,  // Allow multiple requests
+            (Self::PendingCancel, OrderEvent::OrderCanceled(_)) => Self::Canceled,
+            (Self::PendingCancel, OrderEvent::OrderExpired(_)) => Self::Expired,
+            (Self::PendingCancel, OrderEvent::OrderAccepted(_)) => Self::Accepted,  // Allow failed cancel requests
+            (Self::PendingCancel, OrderEvent::OrderPartiallyFilled(_)) => Self::PartiallyFilled,
+            (Self::PendingCancel, OrderEvent::OrderFilled(_)) => Self::Filled,
+            (Self::Triggered, OrderEvent::OrderRejected(_)) => Self::Rejected,
+            (Self::Triggered, OrderEvent::OrderPendingUpdate(_)) => Self::PendingUpdate,
+            (Self::Triggered, OrderEvent::OrderPendingCancel(_)) => Self::PendingCancel,
+            (Self::Triggered, OrderEvent::OrderCanceled(_)) => Self::Canceled,
+            (Self::Triggered, OrderEvent::OrderExpired(_)) => Self::Expired,
+            (Self::Triggered, OrderEvent::OrderPartiallyFilled(_)) => Self::PartiallyFilled,
+            (Self::Triggered, OrderEvent::OrderFilled(_)) => Self::Filled,
+            (Self::PartiallyFilled, OrderEvent::OrderPendingUpdate(_)) => Self::PendingUpdate,
+            (Self::PartiallyFilled, OrderEvent::OrderPendingCancel(_)) => Self::PendingCancel,
+            (Self::PartiallyFilled, OrderEvent::OrderCanceled(_)) => Self::Canceled,
+            (Self::PartiallyFilled, OrderEvent::OrderExpired(_)) => Self::Expired,
+            (Self::PartiallyFilled, OrderEvent::OrderPartiallyFilled(_)) => Self::PartiallyFilled,
+            (Self::PartiallyFilled, OrderEvent::OrderFilled(_)) => Self::Filled,
             _ => return Err(OrderError::InvalidStateTransition),
         };
         Ok(new_state)
@@ -509,7 +510,7 @@ impl OrderCore {
     }
 
     fn submitted(&mut self, event: &OrderSubmitted) {
-        self.account_id = Some(event.account_id)
+        self.account_id = Some(event.account_id);
     }
 
     fn accepted(&mut self, event: &OrderAccepted) {
@@ -593,9 +594,10 @@ impl OrderCore {
                 OrderSide::Sell if avg_px < current_price => Some(current_price - avg_px),
                 _ => None,
             }
-        })
+        });
     }
 
+    #[must_use]
     pub fn opposite_side(side: OrderSide) -> OrderSide {
         match side {
             OrderSide::Buy => OrderSide::Sell,
@@ -604,6 +606,7 @@ impl OrderCore {
         }
     }
 
+    #[must_use]
     pub fn closing_side(side: PositionSide) -> OrderSide {
         match side {
             PositionSide::Long => OrderSide::Sell,
@@ -613,6 +616,7 @@ impl OrderCore {
         }
     }
 
+    #[must_use]
     pub fn signed_decimal_qty(&self) -> Decimal {
         match self.side {
             OrderSide::Buy => self.quantity.as_decimal(),
@@ -621,6 +625,7 @@ impl OrderCore {
         }
     }
 
+    #[must_use]
     pub fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
         if side == PositionSide::Flat {
             return false;
@@ -635,10 +640,12 @@ impl OrderCore {
         }
     }
 
+    #[must_use]
     pub fn commission(&self, currency: &Currency) -> Option<Money> {
         self.commissions.get(currency).copied()
     }
 
+    #[must_use]
     pub fn commissions(&self) -> HashMap<Currency, Money> {
         self.commissions.clone()
     }
@@ -677,7 +684,7 @@ mod tests {
     #[case(OrderSide::NoOrderSide, OrderSide::NoOrderSide)]
     fn test_order_opposite_side(#[case] order_side: OrderSide, #[case] expected_side: OrderSide) {
         let result = OrderCore::opposite_side(order_side);
-        assert_eq!(result, expected_side)
+        assert_eq!(result, expected_side);
     }
 
     #[rstest]
@@ -686,7 +693,7 @@ mod tests {
     #[case(PositionSide::NoPositionSide, OrderSide::NoOrderSide)]
     fn test_closing_side(#[case] position_side: PositionSide, #[case] expected_side: OrderSide) {
         let result = OrderCore::closing_side(position_side);
-        assert_eq!(result, expected_side)
+        assert_eq!(result, expected_side);
     }
 
     #[rstest]
@@ -701,7 +708,7 @@ mod tests {
             .into();
 
         let result = order.signed_decimal_qty();
-        assert_eq!(result, expected)
+        assert_eq!(result, expected);
     }
 
     #[rustfmt::skip]
@@ -763,7 +770,7 @@ mod tests {
 
         assert_eq!(order.client_order_id, init.client_order_id);
         assert_eq!(order.status(), OrderStatus::Filled);
-        assert_eq!(order.filled_qty(), Quantity::from(100000));
+        assert_eq!(order.filled_qty(), Quantity::from(100_000));
         assert_eq!(order.leaves_qty(), Quantity::from(0));
         assert_eq!(order.avg_px(), Some(1.0));
         assert!(!order.is_open());

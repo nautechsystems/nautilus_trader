@@ -38,7 +38,7 @@ pub struct WeightedMovingAverage {
     /// The last indicator value.
     pub value: f64,
     /// Whether the indicator is initialized.
-    pub is_initialized: bool,
+    pub initialized: bool,
     /// Inputs
     pub inputs: Vec<f64>,
     has_inputs: bool,
@@ -61,7 +61,7 @@ impl WeightedMovingAverage {
             price_type: price_type.unwrap_or(PriceType::Last),
             value: 0.0,
             inputs: Vec::with_capacity(period),
-            is_initialized: false,
+            initialized: false,
             has_inputs: false,
         })
     }
@@ -87,16 +87,16 @@ impl Indicator for WeightedMovingAverage {
     fn has_inputs(&self) -> bool {
         self.has_inputs
     }
-    fn is_initialized(&self) -> bool {
-        self.is_initialized
+    fn initialized(&self) -> bool {
+        self.initialized
     }
 
-    fn handle_quote_tick(&mut self, tick: &QuoteTick) {
-        self.update_raw(tick.extract_price(self.price_type).into());
+    fn handle_quote_tick(&mut self, quote: &QuoteTick) {
+        self.update_raw(quote.extract_price(self.price_type).into());
     }
 
-    fn handle_trade_tick(&mut self, tick: &TradeTick) {
-        self.update_raw((&tick.price).into());
+    fn handle_trade_tick(&mut self, trade: &TradeTick) {
+        self.update_raw((&trade.price).into());
     }
 
     fn handle_bar(&mut self, bar: &Bar) {
@@ -106,7 +106,7 @@ impl Indicator for WeightedMovingAverage {
     fn reset(&mut self) {
         self.value = 0.0;
         self.has_inputs = false;
-        self.is_initialized = false;
+        self.initialized = false;
         self.inputs.clear();
     }
 }
@@ -131,8 +131,8 @@ impl MovingAverage for WeightedMovingAverage {
         }
         self.inputs.push(value);
         self.value = self.weighted_average();
-        if !self.is_initialized && self.count() >= self.period {
-            self.is_initialized = true;
+        if !self.initialized && self.count() >= self.period {
+            self.initialized = true;
         }
     }
 }
@@ -159,7 +159,7 @@ mod tests {
         );
         assert_eq!(indicator_wma_10.name(), "WeightedMovingAverage");
         assert!(!indicator_wma_10.has_inputs());
-        assert!(!indicator_wma_10.is_initialized());
+        assert!(!indicator_wma_10.initialized());
     }
 
     #[rstest]
@@ -233,6 +233,6 @@ mod tests {
         assert_eq!(indicator_wma_10.value, 0.0);
         assert_eq!(indicator_wma_10.count(), 0);
         assert!(!indicator_wma_10.has_inputs);
-        assert!(!indicator_wma_10.is_initialized);
+        assert!(!indicator_wma_10.initialized);
     }
 }

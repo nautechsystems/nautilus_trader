@@ -43,7 +43,6 @@ use crate::{
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct LimitIfTouchedOrder {
-    core: OrderCore,
     pub price: Price,
     pub trigger_price: Price,
     pub trigger_type: TriggerType,
@@ -53,6 +52,7 @@ pub struct LimitIfTouchedOrder {
     pub trigger_instrument_id: Option<InstrumentId>,
     pub is_triggered: bool,
     pub ts_triggered: Option<UnixNanos>,
+    core: OrderCore,
 }
 
 impl LimitIfTouchedOrder {
@@ -336,7 +336,7 @@ impl Order for LimitIfTouchedOrder {
         self.core.apply(event)?;
 
         if is_order_filled {
-            self.core.set_slippage(self.price)
+            self.core.set_slippage(self.price);
         };
 
         Ok(())
@@ -358,7 +358,7 @@ impl Order for LimitIfTouchedOrder {
 
 impl From<OrderInitialized> for LimitIfTouchedOrder {
     fn from(event: OrderInitialized) -> Self {
-        LimitIfTouchedOrder::new(
+        Self::new(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,

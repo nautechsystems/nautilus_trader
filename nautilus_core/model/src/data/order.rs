@@ -19,7 +19,6 @@ use std::{
 };
 
 use nautilus_core::serialization::Serializable;
-use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::{quote::QuoteTick, trade::TradeTick};
@@ -49,7 +48,7 @@ pub const NULL_ORDER: BookOrder = BookOrder {
 #[derive(Clone, Eq, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct BookOrder {
@@ -166,7 +165,7 @@ impl Serializable for BookOrder {}
 pub mod stubs {
     use rstest::fixture;
 
-    use super::*;
+    use super::{BookOrder, OrderSide};
     use crate::types::{price::Price, quantity::Quantity};
 
     #[fixture]
@@ -174,7 +173,7 @@ pub mod stubs {
         let price = Price::from("100.00");
         let size = Quantity::from("10");
         let side = OrderSide::Buy;
-        let order_id = 123456;
+        let order_id = 123_456;
 
         BookOrder::new(side, price, size, order_id)
     }
@@ -198,7 +197,7 @@ mod tests {
         let price = Price::from("100.00");
         let size = Quantity::from("10");
         let side = OrderSide::Buy;
-        let order_id = 123456;
+        let order_id = 123_456;
 
         let order = BookOrder::new(side, price, size, order_id);
 
@@ -213,7 +212,7 @@ mod tests {
         let price = Price::from("100.00");
         let size = Quantity::from("10");
         let side = OrderSide::Buy;
-        let order_id = 123456;
+        let order_id = 123_456;
 
         let order = BookOrder::new(side, price, size, order_id);
         let book_price = order.to_book_price();
@@ -227,7 +226,7 @@ mod tests {
         let price = Price::from("100.00");
         let size = Quantity::from("10");
         let side = OrderSide::Buy;
-        let order_id = 123456;
+        let order_id = 123_456;
 
         let order = BookOrder::new(side, price, size, order_id);
         let exposure = order.exposure();
@@ -239,7 +238,7 @@ mod tests {
     fn test_signed_size() {
         let price = Price::from("100.00");
         let size = Quantity::from("10");
-        let order_id = 123456;
+        let order_id = 123_456;
 
         let order_buy = BookOrder::new(OrderSide::Buy, price, size, order_id);
         let signed_size_buy = order_buy.signed_size();
@@ -255,12 +254,12 @@ mod tests {
         let price = Price::from("100.00");
         let size = Quantity::from(10);
         let side = OrderSide::Buy;
-        let order_id = 123456;
+        let order_id = 123_456;
 
         let order = BookOrder::new(side, price, size, order_id);
-        let display = format!("{}", order);
+        let display = format!("{order}");
 
-        let expected = format!("{},{},{},{}", price, size, side, order_id);
+        let expected = format!("{price},{size},{side},{order_id}");
         assert_eq!(display, expected);
     }
 

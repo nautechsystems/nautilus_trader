@@ -32,9 +32,12 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.component import Clock
 from nautilus_trader.common.component import Component
-from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.component import deregister_component_clock
+from nautilus_trader.common.component import register_component_clock
+from nautilus_trader.common.component import remove_instance_component_clocks
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.algorithm import ExecAlgorithm
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -57,6 +60,8 @@ class Trader(Component):
     ----------
     trader_id : TraderId
         The ID for the trader.
+    instance_id : UUID4
+        The instance ID for the trader.
     msgbus : MessageBus
         The message bus for the trader.
     cache : Cache
@@ -92,6 +97,7 @@ class Trader(Component):
     def __init__(
         self,
         trader_id: TraderId,
+        instance_id: UUID4,
         msgbus: MessageBus,
         cache: Cache,
         portfolio: Portfolio,
@@ -108,6 +114,7 @@ class Trader(Component):
             msgbus=msgbus,
         )
 
+        self._instance_id = instance_id
         self._loop = loop
         self._cache = cache
         self._portfolio = portfolio
@@ -119,6 +126,18 @@ class Trader(Component):
         self._strategies: dict[StrategyId, Strategy] = {}
         self._exec_algorithms: dict[ExecAlgorithmId, ExecAlgorithm] = {}
         self._has_controller: bool = has_controller
+
+    @property
+    def instance_id(self) -> UUID4:
+        """
+        Return the traders instance ID.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self._instance_id
 
     def actors(self) -> list[Actor]:
         """
@@ -267,6 +286,8 @@ class Trader(Component):
         self.clear_strategies()
         self.clear_exec_algorithms()
 
+        remove_instance_component_clocks(self._instance_id)
+
     # --------------------------------------------------------------------------------------------------
 
     def add_actor(self, actor: Actor) -> None:
@@ -299,17 +320,15 @@ class Trader(Component):
                 "try specifying a different actor ID.",
             )
 
-        if isinstance(self._clock, LiveClock):
-            clock = self._clock.__class__(loop=self._loop)
-        else:
-            clock = self._clock.__class__()
+        clock = self._clock.__class__()  # Clock per component
+        register_component_clock(self._instance_id, clock)
 
         # Wire component into trader
         actor.register_base(
             portfolio=self._portfolio,
             msgbus=self._msgbus,
             cache=self._cache,
-            clock=clock,  # Clock per component
+            clock=clock,
         )
 
         self._actors[actor.id] = actor
@@ -367,11 +386,6 @@ class Trader(Component):
                 "try specifying a different strategy ID.",
             )
 
-        if isinstance(self._clock, LiveClock):
-            clock = self._clock.__class__(loop=self._loop)
-        else:
-            clock = self._clock.__class__()
-
         # Confirm strategy ID
         order_id_tags: list[str] = [s.order_id_tag for s in self._strategies.values()]
         if strategy.order_id_tag in (None, str(None)):
@@ -388,13 +402,16 @@ class Trader(Component):
                 f"explicitly define all `order_id_tag` values in your strategy configs",
             )
 
+        clock = self._clock.__class__()  # Clock per component
+        register_component_clock(self._instance_id, clock)
+
         # Wire strategy into trader
         strategy.register(
             trader_id=self.id,
             portfolio=self._portfolio,
             msgbus=self._msgbus,
             cache=self._cache,
-            clock=clock,  # Clock per strategy
+            clock=clock,
         )
 
         self._exec_engine.register_oms_type(strategy)
@@ -454,10 +471,8 @@ class Trader(Component):
                 "try specifying a different `exec_algorithm_id`.",
             )
 
-        if isinstance(self._clock, LiveClock):
-            clock = self._clock.__class__(loop=self._loop)
-        else:
-            clock = self._clock.__class__()
+        clock = self._clock.__class__()  # Clock per component
+        register_component_clock(self._instance_id, clock)
 
         # Wire execution algorithm into trader
         exec_algorithm.register(
@@ -465,7 +480,7 @@ class Trader(Component):
             portfolio=self._portfolio,
             msgbus=self._msgbus,
             cache=self._cache,
-            clock=clock,  # Clock per algorithm
+            clock=clock,
         )
 
         self._exec_algorithms[exec_algorithm.id] = exec_algorithm
@@ -627,6 +642,7 @@ class Trader(Component):
             actor.stop()
 
         self._actors.pop(actor_id)
+        deregister_component_clock(self._instance_id, actor.clock)
 
     def remove_strategy(self, strategy_id: StrategyId) -> None:
         """
@@ -655,6 +671,7 @@ class Trader(Component):
             strategy.stop()
 
         self._strategies.pop(strategy_id)
+        deregister_component_clock(self._instance_id, strategy.clock)
 
     def clear_actors(self) -> None:
         """
@@ -672,6 +689,7 @@ class Trader(Component):
 
         for actor in self._actors.values():
             actor.dispose()
+            deregister_component_clock(self._instance_id, actor.clock)
 
         self._actors.clear()
         self._log.info("Cleared all actors.")
@@ -692,6 +710,7 @@ class Trader(Component):
 
         for strategy in self._strategies.values():
             strategy.dispose()
+            deregister_component_clock(self._instance_id, strategy.clock)
 
         self._strategies.clear()
         self._log.info("Cleared all trading strategies.")
@@ -712,6 +731,7 @@ class Trader(Component):
 
         for exec_algorithm in self._exec_algorithms.values():
             exec_algorithm.dispose()
+            deregister_component_clock(self._instance_id, exec_algorithm.clock)
 
         self._exec_algorithms.clear()
         self._log.info("Cleared all execution algorithms.")

@@ -38,6 +38,7 @@ use crate::{
 pub struct Level_API(Box<Level>);
 
 impl Level_API {
+    #[must_use]
     pub fn new(level: Level) -> Self {
         Self(Box::new(level))
     }
@@ -60,7 +61,7 @@ impl DerefMut for Level_API {
 #[no_mangle]
 pub extern "C" fn level_new(order_side: OrderSide, price: Price, orders: CVec) -> Level_API {
     let CVec { ptr, len, cap } = orders;
-    let orders: Vec<BookOrder> = unsafe { Vec::from_raw_parts(ptr as *mut BookOrder, len, cap) };
+    let orders: Vec<BookOrder> = unsafe { Vec::from_raw_parts(ptr.cast::<BookOrder>(), len, cap) };
     let price = BookPrice {
         value: price,
         side: order_side,
@@ -87,7 +88,7 @@ pub extern "C" fn level_price(level: &Level_API) -> Price {
 
 #[no_mangle]
 pub extern "C" fn level_orders(level: &Level_API) -> CVec {
-    let orders_vec: Vec<BookOrder> = level.orders.values().cloned().collect();
+    let orders_vec: Vec<BookOrder> = level.orders.values().copied().collect();
     orders_vec.into()
 }
 
@@ -105,7 +106,7 @@ pub extern "C" fn level_exposure(level: &Level_API) -> f64 {
 #[no_mangle]
 pub extern "C" fn vec_levels_drop(v: CVec) {
     let CVec { ptr, len, cap } = v;
-    let data: Vec<Level_API> = unsafe { Vec::from_raw_parts(ptr as *mut Level_API, len, cap) };
+    let data: Vec<Level_API> = unsafe { Vec::from_raw_parts(ptr.cast::<Level_API>(), len, cap) };
     drop(data); // Memory freed here
 }
 
@@ -113,6 +114,6 @@ pub extern "C" fn vec_levels_drop(v: CVec) {
 #[no_mangle]
 pub extern "C" fn vec_orders_drop(v: CVec) {
     let CVec { ptr, len, cap } = v;
-    let orders: Vec<BookOrder> = unsafe { Vec::from_raw_parts(ptr as *mut BookOrder, len, cap) };
+    let orders: Vec<BookOrder> = unsafe { Vec::from_raw_parts(ptr.cast::<BookOrder>(), len, cap) };
     drop(orders); // Memory freed here
 }

@@ -23,6 +23,7 @@ from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
+from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
@@ -380,6 +381,45 @@ def test_delta_from_dict_returns_expected_clear() -> None:
 def test_deltas_fully_qualified_name() -> None:
     # Arrange, Act, Assert
     assert OrderBookDeltas.fully_qualified_name() == "nautilus_trader.model.data:OrderBookDeltas"
+
+
+def test_deltas_pickle_round_trip() -> None:
+    # Arrange
+    deltas = TestDataStubs.order_book_deltas()
+
+    # Act
+    pickled = pickle.dumps(deltas)
+    unpickled = pickle.loads(pickled)  # noqa
+
+    # Assert
+    assert deltas == unpickled
+    assert len(deltas.deltas) == len(unpickled.deltas)
+
+
+def test_deltas_to_pyo3() -> None:
+    # Arrange
+    deltas = TestDataStubs.order_book_deltas()
+
+    # Act
+    pyo3_deltas = deltas.to_pyo3()
+
+    # Assert
+    assert isinstance(pyo3_deltas, nautilus_pyo3.OrderBookDeltas)
+    assert len(pyo3_deltas.deltas) == len(deltas.deltas)
+
+
+def test_deltas_capsule_round_trip() -> None:
+    # Arrange
+    deltas = TestDataStubs.order_book_deltas()
+
+    # Act
+    pyo3_deltas = deltas.to_pyo3()
+    capsule = pyo3_deltas.as_pycapsule()
+    deltas = capsule_to_data(capsule)
+
+    # Assert
+    assert isinstance(pyo3_deltas, nautilus_pyo3.OrderBookDeltas)
+    assert len(pyo3_deltas.deltas) == len(deltas.deltas)
 
 
 def test_deltas_hash_str_and_repr() -> None:

@@ -345,7 +345,7 @@ impl Order for TrailingStopLimitOrder {
         self.core.apply(event)?;
 
         if is_order_filled {
-            self.core.set_slippage(self.price)
+            self.core.set_slippage(self.price);
         };
 
         Ok(())
@@ -367,7 +367,7 @@ impl Order for TrailingStopLimitOrder {
 
 impl From<OrderInitialized> for TrailingStopLimitOrder {
     fn from(event: OrderInitialized) -> Self {
-        TrailingStopLimitOrder::new(
+        Self::new(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,

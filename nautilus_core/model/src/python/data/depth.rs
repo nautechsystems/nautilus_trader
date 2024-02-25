@@ -25,6 +25,7 @@ use nautilus_core::{
 };
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 
+use super::data_to_pycapsule;
 use crate::{
     data::{
         depth::{OrderBookDepth10, DEPTH10_LEN},
@@ -33,11 +34,9 @@ use crate::{
     },
     enums::OrderSide,
     identifiers::instrument_id::InstrumentId,
-    python::PY_MODULE_MODEL,
+    python::common::PY_MODULE_MODEL,
     types::{price::Price, quantity::Quantity},
 };
-
-use super::data_to_pycapsule;
 
 #[pymethods]
 impl OrderBookDepth10 {
@@ -266,7 +265,7 @@ impl OrderBookDepth10 {
         let bid_counts: [u32; 10] = [1; 10];
         let ask_counts: [u32; 10] = [1; 10];
 
-        OrderBookDepth10::new(
+        Self::new(
             instrument_id,
             bids,
             asks,

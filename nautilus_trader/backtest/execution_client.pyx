@@ -62,7 +62,7 @@ cdef class BacktestExecClient(ExecutionClient):
         TestClock clock not None,
         bint routing=False,
         bint frozen_account=False,
-    ):
+    ) -> None:
         super().__init__(
             client_id=ClientId(exchange.id.value),
             venue=Venue(exchange.id.value),

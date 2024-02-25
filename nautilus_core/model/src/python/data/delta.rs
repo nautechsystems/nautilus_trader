@@ -25,14 +25,13 @@ use nautilus_core::{
 };
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 
+use super::data_to_pycapsule;
 use crate::{
     data::{delta::OrderBookDelta, order::BookOrder, Data},
     enums::BookAction,
     identifiers::instrument_id::InstrumentId,
-    python::PY_MODULE_MODEL,
+    python::common::PY_MODULE_MODEL,
 };
-
-use super::data_to_pycapsule;
 
 #[pymethods]
 impl OrderBookDelta {
@@ -236,7 +235,7 @@ mod tests {
 
         Python::with_gil(|py| {
             let dict_string = delta.py_as_dict(py).unwrap().to_string();
-            let expected_string = r#"{'type': 'OrderBookDelta', 'instrument_id': 'AAPL.XNAS', 'action': 'ADD', 'order': {'side': 'BUY', 'price': '100.00', 'size': '10', 'order_id': 123456}, 'flags': 0, 'sequence': 1, 'ts_event': 1, 'ts_init': 2}"#;
+            let expected_string = r"{'type': 'OrderBookDelta', 'instrument_id': 'AAPL.XNAS', 'action': 'ADD', 'order': {'side': 'BUY', 'price': '100.00', 'size': '10', 'order_id': 123456}, 'flags': 0, 'sequence': 1, 'ts_event': 1, 'ts_init': 2}";
             assert_eq!(dict_string, expected_string);
         });
     }

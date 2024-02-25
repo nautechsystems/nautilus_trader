@@ -78,6 +78,17 @@ from nautilus_trader.core.rust.model cimport instrument_id_from_cstr
 from nautilus_trader.core.rust.model cimport orderbook_delta_eq
 from nautilus_trader.core.rust.model cimport orderbook_delta_hash
 from nautilus_trader.core.rust.model cimport orderbook_delta_new
+from nautilus_trader.core.rust.model cimport orderbook_deltas_clone
+from nautilus_trader.core.rust.model cimport orderbook_deltas_drop
+from nautilus_trader.core.rust.model cimport orderbook_deltas_flags
+from nautilus_trader.core.rust.model cimport orderbook_deltas_instrument_id
+from nautilus_trader.core.rust.model cimport orderbook_deltas_is_snapshot
+from nautilus_trader.core.rust.model cimport orderbook_deltas_new
+from nautilus_trader.core.rust.model cimport orderbook_deltas_sequence
+from nautilus_trader.core.rust.model cimport orderbook_deltas_ts_event
+from nautilus_trader.core.rust.model cimport orderbook_deltas_ts_init
+from nautilus_trader.core.rust.model cimport orderbook_deltas_vec_deltas
+from nautilus_trader.core.rust.model cimport orderbook_deltas_vec_drop
 from nautilus_trader.core.rust.model cimport orderbook_depth10_ask_counts_array
 from nautilus_trader.core.rust.model cimport orderbook_depth10_asks_array
 from nautilus_trader.core.rust.model cimport orderbook_depth10_bid_counts_array
@@ -136,6 +147,12 @@ cdef inline OrderBookDelta delta_from_mem_c(OrderBookDelta_t mem):
     return delta
 
 
+cdef inline OrderBookDeltas deltas_from_mem_c(OrderBookDeltas_API mem):
+    cdef OrderBookDeltas deltas = OrderBookDeltas.__new__(OrderBookDeltas)
+    deltas._mem = orderbook_deltas_clone(&mem)
+    return deltas
+
+
 cdef inline OrderBookDepth10 depth10_from_mem_c(OrderBookDepth10_t mem):
     cdef OrderBookDepth10 depth10 = OrderBookDepth10.__new__(OrderBookDepth10)
     depth10._mem = mem
@@ -170,6 +187,8 @@ cpdef list capsule_to_list(capsule):
     for i in range(0, data.len):
         if ptr[i].tag == Data_t_Tag.DELTA:
             objects.append(delta_from_mem_c(ptr[i].delta))
+        elif ptr[i].tag == Data_t_Tag.DELTAS:
+            objects.append(deltas_from_mem_c(ptr[i].deltas))
         elif ptr[i].tag == Data_t_Tag.DEPTH10:
             objects.append(depth10_from_mem_c(ptr[i].depth10))
         elif ptr[i].tag == Data_t_Tag.QUOTE:
@@ -188,6 +207,8 @@ cpdef Data capsule_to_data(capsule):
 
     if ptr.tag == Data_t_Tag.DELTA:
         return delta_from_mem_c(ptr.delta)
+    elif ptr.tag == Data_t_Tag.DELTAS:
+        return deltas_from_mem_c(ptr.deltas)
     elif ptr.tag == Data_t_Tag.DEPTH10:
         return depth10_from_mem_c(ptr.depth10)
     elif ptr.tag == Data_t_Tag.QUOTE:
@@ -410,7 +431,6 @@ cdef class BarSpecification:
             return True
         else:
             return False
-
 
     @staticmethod
     def from_str(str value) -> BarSpecification:
@@ -1868,12 +1888,12 @@ cdef class OrderBookDelta(Data):
         )
 
     @staticmethod
-    cdef inline list capsule_to_list_c(object capsule):
+    cdef list[OrderBookDelta] capsule_to_list_c(object capsule):
         # SAFETY: Do NOT deallocate the capsule here
         # It is supposed to be deallocated by the creator
         cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
         cdef OrderBookDelta_t* ptr = <OrderBookDelta_t*>data.ptr
-        cdef list deltas = []
+        cdef list[OrderBookDelta] deltas = []
 
         cdef uint64_t i
         for i in range(0, data.len):
@@ -1882,18 +1902,18 @@ cdef class OrderBookDelta(Data):
         return deltas
 
     @staticmethod
-    cdef inline list_to_capsule_c(list items):
+    cdef object list_to_capsule_c(list items):
         # Create a C struct buffer
         cdef uint64_t len_ = len(items)
-        cdef OrderBookDelta_t * data = <OrderBookDelta_t *> PyMem_Malloc(len_ * sizeof(OrderBookDelta_t))
+        cdef OrderBookDelta_t *data = <OrderBookDelta_t *>PyMem_Malloc(len_ * sizeof(OrderBookDelta_t))
         cdef uint64_t i
         for i in range(len_):
-            data[i] = (<OrderBookDelta> items[i])._mem
+            data[i] = (<OrderBookDelta>items[i])._mem
         if not data:
             raise MemoryError()
 
         # Create CVec
-        cdef CVec * cvec = <CVec *> PyMem_Malloc(1 * sizeof(CVec))
+        cdef CVec *cvec = <CVec *>PyMem_Malloc(1 * sizeof(CVec))
         cvec.ptr = data
         cvec.len = len_
         cvec.cap = len_
@@ -2130,12 +2150,82 @@ cdef class OrderBookDeltas(Data):
     ) -> None:
         Condition.not_empty(deltas, "deltas")
 
-        self.instrument_id = instrument_id
-        self.deltas = deltas
-        self.is_snapshot = deltas[0].is_clear
-        self.sequence = deltas[-1].sequence
-        self.ts_event = deltas[-1].ts_event
-        self.ts_init = deltas[-1].ts_init
+        cdef uint64_t len_ = len(deltas)
+
+        # Create a C OrderBookDeltas_t buffer
+        cdef OrderBookDelta_t *data = <OrderBookDelta_t *>PyMem_Malloc(len_ * sizeof(OrderBookDelta_t))
+        if not data:
+            raise MemoryError()
+
+        cdef uint64_t i
+        cdef OrderBookDelta delta
+        for i in range(len_):
+            delta = deltas[i]
+            data[i] = <OrderBookDelta_t>delta._mem
+
+        # Create CVec
+        cdef CVec *cvec = <CVec *>PyMem_Malloc(1 * sizeof(CVec))
+        if not cvec:
+            raise MemoryError()
+
+        cvec.ptr = data
+        cvec.len = len_
+        cvec.cap = len_
+
+        # Transfer data to Rust
+        self._mem = orderbook_deltas_new(
+            instrument_id._mem,
+            cvec,
+        )
+
+        PyMem_Free(cvec.ptr) # De-allocate buffer
+        PyMem_Free(cvec) # De-allocate cvec
+
+    def __getstate__(self):
+        return (
+            self.instrument_id.value,
+            pickle.dumps(self.deltas),
+        )
+
+    def __setstate__(self, state):
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
+
+        cdef list deltas = pickle.loads(state[1])
+
+        cdef uint64_t len_ = len(deltas)
+
+        # Create a C OrderBookDeltas_t buffer
+        cdef OrderBookDelta_t *data = <OrderBookDelta_t *>PyMem_Malloc(len_ * sizeof(OrderBookDelta_t))
+        if not data:
+            raise MemoryError()
+
+        cdef uint64_t i
+        cdef OrderBookDelta delta
+        for i in range(len_):
+            delta = deltas[i]
+            data[i] = <OrderBookDelta_t>delta._mem
+
+        # Create CVec
+        cdef CVec *cvec = <CVec *>PyMem_Malloc(1 * sizeof(CVec))
+        if not cvec:
+            raise MemoryError()
+
+        cvec.ptr = data
+        cvec.len = len_
+        cvec.cap = len_
+
+        # Transfer data to Rust
+        self._mem = orderbook_deltas_new(
+            instrument_id._mem,
+            cvec,
+        )
+
+        PyMem_Free(cvec.ptr) # De-allocate buffer
+        PyMem_Free(cvec) # De-allocate cvec
+
+    def __del__(self) -> None:
+        if self._mem._0 != NULL:
+            orderbook_deltas_drop(self._mem)
 
     def __eq__(self, OrderBookDeltas other) -> bool:
         return OrderBookDeltas.to_dict_c(self) == OrderBookDeltas.to_dict_c(other)
@@ -2154,6 +2244,102 @@ cdef class OrderBookDeltas(Data):
             f"ts_init={self.ts_init})"
         )
 
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        Return the deltas book instrument ID.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return InstrumentId.from_mem_c(orderbook_deltas_instrument_id(&self._mem))
+
+    @property
+    def deltas(self) -> list[OrderBookDelta]:
+        """
+        Return the contained deltas.
+
+        Returns
+        -------
+        list[OrderBookDeltas]
+
+        """
+        cdef CVec raw_deltas_vec = orderbook_deltas_vec_deltas(&self._mem)
+        cdef OrderBookDelta_t* raw_deltas = <OrderBookDelta_t*>raw_deltas_vec.ptr
+
+        cdef list[OrderBookDelta] deltas = []
+
+        cdef:
+            uint64_t i
+        for i in range(raw_deltas_vec.len):
+            deltas.append(delta_from_mem_c(raw_deltas[i]))
+
+        orderbook_deltas_vec_drop(raw_deltas_vec)
+
+        return deltas
+
+    @property
+    def is_snapshot(self) -> bool:
+        """
+        If the deltas is a snapshot.
+
+        Returns
+        -------
+        bool
+
+        """
+        return <bint>orderbook_deltas_is_snapshot(&self._mem)
+
+    @property
+    def flags(self) -> uint8_t:
+        """
+        Return the flags for the last delta.
+
+        Returns
+        -------
+        uint8_t
+
+        """
+        return orderbook_deltas_flags(&self._mem)
+
+    @property
+    def sequence(self) -> uint64_t:
+        """
+        Return the sequence number for the last delta.
+
+        Returns
+        -------
+        uint64_t
+
+        """
+        return orderbook_deltas_sequence(&self._mem)
+
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return orderbook_deltas_ts_event(&self._mem)
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return orderbook_deltas_ts_init(&self._mem)
+
     @staticmethod
     cdef OrderBookDeltas from_dict_c(dict values):
         Condition.not_none(values, "values")
@@ -2167,7 +2353,7 @@ cdef class OrderBookDeltas(Data):
         Condition.not_none(obj, "obj")
         return {
             "type": obj.__class__.__name__,
-            "instrument_id": obj.instrument_id.to_str(),
+            "instrument_id": obj.instrument_id.value,
             "deltas": [OrderBookDelta.to_dict_c(d) for d in obj.deltas],
         }
 
@@ -2199,6 +2385,18 @@ cdef class OrderBookDeltas(Data):
 
         """
         return OrderBookDeltas.to_dict_c(obj)
+
+    cpdef to_capsule(self):
+        cdef OrderBookDeltas_API *data = <OrderBookDeltas_API *>PyMem_Malloc(sizeof(OrderBookDeltas_API))
+        data[0] = self._mem
+        capsule = PyCapsule_New(data, NULL, <PyCapsule_Destructor>capsule_destructor_deltas)
+        return capsule
+
+    cpdef to_pyo3(self):
+        capsule = self.to_capsule()
+        deltas = nautilus_pyo3.OrderBookDeltas.from_pycapsule(capsule)
+        return deltas
+
 
 
 cdef class OrderBookDepth10(Data):
@@ -2561,12 +2759,12 @@ cdef class OrderBookDepth10(Data):
         }
 
     @staticmethod
-    cdef inline list capsule_to_list_c(object capsule):
+    cdef list[OrderBookDepth10] capsule_to_list_c(object capsule):
         # SAFETY: Do NOT deallocate the capsule here
         # It is supposed to be deallocated by the creator
         cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
         cdef OrderBookDepth10_t* ptr = <OrderBookDepth10_t*>data.ptr
-        cdef list depths = []
+        cdef list[OrderBookDepth10] depths = []
 
         cdef uint64_t i
         for i in range(0, data.len):
@@ -2575,10 +2773,10 @@ cdef class OrderBookDepth10(Data):
         return depths
 
     @staticmethod
-    cdef inline list_to_capsule_c(list items):
+    cdef object list_to_capsule_c(list items):
         # Create a C struct buffer
         cdef uint64_t len_ = len(items)
-        cdef OrderBookDepth10_t * data = <OrderBookDepth10_t *> PyMem_Malloc(len_ * sizeof(OrderBookDepth10_t))
+        cdef OrderBookDepth10_t * data = <OrderBookDepth10_t *>PyMem_Malloc(len_ * sizeof(OrderBookDepth10_t))
         cdef uint64_t i
         for i in range(len_):
             data[i] = (<OrderBookDepth10>items[i])._mem
@@ -2586,7 +2784,7 @@ cdef class OrderBookDepth10(Data):
             raise MemoryError()
 
         # Create CVec
-        cdef CVec * cvec = <CVec *> PyMem_Malloc(1 * sizeof(CVec))
+        cdef CVec * cvec = <CVec *>PyMem_Malloc(1 * sizeof(CVec))
         cvec.ptr = data
         cvec.len = len_
         cvec.cap = len_
@@ -3239,12 +3437,12 @@ cdef class QuoteTick(Data):
         return quote
 
     @staticmethod
-    cdef inline list capsule_to_list_c(object capsule):
+    cdef list[QuoteTick] capsule_to_list_c(object capsule):
         # SAFETY: Do NOT deallocate the capsule here
         # It is supposed to be deallocated by the creator
         cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
         cdef QuoteTick_t* ptr = <QuoteTick_t*>data.ptr
-        cdef list quotes = []
+        cdef list[QuoteTick] quotes = []
 
         cdef uint64_t i
         for i in range(0, data.len):
@@ -3253,18 +3451,18 @@ cdef class QuoteTick(Data):
         return quotes
 
     @staticmethod
-    cdef inline list_to_capsule_c(list items):
+    cdef object list_to_capsule_c(list items):
         # Create a C struct buffer
         cdef uint64_t len_ = len(items)
-        cdef QuoteTick_t * data = <QuoteTick_t *> PyMem_Malloc(len_ * sizeof(QuoteTick_t))
+        cdef QuoteTick_t * data = <QuoteTick_t *>PyMem_Malloc(len_ * sizeof(QuoteTick_t))
         cdef uint64_t i
         for i in range(len_):
-            data[i] = (<QuoteTick> items[i])._mem
+            data[i] = (<QuoteTick>items[i])._mem
         if not data:
             raise MemoryError()
 
         # Create CVec
-        cdef CVec * cvec = <CVec *> PyMem_Malloc(1 * sizeof(CVec))
+        cdef CVec *cvec = <CVec *>PyMem_Malloc(1 * sizeof(CVec))
         cvec.ptr = data
         cvec.len = len_
         cvec.cap = len_
@@ -3730,12 +3928,12 @@ cdef class TradeTick(Data):
         return trade
 
     @staticmethod
-    cdef inline list capsule_to_list_c(capsule):
+    cdef list[TradeTick] capsule_to_list_c(capsule):
         # SAFETY: Do NOT deallocate the capsule here
         # It is supposed to be deallocated by the creator
         cdef CVec* data = <CVec *>PyCapsule_GetPointer(capsule, NULL)
         cdef TradeTick_t* ptr = <TradeTick_t *>data.ptr
-        cdef list trades = []
+        cdef list[TradeTick] trades = []
 
         cdef uint64_t i
         for i in range(0, data.len):
@@ -3744,18 +3942,18 @@ cdef class TradeTick(Data):
         return trades
 
     @staticmethod
-    cdef inline list_to_capsule_c(list items):
+    cdef object list_to_capsule_c(list items):
         # Create a C struct buffer
         cdef uint64_t len_ = len(items)
-        cdef TradeTick_t * data = <TradeTick_t *> PyMem_Malloc(len_ * sizeof(TradeTick_t))
+        cdef TradeTick_t *data = <TradeTick_t *>PyMem_Malloc(len_ * sizeof(TradeTick_t))
         cdef uint64_t i
         for i in range(len_):
-            data[i] = (<TradeTick> items[i])._mem
+            data[i] = (<TradeTick>items[i])._mem
         if not data:
             raise MemoryError()
 
         # Create CVec
-        cdef CVec* cvec = <CVec *> PyMem_Malloc(1 * sizeof(CVec))
+        cdef CVec *cvec = <CVec *>PyMem_Malloc(1 * sizeof(CVec))
         cvec.ptr = data
         cvec.len = len_
         cvec.cap = len_
@@ -3907,7 +4105,7 @@ cdef class TradeTick(Data):
             if pyo3_instrument_id is None:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(trade.instrument_id.value)
                 price_prec = trade.price.precision
-                size_prec = trade.price.precision
+                size_prec = trade.size.precision
 
             pyo3_trade = nautilus_pyo3.TradeTick(
                 pyo3_instrument_id,

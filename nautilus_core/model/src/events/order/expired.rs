@@ -16,7 +16,7 @@
 use std::fmt::Display;
 
 use anyhow::Result;
-use derive_builder::{self, Builder};
+use derive_builder::Builder;
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -69,7 +69,7 @@ impl OrderExpired {
             event_id,
             ts_event,
             ts_init,
-            reconciliation: reconciliation as u8,
+            reconciliation: u8::from(reconciliation),
             venue_order_id,
             account_id,
         })
@@ -83,12 +83,8 @@ impl Display for OrderExpired {
             "OrderExpired(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, ts_event={})",
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id
-                .map(|venue_order_id| format!("{}", venue_order_id))
-                .unwrap_or_else(|| "None".to_string()),
-            self.account_id
-                .map(|account_id| format!("{}", account_id))
-                .unwrap_or_else(|| "None".to_string()),
+            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}")),
+            self.account_id.map_or_else(|| "None".to_string(), |account_id| format!("{account_id}")),
             self.ts_event
         )
     }
@@ -106,7 +102,7 @@ mod tests {
 
     #[rstest]
     fn test_order_cancel_rejected(order_expired: OrderExpired) {
-        let display = format!("{}", order_expired);
+        let display = format!("{order_expired}");
         assert_eq!(
             display,
             "OrderExpired(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, venue_order_id=001, account_id=SIM-001, ts_event=0)"

@@ -46,7 +46,7 @@ impl AccountState {
         ts_init: UnixNanos,
         base_currency: Option<Currency>,
     ) -> PyResult<Self> {
-        AccountState::new(
+        Self::new(
             account_id,
             account_type,
             balances,
@@ -74,10 +74,8 @@ impl AccountState {
             stringify!(AccountState),
             self.account_id,
             self.account_type,
-            self.base_currency
-                .map(|base_currency | format!("{}", base_currency.code))
-                .unwrap_or_else(|| "None".to_string()),            self.balances.iter().map(|b| format!("{}", b)).collect::<Vec<String>>().join(","),
-            self.margins.iter().map(|m| format!("{}", m)).collect::<Vec<String>>().join(","),
+            self.base_currency.map_or_else(|| "None".to_string(), |base_currency | format!("{}", base_currency.code)),            self.balances.iter().map(|b| format!("{b}")).collect::<Vec<String>>().join(","),
+            self.margins.iter().map(|m| format!("{m}")).collect::<Vec<String>>().join(","),
             self.is_reported,
             self.event_id,
         )
@@ -89,10 +87,8 @@ impl AccountState {
             stringify!(AccountState),
             self.account_id,
             self.account_type,
-            self.base_currency
-                .map(|base_currency | format!("{}", base_currency.code))
-                .unwrap_or_else(|| "None".to_string()),            self.balances.iter().map(|b| format!("{}", b)).collect::<Vec<String>>().join(","),
-            self.margins.iter().map(|m| format!("{}", m)).collect::<Vec<String>>().join(","),
+            self.base_currency.map_or_else(|| "None".to_string(), |base_currency | format!("{}", base_currency.code)),            self.balances.iter().map(|b| format!("{b}")).collect::<Vec<String>>().join(","),
+            self.margins.iter().map(|m| format!("{m}")).collect::<Vec<String>>().join(","),
             self.is_reported,
             self.event_id,
         )
@@ -123,7 +119,7 @@ impl AccountState {
         dict.set_item("ts_init", self.ts_init.to_u64())?;
         match self.base_currency {
             Some(base_currency) => {
-                dict.set_item("base_currency", base_currency.code.to_string())?
+                dict.set_item("base_currency", base_currency.code.to_string())?;
             }
             None => dict.set_item("base_currency", "None")?,
         }

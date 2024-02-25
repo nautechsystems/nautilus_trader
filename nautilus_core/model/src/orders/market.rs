@@ -321,12 +321,12 @@ impl Order for MarketOrder {
     }
 
     fn update(&mut self, event: &OrderUpdated) {
-        if event.price.is_some() {
-            panic!("{}", OrderError::InvalidOrderEvent);
-        }
-        if event.trigger_price.is_some() {
-            panic!("{}", OrderError::InvalidOrderEvent);
-        }
+        assert!(event.price.is_none(), "{}", OrderError::InvalidOrderEvent);
+        assert!(
+            event.trigger_price.is_none(),
+            "{}",
+            OrderError::InvalidOrderEvent
+        );
 
         self.quantity = event.quantity;
         self.leaves_qty = self.quantity - self.filled_qty;
@@ -335,7 +335,7 @@ impl Order for MarketOrder {
 
 impl From<OrderInitialized> for MarketOrder {
     fn from(event: OrderInitialized) -> Self {
-        MarketOrder::new(
+        Self::new(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,
@@ -367,10 +367,12 @@ impl From<OrderInitialized> for MarketOrder {
 mod tests {
     use rstest::rstest;
 
-    use crate::enums::OrderSide;
-    use crate::instruments::currency_pair::CurrencyPair;
-    use crate::instruments::stubs::*;
-    use crate::{enums::TimeInForce, orders::stubs::*, types::quantity::Quantity};
+    use crate::{
+        enums::{OrderSide, TimeInForce},
+        instruments::{currency_pair::CurrencyPair, stubs::*},
+        orders::stubs::*,
+        types::quantity::Quantity,
+    };
 
     #[rstest]
     #[should_panic(expected = "Condition failed: invalid `Quantity`, should be positive and was 0")]

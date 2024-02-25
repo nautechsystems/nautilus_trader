@@ -39,7 +39,7 @@ cdef class CryptoPerpetual(Instrument):
     instrument_id : InstrumentId
         The instrument ID for the instrument.
     raw_symbol : Symbol
-        The native/local/raw symbol for the instrument, assigned by the venue.
+        The raw/local/native symbol for the instrument, assigned by the venue.
     base_currency : Currency, optional
         The base currency.
     quote_currency : Currency

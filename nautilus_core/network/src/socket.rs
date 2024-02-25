@@ -16,7 +16,7 @@
 use std::{sync::Arc, time::Duration};
 
 use nautilus_core::python::to_pyruntime_err;
-use pyo3::{prelude::*, PyObject, Python};
+use pyo3::prelude::*;
 use tokio::{
     io::{split, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf},
     net::TcpStream,

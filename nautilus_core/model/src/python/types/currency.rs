@@ -68,7 +68,7 @@ impl Currency {
 
     #[staticmethod]
     fn _safe_constructor() -> PyResult<Self> {
-        Ok(Currency::AUD()) // Safe default
+        Ok(Self::AUD()) // Safe default
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -88,7 +88,7 @@ impl Currency {
     }
 
     fn __repr__(&self) -> String {
-        format!("{:?}", self)
+        format!("{self:?}")
     }
 
     #[getter]
@@ -124,34 +124,33 @@ impl Currency {
     #[staticmethod]
     #[pyo3(name = "is_fiat")]
     fn py_is_fiat(code: &str) -> PyResult<bool> {
-        Currency::is_fiat(code).map_err(to_pyvalue_err)
+        Self::is_fiat(code).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
     #[pyo3(name = "is_crypto")]
     fn py_is_crypto(code: &str) -> PyResult<bool> {
-        Currency::is_crypto(code).map_err(to_pyvalue_err)
+        Self::is_crypto(code).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
     #[pyo3(name = "is_commodity_backed")]
     fn py_is_commodidity_backed(code: &str) -> PyResult<bool> {
-        Currency::is_commodity_backed(code).map_err(to_pyvalue_err)
+        Self::is_commodity_backed(code).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
     #[pyo3(name = "from_str")]
     #[pyo3(signature = (value, strict = false))]
-    fn py_from_str(value: &str, strict: bool) -> PyResult<Currency> {
-        match Currency::from_str(value) {
+    fn py_from_str(value: &str, strict: bool) -> PyResult<Self> {
+        match Self::from_str(value) {
             Ok(currency) => Ok(currency),
             Err(e) => {
                 if strict {
                     Err(to_pyvalue_err(e))
                 } else {
                     // SAFETY: Unwrap safe as using known values
-                    let new_crypto =
-                        Currency::new(value, 8, 0, value, CurrencyType::Crypto).unwrap();
+                    let new_crypto = Self::new(value, 8, 0, value, CurrencyType::Crypto).unwrap();
                     Ok(new_crypto)
                 }
             }
@@ -161,7 +160,7 @@ impl Currency {
     #[staticmethod]
     #[pyo3(name = "register")]
     #[pyo3(signature = (currency, overwrite = false))]
-    fn py_register(currency: Currency, overwrite: bool) -> PyResult<()> {
-        Currency::register(currency, overwrite).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    fn py_register(currency: Self, overwrite: bool) -> PyResult<()> {
+        Self::register(currency, overwrite).map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 }

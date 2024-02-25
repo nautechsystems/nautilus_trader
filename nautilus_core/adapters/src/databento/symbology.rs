@@ -13,44 +13,47 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
 use anyhow::{bail, Result};
-use databento::dbn;
-use dbn::Record;
+use databento::dbn::Record;
 use indexmap::IndexMap;
 use nautilus_model::identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue};
 use ustr::Ustr;
 
-use super::{types::DatabentoPublisher, types::PublisherId};
+use super::types::PublisherId;
 
-pub fn parse_nautilus_instrument_id(
-    record: &dbn::RecordRef,
+pub fn decode_nautilus_instrument_id(
+    rec_ref: &dbn::RecordRef,
+    publisher_id: PublisherId,
     metadata: &dbn::Metadata,
-    publishers: &IndexMap<PublisherId, DatabentoPublisher>,
+    publisher_venue_map: &IndexMap<PublisherId, Venue>,
+    glbx_exchange_map: &HashMap<Symbol, Venue>,
 ) -> Result<InstrumentId> {
-    let (publisher_id, instrument_id, nanoseconds) = match record.rtype()? {
+    let (instrument_id, nanoseconds) = match rec_ref.rtype()? {
         dbn::RType::Mbo => {
-            let msg = record.get::<dbn::MboMsg>().unwrap(); // SAFETY: RType known
-            (msg.hd.publisher_id, msg.hd.instrument_id, msg.ts_recv)
+            let msg = rec_ref.get::<dbn::MboMsg>().unwrap(); // SAFETY: RType known
+            (msg.hd.instrument_id, msg.ts_recv)
         }
         dbn::RType::Mbp0 => {
-            let msg = record.get::<dbn::TradeMsg>().unwrap(); // SAFETY: RType known
-            (msg.hd.publisher_id, msg.hd.instrument_id, msg.ts_recv)
+            let msg = rec_ref.get::<dbn::TradeMsg>().unwrap(); // SAFETY: RType known
+            (msg.hd.instrument_id, msg.ts_recv)
         }
         dbn::RType::Mbp1 => {
-            let msg = record.get::<dbn::Mbp1Msg>().unwrap(); // SAFETY: RType known
-            (msg.hd.publisher_id, msg.hd.instrument_id, msg.ts_recv)
+            let msg = rec_ref.get::<dbn::Mbp1Msg>().unwrap(); // SAFETY: RType known
+            (msg.hd.instrument_id, msg.ts_recv)
         }
         dbn::RType::Mbp10 => {
-            let msg = record.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
-            (msg.hd.publisher_id, msg.hd.instrument_id, msg.ts_recv)
+            let msg = rec_ref.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
+            (msg.hd.instrument_id, msg.ts_recv)
         }
         dbn::RType::Ohlcv1S
         | dbn::RType::Ohlcv1M
         | dbn::RType::Ohlcv1H
         | dbn::RType::Ohlcv1D
         | dbn::RType::OhlcvEod => {
-            let msg = record.get::<dbn::OhlcvMsg>().unwrap(); // SAFETY: RType known
-            (msg.hd.publisher_id, msg.hd.instrument_id, msg.hd.ts_event)
+            let msg = rec_ref.get::<dbn::OhlcvMsg>().unwrap(); // SAFETY: RType known
+            (msg.hd.instrument_id, msg.hd.ts_event)
         }
         _ => bail!("RType is currently unsupported by NautilusTrader"),
     };
@@ -68,10 +71,13 @@ pub fn parse_nautilus_instrument_id(
     let symbol = Symbol {
         value: Ustr::from(raw_symbol),
     };
-    let venue_str = publishers.get(&publisher_id).unwrap().venue.as_str();
-    let venue = Venue {
-        value: Ustr::from(venue_str),
+
+    let venue = match glbx_exchange_map.get(&symbol) {
+        Some(venue) => venue,
+        None => publisher_venue_map
+            .get(&publisher_id)
+            .unwrap_or_else(|| panic!("No venue found for `publisher_id` {publisher_id}")),
     };
 
-    Ok(InstrumentId::new(symbol, venue))
+    Ok(InstrumentId::new(symbol, *venue))
 }

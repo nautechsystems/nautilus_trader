@@ -125,6 +125,8 @@ cdef class Actor(Component):
         self._indicators_for_trades: dict[InstrumentId, list[Indicator]] = {}
         self._indicators_for_bars: dict[BarType, list[Indicator]] = {}
 
+        self._pyo3_conversion_types = set()
+
         # Configuration
         self.config = config
 
@@ -382,13 +384,13 @@ cdef class Actor(Component):
         """
         # Optionally override in subclass
 
-    cpdef void on_order_book_deltas(self, OrderBookDeltas deltas):
+    cpdef void on_order_book_deltas(self, deltas):
         """
         Actions to be performed when running and receives order book deltas.
 
         Parameters
         ----------
-        deltas : OrderBookDeltas
+        deltas : OrderBookDeltas or nautilus_pyo3.OrderBookDeltas
             The order book deltas received.
 
         Warnings
@@ -1184,6 +1186,8 @@ cdef class Actor(Component):
         int depth = 0,
         dict kwargs = None,
         ClientId client_id = None,
+        bint managed = True,
+        bint pyo3_conversion = False,
     ):
         """
         Subscribe to the order book data stream, being a snapshot then deltas
@@ -1202,10 +1206,18 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        managed : bool, default True
+            If an order book should be managed by the data engine based on the subscribed feed.
+        pyo3_conversion : bool, default False
+            If received deltas should be converted to `nautilus_pyo3.OrderBookDeltas`
+            prior to being passed to the `on_order_book_deltas` handler.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
+
+        if pyo3_conversion:
+            self._pyo3_conversion_types.add(OrderBookDeltas)
 
         self._msgbus.subscribe(
             topic=f"data.book.deltas"
@@ -1222,6 +1234,7 @@ cdef class Actor(Component):
                 "book_type": book_type,
                 "depth": depth,
                 "kwargs": kwargs,
+                "managed": managed,
             }),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
@@ -1237,6 +1250,7 @@ cdef class Actor(Component):
         int interval_ms = 1000,
         dict kwargs = None,
         ClientId client_id = None,
+        bint managed = True,
     ):
         """
         Subscribe to `OrderBook` snapshots at a specified interval, for the given instrument ID.
@@ -1254,28 +1268,30 @@ cdef class Actor(Component):
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
         interval_ms : int
-            The order book snapshot interval in milliseconds (not less than 20 milliseconds).
+            The order book snapshot interval in milliseconds (must be positive).
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        managed : bool, default True
+            If an order book should be managed by the data engine based on the subscribed feed.
 
         Raises
         ------
         ValueError
             If `depth` is negative (< 0).
         ValueError
-            If `interval_ms` is less than the minimum of 20.
+            If `interval_ms` is not positive (> 0).
 
         Warnings
         --------
-        Consider subscribing to order book deltas if you need intervals less than 20 milliseconds.
+        Consider subscribing to order book deltas if you need intervals less than 100 milliseconds.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_negative(depth, "depth")
-        Condition.true(interval_ms >= 20, f"`interval_ms` {interval_ms} was less than minimum 20")
+        Condition.positive_int(interval_ms, "interval_ms")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         if book_type == BookType.L1_MBP and depth > 1:
@@ -1302,6 +1318,7 @@ cdef class Actor(Component):
                 "depth": depth,
                 "interval_ms": interval_ms,
                 "kwargs": kwargs,
+                "managed": managed,
             }),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
@@ -2388,15 +2405,17 @@ cdef class Actor(Component):
         for i in range(length):
             self.handle_instrument(instruments[i])
 
-    cpdef void handle_order_book_deltas(self, OrderBookDeltas deltas):
+    cpdef void handle_order_book_deltas(self, deltas):
         """
         Handle the given order book deltas.
 
-        Passes to `on_order_book_delta` if state is ``RUNNING``.
+        Passes to `on_order_book_deltas` if state is ``RUNNING``.
+        The `deltas` will be `nautilus_pyo3.OrderBookDeltas` if the
+        pyo3_conversion flag was set for the subscription.
 
         Parameters
         ----------
-        deltas : OrderBookDeltas
+        deltas : OrderBookDeltas or nautilus_pyo3.OrderBookDeltas
             The order book deltas received.
 
         Warnings
@@ -2405,6 +2424,9 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(deltas, "deltas")
+
+        if OrderBookDeltas in self._pyo3_conversion_types:
+            deltas = deltas.to_pyo3()
 
         if self._fsm.state == ComponentState.RUNNING:
             try:

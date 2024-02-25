@@ -13,36 +13,33 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::serialization::from_dict_pyo3;
-use nautilus_core::python::to_pyvalue_err;
-use nautilus_core::time::UnixNanos;
-use pyo3::basic::CompareOp;
-use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
+use nautilus_core::{
+    python::{serialization::from_dict_pyo3, to_pyvalue_err},
+    time::UnixNanos,
+};
+use pyo3::{
+    basic::CompareOp,
+    prelude::*,
+    types::{PyDict, PyList},
+};
 use rust_decimal::prelude::ToPrimitive;
 
-use crate::enums::{OrderSide, PositionSide};
-use crate::events::order::filled::OrderFilled;
-use crate::identifiers::client_order_id::ClientOrderId;
-use crate::identifiers::instrument_id::InstrumentId;
-use crate::identifiers::position_id::PositionId;
-use crate::identifiers::strategy_id::StrategyId;
-use crate::identifiers::symbol::Symbol;
-use crate::identifiers::trade_id::TradeId;
-use crate::identifiers::trader_id::TraderId;
-use crate::identifiers::venue::Venue;
-use crate::identifiers::venue_order_id::VenueOrderId;
-use crate::instruments::crypto_future::CryptoFuture;
-use crate::instruments::crypto_perpetual::CryptoPerpetual;
-use crate::instruments::currency_pair::CurrencyPair;
-use crate::instruments::equity::Equity;
-use crate::instruments::futures_contract::FuturesContract;
-use crate::instruments::options_contract::OptionsContract;
-use crate::position::Position;
-use crate::types::currency::Currency;
-use crate::types::money::Money;
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
+use crate::{
+    enums::{OrderSide, PositionSide},
+    events::order::filled::OrderFilled,
+    identifiers::{
+        client_order_id::ClientOrderId, instrument_id::InstrumentId, position_id::PositionId,
+        strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
+        venue::Venue, venue_order_id::VenueOrderId,
+    },
+    instruments::{
+        crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
+        currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
+        options_contract::OptionsContract,
+    },
+    position::Position,
+    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+};
 
 #[pymethods]
 impl Position {

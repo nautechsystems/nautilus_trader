@@ -64,6 +64,7 @@ impl Display for ClientOrderId {
     }
 }
 
+#[must_use]
 pub fn optional_ustr_to_vec_client_order_ids(s: Option<Ustr>) -> Option<Vec<ClientOrderId>> {
     s.map(|ustr| {
         let s_str = ustr.to_string();
@@ -74,6 +75,7 @@ pub fn optional_ustr_to_vec_client_order_ids(s: Option<Ustr>) -> Option<Vec<Clie
     })
 }
 
+#[must_use]
 pub fn optional_vec_client_order_ids_to_ustr(vec: Option<Vec<ClientOrderId>>) -> Option<Ustr> {
     vec.map(|client_order_ids| {
         let s: String = client_order_ids

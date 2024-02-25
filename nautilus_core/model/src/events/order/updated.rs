@@ -16,7 +16,7 @@
 use std::fmt::{Display, Formatter};
 
 use anyhow::Result;
-use derive_builder::{self, Builder};
+use derive_builder::Builder;
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -69,8 +69,8 @@ impl OrderUpdated {
         account_id: Option<AccountId>,
         price: Option<Price>,
         trigger_price: Option<Price>,
-    ) -> Result<OrderUpdated> {
-        Ok(OrderUpdated {
+    ) -> Result<Self> {
+        Ok(Self {
             trader_id,
             strategy_id,
             instrument_id,
@@ -79,7 +79,7 @@ impl OrderUpdated {
             event_id,
             ts_event,
             ts_init,
-            reconciliation: reconciliation as u8,
+            reconciliation: u8::from(reconciliation),
             venue_order_id,
             account_id,
             price,
@@ -95,19 +95,11 @@ impl Display for OrderUpdated {
             "OrderUpdated(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={},quantity={}, price={}, trigger_price={}, ts_event={})",
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id
-                .map(|venue_order_id| format!("{}", venue_order_id))
-                .unwrap_or_else(|| "None".to_string()),
-            self.account_id
-                .map(|account_id| format!("{}", account_id))
-                .unwrap_or_else(|| "None".to_string()),
+            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}")),
+            self.account_id.map_or_else(|| "None".to_string(), |account_id| format!("{account_id}")),
             self.quantity,
-            self.price
-                .map(|price| format!("{}", price))
-                .unwrap_or_else(|| "None".to_string()),
-            self.trigger_price
-                .map(|trigger_price| format!("{}", trigger_price))
-                .unwrap_or_else(|| "None".to_string()),
+            self.price.map_or_else(|| "None".to_string(), |price| format!("{price}")),
+            self.trigger_price.map_or_else(|| "None".to_string(), |trigger_price| format!("{trigger_price}")),
             self.ts_event
         )
     }
@@ -124,10 +116,10 @@ mod tests {
 
     #[rstest]
     fn test_order_updated_display(order_updated: OrderUpdated) {
-        let display = format!("{}", order_updated);
+        let display = format!("{order_updated}");
         assert_eq!(
             display,
             "OrderUpdated(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, venue_order_id=001, account_id=SIM-001,quantity=100, price=22000, trigger_price=None, ts_event=0)"
-        )
+        );
     }
 }

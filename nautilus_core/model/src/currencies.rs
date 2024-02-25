@@ -23,7 +23,9 @@ use ustr::Ustr;
 
 use crate::{enums::CurrencyType, types::currency::Currency};
 
-// Fiat currency static locks
+///////////////////////////////////////////////////////////////////////////////
+// Fiat currencies
+///////////////////////////////////////////////////////////////////////////////
 static AUD_LOCK: OnceLock<Currency> = OnceLock::new();
 static BRL_LOCK: OnceLock<Currency> = OnceLock::new();
 static CAD_LOCK: OnceLock<Currency> = OnceLock::new();
@@ -54,12 +56,16 @@ static TWD_LOCK: OnceLock<Currency> = OnceLock::new();
 static USD_LOCK: OnceLock<Currency> = OnceLock::new();
 static ZAR_LOCK: OnceLock<Currency> = OnceLock::new();
 
-// Commodity backed currency static locks
+///////////////////////////////////////////////////////////////////////////////
+// Commodity backed currencies
+///////////////////////////////////////////////////////////////////////////////
 static XAG_LOCK: OnceLock<Currency> = OnceLock::new();
 static XAU_LOCK: OnceLock<Currency> = OnceLock::new();
 static XPT_LOCK: OnceLock<Currency> = OnceLock::new();
 
-// Crypto currency static locks
+///////////////////////////////////////////////////////////////////////////////
+// Crypto currencies
+///////////////////////////////////////////////////////////////////////////////
 static ONEINCH_LOCK: OnceLock<Currency> = OnceLock::new();
 static AAVE_LOCK: OnceLock<Currency> = OnceLock::new();
 static ACA_LOCK: OnceLock<Currency> = OnceLock::new();
@@ -103,11 +109,13 @@ static USDT_LOCK: OnceLock<Currency> = OnceLock::new();
 static ZEC_LOCK: OnceLock<Currency> = OnceLock::new();
 
 impl Currency {
+    ///////////////////////////////////////////////////////////////////////////
     // Crypto currencies
+    ///////////////////////////////////////////////////////////////////////////
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn AUD() -> Currency {
-        *AUD_LOCK.get_or_init(|| Currency {
+    pub fn AUD() -> Self {
+        *AUD_LOCK.get_or_init(|| Self {
             code: Ustr::from("AUD"),
             precision: 2,
             iso4217: 36,
@@ -117,8 +125,8 @@ impl Currency {
     }
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn BRL() -> Currency {
-        *BRL_LOCK.get_or_init(|| Currency {
+    pub fn BRL() -> Self {
+        *BRL_LOCK.get_or_init(|| Self {
             code: Ustr::from("BRL"),
             precision: 2,
             iso4217: 986,
@@ -129,8 +137,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn CAD() -> Currency {
-        *CAD_LOCK.get_or_init(|| Currency {
+    pub fn CAD() -> Self {
+        *CAD_LOCK.get_or_init(|| Self {
             code: Ustr::from("CAD"),
             precision: 2,
             iso4217: 124,
@@ -141,8 +149,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn CHF() -> Currency {
-        *CHF_LOCK.get_or_init(|| Currency {
+    pub fn CHF() -> Self {
+        *CHF_LOCK.get_or_init(|| Self {
             code: Ustr::from("CHF"),
             precision: 2,
             iso4217: 756,
@@ -153,8 +161,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn CNY() -> Currency {
-        *CNY_LOCK.get_or_init(|| Currency {
+    pub fn CNY() -> Self {
+        *CNY_LOCK.get_or_init(|| Self {
             code: Ustr::from("CNY"),
             precision: 2,
             iso4217: 156,
@@ -165,8 +173,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn CNH() -> Currency {
-        *CNH_LOCK.get_or_init(|| Currency {
+    pub fn CNH() -> Self {
+        *CNH_LOCK.get_or_init(|| Self {
             code: Ustr::from("CNH"),
             precision: 2,
             iso4217: 0,
@@ -177,8 +185,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn CZK() -> Currency {
-        *CZK_LOCK.get_or_init(|| Currency {
+    pub fn CZK() -> Self {
+        *CZK_LOCK.get_or_init(|| Self {
             code: Ustr::from("CZK"),
             precision: 2,
             iso4217: 203,
@@ -189,8 +197,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn DKK() -> Currency {
-        *DKK_LOCK.get_or_init(|| Currency {
+    pub fn DKK() -> Self {
+        *DKK_LOCK.get_or_init(|| Self {
             code: Ustr::from("DKK"),
             precision: 2,
             iso4217: 208,
@@ -201,8 +209,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn EUR() -> Currency {
-        *EUR_LOCK.get_or_init(|| Currency {
+    pub fn EUR() -> Self {
+        *EUR_LOCK.get_or_init(|| Self {
             code: Ustr::from("EUR"),
             precision: 2,
             iso4217: 978,
@@ -213,8 +221,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn GBP() -> Currency {
-        *GBP_LOCK.get_or_init(|| Currency {
+    pub fn GBP() -> Self {
+        *GBP_LOCK.get_or_init(|| Self {
             code: Ustr::from("GBP"),
             precision: 2,
             iso4217: 826,
@@ -225,8 +233,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn HKD() -> Currency {
-        *HKD_LOCK.get_or_init(|| Currency {
+    pub fn HKD() -> Self {
+        *HKD_LOCK.get_or_init(|| Self {
             code: Ustr::from("HKD"),
             precision: 2,
             iso4217: 344,
@@ -237,8 +245,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn HUF() -> Currency {
-        *HUF_LOCK.get_or_init(|| Currency {
+    pub fn HUF() -> Self {
+        *HUF_LOCK.get_or_init(|| Self {
             code: Ustr::from("HUF"),
             precision: 2,
             iso4217: 348,
@@ -249,8 +257,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn ILS() -> Currency {
-        *ILS_LOCK.get_or_init(|| Currency {
+    pub fn ILS() -> Self {
+        *ILS_LOCK.get_or_init(|| Self {
             code: Ustr::from("ILS"),
             precision: 2,
             iso4217: 376,
@@ -261,8 +269,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn INR() -> Currency {
-        *INR_LOCK.get_or_init(|| Currency {
+    pub fn INR() -> Self {
+        *INR_LOCK.get_or_init(|| Self {
             code: Ustr::from("INR"),
             precision: 2,
             iso4217: 356,
@@ -273,8 +281,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn JPY() -> Currency {
-        *JPY_LOCK.get_or_init(|| Currency {
+    pub fn JPY() -> Self {
+        *JPY_LOCK.get_or_init(|| Self {
             code: Ustr::from("JPY"),
             precision: 0,
             iso4217: 392,
@@ -284,8 +292,8 @@ impl Currency {
     }
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn KRW() -> Currency {
-        *KRW_LOCK.get_or_init(|| Currency {
+    pub fn KRW() -> Self {
+        *KRW_LOCK.get_or_init(|| Self {
             code: Ustr::from("KRW"),
             precision: 0,
             iso4217: 410,
@@ -296,8 +304,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn MXN() -> Currency {
-        *MXN_LOCK.get_or_init(|| Currency {
+    pub fn MXN() -> Self {
+        *MXN_LOCK.get_or_init(|| Self {
             code: Ustr::from("MXN"),
             precision: 2,
             iso4217: 484,
@@ -308,8 +316,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn NOK() -> Currency {
-        *NOK_LOCK.get_or_init(|| Currency {
+    pub fn NOK() -> Self {
+        *NOK_LOCK.get_or_init(|| Self {
             code: Ustr::from("NOK"),
             precision: 2,
             iso4217: 578,
@@ -320,8 +328,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn NZD() -> Currency {
-        *NZD_LOCK.get_or_init(|| Currency {
+    pub fn NZD() -> Self {
+        *NZD_LOCK.get_or_init(|| Self {
             code: Ustr::from("NZD"),
             precision: 2,
             iso4217: 554,
@@ -332,8 +340,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn PLN() -> Currency {
-        *PLN_LOCK.get_or_init(|| Currency {
+    pub fn PLN() -> Self {
+        *PLN_LOCK.get_or_init(|| Self {
             code: Ustr::from("PLN"),
             precision: 2,
             iso4217: 985,
@@ -344,8 +352,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn RUB() -> Currency {
-        *RUB_LOCK.get_or_init(|| Currency {
+    pub fn RUB() -> Self {
+        *RUB_LOCK.get_or_init(|| Self {
             code: Ustr::from("RUB"),
             precision: 2,
             iso4217: 643,
@@ -356,8 +364,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn SAR() -> Currency {
-        *SAR_LOCK.get_or_init(|| Currency {
+    pub fn SAR() -> Self {
+        *SAR_LOCK.get_or_init(|| Self {
             code: Ustr::from("SAR"),
             precision: 2,
             iso4217: 682,
@@ -368,8 +376,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn SEK() -> Currency {
-        *SEK_LOCK.get_or_init(|| Currency {
+    pub fn SEK() -> Self {
+        *SEK_LOCK.get_or_init(|| Self {
             code: Ustr::from("SEK"),
             precision: 2,
             iso4217: 752,
@@ -380,8 +388,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn SGD() -> Currency {
-        *SGD_LOCK.get_or_init(|| Currency {
+    pub fn SGD() -> Self {
+        *SGD_LOCK.get_or_init(|| Self {
             code: Ustr::from("SGD"),
             precision: 2,
             iso4217: 702,
@@ -392,8 +400,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn THB() -> Currency {
-        *THB_LOCK.get_or_init(|| Currency {
+    pub fn THB() -> Self {
+        *THB_LOCK.get_or_init(|| Self {
             code: Ustr::from("THB"),
             precision: 2,
             iso4217: 764,
@@ -404,8 +412,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn TRY() -> Currency {
-        *TRY_LOCK.get_or_init(|| Currency {
+    pub fn TRY() -> Self {
+        *TRY_LOCK.get_or_init(|| Self {
             code: Ustr::from("TRY"),
             precision: 2,
             iso4217: 949,
@@ -416,8 +424,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn TWD() -> Currency {
-        *TWD_LOCK.get_or_init(|| Currency {
+    pub fn TWD() -> Self {
+        *TWD_LOCK.get_or_init(|| Self {
             code: Ustr::from("TWD"),
             precision: 2,
             iso4217: 901,
@@ -428,8 +436,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn USD() -> Currency {
-        *USD_LOCK.get_or_init(|| Currency {
+    pub fn USD() -> Self {
+        *USD_LOCK.get_or_init(|| Self {
             code: Ustr::from("USD"),
             precision: 2,
             iso4217: 840,
@@ -439,8 +447,8 @@ impl Currency {
     }
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn ZAR() -> Currency {
-        *ZAR_LOCK.get_or_init(|| Currency {
+    pub fn ZAR() -> Self {
+        *ZAR_LOCK.get_or_init(|| Self {
             code: Ustr::from("ZAR"),
             precision: 2,
             iso4217: 710,
@@ -451,8 +459,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn XAG() -> Currency {
-        *XAG_LOCK.get_or_init(|| Currency {
+    pub fn XAG() -> Self {
+        *XAG_LOCK.get_or_init(|| Self {
             code: Ustr::from("XAG"),
             precision: 2,
             iso4217: 961,
@@ -463,8 +471,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn XAU() -> Currency {
-        *XAU_LOCK.get_or_init(|| Currency {
+    pub fn XAU() -> Self {
+        *XAU_LOCK.get_or_init(|| Self {
             code: Ustr::from("XAU"),
             precision: 2,
             iso4217: 959,
@@ -475,8 +483,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn XPT() -> Currency {
-        *XPT_LOCK.get_or_init(|| Currency {
+    pub fn XPT() -> Self {
+        *XPT_LOCK.get_or_init(|| Self {
             code: Ustr::from("XPT"),
             precision: 2,
             iso4217: 962,
@@ -487,8 +495,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn ONEINCH() -> Currency {
-        *ONEINCH_LOCK.get_or_init(|| Currency {
+    pub fn ONEINCH() -> Self {
+        *ONEINCH_LOCK.get_or_init(|| Self {
             code: Ustr::from("1INCH"),
             precision: 8,
             iso4217: 0,
@@ -499,8 +507,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn AAVE() -> Currency {
-        *AAVE_LOCK.get_or_init(|| Currency {
+    pub fn AAVE() -> Self {
+        *AAVE_LOCK.get_or_init(|| Self {
             code: Ustr::from("AAVE"),
             precision: 8,
             iso4217: 0,
@@ -511,8 +519,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn ACA() -> Currency {
-        *ACA_LOCK.get_or_init(|| Currency {
+    pub fn ACA() -> Self {
+        *ACA_LOCK.get_or_init(|| Self {
             code: Ustr::from("ACA"),
             precision: 8,
             iso4217: 0,
@@ -523,8 +531,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn ADA() -> Currency {
-        *ADA_LOCK.get_or_init(|| Currency {
+    pub fn ADA() -> Self {
+        *ADA_LOCK.get_or_init(|| Self {
             code: Ustr::from("ADA"),
             precision: 6,
             iso4217: 0,
@@ -535,8 +543,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn AVAX() -> Currency {
-        *AVAX_LOCK.get_or_init(|| Currency {
+    pub fn AVAX() -> Self {
+        *AVAX_LOCK.get_or_init(|| Self {
             code: Ustr::from("AVAX"),
             precision: 8,
             iso4217: 0,
@@ -547,8 +555,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn BCH() -> Currency {
-        *BCH_LOCK.get_or_init(|| Currency {
+    pub fn BCH() -> Self {
+        *BCH_LOCK.get_or_init(|| Self {
             code: Ustr::from("BCH"),
             precision: 8,
             iso4217: 0,
@@ -559,8 +567,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn BTC() -> Currency {
-        *BTC_LOCK.get_or_init(|| Currency {
+    pub fn BTC() -> Self {
+        *BTC_LOCK.get_or_init(|| Self {
             code: Ustr::from("BTC"),
             precision: 8,
             iso4217: 0,
@@ -571,8 +579,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn BTTC() -> Currency {
-        *BTTC_LOCK.get_or_init(|| Currency {
+    pub fn BTTC() -> Self {
+        *BTTC_LOCK.get_or_init(|| Self {
             code: Ustr::from("BTTC"),
             precision: 8,
             iso4217: 0,
@@ -583,8 +591,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn BNB() -> Currency {
-        *BNB_LOCK.get_or_init(|| Currency {
+    pub fn BNB() -> Self {
+        *BNB_LOCK.get_or_init(|| Self {
             code: Ustr::from("BNB"),
             precision: 8,
             iso4217: 0,
@@ -595,8 +603,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn BRZ() -> Currency {
-        *BRZ_LOCK.get_or_init(|| Currency {
+    pub fn BRZ() -> Self {
+        *BRZ_LOCK.get_or_init(|| Self {
             code: Ustr::from("BRZ"),
             precision: 6,
             iso4217: 0,
@@ -607,8 +615,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn BSV() -> Currency {
-        *BSV_LOCK.get_or_init(|| Currency {
+    pub fn BSV() -> Self {
+        *BSV_LOCK.get_or_init(|| Self {
             code: Ustr::from("BSV"),
             precision: 8,
             iso4217: 0,
@@ -619,8 +627,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn BUSD() -> Currency {
-        *BUSD_LOCK.get_or_init(|| Currency {
+    pub fn BUSD() -> Self {
+        *BUSD_LOCK.get_or_init(|| Self {
             code: Ustr::from("BUSD"),
             precision: 8,
             iso4217: 0,
@@ -631,8 +639,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn CAKE() -> Currency {
-        *CAKE_LOCK.get_or_init(|| Currency {
+    pub fn CAKE() -> Self {
+        *CAKE_LOCK.get_or_init(|| Self {
             code: Ustr::from("CAKE"),
             precision: 8,
             iso4217: 0,
@@ -643,8 +651,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn DASH() -> Currency {
-        *DASH_LOCK.get_or_init(|| Currency {
+    pub fn DASH() -> Self {
+        *DASH_LOCK.get_or_init(|| Self {
             code: Ustr::from("DASH"),
             precision: 8,
             iso4217: 0,
@@ -655,8 +663,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn DOT() -> Currency {
-        *DOT_LOCK.get_or_init(|| Currency {
+    pub fn DOT() -> Self {
+        *DOT_LOCK.get_or_init(|| Self {
             code: Ustr::from("DOT"),
             precision: 8,
             iso4217: 0,
@@ -667,8 +675,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn DOGE() -> Currency {
-        *DOGE_LOCK.get_or_init(|| Currency {
+    pub fn DOGE() -> Self {
+        *DOGE_LOCK.get_or_init(|| Self {
             code: Ustr::from("DOGE"),
             precision: 8,
             iso4217: 0,
@@ -679,8 +687,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn EOS() -> Currency {
-        *EOS_LOCK.get_or_init(|| Currency {
+    pub fn EOS() -> Self {
+        *EOS_LOCK.get_or_init(|| Self {
             code: Ustr::from("EOS"),
             precision: 8,
             iso4217: 0,
@@ -691,8 +699,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn ETH() -> Currency {
-        *ETH_LOCK.get_or_init(|| Currency {
+    pub fn ETH() -> Self {
+        *ETH_LOCK.get_or_init(|| Self {
             code: Ustr::from("ETH"),
             precision: 8,
             iso4217: 0,
@@ -703,8 +711,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn ETHW() -> Currency {
-        *ETHW_LOCK.get_or_init(|| Currency {
+    pub fn ETHW() -> Self {
+        *ETHW_LOCK.get_or_init(|| Self {
             code: Ustr::from("ETHW"),
             precision: 8,
             iso4217: 0,
@@ -715,8 +723,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn JOE() -> Currency {
-        *JOE_LOCK.get_or_init(|| Currency {
+    pub fn JOE() -> Self {
+        *JOE_LOCK.get_or_init(|| Self {
             code: Ustr::from("JOE"),
             precision: 8,
             iso4217: 0,
@@ -727,8 +735,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn LINK() -> Currency {
-        *LINK_LOCK.get_or_init(|| Currency {
+    pub fn LINK() -> Self {
+        *LINK_LOCK.get_or_init(|| Self {
             code: Ustr::from("LINK"),
             precision: 8,
             iso4217: 0,
@@ -739,8 +747,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn LTC() -> Currency {
-        *LTC_LOCK.get_or_init(|| Currency {
+    pub fn LTC() -> Self {
+        *LTC_LOCK.get_or_init(|| Self {
             code: Ustr::from("LTC"),
             precision: 8,
             iso4217: 0,
@@ -751,8 +759,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn LUNA() -> Currency {
-        *LUNA_LOCK.get_or_init(|| Currency {
+    pub fn LUNA() -> Self {
+        *LUNA_LOCK.get_or_init(|| Self {
             code: Ustr::from("LUNA"),
             precision: 8,
             iso4217: 0,
@@ -763,8 +771,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn NBT() -> Currency {
-        *NBT_LOCK.get_or_init(|| Currency {
+    pub fn NBT() -> Self {
+        *NBT_LOCK.get_or_init(|| Self {
             code: Ustr::from("NBT"),
             precision: 8,
             iso4217: 0,
@@ -775,8 +783,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn SOL() -> Currency {
-        *SOL_LOCK.get_or_init(|| Currency {
+    pub fn SOL() -> Self {
+        *SOL_LOCK.get_or_init(|| Self {
             code: Ustr::from("SOL"),
             precision: 8,
             iso4217: 0,
@@ -787,8 +795,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn SHIB() -> Currency {
-        *SHIB_LOCK.get_or_init(|| Currency {
+    pub fn SHIB() -> Self {
+        *SHIB_LOCK.get_or_init(|| Self {
             code: Ustr::from("SHIB"),
             precision: 8,
             iso4217: 0,
@@ -799,8 +807,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn TRX() -> Currency {
-        *TRX_LOCK.get_or_init(|| Currency {
+    pub fn TRX() -> Self {
+        *TRX_LOCK.get_or_init(|| Self {
             code: Ustr::from("TRX"),
             precision: 8,
             iso4217: 0,
@@ -811,8 +819,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn TRYB() -> Currency {
-        *TRYB_LOCK.get_or_init(|| Currency {
+    pub fn TRYB() -> Self {
+        *TRYB_LOCK.get_or_init(|| Self {
             code: Ustr::from("TRYB"),
             precision: 8,
             iso4217: 0,
@@ -823,8 +831,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn TUSD() -> Currency {
-        *TUSD_LOCK.get_or_init(|| Currency {
+    pub fn TUSD() -> Self {
+        *TUSD_LOCK.get_or_init(|| Self {
             code: Ustr::from("TUSD"),
             precision: 8,
             iso4217: 0,
@@ -835,8 +843,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn VTC() -> Currency {
-        *VTC_LOCK.get_or_init(|| Currency {
+    pub fn VTC() -> Self {
+        *VTC_LOCK.get_or_init(|| Self {
             code: Ustr::from("VTC"),
             precision: 8,
             iso4217: 0,
@@ -847,8 +855,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn WSB() -> Currency {
-        *WSB_LOCK.get_or_init(|| Currency {
+    pub fn WSB() -> Self {
+        *WSB_LOCK.get_or_init(|| Self {
             code: Ustr::from("WSB"),
             precision: 8,
             iso4217: 0,
@@ -859,8 +867,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn XBT() -> Currency {
-        *XBT_LOCK.get_or_init(|| Currency {
+    pub fn XBT() -> Self {
+        *XBT_LOCK.get_or_init(|| Self {
             code: Ustr::from("XBT"),
             precision: 8,
             iso4217: 0,
@@ -871,8 +879,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn XEC() -> Currency {
-        *XEC_LOCK.get_or_init(|| Currency {
+    pub fn XEC() -> Self {
+        *XEC_LOCK.get_or_init(|| Self {
             code: Ustr::from("XEC"),
             precision: 8,
             iso4217: 0,
@@ -883,8 +891,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn XLM() -> Currency {
-        *XLM_LOCK.get_or_init(|| Currency {
+    pub fn XLM() -> Self {
+        *XLM_LOCK.get_or_init(|| Self {
             code: Ustr::from("XLM"),
             precision: 8,
             iso4217: 0,
@@ -895,8 +903,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn XMR() -> Currency {
-        *XMR_LOCK.get_or_init(|| Currency {
+    pub fn XMR() -> Self {
+        *XMR_LOCK.get_or_init(|| Self {
             code: Ustr::from("XMR"),
             precision: 8,
             iso4217: 0,
@@ -907,8 +915,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn USDT() -> Currency {
-        *USDT_LOCK.get_or_init(|| Currency {
+    pub fn USDT() -> Self {
+        *USDT_LOCK.get_or_init(|| Self {
             code: Ustr::from("USDT"),
             precision: 8,
             iso4217: 0,
@@ -919,8 +927,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn XRP() -> Currency {
-        *XRP_LOCK.get_or_init(|| Currency {
+    pub fn XRP() -> Self {
+        *XRP_LOCK.get_or_init(|| Self {
             code: Ustr::from("XRP"),
             precision: 6,
             iso4217: 0,
@@ -931,8 +939,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn XTZ() -> Currency {
-        *XTZ_LOCK.get_or_init(|| Currency {
+    pub fn XTZ() -> Self {
+        *XTZ_LOCK.get_or_init(|| Self {
             code: Ustr::from("XTZ"),
             precision: 6,
             iso4217: 0,
@@ -943,8 +951,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn USDC() -> Currency {
-        *USDC_LOCK.get_or_init(|| Currency {
+    pub fn USDC() -> Self {
+        *USDC_LOCK.get_or_init(|| Self {
             code: Ustr::from("USDC"),
             precision: 8,
             iso4217: 0,
@@ -955,8 +963,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn USDP() -> Currency {
-        *USDP_LOCK.get_or_init(|| Currency {
+    pub fn USDP() -> Self {
+        *USDP_LOCK.get_or_init(|| Self {
             code: Ustr::from("USDP"),
             precision: 4,
             iso4217: 0,
@@ -967,8 +975,8 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn ZEC() -> Currency {
-        *ZEC_LOCK.get_or_init(|| Currency {
+    pub fn ZEC() -> Self {
+        *ZEC_LOCK.get_or_init(|| Self {
             code: Ustr::from("ZEC"),
             precision: 8,
             iso4217: 0,
@@ -980,7 +988,9 @@ impl Currency {
 
 pub static CURRENCY_MAP: Lazy<Mutex<HashMap<String, Currency>>> = Lazy::new(|| {
     let mut map = HashMap::new();
+    ///////////////////////////////////////////////////////////////////////////
     // Fiat currencies
+    ///////////////////////////////////////////////////////////////////////////
     map.insert(Currency::AUD().code.to_string(), Currency::AUD());
     map.insert(Currency::BRL().code.to_string(), Currency::BRL());
     map.insert(Currency::CAD().code.to_string(), Currency::CAD());
@@ -1012,7 +1022,9 @@ pub static CURRENCY_MAP: Lazy<Mutex<HashMap<String, Currency>>> = Lazy::new(|| {
     map.insert(Currency::XAU().code.to_string(), Currency::XAU());
     map.insert(Currency::XPT().code.to_string(), Currency::XPT());
     map.insert(Currency::ZAR().code.to_string(), Currency::ZAR());
+    ///////////////////////////////////////////////////////////////////////////
     // Crypto currencies
+    ///////////////////////////////////////////////////////////////////////////
     map.insert(Currency::AAVE().code.to_string(), Currency::AAVE());
     map.insert(Currency::ACA().code.to_string(), Currency::ACA());
     map.insert(Currency::ADA().code.to_string(), Currency::ADA());

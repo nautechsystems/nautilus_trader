@@ -24,7 +24,6 @@ use indexmap::IndexMap;
 use nautilus_core::{serialization::Serializable, time::UnixNanos};
 use pyo3::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use thiserror;
 
 use crate::{
     enums::{AggregationSource, BarAggregation, PriceType},
@@ -38,7 +37,7 @@ use crate::{
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct BarSpecification {
@@ -73,7 +72,7 @@ impl Display for BarSpecification {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct BarType {
     /// The bar types instrument ID.
@@ -118,7 +117,7 @@ impl FromStr for BarType {
         if rev_pieces.len() != 5 {
             return Err(BarTypeParseError {
                 input: s.to_string(),
-                token: "".to_string(),
+                token: String::new(),
                 position: 0,
             });
         }
@@ -153,7 +152,7 @@ impl FromStr for BarType {
                 position: 4,
             })?;
 
-        Ok(BarType {
+        Ok(Self {
             instrument_id,
             spec: BarSpecification {
                 step,
@@ -196,7 +195,7 @@ impl<'de> Deserialize<'de> for BarType {
         D: Deserializer<'de>,
     {
         let s: String = Deserialize::deserialize(deserializer)?;
-        BarType::from_str(&s).map_err(serde::de::Error::custom)
+        Self::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
 
@@ -206,7 +205,7 @@ impl<'de> Deserialize<'de> for BarType {
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Bar {
     /// The bar type for this bar.
@@ -253,6 +252,7 @@ impl Bar {
     }
 
     /// Returns the metadata for the type, for use with serialization formats.
+    #[must_use]
     pub fn get_metadata(
         bar_type: &BarType,
         price_precision: u8,
@@ -268,6 +268,7 @@ impl Bar {
     }
 
     /// Returns the field map for the type, for use with Arrow schemas.
+    #[must_use]
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
         metadata.insert("open".to_string(), "Int64".to_string());

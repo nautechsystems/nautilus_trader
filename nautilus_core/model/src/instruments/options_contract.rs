@@ -39,42 +39,24 @@ use crate::{
 )]
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct OptionsContract {
-    #[pyo3(get)]
     pub id: InstrumentId,
-    #[pyo3(get)]
     pub raw_symbol: Symbol,
-    #[pyo3(get)]
     pub asset_class: AssetClass,
     pub underlying: Ustr,
-    #[pyo3(get)]
     pub option_kind: OptionKind,
-    #[pyo3(get)]
     pub activation_ns: UnixNanos,
-    #[pyo3(get)]
     pub expiration_ns: UnixNanos,
-    #[pyo3(get)]
     pub strike_price: Price,
-    #[pyo3(get)]
     pub currency: Currency,
-    #[pyo3(get)]
     pub price_precision: u8,
-    #[pyo3(get)]
     pub price_increment: Price,
-    #[pyo3(get)]
     pub multiplier: Quantity,
-    #[pyo3(get)]
     pub lot_size: Quantity,
-    #[pyo3(get)]
     pub max_quantity: Option<Quantity>,
-    #[pyo3(get)]
     pub min_quantity: Option<Quantity>,
-    #[pyo3(get)]
     pub max_price: Option<Price>,
-    #[pyo3(get)]
     pub min_price: Option<Price>,
-    #[pyo3(get)]
     pub ts_event: UnixNanos,
-    #[pyo3(get)]
     pub ts_init: UnixNanos,
 }
 
@@ -236,7 +218,7 @@ mod tests {
 
     #[rstest]
     fn test_equality(options_contract_appl: OptionsContract) {
-        let options_contract_appl2 = options_contract_appl.clone();
+        let options_contract_appl2 = options_contract_appl;
         assert_eq!(options_contract_appl, options_contract_appl2);
     }
 }

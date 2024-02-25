@@ -69,11 +69,11 @@ pub extern "C" fn book_order_signed_size(order: &BookOrder) -> f64 {
 /// Returns a [`BookOrder`] display string as a C string pointer.
 #[no_mangle]
 pub extern "C" fn book_order_display_to_cstr(order: &BookOrder) -> *const c_char {
-    str_to_cstr(&format!("{}", order))
+    str_to_cstr(&format!("{order}"))
 }
 
 /// Returns a [`BookOrder`] debug string as a C string pointer.
 #[no_mangle]
 pub extern "C" fn book_order_debug_to_cstr(order: &BookOrder) -> *const c_char {
-    str_to_cstr(&format!("{:?}", order))
+    str_to_cstr(&format!("{order:?}"))
 }

@@ -70,7 +70,6 @@ impl_serialization_for_identifier!(order_list_id::OrderListId);
 impl_serialization_for_identifier!(position_id::PositionId);
 impl_serialization_for_identifier!(strategy_id::StrategyId);
 impl_serialization_for_identifier!(symbol::Symbol);
-impl_serialization_for_identifier!(trade_id::TradeId);
 impl_serialization_for_identifier!(trader_id::TraderId);
 impl_serialization_for_identifier!(venue::Venue);
 impl_serialization_for_identifier!(venue_order_id::VenueOrderId);
@@ -84,7 +83,6 @@ identifier_for_python!(order_list_id::OrderListId);
 identifier_for_python!(position_id::PositionId);
 identifier_for_python!(strategy_id::StrategyId);
 identifier_for_python!(symbol::Symbol);
-identifier_for_python!(trade_id::TradeId);
 identifier_for_python!(trader_id::TraderId);
 identifier_for_python!(venue::Venue);
 identifier_for_python!(venue_order_id::VenueOrderId);
@@ -94,5 +92,5 @@ pub extern "C" fn interned_string_stats() {
     dbg!(ustr::total_allocated());
     dbg!(ustr::total_capacity());
 
-    ustr::string_cache_iter().for_each(|s| println!("{}", s));
+    ustr::string_cache_iter().for_each(|s| println!("{s}"));
 }

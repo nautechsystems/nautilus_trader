@@ -16,7 +16,7 @@
 use std::fmt::{Display, Formatter};
 
 use anyhow::Result;
-use derive_builder::{self, Builder};
+use derive_builder::Builder;
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -73,7 +73,7 @@ impl OrderModifyRejected {
             event_id,
             ts_event,
             ts_init,
-            reconciliation: reconciliation as u8,
+            reconciliation: u8::from(reconciliation),
             venue_order_id,
             account_id,
         })
@@ -87,12 +87,8 @@ impl Display for OrderModifyRejected {
             "OrderModifyRejected(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={},reason={}, ts_event={})",
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id
-                .map(|venue_order_id| format!("{}", venue_order_id))
-                .unwrap_or_else(|| "None".to_string()),
-            self.account_id
-                .map(|account_id| format!("{}", account_id))
-                .unwrap_or_else(|| "None".to_string()),
+            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}")),
+            self.account_id.map_or_else(|| "None".to_string(), |account_id| format!("{account_id}")),
             self.reason,
             self.ts_event
         )
@@ -110,7 +106,7 @@ mod tests {
 
     #[rstest]
     fn test_order_modified_rejected(order_modify_rejected: OrderModifyRejected) {
-        let display = format!("{}", order_modify_rejected);
+        let display = format!("{order_modify_rejected}");
         assert_eq!(
             display,
             "OrderModifyRejected(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, \

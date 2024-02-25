@@ -17,14 +17,18 @@ use std::str::FromStr;
 
 use nautilus_core::uuid::UUID4;
 
-use crate::identifiers::client_order_id::ClientOrderId;
-use crate::identifiers::instrument_id::InstrumentId;
 use crate::{
     enums::{LiquiditySide, OrderSide, TimeInForce},
     events::order::filled::OrderFilled,
     identifiers::{
-        account_id::AccountId, position_id::PositionId, strategy_id::StrategyId, stubs::*,
-        trade_id::TradeId, venue_order_id::VenueOrderId,
+        account_id::AccountId,
+        client_order_id::ClientOrderId,
+        instrument_id::InstrumentId,
+        position_id::PositionId,
+        strategy_id::StrategyId,
+        stubs::{strategy_id_ema_cross, trader_id},
+        trade_id::TradeId,
+        venue_order_id::VenueOrderId,
     },
     instruments::Instrument,
     orders::{base::Order, market::MarketOrder},
@@ -95,6 +99,7 @@ impl TestOrderEventStubs {
 pub struct TestOrderStubs;
 
 impl TestOrderStubs {
+    #[must_use]
     pub fn market_order(
         instrument_id: InstrumentId,
         order_side: OrderSide,
@@ -116,7 +121,7 @@ impl TestOrderStubs {
             quantity,
             time_in_force,
             UUID4::new(),
-            12321312321312,
+            12_321_312_321_312,
             false,
             false,
             None,

@@ -27,7 +27,7 @@ use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 use crate::{
     data::order::{BookOrder, OrderId},
     enums::OrderSide,
-    python::PY_MODULE_MODEL,
+    python::common::PY_MODULE_MODEL,
     types::{price::Price, quantity::Quantity},
 };
 
@@ -164,7 +164,7 @@ mod tests {
         Python::with_gil(|py| {
             let dict_string = book_order.py_as_dict(py).unwrap().to_string();
             let expected_string =
-                r#"{'side': 'BUY', 'price': '100.00', 'size': '10', 'order_id': 123456}"#;
+                r"{'side': 'BUY', 'price': '100.00', 'size': '10', 'order_id': 123456}";
             assert_eq!(dict_string, expected_string);
         });
     }

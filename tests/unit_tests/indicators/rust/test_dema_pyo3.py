@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import pytest
 
 from nautilus_trader.core.nautilus_pyo3 import DoubleExponentialMovingAverage
@@ -22,32 +21,34 @@ from nautilus_trader.test_kit.rust.data_pyo3 import TestDataProviderPyo3
 
 
 @pytest.fixture(scope="function")
-def dema():
+def dema() -> DoubleExponentialMovingAverage:
     return DoubleExponentialMovingAverage(10)
 
 
-def test_name_returns_expected_string(dema: DoubleExponentialMovingAverage):
+def test_name_returns_expected_string(dema: DoubleExponentialMovingAverage) -> None:
     # Arrange, Act, Assert
     assert dema.name == "DoubleExponentialMovingAverage"
 
 
-def test_str_repr_returns_expected_string(dema: DoubleExponentialMovingAverage):
+def test_str_repr_returns_expected_string(dema: DoubleExponentialMovingAverage) -> None:
     # Arrange, Act, Assert
     assert str(dema) == "DoubleExponentialMovingAverage(10)"
     assert repr(dema) == "DoubleExponentialMovingAverage(10)"
 
 
-def test_period_returns_expected_value(dema: DoubleExponentialMovingAverage):
+def test_period_returns_expected_value(dema: DoubleExponentialMovingAverage) -> None:
     # Arrange, Act, Assert
     assert dema.period == 10
 
 
-def test_initialized_without_inputs_returns_false(dema: DoubleExponentialMovingAverage):
+def test_initialized_without_inputs_returns_false(dema: DoubleExponentialMovingAverage) -> None:
     # Arrange, Act, Assert
-    assert dema.initialized is False
+    assert not dema.initialized
 
 
-def test_initialized_with_required_inputs_returns_true(dema: DoubleExponentialMovingAverage):
+def test_initialized_with_required_inputs_returns_true(
+    dema: DoubleExponentialMovingAverage,
+) -> None:
     # Arrange
     dema.update_raw(1.00000)
     dema.update_raw(2.00000)
@@ -63,10 +64,10 @@ def test_initialized_with_required_inputs_returns_true(dema: DoubleExponentialMo
     # Act
 
     # Assert
-    assert dema.initialized is True
+    assert dema.initialized
 
 
-def test_handle_quote_tick_updates_indicator():
+def test_handle_quote_tick_updates_indicator() -> None:
     # Arrange
     indicator = DoubleExponentialMovingAverage(10, PriceType.MID)
 
@@ -80,7 +81,7 @@ def test_handle_quote_tick_updates_indicator():
     assert indicator.value == 1987.5
 
 
-def test_handle_trade_tick_updates_indicator():
+def test_handle_trade_tick_updates_indicator() -> None:
     # Arrange
     indicator = DoubleExponentialMovingAverage(10)
 
@@ -94,7 +95,7 @@ def test_handle_trade_tick_updates_indicator():
     assert indicator.value == 1986.9999999999998
 
 
-def test_handle_bar_updates_indicator(dema: DoubleExponentialMovingAverage):
+def test_handle_bar_updates_indicator(dema: DoubleExponentialMovingAverage) -> None:
     # Arrange
     bar = TestDataProviderPyo3.bar_5decimal()
 
@@ -106,7 +107,7 @@ def test_handle_bar_updates_indicator(dema: DoubleExponentialMovingAverage):
     assert dema.value == 1.00003
 
 
-def test_value_with_one_input_returns_expected_value(dema: DoubleExponentialMovingAverage):
+def test_value_with_one_input_returns_expected_value(dema: DoubleExponentialMovingAverage) -> None:
     # Arrange
     dema.update_raw(1.00000)
 
@@ -114,7 +115,9 @@ def test_value_with_one_input_returns_expected_value(dema: DoubleExponentialMovi
     assert dema.value == 1.0
 
 
-def test_value_with_three_inputs_returns_expected_value(dema: DoubleExponentialMovingAverage):
+def test_value_with_three_inputs_returns_expected_value(
+    dema: DoubleExponentialMovingAverage,
+) -> None:
     # Arrange
     dema.update_raw(1.00000)
     dema.update_raw(2.00000)
@@ -124,7 +127,9 @@ def test_value_with_three_inputs_returns_expected_value(dema: DoubleExponentialM
     assert dema.value == pytest.approx(1.904583020285499, rel=1e-9)
 
 
-def test_reset_successfully_returns_indicator_to_fresh_state(dema: DoubleExponentialMovingAverage):
+def test_reset_successfully_returns_indicator_to_fresh_state(
+    dema: DoubleExponentialMovingAverage,
+) -> None:
     # Arrange
     for _i in range(1000):
         dema.update_raw(1.00000)

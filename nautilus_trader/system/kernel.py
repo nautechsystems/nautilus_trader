@@ -39,6 +39,7 @@ from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.component import init_tracing
 from nautilus_trader.common.component import is_logging_initialized
 from nautilus_trader.common.component import log_header
+from nautilus_trader.common.component import register_component_clock
 from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
@@ -147,11 +148,13 @@ class NautilusKernel:
         if self._environment == Environment.BACKTEST:
             self._clock = TestClock()
         elif self.environment in (Environment.SANDBOX, Environment.LIVE):
-            self._clock = LiveClock(loop=loop)
+            self._clock = LiveClock()
         else:
             raise NotImplementedError(  # pragma: no cover (design-time error)
                 f"environment {self._environment} not recognized",  # pragma: no cover (design-time error)
             )
+
+        register_component_clock(self._instance_id, self._clock)
 
         # Setup logging
         logging: LoggingConfig = config.logging or LoggingConfig()
@@ -178,6 +181,7 @@ class NautilusKernel:
                     component_levels=logging.log_component_levels,
                     colors=logging.log_colors,
                     bypass=logging.bypass_logging,
+                    print_config=logging.print_config,
                 )
             elif self._environment == Environment.LIVE:
                 raise InvalidConfiguration(
@@ -381,6 +385,7 @@ class NautilusKernel:
         ########################################################################
         self._trader = Trader(
             trader_id=self._trader_id,
+            instance_id=self._instance_id,
             msgbus=self._msgbus,
             cache=self._cache,
             portfolio=self._portfolio,

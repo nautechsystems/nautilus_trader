@@ -297,6 +297,7 @@ def betfair_account_to_account_state(
     event_id,
     ts_event,
     ts_init,
+    reported,
     account_id="001",
 ) -> AccountState:
     currency = Currency.from_str(account_detail.currency_code)
@@ -307,7 +308,7 @@ def betfair_account_to_account_state(
         account_id=AccountId(f"{BETFAIR_VENUE.value}-{account_id}"),
         account_type=AccountType.BETTING,
         base_currency=currency,
-        reported=False,
+        reported=reported,
         balances=[
             AccountBalance(
                 total=Money(balance, currency),
@@ -491,7 +492,7 @@ def hashed_trade_id(
             size_matched,
         ),
     )
-    return TradeId(hashlib.sha256(data).hexdigest()[:40])
+    return TradeId(hashlib.shake_256(msgspec.json.encode(data)).hexdigest(18))
 
 
 def order_to_trade_id(uo: BetfairOrder) -> TradeId:

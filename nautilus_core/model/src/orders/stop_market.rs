@@ -44,7 +44,6 @@ use crate::{
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct StopMarketOrder {
-    core: OrderCore,
     pub trigger_price: Price,
     pub trigger_type: TriggerType,
     pub expire_time: Option<UnixNanos>,
@@ -52,6 +51,7 @@ pub struct StopMarketOrder {
     pub trigger_instrument_id: Option<InstrumentId>,
     pub is_triggered: bool,
     pub ts_triggered: Option<UnixNanos>,
+    core: OrderCore,
 }
 
 impl StopMarketOrder {
@@ -331,16 +331,14 @@ impl Order for StopMarketOrder {
         self.core.apply(event)?;
 
         if is_order_filled {
-            self.core.set_slippage(self.trigger_price)
+            self.core.set_slippage(self.trigger_price);
         };
 
         Ok(())
     }
 
     fn update(&mut self, event: &OrderUpdated) {
-        if event.price.is_some() {
-            panic!("{}", OrderError::InvalidOrderEvent);
-        }
+        assert!(event.price.is_none(), "{}", OrderError::InvalidOrderEvent);
 
         if let Some(trigger_price) = event.trigger_price {
             self.trigger_price = trigger_price;
@@ -353,7 +351,7 @@ impl Order for StopMarketOrder {
 
 impl From<OrderInitialized> for StopMarketOrder {
     fn from(event: OrderInitialized) -> Self {
-        StopMarketOrder::new(
+        Self::new(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,

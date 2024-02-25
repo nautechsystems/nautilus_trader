@@ -23,7 +23,7 @@ use ustr::Ustr;
 
 use crate::{
     handlers::EventHandler,
-    timer::{TestTimer, TimeEvent, TimeEventHandler},
+    timer::{LiveTimer, TestTimer, TimeEvent, TimeEventHandler},
 };
 
 /// Represents a type of clock.
@@ -241,9 +241,8 @@ impl Clock for TestClock {
 
 pub struct LiveClock {
     time: &'static AtomicTime,
-    timers: HashMap<Ustr, TestTimer>,
+    timers: HashMap<Ustr, LiveTimer>,
     default_callback: Option<EventHandler>,
-    callbacks: HashMap<Ustr, EventHandler>,
 }
 
 impl LiveClock {
@@ -253,8 +252,12 @@ impl LiveClock {
             time: get_atomic_clock_realtime(),
             timers: HashMap::new(),
             default_callback: None,
-            callbacks: HashMap::new(),
         }
+    }
+
+    #[must_use]
+    pub fn get_timers(&self) -> &HashMap<Ustr, LiveTimer> {
+        &self.timers
     }
 }
 
@@ -304,16 +307,22 @@ impl Clock for LiveClock {
             "All Python callbacks were `None`"
         );
 
-        let name_ustr = Ustr::from(name);
-        match callback {
-            Some(callback_py) => self.callbacks.insert(name_ustr, callback_py),
-            None => None,
+        let callback = match callback {
+            Some(callback) => callback,
+            None => self.default_callback.clone().unwrap(),
         };
 
         let ts_now = self.get_time_ns();
         alert_time_ns = std::cmp::max(alert_time_ns, ts_now);
-        let timer = TestTimer::new(name, alert_time_ns - ts_now, ts_now, Some(alert_time_ns));
-        self.timers.insert(name_ustr, timer);
+        let mut timer = LiveTimer::new(
+            name,
+            alert_time_ns - ts_now,
+            ts_now,
+            Some(alert_time_ns),
+            callback,
+        );
+        timer.start();
+        self.timers.insert(Ustr::from(name), timer);
     }
 
     fn set_timer_ns(
@@ -330,14 +339,14 @@ impl Clock for LiveClock {
             "All Python callbacks were `None`"
         );
 
-        let name_ustr = Ustr::from(name);
-        match callback {
-            Some(callback) => self.callbacks.insert(name_ustr, callback),
-            None => None,
+        let callback = match callback {
+            Some(callback) => callback,
+            None => self.default_callback.clone().unwrap(),
         };
 
-        let timer = TestTimer::new(name, interval_ns, start_time_ns, stop_time_ns);
-        self.timers.insert(name_ustr, timer);
+        let mut timer = LiveTimer::new(name, interval_ns, start_time_ns, stop_time_ns, callback);
+        timer.start();
+        self.timers.insert(Ustr::from(name), timer);
     }
 
     fn next_time_ns(&self, name: &str) -> UnixNanos {

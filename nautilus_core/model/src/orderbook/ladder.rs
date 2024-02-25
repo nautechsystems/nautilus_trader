@@ -29,6 +29,10 @@ use crate::{
 
 /// Represents a price level with a specified side in an order books ladder.
 #[derive(Clone, Copy, Debug, Eq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct BookPrice {
     pub value: Price,
     pub side: OrderSide,
@@ -70,6 +74,7 @@ impl Display for BookPrice {
 }
 
 /// Represents one side of an order book as a ladder of price levels.
+#[derive(Clone, Debug)]
 pub struct Ladder {
     pub side: OrderSide,
     pub levels: BTreeMap<BookPrice, Level>,
@@ -98,7 +103,7 @@ impl Ladder {
 
     pub fn add_bulk(&mut self, orders: Vec<BookOrder>) {
         for order in orders {
-            self.add(order)
+            self.add(order);
         }
     }
 
@@ -164,12 +169,15 @@ impl Ladder {
 
     #[must_use]
     pub fn sizes(&self) -> f64 {
-        return self.levels.values().map(|l| l.size()).sum();
+        self.levels.values().map(super::level::Level::size).sum()
     }
 
     #[must_use]
     pub fn exposures(&self) -> f64 {
-        return self.levels.values().map(|l| l.exposure()).sum();
+        self.levels
+            .values()
+            .map(super::level::Level::exposure)
+            .sum()
     }
 
     #[must_use]
@@ -180,6 +188,7 @@ impl Ladder {
         }
     }
 
+    #[must_use]
     pub fn simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
         let is_reversed = self.side == OrderSide::Buy;
 
@@ -203,11 +212,11 @@ impl Ladder {
                         fills.push((book_order.price, remainder));
                     }
                     return fills;
-                } else {
-                    // Add this fill and continue
-                    fills.push((book_order.price, current));
-                    cumulative_denominator += current;
                 }
+
+                // Add this fill and continue
+                fills.push((book_order.price, current));
+                cumulative_denominator += current;
             }
         }
 
@@ -263,7 +272,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 20.0);
         assert_eq!(ladder.exposures(), 200.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0);
     }
 
     #[rstest]
@@ -278,7 +287,7 @@ mod tests {
         assert_eq!(ladder.len(), 3);
         assert_eq!(ladder.sizes(), 300.0);
         assert_eq!(ladder.exposures(), 2520.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0);
     }
 
     #[rstest]
@@ -298,7 +307,7 @@ mod tests {
         assert_eq!(ladder.len(), 3);
         assert_eq!(ladder.sizes(), 300.0);
         assert_eq!(ladder.exposures(), 3780.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0);
     }
 
     #[rstest]
@@ -351,7 +360,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 20.0);
         assert_eq!(ladder.exposures(), 222.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.1)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.1);
     }
 
     #[rstest]
@@ -367,7 +376,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 20.0);
         assert_eq!(ladder.exposures(), 222.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.1)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.1);
     }
 
     #[rstest]
@@ -383,7 +392,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 10.0);
         assert_eq!(ladder.exposures(), 110.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0);
     }
 
     #[rstest]
@@ -399,7 +408,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 10.0);
         assert_eq!(ladder.exposures(), 110.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0);
     }
 
     #[rstest]
@@ -425,7 +434,7 @@ mod tests {
         assert_eq!(ladder.len(), 0);
         assert_eq!(ladder.sizes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);
-        assert_eq!(ladder.top(), None)
+        assert_eq!(ladder.top(), None);
     }
 
     #[rstest]
@@ -441,7 +450,7 @@ mod tests {
         assert_eq!(ladder.len(), 0);
         assert_eq!(ladder.sizes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);
-        assert_eq!(ladder.top(), None)
+        assert_eq!(ladder.top(), None);
     }
 
     #[rstest]

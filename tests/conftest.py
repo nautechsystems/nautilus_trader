@@ -16,6 +16,7 @@
 import pytest
 
 from nautilus_trader.common.component import init_logging
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import CurrencyPair
@@ -33,7 +34,10 @@ def bypass_logging() -> None:
     to debug specific tests, simply comment this out.
 
     """
-    init_logging(bypass=True)
+    init_logging(
+        level_stdout=LogLevel.DEBUG,
+        bypass=True,
+    )
 
 
 @pytest.fixture(name="audusd_instrument")
