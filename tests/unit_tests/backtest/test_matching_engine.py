@@ -93,7 +93,7 @@ class TestOrderMatchingEngine:
 
     def test_process_market_on_close_order(self) -> None:
         order: MarketOrder = TestExecStubs.market_order(
-            instrument_id=self.instrument.id,
+            instrument=self.instrument,
             time_in_force=TimeInForce.AT_THE_CLOSE,
         )
         self.matching_engine.process_order(order, self.account_id)
@@ -109,7 +109,7 @@ class TestOrderMatchingEngine:
         self.matching_engine.process_order_book(snapshot)
 
         client_order: MarketOrder = TestExecStubs.market_order(
-            instrument_id=self.instrument.id,
+            instrument=self.instrument,
             order_side=OrderSide.BUY,
             time_in_force=TimeInForce.AT_THE_CLOSE,
         )

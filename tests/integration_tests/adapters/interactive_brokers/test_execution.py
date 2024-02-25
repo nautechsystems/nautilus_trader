@@ -70,7 +70,7 @@ def order_setup(
     status: OrderStatus = OrderStatus.SUBMITTED,
 ):
     order = TestExecStubs.limit_order(
-        instrument_id=instrument.id,
+        instrument=instrument,
         client_order_id=client_order_id,
     )
     if status == OrderStatus.SUBMITTED:

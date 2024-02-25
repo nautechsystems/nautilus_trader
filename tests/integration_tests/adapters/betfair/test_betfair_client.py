@@ -170,7 +170,7 @@ async def test_get_account_funds(betfair_client):
 async def test_place_orders(betfair_client):
     instrument = betting_instrument()
     limit_order = TestExecStubs.limit_order(
-        instrument_id=instrument.id,
+        instrument=instrument,
         order_side=OrderSide.SELL,
         price=betfair_float_to_price(2.0),
         quantity=betfair_float_to_quantity(10),
@@ -215,7 +215,7 @@ async def test_place_orders(betfair_client):
 async def test_place_orders_handicap(betfair_client):
     instrument = betting_instrument_handicap()
     limit_order = TestExecStubs.limit_order(
-        instrument_id=instrument.id,
+        instrument=instrument,
         order_side=OrderSide.BUY,
         price=betfair_float_to_price(2.0),
         quantity=betfair_float_to_quantity(10.0),
