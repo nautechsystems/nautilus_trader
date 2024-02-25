@@ -492,7 +492,7 @@ def hashed_trade_id(
             size_matched,
         ),
     )
-    return TradeId(hashlib.sha256(data).hexdigest()[:40])
+    return TradeId(hashlib.shake_256(msgspec.json.encode(data)).hexdigest(18))
 
 
 def order_to_trade_id(uo: BetfairOrder) -> TradeId:

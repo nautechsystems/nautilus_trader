@@ -21,6 +21,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 
@@ -235,3 +236,9 @@ def test_exec_algorithm_id() -> None:
     assert isinstance(hash(exec_algorithm_id1), int)
     assert str(exec_algorithm_id1) == "VWAP"
     assert repr(exec_algorithm_id1) == "ExecAlgorithmId('VWAP')"
+
+
+def test_trade_id_maximum_length() -> None:
+    # Arrange, Act, Assert
+    with pytest.raises(ValueError):
+        TradeId("A" * 37)

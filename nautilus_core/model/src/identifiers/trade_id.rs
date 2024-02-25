@@ -25,6 +25,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 /// Represents a valid trade match ID (assigned by a trading venue).
 ///
+/// Maximum length is 36 characters.
 /// Can correspond to the `TradeID <1003> field` of the FIX protocol.
 ///
 /// The unique ID assigned to the trade entity once it is received or matched by
@@ -37,7 +38,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 )]
 pub struct TradeId {
     /// The trade match ID C string value as a fixed-length byte array.
-    pub(crate) value: [u8; 65],
+    pub(crate) value: [u8; 37],
 }
 
 impl TradeId {
@@ -53,10 +54,10 @@ impl TradeId {
         // TODO: Temporarily make this 65 to accommodate Betfair trade IDs
         // TODO: Extract this to single function
         let bytes = cstr.as_bytes_with_nul();
-        if bytes.len() > 65 {
+        if bytes.len() > 37 {
             bail!("Condition failed: value exceeds maximum trade ID length of 36");
         }
-        let mut value = [0; 65];
+        let mut value = [0; 37];
         value[..bytes.len()].copy_from_slice(bytes);
 
         Ok(Self { value })
