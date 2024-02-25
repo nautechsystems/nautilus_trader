@@ -892,6 +892,7 @@ typedef struct QuoteTick_t {
 /**
  * Represents a valid trade match ID (assigned by a trading venue).
  *
+ * Maximum length is 36 characters.
  * Can correspond to the `TradeID <1003> field` of the FIX protocol.
  *
  * The unique ID assigned to the trade entity once it is received or matched by
@@ -901,7 +902,7 @@ typedef struct TradeId_t {
     /**
      * The trade match ID C string value as a fixed-length byte array.
      */
-    uint8_t value[65];
+    uint8_t value[37];
 } TradeId_t;
 
 /**

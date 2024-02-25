@@ -934,6 +934,7 @@ cdef class TradeId(Identifier):
     """
     Represents a valid trade match ID (assigned by a trading venue).
 
+    Maximum length is 36 characters.
     Can correspond to the `TradeID <1003> field` of the FIX protocol.
 
     The unique ID assigned to the trade entity once it is received or matched by
@@ -948,6 +949,8 @@ cdef class TradeId(Identifier):
     ------
     ValueError
         If `value` is not a valid string.
+    ValueError
+        If `value` length exceeds maximum 36 characters.
 
     References
     ----------
@@ -956,6 +959,9 @@ cdef class TradeId(Identifier):
 
     def __init__(self, str value not None) -> None:
         Condition.valid_string(value, "value")
+        if len(value) > 36:
+            Condition.in_range_int(len(value), 1, 36, "value")
+
         self._mem = trade_id_new(pystr_to_cstr(value))
 
     def __getstate__(self):

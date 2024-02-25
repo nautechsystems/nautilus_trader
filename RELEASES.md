@@ -16,7 +16,7 @@ Released on TBD (UTC).
 - Implemented `AverageTrueRange` in Rust, thanks @rsmb7z
 
 ### Breaking Changes
-None
+- Changed `TradeId` value maximum length to 36 characters (will raise a `ValueError` if value exceeds the maximum)
 
 ### Fixes
 - Fixed `TradeId` memory leak due assigning unique values to the `Ustr` global string cache (which are never freed for the lifetime of the program)

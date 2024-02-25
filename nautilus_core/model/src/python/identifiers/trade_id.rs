@@ -43,7 +43,7 @@ impl TradeId {
         // TODO: Extract this to single function
         let c_string = CString::new(value_str).expect("`CString` conversion failed");
         let bytes = c_string.as_bytes_with_nul();
-        let mut value = [0; 65];
+        let mut value = [0; 37];
         value[..bytes.len()].copy_from_slice(bytes);
         self.value = value;
 
