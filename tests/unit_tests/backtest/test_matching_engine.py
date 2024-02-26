@@ -102,7 +102,7 @@ class TestOrderMatchingEngine:
     def test_process_auction_book(self) -> None:
         # Arrange
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=self.instrument.id,
+            instrument=self.instrument,
             bid_price=100,
             ask_price=105,
         )

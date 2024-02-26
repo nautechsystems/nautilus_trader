@@ -158,7 +158,7 @@ class TestL2OrderBookExchange:
         )
         self.data_engine.process(quote)
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=_USDJPY_SIM.id,
+            instrument=_USDJPY_SIM,
             bid_size=10000,
             ask_size=10000,
         )
@@ -199,7 +199,7 @@ class TestL2OrderBookExchange:
         )
         self.data_engine.process(quote)
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=_USDJPY_SIM.id,
+            instrument=_USDJPY_SIM,
             bid_size=10_000,
             ask_size=10_000,
         )
@@ -229,7 +229,7 @@ class TestL2OrderBookExchange:
         self.cache.add_instrument(_USDJPY_SIM)
         # Market is 10 @ 15
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=_USDJPY_SIM.id,
+            instrument=_USDJPY_SIM,
             bid_size=1000,
             ask_size=1000,
         )
@@ -257,7 +257,7 @@ class TestL2OrderBookExchange:
         self.cache.add_instrument(_USDJPY_SIM)
         # Market is 10 @ 15
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=_USDJPY_SIM.id,
+            instrument=_USDJPY_SIM,
             bid_size=1000,
             ask_size=1000,
         )
@@ -295,7 +295,7 @@ class TestL2OrderBookExchange:
         # Arrange: Prepare market
         # Market is 10 @ 15
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=_USDJPY_SIM.id,
+            instrument=_USDJPY_SIM,
             bid_size=1000,
             ask_size=1000,
         )

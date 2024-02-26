@@ -229,7 +229,7 @@ class TestDataStubs:
 
     @staticmethod
     def order_book(
-        instrument_id: InstrumentId | None = None,
+        instrument: Instrument | None = None,
         book_type: BookType = BookType.L2_MBP,
         bid_price: float = 10.0,
         ask_price: float = 15.0,
@@ -240,13 +240,14 @@ class TestDataStubs:
         ts_event: int = 0,
         ts_init: int = 0,
     ) -> OrderBook:
-        instrument_id = instrument_id or TestIdStubs.audusd_id()
+        instrument = instrument or TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        assert instrument
         order_book = OrderBook(
-            instrument_id=instrument_id,
+            instrument_id=instrument.id,
             book_type=book_type,
         )
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=instrument_id,
+            instrument=instrument,
             bid_price=bid_price,
             ask_price=ask_price,
             bid_levels=bid_levels,
@@ -261,7 +262,7 @@ class TestDataStubs:
 
     @staticmethod
     def order_book_snapshot(
-        instrument_id: InstrumentId | None = None,
+        instrument: Instrument | None = None,
         bid_price: float = 10.0,
         ask_price: float = 15.0,
         bid_size: float = 10.0,
@@ -273,12 +274,13 @@ class TestDataStubs:
     ) -> OrderBookDeltas:
         err = "Too many levels generated; orders will be in cross. Increase bid/ask spread or reduce number of levels"
         assert bid_price < ask_price, err
-        instrument_id = instrument_id or TestIdStubs.audusd_id()
+        instrument = instrument or TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        assert instrument
         bids = [
             BookOrder(
                 OrderSide.BUY,
-                Price(bid_price - i, 2),
-                Quantity(bid_size * (1 + i), 2),
+                instrument.make_price(bid_price - i),
+                instrument.make_qty(bid_size * (1 + i)),
                 0,
             )
             for i in range(bid_levels)
@@ -286,20 +288,20 @@ class TestDataStubs:
         asks = [
             BookOrder(
                 OrderSide.SELL,
-                Price(ask_price + i, 2),
-                Quantity(ask_size * (1 + i), 2),
+                instrument.make_price(ask_price + i),
+                instrument.make_qty(ask_size * (1 + i)),
                 0,
             )
             for i in range(ask_levels)
         ]
 
-        deltas = [OrderBookDelta.clear(instrument_id, ts_event, ts_init)]
+        deltas = [OrderBookDelta.clear(instrument.id, ts_event, ts_init)]
         deltas += [
-            OrderBookDelta(instrument_id, BookAction.ADD, order, ts_event, ts_init)
+            OrderBookDelta(instrument.id, BookAction.ADD, order, ts_event, ts_init)
             for order in bids + asks
         ]
         return OrderBookDeltas(
-            instrument_id=instrument_id,
+            instrument_id=instrument.id,
             deltas=deltas,
         )
 

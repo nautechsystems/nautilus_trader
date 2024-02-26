@@ -1021,7 +1021,10 @@ class TestDataEngine:
 
         self.data_engine.execute(subscribe)
 
-        snapshot = TestDataStubs.order_book_snapshot(ETHUSDT_BINANCE.id, ts_event=1)
+        snapshot = TestDataStubs.order_book_snapshot(
+            instrument=ETHUSDT_BINANCE,
+            ts_event=1,
+        )
 
         # Act
         self.data_engine.process(snapshot)
@@ -1127,7 +1130,7 @@ class TestDataEngine:
         self.data_engine.execute(subscribe2)
 
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=ETHUSDT_BINANCE.id,
+            instrument=ETHUSDT_BINANCE,
             ts_event=1,
         )
 
