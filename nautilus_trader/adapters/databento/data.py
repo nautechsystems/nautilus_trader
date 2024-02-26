@@ -500,12 +500,15 @@ class DatabentoDataClient(LiveMarketDataClient):
             start = self._clock.utc_now().normalize()
 
             self._log.info(f"Replaying MBO/L3 feeds from {start}.", LogColor.BLUE)
+            self._log.warning(
+                "Replaying MBO/L3 feeds is under development and not considered usable.",
+            )
 
             future = asyncio.ensure_future(
                 live_client.subscribe(
                     schema=DatabentoSchema.MBO.value,
                     symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
-                    start=start.value,
+                    start=0,  # Replay from start of weekly session
                 ),
             )
             self._live_client_futures.add(future)
