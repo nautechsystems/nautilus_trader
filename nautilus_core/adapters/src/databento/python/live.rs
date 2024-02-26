@@ -15,7 +15,7 @@
 
 use std::{collections::HashMap, ffi::CStr, fs, str::FromStr, sync::Arc};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::Result;
 use databento::{
     dbn::{PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy},
     live::Subscription,
@@ -234,8 +234,7 @@ impl DatabentoLiveClient {
                         &mut instrument_id_map,
                         clock,
                         &callback,
-                    )
-                    .map_err(to_pyvalue_err)?;
+                    )?;
                 } else {
                     let (mut data1, data2) = handle_record(
                         record,
@@ -244,8 +243,7 @@ impl DatabentoLiveClient {
                         &glbx_exchange_map,
                         &mut instrument_id_map,
                         clock,
-                    )
-                    .map_err(to_pyvalue_err)?;
+                    )?;
 
                     if let Some(msg) = record.get::<dbn::MboMsg>() {
                         // SAFETY: An MBO message will always produce a delta
@@ -371,9 +369,9 @@ fn handle_instrument_def_msg(
     instrument_id_map: &mut HashMap<u32, InstrumentId>,
     clock: &AtomicTime,
     callback: &PyObject,
-) -> Result<()> {
+) -> PyResult<Py<PyAny>> {
     let c_str: &CStr = unsafe { CStr::from_ptr(msg.raw_symbol.as_ptr()) };
-    let raw_symbol: &str = c_str.to_str().map_err(|e| anyhow!(e))?;
+    let raw_symbol: &str = c_str.to_str().map_err(to_pyvalue_err)?;
 
     let instrument_id = update_instrument_id_map(
         msg.header(),
@@ -384,18 +382,13 @@ fn handle_instrument_def_msg(
     );
 
     let ts_init = clock.get_time_ns();
-    let result = decode_instrument_def_msg(msg, instrument_id, ts_init);
+    let instrument =
+        decode_instrument_def_msg(msg, instrument_id, ts_init).map_err(to_pyvalue_err)?;
 
-    match result {
-        Ok(instrument) => Python::with_gil(|py| {
-            let py_obj = convert_instrument_to_pyobject(py, instrument).unwrap();
-            match callback.call1(py, (py_obj,)) {
-                Ok(_) => Ok(()),
-                Err(e) => bail!(e),
-            }
-        }),
-        Err(e) => Err(e),
-    }
+    Python::with_gil(|py| {
+        let py_obj = convert_instrument_to_pyobject(py, instrument)?;
+        callback.call1(py, (py_obj,))
+    })
 }
 
 fn handle_record(
@@ -405,7 +398,7 @@ fn handle_record(
     glbx_exchange_map: &HashMap<Symbol, Venue>,
     instrument_id_map: &mut HashMap<u32, InstrumentId>,
     clock: &AtomicTime,
-) -> Result<(Option<Data>, Option<Data>)> {
+) -> PyResult<(Option<Data>, Option<Data>)> {
     let raw_symbol = symbol_map
         .get_for_rec(&rec_ref)
         .expect("Cannot resolve `raw_symbol` from `symbol_map`");
@@ -428,6 +421,7 @@ fn handle_record(
         Some(ts_init),
         true, // Always include trades
     )
+    .map_err(to_pyvalue_err)
 }
 
 fn call_python_with_data(py: Python, callback: &PyObject, data: Data) {
