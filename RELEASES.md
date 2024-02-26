@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added additional validations for `OrderMatchingEngine` (will now raise a `RuntimeError` when a price or size precision for a fill does not match the instruments precisions)
 
 ### Breaking Changes
 None

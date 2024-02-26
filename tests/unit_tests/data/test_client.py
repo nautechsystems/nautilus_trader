@@ -184,7 +184,7 @@ class TestMarketDataClient:
 
     def test_handle_order_book_snapshot_sends_to_data_engine(self):
         # Arrange
-        snapshot = TestDataStubs.order_book_snapshot(AUDUSD_SIM.id)
+        snapshot = TestDataStubs.order_book_snapshot(AUDUSD_SIM)
 
         # Act
         self.client._handle_data_py(snapshot)

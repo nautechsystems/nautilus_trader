@@ -1587,6 +1587,21 @@ cdef class OrderMatchingEngine:
             bint initial_market_to_limit_fill = False
             Price last_fill_px = None
         for fill_px, fill_qty in fills:
+            # Validate price precision
+            if fill_px.precision != self.instrument.price_precision:
+                raise RuntimeError(
+                    f"Invalid price precision for fill {fill_px.precision} "
+                    f"when instrument price precision is {self.instrument.price_precision}. "
+                    f"Check that the data price precision matches the {self.instrument.id} instrument."
+                )
+            # Validate size precision
+            if fill_qty.precision != self.instrument.size_precision:
+                raise RuntimeError(
+                    f"Invalid size precision for fill {fill_qty.precision} "
+                    f"when instrument size precision is {self.instrument.size_precision}. "
+                    f"Check that the data size precision matches the {self.instrument.id} instrument."
+                )
+
             if order.filled_qty._mem.raw == 0:
                 if order.order_type == OrderType.MARKET_TO_LIMIT:
                     self._generate_order_updated(

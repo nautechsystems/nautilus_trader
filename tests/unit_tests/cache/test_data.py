@@ -307,11 +307,12 @@ class TestCache:
 
     def test_order_book_when_order_book_exists_returns_expected(self):
         # Arrange
-        order_book = TestDataStubs.order_book(ETHUSDT_BINANCE.id)
+        instrument = ETHUSDT_BINANCE
+        order_book = TestDataStubs.order_book(instrument)
         self.cache.add_order_book(order_book)
 
         # Act
-        result = self.cache.order_book(ETHUSDT_BINANCE.id)
+        result = self.cache.order_book(instrument.id)
 
         # Assert
         assert result == order_book
