@@ -21,7 +21,6 @@ use std::{
 
 use anyhow::Result;
 use nautilus_core::time::UnixNanos;
-use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -44,7 +43,7 @@ use crate::{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
 pub struct Position {
     pub events: Vec<OrderFilled>,

@@ -19,7 +19,6 @@ use std::{
 };
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
-use pyo3::prelude::*;
 use ustr::Ustr;
 
 use super::base::{Order, OrderCore};
@@ -41,7 +40,7 @@ use crate::{
 
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct MarketToLimitOrder {
     core: OrderCore,

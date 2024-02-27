@@ -38,7 +38,7 @@ type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 pub struct WebSocketConfig {
     url: String,
@@ -286,7 +286,7 @@ impl Drop for WebSocketClientInner {
 
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 pub struct WebSocketClient {
     writer: SharedMessageWriter,

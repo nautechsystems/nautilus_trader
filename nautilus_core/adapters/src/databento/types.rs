@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use pyo3::prelude::*;
 use serde::Deserialize;
 use ustr::Ustr;
 
@@ -25,7 +24,7 @@ pub type Dataset = Ustr;
 
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
 )]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
 pub struct DatabentoPublisher {

@@ -20,14 +20,16 @@ use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
 };
-use pyo3::prelude::*;
 
 use crate::indicator::{Indicator, MovingAverage};
 
 /// An indicator which calculates a weighted moving average across a rolling window.
 #[repr(C)]
 #[derive(Debug)]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+)]
 pub struct WeightedMovingAverage {
     /// The rolling window period for the indicator (> 0).
     pub period: usize,

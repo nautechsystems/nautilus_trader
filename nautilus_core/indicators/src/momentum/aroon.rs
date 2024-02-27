@@ -23,7 +23,6 @@ use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
 };
-use pyo3::prelude::*;
 
 use crate::indicator::Indicator;
 
@@ -31,7 +30,10 @@ use crate::indicator::Indicator;
 /// determine if an instrument is trending, and the strength of the trend.
 #[repr(C)]
 #[derive(Debug)]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+)]
 pub struct AroonOscillator {
     pub period: usize,
     pub high_inputs: VecDeque<f64>,

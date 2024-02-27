@@ -20,7 +20,6 @@ use std::{
 
 use anyhow::Result;
 use nautilus_core::time::UnixNanos;
-use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::Instrument;
@@ -34,7 +33,7 @@ use crate::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct CryptoFuture {

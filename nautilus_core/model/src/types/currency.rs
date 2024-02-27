@@ -20,7 +20,6 @@ use std::{
 
 use anyhow::{anyhow, Result};
 use nautilus_core::correctness::check_valid_string;
-use pyo3::prelude::*;
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
@@ -31,7 +30,7 @@ use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 #[derive(Clone, Copy, Debug, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Currency {
     pub code: Ustr,
