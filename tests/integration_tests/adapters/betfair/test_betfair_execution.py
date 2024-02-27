@@ -945,7 +945,7 @@ async def test_fok_order_found_in_cache(exec_client, setup_order_state, strategy
         instrument=instrument,
         order_side=OrderSide.SELL,
         price=Price(9.6000000, BETFAIR_PRICE_PRECISION),
-        quantity=Quantity(2.8000, 4),
+        quantity=Quantity(2.8000, 2),
         time_in_force=TimeInForce.FOK,
         client_order_id=client_order_id,
     )

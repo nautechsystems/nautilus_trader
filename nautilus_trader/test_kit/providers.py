@@ -25,6 +25,8 @@ import pandas as pd
 import pytz
 from fsspec.implementations.local import LocalFileSystem
 
+from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
+from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import secs_to_nanos
@@ -610,6 +612,8 @@ class TestInstrumentProvider:
             selection_id=50214,
             selection_name="Kansas City Chiefs",
             currency="GBP",
+            price_precision=BETFAIR_PRICE_PRECISION,
+            size_precision=BETFAIR_QUANTITY_PRECISION,
             ts_event=0,
             ts_init=0,
         )
