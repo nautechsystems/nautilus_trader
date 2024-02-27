@@ -851,6 +851,8 @@ def betting_instrument_handicap() -> BettingInstrument:
             "selection_name": "GWS",
             "selection_handicap": -5.5,
             "currency": "AUD",
+            "price_precision": 2,
+            "size_precision": 2,
             "ts_event": 0,
             "ts_init": 0,
         },

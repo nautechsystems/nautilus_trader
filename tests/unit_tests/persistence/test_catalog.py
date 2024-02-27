@@ -206,6 +206,20 @@ def test_catalog_filter(
     assert len(filtered_deltas) == 351
 
 
+def test_catalog_orderbook_deltas_precision(
+    catalog_betfair: ParquetDataCatalog,
+) -> None:
+    # Arrange, Act
+    deltas = catalog_betfair.order_book_deltas()
+    delta = deltas[1]
+
+    # Assert
+    delta.order.price == 2
+    delta.order.price.precision == 2
+
+    assert len == 2384
+
+
 def test_catalog_custom_data(catalog: ParquetDataCatalog) -> None:
     # Arrange
     TestPersistenceStubs.setup_news_event_persistence()
