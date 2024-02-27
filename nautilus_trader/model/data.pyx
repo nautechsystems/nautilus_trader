@@ -2062,8 +2062,10 @@ cdef class OrderBookDelta(Data):
         for delta in deltas:
             if pyo3_instrument_id is None:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(delta.instrument_id.value)
-                price_prec = delta.order.price.precision
-                size_prec = delta.order.size.precision
+            if price_prec == 0:
+                price_prec = delta._mem.order.price.precision
+            if size_prec == 0:
+                size_prec = delta._mem.order.size.precision
 
             pyo3_book_order = nautilus_pyo3.BookOrder(
                nautilus_pyo3.OrderSide(order_side_to_str(delta._mem.order.side)),
