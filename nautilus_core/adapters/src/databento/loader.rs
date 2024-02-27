@@ -310,7 +310,7 @@ impl DatabentoDataLoader {
                             let mut instrument_id = self
                                 .get_nautilus_instrument_id_for_record(&rec_ref, &metadata, *venue)
                                 .unwrap_or_else(|_| {
-                                    panic!("Error resolving symbology mapping for {:?}", rec_ref)
+                                    panic!("Error resolving symbology mapping for {rec_ref:?}")
                                 });
 
                             if publisher == Publisher::GlbxMdp3Glbx {
