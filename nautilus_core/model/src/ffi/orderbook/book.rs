@@ -32,7 +32,7 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-/// Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBook`].
+/// Provides a C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
 ///
 /// This struct wraps `OrderBook` in a way that makes it compatible with C function
 /// calls, enabling interaction with `OrderBook` in a C environment.
@@ -272,7 +272,7 @@ pub extern "C" fn vec_fills_drop(v: CVec) {
     drop(data); // Memory freed here
 }
 
-/// Returns a pretty printed [`OrderBook`] number of levels per side, as a C string pointer.
+/// Returns a pretty printed `OrderBook` number of levels per side, as a C string pointer.
 #[no_mangle]
 pub extern "C" fn orderbook_pprint_to_cstr(
     book: &OrderBook_API,
