@@ -23,11 +23,10 @@ use nautilus_core::ffi::{cvec::CVec, string::str_to_cstr};
 use super::{container::OrderBookContainer, level::Level_API};
 use crate::{
     data::{
-        delta::OrderBookDelta, depth::OrderBookDepth10, order::BookOrder, quote::QuoteTick,
-        trade::TradeTick,
+        delta::OrderBookDelta, deltas::OrderBookDeltas_API, depth::OrderBookDepth10,
+        order::BookOrder, quote::QuoteTick, trade::TradeTick,
     },
     enums::{BookType, OrderSide},
-    ffi::data::deltas::OrderBookDeltas_API,
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
