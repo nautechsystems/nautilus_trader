@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod clock;
 pub mod logging;
 pub mod timer;
 pub mod versioning;

@@ -221,10 +221,6 @@ typedef struct MessageBus MessageBus;
 
 typedef struct TestClock TestClock;
 
-typedef struct PyCallableWrapper_t {
-    PyObject *ptr;
-} PyCallableWrapper_t;
-
 /**
  * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
  *
@@ -299,12 +295,10 @@ typedef struct TimeEventHandler_t {
      */
     struct TimeEvent_t event;
     /**
-     * The Python callable pointer.
+     * The callable raw pointer.
      */
-    PyObject *callback_ptr;
+    char *callback_ptr;
 } TimeEventHandler_t;
-
-struct PyCallableWrapper_t dummy_callable(struct PyCallableWrapper_t c);
 
 /**
  * Returns whether the core logger is enabled.
@@ -726,8 +720,6 @@ const char *msgbus_endpoint_callback(const struct MessageBus_API *bus, const cha
  * - Assumes `pattern_ptr` is a valid C string pointer.
  */
 CVec msgbus_matching_callbacks(struct MessageBus_API *bus, const char *pattern_ptr);
-
-void vec_pycallable_drop(CVec v);
 
 /**
  * # Safety

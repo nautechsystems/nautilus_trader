@@ -81,8 +81,8 @@ pub unsafe extern "C" fn test_clock_register_default_handler(
     assert!(!callback_ptr.is_null());
     assert!(ffi::Py_None() != callback_ptr);
 
-    let callback_py = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
-    let handler = EventHandler::new(Some(callback_py), None);
+    let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
+    let handler = EventHandler::new(callback);
 
     clock.register_default_handler(handler);
 }
@@ -144,13 +144,15 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
     assert!(!callback_ptr.is_null());
 
     let name = cstr_to_str(name_ptr);
-    let callback_py = Python::with_gil(|py| match callback_ptr {
-        ptr if ptr != ffi::Py_None() => Some(PyObject::from_borrowed_ptr(py, ptr)),
-        _ => None,
-    });
-    let handler = EventHandler::new(callback_py.clone(), None);
+    let handler = match callback_ptr == ffi::Py_None() {
+        true => None,
+        false => {
+            let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
+            Some(EventHandler::new(callback))
+        }
+    };
 
-    clock.set_time_alert_ns(name, alert_time_ns, callback_py.map(|_| handler));
+    clock.set_time_alert_ns(name, alert_time_ns, handler);
 }
 
 /// # Safety
@@ -173,20 +175,15 @@ pub unsafe extern "C" fn test_clock_set_timer(
         0 => None,
         _ => Some(stop_time_ns),
     };
-    let callback_py = Python::with_gil(|py| match callback_ptr {
-        ptr if ptr != ffi::Py_None() => Some(PyObject::from_borrowed_ptr(py, ptr)),
-        _ => None,
-    });
+    let handler = match callback_ptr == ffi::Py_None() {
+        true => None,
+        false => {
+            let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
+            Some(EventHandler::new(callback))
+        }
+    };
 
-    let handler = EventHandler::new(callback_py.clone(), None);
-
-    clock.set_timer_ns(
-        name,
-        interval_ns,
-        start_time_ns,
-        stop_time_ns,
-        callback_py.map(|_| handler),
-    );
+    clock.set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, handler);
 }
 
 /// # Safety
@@ -290,8 +287,8 @@ pub unsafe extern "C" fn live_clock_register_default_handler(
     assert!(!callback_ptr.is_null());
     assert!(ffi::Py_None() != callback_ptr);
 
-    let callback_py = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
-    let handler = EventHandler::new(Some(callback_py), None);
+    let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
+    let handler = EventHandler::new(callback);
 
     clock.register_default_handler(handler);
 }
@@ -348,13 +345,15 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
     assert!(!callback_ptr.is_null());
 
     let name = cstr_to_str(name_ptr);
-    let callback_py = Python::with_gil(|py| match callback_ptr {
-        ptr if ptr != ffi::Py_None() => Some(PyObject::from_borrowed_ptr(py, ptr)),
-        _ => None,
-    });
-    let handler = EventHandler::new(callback_py.clone(), None);
+    let handler = match callback_ptr == ffi::Py_None() {
+        true => None,
+        false => {
+            let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
+            Some(EventHandler::new(callback))
+        }
+    };
 
-    clock.set_time_alert_ns(name, alert_time_ns, callback_py.map(|_| handler));
+    clock.set_time_alert_ns(name, alert_time_ns, handler);
 }
 
 /// # Safety
@@ -377,20 +376,16 @@ pub unsafe extern "C" fn live_clock_set_timer(
         0 => None,
         _ => Some(stop_time_ns),
     };
-    let callback_py = Python::with_gil(|py| match callback_ptr {
-        ptr if ptr != ffi::Py_None() => Some(PyObject::from_borrowed_ptr(py, ptr)),
-        _ => None,
-    });
 
-    let handler = EventHandler::new(callback_py.clone(), None);
+    let handler = match callback_ptr == ffi::Py_None() {
+        true => None,
+        false => {
+            let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
+            Some(EventHandler::new(callback))
+        }
+    };
 
-    clock.set_timer_ns(
-        name,
-        interval_ns,
-        start_time_ns,
-        stop_time_ns,
-        callback_py.map(|_| handler),
-    );
+    clock.set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, handler);
 }
 
 /// # Safety

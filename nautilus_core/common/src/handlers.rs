@@ -15,28 +15,25 @@
 
 use std::{fmt, sync::Arc};
 
-use nautilus_core::message::Message;
-use pyo3::{ffi, prelude::*};
 use ustr::Ustr;
 
 use crate::timer::TimeEvent;
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-pub struct PyCallableWrapper {
-    pub ptr: *mut ffi::PyObject,
-}
+#[cfg(not(feature = "python"))]
+use nautilus_core::message::Message;
+#[cfg(not(feature = "python"))]
+use std::ffi::c_char;
 
-// This function only exists so that `PyCallableWrapper` is included in the definitions
-#[no_mangle]
-pub extern "C" fn dummy_callable(c: PyCallableWrapper) -> PyCallableWrapper {
-    c
-}
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 
 #[allow(dead_code)]
 #[derive(Clone)]
 pub struct SafeMessageCallback {
+    #[cfg(not(feature = "python"))]
     pub callback: Arc<dyn Fn(Message) + Send>,
+    #[cfg(feature = "python")]
+    callback: PyObject,
 }
 
 unsafe impl Send for SafeMessageCallback {}
@@ -63,7 +60,6 @@ pub struct MessageHandler {
 }
 
 impl MessageHandler {
-    // TODO: Validate exactly one of these is `Some`
     #[must_use]
     pub fn new(handler_id: Ustr, callback: Option<SafeMessageCallback>) -> Self {
         Self {
@@ -87,29 +83,41 @@ impl fmt::Debug for MessageHandler {
     }
 }
 
-// TODO: Make this more generic
 #[derive(Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
 pub struct EventHandler {
-    pub py_callback: Option<PyObject>,
-    _callback: Option<SafeTimeEventCallback>,
+    #[cfg(not(feature = "python"))]
+    pub callback: SafeTimeEventCallback,
+    #[cfg(feature = "python")]
+    pub callback: PyObject,
 }
 
 impl EventHandler {
+    #[cfg(not(feature = "python"))]
     #[must_use]
-    pub fn new(py_callback: Option<PyObject>, callback: Option<SafeTimeEventCallback>) -> Self {
-        Self {
-            py_callback,
-            _callback: callback,
-        }
+    pub fn new(callback: SafeTimeEventCallback) -> Self {
+        Self { callback }
     }
 
+    #[cfg(feature = "python")]
     #[must_use]
-    pub fn as_ptr(self) -> *mut ffi::PyObject {
-        // SAFETY: Will panic if `unwrap` is called on None
-        self.py_callback.unwrap().as_ptr()
+    pub fn new(callback: PyObject) -> Self {
+        Self { callback }
+    }
+
+    #[cfg(not(feature = "python"))]
+    #[must_use]
+    pub fn as_ptr(self) -> *mut c_char {
+        // TODO: Temporary hack for conditional compilation
+        std::ptr::null_mut()
+    }
+
+    #[cfg(feature = "python")]
+    #[must_use]
+    pub fn as_ptr(self) -> *mut pyo3::ffi::PyObject {
+        self.callback.as_ptr()
     }
 }

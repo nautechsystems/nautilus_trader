@@ -683,12 +683,14 @@ cdef class TestClock(Clock):
             TimeEvent event
             TimeEventHandler_t raw_handler
             TimeEventHandler event_handler
+            PyObject *raw_callback
         for i in range(raw_handler_vec.len):
             raw_handler = <TimeEventHandler_t>raw_handlers[i]
             event = TimeEvent.from_mem_c(raw_handler.event)
 
             # Cast raw `PyObject *` to a `PyObject`
-            callback = <object>raw_handler.callback_ptr
+            raw_callback = <PyObject *>raw_handler.callback_ptr
+            callback = <object>raw_callback
 
             event_handler = TimeEventHandler(event, callback)
             event_handlers.append(event_handler)

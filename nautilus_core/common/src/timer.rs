@@ -15,6 +15,7 @@
 
 use std::{
     cmp::Ordering,
+    ffi::c_char,
     fmt::{Display, Formatter},
     time::Duration,
 };
@@ -24,11 +25,13 @@ use nautilus_core::{
     time::{get_atomic_clock_realtime, TimedeltaNanos, UnixNanos},
     uuid::UUID4,
 };
-use pyo3::{ffi, types::PyCapsule, IntoPy, PyObject, Python};
 use tokio::sync::oneshot;
 use ustr::Ustr;
 
-use crate::handlers::EventHandler;
+use crate::{handlers::EventHandler, runtime::get_runtime};
+
+#[cfg(feature = "python")]
+use pyo3::{types::PyCapsule, IntoPy, PyObject, Python};
 
 #[repr(C)]
 #[derive(Clone, Debug)]
@@ -83,8 +86,8 @@ impl PartialEq for TimeEvent {
 pub struct TimeEventHandler {
     /// The event.
     pub event: TimeEvent,
-    /// The Python callable pointer.
-    pub callback_ptr: *mut ffi::PyObject,
+    /// The callable raw pointer.
+    pub callback_ptr: *mut c_char,
 }
 
 impl PartialOrd for TimeEventHandler {
@@ -250,17 +253,13 @@ impl LiveTimer {
         let stop_time_ns = self.stop_time_ns;
         let interval_ns = self.interval_ns;
 
-        let callback = self
-            .callback
-            .py_callback
-            .clone()
-            .expect("No callback for event handler");
+        let callback = self.callback.clone();
 
         // Setup oneshot channel for cancelling timer task
         let (cancel_tx, mut cancel_rx) = oneshot::channel();
         self.canceler = Some(cancel_tx);
 
-        pyo3_asyncio::tokio::get_runtime().spawn(async move {
+        get_runtime().spawn(async move {
             let clock = get_atomic_clock_realtime();
             if start_time_ns == 0 {
                 start_time_ns = clock.get_time_ns();
@@ -271,21 +270,9 @@ impl LiveTimer {
             loop {
                 tokio::select! {
                     _ = tokio::time::sleep(Duration::from_nanos(next_time_ns.saturating_sub(clock.get_time_ns()))) => {
-                        Python::with_gil(|py| {
-                            // Create new time event
-                            let event = TimeEvent::new(
-                                event_name,
-                                UUID4::new(),
-                                next_time_ns,
-                                clock.get_time_ns()
-                            );
-                            let capsule: PyObject = PyCapsule::new(py, event, None).expect("Error creating `PyCapsule`").into_py(py);
-
-                            match callback.call1(py, (capsule,)) {
-                                Ok(_) => {},
-                                Err(e) => eprintln!("Error on callback: {:?}", e),
-                            };
-                        });
+                        // TODO: Remove this clone
+                        let callback = callback.clone();
+                        call_python_with_time_event(event_name, next_time_ns, clock.get_time_ns(), callback);
 
                         // Prepare next time interval
                         next_time_ns += interval_ns;
@@ -317,9 +304,41 @@ impl LiveTimer {
     }
 }
 
+#[cfg(feature = "python")]
+fn call_python_with_time_event(
+    name: Ustr,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    handler: EventHandler,
+) {
+    Python::with_gil(|py| {
+        // Create new time event
+        let event = TimeEvent::new(name, UUID4::new(), ts_event, ts_init);
+        let capsule: PyObject = PyCapsule::new(py, event, None)
+            .expect("Error creating `PyCapsule`")
+            .into_py(py);
+
+        match handler.callback.call1(py, (capsule,)) {
+            Ok(_) => {}
+            Err(e) => eprintln!("Error on callback: {:?}", e),
+        };
+    })
+}
+
+#[cfg(not(feature = "python"))]
+fn call_python_with_time_event(
+    _name: Ustr,
+    _ts_event: UnixNanos,
+    _ts_init: UnixNanos,
+    _handler: EventHandler,
+) {
+    panic!("`python` feature is not enabled");
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+#[cfg(not(feature = "python"))]
 #[cfg(test)]
 mod tests {
     use rstest::*;

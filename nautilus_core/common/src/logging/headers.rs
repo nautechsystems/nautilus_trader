@@ -21,7 +21,6 @@ use ustr::Ustr;
 use crate::{
     enums::{LogColor, LogLevel},
     logging::log,
-    python::versioning::{get_python_package_version, get_python_version},
 };
 
 #[rustfmt::skip]
@@ -74,20 +73,20 @@ pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, com
     header_sepr(c, " VERSIONING");
     header_sepr(c, "=================================================================");
     let package = "nautilus_trader";
-    header_line(c, &format!("{package}: {}", get_python_package_version(package)));
-    header_line(c, &format!("python: {}", get_python_version()));
+    header_line(c, &format!("{package}: {}", python_package_version(package)));
+    header_line(c, &format!("python: {}", python_version()));
     let package = "numpy";
-    header_line(c, &format!("{package}: {}", get_python_package_version(package)));
+    header_line(c, &format!("{package}: {}", python_package_version(package)));
     let package = "pandas";
-    header_line(c, &format!("{package}: {}", get_python_package_version(package)));
+    header_line(c, &format!("{package}: {}", python_package_version(package)));
     let package = "msgspec";
-    header_line(c, &format!("{package}: {}", get_python_package_version(package)));
+    header_line(c, &format!("{package}: {}", python_package_version(package)));
     let package = "pyarrow";
-    header_line(c, &format!("{package}: {}", get_python_package_version(package)));
+    header_line(c, &format!("{package}: {}", python_package_version(package)));
     let package = "pytz";
-    header_line(c, &format!("{package}: {}", get_python_package_version(package)));
+    header_line(c, &format!("{package}: {}", python_package_version(package)));
     let package = "uvloop";
-    header_line(c, &format!("{package}: {}", get_python_package_version(package)));
+    header_line(c, &format!("{package}: {}", python_package_version(package)));
     header_sepr(c, "=================================================================");
 }
 
@@ -131,4 +130,28 @@ fn header_line(c: Ustr, s: &str) {
 
 fn bytes_to_gib(b: u64) -> f64 {
     b as f64 / (2u64.pow(30) as f64)
+}
+
+#[cfg(feature = "python")]
+fn python_package_version(package: &str) -> String {
+    use crate::python::versioning::get_python_package_version;
+
+    get_python_package_version(package)
+}
+
+#[cfg(not(feature = "python"))]
+fn python_package_version(_package: &str) -> &str {
+    panic!("`python` feature is not enabled");
+}
+
+#[cfg(feature = "python")]
+fn python_version() -> String {
+    use crate::python::versioning::get_python_version;
+
+    get_python_version()
+}
+
+#[cfg(not(feature = "python"))]
+fn python_version() -> String {
+    panic!("`python` feature is not enabled");
 }

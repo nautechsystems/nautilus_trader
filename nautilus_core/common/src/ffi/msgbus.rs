@@ -35,7 +35,7 @@ use pyo3::{
 };
 
 use crate::{
-    handlers::{MessageHandler, PyCallableWrapper},
+    handlers::MessageHandler,
     msgbus::{is_matching, MessageBus, Subscription},
 };
 
@@ -328,15 +328,6 @@ pub unsafe extern "C" fn msgbus_matching_callbacks(
         .map(|s| s.handler.handler_id.as_ptr().cast::<c_char>())
         .collect::<Vec<*const c_char>>()
         .into()
-}
-
-#[allow(clippy::drop_non_drop)]
-#[no_mangle]
-pub extern "C" fn vec_pycallable_drop(v: CVec) {
-    let CVec { ptr, len, cap } = v;
-    let data: Vec<PyCallableWrapper> =
-        unsafe { Vec::from_raw_parts(ptr.cast::<PyCallableWrapper>(), len, cap) };
-    drop(data); // Memory freed here
 }
 
 /// # Safety
