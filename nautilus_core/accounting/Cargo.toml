@@ -11,8 +11,8 @@ name = "nautilus_accounting"
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]
-nautilus-common = { path = "../common", features = ["stubs"] }
-nautilus-model = { path = "../model", features = ["stubs"]}
+nautilus-common = { path = "../common", optional = true , features = ["stubs"]}
+nautilus-model = { path = "../model", optional = true }
 nautilus-core = { path = "../core" }
 anyhow = { workspace = true }
 pyo3 = { workspace = true, optional = true }
@@ -30,7 +30,7 @@ extension-module = [
   "nautilus-common/extension-module",
 ]
 python = ["pyo3"]
-default = ["python"]
+default = ["nautilus-model", "nautilus-common"]
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }

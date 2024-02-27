@@ -17,16 +17,14 @@ use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
     hash::Hash,
-    str::FromStr,
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{python::to_pyvalue_err, serialization::Serializable, time::UnixNanos};
-use pyo3::prelude::*;
+use nautilus_core::{serialization::Serializable, time::UnixNanos};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    enums::{AggressorSide, FromU8},
+    enums::AggressorSide,
     identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
     types::{price::Price, quantity::Quantity},
 };
@@ -104,44 +102,6 @@ impl TradeTick {
         metadata.insert("ts_event".to_string(), "UInt64".to_string());
         metadata.insert("ts_init".to_string(), "UInt64".to_string());
         metadata
-    }
-
-    /// Create a new [`TradeTick`] extracted from the given [`PyAny`].
-    pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
-        let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
-        let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
-        let instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
-
-        let price_py: &PyAny = obj.getattr("price")?;
-        let price_raw: i64 = price_py.getattr("raw")?.extract()?;
-        let price_prec: u8 = price_py.getattr("precision")?.extract()?;
-        let price = Price::from_raw(price_raw, price_prec).map_err(to_pyvalue_err)?;
-
-        let size_py: &PyAny = obj.getattr("size")?;
-        let size_raw: u64 = size_py.getattr("raw")?.extract()?;
-        let size_prec: u8 = size_py.getattr("precision")?.extract()?;
-        let size = Quantity::from_raw(size_raw, size_prec).map_err(to_pyvalue_err)?;
-
-        let aggressor_side_obj: &PyAny = obj.getattr("aggressor_side")?.extract()?;
-        let aggressor_side_u8 = aggressor_side_obj.getattr("value")?.extract()?;
-        let aggressor_side = AggressorSide::from_u8(aggressor_side_u8).unwrap();
-
-        let trade_id_obj: &PyAny = obj.getattr("trade_id")?.extract()?;
-        let trade_id_str = trade_id_obj.getattr("value")?.extract()?;
-        let trade_id = TradeId::from_str(trade_id_str).map_err(to_pyvalue_err)?;
-
-        let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
-        let ts_init: UnixNanos = obj.getattr("ts_init")?.extract()?;
-
-        Ok(Self::new(
-            instrument_id,
-            price,
-            size,
-            aggressor_side,
-            trade_id,
-            ts_event,
-            ts_init,
-        ))
     }
 }
 

@@ -25,7 +25,7 @@ heck = "0.4.1"
 extension-module = ["pyo3/extension-module"]
 ffi = ["cbindgen"]
 python = ["pyo3"]
-default = ["ffi", "python"]
+default = []
 
 [dev-dependencies]
 criterion = { workspace = true }

@@ -15,10 +15,9 @@
 
 use pyo3::prelude::*;
 
-use crate::enums;
-
 pub mod common;
 pub mod data;
+pub mod enums;
 pub mod events;
 pub mod identifiers;
 pub mod instruments;
@@ -43,30 +42,30 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::data::quote::QuoteTick>()?;
     m.add_class::<crate::data::trade::TradeTick>()?;
     // Enums
-    m.add_class::<enums::AccountType>()?;
-    m.add_class::<enums::AggregationSource>()?;
-    m.add_class::<enums::AggressorSide>()?;
-    m.add_class::<enums::AssetClass>()?;
-    m.add_class::<enums::InstrumentClass>()?;
-    m.add_class::<enums::BarAggregation>()?;
-    m.add_class::<enums::BookAction>()?;
-    m.add_class::<enums::BookType>()?;
-    m.add_class::<enums::ContingencyType>()?;
-    m.add_class::<enums::CurrencyType>()?;
-    m.add_class::<enums::InstrumentCloseType>()?;
-    m.add_class::<enums::LiquiditySide>()?;
-    m.add_class::<enums::MarketStatus>()?;
-    m.add_class::<enums::OmsType>()?;
-    m.add_class::<enums::OptionKind>()?;
-    m.add_class::<enums::OrderSide>()?;
-    m.add_class::<enums::OrderStatus>()?;
-    m.add_class::<enums::OrderType>()?;
-    m.add_class::<enums::PositionSide>()?;
-    m.add_class::<enums::PriceType>()?;
-    m.add_class::<enums::TimeInForce>()?;
-    m.add_class::<enums::TradingState>()?;
-    m.add_class::<enums::TrailingOffsetType>()?;
-    m.add_class::<enums::TriggerType>()?;
+    m.add_class::<crate::enums::AccountType>()?;
+    m.add_class::<crate::enums::AggregationSource>()?;
+    m.add_class::<crate::enums::AggressorSide>()?;
+    m.add_class::<crate::enums::AssetClass>()?;
+    m.add_class::<crate::enums::InstrumentClass>()?;
+    m.add_class::<crate::enums::BarAggregation>()?;
+    m.add_class::<crate::enums::BookAction>()?;
+    m.add_class::<crate::enums::BookType>()?;
+    m.add_class::<crate::enums::ContingencyType>()?;
+    m.add_class::<crate::enums::CurrencyType>()?;
+    m.add_class::<crate::enums::InstrumentCloseType>()?;
+    m.add_class::<crate::enums::LiquiditySide>()?;
+    m.add_class::<crate::enums::MarketStatus>()?;
+    m.add_class::<crate::enums::OmsType>()?;
+    m.add_class::<crate::enums::OptionKind>()?;
+    m.add_class::<crate::enums::OrderSide>()?;
+    m.add_class::<crate::enums::OrderStatus>()?;
+    m.add_class::<crate::enums::OrderType>()?;
+    m.add_class::<crate::enums::PositionSide>()?;
+    m.add_class::<crate::enums::PriceType>()?;
+    m.add_class::<crate::enums::TimeInForce>()?;
+    m.add_class::<crate::enums::TradingState>()?;
+    m.add_class::<crate::enums::TrailingOffsetType>()?;
+    m.add_class::<crate::enums::TriggerType>()?;
     // Identifiers
     m.add_class::<crate::identifiers::account_id::AccountId>()?;
     m.add_class::<crate::identifiers::client_id::ClientId>()?;

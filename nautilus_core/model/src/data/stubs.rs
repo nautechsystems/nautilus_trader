@@ -13,11 +13,37 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod balance;
-pub mod currency;
-pub mod fixed;
-pub mod money;
-pub mod price;
-pub mod quantity;
-#[cfg(feature = "stubs")]
-pub mod stubs;
+use rstest::fixture;
+
+use super::*;
+use crate::data::order::BookOrder;
+use crate::enums::{BookAction, OrderSide};
+use crate::{
+    identifiers::instrument_id::InstrumentId,
+    types::{price::Price, quantity::Quantity},
+};
+
+#[fixture]
+pub fn stub_delta() -> OrderBookDelta {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let action = BookAction::Add;
+    let price = Price::from("100.00");
+    let size = Quantity::from("10");
+    let side = OrderSide::Buy;
+    let order_id = 123456;
+    let flags = 0;
+    let sequence = 1;
+    let ts_event = 1;
+    let ts_init = 2;
+
+    let order = BookOrder::new(side, price, size, order_id);
+    OrderBookDelta::new(
+        instrument_id,
+        action,
+        order,
+        flags,
+        sequence,
+        ts_event,
+        ts_init,
+    )
+}

@@ -11,8 +11,8 @@ name = "nautilus_backtest"
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
-nautilus-common = { path = "../common" }
-nautilus-core = { path = "../core" }
+nautilus-common = { path = "../common" , features = ["ffi","python"]}
+nautilus-core = { path = "../core", features = ["ffi","python"] }
 nautilus-model = { path = "../model" }
 pyo3 = { workspace = true, optional = true }
 ustr = { workspace = true }
@@ -30,7 +30,8 @@ extension-module = [
 ]
 ffi = ["cbindgen"]
 python = ["pyo3"]
-default = ["ffi", "python"]
+default = ["python"]
+
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }

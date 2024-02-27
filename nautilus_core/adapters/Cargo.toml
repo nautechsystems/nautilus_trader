@@ -42,9 +42,9 @@ extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
 ]
-databento = ["dep:databento", "dbn"]
+databento = ["dep:databento", "dbn", "python"]
 python = ["pyo3", "pyo3-asyncio"]
-default = ["databento", "python"]
+default = []
 
 [dev-dependencies]
 criterion = { workspace = true }

@@ -11,7 +11,7 @@ name = "nautilus_model"
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
-nautilus-core = { path = "../core" }
+nautilus-core = { path = "../core" , optional = true}
 anyhow = { workspace = true }
 indexmap = { workspace = true }
 once_cell = { workspace = true }
@@ -35,11 +35,11 @@ extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
 ]
-ffi = ["cbindgen"]
-python = ["pyo3"]
+ffi = ["cbindgen", "nautilus-core/ffi"]
+python = ["pyo3", "pyo3/multiple-pymethods","nautilus-core/python"]
 stubs = ["rstest"]
 trivial_copy = []  # Enables deriving the `Copy` trait for data types (should be included in default)
-default = ["ffi", "python", "stubs", "trivial_copy"]
+default = ["nautilus-core", "trivial_copy"]
 
 [dev-dependencies]
 criterion = { workspace = true }

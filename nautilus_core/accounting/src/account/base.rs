@@ -34,7 +34,6 @@ use rust_decimal::prelude::ToPrimitive;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct BaseAccount {
-    #[pyo3(get)]
     pub id: AccountId,
     pub account_type: AccountType,
     pub base_currency: Option<Currency>,
