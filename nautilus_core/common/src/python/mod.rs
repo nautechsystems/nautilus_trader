@@ -22,7 +22,7 @@ use pyo3::prelude::*;
 
 use crate::{
     enums,
-    logging::{writer::FileWriterConfig, LoggerConfig},
+    logging::{writer::FileWriterConfig, LoggerConfig, LogGuard},
 };
 
 /// Loaded as nautilus_pyo3.common
@@ -34,6 +34,7 @@ pub fn common(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<enums::LogLevel>()?;
     m.add_class::<enums::LogFormat>()?;
     m.add_class::<LoggerConfig>()?;
+    m.add_class::<LogGuard>()?;
     m.add_class::<FileWriterConfig>()?;
     m.add_function(wrap_pyfunction!(logging::py_init_tracing, m)?)?;
     m.add_function(wrap_pyfunction!(logging::py_init_logging, m)?)?;

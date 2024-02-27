@@ -397,9 +397,9 @@ impl Log for Logger {
 
 #[allow(clippy::too_many_arguments)]
 impl Logger {
-    pub fn init_with_env(trader_id: TraderId, instance_id: UUID4, file_config: FileWriterConfig) {
+    pub fn init_with_env(trader_id: TraderId, instance_id: UUID4, file_config: FileWriterConfig) -> LogGuard {
         let config = LoggerConfig::from_env();
-        Logger::init_with_config(trader_id, instance_id, config, file_config);
+        Logger::init_with_config(trader_id, instance_id, config, file_config)
     }
 
     pub fn init_with_config(
@@ -407,7 +407,7 @@ impl Logger {
         instance_id: UUID4,
         config: LoggerConfig,
         file_config: FileWriterConfig,
-    ) {
+    ) -> LogGuard {
         let (tx, rx) = channel::<LogEvent>();
 
         let logger = Self {
@@ -443,6 +443,8 @@ impl Logger {
                 eprintln!("Cannot set logger because of error: {e}")
             }
         }
+
+        LogGuard::new()
     }
 
     fn handle_messages(
@@ -553,6 +555,27 @@ pub fn log(level: LogLevel, color: LogColor, component: Ustr, message: &str) {
         LogLevel::Error => {
             error!(component = component.to_value(), color = color; "{}", message);
         }
+    }
+}
+
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
+#[derive(Debug)]
+pub struct LogGuard {
+
+}
+
+impl LogGuard {
+    pub fn new() -> Self {
+        LogGuard {}
+    }
+}
+
+impl Drop for LogGuard {
+    fn drop(&mut self) {
+        log::logger().flush();
     }
 }
 
