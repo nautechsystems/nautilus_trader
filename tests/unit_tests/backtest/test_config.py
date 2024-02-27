@@ -280,7 +280,7 @@ class TestBacktestConfigParsing:
                 {},
                 (
                     "aad6794664f7690691f1ca3c9da8d8051b21a3bab7877fc9c594a78871cb76a8",  # UNIX
-                    "d32e5785aad958ec163da39ba501a8fbe654fd973ada46e21907631824369ce4",  # Windows
+                    "25cea2290b2bee4312363bba8c2b54ac34025fa2b30f9acce44f2db0254f26af",  # Windows
                 ),
             ),
             (
@@ -288,8 +288,8 @@ class TestBacktestConfigParsing:
                 ("catalog",),
                 {"persist": True},
                 (
-                    "b015efcc4f6ba3a3fb8d4affe0a04ead5bb1de18991d892c7e68a09b0fadd307",
-                    "11048af3175c58d841d1e936e6075d053d8d445d889ab653229208033f60307d",
+                    "b015efcc4f6ba3a3fb8d4affe0a04ead5bb1de18991d892c7e68a09b0fadd307",  # UNIX
+                    "6bfff07ec02f2e96f33d12d30263b4b43f88f89473e764f23011c4fdb22c226c",  # Windows
                 ),
             ),
             (
@@ -309,8 +309,8 @@ class TestBacktestConfigParsing:
                 ("catalog",),
                 {},
                 (
-                    "c287d8e433d931f014895daa4400171a67c30b8c61d94f51be60ad162bdef6cd",
-                    "1f1564863058e883768f311e4724fa1f4ddcab0faf717d262a586f734403dc11",
+                    "c287d8e433d931f014895daa4400171a67c30b8c61d94f51be60ad162bdef6cd",  # UNIX
+                    "2d16c7953fedbfd3eda3b12351bfa18770fc41489ab89dcb7296aaa9b2af7684",  # Windows
                 ),
             ),
         ],
