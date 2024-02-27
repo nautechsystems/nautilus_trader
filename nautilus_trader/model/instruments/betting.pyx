@@ -60,10 +60,11 @@ cdef class BettingInstrument(Instrument):
         str selection_name not None,
         str currency not None,
         float selection_handicap,
+        int8_t price_precision,
+        int8_t size_precision,
         uint64_t ts_event,
         uint64_t ts_init,
         str tick_scheme_name=None,
-        int8_t price_precision=2,
         Price min_price = None,
         Price max_price = None,
         dict info = None,
@@ -105,10 +106,10 @@ cdef class BettingInstrument(Instrument):
             instrument_class=InstrumentClass.SPORTS_BETTING,
             quote_currency=Currency.from_str_c(currency),
             is_inverse=False,
-            size_precision=4,
+            size_precision=size_precision,
             price_precision=price_precision,
             price_increment=None,
-            size_increment=Quantity(1e-4, precision=4),
+            size_increment=Quantity(0.01, precision=size_precision),
             multiplier=Quantity.from_int_c(1),
             lot_size=Quantity.from_int_c(1),
             max_quantity=None,   # Can be None
@@ -137,7 +138,7 @@ cdef class BettingInstrument(Instrument):
         data = values.copy()
         data['event_open_date'] = pd.Timestamp(data['event_open_date'])
         data['market_start_time'] = pd.Timestamp(data['market_start_time'])
-        return BettingInstrument(**{k: v for k, v in data.items() if k not in ('id',)})
+        return BettingInstrument(**{k: v for k, v in data.items() if k not in ('id', "type")})
 
     @staticmethod
     cdef dict to_dict_c(BettingInstrument obj):
@@ -162,6 +163,8 @@ cdef class BettingInstrument(Instrument):
             "selection_id": obj.selection_id,
             "selection_name": obj.selection_name,
             "selection_handicap": obj.selection_handicap,
+            "price_precision": obj.price_precision,
+            "size_precision": obj.size_precision,
             "currency": obj.quote_currency.code,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
