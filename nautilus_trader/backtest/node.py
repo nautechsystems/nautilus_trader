@@ -23,6 +23,7 @@ from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
+from nautilus_trader.common.component import Logger
 from nautilus_trader.common.config import ActorFactory
 from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.core.correctness import PyCondition
@@ -142,7 +143,8 @@ class BacktestNode:
             except Exception as e:
                 # Broad catch all prevents a single backtest run from halting
                 # the execution of the other backtests (such as a zero balance exception).
-                print(f"Error running {config}: {e}")
+                Logger(type(self).__name__).error(f"Error running back: {e}")
+                Logger(type(self).__name__).info(f"Config: {config}")
 
         return results
 
