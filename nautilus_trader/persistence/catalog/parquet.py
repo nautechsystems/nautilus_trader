@@ -334,6 +334,8 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         name_to_cls = {cls.__name__: cls for cls in {type(d) for d in data}}
         for (cls_name, instrument_id), single_type in groupby(sorted(data, key=key), key=key):
+            if isinstance(cls_name, CustomData):
+                cls_name = cls_name.data_type.__class__
             self.write_chunk(
                 data=list(single_type),
                 data_cls=name_to_cls[cls_name],
