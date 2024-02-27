@@ -77,7 +77,7 @@ clippy:
 	(cd nautilus_core && cargo clippy --fix --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used)
 
 .PHONY: clippy-nightly
-clippy:
+clippy-nightly:
 	(cd nautilus_core && cargo +nightly clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used)
 
 .PHONY: cargo-build
