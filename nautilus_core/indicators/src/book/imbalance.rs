@@ -20,13 +20,15 @@ use nautilus_model::{
     orderbook::{book_mbo::OrderBookMbo, book_mbp::OrderBookMbp},
     types::quantity::Quantity,
 };
-use pyo3::prelude::*;
 
 use crate::indicator::Indicator;
 
 #[repr(C)]
 #[derive(Debug)]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+)]
 pub struct BookImbalanceRatio {
     pub value: f64,
     pub count: usize,

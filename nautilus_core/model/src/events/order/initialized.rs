@@ -21,7 +21,6 @@ use std::{
 use anyhow::Result;
 use derive_builder::Builder;
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
-use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -41,7 +40,7 @@ use crate::{
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct OrderInitialized {
     pub trader_id: TraderId,

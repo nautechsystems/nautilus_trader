@@ -17,7 +17,6 @@ use std::fmt::{Debug, Display};
 
 use anyhow::Result;
 use nautilus_model::data::bar::Bar;
-use pyo3::prelude::*;
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
@@ -27,7 +26,10 @@ use crate::{
 /// An indicator which calculates a Average True Range (ATR) across a rolling window.
 #[repr(C)]
 #[derive(Debug)]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+)]
 pub struct AverageTrueRange {
     pub period: usize,
     pub ma_type: MovingAverageType,
