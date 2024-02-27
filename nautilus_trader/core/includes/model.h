@@ -1256,7 +1256,7 @@ typedef struct SyntheticInstrument_API {
 } SyntheticInstrument_API;
 
 /**
- * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBook`].
+ * Provides a C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
  *
  * This struct wraps `OrderBook` in a way that makes it compatible with C function
  * calls, enabling interaction with `OrderBook` in a C environment.
@@ -2205,7 +2205,7 @@ void orderbook_check_integrity(const struct OrderBook_API *book);
 void vec_fills_drop(CVec v);
 
 /**
- * Returns a pretty printed [`OrderBook`] number of levels per side, as a C string pointer.
+ * Returns a pretty printed `OrderBook` number of levels per side, as a C string pointer.
  */
 const char *orderbook_pprint_to_cstr(const struct OrderBook_API *book, uintptr_t num_levels);
 
