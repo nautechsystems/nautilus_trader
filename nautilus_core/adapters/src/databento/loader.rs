@@ -28,7 +28,6 @@ use nautilus_model::{
     instruments::Instrument,
     types::currency::Currency,
 };
-use pyo3::prelude::*;
 use streaming_iterator::StreamingIterator;
 use ustr::Ustr;
 
@@ -55,16 +54,14 @@ use super::{
 ///
 /// # Warnings
 /// The following Databento instrument classes are not supported:
-///  - ``FUTURE_SPREAD``
-///  - ``OPTION_SPEAD``
-///  - ``MIXED_SPREAD``
+///  - ``BOND``
 ///  - ``FX_SPOT``
 ///
 /// # References
-/// https://docs.databento.com/knowledge-base/new-users/dbn-encoding
+/// <https://docs.databento.com/knowledge-base/new-users/dbn-encoding>
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
 )]
 pub struct DatabentoDataLoader {
     publishers_map: IndexMap<PublisherId, DatabentoPublisher>,
