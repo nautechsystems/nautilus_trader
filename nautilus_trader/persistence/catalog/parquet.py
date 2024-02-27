@@ -234,6 +234,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         basename_template: str = "part-{i}",
         **kwargs: Any,
     ) -> None:
+        if isinstance(data[0], CustomData):
+            data = [d.data for d in data]
         table = self._objects_to_table(data, data_cls=data_cls)
         path = self._make_path(data_cls=data_cls, instrument_id=instrument_id)
         kw = dict(**self.dataset_kwargs, **kwargs)
@@ -324,6 +326,9 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         def key(obj: Any) -> tuple[str, str | None]:
             name = type(obj).__name__
+            if isinstance(obj, CustomData):
+                obj = obj.data
+                name = type(obj).__name__
             if isinstance(obj, Instrument):
                 return name, obj.id.value
             elif isinstance(obj, Bar):
@@ -332,10 +337,14 @@ class ParquetDataCatalog(BaseDataCatalog):
                 return name, obj.instrument_id.value
             return name, None
 
-        name_to_cls = {cls.__name__: cls for cls in {type(d) for d in data}}
+        def obj_to_type(obj) -> type:
+            return type(obj) if not isinstance(obj, CustomData) else obj.data.__class__
+
+        name_to_cls = {cls.__name__: cls for cls in {obj_to_type(d) for d in data}}
         for (cls_name, instrument_id), single_type in groupby(sorted(data, key=key), key=key):
+            chunk = list(single_type)
             self.write_chunk(
-                data=list(single_type),
+                data=chunk,
                 data_cls=name_to_cls[cls_name],
                 instrument_id=instrument_id,
                 basename_template=basename_template,

@@ -21,6 +21,7 @@ import pandas as pd
 import pyarrow.dataset as ds
 import pytest
 
+from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.rust.model import AggressorSide
 from nautilus_trader.core.rust.model import BookAction
@@ -204,6 +205,19 @@ def test_catalog_filter(
     # Assert
     assert len(deltas) == 2384
     assert len(filtered_deltas) == 351
+
+
+def test_catalog_orderbook_deltas_precision(
+    catalog_betfair: ParquetDataCatalog,
+) -> None:
+    # Arrange, Act
+    deltas = catalog_betfair.order_book_deltas()
+
+    # Assert
+    for delta in deltas:
+        assert delta.order.price.precision == BETFAIR_PRICE_PRECISION
+
+    assert len(deltas) == 2384
 
 
 def test_catalog_custom_data(catalog: ParquetDataCatalog) -> None:

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import time
 from collections.abc import Iterable
 
 import msgspec
@@ -30,6 +29,8 @@ from betfair_parser.spec.streaming import MarketDefinition
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
+from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
+from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing.common import chunk
 from nautilus_trader.common.providers import InstrumentProvider
@@ -110,7 +111,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
         instruments = [
             instrument
             for metadata in market_metadata
-            for instrument in make_instruments(metadata, currency=currency)
+            for instrument in make_instruments(metadata, currency=currency, ts_event=0, ts_init=0)
         ]
         for instrument in instruments:
             self.add(instrument=instrument)
@@ -132,6 +133,8 @@ def _parse_date(s, tz):
 def market_catalog_to_instruments(
     market_catalog: MarketCatalogue,
     currency: str,
+    ts_event: int,
+    ts_init: int,
 ) -> list[BettingInstrument]:
     instruments: list[BettingInstrument] = []
     for runner in market_catalog.runners:
@@ -155,8 +158,10 @@ def market_catalog_to_instruments(
             selection_handicap=runner.handicap or null_handicap(),
             currency=currency,
             tick_scheme_name=BETFAIR_TICK_SCHEME.name,
-            ts_event=time.time_ns(),
-            ts_init=time.time_ns(),
+            price_precision=BETFAIR_PRICE_PRECISION,
+            size_precision=BETFAIR_QUANTITY_PRECISION,
+            ts_event=ts_event,
+            ts_init=ts_init,
             info=msgspec.json.decode(bf_encode(market_catalog).decode()),
         )
         instruments.append(instrument)
@@ -166,6 +171,8 @@ def market_catalog_to_instruments(
 def market_definition_to_instruments(
     market_definition: MarketDefinition,
     currency: str,
+    ts_event: int,
+    ts_init: int,
 ) -> list[BettingInstrument]:
     instruments: list[BettingInstrument] = []
     for runner in market_definition.runners:
@@ -193,8 +200,10 @@ def market_definition_to_instruments(
             selection_handicap=runner.hc or null_handicap(),
             tick_scheme_name=BETFAIR_TICK_SCHEME.name,
             currency=currency,
-            ts_event=time.time_ns(),
-            ts_init=time.time_ns(),
+            price_precision=BETFAIR_PRICE_PRECISION,
+            size_precision=BETFAIR_QUANTITY_PRECISION,
+            ts_event=ts_event,
+            ts_init=ts_init,
             info=msgspec.json.decode(msgspec.json.encode(market_definition)),
         )
         instruments.append(instrument)
@@ -204,11 +213,23 @@ def market_definition_to_instruments(
 def make_instruments(
     market: MarketCatalogue | MarketDefinition,
     currency: str,
+    ts_event: int,
+    ts_init: int,
 ) -> list[BettingInstrument]:
     if isinstance(market, MarketCatalogue):
-        return market_catalog_to_instruments(market, currency)
+        return market_catalog_to_instruments(
+            market,
+            currency=currency,
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
     elif isinstance(market, MarketDefinition):
-        return market_definition_to_instruments(market, currency)
+        return market_definition_to_instruments(
+            market,
+            currency=currency,
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
     else:
         raise TypeError(type(market))
 
