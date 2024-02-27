@@ -57,7 +57,12 @@ class BetfairParser:
             if mc.market_definition is not None:
                 market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
                 self.market_definitions[mc.id] = market_def
-                instruments = make_instruments(market_def, currency=self.currency.code)
+                instruments = make_instruments(
+                    market_def,
+                    currency=self.currency.code,
+                    ts_event=ts_event,
+                    ts_init=ts_init,
+                )
                 updates.extend(instruments)
             mc_updates = market_change_to_updates(mc, self.traded_volumes, ts_event, ts_init)
             updates.extend(mc_updates)
@@ -93,6 +98,8 @@ def parse_betfair_file(
 def betting_instruments_from_file(
     uri: PathLike[str] | str,
     currency: str,
+    ts_event: int,
+    ts_init: int,
 ) -> list[BettingInstrument]:
     from nautilus_trader.adapters.betfair.providers import make_instruments
 
@@ -104,6 +111,11 @@ def betting_instruments_from_file(
                 if mc.market_definition:
                     market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
                     mc = msgspec.structs.replace(mc, market_definition=market_def)
-                    instruments = make_instruments(mc.market_definition, currency=currency)
+                    instruments = make_instruments(
+                        mc.market_definition,
+                        currency=currency,
+                        ts_event=ts_event,
+                        ts_init=ts_init,
+                    )
                     instruments.extend(instruments)
     return list(set(instruments))

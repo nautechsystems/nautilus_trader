@@ -22,6 +22,7 @@ from nautilus_trader.adapters.betfair.common import MAX_BET_PRICE
 from nautilus_trader.adapters.betfair.common import MIN_BET_PRICE
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
+from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
@@ -83,6 +84,8 @@ class TestBettingInstrument:
         instrument = betting_instrument()
         data = instrument.to_dict(instrument)
         assert data["venue_name"] == "BETFAIR"
+        new_instrument = BettingInstrument.from_dict(data)
+        assert instrument == new_instrument
 
     @pytest.mark.parametrize(
         "price, quantity, expected",
