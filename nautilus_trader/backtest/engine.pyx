@@ -32,6 +32,7 @@ from nautilus_trader.system.kernel import NautilusKernel
 from nautilus_trader.trading.trader import Trader
 
 from cpython.datetime cimport datetime
+from cpython.object cimport PyObject
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.backtest.data_client cimport BacktestDataClient
@@ -1192,6 +1193,7 @@ cdef class BacktestEngine:
             TimeEventHandler_t raw_handler
             TimeEvent event
             TestClock clock
+            PyObject *raw_callback
             object callback
             SimulatedExchange exchange
         for i in range(raw_handler_vec.len):
@@ -1208,7 +1210,8 @@ cdef class BacktestEngine:
             event = TimeEvent.from_mem_c(raw_handler.event)
 
             # Cast raw `PyObject *` to a `PyObject`
-            callback = <object>raw_handler.callback_ptr
+            raw_callback = <PyObject *>raw_handler.callback_ptr
+            callback = <object>raw_callback
             callback(event)
 
             if ts_event_init != ts_last_init:

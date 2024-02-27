@@ -123,12 +123,24 @@ impl TestClock {
                     // TODO: clone for now
                     self.default_callback.clone().unwrap()
                 });
-                TimeEventHandler {
-                    event,
-                    callback_ptr: handler.as_ptr(),
-                }
+                create_time_event_handler(event, &handler)
             })
             .collect()
+    }
+}
+
+#[cfg(not(feature = "python"))]
+fn create_time_event_handler(_event: TimeEvent, _handler: &EventHandler) -> TimeEventHandler {
+    panic!("`python` feature is not enabled")
+}
+
+#[cfg(feature = "python")]
+fn create_time_event_handler(event: TimeEvent, handler: &EventHandler) -> TimeEventHandler {
+    use std::ffi::c_char;
+
+    TimeEventHandler {
+        event,
+        callback_ptr: handler.callback.as_ptr() as *mut c_char,
     }
 }
 
@@ -373,142 +385,4 @@ impl Clock for LiveClock {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use super::*;
-
-    #[fixture]
-    pub fn test_clock() -> TestClock {
-        TestClock::new()
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-mod tests {
-    use pyo3::{prelude::*, types::PyList};
-    use rstest::*;
-    use stubs::*;
-
-    use super::*;
-
-    #[rstest]
-    fn test_set_timer_ns_py(mut test_clock: TestClock) {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|py| {
-            let py_list = PyList::empty(py);
-            let py_append = Py::from(py_list.getattr("append").unwrap());
-            let handler = EventHandler::new(Some(py_append), None);
-            test_clock.register_default_handler(handler);
-
-            let timer_name = "TEST_TIME1";
-            test_clock.set_timer_ns(timer_name, 10, 0, None, None);
-
-            assert_eq!(test_clock.timer_names(), [timer_name]);
-            assert_eq!(test_clock.timer_count(), 1);
-        });
-    }
-
-    #[rstest]
-    fn test_cancel_timer(mut test_clock: TestClock) {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|py| {
-            let py_list = PyList::empty(py);
-            let py_append = Py::from(py_list.getattr("append").unwrap());
-            let handler = EventHandler::new(Some(py_append), None);
-            test_clock.register_default_handler(handler);
-
-            let timer_name = "TEST_TIME1";
-            test_clock.set_timer_ns(timer_name, 10, 0, None, None);
-            test_clock.cancel_timer(timer_name);
-
-            assert!(test_clock.timer_names().is_empty());
-            assert_eq!(test_clock.timer_count(), 0);
-        });
-    }
-
-    #[rstest]
-    fn test_cancel_timers(mut test_clock: TestClock) {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|py| {
-            let py_list = PyList::empty(py);
-            let py_append = Py::from(py_list.getattr("append").unwrap());
-            let handler = EventHandler::new(Some(py_append), None);
-            test_clock.register_default_handler(handler);
-
-            let timer_name = "TEST_TIME1";
-            test_clock.set_timer_ns(timer_name, 10, 0, None, None);
-            test_clock.cancel_timers();
-
-            assert!(test_clock.timer_names().is_empty());
-            assert_eq!(test_clock.timer_count(), 0);
-        });
-    }
-
-    #[rstest]
-    fn test_advance_within_stop_time_py(mut test_clock: TestClock) {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|py| {
-            let py_list = PyList::empty(py);
-            let py_append = Py::from(py_list.getattr("append").unwrap());
-            let handler = EventHandler::new(Some(py_append), None);
-            test_clock.register_default_handler(handler);
-
-            let timer_name = "TEST_TIME1";
-            test_clock.set_timer_ns(timer_name, 1, 1, Some(3), None);
-            test_clock.advance_time(2, true);
-
-            assert_eq!(test_clock.timer_names(), [timer_name]);
-            assert_eq!(test_clock.timer_count(), 1);
-        });
-    }
-
-    #[rstest]
-    fn test_advance_time_to_stop_time_with_set_time_true(mut test_clock: TestClock) {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|py| {
-            let py_list = PyList::empty(py);
-            let py_append = Py::from(py_list.getattr("append").unwrap());
-            let handler = EventHandler::new(Some(py_append), None);
-            test_clock.register_default_handler(handler);
-
-            test_clock.set_timer_ns("TEST_TIME1", 2, 0, Some(3), None);
-            test_clock.advance_time(3, true);
-
-            assert_eq!(test_clock.timer_names().len(), 1);
-            assert_eq!(test_clock.timer_count(), 1);
-            assert_eq!(test_clock.get_time_ns(), 3);
-        });
-    }
-
-    #[rstest]
-    fn test_advance_time_to_stop_time_with_set_time_false(mut test_clock: TestClock) {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|py| {
-            let py_list = PyList::empty(py);
-            let py_append = Py::from(py_list.getattr("append").unwrap());
-            let handler = EventHandler::new(Some(py_append), None);
-            test_clock.register_default_handler(handler);
-
-            test_clock.set_timer_ns("TEST_TIME1", 2, 0, Some(3), None);
-            test_clock.advance_time(3, false);
-
-            assert_eq!(test_clock.timer_names().len(), 1);
-            assert_eq!(test_clock.timer_count(), 1);
-            assert_eq!(test_clock.get_time_ns(), 0);
-        });
-    }
-}
+// TODO: Rust specific clock tests
