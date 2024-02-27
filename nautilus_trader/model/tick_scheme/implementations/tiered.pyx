@@ -16,11 +16,8 @@
 import numpy as np
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.core cimport precision_from_cstr
-from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
-from nautilus_trader.model.tick_scheme.base cimport register_tick_scheme
 
 
 cdef class TieredTickScheme(TickScheme):
@@ -46,8 +43,10 @@ cdef class TieredTickScheme(TickScheme):
         self,
         str name not None,
         list tiers not None,
+        int price_precision,
         int max_ticks_per_tier=100,
     ):
+        self.price_precision = price_precision
         self.tiers = self._validate_tiers(tiers)
         self.max_ticks_per_tier = max_ticks_per_tier
         self.ticks = self._build_ticks()
@@ -69,8 +68,7 @@ cdef class TieredTickScheme(TickScheme):
         for start, stop, step in self.tiers:
             if stop == np.inf:
                 stop = start + ((self.max_ticks_per_tier + 1) * step)
-            precision = precision_from_cstr(pystr_to_cstr(str(step)))
-            ticks = [Price(x, precision) for x in np.arange(start, stop, step)]
+            ticks = [Price(x, self.price_precision) for x in np.arange(start, stop, step)]
             if len(ticks) > self.max_ticks_per_tier+1:
                 print(f"{self.name}: too many ticks for tier ({start=}, {stop=}, {step=}, trimming to {self.max_ticks_per_tier} (from {len(ticks)})")
                 ticks = ticks[:self.max_ticks_per_tier]
@@ -149,5 +147,6 @@ TOPIX100_TICK_SCHEME = TieredTickScheme(
         (10_000_000, 30_000_000, 5_000),
         (30_000_000, np.inf, 10_000),
     ],
+    price_precision=4,
     max_ticks_per_tier=10_000,
 )
