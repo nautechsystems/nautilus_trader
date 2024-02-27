@@ -56,7 +56,7 @@ def setup_catalog(
     catalog.fs.mkdir(catalog.path, create_parents=True)
 
     assert catalog.fs.isdir(catalog.path)
-    assert not catalog.fs.glob(f"{catalog.path}/**")
+    assert not [fn for fn in catalog.fs.glob(f"{catalog.path}/**") if catalog.fs.isfile(fn)]
 
     return catalog
 

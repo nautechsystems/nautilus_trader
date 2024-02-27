@@ -37,7 +37,7 @@ def fixture_catalog_betfair(catalog: ParquetDataCatalog) -> ParquetDataCatalog:
     filename = TEST_DATA_DIR / "betfair" / "1.166564490.bz2"
 
     # Write betting instruments
-    instruments = betting_instruments_from_file(filename, currency="GBP")
+    instruments = betting_instruments_from_file(filename, currency="GBP", ts_event=0, ts_init=0)
     catalog.write_data(instruments)
 
     # Write data

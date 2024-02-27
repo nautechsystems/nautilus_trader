@@ -35,8 +35,8 @@ def bypass_logging() -> None:
 
     """
     init_logging(
-        level_stdout=LogLevel.DEBUG,
-        bypass=True,
+        level_stdout=LogLevel.WARNING,
+        bypass=False,
     )
 
 

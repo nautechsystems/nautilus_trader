@@ -50,6 +50,8 @@ SCHEMAS = {
             "selection_id": pa.int64(),
             "selection_name": pa.string(),
             "selection_handicap": pa.float64(),
+            "price_precision": pa.uint8(),
+            "size_precision": pa.uint8(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         },

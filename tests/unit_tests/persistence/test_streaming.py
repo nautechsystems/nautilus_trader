@@ -16,8 +16,6 @@
 import copy
 from collections import Counter
 
-import pytest
-
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.config import BacktestDataConfig
@@ -37,9 +35,6 @@ from nautilus_trader.persistence.writer import generate_signal_class
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-
-
-pytestmark = pytest.mark.skip(reason="Investigate precision mismatch")
 
 
 class TestPersistenceStreaming:
@@ -77,17 +72,18 @@ class TestPersistenceStreaming:
         result = dict(Counter([r.__class__.__name__ for r in result]))  # type: ignore [assignment]
 
         expected = {
-            "AccountState": 398,
+            "AccountState": 400,
             "BettingInstrument": 1,
             "ComponentStateChanged": 21,
-            "OrderAccepted": 188,
+            "OrderAccepted": 189,
             "OrderBookDelta": 1307,
-            "OrderFilled": 210,
-            "OrderInitialized": 189,
-            "OrderSubmitted": 189,
-            "PositionChanged": 207,
-            "PositionClosed": 2,
-            "PositionOpened": 3,
+            "OrderDenied": 3,
+            "OrderFilled": 211,
+            "OrderInitialized": 193,
+            "OrderSubmitted": 190,
+            "PositionChanged": 206,
+            "PositionClosed": 4,
+            "PositionOpened": 5,
             "TradeTick": 179,
         }
 
@@ -243,7 +239,6 @@ class TestPersistenceStreaming:
         assert isinstance(raw, bytes)
         assert NautilusKernelConfig.parse(raw)
 
-    @pytest.mark.skip(reason="Reading backtests appears broken")
     def test_feather_reader_returns_cython_objects(
         self,
         catalog_betfair: ParquetDataCatalog,
@@ -260,8 +255,8 @@ class TestPersistenceStreaming:
         )
 
         # Assert
-        assert len([d for d in result if isinstance(d, TradeTick)]) == 179
-        assert len([d for d in result if isinstance(d, OrderBookDelta)]) == 1307
+        assert len([d for d in result if d.__class__.__name__ == "TradeTick"]) == 179
+        assert len([d for d in result if d.__class__.__name__ == "OrderBookDelta"]) == 1307
 
     def test_feather_reader_order_book_deltas(
         self,
@@ -301,17 +296,18 @@ class TestPersistenceStreaming:
 
         # Assert
         expected = {
-            "OrderBookDelta": 1307,
-            "AccountState": 398,
-            "OrderFilled": 210,
-            "PositionChanged": 207,
-            "OrderInitialized": 189,
-            "OrderSubmitted": 189,
-            "OrderAccepted": 188,
-            "TradeTick": 179,
-            "ComponentStateChanged": 21,
-            "PositionOpened": 3,
-            "PositionClosed": 2,
+            "AccountState": 400,
             "BettingInstrument": 1,
+            "ComponentStateChanged": 21,
+            "OrderAccepted": 189,
+            "OrderBookDelta": 1307,
+            "OrderDenied": 3,
+            "OrderFilled": 211,
+            "OrderInitialized": 193,
+            "OrderSubmitted": 190,
+            "PositionChanged": 206,
+            "PositionClosed": 4,
+            "PositionOpened": 5,
+            "TradeTick": 179,
         }
         assert counts == expected

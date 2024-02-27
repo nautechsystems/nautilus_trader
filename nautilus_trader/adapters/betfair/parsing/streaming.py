@@ -41,6 +41,8 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.model.data import NULL_ORDER
 from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
@@ -279,19 +281,20 @@ def runner_to_betfair_starting_price(
     market_id: str,
     ts_event: int,
     ts_init: int,
-) -> BetfairStartingPrice | None:
+) -> CustomData | None:
     if runner.bsp is not None:
         instrument_id = betfair_instrument_id(
             market_id=market_id,
             selection_id=runner.id,
             selection_handicap=runner.handicap,
         )
-        return BetfairStartingPrice(
-            instrument_id=make_bsp_instrument_id(instrument_id),
+        bsp = BetfairStartingPrice(
+            instrument_id=instrument_id,
             bsp=runner.bsp,
             ts_event=ts_event,
             ts_init=ts_init,
         )
+        return CustomData(DataType(BetfairStartingPrice, {"instrument_id": instrument_id}), bsp)
     else:
         return None
 
@@ -455,7 +458,7 @@ def runner_change_to_betfair_ticker(
     instrument_id: InstrumentId,
     ts_event,
     ts_init,
-) -> BetfairTicker:
+) -> CustomData:
     last_traded_price, traded_volume, starting_price_far, starting_price_near = (
         None,
         None,
@@ -470,7 +473,7 @@ def runner_change_to_betfair_ticker(
         starting_price_near = runner.spn
     if runner.spf is not None and not math.isnan(runner.spf) and runner.spf != math.inf:
         starting_price_far = runner.spf
-    return BetfairTicker(
+    ticker = BetfairTicker(
         instrument_id=instrument_id,
         last_traded_price=last_traded_price,
         traded_volume=traded_volume,
@@ -479,6 +482,7 @@ def runner_change_to_betfair_ticker(
         ts_init=ts_init,
         ts_event=ts_event,
     )
+    return CustomData(DataType(BetfairTicker, {"instrument_id": instrument_id}), ticker)
 
 
 def runner_change_to_bsp_order_book_deltas(
@@ -486,17 +490,16 @@ def runner_change_to_bsp_order_book_deltas(
     instrument_id: InstrumentId,
     ts_event: int,
     ts_init: int,
-) -> list[BSPOrderBookDelta] | None:
+) -> list[CustomData] | None:
     if not (rc.spb or rc.spl):
         return None
-    bsp_instrument_id = make_bsp_instrument_id(instrument_id)
     deltas: list[BSPOrderBookDelta] = []
 
     if rc.spb is not None:
         for spb in rc.spb:
             book_order = _price_volume_to_book_order(spb, OrderSide.SELL)
             delta = BSPOrderBookDelta(
-                bsp_instrument_id,
+                instrument_id,
                 BookAction.DELETE if spb.volume == 0.0 else BookAction.UPDATE,
                 book_order,
                 ts_event,
@@ -508,7 +511,7 @@ def runner_change_to_bsp_order_book_deltas(
         for spl in rc.spl:
             book_order = _price_volume_to_book_order(spl, OrderSide.BUY)
             delta = BSPOrderBookDelta(
-                bsp_instrument_id,
+                instrument_id,
                 BookAction.DELETE if spl.volume == 0.0 else BookAction.UPDATE,
                 book_order,
                 ts_event,
@@ -516,7 +519,10 @@ def runner_change_to_bsp_order_book_deltas(
             )
             deltas.append(delta)
 
-    return deltas
+    return [
+        CustomData(DataType(BSPOrderBookDelta, {"instrument_id": instrument_id}), delta)
+        for delta in deltas
+    ]
 
 
 def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
@@ -569,10 +575,3 @@ async def generate_trades_list(
             ts_init=ts_event,
         ),
     ]
-
-
-def make_bsp_instrument_id(instrument_id: InstrumentId) -> InstrumentId:
-    return InstrumentId(
-        symbol=Symbol(instrument_id.symbol.value + "-BSP"),
-        venue=instrument_id.venue,
-    )
