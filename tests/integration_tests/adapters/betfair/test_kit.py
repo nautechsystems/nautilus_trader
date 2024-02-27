@@ -38,6 +38,8 @@ from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
+from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
+from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.parsing.core import betting_instruments_from_file
@@ -774,7 +776,7 @@ class BetfairDataProvider:
         for mc in mcm.mc:
             if mc.market_definition:
                 market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
-                instruments.extend(market_definition_to_instruments(market_def, currency))
+                instruments.extend(market_definition_to_instruments(market_def, currency, 0, 0))
         return instruments
 
     @staticmethod
@@ -820,6 +822,8 @@ def betting_instrument(
         selection_id=selection_id,
         selection_name="Kansas City Chiefs",
         currency="GBP",
+        price_precision=BETFAIR_PRICE_PRECISION,
+        size_precision=BETFAIR_QUANTITY_PRECISION,
         tick_scheme_name=BETFAIR_TICK_SCHEME.name,
         ts_event=0,
         ts_init=0,
@@ -857,7 +861,7 @@ def load_betfair_data(catalog: ParquetDataCatalog) -> ParquetDataCatalog:
     filename = TEST_DATA_DIR / "betfair" / "1.166564490.bz2"
 
     # Write betting instruments
-    instruments = betting_instruments_from_file(filename, currency="GBP")
+    instruments = betting_instruments_from_file(filename, currency="GBP", ts_event=0, ts_init=0)
     catalog.write_data(instruments)
 
     # Write data

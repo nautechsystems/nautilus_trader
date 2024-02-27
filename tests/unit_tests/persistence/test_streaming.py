@@ -39,9 +39,6 @@ from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
-pytestmark = pytest.mark.skip(reason="Investigate precision mismatch")
-
-
 class TestPersistenceStreaming:
     def setup(self) -> None:
         self.catalog: ParquetDataCatalog | None = None
