@@ -16,8 +16,6 @@
 import copy
 from collections import Counter
 
-import pytest
-
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.config import BacktestDataConfig
@@ -240,7 +238,6 @@ class TestPersistenceStreaming:
         assert isinstance(raw, bytes)
         assert NautilusKernelConfig.parse(raw)
 
-    @pytest.mark.skip(reason="Reading backtests appears broken")
     def test_feather_reader_returns_cython_objects(
         self,
         catalog_betfair: ParquetDataCatalog,
@@ -257,8 +254,8 @@ class TestPersistenceStreaming:
         )
 
         # Assert
-        assert len([d for d in result if isinstance(d, TradeTick)]) == 179
-        assert len([d for d in result if isinstance(d, OrderBookDelta)]) == 1307
+        assert len([d for d in result if d.__class__.__name__ == "TradeTick"]) == 179
+        assert len([d for d in result if d.__class__.__name__ == "OrderBookDelta"]) == 1307
 
     def test_feather_reader_order_book_deltas(
         self,
