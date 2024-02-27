@@ -54,6 +54,18 @@ class TestBettingTickScheme:
         assert result == expected
 
     @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (3.90, Price.from_str("3.95")),
+            (4.0, Price.from_str("4.10")),
+        ],
+    )
+    def test_tick_price_precision(self, value, expected):
+        result = self.tick_scheme.next_ask_price(value, n=1)
+        assert result == expected
+        assert result.precision == 2
+
+    @pytest.mark.parametrize(
         ("value", "n", "expected"),
         [
             (1.499, 0, "1.50"),
