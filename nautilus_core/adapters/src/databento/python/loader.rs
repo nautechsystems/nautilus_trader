@@ -43,12 +43,12 @@ use crate::databento::{
 #[pymethods]
 impl DatabentoDataLoader {
     #[new]
-    pub fn py_new(path: Option<String>) -> PyResult<Self> {
+    fn py_new(path: Option<String>) -> PyResult<Self> {
         Self::new(path.map(PathBuf::from)).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_publishers")]
-    pub fn py_load_publishers(&mut self, path: String) -> PyResult<()> {
+    fn py_load_publishers(&mut self, path: String) -> PyResult<()> {
         let path_buf = PathBuf::from(path);
         self.load_publishers(path_buf).map_err(to_pyvalue_err)
     }
@@ -60,7 +60,7 @@ impl DatabentoDataLoader {
 
     #[must_use]
     #[pyo3(name = "get_publishers")]
-    pub fn py_get_publishers(&self) -> HashMap<u16, DatabentoPublisher> {
+    fn py_get_publishers(&self) -> HashMap<u16, DatabentoPublisher> {
         self.get_publishers()
             .iter()
             .map(|(&key, value)| (key, value.clone()))
@@ -69,14 +69,14 @@ impl DatabentoDataLoader {
 
     #[must_use]
     #[pyo3(name = "get_dataset_for_venue")]
-    pub fn py_get_dataset_for_venue(&self, venue: &Venue) -> Option<String> {
+    fn py_get_dataset_for_venue(&self, venue: &Venue) -> Option<String> {
         self.get_dataset_for_venue(venue)
             .map(std::string::ToString::to_string)
     }
 
     #[must_use]
     #[pyo3(name = "get_venue_for_publisher")]
-    pub fn py_get_venue_for_publisher(&self, publisher_id: PublisherId) -> Option<String> {
+    fn py_get_venue_for_publisher(&self, publisher_id: PublisherId) -> Option<String> {
         self.get_venue_for_publisher(publisher_id)
             .map(std::string::ToString::to_string)
     }
@@ -87,13 +87,13 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "schema_for_file")]
-    pub fn py_schema_for_file(&self, path: String) -> PyResult<Option<String>> {
+    fn py_schema_for_file(&self, path: String) -> PyResult<Option<String>> {
         self.schema_from_file(PathBuf::from(path))
             .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_instruments")]
-    pub fn py_load_instruments(&mut self, py: Python, path: String) -> PyResult<PyObject> {
+    fn py_load_instruments(&mut self, py: Python, path: String) -> PyResult<PyObject> {
         let path_buf = PathBuf::from(path);
         let iter = self
             .read_definition_records(path_buf)
@@ -117,7 +117,7 @@ impl DatabentoDataLoader {
 
     /// Cannot include trades
     #[pyo3(name = "load_order_book_deltas")]
-    pub fn py_load_order_book_deltas(
+    fn py_load_order_book_deltas(
         &self,
         path: String,
         instrument_id: Option<InstrumentId>,
@@ -144,7 +144,7 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_order_book_deltas_as_pycapsule")]
-    pub fn py_load_order_book_deltas_as_pycapsule(
+    fn py_load_order_book_deltas_as_pycapsule(
         &self,
         py: Python,
         path: String,
@@ -160,7 +160,7 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_order_book_depth10")]
-    pub fn py_load_order_book_depth10(
+    fn py_load_order_book_depth10(
         &self,
         path: String,
         instrument_id: Option<InstrumentId>,
@@ -187,7 +187,7 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_order_book_depth10_as_pycapsule")]
-    pub fn py_load_order_book_depth10_as_pycapsule(
+    fn py_load_order_book_depth10_as_pycapsule(
         &self,
         py: Python,
         path: String,
@@ -202,7 +202,7 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_quotes")]
-    pub fn py_load_quotes(
+    fn py_load_quotes(
         &self,
         path: String,
         instrument_id: Option<InstrumentId>,
@@ -230,7 +230,7 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_quotes_as_pycapsule")]
-    pub fn py_load_quotes_as_pycapsule(
+    fn py_load_quotes_as_pycapsule(
         &self,
         py: Python,
         path: String,
@@ -246,7 +246,7 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_tbbo_trades")]
-    pub fn py_load_tbbo_trades(
+    fn py_load_tbbo_trades(
         &self,
         path: String,
         instrument_id: Option<InstrumentId>,
@@ -272,7 +272,7 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_tbbo_trades_as_pycapsule")]
-    pub fn py_load_tbbo_trades_as_pycapsule(
+    fn py_load_tbbo_trades_as_pycapsule(
         &self,
         py: Python,
         path: String,
@@ -287,7 +287,7 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_trades")]
-    pub fn py_load_trades(
+    fn py_load_trades(
         &self,
         path: String,
         instrument_id: Option<InstrumentId>,
@@ -314,7 +314,7 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_trades_as_pycapsule")]
-    pub fn py_load_trades_as_pycapsule(
+    fn py_load_trades_as_pycapsule(
         &self,
         py: Python,
         path: String,
@@ -329,7 +329,7 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_bars")]
-    pub fn py_load_bars(
+    fn py_load_bars(
         &self,
         path: String,
         instrument_id: Option<InstrumentId>,
@@ -356,7 +356,7 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_bars_as_pycapsule")]
-    pub fn py_load_bars_as_pycapsule(
+    fn py_load_bars_as_pycapsule(
         &self,
         py: Python,
         path: String,
