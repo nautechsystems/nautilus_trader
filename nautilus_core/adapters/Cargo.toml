@@ -45,7 +45,7 @@ extension-module = [
 databento = ["dep:databento", "dbn", "python"]
 ffi = ["nautilus-core/ffi", "nautilus-model/ffi", "nautilus-common/ffi"]
 python = ["pyo3", "pyo3-asyncio"]
-default = []
+default = ["python","ffi"]
 
 [dev-dependencies]
 criterion = { workspace = true }
