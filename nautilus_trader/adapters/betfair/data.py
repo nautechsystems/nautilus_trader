@@ -128,6 +128,15 @@ class BetfairDataClient(LiveMarketDataClient):
         self._log.debug("scheduling heartbeat")
         self.create_task(self._post_connect_heartbeat())
 
+        # Check for any global filters in instrument provider to subscribe
+        if self.instrument_provider._config.event_type_ids:
+            await self._stream.send_subscription_message(
+                event_type_ids=self.instrument_provider._config.event_type_ids,
+                country_codes=self.instrument_provider._config.country_codes,
+                market_types=self.instrument_provider._config.market_types,
+            )
+            self.subscription_status = SubscriptionStatus.SUBSCRIBED
+
     async def _post_connect_heartbeat(self):
         for _ in range(3):
             await self._stream.send(msgspec.json.encode({"op": "heartbeat"}))
@@ -172,6 +181,10 @@ class BetfairDataClient(LiveMarketDataClient):
                 f"Already subscribed to market_id: {instrument.market_id} "
                 f"[Instrument: {instrument_id.symbol}] <OrderBook> data.",
             )
+            return
+
+        if self.subscription_status == SubscriptionStatus.SUBSCRIBED:
+            self._log.debug("Already subscribed")
             return
 
         # If this is the first subscription request we're receiving, schedule a
