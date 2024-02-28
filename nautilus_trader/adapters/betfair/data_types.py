@@ -313,14 +313,13 @@ register_arrow(
     decoder=make_dict_deserializer(BetfairTicker),
 )
 
-# Register serialization/parquet BSPOrderBookDeltas
+# Register serialization/parquet BetfairStartingPrice
 register_serializable_object(
     BetfairStartingPrice,
     BetfairStartingPrice.to_dict,
     BetfairStartingPrice.from_dict,
 )
 
-# Register serialization/parquet BetfairStartingPrice
 register_arrow(
     data_cls=BetfairStartingPrice,
     schema=BetfairStartingPrice.schema(),
