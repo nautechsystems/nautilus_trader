@@ -310,8 +310,8 @@ class Trader(Component):
         PyCondition.true(not actor.is_running, "actor.state was RUNNING")
         PyCondition.true(not actor.is_disposed, "actor.state was DISPOSED")
 
-        if self.is_running:
-            self._log.error("Cannot add component to a running trader.")
+        if self.is_running and not self._has_controller:
+            self._log.error("Cannot add an actor/component to a running trader.")
             return
 
         if actor.id in self._actors:
