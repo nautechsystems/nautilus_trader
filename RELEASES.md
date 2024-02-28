@@ -9,6 +9,7 @@ Released on TBD (UTC).
 None
 
 ### Fixes
+- Fixed `MessageBus` handling of subscriptions after a topic has been published on (was previously dropping messages for these late subscribers)
 - Fixed `OrderBookDelta.to_pyo3_list` using zero precision from clear delta
 - Fixed `DataTransformer.pyo3_order_book_deltas_to_record_batch_bytes` using zero precision from clear delta
 

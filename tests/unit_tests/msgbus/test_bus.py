@@ -354,6 +354,20 @@ class TestMessageBus:
         assert "ORDER" in subscriber
         assert self.msgbus.pub_count == 1
 
+    def test_publish_with_header_sends_to_handler_after_published(self):
+        # Arrange
+        subscriber = []
+        self.msgbus.publish("events.order.SCALPER-001", "ORDER")
+
+        self.msgbus.subscribe(topic="events.order*", handler=subscriber.append)
+
+        # Act
+        self.msgbus.publish("events.order.SCALPER-001", "ORDER")
+
+        # Assert
+        assert "ORDER" in subscriber
+        assert self.msgbus.pub_count == 2
+
     def test_publish_with_none_matching_header_then_filters_from_subscriber(self):
         # Arrange
         subscriber = []
