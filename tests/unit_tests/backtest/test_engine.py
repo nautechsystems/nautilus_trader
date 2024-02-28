@@ -267,7 +267,7 @@ class TestBacktestEngine:
         engine.run()
 
         # Assert
-        msg = messages[1]
+        msg = messages[11]
         assert msg.__class__.__name__ == "SignalCounter"
         assert msg.ts_init == 1359676799700000000
         assert msg.ts_event == 1359676799700000000

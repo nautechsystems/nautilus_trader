@@ -2412,7 +2412,7 @@ cdef class MessageBus:
 
         # Get all subscriptions matching topic pattern
         cdef Subscription[:] subs = self._patterns.get(topic)
-        if subs is None:
+        if subs is None or len(subs) == 0:  # Cannot use truthiness on array
             # Add the topic pattern and get matching subscribers
             subs = self._resolve_subscriptions(topic)
 
