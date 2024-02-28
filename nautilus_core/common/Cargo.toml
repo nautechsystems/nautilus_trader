@@ -40,11 +40,11 @@ extension-module = [
     "nautilus-core/extension-module",
     "nautilus-model/extension-module",
 ]
-python = ["pyo3", "pyo3-asyncio", "nautilus-core/python", "nautilus-model/python"]
 ffi = ["cbindgen", "nautilus-core/ffi", "nautilus-model/ffi"]
+python = ["pyo3", "pyo3-asyncio", "nautilus-core/python", "nautilus-model/python"]
 stubs = ["rstest", "nautilus-model/stubs"]
 redis = ["dep:redis"]
-default = ["nautilus-core","nautilus-model"]
+default = []
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }

@@ -10,14 +10,6 @@ documentation.workspace = true
 name = "nautilus_persistence"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
-[[bin]]
-name = "init-db"
-path = "src/bin/init_db.rs"
-
-[[bin]]
-name = "drop-db"
-path = "src/bin/drop_db.rs"
-
 [dependencies]
 nautilus-core = { path = "../core" , optional = true }
 nautilus-model = { path = "../model", optional = true }

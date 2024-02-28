@@ -36,10 +36,10 @@ extension-module = [
   "nautilus-core/extension-module",
 ]
 ffi = ["cbindgen", "nautilus-core/ffi"]
-python = ["pyo3", "pyo3/multiple-pymethods","nautilus-core/python"]
+python = ["pyo3", "pyo3/multiple-pymethods", "nautilus-core/python"]
 stubs = ["rstest"]
 trivial_copy = []  # Enables deriving the `Copy` trait for data types (should be included in default)
-default = ["nautilus-core", "trivial_copy"]
+default = ["trivial_copy"]
 
 [dev-dependencies]
 criterion = { workspace = true }
