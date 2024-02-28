@@ -41,6 +41,7 @@ class SubscriptionStatus(Enum):
     UNSUBSCRIBED = 0
     PENDING_STARTUP = 1
     RUNNING = 2
+    SUBSCRIBED = 3
 
 
 class BSPOrderBookDelta(OrderBookDelta):
@@ -298,18 +299,25 @@ class BetfairStartingPrice(Data):
         }
 
 
+# Register serialization/parquet BetfairTicker
 register_serializable_object(
     BetfairTicker,
     BetfairTicker.to_dict,
     BetfairTicker.from_dict,
 )
 
-# Register serialization/parquet BetfairTicker
 register_arrow(
     data_cls=BetfairTicker,
     schema=BetfairTicker.schema(),
     encoder=make_dict_serializer(schema=BetfairTicker.schema()),
     decoder=make_dict_deserializer(BetfairTicker),
+)
+
+# Register serialization/parquet BSPOrderBookDeltas
+register_serializable_object(
+    BetfairStartingPrice,
+    BetfairStartingPrice.to_dict,
+    BetfairStartingPrice.from_dict,
 )
 
 # Register serialization/parquet BetfairStartingPrice
@@ -318,12 +326,6 @@ register_arrow(
     schema=BetfairStartingPrice.schema(),
     encoder=make_dict_serializer(schema=BetfairStartingPrice.schema()),
     decoder=make_dict_deserializer(BetfairStartingPrice),
-)
-
-register_serializable_object(
-    BetfairStartingPrice,
-    BetfairStartingPrice.to_dict,
-    BetfairStartingPrice.from_dict,
 )
 
 
