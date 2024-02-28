@@ -33,4 +33,11 @@ extension-module = [
     "nautilus-model/extension-module",
     "nautilus-persistence/extension-module",
 ]
+ffi = [
+    "nautilus-adapters/ffi",
+    "nautilus-core/ffi",
+    "nautilus-common/ffi",
+    "nautilus-model/ffi",
+    "nautilus-persistence/ffi",
+]
 default = []
