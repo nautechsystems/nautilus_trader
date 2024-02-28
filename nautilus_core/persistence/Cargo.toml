@@ -39,8 +39,9 @@ extension-module = [
   "nautilus-core/extension-module", 
   "nautilus-model/extension-module",
 ]
-python = ["pyo3", "nautilus-model/python", "nautilus-core/python"]
-default = ["python"]
+ffi = ["nautilus-core/ffi", "nautilus-model/ffi"]
+python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]
+default = ["ffi", "python"]
 
 [dev-dependencies]
 criterion = { workspace = true }
