@@ -239,13 +239,13 @@ VALID_MARKET_FILTER_KEYS = (
     "event_type_id",
     "event_name",
     "event_id",
-    "event_countryCode",
+    "event_country_code",
     "market_name",
     "market_id",
-    "market_exchangeId",
-    "market_marketType",
-    "market_marketStartTime",
-    "market_numberOfWinners",
+    "market_exchange_id",
+    "market_market_type",
+    "market_market_start_time",
+    "market_number_of_winners",
 )
 
 
@@ -268,8 +268,8 @@ async def load_markets(
         "event_type_id": event_type_ids,
         "event_id": event_ids,
         "market_id": market_ids,
-        "market_marketType": market_market_types,
-        "event_countryCode": event_country_codes,
+        "market_market_type": market_market_types,
+        "event_country_code": event_country_codes,
         "event_type_name": event_type_names,
     }
     market_filter = {k: v for k, v in market_filter.items() if v is not None}
