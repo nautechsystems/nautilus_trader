@@ -15,7 +15,7 @@
 
 use rstest::fixture;
 
-use super::*;
+use super::OrderBookDelta;
 use crate::data::order::BookOrder;
 use crate::enums::{BookAction, OrderSide};
 use crate::{
@@ -30,7 +30,7 @@ pub fn stub_delta() -> OrderBookDelta {
     let price = Price::from("100.00");
     let size = Quantity::from("10");
     let side = OrderSide::Buy;
-    let order_id = 123456;
+    let order_id = 123_456;
     let flags = 0;
     let sequence = 1;
     let ts_event = 1;
