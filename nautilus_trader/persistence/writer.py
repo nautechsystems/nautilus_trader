@@ -81,7 +81,7 @@ class StreamingFeatherWriter:
                 self.fs.rm(fn)
             self.fs.rmdir(self.path)
 
-        self.fs.makedirs(self.fs._parent(self.path), exist_ok=True)
+        self.fs.makedirs(self.path, exist_ok=True)
 
         self._schemas = list_schemas()
         self.logger = Logger(type(self).__name__)
