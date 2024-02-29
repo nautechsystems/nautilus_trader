@@ -11,7 +11,6 @@ from typing import Any, TypeAlias, Union
 
 from nautilus_trader.core.data import Data
 
-
 # Python Interface typing:
 # We will eventually separate these into a .pyi file per module, for now this at least
 # provides import resolution as well as docstrings.
