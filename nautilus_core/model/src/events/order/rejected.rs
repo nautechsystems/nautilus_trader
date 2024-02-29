@@ -18,6 +18,7 @@ use std::fmt::{Display, Formatter};
 use anyhow::Result;
 use derive_builder::Builder;
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 

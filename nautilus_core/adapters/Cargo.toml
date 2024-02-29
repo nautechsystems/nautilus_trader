@@ -13,7 +13,7 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 [dependencies]
 nautilus-common = { path = "../common" }
 nautilus-core = { path = "../core" }
-nautilus-model = { path = "../model", features = ["stubs"]}
+nautilus-model = { path = "../model", features = ["stubs"] }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 indexmap = { workspace = true }
@@ -35,6 +35,10 @@ dbn = { version = "0.15.1", optional = true, features = ["python"] }
 streaming-iterator = "0.1.9"
 time = "0.3.31"
 
+[dev-dependencies]
+criterion = { workspace = true }
+rstest = { workspace = true }
+
 [features]
 extension-module = [
   "pyo3/extension-module",
@@ -42,10 +46,13 @@ extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
 ]
-databento = ["dep:databento", "dbn"]
-python = ["pyo3", "pyo3-asyncio"]
-default = ["databento", "python"]
-
-[dev-dependencies]
-criterion = { workspace = true }
-rstest = { workspace = true }
+databento = ["dep:databento", "dbn", "python"]
+ffi = ["nautilus-core/ffi", "nautilus-model/ffi", "nautilus-common/ffi"]
+python = [
+  "pyo3",
+  "pyo3-asyncio",
+  "nautilus-core/python",
+  "nautilus-model/python",
+  "nautilus-common/python",
+]
+default = ["ffi", "python"]

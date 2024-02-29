@@ -79,6 +79,12 @@ impl CashAccount {
     }
 
     #[getter]
+    #[pyo3(name = "id")]
+    fn py_id(&self) -> AccountId {
+        self.id
+    }
+
+    #[getter]
     #[pyo3(name = "base_currency")]
     fn py_base_currency(&self) -> Option<Currency> {
         self.base_currency

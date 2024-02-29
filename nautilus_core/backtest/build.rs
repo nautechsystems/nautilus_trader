@@ -13,29 +13,34 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-extern crate cbindgen;
-
-use std::{env, path::PathBuf};
+use std::env;
 
 #[allow(clippy::expect_used)] // OK in build script
 fn main() {
-    let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let _is_ffi_feature_on = env::var("CARGO_FEATURE_FFI").is_ok();
 
-    // Generate C headers
-    let config_c = cbindgen::Config::from_file("cbindgen.toml")
-        .expect("unable to find cbindgen.toml configuration file");
+    #[cfg(feature = "ffi")]
+    if !_is_ffi_feature_on {
+        extern crate cbindgen;
+        use std::path::PathBuf;
+        let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
-    let c_header_path = crate_dir.join("../../nautilus_trader/core/includes/backtest.h");
-    cbindgen::generate_with_config(&crate_dir, config_c)
-        .expect("unable to generate bindings")
-        .write_to_file(c_header_path);
+        // Generate C headers
+        let config_c = cbindgen::Config::from_file("cbindgen.toml")
+            .expect("unable to find cbindgen.toml configuration file");
 
-    // Generate Cython definitions
-    let config_cython = cbindgen::Config::from_file("cbindgen_cython.toml")
-        .expect("unable to find cbindgen_cython.toml configuration file");
+        let c_header_path = crate_dir.join("../../nautilus_trader/core/includes/backtest.h");
+        cbindgen::generate_with_config(&crate_dir, config_c)
+            .expect("unable to generate bindings")
+            .write_to_file(c_header_path);
 
-    let cython_path = crate_dir.join("../../nautilus_trader/core/rust/backtest.pxd");
-    cbindgen::generate_with_config(&crate_dir, config_cython)
-        .expect("unable to generate bindings")
-        .write_to_file(cython_path);
+        // Generate Cython definitions
+        let config_cython = cbindgen::Config::from_file("cbindgen_cython.toml")
+            .expect("unable to find cbindgen_cython.toml configuration file");
+
+        let cython_path = crate_dir.join("../../nautilus_trader/core/rust/backtest.pxd");
+        cbindgen::generate_with_config(&crate_dir, config_cython)
+            .expect("unable to generate bindings")
+            .write_to_file(cython_path);
+    }
 }

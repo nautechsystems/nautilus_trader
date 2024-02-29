@@ -21,6 +21,9 @@ ustr = { workspace = true }
 tempfile = { workspace = true }
 rstest = { workspace = true}
 
+[build-dependencies]
+cbindgen = { workspace = true, optional = true }
+
 [features]
 extension-module = [
     "pyo3/extension-module",
@@ -28,9 +31,6 @@ extension-module = [
     "nautilus-core/extension-module",
     "nautilus-model/extension-module",
 ]
-ffi = ["cbindgen"]
-python = ["pyo3"]
+ffi = ["cbindgen", "nautilus-core/ffi", "nautilus-common/ffi"]
+python = ["pyo3", "nautilus-core/python", "nautilus-common/python"]
 default = ["ffi", "python"]
-
-[build-dependencies]
-cbindgen = { workspace = true, optional = true }
