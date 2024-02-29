@@ -17,7 +17,6 @@ use std::env;
 
 #[allow(clippy::expect_used)] // OK in build script
 fn main() {
-    // Check if the 'native' feature is not enabled
     let _is_ffi_feature_on = env::var("CARGO_FEATURE_FFI").is_ok();
 
     #[cfg(feature = "ffi")]

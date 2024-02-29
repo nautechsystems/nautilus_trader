@@ -35,6 +35,10 @@ dbn = { version = "0.15.1", optional = true, features = ["python"] }
 streaming-iterator = "0.1.9"
 time = "0.3.31"
 
+[dev-dependencies]
+criterion = { workspace = true }
+rstest = { workspace = true }
+
 [features]
 extension-module = [
   "pyo3/extension-module",
@@ -52,7 +56,3 @@ python = [
   "nautilus-common/python",
 ]
 default = ["ffi", "python"]
-
-[dev-dependencies]
-criterion = { workspace = true }
-rstest = { workspace = true }

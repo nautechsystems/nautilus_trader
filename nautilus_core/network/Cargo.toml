@@ -11,7 +11,7 @@ name = "nautilus_network"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
-nautilus-core = { path = "../core" , features = ["python"]}
+nautilus-core = { path = "../core" }
 anyhow = { workspace = true }
 futures = { workspace = true }
 pyo3 = { workspace = true, optional = true }

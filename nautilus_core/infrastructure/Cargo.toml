@@ -11,9 +11,9 @@ name = "nautilus_infrastructure"
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]
-nautilus-common = { path = "../common",features = ["redis"]}
-nautilus-core = { path = "../core" , features = ["python"]}
-nautilus-model = { path = "../model" ,features = ["python"]}
+nautilus-common = { path = "../common", features = ["redis"] }
+nautilus-core = { path = "../core" , features = ["python"] }
+nautilus-model = { path = "../model" , features = ["python"] }
 anyhow = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 redis = { workspace = true, optional = true }
@@ -21,7 +21,7 @@ rmp-serde = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
-rstest.workspace = true
+rstest = { workspace = true }
 
 [features]
 extension-module = [

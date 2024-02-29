@@ -11,8 +11,8 @@ name = "nautilus_persistence"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
-nautilus-core = { path = "../core" , optional = true }
-nautilus-model = { path = "../model", optional = true }
+nautilus-core = { path = "../core" }
+nautilus-model = { path = "../model" }
 anyhow = { workspace = true }
 futures = { workspace = true }
 pyo3 = { workspace = true, optional = true }
@@ -25,6 +25,14 @@ datafusion = { version = "36.0.0", default-features = false, features = ["compre
 dotenv = "0.15.0"
 sqlx = { version = "0.7.3", features = ["sqlite", "postgres", "any", "runtime-tokio"] }
 
+[dev-dependencies]
+criterion = { workspace = true }
+rstest = { workspace = true }
+quickcheck = "1"
+quickcheck_macros = "1"
+[target.'cfg(target_os = "linux")'.dependencies]
+procfs = "0.16.0"
+
 [features]
 extension-module = [
   "pyo3/extension-module", 
@@ -34,14 +42,6 @@ extension-module = [
 ffi = ["nautilus-core/ffi", "nautilus-model/ffi"]
 python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]
 default = ["ffi", "python"]
-
-[dev-dependencies]
-criterion = { workspace = true }
-rstest = { workspace = true }
-quickcheck = "1"
-quickcheck_macros = "1"
-[target.'cfg(target_os = "linux")'.dependencies]
-procfs = "0.16.0"
 
 [[bench]]
 name = "bench_persistence"

@@ -21,12 +21,6 @@ ustr = { workspace = true }
 uuid = { workspace = true }
 heck = "0.4.1"
 
-[features]
-extension-module = ["pyo3/extension-module"]
-ffi = ["cbindgen"]
-python = ["pyo3"]
-default = []
-
 [dev-dependencies]
 criterion = { workspace = true }
 iai = { workspace = true }
@@ -34,3 +28,10 @@ rstest = { workspace = true }
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
+
+[features]
+extension-module = ["pyo3/extension-module"]
+ffi = ["cbindgen"]
+python = ["pyo3"]
+default = []
+

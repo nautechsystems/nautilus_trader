@@ -11,7 +11,7 @@ name = "nautilus_model"
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
-nautilus-core = { path = "../core" , optional = true}
+nautilus-core = { path = "../core" }
 anyhow = { workspace = true }
 indexmap = { workspace = true }
 once_cell = { workspace = true }
@@ -30,6 +30,14 @@ derive_builder = "0.13.1"
 evalexpr = "11.3.0"
 tabled = "0.15.0"
 
+[dev-dependencies]
+criterion = { workspace = true }
+float-cmp = { workspace = true }
+iai = { workspace = true }
+
+[build-dependencies]
+cbindgen = { workspace = true, optional = true }
+
 [features]
 extension-module = [
   "pyo3/extension-module",
@@ -40,14 +48,6 @@ python = ["pyo3", "pyo3/multiple-pymethods", "nautilus-core/python"]
 stubs = ["rstest"]
 trivial_copy = []  # Enables deriving the `Copy` trait for data types (should be included in default)
 default = ["trivial_copy"]
-
-[dev-dependencies]
-criterion = { workspace = true }
-float-cmp = { workspace = true }
-iai = { workspace = true }
-
-[build-dependencies]
-cbindgen = { workspace = true, optional = true }
 
 [[bench]]
 name = "criterion_fixed_precision_benchmark"
