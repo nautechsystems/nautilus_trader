@@ -22,6 +22,7 @@ use std::{
 use nautilus_core::time::UnixNanos;
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyCapsule};
 
+use super::data_to_pycapsule;
 use crate::{
     data::{
         delta::OrderBookDelta,
@@ -31,8 +32,6 @@ use crate::{
     identifiers::instrument_id::InstrumentId,
     python::common::PY_MODULE_MODEL,
 };
-
-use super::data_to_pycapsule;
 
 #[pymethods]
 impl OrderBookDeltas {

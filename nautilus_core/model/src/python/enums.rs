@@ -13,16 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::enum_for_python;
-use crate::enums::{
-    AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
-    BookType, ContingencyType, CurrencyType, HaltReason, InstrumentClass, InstrumentCloseType,
-    LiquiditySide, MarketStatus, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
-    PositionSide, PriceType, TimeInForce, TradingState, TrailingOffsetType, TriggerType,
-};
-use crate::python::common::EnumIterator;
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyType, PyTypeInfo};
 use std::str::FromStr;
+
+use pyo3::{exceptions::PyValueError, prelude::*, types::PyType, PyTypeInfo};
+
+use crate::{
+    enum_for_python,
+    enums::{
+        AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
+        BookType, ContingencyType, CurrencyType, HaltReason, InstrumentClass, InstrumentCloseType,
+        LiquiditySide, MarketStatus, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
+        PositionSide, PriceType, TimeInForce, TradingState, TrailingOffsetType, TriggerType,
+    },
+    python::common::EnumIterator,
+};
 
 #[pymethods]
 impl AccountType {

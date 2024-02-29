@@ -23,7 +23,6 @@ use std::{
 use anyhow::Result;
 use indexmap::IndexMap;
 use nautilus_core::{correctness::check_u8_equal, serialization::Serializable, time::UnixNanos};
-
 use serde::{Deserialize, Serialize};
 
 use crate::{

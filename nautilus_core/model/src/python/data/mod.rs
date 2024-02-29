@@ -21,12 +21,11 @@ pub mod order;
 pub mod quote;
 pub mod trade;
 
+#[cfg(feature = "ffi")]
+use nautilus_core::ffi::cvec::CVec;
 use pyo3::{prelude::*, types::PyCapsule};
 
 use crate::data::Data;
-
-#[cfg(feature = "ffi")]
-use nautilus_core::ffi::cvec::CVec;
 
 /// Creates a Python `PyCapsule` object containing a Rust `Data` instance.
 ///

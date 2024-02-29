@@ -13,15 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::identifier_for_python;
+use std::str::FromStr;
+
 use nautilus_core::python::to_pyvalue_err;
 use pyo3::{
     prelude::*,
     pyclass::CompareOp,
     types::{PyString, PyTuple},
 };
-use std::str::FromStr;
 use ustr::Ustr;
+
+use crate::identifier_for_python;
 
 pub mod instrument_id;
 pub mod trade_id;

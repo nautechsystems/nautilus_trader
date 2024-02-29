@@ -25,13 +25,12 @@ use nautilus_core::{
     time::{get_atomic_clock_realtime, TimedeltaNanos, UnixNanos},
     uuid::UUID4,
 };
+#[cfg(feature = "python")]
+use pyo3::{types::PyCapsule, IntoPy, PyObject, Python};
 use tokio::sync::oneshot;
 use ustr::Ustr;
 
 use crate::{handlers::EventHandler, runtime::get_runtime};
-
-#[cfg(feature = "python")]
-use pyo3::{types::PyCapsule, IntoPy, PyObject, Python};
 
 #[repr(C)]
 #[derive(Clone, Debug)]

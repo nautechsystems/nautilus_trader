@@ -13,19 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#[cfg(not(feature = "python"))]
+use std::ffi::c_char;
 use std::{fmt, sync::Arc};
-
-use ustr::Ustr;
-
-use crate::timer::TimeEvent;
 
 #[cfg(not(feature = "python"))]
 use nautilus_core::message::Message;
-#[cfg(not(feature = "python"))]
-use std::ffi::c_char;
-
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+use ustr::Ustr;
+
+use crate::timer::TimeEvent;
 
 #[allow(dead_code)]
 #[derive(Clone)]

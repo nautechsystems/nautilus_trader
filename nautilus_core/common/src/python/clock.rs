@@ -33,15 +33,15 @@ pub mod stubs {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use pyo3::{prelude::*, types::PyList};
+    use rstest::*;
+    use stubs::*;
+
+    use super::*;
     use crate::{
         clock::{Clock, TestClock},
         handlers::EventHandler,
     };
-    use pyo3::{prelude::*, types::PyList};
-    use rstest::*;
-
-    use super::*;
-    use stubs::*;
 
     #[rstest]
     fn test_set_timer_ns_py(mut test_clock: TestClock) {
