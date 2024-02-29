@@ -11,14 +11,14 @@ name = "nautilus_pyo3"
 crate-type = ["cdylib"]
 
 [dependencies]
-nautilus-adapters = { path = "../adapters", features = ["databento"]}
-nautilus-core = { path = "../core" , features = ["python"]}
-nautilus-common = { path = "../common" , features = ["python"]}
-nautilus-indicators = { path = "../indicators" , features = ["python"]}
+nautilus-adapters = { path = "../adapters", features = ["databento"] }
+nautilus-core = { path = "../core" , features = ["python"] }
+nautilus-common = { path = "../common" , features = ["python"] }
+nautilus-indicators = { path = "../indicators" , features = ["python"] }
 nautilus-infrastructure = { path = "../infrastructure", features = ["python"] }
-nautilus-model = { path = "../model" , features = ["python"]}
-nautilus-persistence = { path = "../persistence" , features = ["python"]}
-nautilus-network = { path = "../network" , features = ["python"]}
+nautilus-model = { path = "../model" , features = ["python"] }
+nautilus-persistence = { path = "../persistence" , features = ["python"] }
+nautilus-network = { path = "../network" , features = ["python"] }
 nautilus-accounting = { path = "../accounting", features = ["python"] }
 pyo3 = { workspace = true }
 
