@@ -29,7 +29,6 @@ use serde_json::Value;
 use ustr::Ustr;
 
 use crate::handlers::MessageHandler;
-
 #[cfg(feature = "redis")]
 use crate::redis::handle_messages_with_redis;
 

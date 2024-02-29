@@ -13,11 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use pyo3::basic::CompareOp;
-use std::str::FromStr;
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     hash::{Hash, Hasher},
+    str::FromStr,
 };
 
 use nautilus_core::{
@@ -25,19 +24,19 @@ use nautilus_core::{
     serialization::Serializable,
     time::UnixNanos,
 };
-use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use super::data_to_pycapsule;
-use crate::data::order::{OrderId, NULL_ORDER};
-use crate::enums::{FromU8, OrderSide};
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
 use crate::{
-    data::{delta::OrderBookDelta, order::BookOrder, Data},
-    enums::BookAction,
+    data::{
+        delta::OrderBookDelta,
+        order::{BookOrder, OrderId, NULL_ORDER},
+        Data,
+    },
+    enums::{BookAction, FromU8, OrderSide},
     identifiers::instrument_id::InstrumentId,
     python::common::PY_MODULE_MODEL,
+    types::{price::Price, quantity::Quantity},
 };
 
 impl OrderBookDelta {

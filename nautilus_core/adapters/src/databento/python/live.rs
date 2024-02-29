@@ -27,7 +27,11 @@ use nautilus_core::{
     time::{get_atomic_clock_realtime, AtomicTime, UnixNanos},
 };
 use nautilus_model::{
-    data::{delta::OrderBookDelta, deltas::OrderBookDeltas, deltas::OrderBookDeltas_API, Data},
+    data::{
+        delta::OrderBookDelta,
+        deltas::{OrderBookDeltas, OrderBookDeltas_API},
+        Data,
+    },
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
     python::data::data_to_pycapsule,
 };

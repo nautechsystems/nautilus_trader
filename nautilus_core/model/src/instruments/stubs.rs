@@ -19,6 +19,7 @@ use rstest::fixture;
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
+use super::{futures_spread::FuturesSpread, options_spread::OptionsSpread};
 use crate::{
     enums::{AssetClass, OptionKind},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
@@ -29,8 +30,6 @@ use crate::{
     },
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
-
-use super::{futures_spread::FuturesSpread, options_spread::OptionsSpread};
 
 ////////////////////////////////////////////////////////////////////////////////
 // CryptoFuture

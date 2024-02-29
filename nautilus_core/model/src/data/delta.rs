@@ -150,8 +150,8 @@ pub mod stubs {
     use rstest::fixture;
 
     use super::{BookAction, BookOrder, OrderBookDelta};
-    use crate::enums::OrderSide;
     use crate::{
+        enums::OrderSide,
         identifiers::instrument_id::InstrumentId,
         types::{price::Price, quantity::Quantity},
     };
@@ -190,13 +190,10 @@ mod tests {
     use nautilus_core::serialization::Serializable;
     use rstest::rstest;
 
-    use crate::data::delta::OrderBookDelta;
-    use crate::data::order::BookOrder;
-    use crate::data::stubs::*;
-    use crate::enums::BookAction;
-    use crate::identifiers::instrument_id::InstrumentId;
     use crate::{
-        enums::OrderSide,
+        data::{delta::OrderBookDelta, order::BookOrder, stubs::*},
+        enums::{BookAction, OrderSide},
+        identifiers::instrument_id::InstrumentId,
         types::{price::Price, quantity::Quantity},
     };
 

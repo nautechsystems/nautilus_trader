@@ -16,9 +16,9 @@
 use rstest::fixture;
 
 use super::OrderBookDelta;
-use crate::data::order::BookOrder;
-use crate::enums::{BookAction, OrderSide};
 use crate::{
+    data::order::BookOrder,
+    enums::{BookAction, OrderSide},
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
