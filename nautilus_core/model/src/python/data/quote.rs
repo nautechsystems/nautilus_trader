@@ -39,6 +39,49 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
+impl QuoteTick {
+    /// Create a new [`QuoteTick`] extracted from the given [`PyAny`].
+    pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
+        let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
+        let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
+        let instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
+
+        let bid_price_py: &PyAny = obj.getattr("bid_price")?;
+        let bid_price_raw: i64 = bid_price_py.getattr("raw")?.extract()?;
+        let bid_price_prec: u8 = bid_price_py.getattr("precision")?.extract()?;
+        let bid_price = Price::from_raw(bid_price_raw, bid_price_prec).map_err(to_pyvalue_err)?;
+
+        let ask_price_py: &PyAny = obj.getattr("ask_price")?;
+        let ask_price_raw: i64 = ask_price_py.getattr("raw")?.extract()?;
+        let ask_price_prec: u8 = ask_price_py.getattr("precision")?.extract()?;
+        let ask_price = Price::from_raw(ask_price_raw, ask_price_prec).map_err(to_pyvalue_err)?;
+
+        let bid_size_py: &PyAny = obj.getattr("bid_size")?;
+        let bid_size_raw: u64 = bid_size_py.getattr("raw")?.extract()?;
+        let bid_size_prec: u8 = bid_size_py.getattr("precision")?.extract()?;
+        let bid_size = Quantity::from_raw(bid_size_raw, bid_size_prec).map_err(to_pyvalue_err)?;
+
+        let ask_size_py: &PyAny = obj.getattr("ask_size")?;
+        let ask_size_raw: u64 = ask_size_py.getattr("raw")?.extract()?;
+        let ask_size_prec: u8 = ask_size_py.getattr("precision")?.extract()?;
+        let ask_size = Quantity::from_raw(ask_size_raw, ask_size_prec).map_err(to_pyvalue_err)?;
+
+        let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
+        let ts_init: UnixNanos = obj.getattr("ts_init")?.extract()?;
+
+        Self::new(
+            instrument_id,
+            bid_price,
+            ask_price,
+            bid_size,
+            ask_size,
+            ts_event,
+            ts_init,
+        )
+        .map_err(to_pyvalue_err)
+    }
+}
+
 #[pymethods]
 impl QuoteTick {
     #[new]

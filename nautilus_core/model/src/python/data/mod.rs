@@ -21,10 +21,12 @@ pub mod order;
 pub mod quote;
 pub mod trade;
 
-use nautilus_core::ffi::cvec::CVec;
 use pyo3::{prelude::*, types::PyCapsule};
 
 use crate::data::Data;
+
+#[cfg(feature = "ffi")]
+use nautilus_core::ffi::cvec::CVec;
 
 /// Creates a Python `PyCapsule` object containing a Rust `Data` instance.
 ///
@@ -67,6 +69,7 @@ pub fn data_to_pycapsule(py: Python, data: Data) -> PyObject {
 /// management. The caller must ensure the `PyCapsule` contains a valid `CVec` pointer.
 /// Incorrect usage can lead to memory corruption or undefined behavior.
 #[pyfunction]
+#[cfg(feature = "ffi")]
 pub fn drop_cvec_pycapsule(capsule: &PyAny) {
     let capsule: &PyCapsule = capsule
         .downcast()
@@ -75,4 +78,10 @@ pub fn drop_cvec_pycapsule(capsule: &PyAny) {
     let data: Vec<Data> =
         unsafe { Vec::from_raw_parts(cvec.ptr.cast::<Data>(), cvec.len, cvec.cap) };
     drop(data);
+}
+
+#[pyfunction]
+#[cfg(not(feature = "ffi"))]
+pub fn drop_cvec_pycapsule(_capsule: &PyAny) {
+    panic!("`ffi` feature is not enabled");
 }

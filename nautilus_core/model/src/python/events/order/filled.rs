@@ -193,6 +193,120 @@ impl OrderFilled {
         }
     }
 
+    #[getter]
+    #[pyo3(name = "trader_id")]
+    fn py_trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "strategy_id")]
+    fn py_strategy_id(&self) -> StrategyId {
+        self.strategy_id
+    }
+
+    #[getter]
+    #[pyo3(name = "client_order_id")]
+    fn py_client_order_id(&self) -> ClientOrderId {
+        self.client_order_id
+    }
+
+    #[getter]
+    #[pyo3(name = "venue_order_id")]
+    fn py_venue_order_id(&self) -> VenueOrderId {
+        self.venue_order_id
+    }
+
+    #[getter]
+    #[pyo3(name = "account_id")]
+    fn py_account_id(&self) -> AccountId {
+        self.account_id
+    }
+
+    #[getter]
+    #[pyo3(name = "trade_id")]
+    fn py_trade_id(&self) -> TradeId {
+        self.trade_id
+    }
+
+    #[getter]
+    #[pyo3(name = "order_side")]
+    fn py_order_side(&self) -> OrderSide {
+        self.order_side
+    }
+
+    #[getter]
+    #[pyo3(name = "last_qty")]
+    fn py_last_qty(&self) -> Quantity {
+        self.last_qty
+    }
+
+    #[getter]
+    #[pyo3(name = "last_px")]
+    fn py_last_px(&self) -> Price {
+        self.last_px
+    }
+
+    #[getter]
+    #[pyo3(name = "currency")]
+    fn py_currency(&self) -> Currency {
+        self.currency
+    }
+
+    #[getter]
+    #[pyo3(name = "liquidity_side")]
+    fn py_liquidity_side(&self) -> LiquiditySide {
+        self.liquidity_side
+    }
+
+    #[getter]
+    #[pyo3(name = "event_id")]
+    fn py_event_id(&self) -> UUID4 {
+        self.event_id
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+
+    #[getter]
+    #[pyo3(name = "reconciliation")]
+    fn py_reconciliation(&self) -> bool {
+        self.reconciliation
+    }
+
+    #[getter]
+    #[pyo3(name = "position_id")]
+    fn py_position_id(&self) -> Option<PositionId> {
+        self.position_id
+    }
+
+    #[getter]
+    #[pyo3(name = "commission")]
+    fn py_commission(&self) -> Option<Money> {
+        self.commission
+    }
+
+    #[getter]
+    #[pyo3(name = "order_type")]
+    fn py_order_type(&self) -> OrderType {
+        self.order_type
+    }
+
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {

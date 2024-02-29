@@ -12,7 +12,7 @@ crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 nautilus-core = { path = "../core" }
-nautilus-model = { path = "../model", features = ["stubs"]}
+nautilus-model = { path = "../model" }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 indexmap = { workspace = true }
@@ -32,7 +32,11 @@ sysinfo = "0.30.5"
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
 
 [dev-dependencies]
+rstest = { workspace = true }
 tempfile = { workspace = true }
+
+[build-dependencies]
+cbindgen = { workspace = true, optional = true }
 
 [features]
 extension-module = [
@@ -40,11 +44,8 @@ extension-module = [
     "nautilus-core/extension-module",
     "nautilus-model/extension-module",
 ]
-ffi = ["cbindgen"]
-python = ["pyo3", "pyo3-asyncio"]
-stubs = ["rstest"]
+ffi = ["cbindgen", "nautilus-core/ffi", "nautilus-model/ffi"]
+python = ["pyo3", "pyo3-asyncio", "nautilus-core/python", "nautilus-model/python"]
+stubs = ["rstest", "nautilus-model/stubs"]
 redis = ["dep:redis"]
-default = ["ffi", "python", "redis"]
-
-[build-dependencies]
-cbindgen = { workspace = true, optional = true }
+default = []

@@ -11,8 +11,8 @@ name = "nautilus_accounting"
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]
-nautilus-common = { path = "../common", features = ["stubs"] }
-nautilus-model = { path = "../model", features = ["stubs"]}
+nautilus-common = { path = "../common", features = ["stubs"]}
+nautilus-model = { path = "../model" }
 nautilus-core = { path = "../core" }
 anyhow = { workspace = true }
 pyo3 = { workspace = true, optional = true }
@@ -21,16 +21,17 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
-rstest.workspace = true
+rstest = { workspace = true }
+
+[build-dependencies]
+cbindgen = { workspace = true, optional = true }
 
 [features]
 extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
   "nautilus-common/extension-module",
 ]
 python = ["pyo3"]
-default = ["python"]
-
-[build-dependencies]
-cbindgen = { workspace = true, optional = true }
+default = []
