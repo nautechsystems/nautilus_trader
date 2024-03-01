@@ -1028,7 +1028,7 @@ async def test_generate_order_status_reports_executable_limit_on_close(exec_clie
     assert reports[0].price == Price(5.0, BETFAIR_PRICE_PRECISION)
     assert reports[0].quantity == Quantity(20.0, BETFAIR_QUANTITY_PRECISION)
     assert reports[0].order_status == OrderStatus.ACCEPTED
-    assert reports[0].filled_qty == 0.0
+    assert reports[0].filled_qty == Quantity(20.0, BETFAIR_QUANTITY_PRECISION)
     assert reports[0].time_in_force == TimeInForce.DAY
 
     # Lay
@@ -1036,7 +1036,7 @@ async def test_generate_order_status_reports_executable_limit_on_close(exec_clie
     assert reports[1].price == Price(1.5, BETFAIR_PRICE_PRECISION)
     assert reports[1].quantity == Quantity(50.0, BETFAIR_QUANTITY_PRECISION)
     assert reports[1].order_status == OrderStatus.ACCEPTED
-    assert reports[1].filled_qty == 0.0
+    assert reports[1].filled_qty == Quantity(50.0, BETFAIR_QUANTITY_PRECISION)
     assert reports[1].time_in_force == TimeInForce.DAY
 
 
