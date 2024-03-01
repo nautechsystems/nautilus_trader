@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from nautilus_trader.core.nautilus_pyo3 import AccountState
 from nautilus_trader.test_kit.rust.events_pyo3 import TestEventsProviderPyo3
 

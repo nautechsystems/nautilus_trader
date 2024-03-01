@@ -11,23 +11,24 @@ name = "nautilus_pyo3"
 crate-type = ["cdylib"]
 
 [dependencies]
-nautilus-adapters = { path = "../adapters", features = ["databento"] }
-nautilus-core = { path = "../core" , features = ["python"] }
+nautilus-accounting = { path = "../accounting", features = ["python"] }
+nautilus-adapters = { path = "../adapters", features = ["python", "databento"] }
 nautilus-common = { path = "../common" , features = ["python"] }
+nautilus-core = { path = "../core" , features = ["python"] }
 nautilus-indicators = { path = "../indicators" , features = ["python"] }
 nautilus-infrastructure = { path = "../infrastructure", features = ["python"] }
 nautilus-model = { path = "../model" , features = ["python"] }
-nautilus-persistence = { path = "../persistence" , features = ["python"] }
 nautilus-network = { path = "../network" , features = ["python"] }
-nautilus-accounting = { path = "../accounting", features = ["python"] }
+nautilus-persistence = { path = "../persistence" , features = ["python"] }
 pyo3 = { workspace = true }
 
 [features]
 extension-module = [
     "pyo3/extension-module",
+    "nautilus-accounting/extension-module",
     "nautilus-adapters/extension-module",
-    "nautilus-core/extension-module",
     "nautilus-common/extension-module",
+    "nautilus-core/extension-module",
     "nautilus-indicators/extension-module",
     "nautilus-infrastructure/extension-module",
     "nautilus-model/extension-module",
@@ -35,8 +36,8 @@ extension-module = [
 ]
 ffi = [
     "nautilus-adapters/ffi",
-    "nautilus-core/ffi",
     "nautilus-common/ffi",
+    "nautilus-core/ffi",
     "nautilus-model/ffi",
     "nautilus-persistence/ffi",
 ]
