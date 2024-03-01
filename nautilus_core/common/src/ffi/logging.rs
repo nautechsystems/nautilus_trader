@@ -28,9 +28,13 @@ use crate::{
     enums::{LogColor, LogLevel},
     logging::{
         self, headers, logging_set_bypass, map_log_level_to_filter, parse_component_levels,
-        writer::FileWriterConfig, LoggerConfig,
+        writer::FileWriterConfig, LogGuard, LoggerConfig,
     },
 };
+
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub struct LogGuard_API(Box<LogGuard>);
 
 /// Initializes tracing.
 ///
@@ -63,6 +67,7 @@ pub extern "C" fn tracing_init() {
 /// - Assume `file_name_ptr` is either NULL or a valid C string pointer.
 /// - Assume `file_format_ptr` is either NULL or a valid C string pointer.
 /// - Assume `component_level_ptr` is either NULL or a valid C string pointer.
+
 #[no_mangle]
 pub unsafe extern "C" fn logging_init(
     trader_id: TraderId,
@@ -76,7 +81,7 @@ pub unsafe extern "C" fn logging_init(
     is_colored: u8,
     is_bypassed: u8,
     print_config: u8,
-) {
+) -> LogGuard_API {
     let level_stdout = map_log_level_to_filter(level_stdout);
     let level_file = map_log_level_to_filter(level_file);
 
@@ -100,7 +105,12 @@ pub unsafe extern "C" fn logging_init(
         logging_set_bypass();
     }
 
-    logging::init_logging(trader_id, instance_id, config, file_config);
+    LogGuard_API(Box::new(logging::init_logging(
+        trader_id,
+        instance_id,
+        config,
+        file_config,
+    )))
 }
 
 /// Creates a new log event.

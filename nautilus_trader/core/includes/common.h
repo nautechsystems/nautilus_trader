@@ -250,6 +250,14 @@ typedef struct LiveClock_API {
     struct LiveClock *_0;
 } LiveClock_API;
 
+typedef struct LogGuard {
+
+} LogGuard;
+
+typedef struct LogGuard_API {
+    struct LogGuard *_0;
+} LogGuard_API;
+
 /**
  * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`MessageBus`].
  *
@@ -548,17 +556,17 @@ void tracing_init(void);
  * - Assume `file_format_ptr` is either NULL or a valid C string pointer.
  * - Assume `component_level_ptr` is either NULL or a valid C string pointer.
  */
-void logging_init(TraderId_t trader_id,
-                  UUID4_t instance_id,
-                  enum LogLevel level_stdout,
-                  enum LogLevel level_file,
-                  const char *directory_ptr,
-                  const char *file_name_ptr,
-                  const char *file_format_ptr,
-                  const char *component_levels_ptr,
-                  uint8_t is_colored,
-                  uint8_t is_bypassed,
-                  uint8_t print_config);
+struct LogGuard_API logging_init(TraderId_t trader_id,
+                                 UUID4_t instance_id,
+                                 enum LogLevel level_stdout,
+                                 enum LogLevel level_file,
+                                 const char *directory_ptr,
+                                 const char *file_name_ptr,
+                                 const char *file_format_ptr,
+                                 const char *component_levels_ptr,
+                                 uint8_t is_colored,
+                                 uint8_t is_bypassed,
+                                 uint8_t print_config);
 
 /**
  * Creates a new log event.

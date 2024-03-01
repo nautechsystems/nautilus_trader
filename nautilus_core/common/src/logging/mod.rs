@@ -260,10 +260,10 @@ pub fn init_logging(
     instance_id: UUID4,
     config: LoggerConfig,
     file_config: FileWriterConfig,
-) {
+) -> LogGuard {
     LOGGING_INITIALIZED.store(true, Ordering::Relaxed);
     LOGGING_COLORED.store(config.is_colored, Ordering::Relaxed);
-    Logger::init_with_config(trader_id, instance_id, config, file_config);
+    Logger::init_with_config(trader_id, instance_id, config, file_config)
 }
 
 /// Provides a high-performance logger utilizing a MPSC channel under the hood.
@@ -566,6 +566,7 @@ pub fn log(level: LogLevel, color: LogColor, component: Ustr, message: &str) {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
+#[repr(C)]
 #[derive(Debug)]
 pub struct LogGuard {}
 

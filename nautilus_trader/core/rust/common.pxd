@@ -153,6 +153,12 @@ cdef extern from "../includes/common.h":
     cdef struct LiveClock_API:
         LiveClock *_0;
 
+    cdef struct LogGuard:
+        pass
+
+    cdef struct LogGuard_API:
+        LogGuard *_0;
+
     # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`MessageBus`].
     #
     # This struct wraps `MessageBus` in a way that makes it compatible with C function
@@ -382,17 +388,17 @@ cdef extern from "../includes/common.h":
     # - Assume `file_name_ptr` is either NULL or a valid C string pointer.
     # - Assume `file_format_ptr` is either NULL or a valid C string pointer.
     # - Assume `component_level_ptr` is either NULL or a valid C string pointer.
-    void logging_init(TraderId_t trader_id,
-                      UUID4_t instance_id,
-                      LogLevel level_stdout,
-                      LogLevel level_file,
-                      const char *directory_ptr,
-                      const char *file_name_ptr,
-                      const char *file_format_ptr,
-                      const char *component_levels_ptr,
-                      uint8_t is_colored,
-                      uint8_t is_bypassed,
-                      uint8_t print_config);
+    LogGuard_API logging_init(TraderId_t trader_id,
+                              UUID4_t instance_id,
+                              LogLevel level_stdout,
+                              LogLevel level_file,
+                              const char *directory_ptr,
+                              const char *file_name_ptr,
+                              const char *file_format_ptr,
+                              const char *component_levels_ptr,
+                              uint8_t is_colored,
+                              uint8_t is_bypassed,
+                              uint8_t print_config);
 
     # Creates a new log event.
     #
