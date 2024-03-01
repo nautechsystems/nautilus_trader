@@ -2443,7 +2443,8 @@ cdef class MessageBus:
     cdef Subscription[:] _resolve_subscriptions(self, str topic):
         cdef list subs_list = []
         cdef Subscription existing_sub
-        for existing_sub in self._subscriptions:
+        # Copy to handle subscription changes on iteration
+        for existing_sub in self._subscriptions.copy():
             if is_matching(topic, existing_sub.topic):
                 subs_list.append(existing_sub)
 
