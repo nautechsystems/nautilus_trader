@@ -3,13 +3,14 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Added additional validations for `OrderMatchingEngine` (will now raise a `RuntimeError` when a price or size precision for a fill does not match the instruments precisions)
+- Added additional validations for `OrderMatchingEngine` (will now raise a `RuntimeError` when a price or size precision for `OrderFilled` does not match the instruments precisions)
 
 ### Breaking Changes
 None
 
 ### Fixes
 - Fixed `MessageBus` handling of subscriptions after a topic has been published on (was previously dropping messages for these late subscribers)
+- Fixed `MessageBus` handling of subscriptions under certain edge cases (subscriptions list could be resized on iteration causing a `RuntimeError`)
 - Fixed `OrderBookDelta.to_pyo3_list` using zero precision from clear delta
 - Fixed `DataTransformer.pyo3_order_book_deltas_to_record_batch_bytes` using zero precision from clear delta
 
