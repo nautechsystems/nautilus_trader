@@ -195,7 +195,6 @@ class BetfairExecutionClient(LiveExecutionClient):
     async def account_state_updates(self) -> None:
         while True:
             self._log.debug("Requesting account state")
-
             account_state = await self.request_account_state()
             self._log.debug(f"Received account state: {account_state}")
             self._send_account_state(account_state)
