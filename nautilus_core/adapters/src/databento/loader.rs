@@ -40,9 +40,9 @@ use super::{
 ///
 /// # Supported schemas:
 ///  - MBO -> `OrderBookDelta`
-///  - MBP_1 -> `QuoteTick` | `TradeTick`
+///  - MBP_1 -> `QuoteTick` & `TradeTick`
 ///  - MBP_10 -> `OrderBookDepth10`
-///  - TBBO -> `QuoteTick` | `TradeTick`
+///  - TBBO -> `QuoteTick` & `TradeTick`
 ///  - TRADES -> `TradeTick`
 ///  - OHLCV_1S -> `Bar`
 ///  - OHLCV_1M -> `Bar`
@@ -51,11 +51,6 @@ use super::{
 ///  - DEFINITION -> `Instrument`
 ///  - IMBALANCE -> `DatabentoImbalance`
 ///  - STATISTICS -> `DatabentoStatistics`
-///
-/// # Warnings
-/// The following Databento instrument classes are not supported:
-///  - ``BOND``
-///  - ``FX_SPOT``
 ///
 /// # References
 /// <https://docs.databento.com/knowledge-base/new-users/dbn-encoding>
