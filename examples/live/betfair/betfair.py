@@ -96,7 +96,7 @@ async def main(
             config=OrderBookImbalanceConfig(
                 instrument_id=instrument.id,
                 max_trade_size=Decimal(10),
-                trigger_min_size=1000,
+                trigger_min_size=2,
                 order_id_tag=instrument.selection_id,
                 subscribe_ticker=True,
             ),
