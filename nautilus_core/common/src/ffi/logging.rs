@@ -28,11 +28,19 @@ use crate::{
     enums::{LogColor, LogLevel},
     logging::{
         self, headers,
-        logger::{self, LoggerConfig},
+        logger::{self, LogGuard, LoggerConfig},
         logging_set_bypass, map_log_level_to_filter, parse_component_levels,
         writer::FileWriterConfig,
     },
 };
+
+/// Wrapper for LogGuard
+///
+/// LogGuard is an empty struct, which is not FFI-safe. To avoid errors, it is
+/// boxed.
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub struct LogGuard_API(Box<LogGuard>);
 
 /// Initializes tracing.
 ///
@@ -78,7 +86,7 @@ pub unsafe extern "C" fn logging_init(
     is_colored: u8,
     is_bypassed: u8,
     print_config: u8,
-) {
+) -> LogGuard_API {
     let level_stdout = map_log_level_to_filter(level_stdout);
     let level_file = map_log_level_to_filter(level_file);
 
@@ -102,7 +110,12 @@ pub unsafe extern "C" fn logging_init(
         logging_set_bypass();
     }
 
-    logging::init_logging(trader_id, instance_id, config, file_config);
+    LogGuard_API(Box::new(logging::init_logging(
+        trader_id,
+        instance_id,
+        config,
+        file_config,
+    )))
 }
 
 /// Creates a new log event.
