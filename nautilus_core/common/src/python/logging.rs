@@ -24,8 +24,10 @@ use ustr::Ustr;
 use crate::{
     enums::{LogColor, LogLevel},
     logging::{
-        self, logging_set_bypass, map_log_level_to_filter, parse_level_filter_str,
-        writer::FileWriterConfig, LoggerConfig,
+        self,
+        logger::{self, LoggerConfig},
+        logging_set_bypass, map_log_level_to_filter, parse_level_filter_str,
+        writer::FileWriterConfig,
     },
 };
 
@@ -114,7 +116,7 @@ fn parse_component_levels(
 #[pyfunction]
 #[pyo3(name = "logger_log")]
 pub fn py_logger_log(level: LogLevel, color: LogColor, component: String, message: String) {
-    logging::log(level, color, Ustr::from(&component), message.as_str());
+    logger::log(level, color, Ustr::from(&component), message.as_str());
 }
 
 #[pymethods]
