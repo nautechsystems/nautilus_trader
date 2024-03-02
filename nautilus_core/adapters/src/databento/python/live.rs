@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::mpsc::Sender;
-use std::{collections::HashMap, fs, str::FromStr};
+use std::{collections::HashMap, fs, str::FromStr, sync::mpsc::Sender};
 
 use databento::live::Subscription;
 use indexmap::IndexMap;

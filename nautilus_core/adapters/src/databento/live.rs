@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, ffi::CStr};
+use std::{collections::HashMap, ffi::CStr, sync::mpsc::Receiver};
 
 use anyhow::Result;
 use databento::{
@@ -35,7 +35,6 @@ use nautilus_model::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
     instruments::Instrument,
 };
-use std::sync::mpsc::Receiver;
 use tokio::sync::mpsc::Sender;
 use ustr::Ustr;
 
