@@ -27,7 +27,7 @@ use crate::{
 pub enum InvalidBookOperation {
     #[error("Invalid book operation: cannot pre-process order for {0} book")]
     PreProcessOrder(BookType),
-    #[error("Invalid book operation: cannot add for {0} book")]
+    #[error("Invalid book operation: cannot add order for {0} book")]
     Add(BookType),
 }
 
