@@ -368,13 +368,17 @@ cdef class OrderBook(Data):
         """
         Check book integrity.
 
-        For now will panic from Rust and print the error message to stdout.
-
         For all order books:
         - The bid side price should not be greater than the ask side price.
 
+        Raises
+        ------
+        RuntimeError
+            If book integrity check fails.
+
         """
-        orderbook_check_integrity(&self._mem)
+        if not orderbook_check_integrity(&self._mem):
+            raise RuntimeError(f"Integrity error: orders in cross [{self.best_bid_price()} {self.best_ask_price()}]")
 
     cpdef list bids(self):
         """
