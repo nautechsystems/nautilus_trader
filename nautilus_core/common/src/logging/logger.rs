@@ -43,6 +43,7 @@ use crate::{
     enums::{LogColor, LogLevel},
     logging::writer::{FileWriter, FileWriterConfig, LogWriter, StderrWriter, StdoutWriter},
 };
+
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
