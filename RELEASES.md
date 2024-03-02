@@ -14,6 +14,7 @@ None
 - Fixed `OrderBookDelta.to_pyo3_list` using zero precision from clear delta
 - Fixed `DataTransformer.pyo3_order_book_deltas_to_record_batch_bytes` using zero precision from clear delta
 - Fixed `OrderBookMbo` and `OrderBookMbp` integrity check when crossed book
+- Fixed `OrderBookMbp` error when attempting to add to a L1\_MBP book type (now raises `RuntimeError` rather than panicking)
 
 ---
 
