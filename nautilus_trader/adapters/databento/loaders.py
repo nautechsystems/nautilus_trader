@@ -42,16 +42,8 @@ class DatabentoDataLoader:
      - OHLCV_1H -> `Bar`
      - OHLCV_1D -> `Bar`
      - DEFINITION -> `Instrument`
-     - IMBALANCE -> `DatabentoImbalance`
-     - STATISTICS -> `DatabentoStatistics`
-
-    Warnings
-    --------
-    The following Databento instrument classes are not currently supported:
-     - ``FUTURE_SPREAD``
-     - ``OPTION_SPEAD``
-     - ``MIXED_SPREAD``
-     - ``FX_SPOT``
+     - IMBALANCE -> `DatabentoImbalance` (under development)
+     - STATISTICS -> `DatabentoStatistics` (under development)
 
     References
     ----------
