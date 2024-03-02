@@ -1093,7 +1093,7 @@ cpdef void init_logging(
         instance_id = UUID4()
 
     if not logging_is_initialized():
-        logging_init(
+        return logging_init(
             trader_id._mem,
             instance_id._mem,
             level_stdout,

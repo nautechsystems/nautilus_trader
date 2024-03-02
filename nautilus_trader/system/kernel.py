@@ -165,7 +165,7 @@ class NautilusKernel:
                 init_tracing()
 
                 # Initialize logging for sync Rust and Python
-                init_logging(
+                self._log_guard = init_logging(
                     trader_id=self._trader_id,
                     machine_id=self._machine_id,
                     instance_id=self._instance_id,

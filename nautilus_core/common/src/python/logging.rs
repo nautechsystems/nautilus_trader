@@ -25,7 +25,7 @@ use crate::{
     enums::{LogColor, LogLevel},
     logging::{
         self, logging_set_bypass, map_log_level_to_filter, parse_level_filter_str,
-        writer::FileWriterConfig, LoggerConfig,
+        writer::FileWriterConfig, LogGuard, LoggerConfig,
     },
 };
 
@@ -71,7 +71,7 @@ pub fn py_init_logging(
     is_colored: Option<bool>,
     is_bypassed: Option<bool>,
     print_config: Option<bool>,
-) {
+) -> LogGuard {
     let level_file = level_file
         .map(map_log_level_to_filter)
         .unwrap_or(LevelFilter::Off);
@@ -90,7 +90,7 @@ pub fn py_init_logging(
         logging_set_bypass();
     }
 
-    logging::init_logging(trader_id, instance_id, config, file_config);
+    logging::init_logging(trader_id, instance_id, config, file_config)
 }
 
 fn parse_component_levels(

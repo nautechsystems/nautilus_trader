@@ -91,7 +91,7 @@ RAW_CONFIG = msgspec.json.encode(
 class TestTradingNodeConfiguration:
     def setup(self):
         # Pre-initialize logging and bypass to avoid the `InvalidConfiguration` exception
-        init_logging(bypass=True)
+        self._log_guard = init_logging(bypass=True)
 
     def teardown(self):
         ensure_all_tasks_completed()
@@ -213,7 +213,7 @@ class TestTradingNodeConfiguration:
 class TestTradingNodeOperation:
     def setup(self):
         # Pre-initialize logging and bypass to avoid the `InvalidConfiguration` exception
-        init_logging(bypass=True)
+        self._log_guard = init_logging(bypass=True)
 
     def teardown(self):
         ensure_all_tasks_completed()

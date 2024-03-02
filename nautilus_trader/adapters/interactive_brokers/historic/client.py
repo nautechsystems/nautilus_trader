@@ -66,7 +66,7 @@ class HistoricInteractiveBrokersClient:
         loop.set_debug(True)
         clock = LiveClock()
 
-        init_logging(level_stdout=log_level_from_str(log_level))
+        self._log_guard = init_logging(level_stdout=log_level_from_str(log_level))
 
         self.log = Logger(name="HistoricInteractiveBrokersClient")
         msgbus = MessageBus(
