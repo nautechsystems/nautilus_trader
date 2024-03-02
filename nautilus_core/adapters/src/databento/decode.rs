@@ -173,7 +173,7 @@ pub fn decode_equity_v1(
     msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> Result<Equity> {
+) -> anyhow::Result<Equity> {
     let currency = Currency::USD(); // TODO: Temporary hard coding of US equities for now
 
     Equity::new(
@@ -197,7 +197,7 @@ pub fn decode_futures_contract_v1(
     msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> Result<FuturesContract> {
+) -> anyhow::Result<FuturesContract> {
     let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
     let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
@@ -228,7 +228,7 @@ pub fn decode_futures_spread_v1(
     msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> Result<FuturesSpread> {
+) -> anyhow::Result<FuturesSpread> {
     let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
     let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
@@ -261,7 +261,7 @@ pub fn decode_options_contract_v1(
     msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> Result<OptionsContract> {
+) -> anyhow::Result<OptionsContract> {
     let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
     let asset_class_opt = match instrument_id.venue.value.as_str() {
@@ -301,7 +301,7 @@ pub fn decode_options_spread_v1(
     msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> Result<OptionsSpread> {
+) -> anyhow::Result<OptionsSpread> {
     let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
     let asset_class_opt = match instrument_id.venue.value.as_str() {
@@ -348,7 +348,7 @@ pub fn decode_mbo_msg(
     price_precision: u8,
     ts_init: UnixNanos,
     include_trades: bool,
-) -> Result<(Option<OrderBookDelta>, Option<TradeTick>)> {
+) -> anyhow::Result<(Option<OrderBookDelta>, Option<TradeTick>)> {
     let side = parse_order_side(msg.side);
     if is_trade_msg(side, msg.action) {
         if include_trades {
@@ -362,9 +362,9 @@ pub fn decode_mbo_msg(
                 ts_init,
             );
             return Ok((None, Some(trade)));
-        } else {
-            return Ok((None, None));
         }
+
+        return Ok((None, None));
     };
 
     let order = BookOrder::new(
@@ -392,7 +392,7 @@ pub fn decode_trade_msg(
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
-) -> Result<TradeTick> {
+) -> anyhow::Result<TradeTick> {
     let trade = TradeTick::new(
         instrument_id,
         Price::from_raw(msg.price, price_precision)?,
@@ -412,7 +412,7 @@ pub fn decode_mbp1_msg(
     price_precision: u8,
     ts_init: UnixNanos,
     include_trades: bool,
-) -> Result<(QuoteTick, Option<TradeTick>)> {
+) -> anyhow::Result<(QuoteTick, Option<TradeTick>)> {
     let top_level = &msg.levels[0];
     let quote = QuoteTick::new(
         instrument_id,
@@ -446,7 +446,7 @@ pub fn decode_mbp10_msg(
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
-) -> Result<OrderBookDepth10> {
+) -> anyhow::Result<OrderBookDepth10> {
     let mut bids = Vec::with_capacity(DEPTH10_LEN);
     let mut asks = Vec::with_capacity(DEPTH10_LEN);
     let mut bid_counts = Vec::with_capacity(DEPTH10_LEN);
@@ -493,7 +493,10 @@ pub fn decode_mbp10_msg(
     Ok(depth)
 }
 
-pub fn decode_bar_type(msg: &dbn::OhlcvMsg, instrument_id: InstrumentId) -> Result<BarType> {
+pub fn decode_bar_type(
+    msg: &dbn::OhlcvMsg,
+    instrument_id: InstrumentId,
+) -> anyhow::Result<BarType> {
     let bar_type = match msg.hd.rtype {
         32 => {
             // ohlcv-1s
@@ -520,7 +523,7 @@ pub fn decode_bar_type(msg: &dbn::OhlcvMsg, instrument_id: InstrumentId) -> Resu
     Ok(bar_type)
 }
 
-pub fn decode_ts_event_adjustment(msg: &dbn::OhlcvMsg) -> Result<UnixNanos> {
+pub fn decode_ts_event_adjustment(msg: &dbn::OhlcvMsg) -> anyhow::Result<UnixNanos> {
     let adjustment = match msg.hd.rtype {
         32 => {
             // ohlcv-1s
@@ -552,7 +555,7 @@ pub fn decode_ohlcv_msg(
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
-) -> Result<Bar> {
+) -> anyhow::Result<Bar> {
     let bar_type = decode_bar_type(msg, instrument_id)?;
     let ts_event_adjustment = decode_ts_event_adjustment(msg)?;
 
@@ -580,7 +583,7 @@ pub fn decode_record(
     price_precision: u8,
     ts_init: Option<UnixNanos>,
     include_trades: bool,
-) -> Result<(Option<Data>, Option<Data>)> {
+) -> anyhow::Result<(Option<Data>, Option<Data>)> {
     let rtype = rec_ref.rtype().expect("Invalid `rtype`");
     let result = match rtype {
         dbn::RType::Mbo => {
@@ -652,7 +655,7 @@ pub fn decode_instrument_def_msg_v1(
     msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> Result<Box<dyn Instrument>> {
+) -> anyhow::Result<Box<dyn Instrument>> {
     match msg.instrument_class as u8 as char {
         'K' => Ok(Box::new(decode_equity_v1(msg, instrument_id, ts_init)?)),
         'F' => Ok(Box::new(decode_futures_contract_v1(
@@ -688,7 +691,7 @@ pub fn decode_instrument_def_msg(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> Result<Box<dyn Instrument>> {
+) -> anyhow::Result<Box<dyn Instrument>> {
     match msg.instrument_class as u8 as char {
         'K' => Ok(Box::new(decode_equity(msg, instrument_id, ts_init)?)),
         'F' => Ok(Box::new(decode_futures_contract(
@@ -724,7 +727,7 @@ pub fn decode_equity(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> Result<Equity> {
+) -> anyhow::Result<Equity> {
     let currency = Currency::USD(); // TODO: Temporary hard coding of US equities for now
 
     Equity::new(
@@ -748,7 +751,7 @@ pub fn decode_futures_contract(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> Result<FuturesContract> {
+) -> anyhow::Result<FuturesContract> {
     let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
     let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
@@ -779,7 +782,7 @@ pub fn decode_futures_spread(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> Result<FuturesSpread> {
+) -> anyhow::Result<FuturesSpread> {
     let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
     let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
@@ -812,7 +815,7 @@ pub fn decode_options_contract(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> Result<OptionsContract> {
+) -> anyhow::Result<OptionsContract> {
     let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
     let asset_class_opt = match instrument_id.venue.value.as_str() {
@@ -852,7 +855,7 @@ pub fn decode_options_spread(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> Result<OptionsSpread> {
+) -> anyhow::Result<OptionsSpread> {
     let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
     let asset_class_opt = match instrument_id.venue.value.as_str() {

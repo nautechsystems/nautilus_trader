@@ -15,10 +15,7 @@
 
 use std::{any::Any, collections::HashMap, path::PathBuf};
 
-use nautilus_core::{
-    ffi::cvec::CVec,
-    python::{to_pyruntime_err, to_pyvalue_err},
-};
+use nautilus_core::{ffi::cvec::CVec, python::to_pyvalue_err};
 use nautilus_model::{
     data::{
         bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
@@ -48,9 +45,9 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_publishers")]
-    fn py_load_publishers(&mut self, path: String) -> PyResult<()> {
+    fn py_load_publishers(&mut self, path: String) -> anyhow::Result<()> {
         let path_buf = PathBuf::from(path);
-        self.load_publishers(path_buf).map_err(to_pyvalue_err)
+        self.load_publishers(path_buf)
     }
 
     #[pyo3(name = "load_glbx_exchange_map")]
@@ -87,17 +84,14 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "schema_for_file")]
-    fn py_schema_for_file(&self, path: String) -> PyResult<Option<String>> {
+    fn py_schema_for_file(&self, path: String) -> anyhow::Result<Option<String>> {
         self.schema_from_file(PathBuf::from(path))
-            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_instruments")]
-    fn py_load_instruments(&mut self, py: Python, path: String) -> PyResult<PyObject> {
+    fn py_load_instruments(&mut self, py: Python, path: String) -> anyhow::Result<PyObject> {
         let path_buf = PathBuf::from(path);
-        let iter = self
-            .read_definition_records(path_buf)
-            .map_err(to_pyvalue_err)?;
+        let iter = self.read_definition_records(path_buf)?;
 
         let mut data = Vec::new();
         for result in iter {
@@ -121,11 +115,9 @@ impl DatabentoDataLoader {
         &self,
         path: String,
         instrument_id: Option<InstrumentId>,
-    ) -> PyResult<Vec<OrderBookDelta>> {
+    ) -> anyhow::Result<Vec<OrderBookDelta>> {
         let path_buf = PathBuf::from(path);
-        let iter = self
-            .read_records::<dbn::MboMsg>(path_buf, instrument_id, false)
-            .map_err(to_pyvalue_err)?;
+        let iter = self.read_records::<dbn::MboMsg>(path_buf, instrument_id, false)?;
 
         let mut data = Vec::new();
         for result in iter {
@@ -136,7 +128,7 @@ impl DatabentoDataLoader {
                     }
                 }
                 Ok((None, _)) => continue,
-                Err(e) => return Err(to_pyvalue_err(e)),
+                Err(e) => return Err(e),
             }
         }
 
@@ -150,11 +142,13 @@ impl DatabentoDataLoader {
         path: String,
         instrument_id: Option<InstrumentId>,
         include_trades: Option<bool>,
-    ) -> PyResult<PyObject> {
+    ) -> anyhow::Result<PyObject> {
         let path_buf = PathBuf::from(path);
-        let iter = self
-            .read_records::<dbn::MboMsg>(path_buf, instrument_id, include_trades.unwrap_or(false))
-            .map_err(to_pyvalue_err)?;
+        let iter = self.read_records::<dbn::MboMsg>(
+            path_buf,
+            instrument_id,
+            include_trades.unwrap_or(false),
+        )?;
 
         exhaust_data_iter_to_pycapsule(py, iter)
     }
@@ -164,11 +158,9 @@ impl DatabentoDataLoader {
         &self,
         path: String,
         instrument_id: Option<InstrumentId>,
-    ) -> PyResult<Vec<OrderBookDepth10>> {
+    ) -> anyhow::Result<Vec<OrderBookDepth10>> {
         let path_buf = PathBuf::from(path);
-        let iter = self
-            .read_records::<dbn::Mbp10Msg>(path_buf, instrument_id, false)
-            .map_err(to_pyvalue_err)?;
+        let iter = self.read_records::<dbn::Mbp10Msg>(path_buf, instrument_id, false)?;
 
         let mut data = Vec::new();
         for result in iter {
@@ -179,7 +171,7 @@ impl DatabentoDataLoader {
                     }
                 }
                 Ok((None, _)) => continue,
-                Err(e) => return Err(to_pyvalue_err(e)),
+                Err(e) => return Err(e),
             }
         }
 
@@ -192,11 +184,9 @@ impl DatabentoDataLoader {
         py: Python,
         path: String,
         instrument_id: Option<InstrumentId>,
-    ) -> PyResult<PyObject> {
+    ) -> anyhow::Result<PyObject> {
         let path_buf = PathBuf::from(path);
-        let iter = self
-            .read_records::<dbn::Mbp10Msg>(path_buf, instrument_id, false)
-            .map_err(to_pyvalue_err)?;
+        let iter = self.read_records::<dbn::Mbp10Msg>(path_buf, instrument_id, false)?;
 
         exhaust_data_iter_to_pycapsule(py, iter)
     }
@@ -207,11 +197,13 @@ impl DatabentoDataLoader {
         path: String,
         instrument_id: Option<InstrumentId>,
         include_trades: Option<bool>,
-    ) -> PyResult<Vec<QuoteTick>> {
+    ) -> anyhow::Result<Vec<QuoteTick>> {
         let path_buf = PathBuf::from(path);
-        let iter = self
-            .read_records::<dbn::Mbp1Msg>(path_buf, instrument_id, include_trades.unwrap_or(false))
-            .map_err(to_pyvalue_err)?;
+        let iter = self.read_records::<dbn::Mbp1Msg>(
+            path_buf,
+            instrument_id,
+            include_trades.unwrap_or(false),
+        )?;
 
         let mut data = Vec::new();
         for result in iter {
@@ -222,7 +214,7 @@ impl DatabentoDataLoader {
                     }
                 }
                 Ok((None, _)) => continue,
-                Err(e) => return Err(to_pyvalue_err(e)),
+                Err(e) => return Err(e),
             }
         }
 
@@ -236,11 +228,13 @@ impl DatabentoDataLoader {
         path: String,
         instrument_id: Option<InstrumentId>,
         include_trades: Option<bool>,
-    ) -> PyResult<PyObject> {
+    ) -> anyhow::Result<PyObject> {
         let path_buf = PathBuf::from(path);
-        let iter = self
-            .read_records::<dbn::Mbp1Msg>(path_buf, instrument_id, include_trades.unwrap_or(false))
-            .map_err(to_pyvalue_err)?;
+        let iter = self.read_records::<dbn::Mbp1Msg>(
+            path_buf,
+            instrument_id,
+            include_trades.unwrap_or(false),
+        )?;
 
         exhaust_data_iter_to_pycapsule(py, iter)
     }
@@ -250,11 +244,9 @@ impl DatabentoDataLoader {
         &self,
         path: String,
         instrument_id: Option<InstrumentId>,
-    ) -> PyResult<Vec<TradeTick>> {
+    ) -> anyhow::Result<Vec<TradeTick>> {
         let path_buf = PathBuf::from(path);
-        let iter = self
-            .read_records::<dbn::TbboMsg>(path_buf, instrument_id, false)
-            .map_err(to_pyvalue_err)?;
+        let iter = self.read_records::<dbn::TbboMsg>(path_buf, instrument_id, false)?;
 
         let mut data = Vec::new();
         for result in iter {
@@ -264,7 +256,7 @@ impl DatabentoDataLoader {
                         data.push(trade);
                     }
                 }
-                Err(e) => return Err(to_pyvalue_err(e)),
+                Err(e) => return Err(e),
             }
         }
 
@@ -277,11 +269,9 @@ impl DatabentoDataLoader {
         py: Python,
         path: String,
         instrument_id: Option<InstrumentId>,
-    ) -> PyResult<PyObject> {
+    ) -> anyhow::Result<PyObject> {
         let path_buf = PathBuf::from(path);
-        let iter = self
-            .read_records::<dbn::TbboMsg>(path_buf, instrument_id, false)
-            .map_err(to_pyvalue_err)?;
+        let iter = self.read_records::<dbn::TbboMsg>(path_buf, instrument_id, false)?;
 
         exhaust_data_iter_to_pycapsule(py, iter)
     }
@@ -291,11 +281,9 @@ impl DatabentoDataLoader {
         &self,
         path: String,
         instrument_id: Option<InstrumentId>,
-    ) -> PyResult<Vec<TradeTick>> {
+    ) -> anyhow::Result<Vec<TradeTick>> {
         let path_buf = PathBuf::from(path);
-        let iter = self
-            .read_records::<dbn::TradeMsg>(path_buf, instrument_id, false)
-            .map_err(to_pyvalue_err)?;
+        let iter = self.read_records::<dbn::TradeMsg>(path_buf, instrument_id, false)?;
 
         let mut data = Vec::new();
         for result in iter {
@@ -306,7 +294,7 @@ impl DatabentoDataLoader {
                     }
                 }
                 Ok((None, _)) => continue,
-                Err(e) => return Err(to_pyvalue_err(e)),
+                Err(e) => return Err(e),
             }
         }
 
@@ -319,11 +307,9 @@ impl DatabentoDataLoader {
         py: Python,
         path: String,
         instrument_id: Option<InstrumentId>,
-    ) -> PyResult<PyObject> {
+    ) -> anyhow::Result<PyObject> {
         let path_buf = PathBuf::from(path);
-        let iter = self
-            .read_records::<dbn::TradeMsg>(path_buf, instrument_id, false)
-            .map_err(to_pyvalue_err)?;
+        let iter = self.read_records::<dbn::TradeMsg>(path_buf, instrument_id, false)?;
 
         exhaust_data_iter_to_pycapsule(py, iter)
     }
@@ -333,11 +319,9 @@ impl DatabentoDataLoader {
         &self,
         path: String,
         instrument_id: Option<InstrumentId>,
-    ) -> PyResult<Vec<Bar>> {
+    ) -> anyhow::Result<Vec<Bar>> {
         let path_buf = PathBuf::from(path);
-        let iter = self
-            .read_records::<dbn::OhlcvMsg>(path_buf, instrument_id, false)
-            .map_err(to_pyvalue_err)?;
+        let iter = self.read_records::<dbn::OhlcvMsg>(path_buf, instrument_id, false)?;
 
         let mut data = Vec::new();
         for result in iter {
@@ -348,7 +332,7 @@ impl DatabentoDataLoader {
                     }
                 }
                 Ok((None, _)) => continue,
-                Err(e) => return Err(to_pyvalue_err(e)),
+                Err(e) => return Err(e),
             }
         }
 
@@ -361,11 +345,9 @@ impl DatabentoDataLoader {
         py: Python,
         path: String,
         instrument_id: Option<InstrumentId>,
-    ) -> PyResult<PyObject> {
+    ) -> anyhow::Result<PyObject> {
         let path_buf = PathBuf::from(path);
-        let iter = self
-            .read_records::<dbn::OhlcvMsg>(path_buf, instrument_id, false)
-            .map_err(to_pyvalue_err)?;
+        let iter = self.read_records::<dbn::OhlcvMsg>(path_buf, instrument_id, false)?;
 
         exhaust_data_iter_to_pycapsule(py, iter)
     }
@@ -400,7 +382,7 @@ pub fn convert_instrument_to_pyobject(
 fn exhaust_data_iter_to_pycapsule(
     py: Python,
     iter: impl Iterator<Item = anyhow::Result<(Option<Data>, Option<Data>)>>,
-) -> PyResult<PyObject> {
+) -> anyhow::Result<PyObject> {
     let mut data = Vec::new();
     for result in iter {
         match result {
@@ -413,12 +395,12 @@ fn exhaust_data_iter_to_pycapsule(
             Ok((None, None)) => {
                 continue;
             }
-            Err(e) => return Err(to_pyvalue_err(e)),
+            Err(e) => return Err(e),
         }
     }
 
     let cvec: CVec = data.into();
-    let capsule = PyCapsule::new::<CVec>(py, cvec, None).map_err(to_pyruntime_err)?;
+    let capsule = PyCapsule::new::<CVec>(py, cvec, None)?;
 
     Ok(capsule.into_py(py))
 }

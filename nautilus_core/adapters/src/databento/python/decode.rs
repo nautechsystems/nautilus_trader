@@ -13,7 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{python::to_pyvalue_err, time::UnixNanos};
+use anyhow::bail;
+use nautilus_core::time::UnixNanos;
 use nautilus_model::{
     data::{depth::OrderBookDepth10, trade::TradeTick},
     identifiers::instrument_id::InstrumentId,
@@ -21,7 +22,7 @@ use nautilus_model::{
         equity::Equity, futures_contract::FuturesContract, options_contract::OptionsContract,
     },
 };
-use pyo3::{exceptions::PyRuntimeError, prelude::*, types::PyTuple};
+use pyo3::{prelude::*, types::PyTuple};
 
 use crate::databento::decode::{
     decode_equity_v1, decode_futures_contract_v1, decode_mbo_msg, decode_mbp10_msg,
@@ -34,8 +35,8 @@ pub fn py_decode_equity(
     record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> PyResult<Equity> {
-    decode_equity_v1(record, instrument_id, ts_init).map_err(to_pyvalue_err)
+) -> anyhow::Result<Equity> {
+    decode_equity_v1(record, instrument_id, ts_init)
 }
 
 #[pyfunction]
@@ -44,8 +45,8 @@ pub fn py_decode_futures_contract(
     record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> PyResult<FuturesContract> {
-    decode_futures_contract_v1(record, instrument_id, ts_init).map_err(to_pyvalue_err)
+) -> anyhow::Result<FuturesContract> {
+    decode_futures_contract_v1(record, instrument_id, ts_init)
 }
 
 #[pyfunction]
@@ -54,8 +55,8 @@ pub fn py_decode_options_contract(
     record: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> PyResult<OptionsContract> {
-    decode_options_contract_v1(record, instrument_id, ts_init).map_err(to_pyvalue_err)
+) -> anyhow::Result<OptionsContract> {
+    decode_options_contract_v1(record, instrument_id, ts_init)
 }
 
 #[pyfunction]
@@ -66,13 +67,12 @@ pub fn py_decode_mbo_msg(
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
-) -> PyResult<PyObject> {
-    let result = decode_mbo_msg(record, instrument_id, price_precision, ts_init, false);
-
-    match result {
-        Ok((Some(data), None)) => Ok(data.into_py(py)),
-        Err(e) => Err(to_pyvalue_err(e)),
-        _ => Err(PyRuntimeError::new_err("Error decoding MBO message")),
+) -> anyhow::Result<PyObject> {
+    let (data, _) = decode_mbo_msg(record, instrument_id, price_precision, ts_init, false)?;
+    if let Some(data) = data {
+        Ok(data.into_py(py))
+    } else {
+        bail!("Error decoding MBO message")
     }
 }
 
@@ -83,8 +83,8 @@ pub fn py_decode_trade_msg(
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
-) -> PyResult<TradeTick> {
-    decode_trade_msg(record, instrument_id, price_precision, ts_init).map_err(to_pyvalue_err)
+) -> anyhow::Result<TradeTick> {
+    decode_trade_msg(record, instrument_id, price_precision, ts_init)
 }
 
 #[pyfunction]
@@ -96,31 +96,22 @@ pub fn py_decode_mbp1_msg(
     price_precision: u8,
     ts_init: UnixNanos,
     include_trades: bool,
-) -> PyResult<PyObject> {
-    let result = decode_mbp1_msg(
+) -> anyhow::Result<PyObject> {
+    let (quote, maybe_trade) = decode_mbp1_msg(
         record,
         instrument_id,
         price_precision,
         ts_init,
         include_trades,
-    );
+    )?;
 
-    match result {
-        Ok((quote, Some(trade))) => {
-            let quote_py = quote.into_py(py);
+    let quote_py = quote.into_py(py);
+    match maybe_trade {
+        Some(trade) => {
             let trade_py = trade.into_py(py);
-            Ok(PyTuple::new(py, &[quote_py, trade_py.into_py(py)]).into_py(py))
+            Ok(PyTuple::new(py, &[quote_py, trade_py]).into_py(py))
         }
-        Ok((quote, None)) => {
-            let quote_py = quote.into_py(py);
-            Ok(PyTuple::new(py, &[quote_py, py.None()]).into_py(py))
-        }
-        Err(e) => {
-            // Convert the Rust error to a Python exception
-            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                "Error decoding MBP1 message: {e}"
-            )))
-        }
+        None => Ok(PyTuple::new(py, &[quote_py, py.None()]).into_py(py)),
     }
 }
 
@@ -131,6 +122,6 @@ pub fn py_decode_mbp10_msg(
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
-) -> PyResult<OrderBookDepth10> {
-    decode_mbp10_msg(record, instrument_id, price_precision, ts_init).map_err(to_pyvalue_err)
+) -> anyhow::Result<OrderBookDepth10> {
+    decode_mbp10_msg(record, instrument_id, price_precision, ts_init)
 }
