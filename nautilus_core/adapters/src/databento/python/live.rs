@@ -17,10 +17,7 @@ use std::{collections::HashMap, fs, str::FromStr, sync::mpsc::Sender};
 
 use databento::live::Subscription;
 use indexmap::IndexMap;
-use nautilus_core::{
-    python::{to_pyruntime_err, to_pyvalue_err},
-    time::UnixNanos,
-};
+use nautilus_core::time::UnixNanos;
 use nautilus_model::{
     data::Data,
     identifiers::{symbol::Symbol, venue::Venue},
@@ -52,7 +49,10 @@ pub struct DatabentoLiveClient {
 }
 
 impl DatabentoLiveClient {
-    async fn process_messages(mut rx: Receiver<LiveMessage>, callback: PyObject) -> PyResult<()> {
+    async fn process_messages(
+        mut rx: Receiver<LiveMessage>,
+        callback: PyObject,
+    ) -> anyhow::Result<()> {
         while let Some(msg) = rx.recv().await {
             match msg {
                 LiveMessage::Data(data) => {
@@ -65,24 +65,23 @@ impl DatabentoLiveClient {
                         call_python_with_instrument(py, &callback, inst);
                     });
                 }
-                LiveMessage::Error(e) => return Err(to_pyruntime_err(e)),
+                LiveMessage::Error(e) => return Err(e.into()),
             }
         }
         Ok(())
     }
 
-    fn send_command(&self, cmd: LiveCommand) -> PyResult<()> {
-        self.tx.send(cmd).map_err(to_pyruntime_err)
+    fn send_command(&self, cmd: LiveCommand) -> anyhow::Result<()> {
+        self.tx.send(cmd).map_err(anyhow::Error::new)
     }
 }
 
 #[pymethods]
 impl DatabentoLiveClient {
     #[new]
-    pub fn py_new(key: String, dataset: String, publishers_path: String) -> PyResult<Self> {
+    pub fn py_new(key: String, dataset: String, publishers_path: String) -> anyhow::Result<Self> {
         let file_content = fs::read_to_string(publishers_path)?;
-        let publishers_vec: Vec<DatabentoPublisher> =
-            serde_json::from_str(&file_content).map_err(to_pyvalue_err)?;
+        let publishers_vec: Vec<DatabentoPublisher> = serde_json::from_str(&file_content)?;
 
         let publisher_venue_map = publishers_vec
             .into_iter()
@@ -101,7 +100,7 @@ impl DatabentoLiveClient {
             HashMap::new(),
         );
 
-        tokio::spawn(async move { feed_handler.run().await.map_err(to_pyruntime_err) });
+        tokio::spawn(async move { feed_handler.run().await });
 
         Ok(Self {
             key,
@@ -113,7 +112,7 @@ impl DatabentoLiveClient {
     }
 
     #[pyo3(name = "load_glbx_exchange_map")]
-    fn py_load_glbx_exchange_map(&mut self, map: HashMap<Symbol, Venue>) -> PyResult<()> {
+    fn py_load_glbx_exchange_map(&mut self, map: HashMap<Symbol, Venue>) -> anyhow::Result<()> {
         self.glbx_exchange_map = map.clone();
         self.send_command(LiveCommand::UpdateGlbx(map))
     }
@@ -130,26 +129,18 @@ impl DatabentoLiveClient {
         symbols: String,
         stype_in: Option<String>,
         start: Option<UnixNanos>,
-    ) -> PyResult<()> {
+    ) -> anyhow::Result<()> {
         let stype_in = stype_in.unwrap_or("raw_symbol".to_string());
 
-        // TODO: This can be tidied up, conditionally calling `if let Some(start)` on
-        // the builder was proving troublesome.
-        let sub = match start {
-            Some(start) => Subscription::builder()
-                .symbols(symbols)
-                .schema(dbn::Schema::from_str(&schema).map_err(to_pyvalue_err)?)
-                .stype_in(dbn::SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
-                .start(
-                    OffsetDateTime::from_unix_timestamp_nanos(i128::from(start))
-                        .map_err(to_pyvalue_err)?,
-                )
-                .build(),
-            None => Subscription::builder()
-                .symbols(symbols)
-                .schema(dbn::Schema::from_str(&schema).map_err(to_pyvalue_err)?)
-                .stype_in(dbn::SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
-                .build(),
+        let mut sub = Subscription::builder()
+            .symbols(symbols)
+            .schema(dbn::Schema::from_str(&schema)?)
+            .stype_in(dbn::SType::from_str(&stype_in)?)
+            .build();
+
+        if let Some(start) = start {
+            let start = OffsetDateTime::from_unix_timestamp_nanos(i128::from(start))?;
+            sub.start = Some(start);
         };
 
         self.send_command(LiveCommand::Subscribe(sub))
@@ -171,12 +162,14 @@ impl DatabentoLiveClient {
         let rx = self.rx.take().expect("Client already started");
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            Self::process_messages(rx, callback).await
+            Self::process_messages(rx, callback)
+                .await
+                .map_err(|e| e.into())
         })
     }
 
     #[pyo3(name = "close")]
-    fn py_close(&self) -> PyResult<()> {
+    fn py_close(&self) -> anyhow::Result<()> {
         self.send_command(LiveCommand::Close)
     }
 }
