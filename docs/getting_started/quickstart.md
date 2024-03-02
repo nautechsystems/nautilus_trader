@@ -37,7 +37,7 @@ First, download and load the data by running the next cell (this should take ~ 1
 
 ```bash
 !apt-get update && apt-get install curl -y
-!curl https://raw.githubusercontent.com/nautechsystems/nautilus_data/main/scripts/hist_data_to_catalog.py | python - 
+!curl https://raw.githubusercontent.com/nautechsystems/nautilus_data/main/nautilus_data/hist_data_to_catalog.py | python -
 ```
 
 ## Connecting to the ParquetDataCatalog
