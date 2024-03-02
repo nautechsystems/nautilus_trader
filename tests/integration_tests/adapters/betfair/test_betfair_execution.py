@@ -674,10 +674,10 @@ async def test_duplicate_trade_id(exec_client, setup_order_state, fill_events, c
 @pytest.mark.parametrize(
     ("side", "price", "quantity", "free"),
     [
-        (OrderSide.BUY, Price.from_str("2.0"), Quantity.from_str("100"), 900),
-        (OrderSide.BUY, Price.from_str("5.0"), Quantity.from_str("50"), 950),
-        (OrderSide.SELL, Price.from_str("1.2"), Quantity.from_str("100"), 980),
-        (OrderSide.SELL, Price.from_str("5.0"), Quantity.from_str("100"), 600),
+        (OrderSide.SELL, Price.from_str("2.0"), Quantity.from_str("100"), 9900),
+        (OrderSide.SELL, Price.from_str("5.0"), Quantity.from_str("50"), 9950),
+        (OrderSide.BUY, Price.from_str("1.2"), Quantity.from_str("100"), 9980),
+        (OrderSide.BUY, Price.from_str("5.0"), Quantity.from_str("100"), 9600),
     ],
 )
 @pytest.mark.asyncio()
@@ -724,9 +724,9 @@ async def test_betfair_back_order_reduces_balance(
     await asyncio.sleep(0)
 
     # Assert
-    assert balance_pre_order.free == Money(1000.0, GBP)
+    assert balance_pre_order.free == Money(10000.0, GBP)
     assert balance_order.free == Money(free, GBP)
-    assert balance_cancel.free == Money(1000.0, GBP)
+    assert balance_cancel.free == Money(10000.0, GBP)
 
 
 @pytest.mark.asyncio()

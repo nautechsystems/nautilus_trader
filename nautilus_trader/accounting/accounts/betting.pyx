@@ -78,10 +78,10 @@ cdef class BettingAccount(CashAccount):
         OrderSide order_side,
     ):
         cdef Money notional
-        if order_side == OrderSide.BUY:
+        if order_side == OrderSide.SELL:
             notional = instrument.notional_value(quantity, price)
             return Money(-notional.as_f64_c(), notional.currency)
-        elif order_side == OrderSide.SELL:
+        elif order_side == OrderSide.BUY:
             notional = instrument.notional_value(quantity, price)
             return Money(-notional.as_f64_c() * (price.as_f64_c() - 1.0), notional.currency)
         else:
@@ -93,9 +93,9 @@ cpdef stake(Quantity quantity, Price price):
 
 
 cpdef liability(Quantity quantity, Price price, OrderSide side):
-    if side == OrderSide.BUY:
+    if side == OrderSide.SELL:
         return quantity
-    elif side == OrderSide.SELL:
+    elif side == OrderSide.BUY:
         return stake(quantity, price)
 
 

@@ -84,6 +84,7 @@ async def main(
             "BETFAIR": BetfairExecClientConfig(
                 account_currency=account.currency_code,
                 instrument_config=instrument_config,
+                request_account_state_period=5,
                 # "username": "YOUR_BETFAIR_USERNAME",
                 # "password": "YOUR_BETFAIR_PASSWORD",
                 # "app_key": "YOUR_BETFAIR_APP_KEY",
@@ -130,7 +131,7 @@ if __name__ == "__main__":
     # The market ID will appear in the browser query string.
     config = BetfairInstrumentProviderConfig(
         account_currency="GBP",
-        market_ids=["1.223041451"],
+        market_ids=["1.225532381"],
     )
     node = asyncio.run(main(instrument_config=config, log_level="DEBUG"))
     node.dispose()
