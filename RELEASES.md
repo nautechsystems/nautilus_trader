@@ -13,6 +13,7 @@ None
 - Fixed `MessageBus` handling of subscriptions under certain edge cases (subscriptions list could be resized on iteration causing a `RuntimeError`)
 - Fixed `OrderBookDelta.to_pyo3_list` using zero precision from clear delta
 - Fixed `DataTransformer.pyo3_order_book_deltas_to_record_batch_bytes` using zero precision from clear delta
+- Fixed `OrderBookMbo` and `OrderBookMbp` integrity check when crossed book
 
 ---
 

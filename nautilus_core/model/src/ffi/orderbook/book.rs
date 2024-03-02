@@ -256,8 +256,8 @@ pub extern "C" fn orderbook_simulate_fills(book: &OrderBook_API, order: BookOrde
 }
 
 #[no_mangle]
-pub extern "C" fn orderbook_check_integrity(book: &OrderBook_API) {
-    book.check_integrity().unwrap();
+pub extern "C" fn orderbook_check_integrity(book: &OrderBook_API) -> u8 {
+    u8::from(book.check_integrity().is_ok())
 }
 
 // TODO: This struct implementation potentially leaks memory

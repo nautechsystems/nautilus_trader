@@ -37,7 +37,7 @@ pub enum BookIntegrityError {
     OrderNotFound(u64, u64, u64),
     #[error("Integrity error: invalid `NoOrderSide` in book")]
     NoOrderSide,
-    #[error("Integrity error: orders in cross [{0} @ {1}]")]
+    #[error("Integrity error: orders in cross [{0} {1}]")]
     OrdersCrossed(BookPrice, BookPrice),
     #[error("Integrity error: number of {0} orders at level > 1 for L2_MBP book, was {1}")]
     TooManyOrders(OrderSide, usize),
