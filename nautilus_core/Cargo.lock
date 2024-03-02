@@ -916,9 +916,9 @@ dependencies = [
 
 [[package]]
 name = "crc"
-version = "3.0.1"
+version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86ec7a15cbe22e59248fc7eadb1907dab5ba09372595da4d73dd805ed4417dfe"
+checksum = "af1babde0954990bc132378e0b597e53e8f5370b867d79f31f38ba80776b79f6"
 dependencies = [
  "crc-catalog",
 ]
@@ -1101,9 +1101,9 @@ checksum = "7e962a19be5cfc3f3bf6dd8f61eb50107f356ad6270fbb3ed41476571db78be5"
 
 [[package]]
 name = "databento"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0910be81a369b8c08c1f2e034ad999f2d300a872831d2992ad69357f3293da96"
+checksum = "6390f67490cc4876351086de232d222fa4e42f8c22dc637688d99476cbbe03ab"
 dependencies = [
  "dbn",
  "futures",
@@ -1343,9 +1343,9 @@ dependencies = [
 
 [[package]]
 name = "dbn"
-version = "0.15.1"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "227bb0e0d861f52b57ee1ec19b757059297211f65f113cefae1ebf3ddcae664d"
+checksum = "afd488d5a4c75b7ed5557c205f02c38db1bc0a6e85b6a7ff69e24cc354692143"
 dependencies = [
  "async-compression",
  "csv",
@@ -1356,7 +1356,7 @@ dependencies = [
  "pyo3",
  "serde",
  "streaming-iterator",
- "strum 0.25.0",
+ "strum 0.26.1",
  "thiserror",
  "time",
  "tokio",
@@ -1365,9 +1365,9 @@ dependencies = [
 
 [[package]]
 name = "dbn-macros"
-version = "0.15.1"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0f28d710e01139881fca833572859ca46ea871ba44dc822d67cf9e807c0330d"
+checksum = "d96ad08a698e3d5a61184e43d12d287b1198b447f641c4bfa268d89c7d7161f1"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -2393,9 +2393,9 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "0.8.10"
+version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f3d0b296e374a4e6f3c7b0a1f5a51d748a0d34c85e7dc48fc3fa9a87657fe09"
+checksum = "a4a650543ca06a924e8b371db273b2756685faae30f8487da1b56505a8f78b0c"
 dependencies = [
  "libc",
  "wasi",
@@ -3286,6 +3286,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "53bdbb96d49157e65d45cc287af5f32ffadd5f4761438b527b055fb0d4bb8233"
 dependencies = [
  "cfg-if",
+ "indexmap 1.9.3",
  "indoc",
  "libc",
  "memoffset",
@@ -4421,9 +4422,6 @@ name = "strum"
 version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "290d54ea6f91c969195bdbcd7442c8c2a2ba87da8bf60a7ee86a235d4bc1e125"
-dependencies = [
- "strum_macros 0.25.3",
-]
 
 [[package]]
 name = "strum"
@@ -4508,9 +4506,9 @@ checksum = "2047c6ded9c721764247e62cd3b03c09ffc529b2ba5b10ec482ae507a4a70160"
 
 [[package]]
 name = "sysinfo"
-version = "0.30.5"
+version = "0.30.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fb4f3438c8f6389c864e61221cbc97e9bca98b4daf39a5beb7bea660f528bb2"
+checksum = "6746919caf9f2a85bff759535664c060109f21975c5ac2e8652e60102bd4d196"
 dependencies = [
  "cfg-if",
  "core-foundation-sys",
@@ -5153,9 +5151,9 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "walkdir"
-version = "2.4.0"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d71d857dc86794ca4c280d616f7da00d2dbfd8cd788846559a6813e6aa4b54ee"
+checksum = "29790946404f91d9c5d06f9874efddea1dc06c5efe94541a7d6863108e3a5e4b"
 dependencies = [
  "same-file",
  "winapi-util",

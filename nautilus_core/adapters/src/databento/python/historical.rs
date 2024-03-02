@@ -126,6 +126,7 @@ impl DatabentoHistoricalClient {
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
 
+        let end = end.unwrap_or(self.clock.get_time_ns());
         let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
@@ -198,6 +199,7 @@ impl DatabentoHistoricalClient {
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
 
+        let end = end.unwrap_or(self.clock.get_time_ns());
         let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
@@ -267,6 +269,7 @@ impl DatabentoHistoricalClient {
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
 
+        let end = end.unwrap_or(self.clock.get_time_ns());
         let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
@@ -345,6 +348,7 @@ impl DatabentoHistoricalClient {
             BarAggregation::Day => dbn::Schema::Ohlcv1D,
             _ => panic!("Invalid `BarAggregation` for request, was {aggregation}"),
         };
+        let end = end.unwrap_or(self.clock.get_time_ns());
         let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)

@@ -27,7 +27,7 @@ ustr = { workspace = true }
 rstest = { workspace = true , optional = true}
 tokio = { workspace = true }
 tracing = { workspace = true }
-sysinfo = "0.30.5"
+sysinfo = "0.30.6"
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
 

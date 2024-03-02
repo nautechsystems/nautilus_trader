@@ -31,7 +31,7 @@ indexmap = "2.2.5"
 itoa = "1.0.10"
 once_cell = "1.19.0"
 log = { version = "0.4.21", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
-pyo3 = { version = "0.20.3", features = ["rust_decimal"] }
+pyo3 = { version = "0.20.3", features = ["indexmap", "rust_decimal"] }
 pyo3-asyncio = { version = "0.20.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.8.5"
 redis = { version = "0.24.0", features = ["tokio-comp", "tls-rustls", "tokio-rustls-comp", "keep-alive", "connection-manager"] }
