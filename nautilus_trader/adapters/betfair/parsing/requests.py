@@ -34,6 +34,7 @@ from betfair_parser.spec.betting.type_definitions import LimitOrder
 from betfair_parser.spec.betting.type_definitions import MarketOnCloseOrder
 from betfair_parser.spec.common import BetId
 from betfair_parser.spec.common import CustomerOrderRef
+from betfair_parser.spec.common import OrderSide as BetOrderSide
 from betfair_parser.spec.common import OrderStatus as BetfairOrderStatus
 from betfair_parser.spec.common import OrderType
 from betfair_parser.spec.streaming import Order as BetfairOrder
@@ -301,9 +302,9 @@ def betfair_account_to_account_state(
     account_id="001",
 ) -> AccountState:
     currency = Currency.from_str(account_detail.currency_code)
-    balance = float(account_funds.available_to_bet_balance)
+    free = float(account_funds.available_to_bet_balance)
     locked = -float(account_funds.exposure)
-    free = balance - locked
+    total = free + locked
     return AccountState(
         account_id=AccountId(f"{BETFAIR_VENUE.value}-{account_id}"),
         account_type=AccountType.BETTING,
@@ -311,7 +312,7 @@ def betfair_account_to_account_state(
         reported=reported,
         balances=[
             AccountBalance(
-                total=Money(balance, currency),
+                total=Money(total, currency),
                 locked=Money(locked, currency),
                 free=Money(free, currency),
             ),
@@ -365,6 +366,17 @@ def bet_to_order_status_report(
     ts_init,
     report_id,
 ) -> OrderStatusReport:
+    if order.price_size.size != 0.0:
+        qty = Quantity(order.price_size.size, BETFAIR_QUANTITY_PRECISION)
+        fill_qty = Quantity(order.size_matched, BETFAIR_QUANTITY_PRECISION)
+    elif order.bsp_liability != 0.0:
+        size = (
+            order.bsp_liability / order if order.side == BetOrderSide.BACK else order.bsp_liability
+        )
+        qty = Quantity(size, BETFAIR_QUANTITY_PRECISION)
+        fill_qty = Quantity(size, BETFAIR_QUANTITY_PRECISION)
+    else:
+        raise ValueError(f"Unknown order size {order.price_size.size=}, {order.bsp_liability=}")
     return OrderStatusReport(
         account_id=account_id,
         instrument_id=instrument_id,
@@ -376,8 +388,8 @@ def bet_to_order_status_report(
         time_in_force=B2N_TIME_IN_FORCE[order.persistence_type],
         order_status=determine_order_status(order),
         price=BETFAIR_FLOAT_TO_PRICE[order.price_size.price],
-        quantity=Quantity(order.price_size.size, BETFAIR_QUANTITY_PRECISION),
-        filled_qty=Quantity(order.size_matched, BETFAIR_QUANTITY_PRECISION),
+        quantity=qty,
+        filled_qty=fill_qty,
         report_id=report_id,
         ts_accepted=dt_to_unix_nanos(pd.Timestamp(order.placed_date)),
         ts_triggered=0,

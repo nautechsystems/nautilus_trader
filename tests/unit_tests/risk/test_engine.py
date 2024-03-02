@@ -2040,12 +2040,12 @@ class TestRiskEngineWithBettingAccount:
     @pytest.mark.parametrize(
         "side,quantity,price,expected_status",
         [
-            (OrderSide.BUY, 500, 2.0, OrderStatus.INITIALIZED),
-            (OrderSide.BUY, 999, 2.0, OrderStatus.INITIALIZED),
-            (OrderSide.BUY, 1100, 2.0, OrderStatus.DENIED),
-            (OrderSide.SELL, 100, 5.0, OrderStatus.INITIALIZED),
-            (OrderSide.SELL, 150, 5.0, OrderStatus.INITIALIZED),
-            (OrderSide.SELL, 300, 5.0, OrderStatus.DENIED),
+            (OrderSide.SELL, 500, 2.0, OrderStatus.INITIALIZED),
+            (OrderSide.SELL, 999, 2.0, OrderStatus.INITIALIZED),
+            (OrderSide.SELL, 1100, 2.0, OrderStatus.DENIED),
+            (OrderSide.BUY, 100, 5.0, OrderStatus.INITIALIZED),
+            (OrderSide.BUY, 150, 5.0, OrderStatus.INITIALIZED),
+            (OrderSide.BUY, 300, 5.0, OrderStatus.DENIED),
         ],
     )
     def test_submit_order_when_market_order_and_over_free_balance_then_denies(
