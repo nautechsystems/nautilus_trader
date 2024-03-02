@@ -148,7 +148,7 @@ class TestEventStubs:
 
     @staticmethod
     def betting_account_state(
-        balance: float = 1_000,
+        balance: float = 10_000,
         currency: Currency = GBP,
         account_id: AccountId | None = None,
     ) -> AccountState:

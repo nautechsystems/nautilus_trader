@@ -218,7 +218,7 @@ class BetfairDataClient(LiveMarketDataClient):
         pass  # Subscribed as part of orderbook
 
     async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
-        self._log.info("Skipping subscribe_instrument, betfair subscribes as part of orderbook")
+        self._log.debug("Skipping subscribe_instrument, betfair subscribes as part of orderbook")
         return
 
     async def _subscribe_instruments(self) -> None:
@@ -273,15 +273,17 @@ class BetfairDataClient(LiveMarketDataClient):
         if update.mc is not None:
             for mc in update.mc:
                 if mc.con:
-                    self._log.warning(
-                        "Conflated stream - consuming data too slow (data received is delayed)",
-                    )
+                    ms_delay = self._clock.timestamp_ms() - update.pt
+                    self._log.warning(f"Conflated stream - data received is delayed ({ms_delay}ms)")
 
     def _handle_status_message(self, update: Status) -> None:
         if update.status_code == "FAILURE" and update.connection_closed:
-            self._log.warning(str(update))
+            self._log.error(f"Error connecting to betfair: {update.error_message}")
             if update.error_code == "MAX_CONNECTION_LIMIT_EXCEEDED":
                 raise RuntimeError("No more connections available")
             else:
                 self._log.info("Attempting reconnect")
-                self.create_task(self._stream.connect())
+                if self._stream.is_connected:
+                    self._log.info("stream connected, disconnecting.")
+                    self.create_task(self._stream.disconnect())
+                self.create_task(self._connect())

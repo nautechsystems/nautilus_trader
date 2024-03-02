@@ -66,3 +66,4 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     app_key: str | None = None
     cert_dir: str | None = None
     instrument_config: BetfairInstrumentProviderConfig | None = None
+    request_account_state_period: int | None = None

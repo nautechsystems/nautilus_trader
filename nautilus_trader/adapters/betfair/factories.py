@@ -235,5 +235,6 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
             cache=cache,
             clock=clock,
             instrument_provider=provider,
+            request_account_state_period=config.request_account_state_period,
         )
         return exec_client

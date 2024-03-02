@@ -389,6 +389,10 @@ class BetfairResponses:
         return BetfairResponses.load("list_current_orders_executable.json")
 
     @staticmethod
+    def list_current_orders_on_close_execution_complete():
+        return BetfairResponses.load("list_current_orders_on_close_execution_complete.json")
+
+    @staticmethod
     def list_current_orders_execution_complete():
         return BetfairResponses.load("list_current_orders_execution_complete.json")
 
