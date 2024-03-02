@@ -22,7 +22,6 @@ use databento::{
 };
 use indexmap::IndexMap;
 use log::{error, info};
-use nautilus_common::runtime::get_runtime;
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
     time::{get_atomic_clock_realtime, AtomicTime},
@@ -73,6 +72,7 @@ pub struct DatabentoFeedHandler {
 }
 
 impl DatabentoFeedHandler {
+    #[must_use]
     pub fn new(
         key: String,
         dataset: String,
@@ -93,27 +93,19 @@ impl DatabentoFeedHandler {
 
     pub async fn run(&mut self) -> Result<()> {
         let clock = get_atomic_clock_realtime();
-
-        let mut buffering_start = None;
-
         let mut symbol_map = PitSymbolMap::new();
         let mut instrument_id_map: HashMap<u32, InstrumentId> = HashMap::new();
 
+        let mut buffering_start = None;
         let mut buffered_deltas: HashMap<InstrumentId, Vec<OrderBookDelta>> = HashMap::new();
-
         let mut deltas_count = 0_u64;
 
-        let rt = get_runtime();
-        let mut client = rt
-            .block_on(async {
-                databento::LiveClient::builder()
-                    .key(self.key.clone())?
-                    .dataset(self.dataset.clone())
-                    .upgrade_policy(VersionUpgradePolicy::Upgrade)
-                    .build()
-                    .await
-            })
-            .expect("Error creating `DatabentoLiveClient`");
+        let mut client = databento::LiveClient::builder()
+            .key(self.key.clone())?
+            .dataset(self.dataset.clone())
+            .upgrade_policy(VersionUpgradePolicy::Upgrade)
+            .build()
+            .await?;
 
         let mut running = false;
 
@@ -226,14 +218,14 @@ impl DatabentoFeedHandler {
 
                 if let Some(data) = data1 {
                     match self.tx.send(LiveMessage::Data(data)).await {
-                        Ok(_) => {}
+                        Ok(()) => {}
                         Err(e) => eprintln!("{e:?}"), // Print stderr for now
                     }
                 }
 
                 if let Some(data) = data2 {
                     match self.tx.send(LiveMessage::Data(data)).await {
-                        Ok(_) => {}
+                        Ok(()) => {}
                         Err(e) => eprintln!("{e:?}"), // Print stderr for now
                     }
                 }
