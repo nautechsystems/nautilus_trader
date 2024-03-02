@@ -20,7 +20,7 @@ use ustr::Ustr;
 
 use crate::{
     enums::{LogColor, LogLevel},
-    logging::log,
+    logging::logger::log,
 };
 
 #[rustfmt::skip]

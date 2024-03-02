@@ -22,7 +22,7 @@ use std::{
 use chrono::{DateTime, Utc};
 use log::LevelFilter;
 
-use crate::logging::LogLine;
+use crate::logging::logger::LogLine;
 
 pub trait LogWriter {
     /// Writes a log line.
