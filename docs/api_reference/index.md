@@ -16,7 +16,6 @@
    data.md
    execution.md
    indicators.md
-   infrastructure.md
    live.md
    model/index.md
    persistence.md
