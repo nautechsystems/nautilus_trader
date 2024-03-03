@@ -42,8 +42,8 @@ class DatabentoDataLoader:
      - OHLCV_1H -> `Bar`
      - OHLCV_1D -> `Bar`
      - DEFINITION -> `Instrument`
-     - IMBALANCE -> `DatabentoImbalance` (under development)
-     - STATISTICS -> `DatabentoStatistics` (under development)
+     - IMBALANCE -> `DatabentoImbalance`
+     - STATISTICS -> `DatabentoStatistics`
 
     References
     ----------
