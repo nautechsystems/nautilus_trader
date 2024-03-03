@@ -20,6 +20,12 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
+use super::{
+    limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder,
+    market_if_touched::MarketIfTouchedOrder, market_to_limit::MarketToLimitOrder,
+    stop_limit::StopLimitOrder, stop_market::StopMarketOrder,
+    trailing_stop_limit::TrailingStopLimitOrder, trailing_stop_market::TrailingStopMarketOrder,
+};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
@@ -67,6 +73,153 @@ const VALID_LIMIT_ORDER_TYPES: &[OrderType] = &[
     OrderType::LimitIfTouched,
     OrderType::MarketIfTouched,
 ];
+
+pub trait GetClientOrderId {
+    fn get_client_order_id(&self) -> ClientOrderId;
+}
+
+pub trait GetOrderSide {
+    fn get_order_side(&self) -> OrderSide;
+}
+
+pub trait GetLimitPrice {
+    fn get_limit_px(&self) -> Price;
+}
+
+pub trait GetStopPrice {
+    fn get_stop_px(&self) -> Price;
+}
+
+pub enum PassiveOrderType {
+    Limit(LimitOrderType),
+    Stop(StopOrderType),
+}
+
+impl PartialEq for PassiveOrderType {
+    fn eq(&self, rhs: &PassiveOrderType) -> bool {
+        match self {
+            Self::Limit(o) => o.get_client_order_id() == rhs.get_client_order_id(),
+            Self::Stop(o) => o.get_client_order_id() == rhs.get_client_order_id(),
+        }
+    }
+}
+
+impl GetClientOrderId for PassiveOrderType {
+    fn get_client_order_id(&self) -> ClientOrderId {
+        match self {
+            Self::Limit(o) => o.get_client_order_id(),
+            Self::Stop(o) => o.get_client_order_id(),
+        }
+    }
+}
+
+impl GetOrderSide for PassiveOrderType {
+    fn get_order_side(&self) -> OrderSide {
+        match self {
+            Self::Limit(o) => o.get_order_side(),
+            Self::Stop(o) => o.get_order_side(),
+        }
+    }
+}
+
+pub enum LimitOrderType {
+    Limit(LimitOrder),
+    MarketToLimit(MarketToLimitOrder),
+    StopLimit(StopLimitOrder),
+    TrailingStopLimit(TrailingStopLimitOrder),
+}
+
+impl PartialEq for LimitOrderType {
+    fn eq(&self, rhs: &LimitOrderType) -> bool {
+        match self {
+            Self::Limit(o) => o.client_order_id == rhs.get_client_order_id(),
+            Self::MarketToLimit(o) => o.client_order_id == rhs.get_client_order_id(),
+            Self::StopLimit(o) => o.client_order_id == rhs.get_client_order_id(),
+            Self::TrailingStopLimit(o) => o.client_order_id == rhs.get_client_order_id(),
+        }
+    }
+}
+
+impl GetClientOrderId for LimitOrderType {
+    fn get_client_order_id(&self) -> ClientOrderId {
+        match self {
+            Self::Limit(o) => o.client_order_id,
+            Self::MarketToLimit(o) => o.client_order_id,
+            Self::StopLimit(o) => o.client_order_id,
+            Self::TrailingStopLimit(o) => o.client_order_id,
+        }
+    }
+}
+
+impl GetOrderSide for LimitOrderType {
+    fn get_order_side(&self) -> OrderSide {
+        match self {
+            Self::Limit(o) => o.side,
+            Self::MarketToLimit(o) => o.side,
+            Self::StopLimit(o) => o.side,
+            Self::TrailingStopLimit(o) => o.side,
+        }
+    }
+}
+
+impl GetLimitPrice for LimitOrderType {
+    fn get_limit_px(&self) -> Price {
+        match self {
+            Self::Limit(o) => o.price,
+            Self::MarketToLimit(o) => o.price.expect("No price for order"), // TBD
+            Self::StopLimit(o) => o.price,
+            Self::TrailingStopLimit(o) => o.price,
+        }
+    }
+}
+
+pub enum StopOrderType {
+    StopMarket(StopMarketOrder),
+    StopLimit(StopLimitOrder),
+    MarketIfTouched(MarketIfTouchedOrder),
+    LimitIfTouched(LimitIfTouchedOrder),
+    TrailingStopMarket(TrailingStopMarketOrder),
+    TrailingStopLimit(TrailingStopLimitOrder),
+}
+
+impl GetClientOrderId for StopOrderType {
+    fn get_client_order_id(&self) -> ClientOrderId {
+        match self {
+            Self::StopMarket(o) => o.client_order_id,
+            Self::StopLimit(o) => o.client_order_id,
+            Self::MarketIfTouched(o) => o.client_order_id,
+            Self::LimitIfTouched(o) => o.client_order_id,
+            Self::TrailingStopMarket(o) => o.client_order_id,
+            Self::TrailingStopLimit(o) => o.client_order_id,
+        }
+    }
+}
+
+impl GetOrderSide for StopOrderType {
+    fn get_order_side(&self) -> OrderSide {
+        match self {
+            Self::StopMarket(o) => o.side,
+            Self::StopLimit(o) => o.side,
+            Self::MarketIfTouched(o) => o.side,
+            Self::LimitIfTouched(o) => o.side,
+            Self::TrailingStopMarket(o) => o.side,
+            Self::TrailingStopLimit(o) => o.side,
+        }
+    }
+}
+
+impl GetStopPrice for StopOrderType {
+    fn get_stop_px(&self) -> Price {
+        match self {
+            Self::StopMarket(o) => o.trigger_price,
+            Self::StopLimit(o) => o.trigger_price,
+            Self::MarketIfTouched(o) => o.trigger_price,
+            Self::LimitIfTouched(o) => o.trigger_price,
+            Self::TrailingStopMarket(o) => o.trigger_price,
+            Self::TrailingStopLimit(o) => o.trigger_price,
+        }
+    }
+}
 
 #[must_use]
 pub fn ustr_hashmap_to_str(h: HashMap<Ustr, Ustr>) -> HashMap<String, String> {
@@ -621,7 +774,7 @@ impl OrderCore {
         match self.side {
             OrderSide::Buy => self.quantity.as_decimal(),
             OrderSide::Sell => -self.quantity.as_decimal(),
-            _ => panic!("invalid order side"),
+            _ => panic!("Invalid order side"),
         }
     }
 
