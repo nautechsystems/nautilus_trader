@@ -12,9 +12,9 @@ The capabilities of this adapter include:
 - Subscribing to real-time data feeds which is converted to Nautilus objects to support live trading and sandbox environments
 
 ```{tip}
-[Databento](https://databento.com/signup) currently offers 125 USD in free data credits for new account sign-ups.
-With careful requests, this is more than enough for testing and evaluation purposes.
+[Databento](https://databento.com/signup) currently offers 125 USD in free data credits (historical data only) for new account sign-ups.
 
+With careful requests, this is more than enough for testing and evaluation purposes.
 It's recommended you make use of the [/metadata.get_cost](https://docs.databento.com/api-reference-historical/metadata/metadata-get-cost) endpoint.
 ```
 
@@ -55,19 +55,19 @@ The following Databento schemas are supported by NautilusTrader:
 
 | Databento schema | Nautilus type                |
 |------------------|------------------------------|
-| `MBO`            | `OrderBookDelta`             |
-| `MBP_1`          | `QuoteTick` & `TradeTick`    |
-| `MBP_10`         | `OrderBookDepth10`           |
-| `TBBO`           | `QuoteTick` & `TradeTick`    |
-| `TRADES`         | `TradeTick`                  |
-| `OHLCV_1S`       | `Bar`                        |
-| `OHLCV_1M`       | `Bar`                        |
-| `OHLCV_1H`       | `Bar`                        |
-| `OHLCV_1D`       | `Bar`                        |
-| `DEFINITION`     | `Instrument` (various types) |
-| `IMBALANCE`      | `DatabentoImbalance` (under development)  |
-| `STATISTICS`     | `DatabentoStatistics` (under development) |
-| `STATUS`         | Not yet available                         |
+| MBO              | `OrderBookDelta`             |
+| MBP_1            | `QuoteTick` + `TradeTick`    |
+| MBP_10           | `OrderBookDepth10`           |
+| TBBO             | `QuoteTick` + `TradeTick`    |
+| TRADES           | `TradeTick`                  |
+| OHLCV_1S         | `Bar`                        |
+| OHLCV_1M         | `Bar`                        |
+| OHLCV_1H         | `Bar`                        |
+| OHLCV_1D         | `Bar`                        |
+| DEFINITION       | `Instrument` (various types) |
+| IMBALANCE        | `DatabentoImbalance` (under development)  |
+| STATISTICS       | `DatabentoStatistics` (under development) |
+| STATUS           | Not yet available                         |
 
 ## Performance considerations
 
@@ -99,17 +99,17 @@ decoded to the appropriate Nautilus `Instrument` types.
 
 The following Databento instrument classes are supported by NautilusTrader:
 
-| Databento instrument class | Nautilus instrument type
+| Databento instrument class | Nautilus instrument type     |
 |----------------------------|------------------------------|
-| `BOND`                     | Not available                |
-| `CALL`                     | `OptionsContract`            |
-| `FUTURE`                   | `FuturesContract`            |
-| `STOCK`                    | `Equity                      |
-| `MIXEDSPREAD`              | `OptionsSpread`              |
-| `PUT`                      | `OptionsContract`            |
-| `FUTURESPREAD`             | `FuturesSpread`              |
-| `OPTIONSPREAD`             | `OptionsSpread`              |
-| `FXSPOT`                   | `CurrencyPair`               |
+| BOND                       | Not yet available            |
+| CALL                       | `OptionsContract`            |
+| FUTURE                     | `FuturesContract`            |
+| STOCK                      | `Equity`                     |
+| MIXEDSPREAD                | `OptionsSpread`              |
+| PUT                        | `OptionsContract`            |
+| FUTURESPREAD               | `FuturesSpread`              |
+| OPTIONSPREAD               | `OptionsSpread`              |
+| FXSPOT                     | `CurrencyPair`               |
 
 ### MBO (market by order)
 
