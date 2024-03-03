@@ -5,11 +5,13 @@ We are currently working on this integration guide - consider it incomplete.
 ```
 
 NautilusTrader provides an adapter for integrating with the Databento API and [Databento Binary Encoding (DBN)](https://docs.databento.com/knowledge-base/new-users/dbn-encoding) format data.
+As Databento is purely a market data provider, there is no execution client provided - although a sandbox environment with simulated execution could still be step.
+It's also possible to match Databento data with Interactive Broker execution, or to provide traditional asset class signals for crypto trading.
 
 The capabilities of this adapter include:
-- Loading historical data from DBN files on disk into Nautilus objects for backtesting and writing to the data catalog
-- Requesting historical data which is converted to Nautilus objects to support live trading and backtesting
-- Subscribing to real-time data feeds which is converted to Nautilus objects to support live trading and sandbox environments
+- Loading historical data from DBN files and decoding into Nautilus objects for backtesting or writing to the data catalog
+- Requesting historical data which is decoded to Nautilus objects to support live trading and backtesting
+- Subscribing to real-time data feeds which are decoded to Nautilus objects to support live trading and sandbox environments
 
 ```{tip}
 [Databento](https://databento.com/signup) currently offers 125 USD in free data credits (historical data only) for new account sign-ups.
@@ -21,24 +23,29 @@ It's recommended you make use of the [/metadata.get_cost](https://docs.databento
 ## Overview
 
 The integrations implementation takes the [databento-rs](https://crates.io/crates/databento) crate as a dependency,
-which is the official Rust client library provided by Databento. There are actually no Databento Python dependencies.
-
-The following adapter classes are available:
-- `DatabentoDataLoader` which allows loading Databento Binary Encoding (DBN) data from disk
-- `DatabentoInstrumentProvider` which integrates with the Databento API (HTTP) to provide latest or historical instrument definitions
-- `DatabentoHistoricalClient` which integrates with the Databento API (HTTP) for historical market data requests
-- `DatabentoLiveClient` which integrates with the Databento API (raw TCP) for subscribing to real-time data feeds
-- `DatabentoDataClient` providing a `LiveMarketDataClient` implementation for running a trading node in real time
+which is the official Rust client library provided by Databento 🦀. There are actually no Databento Python dependencies.
 
 ```{note}
 There is no optional extra installation for `databento`, at this stage the core components of the adapter are compiled
 as static libraries and linked during the build by default.
 ```
 
+The following adapter classes are available:
+- `DatabentoDataLoader` - Loads Databento Binary Encoding (DBN) data from files
+- `DatabentoInstrumentProvider` - Integrates with the Databento API (HTTP) to provide latest or historical instrument definitions
+- `DatabentoHistoricalClient` - Integrates with the Databento API (HTTP) for historical market data requests
+- `DatabentoLiveClient` - Integrates with the Databento API (raw TCP) for subscribing to real-time data feeds
+- `DatabentoDataClient` - Provides a `LiveMarketDataClient` implementation for running a trading node in real time
+
+```{note}
+As with the other integration adapters, most users will simply define a configuration for a live trading node (covered below),
+and won't need to necessarily work with these lower level components individually.
+```
+
 ## Documentation
 
 Databento provides extensive documentation for users https://docs.databento.com/knowledge-base/new-users.
-It's recommended you also refer to this documentation in conjunction with this Nautilus integration guide.
+It's recommended you also refer to the Databento documentation in conjunction with this Nautilus integration guide.
 
 ## Databento Binary Encoding (DBN)
 
@@ -101,15 +108,15 @@ The following Databento instrument classes are supported by NautilusTrader:
 
 | Databento instrument class | Nautilus instrument type     |
 |----------------------------|------------------------------|
-| BOND                       | Not yet available            |
-| CALL                       | `OptionsContract`            |
-| FUTURE                     | `FuturesContract`            |
 | STOCK                      | `Equity`                     |
-| MIXEDSPREAD                | `OptionsSpread`              |
+| FUTURE                     | `FuturesContract`            |
+| CALL                       | `OptionsContract`            |
 | PUT                        | `OptionsContract`            |
 | FUTURESPREAD               | `FuturesSpread`              |
 | OPTIONSPREAD               | `OptionsSpread`              |
+| MIXEDSPREAD                | `OptionsSpread`              |
 | FXSPOT                     | `CurrencyPair`               |
+| BOND                       | Not yet available            |
 
 ### MBO (market by order)
 
@@ -133,4 +140,73 @@ will produce a `QuoteTick` and optionally a `TradeTick`.
 
 ### OHLCV (bar aggregates)
 
-The `ts_event` timestamps are normalized to bar close during Nautilus decoding.
+The Databento bar aggregation schemas are timestamped at the **open** of the bar interval.
+The Nautilus decoder will normalize the `ts_event` timestamps to the **close** of the bar
+(original `ts_event` + bar interval).
+
+## Instrument IDs and symbology
+
+Databento market data includes an `instrument_id` field which is an integer assigned
+by either the original source venue, or internally by Databento during normalization.
+
+It's important to realize that this is different to the Nautilus `InstrumentId`
+which is a string made up of the raw symbol + venue with a period separator i.e. `{symbol}.{venue}`.
+
+The Nautilus decoder will use the Databento `raw_symbol` for the Nautilus `symbol` and the [ISO 10383 MIC (Market Identification Code)](https://www.iso20022.org/market-identifier-codes)
+from the Databento instrument definition message for the Nautilus `venue`.
+
+Databento datasets are identified with a `Dataset code/ID` which is different
+to the venue.
+
+Of particular note is for CME Globex MDP 3.0 data (`GLBX.MDP3` dataset code), the `venue`
+Nautilus will use is the CME exchange code provided by instrument definition messages (which the Interactive Brokers adapter can map):
+- `CBCM` XCME-XCBT inter-exchange spread
+- `NYUM` XNYM-DUMX inter-exchange spread
+- `XCBT` Chicago Board of Trade (CBOT)
+- `XCEC` Commodities Exchange Center (COMEX)
+- `XCME` Chicago Mercantile Exchange (CME)
+- `XFXS` CME FX Link spread
+- `XNYM` New York Mercantile Exchange (NYMEX)
+
+Other venue MICs can be found in the `venue` field of responses from the [metadata.list_publishers](https://docs.databento.com/api-reference-historical/metadata/metadata-list-publishers?historical=http&live=python) endpoint.
+
+## Configuration
+
+The most common use case is to configure a live `TradingNode` to include a
+Databento data client. To achieve this, add a `DATABENTO` section to your client
+configuration(s):
+
+```python
+from nautilus_trader.adapters.databento import DATABENTO
+from nautilus_trader.live.node import TradingNode
+
+config = TradingNodeConfig(
+    ...,  # Omitted
+    data_clients={
+        DATABENTO: {
+            "api_key": None,  # 'DATABENTO_API_KEY' env var
+            "http_gateway": None,  # Override for the default HTTP gateway
+            "instrument_provider": InstrumentProviderConfig(load_all=True),
+            "instrument_ids": None,  # Nautilus instrument IDs to load on start
+            "parent_symbols": None,  # Databento parent symbols to load on start
+        },
+    },
+    ..., # Omitted
+)
+```
+
+Then, create a `TradingNode` and add the client factory:
+
+```python
+from nautilus_trader.adapters.databento.factories import DatabentoLiveDataClientFactory
+from nautilus_trader.live.node import TradingNode
+
+# Instantiate the live trading node with a configuration
+node = TradingNode(config=config)
+
+# Register the client factory with the node
+node.add_data_client_factory(DATABENTO, DatabentoLiveDataClientFactory)
+
+# Finally build the node
+node.build()
+```
