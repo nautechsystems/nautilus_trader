@@ -21,7 +21,7 @@ which can be used together or separately depending on the users needs.
 
 ```{note}
 Most users will simply define a configuration for a live trading node (as below),
-and won't need to necessarily work with these lower level components individually.
+and won't need to necessarily work with these lower level components directly.
 ```
 
 ## Data types

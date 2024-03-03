@@ -6,7 +6,7 @@ We are currently working on this integration guide - consider it incomplete for 
 
 NautilusTrader provides an adapter for integrating with the Databento API and [Databento Binary Encoding (DBN)](https://docs.databento.com/knowledge-base/new-users/dbn-encoding) format data.
 As Databento is purely a market data provider, there is no execution client provided - although a sandbox environment with simulated execution could still be set up.
-It's also possible to match Databento data with Interactive Brokers execution, or to provide traditional asset class signals for crypto trading.
+It's also possible to match Databento data with Interactive Brokers execution, or to calculate traditional asset class signals for crypto trading.
 
 The capabilities of this adapter include:
 - Loading historical data from DBN files and decoding into Nautilus objects for backtesting or writing to the data catalog
@@ -39,7 +39,7 @@ The following adapter classes are available:
 
 ```{note}
 As with the other integration adapters, most users will simply define a configuration for a live trading node (covered below),
-and won't need to necessarily work with these lower level components individually.
+and won't need to necessarily work with these lower level components directly.
 ```
 
 ## Documentation
@@ -52,7 +52,7 @@ It's recommended you also refer to the Databento documentation in conjunction wi
 The integration provides a decoder which can convert DBN format data to Nautilus objects.
 You can read more about the DBN format [here](https://docs.databento.com/knowledge-base/new-users/dbn-encoding).
 
-The same Rust implemented decoder is used for:
+The same Rust implemented Nautilus decoder is used for:
 - Loading and decoding DBN files from disk
 - Decoding historical and live data in real time
 
@@ -72,27 +72,56 @@ The following Databento schemas are supported by NautilusTrader:
 | OHLCV_1H         | `Bar`                        |
 | OHLCV_1D         | `Bar`                        |
 | DEFINITION       | `Instrument` (various types) |
-| IMBALANCE        | `DatabentoImbalance` (under development)  |
-| STATISTICS       | `DatabentoStatistics` (under development) |
-| STATUS           | Not yet available                         |
+| IMBALANCE        | `DatabentoImbalance`         |
+| STATISTICS       | `DatabentoStatistics`        |
+| STATUS           | Not yet available            |
 
-## Performance considerations
+## Instrument IDs and symbology
 
-When backtesting with Databento DBN data, there are two options:
-- Store the data in DBN (`.dbn.zst`) format files and decode to Nautilus objects on every run
-- Convert the DBN files to Nautilus objects and then write to the data catalog once (stored as Nautilus Parquet format on disk)
+Databento market data includes an `instrument_id` field which is an integer assigned
+by either the original source venue, or internally by Databento during normalization.
 
-Whilst the DBN -> Nautilus decoder is implemented in Rust and has been optimized,
-the best performance for backtesting will be achieved by writing the Nautilus
-objects to the data catalog, which performs the decoding step once.
+It's important to realize that this is different to the Nautilus `InstrumentId`
+which is a string made up of a symbol + venue with a period separator i.e. `"{symbol}.{venue}"`.
 
-[DataFusion](https://arrow.apache.org/datafusion/) provides a query engine backend to efficiently load and stream
-the Nautilus Parquet data from disk, which achieves extremely high through-put (at least an order of magnitude faster
-than converting DBN -> Nautilus on the fly for every backtest run).
+The Nautilus decoder will use the Databento `raw_symbol` for the Nautilus `symbol` and an [ISO 10383 MIC (Market Identification Code)](https://www.iso20022.org/market-identifier-codes)
+from the Databento instrument definition message for the Nautilus `venue`.
 
-```{note}
-Performance benchmarks are under development.
-```
+Databento datasets are identified with a *dataset code* which is not the same
+as a venue identifier. You can read more about Databento dataset naming conventions [here](https://docs.databento.com/api-reference-historical/basics/datasets).
+
+Of particular note is for CME Globex MDP 3.0 data (`GLBX.MDP3` dataset code), the `venue` that
+Nautilus will use is the CME exchange code provided by instrument definition messages (which the Interactive Brokers adapter can map):
+- `CBCM` - XCME-XCBT inter-exchange spread
+- `NYUM` - XNYM-DUMX inter-exchange spread
+- `XCBT` - Chicago Board of Trade (CBOT)
+- `XCEC` - Commodities Exchange Center (COMEX)
+- `XCME` - Chicago Mercantile Exchange (CME)
+- `XFXS` - CME FX Link spread
+- `XNYM` - New York Mercantile Exchange (NYMEX)
+
+Other venue MICs can be found in the `venue` field of responses from the [metadata.list_publishers](https://docs.databento.com/api-reference-historical/metadata/metadata-list-publishers?historical=http&live=python) endpoint.
+
+## Timestamps
+
+Databento data includes various timestamp fields including (but not limited to):
+
+- `ts_event` - The matching-engine-received timestamp expressed as the number of nanoseconds since the UNIX epoch
+- `ts_in_delta` - The matching-engine-sending timestamp expressed as the number of nanoseconds before `ts_recv`
+- `ts_recv` - The capture-server-received timestamp expressed as the number of nanoseconds since the UNIX epoch
+- `ts_out` - The Databento sending timestamp
+
+Nautilus data includes at *least* two timestamps (required by the `Data` contract):
+
+- `ts_event` - The UNIX timestamp (nanoseconds) when the data event occurred
+- `ts_init` - The UNIX timestamp (nanoseconds) when the data object was initialized
+
+When decoding and normalizing Databento to Nautilus we generally assign the Databento `ts_recv` value to the Nautilus
+`ts_event` field, as this timestamp is much more reliable and consistent, and is guaranteed to be monotonically increasing per symbol.
+
+See the following Databento docs for further information:
+- [Databento standards and conventions - timestamps](https://docs.databento.com/knowledge-base/new-users/standards-conventions/timestamps)
+- [Databento timestamping guide](https://docs.databento.com/knowledge-base/data-integrity/timestamping/timestamps-on-databento-and-how-to-use-them)
 
 ## Data types
 
@@ -144,31 +173,41 @@ The Databento bar aggregation schemas are timestamped at the **open** of the bar
 The Nautilus decoder will normalize the `ts_event` timestamps to the **close** of the bar
 (original `ts_event` + bar interval).
 
-## Instrument IDs and symbology
+## Performance considerations
 
-Databento market data includes an `instrument_id` field which is an integer assigned
-by either the original source venue, or internally by Databento during normalization.
+When backtesting with Databento DBN data, there are two options:
+- Store the data in DBN (`.dbn.zst`) format files and decode to Nautilus objects on every run
+- Convert the DBN files to Nautilus objects and then write to the data catalog once (stored as Nautilus Parquet format on disk)
 
-It's important to realize that this is different to the Nautilus `InstrumentId`
-which is a string made up of a symbol + venue with a period separator i.e. `"{symbol}.{venue}"`.
+Whilst the DBN -> Nautilus decoder is implemented in Rust and has been optimized,
+the best performance for backtesting will be achieved by writing the Nautilus
+objects to the data catalog, which performs the decoding step once.
 
-The Nautilus decoder will use the Databento `raw_symbol` for the Nautilus `symbol` and an [ISO 10383 MIC (Market Identification Code)](https://www.iso20022.org/market-identifier-codes)
-from the Databento instrument definition message for the Nautilus `venue`.
+[DataFusion](https://arrow.apache.org/datafusion/) provides a query engine backend to efficiently load and stream
+the Nautilus Parquet data from disk, which achieves extremely high through-put (at least an order of magnitude faster
+than converting DBN -> Nautilus on the fly for every backtest run).
 
-Databento datasets are identified with a *dataset code* which is not the same
-as a venue identifier. You can read more about Databento dataset naming conventions [here](https://docs.databento.com/api-reference-historical/basics/datasets).
+```{note}
+Performance benchmarks are under development.
+```
 
-Of particular note is for CME Globex MDP 3.0 data (`GLBX.MDP3` dataset code), the `venue` that
-Nautilus will use is the CME exchange code provided by instrument definition messages (which the Interactive Brokers adapter can map):
-- `CBCM` - XCME-XCBT inter-exchange spread
-- `NYUM` - XNYM-DUMX inter-exchange spread
-- `XCBT` - Chicago Board of Trade (CBOT)
-- `XCEC` - Commodities Exchange Center (COMEX)
-- `XCME` - Chicago Mercantile Exchange (CME)
-- `XFXS` - CME FX Link spread
-- `XNYM` - New York Mercantile Exchange (NYMEX)
+## Real-time client architecture
 
-Other venue MICs can be found in the `venue` field of responses from the [metadata.list_publishers](https://docs.databento.com/api-reference-historical/metadata/metadata-list-publishers?historical=http&live=python) endpoint.
+The `DatabentoDataClient` is a Python class which contains other Databento adapter classes.
+There are two `DatabentoLiveClient`s per Databento dataset:
+- One for MBO (order book deltas) real-time feeds
+- One for all other real-time feeds
+
+```{note}
+There is currently a limitation that all MBO (order book deltas) subscriptions for a dataset have to be made at
+node startup, to then be able to replay data from the beginning of the session. If subsequent subscriptions
+arrive after start, then they will be ignored and an error logged.
+
+There is no such limitation for any of the other Databento schemas.
+```
+
+A single `DatabentoHistoricalClient` instance is reused between the `DatabentoInstrumentProvider` and `DatabentoDataClient`,
+which makes historical instrument definitions and data requests.
 
 ## Configuration
 
@@ -220,21 +259,3 @@ node.build()
 - `instrument_ids` - The instrument IDs to request instrument definitions for on start
 - `timeout_initial_load` - The timeout (seconds) to wait for instruments to load (concurrently per dataset).
 - `mbo_subscriptions_delay` - The timeout (seconds) to wait for MBO/L3 subscriptions (concurrently per dataset). After the timeout the MBO order book feed will start and replay messages from the start of the week which encompasses the initial snapshot and then all deltas
-
-## Real-time client architecture
-
-The `DatabentoDataClient` is a Python class which contains other Databento adapter classes.
-There are two `DatabentoLiveClient`s per Databento dataset:
-- One for MBO (order book deltas) real-time feeds
-- One for all other real-time feeds
-
-```{note}
-There is currently a limitation that all MBO (order book deltas) subscriptions for a dataset have to be made at
-node startup, to then be able to replay data from the beginning of the session. If subsequent subscriptions
-arrive after start, then they will be ignored and an error logged.
-
-There is no such limitation for any of the other Databento schemas.
-```
-
-A single `DatabentoHistoricalClient` instance is reused between the `DatabentoInstrumentProvider` and `DatabentoDataClient`,
-which makes historical instrument definitions and data requests.
