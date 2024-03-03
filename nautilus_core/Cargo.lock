@@ -2528,6 +2528,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-execution"
+version = "0.19.0"
+dependencies = [
+ "anyhow",
+ "criterion",
+ "indexmap 2.2.5",
+ "log",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-model",
+ "pyo3",
+ "pyo3-asyncio",
+ "rstest",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "strum 0.26.1",
+ "thiserror",
+ "tracing",
+ "ustr",
+]
+
+[[package]]
 name = "nautilus-indicators"
 version = "0.19.0"
 dependencies = [

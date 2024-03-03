@@ -6,6 +6,7 @@ members = [
     "backtest",
     "common",
     "core",
+    "execution",
     "indicators",
     "infrastructure",
     "model",
