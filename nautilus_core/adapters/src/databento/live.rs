@@ -303,7 +303,7 @@ fn handle_instrument_def_msg(
 }
 
 fn handle_record(
-    rec_ref: dbn::RecordRef,
+    record: dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     glbx_exchange_map: &HashMap<Symbol, Venue>,
@@ -311,11 +311,11 @@ fn handle_record(
     clock: &AtomicTime,
 ) -> Result<(Option<Data>, Option<Data>)> {
     let raw_symbol = symbol_map
-        .get_for_rec(&rec_ref)
+        .get_for_rec(&record)
         .expect("Cannot resolve `raw_symbol` from `symbol_map`");
 
     let instrument_id = update_instrument_id_map(
-        rec_ref.header(),
+        record.header(),
         raw_symbol,
         publisher_venue_map,
         glbx_exchange_map,
@@ -326,7 +326,7 @@ fn handle_record(
     let ts_init = clock.get_time_ns();
 
     decode_record(
-        &rec_ref,
+        &record,
         instrument_id,
         price_precision,
         Some(ts_init),

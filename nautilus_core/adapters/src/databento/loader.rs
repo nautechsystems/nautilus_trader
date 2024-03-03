@@ -228,8 +228,8 @@ impl DatabentoDataLoader {
 
             match dbn_stream.get() {
                 Some(rec) => {
-                    let rec_ref = dbn::RecordRef::from(rec);
-                    let msg = rec_ref.get::<InstrumentDefMsgV1>().unwrap();
+                    let record = dbn::RecordRef::from(rec);
+                    let msg = record.get::<InstrumentDefMsgV1>().unwrap();
 
                     let raw_symbol = unsafe {
                         raw_ptr_to_ustr(rec.raw_symbol.as_ptr())
@@ -284,12 +284,12 @@ impl DatabentoDataLoader {
             dbn_stream.advance();
             match dbn_stream.get() {
                 Some(rec) => {
-                    let rec_ref = dbn::RecordRef::from(rec);
+                    let record = dbn::RecordRef::from(rec);
                     let instrument_id = match &instrument_id {
                         Some(id) => *id, // Copy
                         None => {
                             let publisher =
-                                rec_ref.publisher().expect("Invalid `publisher` for record");
+                                record.publisher().expect("Invalid `publisher` for record");
                             let publisher_id = publisher as PublisherId;
                             let venue =
                                 self.publisher_venue_map
@@ -300,9 +300,9 @@ impl DatabentoDataLoader {
                                         )
                                     });
                             let mut instrument_id = self
-                                .get_nautilus_instrument_id_for_record(&rec_ref, &metadata, *venue)
+                                .get_nautilus_instrument_id_for_record(&record, &metadata, *venue)
                                 .unwrap_or_else(|_| {
-                                    panic!("Error resolving symbology mapping for {rec_ref:?}")
+                                    panic!("Error resolving symbology mapping for {record:?}")
                                 });
 
                             if publisher == Publisher::GlbxMdp3Glbx {
@@ -320,7 +320,7 @@ impl DatabentoDataLoader {
                     };
 
                     match decode_record(
-                        &rec_ref,
+                        &record,
                         instrument_id,
                         price_precision,
                         None,

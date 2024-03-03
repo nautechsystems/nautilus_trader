@@ -24,27 +24,27 @@ use ustr::Ustr;
 use super::types::PublisherId;
 
 pub fn decode_nautilus_instrument_id(
-    rec_ref: &dbn::RecordRef,
+    record: &dbn::RecordRef,
     publisher_id: PublisherId,
     metadata: &dbn::Metadata,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     glbx_exchange_map: &HashMap<Symbol, Venue>,
 ) -> Result<InstrumentId> {
-    let (instrument_id, nanoseconds) = match rec_ref.rtype()? {
+    let (instrument_id, nanoseconds) = match record.rtype()? {
         dbn::RType::Mbo => {
-            let msg = rec_ref.get::<dbn::MboMsg>().unwrap(); // SAFETY: RType known
+            let msg = record.get::<dbn::MboMsg>().unwrap(); // SAFETY: RType known
             (msg.hd.instrument_id, msg.ts_recv)
         }
         dbn::RType::Mbp0 => {
-            let msg = rec_ref.get::<dbn::TradeMsg>().unwrap(); // SAFETY: RType known
+            let msg = record.get::<dbn::TradeMsg>().unwrap(); // SAFETY: RType known
             (msg.hd.instrument_id, msg.ts_recv)
         }
         dbn::RType::Mbp1 => {
-            let msg = rec_ref.get::<dbn::Mbp1Msg>().unwrap(); // SAFETY: RType known
+            let msg = record.get::<dbn::Mbp1Msg>().unwrap(); // SAFETY: RType known
             (msg.hd.instrument_id, msg.ts_recv)
         }
         dbn::RType::Mbp10 => {
-            let msg = rec_ref.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
+            let msg = record.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
             (msg.hd.instrument_id, msg.ts_recv)
         }
         dbn::RType::Ohlcv1S
@@ -52,7 +52,7 @@ pub fn decode_nautilus_instrument_id(
         | dbn::RType::Ohlcv1H
         | dbn::RType::Ohlcv1D
         | dbn::RType::OhlcvEod => {
-            let msg = rec_ref.get::<dbn::OhlcvMsg>().unwrap(); // SAFETY: RType known
+            let msg = record.get::<dbn::OhlcvMsg>().unwrap(); // SAFETY: RType known
             (msg.hd.instrument_id, msg.hd.ts_event)
         }
         _ => bail!("RType is currently unsupported by NautilusTrader"),
