@@ -53,7 +53,7 @@ The same Rust implemented decoder is used for:
 
 The following Databento schemas are supported by NautilusTrader:
 
-| Databento schema | Nautilus type                |
+| Databento schema | Nautilus data type           |
 |------------------|------------------------------|
 | MBO              | `OrderBookDelta`             |
 | MBP_1            | `QuoteTick` + `TradeTick`    |
