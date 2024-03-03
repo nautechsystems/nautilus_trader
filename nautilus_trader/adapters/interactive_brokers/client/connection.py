@@ -262,7 +262,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         if self._eclient.wrapper:
             self._eclient.wrapper.error(NO_VALID_ID, CONNECT_FAIL.code(), CONNECT_FAIL.msg())
         self._eclient.disconnect()
-        self._log.error("Connection failed", e)
+        self._log.error(f"Connection failed: {e}")
 
     # -- EWrapper overrides -----------------------------------------------------------------------
     def connectionClosed(self) -> None:
