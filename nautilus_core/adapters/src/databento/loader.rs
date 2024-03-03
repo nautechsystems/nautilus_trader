@@ -166,32 +166,18 @@ impl DatabentoDataLoader {
         metadata: &dbn::Metadata,
         venue: Venue,
     ) -> Result<InstrumentId> {
-        let (instrument_id, nanoseconds) = match record.rtype()? {
-            dbn::RType::Mbo => {
-                let msg = record.get::<dbn::MboMsg>().unwrap(); // SAFETY: RType known
-                (msg.hd.instrument_id, msg.ts_recv)
-            }
-            dbn::RType::Mbp0 => {
-                let msg = record.get::<dbn::TradeMsg>().unwrap(); // SAFETY: RType known
-                (msg.hd.instrument_id, msg.ts_recv)
-            }
-            dbn::RType::Mbp1 => {
-                let msg = record.get::<dbn::Mbp1Msg>().unwrap(); // SAFETY: RType known
-                (msg.hd.instrument_id, msg.ts_recv)
-            }
-            dbn::RType::Mbp10 => {
-                let msg = record.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
-                (msg.hd.instrument_id, msg.ts_recv)
-            }
-            dbn::RType::Ohlcv1S
-            | dbn::RType::Ohlcv1M
-            | dbn::RType::Ohlcv1H
-            | dbn::RType::Ohlcv1D
-            | dbn::RType::OhlcvEod => {
-                let msg = record.get::<dbn::OhlcvMsg>().unwrap(); // SAFETY: RType known
-                (msg.hd.instrument_id, msg.hd.ts_event)
-            }
-            _ => bail!("RType is currently unsupported by NautilusTrader"),
+        let (instrument_id, nanoseconds) = if let Some(msg) = record.get::<dbn::MboMsg>() {
+            (msg.hd.instrument_id, msg.ts_recv)
+        } else if let Some(msg) = record.get::<dbn::TradeMsg>() {
+            (msg.hd.instrument_id, msg.ts_recv)
+        } else if let Some(msg) = record.get::<dbn::Mbp1Msg>() {
+            (msg.hd.instrument_id, msg.ts_recv)
+        } else if let Some(msg) = record.get::<dbn::Mbp10Msg>() {
+            (msg.hd.instrument_id, msg.ts_recv)
+        } else if let Some(msg) = record.get::<dbn::OhlcvMsg>() {
+            (msg.hd.instrument_id, msg.hd.ts_event)
+        } else {
+            bail!("DBN message type is not currently supported")
         };
 
         let duration = time::Duration::nanoseconds(nanoseconds as i64);
