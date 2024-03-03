@@ -181,9 +181,12 @@ impl MessageBus {
             .map_or(false, |v| v != &serde_json::Value::Null);
         let tx = if has_backing {
             let (tx, rx) = channel::<BusMessage>();
-            thread::spawn(move || {
-                Self::handle_messages(rx, trader_id, instance_id, config);
-            });
+            let _join_handler = thread::Builder::new()
+                .name("msgbus".to_string())
+                .spawn(move || {
+                    Self::handle_messages(rx, trader_id, instance_id, config);
+                })
+                .expect("Error spawning `msgbus` thread");
             Some(tx)
         } else {
             None

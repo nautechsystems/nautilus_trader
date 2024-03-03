@@ -299,15 +299,18 @@ impl Logger {
 
         match set_boxed_logger(Box::new(logger)) {
             Ok(_) => {
-                thread::spawn(move || {
-                    Self::handle_messages(
-                        trader_id.to_string(),
-                        instance_id.to_string(),
-                        config,
-                        file_config,
-                        rx,
-                    );
-                });
+                let _join_handle = thread::Builder::new()
+                    .name("logging".to_string())
+                    .spawn(move || {
+                        Self::handle_messages(
+                            trader_id.to_string(),
+                            instance_id.to_string(),
+                            config,
+                            file_config,
+                            rx,
+                        );
+                    })
+                    .expect("Error spawning `logging` thread");
 
                 let max_level = log::LevelFilter::Debug;
                 set_max_level(max_level);

@@ -90,9 +90,12 @@ impl CacheDatabase for RedisCacheDatabase {
         let trader_key = get_trader_key(trader_id, instance_id, &config);
         let trader_key_clone = trader_key.clone();
 
-        thread::spawn(move || {
-            Self::handle_messages(rx, trader_key_clone, config);
-        });
+        let _join_handle = thread::Builder::new()
+            .name("cache".to_string())
+            .spawn(move || {
+                Self::handle_messages(rx, trader_key_clone, config);
+            })
+            .expect("Error spawning `cache` thread");
 
         Ok(RedisCacheDatabase {
             trader_id,
