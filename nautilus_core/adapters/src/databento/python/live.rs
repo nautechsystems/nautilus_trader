@@ -17,6 +17,7 @@ use std::{collections::HashMap, fs, str::FromStr, sync::mpsc::Sender};
 
 use databento::live::Subscription;
 use indexmap::IndexMap;
+use nautilus_common::runtime::get_runtime;
 use nautilus_core::time::UnixNanos;
 use nautilus_model::{
     data::Data,
@@ -100,7 +101,8 @@ impl DatabentoLiveClient {
             HashMap::new(),
         );
 
-        tokio::spawn(async move { feed_handler.run().await });
+        let rt = get_runtime();
+        rt.spawn(async move { feed_handler.run().await });
 
         Ok(Self {
             key,
