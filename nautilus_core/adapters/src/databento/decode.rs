@@ -21,7 +21,6 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Result};
-use databento::dbn::Record;
 use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, time::UnixNanos};
 use nautilus_model::{
     data::{
@@ -357,7 +356,7 @@ pub fn decode_options_spread_v1(
 }
 
 #[must_use]
-pub fn is_trade_msg(order_side: OrderSide, action: c_char) -> bool {
+fn is_trade_msg(order_side: OrderSide, action: c_char) -> bool {
     order_side == OrderSide::NoOrderSide || action as u8 as char == 'T'
 }
 
@@ -597,77 +596,52 @@ pub fn decode_ohlcv_msg(
 }
 
 pub fn decode_record(
-    rec_ref: &dbn::RecordRef,
+    record: &dbn::RecordRef,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: Option<UnixNanos>,
     include_trades: bool,
 ) -> anyhow::Result<(Option<Data>, Option<Data>)> {
-    let rtype = rec_ref.rtype().expect("Invalid `rtype`");
-    let result = match rtype {
-        dbn::RType::Mbo => {
-            let msg = rec_ref.get::<dbn::MboMsg>().unwrap(); // SAFETY: RType known
-            let ts_init = match ts_init {
-                Some(ts_init) => ts_init,
-                None => msg.ts_recv,
-            };
-            let result =
-                decode_mbo_msg(msg, instrument_id, price_precision, ts_init, include_trades)?;
-            match result {
-                (Some(delta), None) => (Some(Data::Delta(delta)), None),
-                (None, Some(trade)) => (Some(Data::Trade(trade)), None),
-                (None, None) => (None, None),
-                _ => bail!("Invalid `MboMsg` parsing combination"),
-            }
+    let result = if let Some(msg) = record.get::<dbn::MboMsg>() {
+        let ts_init = determine_timestamp(ts_init, msg.ts_recv);
+        let result = decode_mbo_msg(msg, instrument_id, price_precision, ts_init, include_trades)?;
+        match result {
+            (Some(delta), None) => (Some(Data::Delta(delta)), None),
+            (None, Some(trade)) => (Some(Data::Trade(trade)), None),
+            (None, None) => (None, None),
+            _ => bail!("Invalid `MboMsg` parsing combination"),
         }
-        dbn::RType::Mbp0 => {
-            let msg = rec_ref.get::<dbn::TradeMsg>().unwrap(); // SAFETY: RType known
-            let ts_init = match ts_init {
-                Some(ts_init) => ts_init,
-                None => msg.ts_recv,
-            };
-            let trade = decode_trade_msg(msg, instrument_id, price_precision, ts_init)?;
-            (Some(Data::Trade(trade)), None)
+    } else if let Some(msg) = record.get::<dbn::TradeMsg>() {
+        let ts_init = determine_timestamp(ts_init, msg.ts_recv);
+        let trade = decode_trade_msg(msg, instrument_id, price_precision, ts_init)?;
+        (Some(Data::Trade(trade)), None)
+    } else if let Some(msg) = record.get::<dbn::Mbp1Msg>() {
+        let ts_init = determine_timestamp(ts_init, msg.ts_recv);
+        let result = decode_mbp1_msg(msg, instrument_id, price_precision, ts_init, include_trades)?;
+        match result {
+            (quote, None) => (Some(Data::Quote(quote)), None),
+            (quote, Some(trade)) => (Some(Data::Quote(quote)), Some(Data::Trade(trade))),
         }
-        dbn::RType::Mbp1 => {
-            let msg = rec_ref.get::<dbn::Mbp1Msg>().unwrap(); // SAFETY: RType known
-            let ts_init = match ts_init {
-                Some(ts_init) => ts_init,
-                None => msg.ts_recv,
-            };
-            let result =
-                decode_mbp1_msg(msg, instrument_id, price_precision, ts_init, include_trades)?;
-            match result {
-                (quote, None) => (Some(Data::Quote(quote)), None),
-                (quote, Some(trade)) => (Some(Data::Quote(quote)), Some(Data::Trade(trade))),
-            }
-        }
-        dbn::RType::Mbp10 => {
-            let msg = rec_ref.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
-            let ts_init = match ts_init {
-                Some(ts_init) => ts_init,
-                None => msg.ts_recv,
-            };
-            let depth = decode_mbp10_msg(msg, instrument_id, price_precision, ts_init)?;
-            (Some(Data::Depth10(depth)), None)
-        }
-        dbn::RType::Ohlcv1S
-        | dbn::RType::Ohlcv1M
-        | dbn::RType::Ohlcv1H
-        | dbn::RType::Ohlcv1D
-        | dbn::RType::OhlcvEod => {
-            let msg = rec_ref.get::<dbn::OhlcvMsg>().unwrap(); // SAFETY: RType known
-            let ts_init = match ts_init {
-                Some(ts_init) => ts_init,
-                None => msg.hd.ts_event,
-            };
-            let bar = decode_ohlcv_msg(msg, instrument_id, price_precision, ts_init)?;
-            (Some(Data::Bar(bar)), None)
-        }
-        _ => bail!("RType {:?} is not currently supported", rtype),
+    } else if let Some(msg) = record.get::<dbn::Mbp10Msg>() {
+        let ts_init = determine_timestamp(ts_init, msg.ts_recv);
+        let depth = decode_mbp10_msg(msg, instrument_id, price_precision, ts_init)?;
+        (Some(Data::Depth10(depth)), None)
+    } else if let Some(msg) = record.get::<dbn::OhlcvMsg>() {
+        let ts_init = determine_timestamp(ts_init, msg.hd.ts_event);
+        let bar = decode_ohlcv_msg(msg, instrument_id, price_precision, ts_init)?;
+        (Some(Data::Bar(bar)), None)
+    } else {
+        bail!("DBN message type is not currently supported")
     };
 
     Ok(result)
+}
+
+fn determine_timestamp(ts_init: Option<UnixNanos>, msg_timestamp: UnixNanos) -> UnixNanos {
+    match ts_init {
+        Some(ts_init) => ts_init,
+        None => msg_timestamp,
+    }
 }
 
 pub fn decode_instrument_def_msg_v1(
