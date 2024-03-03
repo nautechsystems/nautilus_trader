@@ -15,7 +15,7 @@
 """
 The `config` subpackage groups all configuration classes and factories.
 
-All configurations inherit from :class:`msgspec.Struct`.
+All configurations inherit from :class:`NautilusConfig` which in turn inherits from :class:`msgspec.Struct`.
 
 """
 
@@ -23,6 +23,8 @@ from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
+from nautilus_trader.backtest.config import FXRolloverInterestConfig
+from nautilus_trader.backtest.config import SimulationModuleConfig
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ActorFactory
@@ -86,6 +88,7 @@ __all__ = [
     "ExecAlgorithmConfig",
     "ExecAlgorithmFactory",
     "ExecEngineConfig",
+    "FXRolloverInterestConfig",
     "ImportableActorConfig",
     "ImportableControllerConfig",
     "ImportableExecAlgorithmConfig",
@@ -105,6 +108,7 @@ __all__ = [
     "StrategyConfig",
     "StrategyFactory",
     "StreamingConfig",
+    "SimulationModuleConfig",
     "ImportableConfig",
     "LiveDataClientConfig",
     "LiveDataEngineConfig",
