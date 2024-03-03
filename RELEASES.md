@@ -15,6 +15,7 @@ None
 - Fixed `DataTransformer.pyo3_order_book_deltas_to_record_batch_bytes` using zero precision from clear delta
 - Fixed `OrderBookMbo` and `OrderBookMbp` integrity check when crossed book
 - Fixed `OrderBookMbp` error when attempting to add to a L1\_MBP book type (now raises `RuntimeError` rather than panicking)
+- Fixed Interactive Brokers connection error logging (#1524), thanks @benjaminsingleton
 
 ---
 
