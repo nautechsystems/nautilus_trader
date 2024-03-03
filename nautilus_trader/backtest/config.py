@@ -18,7 +18,10 @@ from __future__ import annotations
 import sys
 from typing import Any
 
+import pandas as pd
+
 from nautilus_trader.common import Environment
+from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.common.config import resolve_path
@@ -30,6 +33,37 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.system.config import NautilusKernelConfig
+
+
+def parse_filters_expr(s: str | None):
+    # TODO (bm) - could we do this better, probably requires writing our own parser?
+    """
+    Parse a pyarrow.dataset filter expression from a string.
+
+    >>> parse_filters_expr('field("Currency") == "CHF"')
+    <pyarrow.dataset.Expression (Currency == "CHF")>
+
+    >>> parse_filters_expr("print('hello')")
+
+    >>> parse_filters_expr("None")
+
+    """
+    from pyarrow.dataset import field
+
+    assert field  # Required for eval
+
+    if not s:
+        return
+
+    def safer_eval(input_string):
+        allowed_names = {"field": field}
+        code = compile(input_string, "<string>", "eval")
+        for name in code.co_names:
+            if name not in allowed_names:
+                raise NameError(f"Use of {name} not allowed")
+        return eval(code, {}, allowed_names)  # noqa
+
+    return safer_eval(s)  # Only allow use of the field object
 
 
 class BacktestVenueConfig(NautilusConfig, frozen=True):
@@ -226,32 +260,21 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
     batch_size_bytes: int | None = None
 
 
-def parse_filters_expr(s: str | None):
-    # TODO (bm) - could we do this better, probably requires writing our own parser?
+class SimulationModuleConfig(ActorConfig, frozen=True):
     """
-    Parse a pyarrow.dataset filter expression from a string.
+    Configuration for ``SimulationModule`` instances.
+    """
 
-    >>> parse_filters_expr('field("Currency") == "CHF"')
-    <pyarrow.dataset.Expression (Currency == "CHF")>
 
-    >>> parse_filters_expr("print('hello')")
+class FXRolloverInterestConfig(SimulationModuleConfig, frozen=True):
+    """
+    Provides an FX rollover interest simulation module.
 
-    >>> parse_filters_expr("None")
+    Parameters
+    ----------
+    rate_data : pd.DataFrame
+        The interest rate data for the internal rollover interest calculator.
 
     """
-    from pyarrow.dataset import field
 
-    assert field  # Required for eval
-
-    if not s:
-        return
-
-    def safer_eval(input_string):
-        allowed_names = {"field": field}
-        code = compile(input_string, "<string>", "eval")
-        for name in code.co_names:
-            if name not in allowed_names:
-                raise NameError(f"Use of {name} not allowed")
-        return eval(code, {}, allowed_names)  # noqa
-
-    return safer_eval(s)  # Only allow use of the field object
+    rate_data: pd.DataFrame  # TODO(cs): This could probably just become JSON data
