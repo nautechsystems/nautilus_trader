@@ -145,27 +145,24 @@ pub fn parse_cfi_iso10926(value: &str) -> Result<(Option<AssetClass>, Option<Ins
     Ok((asset_class, instrument_class))
 }
 
-pub fn decode_price(value: i64, currency: Currency) -> Result<Price> {
+pub fn decode_price(value: i64, precision: u8) -> Result<Price> {
     match value {
-        0 | i64::MAX => Price::new(
-            10f64.powi(-i32::from(currency.precision)),
-            currency.precision,
-        ),
-        _ => Price::from_raw(value, currency.precision),
+        0 | i64::MAX => Price::new(10f64.powi(-i32::from(precision)), precision),
+        _ => Price::from_raw(value, precision),
     }
 }
 
-pub fn decode_optional_price(value: i64, currency: Currency) -> Result<Option<Price>> {
+pub fn decode_optional_price(value: i64, precision: u8) -> Result<Option<Price>> {
     match value {
         i64::MAX => Ok(None),
-        _ => Ok(Some(Price::from_raw(value, currency.precision)?)),
+        _ => Ok(Some(Price::from_raw(value, precision)?)),
     }
 }
 
-pub fn decode_optional_quantity_i32(value: i32, currency: Currency) -> Result<Option<Quantity>> {
+pub fn decode_optional_quantity_i32(value: i32) -> Result<Option<Quantity>> {
     match value {
         i32::MAX => Ok(None),
-        _ => Ok(Some(Quantity::new(value as f64, currency.precision)?)),
+        _ => Ok(Some(Quantity::new(value as f64, 0)?)),
     }
 }
 
@@ -200,7 +197,7 @@ pub fn decode_equity_v1(
         None, // No ISIN available yet
         currency,
         currency.precision,
-        decode_price(msg.min_price_increment, currency)?,
+        decode_price(msg.min_price_increment, currency.precision)?,
         Some(Quantity::new(msg.min_lot_size_round_lot.into(), 0)?),
         None,        // TBD
         None,        // TBD
@@ -230,7 +227,7 @@ pub fn decode_futures_contract_v1(
         msg.expiration,
         currency,
         currency.precision,
-        decode_price(msg.min_price_increment, currency)?,
+        decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
@@ -263,7 +260,7 @@ pub fn decode_futures_spread_v1(
         msg.expiration,
         currency,
         currency.precision,
-        decode_price(msg.min_price_increment, currency)?,
+        decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
@@ -303,7 +300,7 @@ pub fn decode_options_contract_v1(
         Price::from_raw(msg.strike_price, currency.precision)?,
         currency,
         currency.precision,
-        decode_price(msg.min_price_increment, currency)?,
+        decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
@@ -343,7 +340,7 @@ pub fn decode_options_spread_v1(
         msg.expiration,
         currency,
         currency.precision,
-        decode_price(msg.min_price_increment, currency)?,
+        decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
@@ -729,7 +726,7 @@ pub fn decode_equity(
         None, // No ISIN available yet
         currency,
         currency.precision,
-        decode_price(msg.min_price_increment, currency)?,
+        decode_price(msg.min_price_increment, currency.precision)?,
         Some(Quantity::new(msg.min_lot_size_round_lot.into(), 0)?),
         None,        // TBD
         None,        // TBD
@@ -759,7 +756,7 @@ pub fn decode_futures_contract(
         msg.expiration,
         currency,
         currency.precision,
-        decode_price(msg.min_price_increment, currency)?,
+        decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
@@ -792,7 +789,7 @@ pub fn decode_futures_spread(
         msg.expiration,
         currency,
         currency.precision,
-        decode_price(msg.min_price_increment, currency)?,
+        decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
@@ -832,7 +829,7 @@ pub fn decode_options_contract(
         Price::from_raw(msg.strike_price, currency.precision)?,
         currency,
         currency.precision,
-        decode_price(msg.min_price_increment, currency)?,
+        decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
@@ -872,7 +869,7 @@ pub fn decode_options_spread(
         msg.expiration,
         currency,
         currency.precision,
-        decode_price(msg.min_price_increment, currency)?,
+        decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
@@ -887,13 +884,14 @@ pub fn decode_options_spread(
 pub fn decode_imbalance_msg(
     msg: &dbn::ImbalanceMsg,
     instrument_id: InstrumentId,
+    price_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<DatabentoImbalance> {
     DatabentoImbalance::new(
         instrument_id,
-        Price::from_raw(msg.ref_price, 2)?,
-        Price::from_raw(msg.cont_book_clr_price, 2)?,
-        Price::from_raw(msg.auct_interest_clr_price, 2)?,
+        Price::from_raw(msg.ref_price, price_precision)?,
+        Price::from_raw(msg.cont_book_clr_price, price_precision)?,
+        Price::from_raw(msg.auct_interest_clr_price, price_precision)?,
         Quantity::new(msg.paired_qty as f64, 0)?,
         Quantity::new(msg.total_imbalance_qty as f64, 0)?,
         parse_order_side(msg.side),
@@ -907,20 +905,20 @@ pub fn decode_imbalance_msg(
 pub fn decode_statistics_msg(
     msg: &dbn::StatMsg,
     instrument_id: InstrumentId,
+    price_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<DatabentoStatistics> {
-    let currency = Currency::USD(); // Hard coded for now
     let stat_type = DatabentoStatisticType::from_u8(msg.stat_type as u8)
         .expect("Invalid value for `stat_type`");
-    let update_action = DatabentoStatisticUpdateAction::from_u8(msg.stat_type as u8)
+    let update_action = DatabentoStatisticUpdateAction::from_u8(msg.update_action)
         .expect("Invalid value for `update_action`");
 
     DatabentoStatistics::new(
         instrument_id,
         stat_type,
         update_action,
-        decode_optional_price(msg.price, currency)?,
-        decode_optional_quantity_i32(msg.quantity, currency)?,
+        decode_optional_price(msg.price, price_precision)?,
+        decode_optional_quantity_i32(msg.quantity)?,
         msg.channel_id,
         msg.stat_flags,
         msg.sequence,

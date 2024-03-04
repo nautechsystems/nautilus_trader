@@ -130,7 +130,7 @@ class DatabentoDataLoader:
         """
         return self._pyo3_loader.get_glbx_exchange_map()
 
-    def from_dbn_file(
+    def from_dbn_file(  # noqa: C901 (too complex)
         self,
         path: PathLike[str] | str,
         instrument_id: InstrumentId | None = None,
@@ -153,18 +153,22 @@ class DatabentoDataLoader:
             If data should be converted to 'legacy Cython' objects.
             You would typically only set this False if passing the objects
             directly to a data catalog for the data to then be written in Nautilus Parquet format.
+            Note: the `imbalance` and `statistics` schemas are only implemented in Rust, and
+            so cannot be loaded as legacy Cython objects (so set this to False).
         include_trades : bool, False
             If separate `TradeTick` elements will be included in the data for MBO and MBP-1 schemas
             when applicable (your code will have to handle these two types in the returned list).
 
         Returns
         -------
-        list[Data]
+        list[Data] | list[pyo3.DatabentoImbalance] | list[pyo3.DatabentoStatistics]
 
         Raises
         ------
         ValueError
             If there is an error during decoding.
+        ValueError
+            If `as_legacy_cython` is True when schema is `imbalance` or `statistics`.
         RuntimeError
             If a feature is not currently supported.
 
@@ -264,5 +268,17 @@ class DatabentoDataLoader:
                     return data
                 else:
                     return self._pyo3_loader.load_bars(str(path), pyo3_instrument_id)
+            case DatabentoSchema.IMBALANCE.value:
+                if as_legacy_cython:
+                    raise ValueError(
+                        "Cannot load `DatabentoImbalance` as Cython objects, set `as_legacy_cython` to False",
+                    )
+                return self._pyo3_loader.load_imbalance(str(path), pyo3_instrument_id)
+            case DatabentoSchema.STATISTICS.value:
+                if as_legacy_cython:
+                    raise ValueError(
+                        "Cannot load `DatabentoStatistics` as Cython objects, set `as_legacy_cython` to False",
+                    )
+                return self._pyo3_loader.load_statistics(str(path), pyo3_instrument_id)
             case _:
                 raise RuntimeError(f"Loading schema {schema} not currently supported")

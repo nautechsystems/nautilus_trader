@@ -34,7 +34,7 @@ use pyo3::{
 
 use crate::databento::{
     loader::DatabentoDataLoader,
-    types::{DatabentoPublisher, PublisherId},
+    types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, PublisherId},
 };
 
 #[pymethods]
@@ -350,6 +350,46 @@ impl DatabentoDataLoader {
         let iter = self.read_records::<dbn::OhlcvMsg>(path_buf, instrument_id, false)?;
 
         exhaust_data_iter_to_pycapsule(py, iter)
+    }
+
+    #[pyo3(name = "load_imbalance")]
+    fn py_load_imbalance(
+        &self,
+        path: String,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<DatabentoImbalance>> {
+        let path_buf = PathBuf::from(path);
+        let iter = self.read_imbalance_records::<dbn::ImbalanceMsg>(path_buf, instrument_id)?;
+
+        let mut data = Vec::new();
+        for result in iter {
+            match result {
+                Ok(item) => data.push(item),
+                Err(e) => return Err(e),
+            }
+        }
+
+        Ok(data)
+    }
+
+    #[pyo3(name = "load_statistics")]
+    fn py_load_statistics(
+        &self,
+        path: String,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<DatabentoStatistics>> {
+        let path_buf = PathBuf::from(path);
+        let iter = self.read_statistics_records::<dbn::StatMsg>(path_buf, instrument_id)?;
+
+        let mut data = Vec::new();
+        for result in iter {
+            match result {
+                Ok(item) => data.push(item),
+                Err(e) => return Err(e),
+            }
+        }
+
+        Ok(data)
     }
 }
 
