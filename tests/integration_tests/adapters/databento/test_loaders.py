@@ -574,6 +574,36 @@ def test_load_bars(
     assert bar.ts_init == ts_init
 
 
+def test_load_imbalance() -> None:
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "imbalance.dbn.zst"
+
+    # Act
+    data = loader.from_dbn_file(path, as_legacy_cython=False)
+
+    # Assert
+    assert len(data) == 4
+    assert isinstance(data[0], nautilus_pyo3.DatabentoImbalance)
+    assert isinstance(data[1], nautilus_pyo3.DatabentoImbalance)
+    assert isinstance(data[2], nautilus_pyo3.DatabentoImbalance)
+    assert isinstance(data[3], nautilus_pyo3.DatabentoImbalance)
+
+
+def test_load_statistics() -> None:
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "statistics.dbn.zst"
+
+    # Act
+    data = loader.from_dbn_file(path, as_legacy_cython=False)
+
+    # Assert
+    assert len(data) == 4
+    assert isinstance(data[0], nautilus_pyo3.DatabentoStatistics)
+    assert isinstance(data[1], nautilus_pyo3.DatabentoStatistics)
+    assert isinstance(data[2], nautilus_pyo3.DatabentoStatistics)
+    assert isinstance(data[3], nautilus_pyo3.DatabentoStatistics)
+
+
 @pytest.mark.skip("development_only")
 def test_load_instruments() -> None:
     # Arrange
