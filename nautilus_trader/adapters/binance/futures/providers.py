@@ -318,6 +318,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             elif contract_type in (
                 BinanceFuturesContractType.CURRENT_MONTH,
                 BinanceFuturesContractType.CURRENT_QUARTER,
+                BinanceFuturesContractType.CURRENT_QUARTER_DELIVERING,
                 BinanceFuturesContractType.NEXT_MONTH,
                 BinanceFuturesContractType.NEXT_QUARTER,
             ):
