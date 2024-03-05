@@ -29,6 +29,8 @@ from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
 from nautilus_trader.adapters.databento.enums import DatabentoSchema
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
+from nautilus_trader.adapters.databento.types import DatabentoImbalance
+from nautilus_trader.adapters.databento.types import DatabentoStatistics
 from nautilus_trader.adapters.databento.types import Dataset
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
@@ -278,7 +280,10 @@ class DatabentoDataClient(LiveMarketDataClient):
         if not self._has_subscribed.get(dataset):
             self._log.debug(f"Starting {dataset} live client...", LogColor.MAGENTA)
             future = asyncio.ensure_future(
-                live_client.start(callback=self._handle_record),
+                live_client.start(
+                    callback=self._handle_msg,
+                    callback_pyo3=self._handle_msg_pyo3,  # Imbalance and Statistics messages
+                ),
             )
             self._live_client_futures.add(future)
             self._has_subscribed[dataset] = True
@@ -504,7 +509,12 @@ class DatabentoDataClient(LiveMarketDataClient):
             for instrument_id in instrument_ids:
                 self._trade_tick_subscriptions.add(instrument_id)
 
-            future = asyncio.ensure_future(live_client.start(self._handle_record))
+            future = asyncio.ensure_future(
+                live_client.start(
+                    callback=self._handle_msg,
+                    callback_pyo3=self._handle_msg_pyo3,  # Imbalance and Statistics messages
+                ),
+            )
             self._live_client_futures.add(future)
         except asyncio.CancelledError:
             self._log.warning(
@@ -838,7 +848,23 @@ class DatabentoDataClient(LiveMarketDataClient):
             correlation_id=correlation_id,
         )
 
-    def _handle_record(
+    def _handle_msg_pyo3(
+        self,
+        record: object,
+    ) -> None:
+        # TODO: Improve the efficiency of this
+        if isinstance(record, DatabentoImbalance):
+            instrument_id = InstrumentId.from_str(record.instrument_id.value)
+            data = DataType(DatabentoImbalance, metadata={"instrument_id": instrument_id})
+        elif isinstance(record, DatabentoStatistics):
+            instrument_id = InstrumentId.from_str(record.instrument_id.value)
+            data = DataType(DatabentoStatistics, metadata={"instrument_id": instrument_id})
+        else:
+            raise RuntimeError(f"Cannot handle pyo3 record `{record!r}`")
+
+        self._handle_data(data)
+
+    def _handle_msg(
         self,
         pycapsule: object,
     ) -> None:

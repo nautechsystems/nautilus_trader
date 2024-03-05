@@ -2402,5 +2402,6 @@ class DatabentoLiveClient:
     async def start(
         self,
         callback: Callable,
+        callback_pyo3: Callable,
     ) -> dict[str, str]: ...
     def close(self) -> None: ...
