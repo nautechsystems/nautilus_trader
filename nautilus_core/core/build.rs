@@ -13,16 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::env;
+
 #[allow(clippy::expect_used)] // OK in build script
 fn main() {
     #[cfg(feature = "ffi")]
-    {
+    if env::var("CARGO_FEATURE_FFI").is_ok() {
         extern crate cbindgen;
         use std::{
             fs::File,
             io::{Read, Write},
             path::PathBuf,
         };
+
         let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
         // Generate C headers
