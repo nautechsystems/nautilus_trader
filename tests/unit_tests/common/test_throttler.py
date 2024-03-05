@@ -244,7 +244,7 @@ class TestDroppingThrottler:
         assert self.throttler.used() == 0
         assert self.throttler.recv_count == 6
         assert self.throttler.sent_count == 5
-    
+
     def test_send_message_after_dropping_message(self):
         # Arrange
         item = "MESSAGE"
