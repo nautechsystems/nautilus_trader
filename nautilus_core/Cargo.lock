@@ -4796,7 +4796,6 @@ dependencies = [
  "env_logger 0.10.2",
  "futures-channel",
  "futures-util",
- "hyper 0.14.28",
  "log",
  "native-tls",
  "rustls 0.21.10",
