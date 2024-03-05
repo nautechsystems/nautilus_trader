@@ -25,7 +25,7 @@ use indexmap::IndexMap;
 use nautilus_model::{
     data::Data,
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
-    instruments::Instrument,
+    instruments::InstrumentType,
     types::currency::Currency,
 };
 use streaming_iterator::StreamingIterator;
@@ -117,7 +117,7 @@ impl DatabentoDataLoader {
             .collect::<IndexMap<Venue, Ustr>>();
 
         // Insert CME Globex exchanges
-        let glbx = Dataset::from("GLBX");
+        let glbx = Dataset::from("GLBX.MDP3");
         self.venue_dataset_map.insert(Venue::CBCM(), glbx);
         self.venue_dataset_map.insert(Venue::GLBX(), glbx);
         self.venue_dataset_map.insert(Venue::NYUM(), glbx);
@@ -173,7 +173,7 @@ impl DatabentoDataLoader {
     pub fn read_definition_records(
         &mut self,
         path: PathBuf,
-    ) -> Result<impl Iterator<Item = Result<Box<dyn Instrument>>> + '_> {
+    ) -> Result<impl Iterator<Item = Result<InstrumentType>> + '_> {
         let mut decoder = Decoder::from_zstd_file(path)?;
         decoder.set_upgrade_policy(dbn::VersionUpgradePolicy::Upgrade);
         let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsgV1>();
