@@ -65,7 +65,6 @@ version = "0.23.0"
 
 [dev-dependencies]
 futures-channel = "0.3.28"
-hyper = { version = "0.14.25", default-features = false, features = ["http1", "server", "tcp"] }
 tokio = { version = "1.27.0", default-features = false, features = ["io-std", "macros", "net", "rt-multi-thread", "time"] }
 url = "2.3.1"
 env_logger = "0.10.0"
