@@ -13,14 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::env;
-
 #[allow(clippy::expect_used)] // OK in build script
 fn main() {
-    let _is_ffi_feature_on = env::var("CARGO_FEATURE_FFI").is_ok();
-
     #[cfg(feature = "ffi")]
-    if !_is_ffi_feature_on {
+    {
         extern crate cbindgen;
         use std::{
             fs::File,
