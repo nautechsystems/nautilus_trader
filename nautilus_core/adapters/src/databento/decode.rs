@@ -39,7 +39,7 @@ use nautilus_model::{
     identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
     instruments::{
         equity::Equity, futures_contract::FuturesContract, futures_spread::FuturesSpread,
-        options_contract::OptionsContract, options_spread::OptionsSpread, Instrument,
+        options_contract::OptionsContract, options_spread::OptionsSpread, InstrumentType,
     },
     types::{currency::Currency, fixed::FIXED_SCALAR, price::Price, quantity::Quantity},
 };
@@ -645,25 +645,29 @@ pub fn decode_instrument_def_msg_v1(
     msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> anyhow::Result<Box<dyn Instrument>> {
+) -> anyhow::Result<InstrumentType> {
     match msg.instrument_class as u8 as char {
-        'K' => Ok(Box::new(decode_equity_v1(msg, instrument_id, ts_init)?)),
-        'F' => Ok(Box::new(decode_futures_contract_v1(
+        'K' => Ok(InstrumentType::Equity(decode_equity_v1(
             msg,
             instrument_id,
             ts_init,
         )?)),
-        'S' => Ok(Box::new(decode_futures_spread_v1(
+        'F' => Ok(InstrumentType::FuturesContract(decode_futures_contract_v1(
             msg,
             instrument_id,
             ts_init,
         )?)),
-        'C' | 'P' => Ok(Box::new(decode_options_contract_v1(
+        'S' => Ok(InstrumentType::FuturesSpread(decode_futures_spread_v1(
             msg,
             instrument_id,
             ts_init,
         )?)),
-        'T' | 'M' => Ok(Box::new(decode_options_spread_v1(
+        'C' | 'P' => Ok(InstrumentType::OptionsContract(decode_options_contract_v1(
+            msg,
+            instrument_id,
+            ts_init,
+        )?)),
+        'T' | 'M' => Ok(InstrumentType::OptionsSpread(decode_options_spread_v1(
             msg,
             instrument_id,
             ts_init,
@@ -681,25 +685,29 @@ pub fn decode_instrument_def_msg(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> anyhow::Result<Box<dyn Instrument>> {
+) -> anyhow::Result<InstrumentType> {
     match msg.instrument_class as u8 as char {
-        'K' => Ok(Box::new(decode_equity(msg, instrument_id, ts_init)?)),
-        'F' => Ok(Box::new(decode_futures_contract(
+        'K' => Ok(InstrumentType::Equity(decode_equity(
             msg,
             instrument_id,
             ts_init,
         )?)),
-        'S' => Ok(Box::new(decode_futures_spread(
+        'F' => Ok(InstrumentType::FuturesContract(decode_futures_contract(
             msg,
             instrument_id,
             ts_init,
         )?)),
-        'C' | 'P' => Ok(Box::new(decode_options_contract(
+        'S' => Ok(InstrumentType::FuturesSpread(decode_futures_spread(
             msg,
             instrument_id,
             ts_init,
         )?)),
-        'T' | 'M' => Ok(Box::new(decode_options_spread(
+        'C' | 'P' => Ok(InstrumentType::OptionsContract(decode_options_contract(
+            msg,
+            instrument_id,
+            ts_init,
+        )?)),
+        'T' | 'M' => Ok(InstrumentType::OptionsSpread(decode_options_spread(
             msg,
             instrument_id,
             ts_init,

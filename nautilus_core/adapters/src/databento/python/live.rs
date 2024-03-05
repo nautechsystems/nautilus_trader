@@ -13,20 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, fs, str::FromStr, sync::mpsc::Sender};
+use std::{
+    collections::HashMap,
+    fs,
+    str::FromStr,
+    sync::mpsc::{Receiver, Sender},
+};
 
 use anyhow::{anyhow, bail};
 use databento::live::Subscription;
 use indexmap::IndexMap;
 use nautilus_common::runtime::get_runtime;
-use nautilus_core::{python::to_pyruntime_err, time::UnixNanos};
+use nautilus_core::{
+    python::{to_pyruntime_err, to_pyvalue_err},
+    time::UnixNanos,
+};
 use nautilus_model::{
     identifiers::{symbol::Symbol, venue::Venue},
     python::data::data_to_pycapsule,
 };
 use pyo3::prelude::*;
 use time::OffsetDateTime;
-use tokio::sync::mpsc::Receiver;
 
 use super::loader::convert_instrument_to_pyobject;
 use crate::databento::{
@@ -47,46 +54,46 @@ pub struct DatabentoLiveClient {
     pub is_running: bool,
     #[pyo3(get)]
     pub is_closed: bool,
-    tx: Sender<LiveCommand>,
-    rx: Option<Receiver<LiveMessage>>,
+    tx_cmd: Sender<LiveCommand>,
+    rx_cmd: Option<Receiver<LiveCommand>>,
+    publisher_venue_map: IndexMap<u16, Venue>,
     glbx_exchange_map: HashMap<Symbol, Venue>,
 }
 
 impl DatabentoLiveClient {
     async fn process_messages(
-        mut rx: Receiver<LiveMessage>,
+        mut rx: tokio::sync::mpsc::Receiver<LiveMessage>,
         callback: PyObject,
         callback_pyo3: PyObject,
-    ) -> anyhow::Result<()> {
+    ) -> PyResult<()> {
+        // Continue to process messages until channel is hung up
         while let Some(msg) = rx.recv().await {
             match msg {
                 LiveMessage::Data(data) => Python::with_gil(|py| {
                     let py_obj = data_to_pycapsule(py, data);
-                    call_python_with_pyobject(py, &callback, py_obj)
+                    callback.call1(py, (py_obj,))
                 }),
                 LiveMessage::Instrument(data) => Python::with_gil(|py| {
                     let py_obj = convert_instrument_to_pyobject(py, data)
                         .expect("Error creating instrument");
-                    call_python_with_pyobject(py, &callback, py_obj)
+                    callback.call1(py, (py_obj,))
                 }),
                 LiveMessage::Imbalance(data) => Python::with_gil(|py| {
-                    // Can be passed directly to this callback
                     let py_obj = data.into_py(py);
-                    call_python_with_pyobject(py, &callback_pyo3, py_obj)
+                    callback_pyo3.call1(py, (py_obj,))
                 }),
                 LiveMessage::Statistics(data) => Python::with_gil(|py| {
-                    // Can be passed directly to this callback
                     let py_obj = data.into_py(py);
-                    call_python_with_pyobject(py, &callback_pyo3, py_obj)
+                    callback_pyo3.call1(py, (py_obj,))
                 }),
-                LiveMessage::Error(e) => return Err(e.into()),
-            }?
+                LiveMessage::Error(e) => return Err(to_pyruntime_err(e)),
+            }?;
         }
         Ok(())
     }
 
-    fn send_command(&self, cmd: LiveCommand) -> anyhow::Result<()> {
-        self.tx.send(cmd).map_err(anyhow::Error::new)
+    fn send_command(&self, cmd: LiveCommand) -> PyResult<()> {
+        self.tx_cmd.send(cmd).map_err(to_pyruntime_err)
     }
 }
 
@@ -103,33 +110,21 @@ impl DatabentoLiveClient {
             .collect::<IndexMap<u16, Venue>>();
 
         let (tx_cmd, rx_cmd) = std::sync::mpsc::channel::<LiveCommand>();
-        let (tx_msg, rx_msg) = tokio::sync::mpsc::channel::<LiveMessage>(100_000);
-
-        let mut feed_handler = DatabentoFeedHandler::new(
-            key.clone(),
-            dataset.clone(),
-            rx_cmd,
-            tx_msg,
-            publisher_venue_map,
-            HashMap::new(),
-        );
-
-        let rt = get_runtime();
-        rt.spawn(async move { feed_handler.run().await });
 
         Ok(Self {
             key,
             dataset,
-            tx: tx_cmd,
-            rx: Some(rx_msg),
+            tx_cmd,
+            rx_cmd: Some(rx_cmd),
             is_running: false,
             is_closed: false,
+            publisher_venue_map,
             glbx_exchange_map: HashMap::new(),
         })
     }
 
     #[pyo3(name = "load_glbx_exchange_map")]
-    fn py_load_glbx_exchange_map(&mut self, map: HashMap<Symbol, Venue>) -> anyhow::Result<()> {
+    fn py_load_glbx_exchange_map(&mut self, map: HashMap<Symbol, Venue>) -> PyResult<()> {
         self.glbx_exchange_map = map.clone();
         self.send_command(LiveCommand::UpdateGlbx(map))
     }
@@ -146,17 +141,18 @@ impl DatabentoLiveClient {
         symbols: String,
         stype_in: Option<String>,
         start: Option<UnixNanos>,
-    ) -> anyhow::Result<()> {
+    ) -> PyResult<()> {
         let stype_in = stype_in.unwrap_or("raw_symbol".to_string());
 
         let mut sub = Subscription::builder()
             .symbols(symbols)
-            .schema(dbn::Schema::from_str(&schema)?)
-            .stype_in(dbn::SType::from_str(&stype_in)?)
+            .schema(dbn::Schema::from_str(&schema).map_err(to_pyvalue_err)?)
+            .stype_in(dbn::SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
             .build();
 
         if let Some(start) = start {
-            let start = OffsetDateTime::from_unix_timestamp_nanos(i128::from(start))?;
+            let start = OffsetDateTime::from_unix_timestamp_nanos(i128::from(start))
+                .map_err(to_pyvalue_err)?;
             sub.start = Some(start);
         };
 
@@ -173,21 +169,35 @@ impl DatabentoLiveClient {
         if self.is_closed {
             return Err(to_pyruntime_err("Client was already closed"));
         };
+        if self.is_running {
+            return Err(to_pyruntime_err("Client was already running"));
+        };
+        self.is_running = true;
 
-        self.send_command(LiveCommand::Start)?;
+        let (tx_msg, rx_msg) = tokio::sync::mpsc::channel::<LiveMessage>(100_000);
 
         // Consume the receiver
-        let rx = self
-            .rx
+        let rx_cmd = self
+            .rx_cmd
             .take()
             .ok_or_else(|| anyhow!("Client already started"))?;
 
-        self.is_running = true;
+        let mut feed_handler = DatabentoFeedHandler::new(
+            self.key.clone(),
+            self.dataset.clone(),
+            rx_cmd,
+            tx_msg,
+            self.publisher_venue_map.clone(),
+            HashMap::new(),
+        );
+
+        let rt = get_runtime();
+        rt.spawn(async move { feed_handler.run().await });
+
+        self.send_command(LiveCommand::Start)?;
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            Self::process_messages(rx, callback, callback_pyo3)
-                .await
-                .map_err(|e| e.into())
+            Self::process_messages(rx_msg, callback, callback_pyo3).await
         })
     }
 
@@ -202,12 +212,5 @@ impl DatabentoLiveClient {
         self.is_closed = true;
 
         Ok(())
-    }
-}
-
-fn call_python_with_pyobject(py: Python, callback: &PyObject, py_obj: PyObject) -> PyResult<()> {
-    match callback.call1(py, (py_obj,)) {
-        Ok(_) => Ok(()),
-        Err(e) => Err(e),
     }
 }

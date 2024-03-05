@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{any::Any, collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf};
 
 use nautilus_core::{ffi::cvec::CVec, python::to_pyvalue_err};
 use nautilus_model::{
@@ -22,10 +22,7 @@ use nautilus_model::{
         trade::TradeTick, Data,
     },
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
-    instruments::{
-        equity::Equity, futures_contract::FuturesContract, futures_spread::FuturesSpread,
-        options_contract::OptionsContract, options_spread::OptionsSpread, Instrument,
-    },
+    instruments::InstrumentType,
 };
 use pyo3::{
     prelude::*,
@@ -395,28 +392,16 @@ impl DatabentoDataLoader {
 
 pub fn convert_instrument_to_pyobject(
     py: Python,
-    instrument: Box<dyn Instrument + 'static>,
+    instrument: InstrumentType,
 ) -> PyResult<PyObject> {
-    let any_ref: &dyn Any = instrument.as_any();
-    if let Some(equity) = any_ref.downcast_ref::<Equity>() {
-        return Ok(equity.into_py(py));
+    match instrument {
+        InstrumentType::Equity(inst) => Ok(inst.into_py(py)),
+        InstrumentType::FuturesContract(inst) => Ok(inst.into_py(py)),
+        InstrumentType::FuturesSpread(inst) => Ok(inst.into_py(py)),
+        InstrumentType::OptionsContract(inst) => Ok(inst.into_py(py)),
+        InstrumentType::OptionsSpread(inst) => Ok(inst.into_py(py)),
+        _ => Err(to_pyvalue_err("Unsupported instrument type")),
     }
-    if let Some(future) = any_ref.downcast_ref::<FuturesContract>() {
-        return Ok(future.into_py(py));
-    }
-    if let Some(spread) = any_ref.downcast_ref::<FuturesSpread>() {
-        return Ok(spread.into_py(py));
-    }
-    if let Some(option) = any_ref.downcast_ref::<OptionsContract>() {
-        return Ok(option.into_py(py));
-    }
-    if let Some(spread) = any_ref.downcast_ref::<OptionsSpread>() {
-        return Ok(spread.into_py(py));
-    }
-
-    Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
-        "Unknown instrument type",
-    ))
 }
 
 fn exhaust_data_iter_to_pycapsule(
