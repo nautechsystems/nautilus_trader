@@ -41,14 +41,13 @@ use tokio::{
 };
 use ustr::Ustr;
 
-use crate::databento::{
-    decode::{decode_instrument_def_msg, decode_record},
-    types::PublisherId,
-};
-
 use super::{
     decode::{decode_imbalance_msg, decode_statistics_msg},
     types::{DatabentoImbalance, DatabentoStatistics},
+};
+use crate::databento::{
+    decode::{decode_instrument_def_msg, decode_record},
+    types::PublisherId,
 };
 
 pub enum LiveCommand {
@@ -264,14 +263,14 @@ impl DatabentoFeedHandler {
                         Ok(()) => {}
                         Err(e) => eprintln!("{e:?}"), // Print stderr for now
                     }
-                }
+                };
 
                 if let Some(data) = data2 {
                     match self.tx.send(LiveMessage::Data(data)).await {
                         Ok(()) => {}
                         Err(e) => eprintln!("{e:?}"), // Print stderr for now
                     }
-                }
+                };
             };
         }
 
@@ -299,7 +298,7 @@ fn handle_symbol_mapping_msg(
         .on_symbol_mapping(msg)
         .unwrap_or_else(|_| panic!("Error updating `symbol_map` with {msg:?}"));
 
-    // Remove currently entry
+    // Remove current entry for instrument
     instrument_id_map.remove(&msg.header().instrument_id);
 }
 
