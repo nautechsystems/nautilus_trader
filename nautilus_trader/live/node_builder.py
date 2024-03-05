@@ -160,7 +160,7 @@ class TradingNodeBuilder:
 
         for parts, cfg in config.items():
             name = parts.partition("-")[0]
-            self._log.info(f"Building data client for {name}...")
+            self._log.info(f"Building data client for {name}.")
 
             if isinstance(cfg, ImportableConfig):
                 if name not in self._data_factories and cfg.factory is not None:
@@ -221,7 +221,7 @@ class TradingNodeBuilder:
 
         for parts, cfg in config.items():
             name = parts.partition("-")[0]
-            self._log.info(f"Building execution client for {name}...")
+            self._log.info(f"Building execution client for {name}.")
 
             if isinstance(cfg, ImportableConfig):
                 if name not in self._exec_factories and cfg.factory is not None:
