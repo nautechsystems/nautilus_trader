@@ -32,16 +32,15 @@ use nautilus_core::time::UnixNanos;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-use crate::{
-    enums::{AssetClass, InstrumentClass},
-    identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
-};
-
 use self::{
     crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
     equity::Equity, futures_contract::FuturesContract, futures_spread::FuturesSpread,
     options_contract::OptionsContract, options_spread::OptionsSpread,
+};
+use crate::{
+    enums::{AssetClass, InstrumentClass},
+    identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
+    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
 pub enum InstrumentType {
