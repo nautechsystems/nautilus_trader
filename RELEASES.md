@@ -17,6 +17,7 @@ None
 - Fixed `OrderBookMbp` error when attempting to add to a L1\_MBP book type (now raises `RuntimeError` rather than panicking)
 - Fixed Interactive Brokers connection error logging (#1524), thanks @benjaminsingleton
 - Fixed `SimulationModuleConfig` location and missing re-export from `config` subpackage
+- Fixed logging `StdoutWriter` from also writing error logs (writers were duplicating error logs)
 
 ---
 
