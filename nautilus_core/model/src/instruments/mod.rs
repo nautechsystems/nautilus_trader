@@ -38,6 +38,23 @@ use crate::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
+use self::{
+    crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
+    equity::Equity, futures_contract::FuturesContract, futures_spread::FuturesSpread,
+    options_contract::OptionsContract, options_spread::OptionsSpread,
+};
+
+pub enum InstrumentType {
+    CryptoFuture(CryptoFuture),
+    CryptoPerpetual(CryptoPerpetual),
+    CurrencyPair(CurrencyPair),
+    Equity(Equity),
+    FuturesContract(FuturesContract),
+    FuturesSpread(FuturesSpread),
+    OptionsContract(OptionsContract),
+    OptionsSpread(OptionsSpread),
+}
+
 pub trait Instrument: Any + 'static + Send {
     fn id(&self) -> InstrumentId;
     fn symbol(&self) -> Symbol {
