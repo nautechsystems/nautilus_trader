@@ -226,7 +226,6 @@ impl DatabentoHistoricalClient {
                 let record = dbn::RecordRef::from(msg);
                 let instrument_id = decode_nautilus_instrument_id(
                     &record,
-                    msg.hd.publisher_id,
                     &metadata,
                     &publisher_venue_map,
                     &glbx_exchange_map,
@@ -296,7 +295,6 @@ impl DatabentoHistoricalClient {
                 let record = dbn::RecordRef::from(msg);
                 let instrument_id = decode_nautilus_instrument_id(
                     &record,
-                    msg.hd.publisher_id,
                     &metadata,
                     &publisher_venue_map,
                     &glbx_exchange_map,
@@ -375,7 +373,6 @@ impl DatabentoHistoricalClient {
                 let record = dbn::RecordRef::from(msg);
                 let instrument_id = decode_nautilus_instrument_id(
                     &record,
-                    msg.hd.publisher_id,
                     &metadata,
                     &publisher_venue_map,
                     &glbx_exchange_map,

@@ -15,11 +15,11 @@
 
 use std::{collections::HashMap, env, fs, path::PathBuf};
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use dbn::{
     compat::InstrumentDefMsgV1,
     decode::{dbn::Decoder, DbnMetadata, DecodeStream},
-    Publisher, Record,
+    Publisher,
 };
 use indexmap::IndexMap;
 use nautilus_model::{
@@ -36,6 +36,7 @@ use super::{
         decode_imbalance_msg, decode_instrument_def_msg_v1, decode_record, decode_statistics_msg,
         raw_ptr_to_ustr,
     },
+    symbology::decode_nautilus_instrument_id,
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, Dataset, PublisherId},
 };
 
@@ -241,12 +242,13 @@ impl DatabentoDataLoader {
                     let record = dbn::RecordRef::from(rec);
                     let instrument_id = match &instrument_id {
                         Some(id) => *id, // Copy
-                        None => get_nautilus_instrument_id(
+                        None => decode_nautilus_instrument_id(
                             &record,
                             &metadata,
                             &self.publisher_venue_map,
                             &self.glbx_exchange_map,
-                        ),
+                        )
+                        .unwrap(), // TODO: Panic on error for now
                     };
 
                     match decode_record(
@@ -286,12 +288,13 @@ impl DatabentoDataLoader {
                     let record = dbn::RecordRef::from(rec);
                     let instrument_id = match &instrument_id {
                         Some(id) => *id, // Copy
-                        None => get_nautilus_instrument_id(
+                        None => decode_nautilus_instrument_id(
                             &record,
                             &metadata,
                             &self.publisher_venue_map,
                             &self.glbx_exchange_map,
-                        ),
+                        )
+                        .unwrap(), // TODO: Panic on error for now
                     };
 
                     let msg = record
@@ -328,12 +331,13 @@ impl DatabentoDataLoader {
                     let record = dbn::RecordRef::from(rec);
                     let instrument_id = match &instrument_id {
                         Some(id) => *id, // Copy
-                        None => get_nautilus_instrument_id(
+                        None => decode_nautilus_instrument_id(
                             &record,
                             &metadata,
                             &self.publisher_venue_map,
                             &self.glbx_exchange_map,
-                        ),
+                        )
+                        .unwrap(), // TODO: Panic on error for now
                     };
 
                     let msg = record.get::<dbn::StatMsg>().expect("Invalid `StatMsg`");
@@ -346,67 +350,4 @@ impl DatabentoDataLoader {
             }
         }))
     }
-}
-
-fn get_nautilus_instrument_id(
-    record: &dbn::RecordRef,
-    metadata: &dbn::Metadata,
-    publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    glbx_exchange_map: &HashMap<Symbol, Venue>,
-) -> InstrumentId {
-    let publisher = record.publisher().expect("Invalid `publisher` for record");
-    let publisher_id = publisher as PublisherId;
-    let venue = publisher_venue_map
-        .get(&publisher_id)
-        .unwrap_or_else(|| panic!("`Venue` not found for `publisher_id` {publisher_id}"));
-    let mut instrument_id = get_nautilus_instrument_id_for_record(record, metadata, *venue)
-        .unwrap_or_else(|_| panic!("Error resolving symbology mapping for {record:?}"));
-
-    if publisher == Publisher::GlbxMdp3Glbx {
-        // Source actual exchange from GLBX instrument
-        // definitions if they were loaded.
-        if let Some(venue) = glbx_exchange_map.get(&instrument_id.symbol) {
-            instrument_id.venue = *venue;
-        }
-    };
-
-    instrument_id
-}
-
-fn get_nautilus_instrument_id_for_record(
-    record: &dbn::RecordRef,
-    metadata: &dbn::Metadata,
-    venue: Venue,
-) -> Result<InstrumentId> {
-    let (instrument_id, nanoseconds) = if let Some(msg) = record.get::<dbn::MboMsg>() {
-        (msg.hd.instrument_id, msg.ts_recv)
-    } else if let Some(msg) = record.get::<dbn::TradeMsg>() {
-        (msg.hd.instrument_id, msg.ts_recv)
-    } else if let Some(msg) = record.get::<dbn::Mbp1Msg>() {
-        (msg.hd.instrument_id, msg.ts_recv)
-    } else if let Some(msg) = record.get::<dbn::Mbp10Msg>() {
-        (msg.hd.instrument_id, msg.ts_recv)
-    } else if let Some(msg) = record.get::<dbn::OhlcvMsg>() {
-        (msg.hd.instrument_id, msg.hd.ts_event)
-    } else if let Some(msg) = record.get::<dbn::ImbalanceMsg>() {
-        (msg.hd.instrument_id, msg.ts_recv)
-    } else if let Some(msg) = record.get::<dbn::StatMsg>() {
-        (msg.hd.instrument_id, msg.ts_recv)
-    } else {
-        bail!("DBN message type is not currently supported")
-    };
-
-    let duration = time::Duration::nanoseconds(nanoseconds as i64);
-    let datetime = time::OffsetDateTime::UNIX_EPOCH
-        .checked_add(duration)
-        .unwrap(); // SAFETY: Relying on correctness of record timestamps
-    let date = datetime.date();
-    let symbol_map = metadata.symbol_map_for_date(date)?;
-    let raw_symbol = symbol_map
-        .get(instrument_id)
-        .expect("No raw symbol found for {instrument_id}");
-
-    let symbol = Symbol::from_str_unchecked(raw_symbol);
-
-    Ok(InstrumentId::new(symbol, venue))
 }

@@ -15,10 +15,11 @@
 
 use std::{collections::HashMap, fs, str::FromStr, sync::mpsc::Sender};
 
+use anyhow::{anyhow, bail};
 use databento::live::Subscription;
 use indexmap::IndexMap;
 use nautilus_common::runtime::get_runtime;
-use nautilus_core::time::UnixNanos;
+use nautilus_core::{python::to_pyruntime_err, time::UnixNanos};
 use nautilus_model::{
     data::Data,
     identifiers::{symbol::Symbol, venue::Venue},
@@ -31,7 +32,7 @@ use tokio::sync::mpsc::Receiver;
 
 use super::loader::convert_instrument_to_pyobject;
 use crate::databento::{
-    live::{DatabentoFeedHandler, LiveCommand, LiveMessage, StartCommand},
+    live::{DatabentoFeedHandler, LiveCommand, LiveMessage},
     types::DatabentoPublisher,
 };
 
@@ -44,6 +45,10 @@ pub struct DatabentoLiveClient {
     pub key: String,
     #[pyo3(get)]
     pub dataset: String,
+    #[pyo3(get)]
+    pub is_running: bool,
+    #[pyo3(get)]
+    pub is_closed: bool,
     tx: Sender<LiveCommand>,
     rx: Option<Receiver<LiveMessage>>,
     glbx_exchange_map: HashMap<Symbol, Venue>,
@@ -109,6 +114,8 @@ impl DatabentoLiveClient {
             dataset,
             tx: tx_cmd,
             rx: Some(rx_msg),
+            is_running: false,
+            is_closed: false,
             glbx_exchange_map: HashMap::new(),
         })
     }
@@ -149,19 +156,20 @@ impl DatabentoLiveClient {
     }
 
     #[pyo3(name = "start")]
-    fn py_start<'py>(
-        &mut self,
-        py: Python<'py>,
-        callback: PyObject,
-        start: Option<UnixNanos>,
-    ) -> PyResult<&'py PyAny> {
-        let cmd = StartCommand {
-            replay: start.is_some(),
+    fn py_start<'py>(&mut self, py: Python<'py>, callback: PyObject) -> PyResult<&'py PyAny> {
+        if self.is_closed {
+            return Err(to_pyruntime_err("Client was already closed"));
         };
-        self.send_command(LiveCommand::Start(cmd))?;
+
+        self.send_command(LiveCommand::Start)?;
 
         // Consume the receiver
-        let rx = self.rx.take().expect("Client already started");
+        let rx = self
+            .rx
+            .take()
+            .ok_or_else(|| anyhow!("Client already started"))?;
+
+        self.is_running = true;
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
             Self::process_messages(rx, callback)
@@ -171,8 +179,16 @@ impl DatabentoLiveClient {
     }
 
     #[pyo3(name = "close")]
-    fn py_close(&self) -> anyhow::Result<()> {
-        self.send_command(LiveCommand::Close)
+    fn py_close(&mut self) -> anyhow::Result<()> {
+        match self.is_running {
+            true => self.send_command(LiveCommand::Close)?,
+            false => bail!("Client was never started"),
+        };
+
+        self.is_running = false;
+        self.is_closed = true;
+
+        Ok(())
     }
 }
 

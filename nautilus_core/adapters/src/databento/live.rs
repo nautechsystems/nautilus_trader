@@ -35,7 +35,10 @@ use nautilus_model::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
     instruments::Instrument,
 };
-use tokio::sync::mpsc::Sender;
+use tokio::{
+    sync::mpsc::Sender,
+    time::{timeout, Duration},
+};
 use ustr::Ustr;
 
 use crate::databento::{
@@ -43,14 +46,10 @@ use crate::databento::{
     types::PublisherId,
 };
 
-pub struct StartCommand {
-    pub replay: bool,
-}
-
 pub enum LiveCommand {
     Subscribe(Subscription),
     UpdateGlbx(HashMap<Symbol, Venue>),
-    Start(StartCommand),
+    Start,
     Close,
 }
 
@@ -68,6 +67,7 @@ pub struct DatabentoFeedHandler {
     tx: Sender<LiveMessage>,
     publisher_venue_map: IndexMap<PublisherId, Venue>,
     glbx_exchange_map: HashMap<Symbol, Venue>,
+    replay: bool,
 }
 
 impl DatabentoFeedHandler {
@@ -87,6 +87,7 @@ impl DatabentoFeedHandler {
             tx,
             publisher_venue_map,
             glbx_exchange_map,
+            replay: false,
         }
     }
 
@@ -106,6 +107,10 @@ impl DatabentoFeedHandler {
             .build()
             .await?;
 
+        // Timeout awaiting the next record before checking for a command
+        let timeout_duration = Duration::from_millis(1);
+
+        // Flag to control whether to continue to await next record
         let mut running = false;
 
         loop {
@@ -113,11 +118,14 @@ impl DatabentoFeedHandler {
             if let Ok(cmd) = self.rx.recv() {
                 match cmd {
                     LiveCommand::Subscribe(sub) => {
+                        if !self.replay & sub.start.is_some() {
+                            self.replay = true;
+                        }
                         client.subscribe(&sub).await?;
                     }
                     LiveCommand::UpdateGlbx(map) => self.glbx_exchange_map = map,
-                    LiveCommand::Start(cmd) => {
-                        buffering_start = match cmd.replay {
+                    LiveCommand::Start => {
+                        buffering_start = match self.replay {
                             true => Some(clock.get_time_ns()),
                             false => None,
                         };
@@ -125,7 +133,9 @@ impl DatabentoFeedHandler {
                         running = true;
                     }
                     LiveCommand::Close => {
-                        client.close().await.map_err(to_pyruntime_err)?;
+                        if running {
+                            client.close().await.map_err(to_pyruntime_err)?;
+                        }
                         return Ok(());
                     }
                 }
@@ -135,7 +145,13 @@ impl DatabentoFeedHandler {
                 continue;
             };
 
-            let record = match client.next_record().await {
+            let result = timeout(timeout_duration, client.next_record()).await;
+            let record_opt = match result {
+                Ok(record_opt) => record_opt,
+                Err(_) => continue, // Timeout
+            };
+
+            let record = match record_opt {
                 Ok(Some(record)) => record,
                 Ok(None) => break, // Session ended normally
                 Err(e) => {
@@ -144,7 +160,7 @@ impl DatabentoFeedHandler {
                     self.tx
                         .send(LiveMessage::Error(e))
                         .await
-                        .expect("Error sending ");
+                        .expect("Error on sending error message");
                     break;
                 }
             };
