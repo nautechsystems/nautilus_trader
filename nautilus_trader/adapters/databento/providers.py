@@ -135,7 +135,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             if not parent_symbols and not instrument_ids_to_decode:
                 raise asyncio.CancelledError(success_msg)
 
-        await live_client.subscribe(
+        live_client.subscribe(
             schema=DatabentoSchema.DEFINITION.value,
             symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
             start=0,  # From start of current week (latest definitions)
@@ -143,7 +143,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         if parent_symbols:
             self._log.info(f"Requesting parent symbols {parent_symbols}.", LogColor.BLUE)
-            await live_client.subscribe(
+            live_client.subscribe(
                 schema=DatabentoSchema.DEFINITION.value,
                 stype_in="parent",
                 symbols=",".join(parent_symbols),
@@ -152,7 +152,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         try:
             await asyncio.wait_for(
-                live_client.start(callback=receive_instruments, replay=False),
+                live_client.start(callback=receive_instruments),
                 timeout=5.0,
             )
         except ValueError as e:
