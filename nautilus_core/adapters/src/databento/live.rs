@@ -46,6 +46,11 @@ use crate::databento::{
     types::PublisherId,
 };
 
+use super::{
+    decode::{decode_imbalance_msg, decode_statistics_msg},
+    types::{DatabentoImbalance, DatabentoStatistics},
+};
+
 pub enum LiveCommand {
     Subscribe(Subscription),
     UpdateGlbx(HashMap<Symbol, Venue>),
@@ -57,6 +62,8 @@ pub enum LiveCommand {
 pub enum LiveMessage {
     Data(Data),
     Instrument(Box<dyn Instrument>),
+    Imbalance(DatabentoImbalance),
+    Statistics(DatabentoStatistics),
     Error(databento::Error),
 }
 
@@ -172,16 +179,37 @@ impl DatabentoFeedHandler {
             } else if let Some(msg) = record.get::<dbn::SymbolMappingMsg>() {
                 // Remove instrument ID index as the raw symbol may have changed
                 instrument_id_map.remove(&msg.hd.instrument_id);
-                handle_symbol_mapping_msg(msg, &mut symbol_map);
+                handle_symbol_mapping_msg(msg, &mut symbol_map, &mut instrument_id_map);
             } else if let Some(msg) = record.get::<dbn::InstrumentDefMsg>() {
-                let inst = handle_instrument_def_msg(
+                let data = handle_instrument_def_msg(
                     msg,
+                    &self.publisher_venue_map,
+                    &self.glbx_exchange_map,
+                    clock,
+                )?;
+                self.tx.send(LiveMessage::Instrument(data)).await.unwrap();
+            } else if let Some(msg) = record.get::<dbn::ImbalanceMsg>() {
+                let data = handle_imbalance_msg(
+                    msg,
+                    &record,
+                    &symbol_map,
                     &self.publisher_venue_map,
                     &self.glbx_exchange_map,
                     &mut instrument_id_map,
                     clock,
                 )?;
-                self.tx.send(LiveMessage::Instrument(inst)).await.unwrap();
+                self.tx.send(LiveMessage::Imbalance(data)).await.unwrap();
+            } else if let Some(msg) = record.get::<dbn::StatMsg>() {
+                let data = handle_statistics_msg(
+                    msg,
+                    &record,
+                    &symbol_map,
+                    &self.publisher_venue_map,
+                    &self.glbx_exchange_map,
+                    &mut instrument_id_map,
+                    clock,
+                )?;
+                self.tx.send(LiveMessage::Statistics(data)).await.unwrap();
             } else {
                 let (mut data1, data2) = handle_record(
                     record,
@@ -261,23 +289,37 @@ fn handle_system_msg(msg: &dbn::SystemMsg) {
     info!("{:?}", msg);
 }
 
-fn handle_symbol_mapping_msg(msg: &dbn::SymbolMappingMsg, symbol_map: &mut PitSymbolMap) {
+fn handle_symbol_mapping_msg(
+    msg: &dbn::SymbolMappingMsg,
+    symbol_map: &mut PitSymbolMap,
+    instrument_id_map: &mut HashMap<u32, InstrumentId>,
+) {
+    // Update the symbol map
     symbol_map
         .on_symbol_mapping(msg)
         .unwrap_or_else(|_| panic!("Error updating `symbol_map` with {msg:?}"));
+
+    // Remove currently entry
+    instrument_id_map.remove(&msg.header().instrument_id);
 }
 
 fn update_instrument_id_map(
-    header: &dbn::RecordHeader,
-    raw_symbol: &str,
+    record: &dbn::RecordRef,
+    symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     glbx_exchange_map: &HashMap<Symbol, Venue>,
     instrument_id_map: &mut HashMap<u32, InstrumentId>,
 ) -> InstrumentId {
+    let header = record.header();
+
     // Check if instrument ID is already in the map
     if let Some(&instrument_id) = instrument_id_map.get(&header.instrument_id) {
         return instrument_id;
     }
+
+    let raw_symbol = symbol_map
+        .get_for_rec(record)
+        .expect("Cannot resolve `raw_symbol` from `symbol_map`");
 
     let symbol = Symbol {
         value: Ustr::from(raw_symbol),
@@ -300,22 +342,73 @@ fn handle_instrument_def_msg(
     msg: &dbn::InstrumentDefMsg,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     glbx_exchange_map: &HashMap<Symbol, Venue>,
-    instrument_id_map: &mut HashMap<u32, InstrumentId>,
     clock: &AtomicTime,
 ) -> Result<Box<dyn Instrument>> {
     let c_str: &CStr = unsafe { CStr::from_ptr(msg.raw_symbol.as_ptr()) };
     let raw_symbol: &str = c_str.to_str().map_err(to_pyvalue_err)?;
 
+    let symbol = Symbol {
+        value: Ustr::from(raw_symbol),
+    };
+
+    let publisher_id = msg.header().publisher_id;
+    let venue = match glbx_exchange_map.get(&symbol) {
+        Some(venue) => venue,
+        None => publisher_venue_map
+            .get(&publisher_id)
+            .unwrap_or_else(|| panic!("No venue found for `publisher_id` {publisher_id}")),
+    };
+    let instrument_id = InstrumentId::new(symbol, *venue);
+
+    let ts_init = clock.get_time_ns();
+
+    decode_instrument_def_msg(msg, instrument_id, ts_init)
+}
+
+fn handle_imbalance_msg(
+    msg: &dbn::ImbalanceMsg,
+    record: &dbn::RecordRef,
+    symbol_map: &PitSymbolMap,
+    publisher_venue_map: &IndexMap<PublisherId, Venue>,
+    glbx_exchange_map: &HashMap<Symbol, Venue>,
+    instrument_id_map: &mut HashMap<u32, InstrumentId>,
+    clock: &AtomicTime,
+) -> anyhow::Result<DatabentoImbalance> {
     let instrument_id = update_instrument_id_map(
-        msg.header(),
-        raw_symbol,
+        record,
+        symbol_map,
         publisher_venue_map,
         glbx_exchange_map,
         instrument_id_map,
     );
 
+    let price_precision = 2; // Hard coded for now
     let ts_init = clock.get_time_ns();
-    decode_instrument_def_msg(msg, instrument_id, ts_init)
+
+    decode_imbalance_msg(msg, instrument_id, price_precision, ts_init)
+}
+
+fn handle_statistics_msg(
+    msg: &dbn::StatMsg,
+    record: &dbn::RecordRef,
+    symbol_map: &PitSymbolMap,
+    publisher_venue_map: &IndexMap<PublisherId, Venue>,
+    glbx_exchange_map: &HashMap<Symbol, Venue>,
+    instrument_id_map: &mut HashMap<u32, InstrumentId>,
+    clock: &AtomicTime,
+) -> anyhow::Result<DatabentoStatistics> {
+    let instrument_id = update_instrument_id_map(
+        record,
+        symbol_map,
+        publisher_venue_map,
+        glbx_exchange_map,
+        instrument_id_map,
+    );
+
+    let price_precision = 2; // Hard coded for now
+    let ts_init = clock.get_time_ns();
+
+    decode_statistics_msg(msg, instrument_id, price_precision, ts_init)
 }
 
 fn handle_record(
@@ -325,14 +418,10 @@ fn handle_record(
     glbx_exchange_map: &HashMap<Symbol, Venue>,
     instrument_id_map: &mut HashMap<u32, InstrumentId>,
     clock: &AtomicTime,
-) -> Result<(Option<Data>, Option<Data>)> {
-    let raw_symbol = symbol_map
-        .get_for_rec(&record)
-        .expect("Cannot resolve `raw_symbol` from `symbol_map`");
-
+) -> anyhow::Result<(Option<Data>, Option<Data>)> {
     let instrument_id = update_instrument_id_map(
-        record.header(),
-        raw_symbol,
+        &record,
+        symbol_map,
         publisher_venue_map,
         glbx_exchange_map,
         instrument_id_map,

@@ -21,9 +21,7 @@ use indexmap::IndexMap;
 use nautilus_common::runtime::get_runtime;
 use nautilus_core::{python::to_pyruntime_err, time::UnixNanos};
 use nautilus_model::{
-    data::Data,
     identifiers::{symbol::Symbol, venue::Venue},
-    instruments::Instrument,
     python::data::data_to_pycapsule,
 };
 use pyo3::prelude::*;
@@ -58,21 +56,31 @@ impl DatabentoLiveClient {
     async fn process_messages(
         mut rx: Receiver<LiveMessage>,
         callback: PyObject,
+        callback_pyo3: PyObject,
     ) -> anyhow::Result<()> {
         while let Some(msg) = rx.recv().await {
             match msg {
-                LiveMessage::Data(data) => {
-                    Python::with_gil(|py| {
-                        call_python_with_data(py, &callback, data);
-                    });
-                }
-                LiveMessage::Instrument(inst) => {
-                    Python::with_gil(|py| {
-                        call_python_with_instrument(py, &callback, inst);
-                    });
-                }
+                LiveMessage::Data(data) => Python::with_gil(|py| {
+                    let py_obj = data_to_pycapsule(py, data);
+                    call_python_with_pyobject(py, &callback, py_obj)
+                }),
+                LiveMessage::Instrument(data) => Python::with_gil(|py| {
+                    let py_obj = convert_instrument_to_pyobject(py, data)
+                        .expect("Error creating instrument");
+                    call_python_with_pyobject(py, &callback, py_obj)
+                }),
+                LiveMessage::Imbalance(data) => Python::with_gil(|py| {
+                    // Can be passed directly to this callback
+                    let py_obj = data.into_py(py);
+                    call_python_with_pyobject(py, &callback_pyo3, py_obj)
+                }),
+                LiveMessage::Statistics(data) => Python::with_gil(|py| {
+                    // Can be passed directly to this callback
+                    let py_obj = data.into_py(py);
+                    call_python_with_pyobject(py, &callback_pyo3, py_obj)
+                }),
                 LiveMessage::Error(e) => return Err(e.into()),
-            }
+            }?
         }
         Ok(())
     }
@@ -156,7 +164,12 @@ impl DatabentoLiveClient {
     }
 
     #[pyo3(name = "start")]
-    fn py_start<'py>(&mut self, py: Python<'py>, callback: PyObject) -> PyResult<&'py PyAny> {
+    fn py_start<'py>(
+        &mut self,
+        py: Python<'py>,
+        callback: PyObject,
+        callback_pyo3: PyObject,
+    ) -> PyResult<&'py PyAny> {
         if self.is_closed {
             return Err(to_pyruntime_err("Client was already closed"));
         };
@@ -172,7 +185,7 @@ impl DatabentoLiveClient {
         self.is_running = true;
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            Self::process_messages(rx, callback)
+            Self::process_messages(rx, callback, callback_pyo3)
                 .await
                 .map_err(|e| e.into())
         })
@@ -192,18 +205,9 @@ impl DatabentoLiveClient {
     }
 }
 
-fn call_python_with_data(py: Python, callback: &PyObject, data: Data) {
-    let py_obj = data_to_pycapsule(py, data);
+fn call_python_with_pyobject(py: Python, callback: &PyObject, py_obj: PyObject) -> PyResult<()> {
     match callback.call1(py, (py_obj,)) {
-        Ok(_) => {}
-        Err(e) => eprintln!("Error on callback, {e:?}"), // Just print error for now
-    };
-}
-
-fn call_python_with_instrument(py: Python, callback: &PyObject, instrument: Box<dyn Instrument>) {
-    let py_obj = convert_instrument_to_pyobject(py, instrument).expect("Error creating instrument");
-    match callback.call1(py, (py_obj,)) {
-        Ok(_) => {}
-        Err(e) => eprintln!("Error on callback, {e:?}"), // Just print error for now
-    };
+        Ok(_) => Ok(()),
+        Err(e) => Err(e),
+    }
 }

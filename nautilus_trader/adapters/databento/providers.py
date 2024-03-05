@@ -152,7 +152,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         try:
             await asyncio.wait_for(
-                live_client.start(callback=receive_instruments),
+                live_client.start(callback=receive_instruments, callback_pyo3=print),
                 timeout=5.0,
             )
         except ValueError as e:
