@@ -43,6 +43,7 @@ use crate::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
+#[derive(Debug)]
 pub enum InstrumentType {
     CryptoFuture(CryptoFuture),
     CryptoPerpetual(CryptoPerpetual),
