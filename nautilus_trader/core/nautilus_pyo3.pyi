@@ -2135,8 +2135,8 @@ class VariableIndexDynamicAverage:
     def __init__(
         self,
         period: int,
-        price_type: PriceType | None = None,
         cmo_ma_type: int,
+        price_type: PriceType | None = None,
     ) -> None: ...
     @property
     def name(self) -> str: ...

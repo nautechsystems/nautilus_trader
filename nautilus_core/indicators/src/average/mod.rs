@@ -30,8 +30,8 @@ pub mod ema;
 pub mod hma;
 pub mod rma;
 pub mod sma;
-pub mod wma;
 pub mod vidya;
+pub mod wma;
 
 #[repr(C)]
 #[derive(

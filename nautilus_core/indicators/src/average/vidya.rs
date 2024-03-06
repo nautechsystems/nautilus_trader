@@ -22,8 +22,9 @@ use nautilus_model::{
 };
 
 use crate::{
-    indicator::{Indicator, MovingAverage}, momentum::cmo::ChandeMomentumOscillator,
     average::MovingAverageType,
+    indicator::{Indicator, MovingAverage},
+    momentum::cmo::ChandeMomentumOscillator,
 };
 
 #[repr(C)]
@@ -86,7 +87,11 @@ impl Indicator for VariableIndexDynamicAverage {
 }
 
 impl VariableIndexDynamicAverage {
-    pub fn new(period: usize, price_type: Option<PriceType>, cmo_ma_type: Option<MovingAverageType>) -> Result<Self> {
+    pub fn new(
+        period: usize,
+        price_type: Option<PriceType>,
+        cmo_ma_type: Option<MovingAverageType>,
+    ) -> Result<Self> {
         Ok(Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),
@@ -94,7 +99,7 @@ impl VariableIndexDynamicAverage {
             count: 0,
             has_inputs: false,
             initialized: false,
-            alpha: 2.0/(period as f64 + 1.0),
+            alpha: 2.0 / (period as f64 + 1.0),
             cmo: ChandeMomentumOscillator::new(period, cmo_ma_type)?,
             cmo_pct: 0.0,
         })
@@ -114,14 +119,13 @@ impl MovingAverage for VariableIndexDynamicAverage {
         self.cmo.update_raw(value);
         self.cmo_pct = (self.cmo.value / 100.0).abs();
 
-        if self.initialized{
-          self.value = self.alpha * self.cmo_pct * value + (1.0 - self.alpha *  self.cmo_pct as f64) * self.value;
+        if self.initialized {
+            self.value =
+                self.alpha * self.cmo_pct * value + (1.0 - self.alpha * self.cmo_pct) * self.value;
         }
 
-        if !self.initialized{
-          if self.cmo.initialized{
+        if !self.initialized && self.cmo.initialized {
             self.initialized = true;
-          }
         }
 
         self.count += 1;
@@ -192,13 +196,19 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_quote_tick(mut indicator_vidya_10: VariableIndexDynamicAverage, quote_tick: QuoteTick) {
+    fn test_handle_quote_tick(
+        mut indicator_vidya_10: VariableIndexDynamicAverage,
+        quote_tick: QuoteTick,
+    ) {
         indicator_vidya_10.handle_quote_tick(&quote_tick);
         assert_eq!(indicator_vidya_10.value, 1501.0);
     }
 
     #[rstest]
-    fn test_handle_trade_tick(mut indicator_vidya_10: VariableIndexDynamicAverage, trade_tick: TradeTick) {
+    fn test_handle_trade_tick(
+        mut indicator_vidya_10: VariableIndexDynamicAverage,
+        trade_tick: TradeTick,
+    ) {
         indicator_vidya_10.handle_trade_tick(&trade_tick);
         assert_eq!(indicator_vidya_10.value, 1500.0);
     }
