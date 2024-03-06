@@ -13,7 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, ffi::CStr, sync::mpsc::Receiver};
+use std::{
+    collections::HashMap,
+    ffi::CStr,
+    sync::mpsc::{Receiver, Sender},
+};
 
 use anyhow::{anyhow, Result};
 use databento::{
@@ -35,10 +39,7 @@ use nautilus_model::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
     instruments::InstrumentType,
 };
-use tokio::{
-    sync::mpsc::Sender,
-    time::{timeout, Duration},
-};
+use tokio::time::{timeout, Duration};
 use ustr::Ustr;
 
 use super::{
@@ -50,6 +51,7 @@ use crate::databento::{
     types::PublisherId,
 };
 
+#[derive(Debug)]
 pub enum LiveCommand {
     Subscribe(Subscription),
     UpdateGlbx(HashMap<Symbol, Venue>),
@@ -57,6 +59,7 @@ pub enum LiveCommand {
     Close,
 }
 
+#[derive(Debug)]
 #[allow(clippy::large_enum_variant)] // TODO: Optimize this (largest variant 1096 vs 80 bytes)
 pub enum LiveMessage {
     Data(Data),
@@ -112,7 +115,7 @@ impl DatabentoFeedHandler {
             .upgrade_policy(VersionUpgradePolicy::Upgrade)
             .build()
             .await
-            .expect("Error connecting client");
+            .map_err(to_pyruntime_err)?;
 
         // Timeout awaiting the next record before checking for a command
         let timeout_duration = Duration::from_millis(1);
@@ -128,7 +131,7 @@ impl DatabentoFeedHandler {
                         if !self.replay & sub.start.is_some() {
                             self.replay = true;
                         }
-                        client.subscribe(&sub).await.expect("Error on subscribe");
+                        client.subscribe(&sub).await.map_err(to_pyruntime_err)?;
                     }
                     LiveCommand::UpdateGlbx(map) => self.glbx_exchange_map = map,
                     LiveCommand::Start => {
@@ -164,7 +167,7 @@ impl DatabentoFeedHandler {
                 Err(e) => {
                     // Fail the session entirely for now. Consider refining
                     // this strategy to handle specific errors more gracefully.
-                    self.send_msg(LiveMessage::Error(anyhow!(e))).await;
+                    self.send_msg(LiveMessage::Error(anyhow!(e)));
                     break;
                 }
             };
@@ -185,7 +188,7 @@ impl DatabentoFeedHandler {
                     &self.glbx_exchange_map,
                     clock,
                 )?;
-                self.send_msg(LiveMessage::Instrument(data)).await;
+                self.send_msg(LiveMessage::Instrument(data));
             } else if let Some(msg) = record.get::<dbn::ImbalanceMsg>() {
                 let data = handle_imbalance_msg(
                     msg,
@@ -196,7 +199,7 @@ impl DatabentoFeedHandler {
                     &mut instrument_id_map,
                     clock,
                 )?;
-                self.send_msg(LiveMessage::Imbalance(data)).await;
+                self.send_msg(LiveMessage::Imbalance(data));
             } else if let Some(msg) = record.get::<dbn::StatMsg>() {
                 let data = handle_statistics_msg(
                     msg,
@@ -207,7 +210,7 @@ impl DatabentoFeedHandler {
                     &mut instrument_id_map,
                     clock,
                 )?;
-                self.send_msg(LiveMessage::Statistics(data)).await;
+                self.send_msg(LiveMessage::Statistics(data));
             } else {
                 let (mut data1, data2) = handle_record(
                     record,
@@ -258,11 +261,11 @@ impl DatabentoFeedHandler {
                 };
 
                 if let Some(data) = data1 {
-                    self.send_msg(LiveMessage::Data(data)).await;
+                    self.send_msg(LiveMessage::Data(data));
                 };
 
                 if let Some(data) = data2 {
-                    self.send_msg(LiveMessage::Data(data)).await;
+                    self.send_msg(LiveMessage::Data(data));
                 };
             };
         }
@@ -270,8 +273,8 @@ impl DatabentoFeedHandler {
         Ok(())
     }
 
-    async fn send_msg(&mut self, msg: LiveMessage) {
-        self.tx.send(msg).await.expect("Error sending message")
+    fn send_msg(&mut self, msg: LiveMessage) {
+        self.tx.send(msg).expect("Error sending message")
     }
 }
 

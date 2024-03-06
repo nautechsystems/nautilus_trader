@@ -2399,7 +2399,7 @@ class DatabentoLiveClient:
         stype_in: str | None = None,
         start: int | None = None,
     ) -> dict[str, str]: ...
-    async def start(
+    def start(
         self,
         callback: Callable,
         callback_pyo3: Callable,

@@ -151,16 +151,16 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             )
 
         try:
-            await asyncio.wait_for(
-                live_client.start(callback=receive_instruments, callback_pyo3=print),
-                timeout=5.0,
-            )
+            live_client.start(callback=receive_instruments, callback_pyo3=print)
         except ValueError as e:
             if success_msg in str(e):
                 # Expected on decode completion, continue
                 self._log.info(success_msg)
             else:
                 self._log.error(repr(e))
+
+        # Temporary hack
+        await asyncio.sleep(5.0)
 
         instruments = instruments_from_pyo3(pyo3_instruments)
 
@@ -171,6 +171,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         # Update the CME Globex exchange venue map
         glbx_exchange_map = live_client.get_glbx_exchange_map()
         self._loader.load_glbx_exchange_map(glbx_exchange_map)
+        live_client.close()
 
     async def load_async(
         self,
