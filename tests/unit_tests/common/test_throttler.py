@@ -157,6 +157,36 @@ class TestBufferingThrottler:
         assert self.throttler.recv_count == 6
         assert self.throttler.sent_count == 6
 
+    def test_send_message_after_dropping_message(self):
+        # Arrange
+        item = "MESSAGE"
+
+        # Act: Send 6 items
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+
+        # Act: Trigger refresh token time alert
+        events = self.clock.advance_time(1_000_000_000)
+        events[0].handle()
+
+        assert self.throttler.is_limiting is False
+
+        # Act: send a message after a previous message is throttled
+        self.throttler.send(item)
+
+        # Assert: Remaining items sent
+        assert self.clock.timer_count == 0  # No longer timing to process
+        assert self.throttler.is_limiting is False
+        assert self.handler == ["MESSAGE"] * 7
+        assert self.throttler.qsize == 0
+        assert self.throttler.used() == 0
+        assert self.throttler.recv_count == 7
+        assert self.throttler.sent_count == 7
+
 
 class TestDroppingThrottler:
     def setup(self):
@@ -261,11 +291,13 @@ class TestDroppingThrottler:
         events = self.clock.advance_time(1_000_000_000)
         events[0].handle()
 
+        assert self.throttler.is_limiting is False
+
         # Act: send a message after a previous message is throttled
         self.throttler.send(item)
 
         # Assert: Remaining items sent
-        assert self.clock.timer_count == 1  # No longer timing to process
+        assert self.clock.timer_count == 0  # No longer timing to process
         assert self.throttler.is_limiting is False
         assert self.handler == ["MESSAGE"] * 6
         assert self.dropped == ["MESSAGE"]
