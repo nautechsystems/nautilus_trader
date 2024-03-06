@@ -2727,7 +2727,7 @@ cdef class Throttler:
                 return 0
             self._warm = True
 
-        cdef int64_t diff = self._timestamps[0] - self._timestamps[-1]
+        cdef int64_t diff = self._clock.timestamp_ns() - self._timestamps[-1]
         return self._interval_ns - diff
 
     cdef void _limit_msg(self, msg):
