@@ -21,7 +21,7 @@ use futures_util::{
 };
 use hyper::header::HeaderName;
 use nautilus_core::python::to_pyruntime_err;
-use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
+use pyo3::{prelude::*, types::PyBytes};
 use tokio::{net::TcpStream, sync::Mutex, task, time::sleep};
 use tokio_tungstenite::{
     connect_async,
@@ -149,7 +149,6 @@ impl WebSocketClientInner {
                 let duration = Duration::from_secs(duration);
                 loop {
                     sleep(duration).await;
-                    debug!("Sending heartbeat");
                     let mut guard = writer.lock().await;
                     let guard_send_response = match message.clone() {
                         Some(msg) => guard.send(Message::Text(msg)).await,
@@ -157,7 +156,7 @@ impl WebSocketClientInner {
                     };
                     match guard_send_response {
                         Ok(()) => debug!("Sent heartbeat"),
-                        Err(e) => error!("Failed to send heartbeat: {e}"),
+                        Err(e) => error!("Error sending heartbeat: {e}"),
                     }
                 }
             })
@@ -168,10 +167,9 @@ impl WebSocketClientInner {
     pub fn spawn_read_task(mut reader: MessageReader, handler: PyObject) -> task::JoinHandle<()> {
         task::spawn(async move {
             loop {
-                debug!("Receiving message");
                 match reader.next().await {
                     Some(Ok(Message::Binary(data))) => {
-                        debug!("Received binary message");
+                        debug!("Received message <binary>");
                         if let Err(e) =
                             Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &data),)))
                         {
@@ -180,7 +178,7 @@ impl WebSocketClientInner {
                         }
                     }
                     Some(Ok(Message::Text(data))) => {
-                        debug!("Received text message");
+                        debug!("Received message: {data}");
                         if let Err(e) = Python::with_gil(|py| {
                             handler.call1(py, (PyBytes::new(py, data.as_bytes()),))
                         }) {
@@ -189,18 +187,18 @@ impl WebSocketClientInner {
                         }
                     }
                     Some(Ok(Message::Close(_))) => {
-                        error!("Received close message. Terminating.");
+                        error!("Received close message, terminating.");
                         break;
                     }
                     Some(Ok(_)) => (),
                     Some(Err(e)) => {
-                        error!("Received error message. Terminating. {e}");
+                        error!("Received error message, terminating. {e}");
                         break;
                     }
                     // Internally tungstenite considers the connection closed when polling
                     // for the next message in the stream returns None.
                     None => {
-                        error!("No next message received. Terminating");
+                        error!("No message received, terminating");
                         break;
                     }
                 }
@@ -351,7 +349,7 @@ impl WebSocketClient {
         let mut guard = self.writer.lock().await;
         match guard.send(Message::Close(None)).await {
             Ok(()) => debug!("Sent close message"),
-            Err(e) => error!("Failed to send message: {e}"),
+            Err(e) => error!("Error sending close message: {e}"),
         }
     }
 
@@ -377,9 +375,9 @@ impl WebSocketClient {
                             debug!("Reconnected successfully");
                             if let Some(ref handler) = post_reconnection {
                                 Python::with_gil(|py| match handler.call0(py) {
-                                    Ok(_) => debug!("Called post_reconnection handler"),
+                                    Ok(_) => debug!("Called `post_reconnection` handler"),
                                     Err(e) => {
-                                        error!("Error calling post_reconnection handler: {e}");
+                                        error!("Error calling `post_reconnection` handler: {e}");
                                     }
                                 });
                             }
@@ -394,9 +392,9 @@ impl WebSocketClient {
                         inner.shutdown().await;
                         if let Some(ref handler) = post_disconnection {
                             Python::with_gil(|py| match handler.call0(py) {
-                                Ok(_) => debug!("Called post_reconnection handler"),
+                                Ok(_) => debug!("Called `post_reconnection` handler"),
                                 Err(e) => {
-                                    error!("Error calling post_reconnection handler: {e}");
+                                    error!("Error calling `post_reconnection` handler: {e}");
                                 }
                             });
                         }
@@ -449,11 +447,7 @@ impl WebSocketClient {
                 post_disconnection,
             )
             .await
-            .map_err(|e| {
-                PyException::new_err(format!(
-                    "Unable to make websocket connection because of error: {e}",
-                ))
-            })
+            .map_err(to_pyruntime_err)
         })
     }
 
