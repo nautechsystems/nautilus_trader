@@ -24,6 +24,7 @@ use std::{
 use anyhow::anyhow;
 use databento::live::Subscription;
 use indexmap::IndexMap;
+use log::debug;
 use nautilus_common::runtime::get_runtime;
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
@@ -68,6 +69,7 @@ impl DatabentoLiveClient {
         callback: PyObject,
         callback_pyo3: PyObject,
     ) -> PyResult<()> {
+        debug!("Processing messages...");
         // Continue to process messages until channel is hung up
         while let Ok(msg) = rx.recv() {
             match msg {
@@ -189,11 +191,13 @@ impl DatabentoLiveClient {
             HashMap::new(),
         );
 
+        debug!("Starting feed handler");
         let rt = get_runtime();
         rt.spawn(async move { feed_handler.run().await });
 
         self.send_command(LiveCommand::Start)?;
 
+        debug!("Spawning message processing thread");
         let join_handle =
             thread::spawn(move || Self::process_messages(rx_msg, callback, callback_pyo3));
         self.join_handle = Some(join_handle);
