@@ -136,8 +136,6 @@ cpdef str log_color_to_str(LogColor value)
 cpdef LogLevel log_level_from_str(str value)
 cpdef str log_level_to_str(LogLevel value)
 
-cpdef void init_tracing()
-
 cpdef void init_logging(
     TraderId trader_id=*,
     str machine_id=*,
@@ -153,7 +151,10 @@ cpdef void init_logging(
     bint print_config=*,
 )
 
+# Global static to flag if pyo3 based logging is initialized
+cdef bint LOGGING_PYO3
 cpdef bint is_logging_initialized()
+cpdef void set_logging_pyo3(bint value)
 
 
 cdef class Logger:
@@ -175,12 +176,8 @@ cpdef void log_header(
 )
 
 
-cpdef void log_sysinfo(
-    TraderId trader_id,
-    str machine_id,
-    UUID4 instance_id,
-    str component,
-)
+cpdef void log_sysinfo(str component)
+
 
 cpdef ComponentState component_state_from_str(str value)
 cpdef str component_state_to_str(ComponentState value)

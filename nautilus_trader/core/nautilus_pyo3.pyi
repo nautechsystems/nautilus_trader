@@ -203,12 +203,25 @@ def init_tracing() -> None:
 def init_logging(
     trader_id: TraderId,
     instance_id: UUID4,
-    config_spec: str,
-    directory: str,
-    file_name: str,
-    file_format: str,
-) -> None:
-    ...
+    level_stdout: LogLevel,
+    level_file: LogLevel | None = None,
+    component_levels: dict[str, str] | None = None,
+    directory: str | None = None,
+    file_name: str | None = None,
+    file_format: str | None = None,
+    is_colored: bool | None = None,
+    is_bypassed: bool | None = None,
+    print_config: bool | None = None,
+) -> None: ...
+
+def log_header(
+    trader_id: TraderId,
+    machine_id: str,
+    instance_id: UUID4,
+    component: str
+) -> None: ...
+
+def log_sysinfo(component: str) -> None: ...
 
 ###################################################################################################
 # Model
@@ -763,6 +776,20 @@ class MovingAverageType(Enum):
     WILDER = "WILDER"
     HULL = "HULL"
 
+class LogLevel(Enum):
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+
+class LogColor(Enum):
+    DEFAULT = "DEFAULT"
+    GREEN = "GREEN"
+    BLUE = "BLUE"
+    MAGENTA = "MAGENTA"
+    CYAN = "CYAN"
+    YELLOW = "YELLOW"
+    RED = "RED"
 
 ### Identifiers
 
