@@ -44,6 +44,7 @@ config_node = TradingNodeConfig(
         log_level="INFO",
         # log_level_file="DEBUG",
         # log_file_format="json",
+        use_pyo3=False,
     ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,

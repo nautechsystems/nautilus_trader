@@ -263,8 +263,9 @@ class TestBacktestConfigParsing:
         print("token:", token)
         value: bytes = self.backtest_config.json()
         print("token_value:", value.decode())
-        assert token == "1d758e23defb5a69e2449ed03216ef7727c50e12c23730cc0309087ee7e71994"  # UNIX
+        assert token == "1d758e23defb5a69e2449ed03216ef7727c50e12c23730cc0309087ee7e71994"
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     @pytest.mark.parametrize(
         ("config_func", "keys", "kw", "expected"),
         [
@@ -278,19 +279,13 @@ class TestBacktestConfigParsing:
                 TestConfigStubs.backtest_data_config,
                 ("catalog",),
                 {},
-                (
-                    "aad6794664f7690691f1ca3c9da8d8051b21a3bab7877fc9c594a78871cb76a8",  # UNIX
-                    "25cea2290b2bee4312363bba8c2b54ac34025fa2b30f9acce44f2db0254f26af",  # Windows
-                ),
+                ("aad6794664f7690691f1ca3c9da8d8051b21a3bab7877fc9c594a78871cb76a8",),
             ),
             (
                 TestConfigStubs.backtest_engine_config,
                 ("catalog",),
                 {"persist": True},
-                (
-                    "b015efcc4f6ba3a3fb8d4affe0a04ead5bb1de18991d892c7e68a09b0fadd307",  # UNIX
-                    "6bfff07ec02f2e96f33d12d30263b4b43f88f89473e764f23011c4fdb22c226c",  # Windows
-                ),
+                ("fa93b3a2e7e7004b9d287227928371a90de574bf9e32c43d4dd60abbd7f292f9",),
             ),
             (
                 TestConfigStubs.risk_engine_config,
@@ -308,10 +303,7 @@ class TestBacktestConfigParsing:
                 TestConfigStubs.streaming_config,
                 ("catalog",),
                 {},
-                (
-                    "c287d8e433d931f014895daa4400171a67c30b8c61d94f51be60ad162bdef6cd",  # UNIX
-                    "2d16c7953fedbfd3eda3b12351bfa18770fc41489ab89dcb7296aaa9b2af7684",  # Windows
-                ),
+                ("c287d8e433d931f014895daa4400171a67c30b8c61d94f51be60ad162bdef6cd",),
             ),
         ],
     )

@@ -517,20 +517,6 @@ const char *log_color_to_cstr(enum LogColor value);
 enum LogColor log_color_from_cstr(const char *ptr);
 
 /**
- * Initializes tracing.
- *
- * Tracing is meant to be used to trace/debug async Rust code. It can be
- * configured to filter modules and write up to a specific level only using
- * by passing a configuration using the `RUST_LOG` environment variable.
- *
- * # Safety
- *
- * Should only be called once during an applications run, ideally at the
- * beginning of the run.
- */
-void tracing_init(void);
-
-/**
  * Initializes logging.
  *
  * Logging should be used for Python and sync Rust logic which is most of
