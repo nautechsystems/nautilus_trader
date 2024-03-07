@@ -26,7 +26,7 @@ documentation = "https://docs.nautilustrader.io"
 
 [workspace.dependencies]
 anyhow = "1.0.80"
-chrono = "0.4.34"
+chrono = "0.4.35"
 futures = "0.3.30"
 indexmap = "2.2.5"
 itoa = "1.0.10"
