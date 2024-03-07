@@ -2200,7 +2200,7 @@ void orderbook_update_trade_tick(struct OrderBook_API *book, const struct TradeT
 
 CVec orderbook_simulate_fills(const struct OrderBook_API *book, struct BookOrder_t order);
 
-void orderbook_check_integrity(const struct OrderBook_API *book);
+uint8_t orderbook_check_integrity(const struct OrderBook_API *book);
 
 void vec_fills_drop(CVec v);
 

@@ -295,6 +295,26 @@ class TestOrderBook:
         assert bid_level.price == Price.from_str("10.0")
         assert ask_level.price == Price.from_str("11.0")
 
+    def test_adding_to_mbp_l1_book_raises(self) -> None:
+        # Arrange
+        book = OrderBook(
+            instrument_id=self.instrument.id,
+            book_type=BookType.L1_MBP,
+        )
+
+        # Act, Assert
+        with pytest.raises(RuntimeError):
+            book.add(
+                BookOrder(
+                    price=Price(11.0, 1),
+                    size=Quantity(5.0, 0),
+                    side=OrderSide.BUY,
+                    order_id=0,
+                ),
+                0,
+                0,
+            )
+
     def test_repr(self):
         # Arrange
         book = OrderBook(
@@ -670,7 +690,6 @@ class TestOrderBook:
 
         path_20231224 = TEST_DATA_DIR / "databento" / "esh4-glbx-mdp3-20231224.mbo.dbn.zst"
         path_20231225 = TEST_DATA_DIR / "databento" / "esh4-glbx-mdp3-20231225.mbo.dbn.zst"
-        # path_20231226 = TEST_DATA_DIR / "temp" / "databento" / "esh4-glbx-mdp3-20231226.mbo.dbn.zst"
 
         # Act
         data = loader.from_dbn_file(
@@ -685,13 +704,6 @@ class TestOrderBook:
                 as_legacy_cython=True,
             ),
         )
-        # data.extend(
-        #     loader.load_from_file_pyo3(
-        #         path_20231226,
-        #         instrument_id=instrument.id,
-        #         as_legacy_cython=True,
-        #     )
-        # )
 
         book = TestDataStubs.make_book(
             instrument=instrument,
@@ -710,3 +722,44 @@ class TestOrderBook:
         assert len(book.asks()) == 565
         assert book.best_bid_price() == Price.from_str("4810.00")
         assert book.best_ask_price() == Price.from_str("4810.25")
+
+    @pytest.mark.parametrize(
+        ("book_type"),
+        [
+            BookType.L1_MBP,
+            BookType.L2_MBP,
+            BookType.L3_MBO,
+        ],
+    )
+    def test_check_integrity_when_book_crossed(self, book_type: BookType) -> None:
+        # Arrange
+        book = OrderBook(
+            instrument_id=self.instrument.id,
+            book_type=book_type,
+        )
+
+        book.update(
+            BookOrder(
+                price=Price(11.0, 1),
+                size=Quantity(5.0, 0),
+                side=OrderSide.BUY,
+                order_id=0,
+            ),
+            0,
+            0,
+        )
+        book.update(
+            BookOrder(
+                price=Price(10.0, 1),
+                size=Quantity(5.0, 0),
+                side=OrderSide.SELL,
+                order_id=0,
+            ),
+            0,
+            0,
+        )
+
+        # Act, Assert
+        assert book.best_bid_price() > book.best_ask_price()
+        with pytest.raises(RuntimeError):
+            book.check_integrity()

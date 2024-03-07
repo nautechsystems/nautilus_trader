@@ -6,24 +6,26 @@ derivative products. This integration supports live market data ingest and order
 execution with Binance.
 
 ## Overview
+
 The following documentation assumes a trader is setting up for both live market
 data feeds, and trade execution. The full Binance integration consists of an assortment of components,
 which can be used together or separately depending on the users needs.
 
-- `BinanceHttpClient` provides low-level HTTP API connectivity
-- `BinanceWebSocketClient` provides low-level WebSocket API connectivity
-- `BinanceInstrumentProvider` provides instrument parsing and loading functionality
-- `BinanceSpotDataClient`/ `BinanceFuturesDataClient` provide a market data feed manager
-- `BinanceSpotExecutionClient`/`BinanceFuturesExecutionClient` provide an account management and trade execution gateway
-- `BinanceLiveDataClientFactory` creation factory for Binance data clients (used by the trading node builder)
-- `BinanceLiveExecClientFactory` creation factory for Binance execution clients (used by the trading node builder)
+- `BinanceHttpClient` - Low-level HTTP API connectivity
+- `BinanceWebSocketClient` - Low-level WebSocket API connectivity
+- `BinanceInstrumentProvider` - Instrument parsing and loading functionality
+- `BinanceSpotDataClient`/ `BinanceFuturesDataClient` - A market data feed manager
+- `BinanceSpotExecutionClient`/`BinanceFuturesExecutionClient` - An account management and trade execution gateway
+- `BinanceLiveDataClientFactory` - Factory for Binance data clients (used by the trading node builder)
+- `BinanceLiveExecClientFactory` - Factory for Binance execution clients (used by the trading node builder)
 
 ```{note}
 Most users will simply define a configuration for a live trading node (as below),
-and won't need to necessarily work with these lower level components individually.
+and won't need to necessarily work with these lower level components directly.
 ```
 
 ## Data types
+
 To provide complete API functionality to traders, the integration includes several
 custom data types:
 - `BinanceTicker` returned when subscribing to Binance 24hr tickers (contains many prices and stats).
@@ -33,6 +35,7 @@ custom data types:
 See the Binance [API Reference](../api_reference/adapters/binance.md) for full definitions.
 
 ## Symbology
+
 As per the Nautilus unification policy for symbols, the native Binance symbols are used where possible including for
 spot assets and futures contracts. However, because NautilusTrader is capable of multi-venue + multi-account
 trading, it's necessary to explicitly clarify the difference between `BTCUSDT` as the spot and margin traded
@@ -51,6 +54,7 @@ E.g. for Binance Futures, the said instruments symbol is `BTCUSDT-PERP` within t
 | `TRAILING_STOP_MARKET` |                                 |                                 | ✓                 |
 
 ### Trailing stops
+
 Binance use the concept of an *activation price* for trailing stops ([see docs](https://www.binance.com/en-AU/support/faq/what-is-a-trailing-stop-order-360042299292)).
 To get trailing stop orders working for Binance we need to use the `trigger_price` value to set the *activation price*.
 
@@ -65,6 +69,7 @@ You must also have at least *one* of the following:
 - You have subscribed to trade ticks for the instrument you're submitting the order for (used to infer activation price)
 
 ## Configuration
+
 The most common use case is to configure a live `TradingNode` to include Binance
 data and execution clients. To achieve this, add a `BINANCE` section to your client
 configuration(s):
@@ -116,6 +121,7 @@ node.build()
 ```
 
 ### API credentials
+
 There are two options for supplying your credentials to the Binance clients.
 Either pass the corresponding `api_key` and `api_secret` values to the configuration objects, or
 set the following environment variables:
@@ -140,6 +146,7 @@ When starting the trading node, you'll receive immediate confirmation of whether
 credentials are valid and have trading permissions.
 
 ### Account Type
+
 All the Binance account types will be supported for live trading. Set the `account_type`
 using the `BinanceAccountType` enum. The account type options are:
 - `SPOT`
@@ -149,16 +156,19 @@ using the `BinanceAccountType` enum. The account type options are:
 - `COIN_FUTURE` (other cryptocurrency as collateral)
 
 ### Base URL overrides
+
 It's possible to override the default base URLs for both HTTP Rest and
 WebSocket APIs. This is useful for configuring API clusters for performance reasons,
 or when Binance has provided you with specialized endpoints.
 
 ### Binance US
+
 There is support for Binance US accounts by setting the `us` option in the configs
 to `True` (this is `False` by default). All functionality available to US accounts
 should behave identically to standard Binance.
 
 ### Testnets
+
 It's also possible to configure one or both clients to connect to the Binance testnet.
 Simply set the `testnet` option to `True` (this is `False` by default):
 
@@ -185,6 +195,7 @@ config = TradingNodeConfig(
 ```
 
 ### Aggregated Trades
+
 Binance provide aggregated trade data endpoints as an alternative source of trade ticks.
 In comparison to the default trade endpoints, aggregated trade data endpoints can return all
 ticks between a `start_time` and `end_time`.
@@ -193,6 +204,7 @@ To use aggregated trades and the endpoint features, set the `use_agg_trade_ticks
 to `True` (this is `False` by default.)
 
 ### Parser warnings
+
 Some Binance instruments are unable to be parsed into Nautilus objects if they
 contain enormous field values beyond what can be handled by the platform.
 In these cases, a _warn and continue_ approach is taken (the instrument will not
@@ -212,6 +224,7 @@ instrument_provider=InstrumentProviderConfig(
 ```
 
 ## Binance specific data
+
 It's possible to subscribe to Binance specific data streams as they become available to the
 adapter over time.
 
@@ -222,6 +235,7 @@ methods may eventually become first-class (not requiring custom/generic subscrip
 ```
 
 ### BinanceFuturesMarkPriceUpdate
+
 You can subscribe to `BinanceFuturesMarkPriceUpdate` (included funding rating info)
 data streams by subscribing in the following way from your actor or strategy:
 

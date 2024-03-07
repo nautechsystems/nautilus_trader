@@ -42,21 +42,6 @@ use crate::{
 #[allow(non_camel_case_types)]
 pub struct LogGuard_API(Box<LogGuard>);
 
-/// Initializes tracing.
-///
-/// Tracing is meant to be used to trace/debug async Rust code. It can be
-/// configured to filter modules and write up to a specific level only using
-/// by passing a configuration using the `RUST_LOG` environment variable.
-///
-/// # Safety
-///
-/// Should only be called once during an applications run, ideally at the
-/// beginning of the run.
-#[no_mangle]
-pub extern "C" fn tracing_init() {
-    logging::init_tracing();
-}
-
 /// Initializes logging.
 ///
 /// Logging should be used for Python and sync Rust logic which is most of

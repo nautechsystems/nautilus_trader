@@ -463,6 +463,10 @@ class LoggingConfig(NautilusConfig, frozen=True):
         If all logging should be bypassed.
     print_config : bool, default False
         If the core logging configuration should be printed to stdout at initialization.
+    use_pyo3: bool, default False
+        If the logging system should be initialized via pyo3,
+        this isn't recommended for backtesting as the performance is much lower
+        but can be useful for seeing logs originating from Rust.
 
     """
 
@@ -475,6 +479,7 @@ class LoggingConfig(NautilusConfig, frozen=True):
     log_component_levels: dict[str, str] | None = None
     bypass_logging: bool = False
     print_config: bool = False
+    use_pyo3: bool = False
 
 
 class ImportableFactoryConfig(NautilusConfig, frozen=True):

@@ -1531,7 +1531,7 @@ cdef extern from "../includes/model.h":
 
     CVec orderbook_simulate_fills(const OrderBook_API *book, BookOrder_t order);
 
-    void orderbook_check_integrity(const OrderBook_API *book);
+    uint8_t orderbook_check_integrity(const OrderBook_API *book);
 
     void vec_fills_drop(CVec v);
 

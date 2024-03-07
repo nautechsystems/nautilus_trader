@@ -24,12 +24,33 @@ use ustr::Ustr;
 use crate::{
     enums::{LogColor, LogLevel},
     logging::{
-        self,
+        self, headers,
         logger::{self, LogGuard, LoggerConfig},
         logging_set_bypass, map_log_level_to_filter, parse_level_filter_str,
         writer::FileWriterConfig,
     },
 };
+
+#[pymethods]
+impl FileWriterConfig {
+    #[new]
+    pub fn py_new(
+        directory: Option<String>,
+        file_name: Option<String>,
+        file_format: Option<String>,
+    ) -> Self {
+        Self::new(directory, file_name, file_format)
+    }
+}
+
+#[pymethods]
+impl LoggerConfig {
+    #[staticmethod]
+    #[pyo3(name = "from_spec")]
+    pub fn py_from_spec(spec: String) -> Self {
+        LoggerConfig::from_spec(&spec)
+    }
+}
 
 /// Initialize tracing.
 ///
@@ -119,23 +140,16 @@ pub fn py_logger_log(level: LogLevel, color: LogColor, component: String, messag
     logger::log(level, color, Ustr::from(&component), message.as_str());
 }
 
-#[pymethods]
-impl FileWriterConfig {
-    #[new]
-    pub fn py_new(
-        directory: Option<String>,
-        file_name: Option<String>,
-        file_format: Option<String>,
-    ) -> Self {
-        Self::new(directory, file_name, file_format)
-    }
+/// Logs the standard Nautilus system header.
+#[pyfunction]
+#[pyo3(name = "log_header")]
+pub fn py_log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, component: &str) {
+    headers::log_header(trader_id, machine_id, instance_id, Ustr::from(component));
 }
 
-#[pymethods]
-impl LoggerConfig {
-    #[staticmethod]
-    #[pyo3(name = "from_spec")]
-    pub fn py_from_spec(spec: String) -> Self {
-        LoggerConfig::from_spec(&spec)
-    }
+/// Logs system information.
+#[pyfunction]
+#[pyo3(name = "log_sysinfo")]
+pub fn py_log_sysinfo(component: &str) {
+    headers::log_sysinfo(Ustr::from(component))
 }

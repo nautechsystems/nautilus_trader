@@ -27,7 +27,7 @@ use crate::{
 pub enum InvalidBookOperation {
     #[error("Invalid book operation: cannot pre-process order for {0} book")]
     PreProcessOrder(BookType),
-    #[error("Invalid book operation: cannot add for {0} book")]
+    #[error("Invalid book operation: cannot add order for {0} book")]
     Add(BookType),
 }
 
@@ -37,7 +37,7 @@ pub enum BookIntegrityError {
     OrderNotFound(u64, u64, u64),
     #[error("Integrity error: invalid `NoOrderSide` in book")]
     NoOrderSide,
-    #[error("Integrity error: orders in cross [{0} @ {1}]")]
+    #[error("Integrity error: orders in cross [{0} {1}]")]
     OrdersCrossed(BookPrice, BookPrice),
     #[error("Integrity error: number of {0} orders at level > 1 for L2_MBP book, was {1}")]
     TooManyOrders(OrderSide, usize),

@@ -21,9 +21,11 @@ import pandas as pd
 from nautilus_trader.accounting.error import AccountError
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common import Environment
+from nautilus_trader.common.component import is_logging_pyo3
 from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import CacheConfig
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.model import NAUTILUS_PYO3_DATA_TYPES
@@ -1224,12 +1226,10 @@ cdef class BacktestEngine:
         return "\033[36m" if logging_is_colored() else ""
 
     def _log_pre_run(self):
-        log_sysinfo(
-            trader_id=self._kernel.trader_id,
-            machine_id=self._kernel.machine_id,
-            instance_id=self._kernel.instance_id,
-            component=type(self).__name__,
-        )
+        if is_logging_pyo3():
+            nautilus_pyo3.log_sysinfo(component=type(self).__name__)
+        else:
+            log_sysinfo(component=type(self).__name__)
 
         cdef str color = self._get_log_color_code()
 

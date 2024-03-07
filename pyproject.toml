@@ -40,7 +40,7 @@ requires = [
     "setuptools",
     "poetry-core>=1.9.0",
     "numpy>=1.26.4",
-    "Cython==3.0.8",
+    "Cython==3.0.9",
     "toml>=0.10.2",
 ]
 build-backend = "poetry.core.masonry.api"
@@ -51,7 +51,7 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
-cython = "==3.0.8"  # Build dependency (pinned for stability)
+cython = "==3.0.9"  # Build dependency (pinned for stability)
 numpy = "^1.26.4"  # Build dependency
 toml = "^0.10.2"  # Build dependency
 click = "^8.1.7"
@@ -83,7 +83,7 @@ docformatter = "^1.7.5"
 mypy = "^1.8.0"
 pandas-stubs = "^2.1.4"
 pre-commit = "^3.6.2"
-ruff = "^0.3.0"
+ruff = "^0.3.1"
 types-pytz = "^2023.3"
 types-requests = "^2.31"
 types-toml = "^0.10.2"

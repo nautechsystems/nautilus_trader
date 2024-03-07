@@ -13,13 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod common;
-pub mod decode;
-pub mod enums;
-pub mod live;
-pub mod loader;
-pub mod symbology;
-pub mod types;
-
-#[cfg(feature = "python")]
-pub mod python;
+pub mod matching_core;

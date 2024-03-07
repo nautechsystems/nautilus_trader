@@ -14,20 +14,17 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::env;
-#[cfg(feature = "ffi")]
-use std::{
-    fs::File,
-    io::{Read, Write},
-    path::PathBuf,
-};
 
 #[allow(clippy::expect_used)] // OK in build script
 fn main() {
-    let _is_ffi_feature_on = env::var("CARGO_FEATURE_FFI").is_ok();
-
     #[cfg(feature = "ffi")]
-    if !_is_ffi_feature_on {
+    if env::var("CARGO_FEATURE_FFI").is_ok() {
         extern crate cbindgen;
+        use std::{
+            fs::File,
+            io::{Read, Write},
+            path::PathBuf,
+        };
 
         let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 

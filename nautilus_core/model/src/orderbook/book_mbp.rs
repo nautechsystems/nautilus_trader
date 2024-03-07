@@ -327,6 +327,21 @@ impl OrderBookMbp {
             }
         }
 
+        let top_bid_level = self.bids.top();
+        let top_ask_level = self.asks.top();
+
+        if top_bid_level.is_none() || top_ask_level.is_none() {
+            return Ok(());
+        }
+
+        // SAFETY: Levels were already checked for None
+        let best_bid = top_bid_level.unwrap().price;
+        let best_ask = top_ask_level.unwrap().price;
+
+        if best_bid.value >= best_ask.value {
+            return Err(BookIntegrityError::OrdersCrossed(best_bid, best_ask));
+        }
+
         Ok(())
     }
 
@@ -493,5 +508,28 @@ mod tests {
         assert_eq!(book.best_ask_price().unwrap(), price);
         assert_eq!(book.best_bid_size().unwrap(), size);
         assert_eq!(book.best_ask_size().unwrap(), size);
+    }
+
+    #[rstest]
+    fn test_check_integrity_when_crossed() {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let mut book = OrderBookMbp::new(instrument_id, false);
+
+        let ask1 = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1.000"),
+            Quantity::from("1.0"),
+            0, // order_id not applicable
+        );
+        let bid1 = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("2.000"),
+            Quantity::from("1.0"),
+            0, // order_id not applicable
+        );
+        book.add(bid1, 0, 1);
+        book.add(ask1, 0, 1);
+
+        assert!(book.check_integrity().is_err());
     }
 }

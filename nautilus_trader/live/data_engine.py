@@ -90,7 +90,12 @@ class LiveDataEngine(DataEngine):
         """
         Connect the engine by calling connect on all registered clients.
         """
-        self._log.info("Connecting all clients...")
+        if self._clients:
+            self._log.info("Connecting all clients...")
+        else:
+            self._log.warning("No clients to connect.")
+            return
+
         for client in self._clients.values():
             client.connect()
 
@@ -98,7 +103,12 @@ class LiveDataEngine(DataEngine):
         """
         Disconnect the engine by calling disconnect on all registered clients.
         """
-        self._log.info("Disconnecting all clients...")
+        if self._clients:
+            self._log.info("Disconnecting all clients...")
+        else:
+            self._log.warning("No clients to disconnect.")
+            return
+
         for client in self._clients.values():
             client.disconnect()
 

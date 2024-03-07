@@ -58,16 +58,13 @@ pub struct DatabentoHistoricalClient {
 #[pymethods]
 impl DatabentoHistoricalClient {
     #[new]
-    fn py_new(key: String, publishers_path: &str) -> PyResult<Self> {
+    fn py_new(key: String, publishers_path: &str) -> anyhow::Result<Self> {
         let client = databento::HistoricalClient::builder()
-            .key(key.clone())
-            .map_err(to_pyvalue_err)?
-            .build()
-            .map_err(to_pyvalue_err)?;
+            .key(key.clone())?
+            .build()?;
 
         let file_content = fs::read_to_string(publishers_path)?;
-        let publishers_vec: Vec<DatabentoPublisher> =
-            serde_json::from_str(&file_content).map_err(to_pyvalue_err)?;
+        let publishers_vec: Vec<DatabentoPublisher> = serde_json::from_str(&file_content)?;
 
         let publisher_venue_map = publishers_vec
             .into_iter()
@@ -226,10 +223,9 @@ impl DatabentoHistoricalClient {
             let mut result: Vec<QuoteTick> = Vec::new();
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::Mbp1Msg>().await {
-                let rec_ref = dbn::RecordRef::from(msg);
+                let record = dbn::RecordRef::from(msg);
                 let instrument_id = decode_nautilus_instrument_id(
-                    &rec_ref,
-                    msg.hd.publisher_id,
+                    &record,
                     &metadata,
                     &publisher_venue_map,
                     &glbx_exchange_map,
@@ -237,7 +233,7 @@ impl DatabentoHistoricalClient {
                 .map_err(to_pyvalue_err)?;
 
                 let (data, _) = decode_record(
-                    &rec_ref,
+                    &record,
                     instrument_id,
                     price_precision,
                     Some(ts_init),
@@ -296,10 +292,9 @@ impl DatabentoHistoricalClient {
             let mut result: Vec<TradeTick> = Vec::new();
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::TradeMsg>().await {
-                let rec_ref = dbn::RecordRef::from(msg);
+                let record = dbn::RecordRef::from(msg);
                 let instrument_id = decode_nautilus_instrument_id(
-                    &rec_ref,
-                    msg.hd.publisher_id,
+                    &record,
                     &metadata,
                     &publisher_venue_map,
                     &glbx_exchange_map,
@@ -307,7 +302,7 @@ impl DatabentoHistoricalClient {
                 .map_err(to_pyvalue_err)?;
 
                 let (data, _) = decode_record(
-                    &rec_ref,
+                    &record,
                     instrument_id,
                     price_precision,
                     Some(ts_init),
@@ -375,10 +370,9 @@ impl DatabentoHistoricalClient {
             let mut result: Vec<Bar> = Vec::new();
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::OhlcvMsg>().await {
-                let rec_ref = dbn::RecordRef::from(msg);
+                let record = dbn::RecordRef::from(msg);
                 let instrument_id = decode_nautilus_instrument_id(
-                    &rec_ref,
-                    msg.hd.publisher_id,
+                    &record,
                     &metadata,
                     &publisher_venue_map,
                     &glbx_exchange_map,
@@ -386,7 +380,7 @@ impl DatabentoHistoricalClient {
                 .map_err(to_pyvalue_err)?;
 
                 let (data, _) = decode_record(
-                    &rec_ref,
+                    &record,
                     instrument_id,
                     price_precision,
                     Some(ts_init),

@@ -203,12 +203,25 @@ def init_tracing() -> None:
 def init_logging(
     trader_id: TraderId,
     instance_id: UUID4,
-    config_spec: str,
-    directory: str,
-    file_name: str,
-    file_format: str,
-) -> None:
-    ...
+    level_stdout: LogLevel,
+    level_file: LogLevel | None = None,
+    component_levels: dict[str, str] | None = None,
+    directory: str | None = None,
+    file_name: str | None = None,
+    file_format: str | None = None,
+    is_colored: bool | None = None,
+    is_bypassed: bool | None = None,
+    print_config: bool | None = None,
+) -> None: ...
+
+def log_header(
+    trader_id: TraderId,
+    machine_id: str,
+    instance_id: UUID4,
+    component: str
+) -> None: ...
+
+def log_sysinfo(component: str) -> None: ...
 
 ###################################################################################################
 # Model
@@ -763,6 +776,20 @@ class MovingAverageType(Enum):
     WILDER = "WILDER"
     HULL = "HULL"
 
+class LogLevel(Enum):
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+
+class LogColor(Enum):
+    DEFAULT = "DEFAULT"
+    GREEN = "GREEN"
+    BLUE = "BLUE"
+    MAGENTA = "MAGENTA"
+    CYAN = "CYAN"
+    YELLOW = "YELLOW"
+    RED = "RED"
 
 ### Identifiers
 
@@ -2226,6 +2253,25 @@ class BookImbalanceRatio:
 
 # Databento
 
+class DatabentoStatisticType(Enum):
+    OPENING_PRICE = "OPENING_PRICE"
+    INDICATIVE_OPENING_PRICE = "INDICATIVE_OPENING_PRICE"
+    SETTLEMENT_PRICE = "SETTLEMENT_PRICE"
+    TRADING_SESSION_LOW_PRICE = "TRADING_SESSION_LOW_PRICE"
+    TRADING_SESSION_HIGH_PRICE = "TRADING_SESSION_HIGH_PRICE"
+    CLEARED_VOLUME = "CLEARED_VOLUME"
+    LOWEST_OFFER = "LOWEST_OFFER"
+    HIGHEST_BID = "HIGHEST_BID"
+    OPEN_INTEREST = "OPEN_INTEREST"
+    FIXING_PRICE = "FIXING_PRICE"
+    CLOSE_PRICE = "CLOSE_PRICE"
+    NET_CHANGE = "NET_CHANGE"
+    VWAP = "VWAP"
+
+class DatabentoStatisticUpdateAction(Enum):
+    ADDED = "ADDED"
+    DELETED = "DELETED"
+
 class DatabentoPublisher:
     @property
     def publisher_id(self) -> int: ...
@@ -2235,6 +2281,56 @@ class DatabentoPublisher:
     def venue(self) -> str: ...
     @property
     def description(self) -> str: ...
+
+class DatabentoImbalance:
+    @property
+    def instrument_id(self) -> InstrumentId: ...
+    @property
+    def ref_price(self) -> Price: ...
+    @property
+    def cont_book_clr_price(self) -> Price: ...
+    @property
+    def auct_interest_clr_price(self) -> Price: ...
+    @property
+    def paired_qty(self) -> Quantity: ...
+    @property
+    def total_imbalance_qty(self) -> Quantity: ...
+    @property
+    def side(self) -> OrderSide: ...
+    @property
+    def significant_imbalance(self) -> str: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+
+class DatabentoStatistics:
+    @property
+    def instrument_id(self) -> InstrumentId: ...
+    @property
+    def stat_type(self) -> DatabentoStatisticType: ...
+    @property
+    def update_action(self) -> DatabentoStatisticUpdateAction: ...
+    @property
+    def price(self) -> Price | None: ...
+    @property
+    def quantity(self) -> Quantity | None: ...
+    @property
+    def channel_id(self) -> int: ...
+    @property
+    def stat_flags(self) -> int: ...
+    @property
+    def sequence(self) -> int: ...
+    @property
+    def ts_ref(self) -> int: ...
+    @property
+    def ts_in_delta(self) -> int: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_recv(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
 
 class DatabentoDataLoader:
     def __init__(
@@ -2258,6 +2354,8 @@ class DatabentoDataLoader:
     def load_trades_as_pycapsule(self, path: str, instrument_id: InstrumentId | None) -> object: ...
     def load_bars(self, path: str, instrument_id: InstrumentId | None) -> list[Bar]: ...
     def load_bars_as_pycapsule(self, path: str, instrument_id: InstrumentId | None) -> object: ...
+    def load_imbalance(self, path: str, instrument_id: InstrumentId | None) -> list[DatabentoImbalance]: ...
+    def load_statistics(self, path: str, instrument_id: InstrumentId | None) -> list[DatabentoStatistics]: ...
 
 class DatabentoHistoricalClient:
     def __init__(
@@ -2315,18 +2413,22 @@ class DatabentoLiveClient:
     def key(self) -> str: ...
     @property
     def dataset(self) -> str: ...
+    @property
+    def is_running(self) -> bool: ...
+    @property
+    def is_closed(self) -> bool: ...
     def load_glbx_exchange_map(self, map: dict[Symbol, Venue]) -> None: ...
     def get_glbx_exchange_map(self) -> dict[Symbol, Venue]: ...
-    async def subscribe(
+    def subscribe(
         self,
         schema: str,
         symbols: str,
         stype_in: str | None = None,
         start: int | None = None,
     ) -> dict[str, str]: ...
-    async def start(
+    def start(
         self,
         callback: Callable,
-        replay: bool,
+        callback_pyo3: Callable,
     ) -> dict[str, str]: ...
-    async def close(self) -> None: ...
+    def close(self) -> None: ...

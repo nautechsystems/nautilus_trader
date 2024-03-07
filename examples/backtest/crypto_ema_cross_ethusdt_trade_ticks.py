@@ -45,6 +45,7 @@ if __name__ == "__main__":
         logging=LoggingConfig(
             log_level="INFO",
             log_colors=True,
+            use_pyo3=False,
         ),
     )
 

@@ -15,34 +15,38 @@
 
 use std::{collections::HashMap, env, fs, path::PathBuf};
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use dbn::{
     compat::InstrumentDefMsgV1,
     decode::{dbn::Decoder, DbnMetadata, DecodeStream},
-    Publisher, Record,
+    Publisher,
 };
 use indexmap::IndexMap;
 use nautilus_model::{
     data::Data,
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
-    instruments::Instrument,
+    instruments::InstrumentType,
     types::currency::Currency,
 };
 use streaming_iterator::StreamingIterator;
 use ustr::Ustr;
 
 use super::{
-    decode::{decode_instrument_def_msg_v1, decode_record, raw_ptr_to_ustr},
-    types::{DatabentoPublisher, Dataset, PublisherId},
+    decode::{
+        decode_imbalance_msg, decode_instrument_def_msg_v1, decode_record, decode_statistics_msg,
+        raw_ptr_to_ustr,
+    },
+    symbology::decode_nautilus_instrument_id,
+    types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, Dataset, PublisherId},
 };
 
 /// Provides a Nautilus data loader for Databento Binary Encoding (DBN) format data.
 ///
 /// # Supported schemas:
 ///  - MBO -> `OrderBookDelta`
-///  - MBP_1 -> `QuoteTick` | `TradeTick`
+///  - MBP_1 -> `QuoteTick` + `TradeTick`
 ///  - MBP_10 -> `OrderBookDepth10`
-///  - TBBO -> `QuoteTick` | `TradeTick`
+///  - TBBO -> `QuoteTick` + `TradeTick`
 ///  - TRADES -> `TradeTick`
 ///  - OHLCV_1S -> `Bar`
 ///  - OHLCV_1M -> `Bar`
@@ -51,11 +55,6 @@ use super::{
 ///  - DEFINITION -> `Instrument`
 ///  - IMBALANCE -> `DatabentoImbalance`
 ///  - STATISTICS -> `DatabentoStatistics`
-///
-/// # Warnings
-/// The following Databento instrument classes are not supported:
-///  - ``BOND``
-///  - ``FX_SPOT``
 ///
 /// # References
 /// <https://docs.databento.com/knowledge-base/new-users/dbn-encoding>
@@ -118,7 +117,7 @@ impl DatabentoDataLoader {
             .collect::<IndexMap<Venue, Ustr>>();
 
         // Insert CME Globex exchanges
-        let glbx = Dataset::from("GLBX");
+        let glbx = Dataset::from("GLBX.MDP3");
         self.venue_dataset_map.insert(Venue::CBCM(), glbx);
         self.venue_dataset_map.insert(Venue::GLBX(), glbx);
         self.venue_dataset_map.insert(Venue::NYUM(), glbx);
@@ -165,55 +164,6 @@ impl DatabentoDataLoader {
         self.glbx_exchange_map.clone()
     }
 
-    pub fn get_nautilus_instrument_id_for_record(
-        &self,
-        record: &dbn::RecordRef,
-        metadata: &dbn::Metadata,
-        venue: Venue,
-    ) -> Result<InstrumentId> {
-        let (instrument_id, nanoseconds) = match record.rtype()? {
-            dbn::RType::Mbo => {
-                let msg = record.get::<dbn::MboMsg>().unwrap(); // SAFETY: RType known
-                (msg.hd.instrument_id, msg.ts_recv)
-            }
-            dbn::RType::Mbp0 => {
-                let msg = record.get::<dbn::TradeMsg>().unwrap(); // SAFETY: RType known
-                (msg.hd.instrument_id, msg.ts_recv)
-            }
-            dbn::RType::Mbp1 => {
-                let msg = record.get::<dbn::Mbp1Msg>().unwrap(); // SAFETY: RType known
-                (msg.hd.instrument_id, msg.ts_recv)
-            }
-            dbn::RType::Mbp10 => {
-                let msg = record.get::<dbn::Mbp10Msg>().unwrap(); // SAFETY: RType known
-                (msg.hd.instrument_id, msg.ts_recv)
-            }
-            dbn::RType::Ohlcv1S
-            | dbn::RType::Ohlcv1M
-            | dbn::RType::Ohlcv1H
-            | dbn::RType::Ohlcv1D
-            | dbn::RType::OhlcvEod => {
-                let msg = record.get::<dbn::OhlcvMsg>().unwrap(); // SAFETY: RType known
-                (msg.hd.instrument_id, msg.hd.ts_event)
-            }
-            _ => bail!("RType is currently unsupported by NautilusTrader"),
-        };
-
-        let duration = time::Duration::nanoseconds(nanoseconds as i64);
-        let datetime = time::OffsetDateTime::UNIX_EPOCH
-            .checked_add(duration)
-            .unwrap(); // SAFETY: Relying on correctness of record timestamps
-        let date = datetime.date();
-        let symbol_map = metadata.symbol_map_for_date(date)?;
-        let raw_symbol = symbol_map
-            .get(instrument_id)
-            .expect("No raw symbol found for {instrument_id}");
-
-        let symbol = Symbol::from_str_unchecked(raw_symbol);
-
-        Ok(InstrumentId::new(symbol, venue))
-    }
-
     pub fn schema_from_file(&self, path: PathBuf) -> Result<Option<String>> {
         let decoder = Decoder::from_zstd_file(path)?;
         let metadata = decoder.metadata();
@@ -223,7 +173,7 @@ impl DatabentoDataLoader {
     pub fn read_definition_records(
         &mut self,
         path: PathBuf,
-    ) -> Result<impl Iterator<Item = Result<Box<dyn Instrument>>> + '_> {
+    ) -> Result<impl Iterator<Item = Result<InstrumentType>> + '_> {
         let mut decoder = Decoder::from_zstd_file(path)?;
         decoder.set_upgrade_policy(dbn::VersionUpgradePolicy::Upgrade);
         let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsgV1>();
@@ -233,8 +183,8 @@ impl DatabentoDataLoader {
 
             match dbn_stream.get() {
                 Some(rec) => {
-                    let rec_ref = dbn::RecordRef::from(rec);
-                    let msg = rec_ref.get::<InstrumentDefMsgV1>().unwrap();
+                    let record = dbn::RecordRef::from(rec);
+                    let msg = record.get::<InstrumentDefMsgV1>().unwrap();
 
                     let raw_symbol = unsafe {
                         raw_ptr_to_ustr(rec.raw_symbol.as_ptr())
@@ -289,48 +239,109 @@ impl DatabentoDataLoader {
             dbn_stream.advance();
             match dbn_stream.get() {
                 Some(rec) => {
-                    let rec_ref = dbn::RecordRef::from(rec);
+                    let record = dbn::RecordRef::from(rec);
                     let instrument_id = match &instrument_id {
                         Some(id) => *id, // Copy
-                        None => {
-                            let publisher =
-                                rec_ref.publisher().expect("Invalid `publisher` for record");
-                            let publisher_id = publisher as PublisherId;
-                            let venue =
-                                self.publisher_venue_map
-                                    .get(&publisher_id)
-                                    .unwrap_or_else(|| {
-                                        panic!(
-                                            "`Venue` not found for `publisher_id` {publisher_id}"
-                                        )
-                                    });
-                            let mut instrument_id = self
-                                .get_nautilus_instrument_id_for_record(&rec_ref, &metadata, *venue)
-                                .unwrap_or_else(|_| {
-                                    panic!("Error resolving symbology mapping for {rec_ref:?}")
-                                });
-
-                            if publisher == Publisher::GlbxMdp3Glbx {
-                                // Source actual exchange from GLBX instrument
-                                // definitions if they were loaded.
-                                if let Some(venue) =
-                                    self.glbx_exchange_map.get(&instrument_id.symbol)
-                                {
-                                    instrument_id.venue = *venue;
-                                }
-                            };
-
-                            instrument_id
-                        }
+                        None => decode_nautilus_instrument_id(
+                            &record,
+                            &metadata,
+                            &self.publisher_venue_map,
+                            &self.glbx_exchange_map,
+                        )
+                        .unwrap(), // TODO: Panic on error for now
                     };
 
                     match decode_record(
-                        &rec_ref,
+                        &record,
                         instrument_id,
                         price_precision,
                         None,
                         include_trades,
                     ) {
+                        Ok(data) => Some(Ok(data)),
+                        Err(e) => Some(Err(e)),
+                    }
+                }
+                None => None,
+            }
+        }))
+    }
+
+    pub fn read_imbalance_records<T>(
+        &self,
+        path: PathBuf,
+        instrument_id: Option<InstrumentId>,
+    ) -> Result<impl Iterator<Item = Result<DatabentoImbalance>> + '_>
+    where
+        T: dbn::Record + dbn::HasRType + 'static,
+    {
+        let decoder = Decoder::from_zstd_file(path)?;
+        let metadata = decoder.metadata().clone();
+        let mut dbn_stream = decoder.decode_stream::<T>();
+
+        let price_precision = Currency::USD().precision; // Hard coded for now
+
+        Ok(std::iter::from_fn(move || {
+            dbn_stream.advance();
+            match dbn_stream.get() {
+                Some(rec) => {
+                    let record = dbn::RecordRef::from(rec);
+                    let instrument_id = match &instrument_id {
+                        Some(id) => *id, // Copy
+                        None => decode_nautilus_instrument_id(
+                            &record,
+                            &metadata,
+                            &self.publisher_venue_map,
+                            &self.glbx_exchange_map,
+                        )
+                        .unwrap(), // TODO: Panic on error for now
+                    };
+
+                    let msg = record
+                        .get::<dbn::ImbalanceMsg>()
+                        .expect("Invalid `ImbalanceMsg`");
+                    match decode_imbalance_msg(msg, instrument_id, price_precision, msg.ts_recv) {
+                        Ok(data) => Some(Ok(data)),
+                        Err(e) => Some(Err(e)),
+                    }
+                }
+                None => None,
+            }
+        }))
+    }
+
+    pub fn read_statistics_records<T>(
+        &self,
+        path: PathBuf,
+        instrument_id: Option<InstrumentId>,
+    ) -> Result<impl Iterator<Item = Result<DatabentoStatistics>> + '_>
+    where
+        T: dbn::Record + dbn::HasRType + 'static,
+    {
+        let decoder = Decoder::from_zstd_file(path)?;
+        let metadata = decoder.metadata().clone();
+        let mut dbn_stream = decoder.decode_stream::<T>();
+
+        let price_precision = Currency::USD().precision; // Hard coded for now
+
+        Ok(std::iter::from_fn(move || {
+            dbn_stream.advance();
+            match dbn_stream.get() {
+                Some(rec) => {
+                    let record = dbn::RecordRef::from(rec);
+                    let instrument_id = match &instrument_id {
+                        Some(id) => *id, // Copy
+                        None => decode_nautilus_instrument_id(
+                            &record,
+                            &metadata,
+                            &self.publisher_venue_map,
+                            &self.glbx_exchange_map,
+                        )
+                        .unwrap(), // TODO: Panic on error for now
+                    };
+
+                    let msg = record.get::<dbn::StatMsg>().expect("Invalid `StatMsg`");
+                    match decode_statistics_msg(msg, instrument_id, price_precision, msg.ts_recv) {
                         Ok(data) => Some(Ok(data)),
                         Err(e) => Some(Err(e)),
                     }

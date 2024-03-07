@@ -14,16 +14,22 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod decode;
+pub mod enums;
 pub mod historical;
 pub mod live;
 pub mod loader;
+pub mod types;
 
 use pyo3::prelude::*;
 
 /// Loaded as nautilus_pyo3.databento
 #[pymodule]
 pub fn databento(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<super::enums::DatabentoStatisticType>()?;
+    m.add_class::<super::enums::DatabentoStatisticUpdateAction>()?;
     m.add_class::<super::types::DatabentoPublisher>()?;
+    m.add_class::<super::types::DatabentoStatistics>()?;
+    m.add_class::<super::types::DatabentoImbalance>()?;
     m.add_class::<super::loader::DatabentoDataLoader>()?;
     m.add_class::<live::DatabentoLiveClient>()?;
     m.add_class::<historical::DatabentoHistoricalClient>()?;

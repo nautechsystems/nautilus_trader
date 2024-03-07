@@ -354,18 +354,6 @@ cdef extern from "../includes/common.h":
     # - Assumes `ptr` is a valid C string pointer.
     LogColor log_color_from_cstr(const char *ptr);
 
-    # Initializes tracing.
-    #
-    # Tracing is meant to be used to trace/debug async Rust code. It can be
-    # configured to filter modules and write up to a specific level only using
-    # by passing a configuration using the `RUST_LOG` environment variable.
-    #
-    # # Safety
-    #
-    # Should only be called once during an applications run, ideally at the
-    # beginning of the run.
-    void tracing_init();
-
     # Initializes logging.
     #
     # Logging should be used for Python and sync Rust logic which is most of
