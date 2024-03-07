@@ -105,7 +105,7 @@ pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> Result<UnixNanos> 
     });
 
     // Calculate last closest weekday
-    let last_closest = date - TimeDelta::days(offset);
+    let last_closest = date - TimeDelta::try_days(offset).expect("Invalid offset");
 
     // Convert to UNIX nanoseconds
     let unix_timestamp_ns = last_closest
@@ -113,6 +113,7 @@ pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> Result<UnixNanos> 
         .ok_or_else(|| anyhow!("Failed `and_hms_nano_opt`"))?;
 
     Ok(unix_timestamp_ns
+        .and_utc()
         .timestamp_nanos_opt()
         .ok_or_else(|| anyhow!("Failed `timestamp_nanos_opt`"))? as UnixNanos)
 }
@@ -124,7 +125,7 @@ pub fn is_within_last_24_hours(timestamp_ns: UnixNanos) -> Result<bool> {
         .ok_or_else(|| anyhow!("Invalid timestamp {timestamp_ns}"))?;
     let now = Utc::now();
 
-    Ok(now.signed_duration_since(timestamp) <= TimeDelta::days(1))
+    Ok(now.signed_duration_since(timestamp) <= TimeDelta::try_days(1).unwrap())
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -261,7 +262,7 @@ mod tests {
 
     #[rstest]
     fn test_is_within_last_24_hours_when_two_days_ago() {
-        let past_ns = (Utc::now() - TimeDelta::days(2))
+        let past_ns = (Utc::now() - TimeDelta::try_days(2).unwrap())
             .timestamp_nanos_opt()
             .unwrap();
         assert!(!is_within_last_24_hours(past_ns as UnixNanos).unwrap());
