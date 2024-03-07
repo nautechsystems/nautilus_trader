@@ -25,7 +25,7 @@ use databento::{
     live::Subscription,
 };
 use indexmap::IndexMap;
-use log::{error, info};
+use log::{debug, error, info, trace};
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
     time::{get_atomic_clock_realtime, AtomicTime},
@@ -101,6 +101,7 @@ impl DatabentoFeedHandler {
     }
 
     pub async fn run(&mut self) -> Result<()> {
+        debug!("Running feed handler...");
         let clock = get_atomic_clock_realtime();
         let mut symbol_map = PitSymbolMap::new();
         let mut instrument_id_map: HashMap<u32, InstrumentId> = HashMap::new();
@@ -132,6 +133,7 @@ impl DatabentoFeedHandler {
                             self.replay = true;
                         }
                         client.subscribe(&sub).await.map_err(to_pyruntime_err)?;
+                        debug!("DatabentoClient subscribing to {:?}", sub);
                     }
                     LiveCommand::UpdateGlbx(map) => self.glbx_exchange_map = map,
                     LiveCommand::Start => {
@@ -141,10 +143,12 @@ impl DatabentoFeedHandler {
                         };
                         client.start().await.map_err(to_pyruntime_err)?;
                         running = true;
+                        debug!("DatabentoClient started");
                     }
                     LiveCommand::Close => {
                         if running {
                             client.close().await.map_err(to_pyruntime_err)?;
+                            debug!("DatabentoClient closed");
                         }
                         return Ok(());
                     }
@@ -274,17 +278,19 @@ impl DatabentoFeedHandler {
     }
 
     fn send_msg(&mut self, msg: LiveMessage) {
-        self.tx.send(msg).expect("Error sending message")
+        trace!("Sending message {:?}", msg);
+        match self.tx.send(msg) {
+            Ok(_) => {}
+            Err(e) => error!("Error sending message: {:?}", e),
+        }
     }
 }
 
 fn handle_error_msg(msg: &dbn::ErrorMsg) {
-    eprintln!("{msg:?}"); // TODO: Just print stderr for now
     error!("{:?}", msg);
 }
 
 fn handle_system_msg(msg: &dbn::SystemMsg) {
-    println!("{msg:?}"); // TODO: Just print stdout for now
     info!("{:?}", msg);
 }
 
