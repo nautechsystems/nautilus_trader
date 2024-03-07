@@ -166,6 +166,8 @@ class NautilusKernel:
                     set_logging_pyo3(True)
                     # Initialize tracing for async Rust
                     nautilus_pyo3.init_tracing()
+
+                    # Initialize logging for sync Rust and Python
                     nautilus_pyo3.init_logging(
                         trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
                         instance_id=nautilus_pyo3.UUID4(self._instance_id.value),
