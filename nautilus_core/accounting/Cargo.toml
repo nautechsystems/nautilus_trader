@@ -33,5 +33,5 @@ extension-module = [
   "nautilus-model/extension-module",
   "nautilus-common/extension-module",
 ]
-python = ["pyo3"]
+python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]
 default = []
