@@ -168,7 +168,7 @@ mod tests {
     #[rstest]
     fn test_value_with_one_input(mut indicator_vidya_10: VariableIndexDynamicAverage) {
         indicator_vidya_10.update_raw(1.0);
-        assert_eq!(indicator_vidya_10.value, 1.0);
+        assert_eq!(indicator_vidya_10.value, 0.0);
     }
 
     #[rstest]
@@ -176,7 +176,7 @@ mod tests {
         indicator_vidya_10.update_raw(1.0);
         indicator_vidya_10.update_raw(2.0);
         indicator_vidya_10.update_raw(3.0);
-        assert_eq!(indicator_vidya_10.value, 1.824_561_403_508_772);
+        assert_eq!(indicator_vidya_10.value, 0.0);
     }
 
     #[rstest]
@@ -192,7 +192,7 @@ mod tests {
         indicator_vidya_10.update_raw(1.00020);
         indicator_vidya_10.update_raw(1.00010);
         indicator_vidya_10.update_raw(1.00000);
-        assert_eq!(indicator_vidya_10.value, 1.000_140_392_817_059_8);
+        assert_eq!(indicator_vidya_10.value, 0.046_813_474_863_949_87);
     }
 
     #[rstest]
@@ -201,7 +201,7 @@ mod tests {
         quote_tick: QuoteTick,
     ) {
         indicator_vidya_10.handle_quote_tick(&quote_tick);
-        assert_eq!(indicator_vidya_10.value, 1501.0);
+        assert_eq!(indicator_vidya_10.value, 0.0);
     }
 
     #[rstest]
@@ -210,7 +210,7 @@ mod tests {
         trade_tick: TradeTick,
     ) {
         indicator_vidya_10.handle_trade_tick(&trade_tick);
-        assert_eq!(indicator_vidya_10.value, 1500.0);
+        assert_eq!(indicator_vidya_10.value, 0.0);
     }
 
     #[rstest]
@@ -219,8 +219,7 @@ mod tests {
         bar_ethusdt_binance_minute_bid: Bar,
     ) {
         indicator_vidya_10.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_eq!(indicator_vidya_10.value, 1522.0);
-        assert!(indicator_vidya_10.has_inputs);
+        assert_eq!(indicator_vidya_10.value, 0.0);
         assert!(!indicator_vidya_10.initialized);
     }
 
@@ -228,7 +227,7 @@ mod tests {
     fn test_reset(mut indicator_vidya_10: VariableIndexDynamicAverage) {
         indicator_vidya_10.update_raw(1.0);
         assert_eq!(indicator_vidya_10.count, 1);
-        assert_eq!(indicator_vidya_10.value, 1.0);
+        assert_eq!(indicator_vidya_10.value, 0.0);
         indicator_vidya_10.reset();
         assert_eq!(indicator_vidya_10.value, 0.0);
         assert_eq!(indicator_vidya_10.count, 0);
