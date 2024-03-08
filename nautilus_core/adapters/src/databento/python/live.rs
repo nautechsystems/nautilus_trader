@@ -18,13 +18,12 @@ use std::{
     fs,
     str::FromStr,
     sync::mpsc::{self, Receiver, Sender},
-    thread::{self, JoinHandle},
+    thread,
 };
 
 use anyhow::anyhow;
 use databento::live::Subscription;
 use indexmap::IndexMap;
-use log::debug;
 use nautilus_common::runtime::get_runtime;
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
@@ -36,6 +35,7 @@ use nautilus_model::{
 };
 use pyo3::prelude::*;
 use time::OffsetDateTime;
+use tracing::debug;
 
 use super::loader::convert_instrument_to_pyobject;
 use crate::databento::{
@@ -60,7 +60,7 @@ pub struct DatabentoLiveClient {
     rx_cmd: Option<Receiver<LiveCommand>>,
     publisher_venue_map: IndexMap<u16, Venue>,
     glbx_exchange_map: HashMap<Symbol, Venue>,
-    join_handle: Option<JoinHandle<PyResult<()>>>,
+    handle: Option<thread::JoinHandle<PyResult<()>>>,
 }
 
 impl DatabentoLiveClient {
@@ -124,7 +124,7 @@ impl DatabentoLiveClient {
             is_closed: false,
             publisher_venue_map,
             glbx_exchange_map: HashMap::new(),
-            join_handle: None,
+            handle: None,
         })
     }
 
@@ -200,7 +200,7 @@ impl DatabentoLiveClient {
         debug!("Spawning message processing thread");
         let join_handle =
             thread::spawn(move || Self::process_messages(rx_msg, callback, callback_pyo3));
-        self.join_handle = Some(join_handle);
+        self.handle = Some(join_handle);
         Ok(())
     }
 
@@ -215,7 +215,7 @@ impl DatabentoLiveClient {
         self.is_running = false;
         self.is_closed = true;
 
-        if let Some(join_handle) = self.join_handle.take() {
+        if let Some(join_handle) = self.handle.take() {
             match join_handle.join() {
                 Ok(result) => result,
                 Err(e) => Err(to_pyruntime_err(format!("Thread join failed: {:?}", e))),
