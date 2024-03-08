@@ -122,6 +122,7 @@ class BinanceWebSocketClient:
             handler=self._handler,
             heartbeat=60,
             headers=[],
+            ping_handler=self.handle_ping,
         )
 
         self._inner = await WebSocketClient.connect(
@@ -131,6 +132,13 @@ class BinanceWebSocketClient:
         self._is_connecting = False
         self._log.info(f"Connected to {self._base_url}.", LogColor.BLUE)
         self._log.info(f"Subscribed to {initial_stream}.", LogColor.BLUE)
+
+    def handle_ping(self, raw: bytes) -> None:
+        if self._inner is None:
+            return
+
+        # Send ping payload back to server as pong
+        # self._inner.send_pong(raw)  # WIP
 
     # TODO: Temporarily synch
     def reconnect(self) -> None:
