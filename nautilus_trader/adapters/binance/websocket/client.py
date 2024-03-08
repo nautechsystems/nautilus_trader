@@ -122,7 +122,7 @@ class BinanceWebSocketClient:
             handler=self._handler,
             heartbeat=60,
             headers=[],
-            ping_handler=self.handle_ping,
+            ping_handler=self._handle_ping,
         )
 
         self._inner = await WebSocketClient.connect(
@@ -133,12 +133,17 @@ class BinanceWebSocketClient:
         self._log.info(f"Connected to {self._base_url}.", LogColor.BLUE)
         self._log.info(f"Subscribed to {initial_stream}.", LogColor.BLUE)
 
-    def handle_ping(self, raw: bytes) -> None:
+    def _handle_ping(self, raw: bytes) -> None:
+        self._loop.create_task(self.send_pong(raw))
+
+    async def send_pong(self, raw: bytes) -> None:
+        """
+        Send the given raw payload to the server as a PONG message.
+        """
         if self._inner is None:
             return
 
-        # Send ping payload back to server as pong
-        # self._inner.send_pong(raw)  # WIP
+        await self._inner.send_pong(raw)
 
     # TODO: Temporarily synch
     def reconnect(self) -> None:
@@ -466,7 +471,7 @@ class BinanceWebSocketClient:
         message = self._create_subscribe_msg(streams=[stream])
         self._log.debug(f"SENDING: {message}")
 
-        self._inner.send_text(json.dumps(message))
+        await self._inner.send_text(json.dumps(message))
         self._log.info(f"Subscribed to {stream}.", LogColor.BLUE)
 
     async def _subscribe_all(self) -> None:
@@ -477,7 +482,7 @@ class BinanceWebSocketClient:
         message = self._create_subscribe_msg(streams=self._streams)
         self._log.debug(f"SENDING: {message}")
 
-        self._inner.send_text(json.dumps(message))
+        await self._inner.send_text(json.dumps(message))
         for stream in self._streams:
             self._log.info(f"Subscribed to {stream}.", LogColor.BLUE)
 
@@ -495,7 +500,7 @@ class BinanceWebSocketClient:
         message = self._create_unsubscribe_msg(streams=[stream])
         self._log.debug(f"SENDING: {message}")
 
-        self._inner.send_text(json.dumps(message))
+        await self._inner.send_text(json.dumps(message))
         self._log.info(f"Unsubscribed from {stream}.", LogColor.BLUE)
 
     def _create_subscribe_msg(self, streams: list[str]) -> dict[str, Any]:

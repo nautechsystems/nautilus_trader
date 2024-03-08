@@ -20,6 +20,7 @@ None
 - Fixed Interactive Brokers connection error logging (#1524), thanks @benjaminsingleton
 - Fixed `SimulationModuleConfig` location and missing re-export from `config` subpackage
 - Fixed logging `StdoutWriter` from also writing error logs (writers were duplicating error logs)
+- Fixed `BinanceWebSocketClient` to [new specification](https://binance-docs.github.io/apidocs/futures/en/#websocket-market-streams) which requires responding to pings with a pong containing the pings payload
 
 ---
 
