@@ -186,19 +186,27 @@ impl WebSocketClientInner {
                             break;
                         }
                     }
+                    Some(Ok(Message::Ping(ping))) => {
+                        debug!("Received ping: {}", String::from_utf8(ping).unwrap());
+                        break;
+                    }
+                    Some(Ok(Message::Pong(_))) => {
+                        debug!("Received pong");
+                        break;
+                    }
                     Some(Ok(Message::Close(_))) => {
-                        error!("Received close message, terminating.");
+                        error!("Received close message - terminating");
                         break;
                     }
                     Some(Ok(_)) => (),
                     Some(Err(e)) => {
-                        error!("Received error message, terminating. {e}");
+                        error!("Received error message - terminating: {e}");
                         break;
                     }
                     // Internally tungstenite considers the connection closed when polling
                     // for the next message in the stream returns None.
                     None => {
-                        error!("No message received, terminating");
+                        error!("No message received - terminating");
                         break;
                     }
                 }
