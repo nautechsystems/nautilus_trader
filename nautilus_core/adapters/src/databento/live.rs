@@ -25,7 +25,6 @@ use databento::{
     live::Subscription,
 };
 use indexmap::IndexMap;
-use log::{debug, error, info, trace};
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
     time::{get_atomic_clock_realtime, AtomicTime},
@@ -40,6 +39,7 @@ use nautilus_model::{
     instruments::InstrumentType,
 };
 use tokio::time::{timeout, Duration};
+use tracing::{debug, error, info, trace};
 use ustr::Ustr;
 
 use super::{
@@ -133,7 +133,7 @@ impl DatabentoFeedHandler {
                             self.replay = true;
                         }
                         client.subscribe(&sub).await.map_err(to_pyruntime_err)?;
-                        debug!("DatabentoClient subscribing to {:?}", sub);
+                        debug!("{:?}", sub);
                     }
                     LiveCommand::UpdateGlbx(map) => self.glbx_exchange_map = map,
                     LiveCommand::Start => {
@@ -143,12 +143,12 @@ impl DatabentoFeedHandler {
                         };
                         client.start().await.map_err(to_pyruntime_err)?;
                         running = true;
-                        debug!("DatabentoClient started");
+                        debug!("Started");
                     }
                     LiveCommand::Close => {
                         if running {
                             client.close().await.map_err(to_pyruntime_err)?;
-                            debug!("DatabentoClient closed");
+                            debug!("Closed");
                         }
                         return Ok(());
                     }
