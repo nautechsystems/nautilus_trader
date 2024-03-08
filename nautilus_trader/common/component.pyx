@@ -2650,6 +2650,7 @@ cdef class Throttler:
 
     The internal buffer queue is unbounded and so a bounded queue should be
     upstream.
+
     """
 
     def __init__(
@@ -2660,7 +2661,7 @@ cdef class Throttler:
         Clock clock not None,
         output_send not None: Callable[[Any], None],
         output_drop: Callable[[Any], None] | None = None,
-    ):
+    ) -> None:
         Condition.valid_string(name, "name")
         Condition.positive_int(limit, "limit")
         Condition.positive(interval.total_seconds(), "interval.total_seconds()")
@@ -2687,7 +2688,7 @@ cdef class Throttler:
         self._log.info("READY.")
 
     @property
-    def qsize(self):
+    def qsize(self) -> int:
         """
         Return the qsize of the internal buffer.
 
@@ -2701,6 +2702,7 @@ cdef class Throttler:
     cpdef void reset(self):
         """
         Reset the state of the throttler.
+
         """
         self._buffer.clear()
         self._warm = False
@@ -2722,8 +2724,8 @@ cdef class Throttler:
             if self.sent_count < 2:
                 return 0
 
-        cdef int64_t spread = self._clock.timestamp_ns() - self._timestamps[-1]
-        cdef int64_t diff = max_uint64(0, self._interval_ns - spread)
+        cdef int64_t diff = self._clock.timestamp_ns() - self._timestamps[-1]
+        diff = max_uint64(0, self._interval_ns - diff)
         cdef double used = <double>diff / <double>self._interval_ns
 
         if not self._warm:
