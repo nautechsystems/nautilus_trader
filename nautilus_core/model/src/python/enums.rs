@@ -15,7 +15,8 @@
 
 use std::str::FromStr;
 
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyType, PyTypeInfo};
+use nautilus_core::python::to_pyvalue_err;
+use pyo3::{prelude::*, types::PyType, PyTypeInfo};
 
 use crate::{
     enums::{
@@ -74,7 +75,7 @@ impl AccountType {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 
     #[classattr]
@@ -82,11 +83,13 @@ impl AccountType {
     fn py_cash() -> Self {
         Self::Cash
     }
+
     #[classattr]
     #[pyo3(name = "MARGIN")]
     fn py_margin() -> Self {
         Self::Margin
     }
+
     #[classattr]
     #[pyo3(name = "BETTING")]
     fn py_betting() -> Self {
@@ -141,7 +144,7 @@ impl AggregationSource {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 
     #[classattr]
@@ -149,6 +152,7 @@ impl AggregationSource {
     fn py_external() -> Self {
         Self::External
     }
+
     #[classattr]
     #[pyo3(name = "INTERNAL")]
     fn py_internal() -> Self {
@@ -203,7 +207,7 @@ impl AggressorSide {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 
     #[classattr]
@@ -272,7 +276,7 @@ impl AssetClass {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 
     #[classattr]
@@ -280,31 +284,37 @@ impl AssetClass {
     fn py_fx() -> Self {
         Self::FX
     }
+
     #[classattr]
     #[pyo3(name = "EQUITY")]
     fn py_equity() -> Self {
         Self::Equity
     }
+
     #[classattr]
     #[pyo3(name = "COMMODITY")]
     fn py_commodity() -> Self {
         Self::Commodity
     }
+
     #[classattr]
     #[pyo3(name = "DEBT")]
     fn py_debt() -> Self {
         Self::Debt
     }
+
     #[classattr]
     #[pyo3(name = "INDEX")]
     fn py_index() -> Self {
         Self::Index
     }
+
     #[classattr]
     #[pyo3(name = "CRYPTOCURRENCY")]
     fn py_cryptocurrency() -> Self {
         Self::Cryptocurrency
     }
+
     #[classattr]
     #[pyo3(name = "ALTERNATIVE")]
     fn py_alternative() -> Self {
@@ -359,7 +369,7 @@ impl InstrumentClass {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 
     #[classattr]
@@ -367,41 +377,49 @@ impl InstrumentClass {
     fn py_spot() -> Self {
         Self::Spot
     }
+
     #[classattr]
     #[pyo3(name = "SWAP")]
     fn py_swap() -> Self {
         Self::Swap
     }
+
     #[classattr]
     #[pyo3(name = "FUTURE")]
     fn py_future() -> Self {
         Self::Future
     }
+
     #[classattr]
     #[pyo3(name = "FORWARD")]
     fn py_forward() -> Self {
         Self::Forward
     }
+
     #[classattr]
     #[pyo3(name = "CFD")]
     fn py_cfd() -> Self {
         Self::Cfd
     }
+
     #[classattr]
     #[pyo3(name = "BOND")]
     fn py_bond() -> Self {
         Self::Bond
     }
+
     #[classattr]
     #[pyo3(name = "OPTION")]
     fn py_option() -> Self {
         Self::Option
     }
+
     #[classattr]
     #[pyo3(name = "WARRANT")]
     fn py_warrant() -> Self {
         Self::Warrant
     }
+
     #[classattr]
     #[pyo3(name = "SPORTS_BETTING")]
     fn py_sports_betting() -> Self {
@@ -456,7 +474,7 @@ impl BarAggregation {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
     #[classattr]
     #[pyo3(name = "TICK")]
@@ -602,23 +620,27 @@ impl BookAction {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
+
     #[classattr]
     #[pyo3(name = "ADD")]
     fn py_add() -> Self {
         Self::Add
     }
+
     #[classattr]
     #[pyo3(name = "UPDATE")]
     fn py_update() -> Self {
         Self::Update
     }
+
     #[classattr]
     #[pyo3(name = "DELETE")]
     fn py_delete() -> Self {
         Self::Delete
     }
+
     #[classattr]
     #[pyo3(name = "CLEAR")]
     fn py_clear() -> Self {
@@ -673,23 +695,27 @@ impl ContingencyType {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
+
     #[classattr]
     #[pyo3(name = "NO_CONTINGENCY")]
     fn py_no_contingency() -> Self {
         Self::NoContingency
     }
+
     #[classattr]
     #[pyo3(name = "OCO")]
     fn py_oco() -> Self {
         Self::Oco
     }
+
     #[classattr]
     #[pyo3(name = "OTO")]
     fn py_oto() -> Self {
         Self::Oto
     }
+
     #[classattr]
     #[pyo3(name = "OUO")]
     fn py_ouo() -> Self {
@@ -744,18 +770,21 @@ impl CurrencyType {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
+
     #[classattr]
     #[pyo3(name = "CRYPTO")]
     fn py_crypto() -> Self {
         Self::Crypto
     }
+
     #[classattr]
     #[pyo3(name = "FIAT")]
     fn py_fiat() -> Self {
         Self::Fiat
     }
+
     #[classattr]
     #[pyo3(name = "COMMODITY_BACKED")]
     fn py_commodity_backed() -> Self {
@@ -810,13 +839,15 @@ impl InstrumentCloseType {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
+
     #[classattr]
     #[pyo3(name = "END_OF_SESSION")]
     fn py_end_of_session() -> Self {
         Self::EndOfSession
     }
+
     #[classattr]
     #[pyo3(name = "CONTRACT_EXPIRED")]
     fn py_contract_expired() -> Self {
@@ -871,7 +902,7 @@ impl LiquiditySide {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 
     #[classattr]
@@ -879,11 +910,13 @@ impl LiquiditySide {
     fn py_no_liquidity_side() -> Self {
         Self::NoLiquiditySide
     }
+
     #[classattr]
     #[pyo3(name = "MAKER")]
     fn py_maker() -> Self {
         Self::Maker
     }
+
     #[classattr]
     #[pyo3(name = "TAKER")]
     fn py_taker() -> Self {
@@ -938,38 +971,45 @@ impl MarketStatus {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
+
     #[classattr]
     #[pyo3(name = "PRE_OPEN")]
     fn py_pre_open() -> Self {
         Self::PreOpen
     }
+
     #[classattr]
     #[pyo3(name = "OPEN")]
     fn py_open() -> Self {
         Self::Open
     }
+
     #[classattr]
     #[pyo3(name = "PAUSE")]
     fn py_pause() -> Self {
         Self::Pause
     }
+
     #[classattr]
     #[pyo3(name = "HALT")]
     fn py_halt() -> Self {
         Self::Halt
     }
+
     #[classattr]
     #[pyo3(name = "REOPEN")]
     fn py_reopen() -> Self {
         Self::Reopen
     }
+
     #[classattr]
     #[pyo3(name = "PRE_CLOSE")]
     fn py_pre_close() -> Self {
         Self::PreClose
     }
+
     #[classattr]
     #[pyo3(name = "CLOSED")]
     fn py_closed() -> Self {
@@ -1024,18 +1064,21 @@ impl HaltReason {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
+
     #[classattr]
     #[pyo3(name = "NOT_HALTED")]
     fn py_not_halted() -> Self {
         Self::NotHalted
     }
+
     #[classattr]
     #[pyo3(name = "GENERAL")]
     fn py_general() -> Self {
         Self::General
     }
+
     #[classattr]
     #[pyo3(name = "VOLATILITY")]
     fn py_volatility() -> Self {
@@ -1090,7 +1133,7 @@ impl OmsType {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 
     #[classattr]
@@ -1098,11 +1141,13 @@ impl OmsType {
     fn py_unspecified() -> Self {
         Self::Unspecified
     }
+
     #[classattr]
     #[pyo3(name = "NETTING")]
     fn py_netting() -> Self {
         Self::Netting
     }
+
     #[classattr]
     #[pyo3(name = "HEDGING")]
     fn py_hedging() -> Self {
@@ -1157,7 +1202,7 @@ impl OptionKind {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 
     #[classattr]
@@ -1220,7 +1265,7 @@ impl OrderSide {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 
     #[classattr]
@@ -1228,11 +1273,13 @@ impl OrderSide {
     fn py_no_order_side() -> Self {
         Self::NoOrderSide
     }
+
     #[classattr]
     #[pyo3(name = "BUY")]
     fn py_buy() -> Self {
         Self::Buy
     }
+
     #[classattr]
     #[pyo3(name = "SELL")]
     fn py_sell() -> Self {
@@ -1287,7 +1334,7 @@ impl OrderStatus {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 
     #[classattr]
@@ -1295,66 +1342,79 @@ impl OrderStatus {
     fn py_initialized() -> Self {
         Self::Initialized
     }
+
     #[classattr]
     #[pyo3(name = "DENIED")]
     fn py_denied() -> Self {
         Self::Denied
     }
+
     #[classattr]
     #[pyo3(name = "EMULATED")]
     fn py_emulated() -> Self {
         Self::Emulated
     }
+
     #[classattr]
     #[pyo3(name = "RELEASED")]
     fn py_released() -> Self {
         Self::Released
     }
+
     #[classattr]
     #[pyo3(name = "SUBMITTED")]
     fn py_submitted() -> Self {
         Self::Submitted
     }
+
     #[classattr]
     #[pyo3(name = "ACCEPTED")]
     fn py_accepted() -> Self {
         Self::Accepted
     }
+
     #[classattr]
     #[pyo3(name = "REJECTED")]
     fn py_rejected() -> Self {
         Self::Rejected
     }
+
     #[classattr]
     #[pyo3(name = "CANCELED")]
     fn py_canceled() -> Self {
         Self::Canceled
     }
+
     #[classattr]
     #[pyo3(name = "EXPIRED")]
     fn py_expired() -> Self {
         Self::Expired
     }
+
     #[classattr]
     #[pyo3(name = "TRIGGERED")]
     fn py_triggered() -> Self {
         Self::Triggered
     }
+
     #[classattr]
     #[pyo3(name = "PENDING_UPDATE")]
     fn py_pending_update() -> Self {
         Self::PendingUpdate
     }
+
     #[classattr]
     #[pyo3(name = "PENDING_CANCEL")]
     fn py_pending_cancel() -> Self {
         Self::PendingCancel
     }
+
     #[classattr]
     #[pyo3(name = "PARTIALLY_FILLED")]
     fn py_partially_filled() -> Self {
         Self::PartiallyFilled
     }
+
     #[classattr]
     #[pyo3(name = "FILLED")]
     fn py_filled() -> Self {
@@ -1409,7 +1469,7 @@ impl OrderType {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 
     #[classattr]
@@ -1417,41 +1477,49 @@ impl OrderType {
     fn py_market() -> Self {
         Self::Market
     }
+
     #[classattr]
     #[pyo3(name = "LIMIT")]
     fn py_limit() -> Self {
         Self::Limit
     }
+
     #[classattr]
     #[pyo3(name = "STOP_MARKET")]
     fn py_stop_market() -> Self {
         Self::StopMarket
     }
+
     #[classattr]
     #[pyo3(name = "STOP_LIMIT")]
     fn py_stop_limit() -> Self {
         Self::StopLimit
     }
+
     #[classattr]
     #[pyo3(name = "MARKET_TO_LIMIT")]
     fn py_market_to_limit() -> Self {
         Self::MarketToLimit
     }
+
     #[classattr]
     #[pyo3(name = "MARKET_IF_TOUCHED")]
     fn py_market_if_touched() -> Self {
         Self::MarketIfTouched
     }
+
     #[classattr]
     #[pyo3(name = "LIMIT_IF_TOUCHED")]
     fn py_limit_if_touched() -> Self {
         Self::LimitIfTouched
     }
+
     #[classattr]
     #[pyo3(name = "TRAILING_STOP_MARKET")]
     fn py_trailing_stop_market() -> Self {
         Self::TrailingStopMarket
     }
+
     #[classattr]
     #[pyo3(name = "TRAILING_STOP_LIMIT")]
     fn py_trailing_stop_limit() -> Self {
@@ -1506,7 +1574,7 @@ impl PositionSide {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 
     #[classattr]
@@ -1514,16 +1582,19 @@ impl PositionSide {
     fn py_no_position_side() -> Self {
         Self::NoPositionSide
     }
+
     #[classattr]
     #[pyo3(name = "FLAT")]
     fn py_flat() -> Self {
         Self::Flat
     }
+
     #[classattr]
     #[pyo3(name = "LONG")]
     fn py_long() -> Self {
         Self::Long
     }
+
     #[classattr]
     #[pyo3(name = "SHORT")]
     fn py_short() -> Self {
@@ -1605,7 +1676,7 @@ impl TimeInForce {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 
     #[classattr]
@@ -1613,31 +1684,37 @@ impl TimeInForce {
     fn py_gtc() -> Self {
         Self::Gtc
     }
+
     #[classattr]
     #[pyo3(name = "IOC")]
     fn py_ioc() -> Self {
         Self::Ioc
     }
+
     #[classattr]
     #[pyo3(name = "FOK")]
     fn py_fok() -> Self {
         Self::Fok
     }
+
     #[classattr]
     #[pyo3(name = "GTD")]
     fn py_gtd() -> Self {
         Self::Gtd
     }
+
     #[classattr]
     #[pyo3(name = "DAY")]
     fn py_day() -> Self {
         Self::Day
     }
+
     #[classattr]
     #[pyo3(name = "AT_THE_OPEN")]
     fn py_at_the_open() -> Self {
         Self::AtTheOpen
     }
+
     #[classattr]
     #[pyo3(name = "AT_THE_CLOSE")]
     fn py_at_the_close() -> Self {
@@ -1692,7 +1769,7 @@ impl TrailingOffsetType {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 
     #[classattr]
@@ -1700,21 +1777,25 @@ impl TrailingOffsetType {
     fn py_no_trailing_offset() -> Self {
         Self::NoTrailingOffset
     }
+
     #[classattr]
     #[pyo3(name = "PRICE")]
     fn py_price() -> Self {
         Self::Price
     }
+
     #[classattr]
     #[pyo3(name = "BASIS_POINTS")]
     fn py_basis_points() -> Self {
         Self::BasisPoints
     }
+
     #[classattr]
     #[pyo3(name = "TICKS")]
     fn py_ticks() -> Self {
         Self::Ticks
     }
+
     #[classattr]
     #[pyo3(name = "PRICE_TIER")]
     fn py_price_tier() -> Self {
@@ -1769,7 +1850,7 @@ impl TriggerType {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 
     #[classattr]
@@ -1777,46 +1858,55 @@ impl TriggerType {
     fn py_no_trigger() -> Self {
         Self::NoTrigger
     }
+
     #[classattr]
     #[pyo3(name = "DEFAULT")]
     fn py_default() -> Self {
         Self::Default
     }
+
     #[classattr]
     #[pyo3(name = "BID_ASK")]
     fn py_bid_ask() -> Self {
         Self::BidAsk
     }
+
     #[classattr]
     #[pyo3(name = "LAST_TRADE")]
     fn py_last_trade() -> Self {
         Self::LastTrade
     }
+
     #[classattr]
     #[pyo3(name = "DOUBLE_LAST")]
     fn py_double_last() -> Self {
         Self::DoubleLast
     }
+
     #[classattr]
     #[pyo3(name = "DOUBLE_BID_ASK")]
     fn py_double_bid_ask() -> Self {
         Self::DoubleBidAsk
     }
+
     #[classattr]
     #[pyo3(name = "LAST_OR_BID_ASK")]
     fn py_last_or_bid_ask() -> Self {
         Self::LastOrBidAsk
     }
+
     #[classattr]
     #[pyo3(name = "MID_POINT")]
     fn py_mid_point() -> Self {
         Self::MidPoint
     }
+
     #[classattr]
     #[pyo3(name = "MARK_PRICE")]
     fn py_mark_price() -> Self {
         Self::MarkPrice
     }
+
     #[classattr]
     #[pyo3(name = "INDEX_PRICE")]
     fn py_index_price() -> Self {
@@ -1871,7 +1961,7 @@ impl BookType {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 
     #[classattr]
@@ -1879,11 +1969,13 @@ impl BookType {
     fn py_l1_mbp() -> Self {
         Self::L1_MBP
     }
+
     #[classattr]
     #[pyo3(name = "L2_MBP")]
     fn py_l2_mbp() -> Self {
         Self::L2_MBP
     }
+
     #[classattr]
     #[pyo3(name = "L3_MBO")]
     fn py_l3_mbo() -> Self {
@@ -1938,7 +2030,7 @@ impl TradingState {
     fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
         let data_str: &str = data.str().and_then(|s| s.extract())?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 
     #[classattr]
@@ -1946,11 +2038,13 @@ impl TradingState {
     fn py_active() -> Self {
         Self::Active
     }
+
     #[classattr]
     #[pyo3(name = "HALTED")]
     fn py_halted() -> Self {
         Self::Halted
     }
+
     #[classattr]
     #[pyo3(name = "REDUCING")]
     fn py_reducing() -> Self {
