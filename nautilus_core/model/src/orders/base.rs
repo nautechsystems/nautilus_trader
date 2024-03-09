@@ -48,18 +48,6 @@ use crate::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
-#[derive(thiserror::Error, Debug)]
-pub enum OrderError {
-    #[error("Invalid state transition")]
-    InvalidStateTransition,
-    #[error("Invalid event for order type")]
-    InvalidOrderEvent,
-    #[error("Unrecognized event")]
-    UnrecognizedEvent,
-    #[error("No previous state")]
-    NoPreviousState,
-}
-
 const VALID_STOP_ORDER_TYPES: &[OrderType] = &[
     OrderType::StopMarket,
     OrderType::StopLimit,
@@ -74,20 +62,35 @@ const VALID_LIMIT_ORDER_TYPES: &[OrderType] = &[
     OrderType::MarketIfTouched,
 ];
 
-pub trait GetClientOrderId {
-    fn get_client_order_id(&self) -> ClientOrderId;
+#[derive(thiserror::Error, Debug)]
+pub enum OrderError {
+    #[error("Order not found: {0}")]
+    NotFound(ClientOrderId),
+    #[error("Order invariant failed: must have a side for this operation")]
+    NoOrderSide,
+    #[error("Invalid event for order type")]
+    InvalidOrderEvent,
+    #[error("Invalid order state transition")]
+    InvalidStateTransition,
+    #[error("Order was already initialized")]
+    AlreadyInitialized,
+    #[error("Order had no previous state")]
+    NoPreviousState,
 }
 
-pub trait GetOrderSide {
-    fn get_order_side(&self) -> OrderSide;
+pub enum OrderSideFixed {
+    /// The order is a BUY.
+    Buy = 1,
+    /// The order is a SELL.
+    Sell = 2,
 }
 
-pub trait GetLimitPrice {
-    fn get_limit_px(&self) -> Price;
-}
-
-pub trait GetStopPrice {
-    fn get_stop_px(&self) -> Price;
+fn order_side_to_fixed(side: OrderSide) -> OrderSideFixed {
+    match side {
+        OrderSide::Buy => OrderSideFixed::Buy,
+        OrderSide::Sell => OrderSideFixed::Sell,
+        _ => panic!("Order invariant failed: side must be Buy or Sell"),
+    }
 }
 
 pub enum PassiveOrderType {
@@ -100,24 +103,6 @@ impl PartialEq for PassiveOrderType {
         match self {
             Self::Limit(o) => o.get_client_order_id() == rhs.get_client_order_id(),
             Self::Stop(o) => o.get_client_order_id() == rhs.get_client_order_id(),
-        }
-    }
-}
-
-impl GetClientOrderId for PassiveOrderType {
-    fn get_client_order_id(&self) -> ClientOrderId {
-        match self {
-            Self::Limit(o) => o.get_client_order_id(),
-            Self::Stop(o) => o.get_client_order_id(),
-        }
-    }
-}
-
-impl GetOrderSide for PassiveOrderType {
-    fn get_order_side(&self) -> OrderSide {
-        match self {
-            Self::Limit(o) => o.get_order_side(),
-            Self::Stop(o) => o.get_order_side(),
         }
     }
 }
@@ -140,6 +125,49 @@ impl PartialEq for LimitOrderType {
     }
 }
 
+pub enum StopOrderType {
+    StopMarket(StopMarketOrder),
+    StopLimit(StopLimitOrder),
+    MarketIfTouched(MarketIfTouchedOrder),
+    LimitIfTouched(LimitIfTouchedOrder),
+    TrailingStopMarket(TrailingStopMarketOrder),
+    TrailingStopLimit(TrailingStopLimitOrder),
+}
+
+pub trait GetClientOrderId {
+    fn get_client_order_id(&self) -> ClientOrderId;
+}
+
+pub trait GetOrderSide {
+    fn get_order_side(&self) -> OrderSideFixed;
+}
+
+pub trait GetLimitPrice {
+    fn get_limit_px(&self) -> Price;
+}
+
+pub trait GetStopPrice {
+    fn get_stop_px(&self) -> Price;
+}
+
+impl GetClientOrderId for PassiveOrderType {
+    fn get_client_order_id(&self) -> ClientOrderId {
+        match self {
+            Self::Limit(o) => o.get_client_order_id(),
+            Self::Stop(o) => o.get_client_order_id(),
+        }
+    }
+}
+
+impl GetOrderSide for PassiveOrderType {
+    fn get_order_side(&self) -> OrderSideFixed {
+        match self {
+            Self::Limit(o) => o.get_order_side(),
+            Self::Stop(o) => o.get_order_side(),
+        }
+    }
+}
+
 impl GetClientOrderId for LimitOrderType {
     fn get_client_order_id(&self) -> ClientOrderId {
         match self {
@@ -152,12 +180,12 @@ impl GetClientOrderId for LimitOrderType {
 }
 
 impl GetOrderSide for LimitOrderType {
-    fn get_order_side(&self) -> OrderSide {
+    fn get_order_side(&self) -> OrderSideFixed {
         match self {
-            Self::Limit(o) => o.side,
-            Self::MarketToLimit(o) => o.side,
-            Self::StopLimit(o) => o.side,
-            Self::TrailingStopLimit(o) => o.side,
+            Self::Limit(o) => order_side_to_fixed(o.side),
+            Self::MarketToLimit(o) => order_side_to_fixed(o.side),
+            Self::StopLimit(o) => order_side_to_fixed(o.side),
+            Self::TrailingStopLimit(o) => order_side_to_fixed(o.side),
         }
     }
 }
@@ -171,15 +199,6 @@ impl GetLimitPrice for LimitOrderType {
             Self::TrailingStopLimit(o) => o.price,
         }
     }
-}
-
-pub enum StopOrderType {
-    StopMarket(StopMarketOrder),
-    StopLimit(StopLimitOrder),
-    MarketIfTouched(MarketIfTouchedOrder),
-    LimitIfTouched(LimitIfTouchedOrder),
-    TrailingStopMarket(TrailingStopMarketOrder),
-    TrailingStopLimit(TrailingStopLimitOrder),
 }
 
 impl GetClientOrderId for StopOrderType {
@@ -196,14 +215,14 @@ impl GetClientOrderId for StopOrderType {
 }
 
 impl GetOrderSide for StopOrderType {
-    fn get_order_side(&self) -> OrderSide {
+    fn get_order_side(&self) -> OrderSideFixed {
         match self {
-            Self::StopMarket(o) => o.side,
-            Self::StopLimit(o) => o.side,
-            Self::MarketIfTouched(o) => o.side,
-            Self::LimitIfTouched(o) => o.side,
-            Self::TrailingStopMarket(o) => o.side,
-            Self::TrailingStopLimit(o) => o.side,
+            Self::StopMarket(o) => order_side_to_fixed(o.side),
+            Self::StopLimit(o) => order_side_to_fixed(o.side),
+            Self::MarketIfTouched(o) => order_side_to_fixed(o.side),
+            Self::LimitIfTouched(o) => order_side_to_fixed(o.side),
+            Self::TrailingStopMarket(o) => order_side_to_fixed(o.side),
+            Self::TrailingStopLimit(o) => order_side_to_fixed(o.side),
         }
     }
 }
@@ -627,6 +646,7 @@ impl OrderCore {
         self.status = new_status;
 
         match &event {
+            OrderEvent::OrderInitialized(_) => return Err(OrderError::AlreadyInitialized),
             OrderEvent::OrderDenied(event) => self.denied(event),
             OrderEvent::OrderEmulated(event) => self.emulated(event),
             OrderEvent::OrderReleased(event) => self.released(event),
@@ -641,8 +661,8 @@ impl OrderCore {
             OrderEvent::OrderTriggered(event) => self.triggered(event),
             OrderEvent::OrderCanceled(event) => self.canceled(event),
             OrderEvent::OrderExpired(event) => self.expired(event),
+            OrderEvent::OrderPartiallyFilled(event) => self.filled(event),
             OrderEvent::OrderFilled(event) => self.filled(event),
-            _ => return Err(OrderError::UnrecognizedEvent),
         }
 
         self.ts_last = event.ts_event();
