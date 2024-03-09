@@ -120,8 +120,8 @@ impl MovingAverage for VariableIndexDynamicAverage {
         self.cmo_pct = (self.cmo.value / 100.0).abs();
 
         if self.initialized {
-            self.value =
-                self.alpha * self.cmo_pct * value + (1.0 - self.alpha * self.cmo_pct) * self.value;
+            self.value = (self.alpha * self.cmo_pct)
+                .mul_add(value, self.alpha.mul_add(-self.cmo_pct, 1.0) * self.value);
         }
 
         if !self.initialized && self.cmo.initialized {
@@ -148,7 +148,7 @@ mod tests {
 
     #[rstest]
     fn test_vidya_initialized(indicator_vidya_10: VariableIndexDynamicAverage) {
-        let display_st = format!("{}", indicator_vidya_10);
+        let display_st = format!("{indicator_vidya_10}");
         assert_eq!(display_st, "VariableIndexDynamicAverage(10)");
         assert_eq!(indicator_vidya_10.period, 10);
         assert!(!indicator_vidya_10.initialized());
