@@ -56,7 +56,7 @@ def test_stop(ib_client):
     ib_client._stop()
 
     # Assert
-    assert ib_client._watch_dog_task.cancel()
+    assert ib_client._connection_watchdog_task.cancel()
     assert ib_client._tws_incoming_msg_reader_task.cancel()
     assert ib_client._internal_msg_queue_task.cancel()
     assert ib_client._eclient.disconnect.called
@@ -74,7 +74,7 @@ def test_reset(ib_client):
     # Assert
     assert ib_client._stop.called
     assert ib_client._eclient.reset.called
-    assert ib_client._watch_dog_task
+    assert ib_client._connection_watchdog_task
 
 
 def test_resume(ib_client):
@@ -156,29 +156,29 @@ async def test_wait_until_ready(ib_client):
 
 
 @pytest.mark.asyncio
-async def test_run_watch_dog_reconnect(ib_client):
+async def test_run_connection_watchdog_reconnect(ib_client):
     # Arrange
     ib_client._eclient = MagicMock()
     ib_client._eclient.isConnected.return_value = False
     ib_client._reconnect = AsyncMock(side_effect=asyncio.CancelledError)
 
     # Act
-    await ib_client._run_watch_dog()
+    await ib_client._run_connection_watchdog()
 
     # Assert
     ib_client._reconnect.assert_called()
 
 
 @pytest.mark.asyncio
-async def test_run_watch_dog_probe(ib_client):
+async def test_run_connection_watchdog_probe(ib_client):
     # Arrange
     ib_client._eclient = MagicMock()
     ib_client._eclient.isConnected.return_value = True
-    ib_client._is_ib_ready.clear()
+    ib_client._is_ib_connected.clear()
     ib_client._probe_for_connectivity = AsyncMock(side_effect=asyncio.CancelledError)
 
     # Act
-    await ib_client._run_watch_dog()
+    await ib_client._run_connection_watchdog()
 
     # Assert
     ib_client._probe_for_connectivity.assert_called()

@@ -96,11 +96,11 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
                 self._log.warning(f"Unhandled error: {error_code} for req_id {req_id}")
         elif error_code in self.CLIENT_ERRORS or error_code in self.CONNECTIVITY_LOST_CODES:
             self._log.warning(f"Client or Connectivity Lost Error: {error_string}")
-            if self._is_ib_ready.is_set():
-                self._is_ib_ready.clear()
+            if self._is_ib_connected.is_set():
+                self._is_ib_connected.clear()
         elif error_code in self.CONNECTIVITY_RESTORED_CODES:
-            if not self._is_ib_ready.is_set():
-                self._is_ib_ready.set()
+            if not self._is_ib_connected.is_set():
+                self._is_ib_connected.set()
 
     def _handle_subscription_error(self, req_id: int, error_code: int, error_string: str) -> None:
         """
@@ -132,9 +132,9 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
         elif error_code == 10182:
             # Handle disconnection error
             self._log.warning(f"{error_code}: {error_string}")
-            if self._is_ib_ready.is_set():
+            if self._is_ib_connected.is_set():
                 self._log.info(f"`is_ib_ready` cleared by {subscription.name}")
-                self._is_ib_ready.clear()
+                self._is_ib_connected.clear()
         else:
             # Log unknown subscription errors
             self._log.warning(

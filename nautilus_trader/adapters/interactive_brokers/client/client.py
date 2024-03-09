@@ -106,14 +106,14 @@ class InteractiveBrokersClient(
         self._eclient: EClient = EClient(wrapper=self)
 
         # Tasks
-        self._watch_dog_task: asyncio.Task | None = None
+        self._connection_watchdog_task: asyncio.Task | None = None
         self._tws_incoming_msg_reader_task: asyncio.Task | None = None
         self._internal_msg_queue_task: asyncio.Task | None = None
         self._internal_msg_queue: asyncio.Queue = asyncio.Queue()
 
         # Event flags
         self._is_client_ready: asyncio.Event = asyncio.Event()
-        self._is_ib_ready: asyncio.Event = asyncio.Event()  # Connectivity between IB and TWS
+        self._is_ib_connected: asyncio.Event = asyncio.Event()  # Connectivity between IB and TWS
 
         # Hot caches
         self.registered_nautilus_clients: set = set()
@@ -135,10 +135,12 @@ class InteractiveBrokersClient(
         self._account_ids: set[str] = set()
 
         # ConnectionMixin
-        self._connection_attempt_counter: int = 0
         self._contract_for_probe: IBContract = instrument_id_to_ib_contract(
             InstrumentId.from_str("EUR/CHF.IDEALPRO"),
         )
+        self._reconnect_attempts: int = 0
+        self._max_reconnect_attempts: int = 3
+        self._reconnect_delay: int = 5  # seconds
 
         # MarketDataMixin
         self._bar_type_to_last_bar: dict[str, BarData | None] = {}
@@ -150,6 +152,11 @@ class InteractiveBrokersClient(
         ] = {}
         self._order_id_to_order_ref: dict[int, AccountOrderRef] = {}
         self._next_valid_order_id: int = -1
+
+    async def _startup(self):
+        self._log.info("Starting up...")
+        await self.connect()
+        self._handle_connection_established()
 
     def _start(self) -> None:
         """
@@ -168,7 +175,7 @@ class InteractiveBrokersClient(
 
         # Cancel tasks
         tasks = [
-            self._watch_dog_task,
+            self._connection_watchdog_task,
             self._tws_incoming_msg_reader_task,
             self._internal_msg_queue_task,
         ]
@@ -185,17 +192,17 @@ class InteractiveBrokersClient(
         Reset the client state and restart connection watchdog.
         """
         self._stop()
-        self._eclient.reset()
 
         # Start the Watchdog
-        self._watch_dog_task = self._create_task(self._run_watch_dog())
+        self._start_up_task = self._create_task(self._start_up())
+
+        self._connection_watchdog_task = self._create_task(self._run_connection_watchdog())
 
     def _resume(self) -> None:
         """
         Resume the client and reset the connection attempt counter.
         """
         self._is_client_ready.set()
-        self._connection_attempt_counter = 0
 
     def _degrade(self) -> None:
         """
@@ -252,7 +259,7 @@ class InteractiveBrokersClient(
         except asyncio.TimeoutError as e:
             self._log.error(f"Client is not ready. {e}")
 
-    async def _run_watch_dog(self) -> None:
+    async def _run_connection_watchdog(self) -> None:
         """
         Run a watchdog to monitor and manage the health of the socket connection.
 
@@ -267,7 +274,7 @@ class InteractiveBrokersClient(
                 if not self._eclient.isConnected():
                     await self._reconnect()
 
-                if not self._is_ib_ready.is_set():
+                if not self._is_ib_connected.is_set():
                     if self.is_running:
                         self._degrade()
                         continue

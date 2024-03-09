@@ -19,7 +19,7 @@ from unittest.mock import Mock
 
 def test_ib_is_ready_by_notification_1101(ib_client):
     # Arrange
-    ib_client._is_ib_ready.clear()
+    ib_client._is_ib_connected.clear()
 
     # Act
     ib_client.error(
@@ -29,12 +29,12 @@ def test_ib_is_ready_by_notification_1101(ib_client):
     )
 
     # Assert
-    assert ib_client._is_ib_ready.is_set()
+    assert ib_client._is_ib_connected.is_set()
 
 
 def test_ib_is_ready_by_notification_1102(ib_client):
     # Arrange
-    ib_client._is_ib_ready.clear()
+    ib_client._is_ib_connected.clear()
 
     # Act
     ib_client.error(
@@ -44,26 +44,26 @@ def test_ib_is_ready_by_notification_1102(ib_client):
     )
 
     # Assert
-    assert ib_client._is_ib_ready.is_set()
+    assert ib_client._is_ib_connected.is_set()
 
 
 def test_ib_is_not_ready_by_error_10182(ib_client):
     # Arrange
     req_id = 6
-    ib_client._is_ib_ready.set()
+    ib_client._is_ib_connected.set()
     ib_client._subscriptions.add(req_id, "EUR.USD", ib_client._eclient.reqHistoricalData, {})
 
     # Act
     ib_client.error(req_id, 10182, "Failed to request live updates (disconnected).")
 
     # Assert
-    assert not ib_client._is_ib_ready.is_set()
+    assert not ib_client._is_ib_connected.is_set()
 
 
 def test_ib_is_not_ready_by_error_10189(ib_client):
     # Arrange
     req_id = 6
-    ib_client._is_ib_ready.set()
+    ib_client._is_ib_connected.set()
     ib_client._subscriptions.add(
         req_id=req_id,
         name="EUR.USD",
@@ -87,4 +87,4 @@ def test_ib_is_not_ready_by_error_10189(ib_client):
     )
 
     # Assert
-    assert not ib_client._is_ib_ready.is_set()
+    assert not ib_client._is_ib_connected.is_set()

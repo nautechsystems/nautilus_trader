@@ -22,7 +22,7 @@ from ibapi.client import EClient
 
 
 @pytest.mark.asyncio
-async def test_establish_socket_connection(ib_client):
+async def testconnect(ib_client):
     # Arrange
     ib_client._eclient.connState = EClient.DISCONNECTED
     ib_client._tws_incoming_msg_reader_task = None
@@ -38,7 +38,7 @@ async def test_establish_socket_connection(ib_client):
     ib_client._eclient.conn.isConnected = Mock(return_value=True)
 
     # Act
-    await ib_client._establish_socket_connection()
+    await ib_client.connect()
 
     # Assert
     assert ib_client._eclient.isConnected()

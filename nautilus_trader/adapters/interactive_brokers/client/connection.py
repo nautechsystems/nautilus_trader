@@ -35,26 +35,25 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
 
     This class is responsible for establishing and maintaining the socket connection,
     handling server communication, monitoring the connection's health, and managing
-    reconnections.
+    reconnections. When a connection is established, the `_is_ib_connected` event is set,
+    and if the connection is lost, the `_is_ib_connected` event is cleared.
 
     """
 
-    async def _establish_socket_connection(self) -> None:
+    async def connect(self):
         """
         Establish the socket connection with TWS/Gateway. It initializes the connection,
-        connects the socket, sends and receives version information, and then sets up
-        the client.
+        connects the socket, sends and receives version information, and then sets a
+        flag that the connection has been successfully established.
 
         Raises
         ------
-        OSError
-            If an OSError occurs during the connection process.
         Exception
-            For any other unexpected errors during the connection.
+            For any unexpected errors during the connection.
 
         """
-        self._initialize_connection_params()
         try:
+            self._initialize_connection_params()
             await self._connect_socket()
             self._eclient.setConnState(EClient.CONNECTING)
             await self._send_version_info()
@@ -64,12 +63,47 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             )
             await self._receive_server_info()
             self._eclient.setConnState(EClient.CONNECTED)
-            self._start_client_tasks_and_tws_api()
-            self._log.debug("TWS API connection established successfully.")
-        except OSError as e:
-            self._handle_connection_error(e)
+            self._log.info(
+                f"Connected to Interactive Brokers ({self._eclient.serverVersion_}) "
+                f"at {self._eclient.connTime} from {self._host}:{self._port} "
+                f"with client id: {self._client_id}.",
+            )
+            self._is_ib_connected.set()
         except Exception as e:
-            self._log.exception("Unexpected error during connection", e)
+            self._log.error(f"Connection failed: {e}")
+            await self._handle_reconnect()
+
+    async def disconnect(self):
+        try:
+            self._eclient.disconnect()
+            self._is_ib_connected.clear()
+            self._log.info("Disconnected from Interactive Brokers API.")
+        except Exception as e:
+            self._log.error(f"Disconnection failed: {e}")
+
+    async def _handle_reconnect(self):
+        if self._reconnect_attempts < self._max_reconnect_attempts:
+            self._reconnect_attempts += 1
+            backoff_delay = self._reconnect_delay * (2 ** (self._reconnect_attempts - 1))
+            self._log.info(
+                f"Attempt {self._reconnect_attempts}: reconnecting in {backoff_delay:.2f} seconds...",
+            )
+            await asyncio.sleep(backoff_delay)
+            await self.connect()
+            self._reconnect_attempts = 0
+        else:
+            self._log.error("Max reconnection attempts reached. Connection failed.")
+
+    async def _handle_connection_established(self):
+        self._start_client_tasks_and_tws_api()
+        self._get_account_ids()
+        self._connection_watchdog_task = self._create_task(self._run_connection_watchdog())
+        await self._subscribe_all()
+
+    async def _handle_connection_lost(self):
+        self._is_ib_connected.clear()
+        await self._handle_reconnect()
+        await self.resubscribe_all()
 
     def _initialize_connection_params(self) -> None:
         """
@@ -79,13 +113,13 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         the connection attempt counter. Logs the attempt information.
 
         """
+        self._eclient.reset()
         self._eclient._host = self._host
         self._eclient._port = self._port
         self._eclient.clientId = self._client_id
         self._connection_attempt_counter += 1
         self._log.info(
-            f"Attempt {self._connection_attempt_counter}: "
-            f"Connecting to {self._host}:{self._port} w/ id:{self._client_id}",
+            f"Connecting to {self._host}:{self._port} with client id:{self._client_id}",
         )
 
     async def _connect_socket(self) -> None:
@@ -132,49 +166,32 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             If the server version information is not received within the allotted retries.
 
         """
-        connection_retries_remaining = 5
+        retries_remaining = 5
         fields: list[str] = []
 
-        while len(fields) != 2 and connection_retries_remaining > 0:
-            await asyncio.sleep(1)
+        while retries_remaining > 0:
             buf = await self._loop.run_in_executor(None, self._eclient.conn.recvMsg)
-            self._process_received_buffer(buf, connection_retries_remaining, fields)
+            if len(buf) > 0:
+                _, msg, _ = comm.read_msg(buf)
+                fields.extend(comm.read_fields(msg))
+            else:
+                self._log.debug("Received empty buffer.")
 
-        if len(fields) == 2:
-            self._process_server_version(fields)
-        else:
-            raise ConnectionError("Failed to receive server version information.")
+            if len(fields) == 2:
+                self._process_server_version(fields)
+                break
 
-    def _process_received_buffer(
-        self,
-        buf: bytes,
-        retries_remaining: int,
-        fields: list[str],
-    ) -> None:
-        """
-        Process the received buffer from TWS API. Reads the received message and
-        extracts fields from it. Handles situations where the connection might be lost
-        or the received buffer is empty.
+            retries_remaining -= 1
+            self._log.debug(
+                "Failed to receive server version information."
+                f"Retries remaining={retries_remaining}).",
+            )
+            await asyncio.sleep(1)
 
-        Parameters
-        ----------
-        buf : bytes
-            The received buffer from the server.
-        retries_remaining : int
-            The number of remaining retries for receiving the message.
-        fields : list[str]
-            The list to which the extracted fields will be appended.
-
-        """
-        if not self._eclient.conn.isConnected() or retries_remaining <= 0:
-            self._log.warning("Disconnected. Resetting connection...")
-            self._reset()
-            return
-        if len(buf) > 0:
-            _, msg, _ = comm.read_msg(buf)
-            fields.extend(comm.read_fields(msg))
-        else:
-            self._log.debug(f"Received empty buffer (retries_remaining={retries_remaining})")
+        if retries_remaining == 0:
+            raise ConnectionError(
+                "Max retry attempts reached. Failed to receive server version information.",
+            )
 
     def _process_server_version(self, fields: list[str]) -> None:
         """
@@ -192,39 +209,6 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         self._eclient.connTime = conn_time
         self._eclient.serverVersion_ = server_version
         self._eclient.decoder.serverVersion = server_version
-        self._log.debug(f"Connected to server version {server_version} at {conn_time}")
-
-    async def _reconnect(self) -> None:
-        """
-        Manage socket connectivity, including reconnection attempts and error handling.
-        Degrades the client if it's currently running and tries to re-establish the
-        socket connection. Waits for the Interactive Brokers readiness signal, logging
-        success or failure accordingly.
-
-        Raises
-        ------
-        asyncio.TimeoutError
-            If the connection attempt times out.
-        Exception
-            For general failures in re-establishing the connection.
-
-        """
-        if self.is_running:
-            self._degrade()
-        self._is_ib_ready.clear()
-        await asyncio.sleep(5)  # Avoid too fast attempts
-        await self._establish_socket_connection()
-        try:
-            await asyncio.wait_for(self._is_ib_ready.wait(), 15)
-            self._log.info(
-                f"Connected to {self._host}:{self._port} w/ id:{self._client_id}",
-            )
-        except asyncio.TimeoutError:
-            self._log.error(
-                f"Unable to connect to {self._host}:{self._port} w/ id:{self._client_id}",
-            )
-        except Exception as e:
-            self._log.exception("Failed connection", e)
 
     async def _probe_for_connectivity(self) -> None:
         """
@@ -276,5 +260,5 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         self.logAnswer(current_fn_name(), vars())
         for future in self._requests.get_futures():
             if not future.done():
-                future.set_exception(ConnectionError("Socket disconnect"))
+                future.set_exception(ConnectionError("Socket disconnected."))
         self._eclient.reset()

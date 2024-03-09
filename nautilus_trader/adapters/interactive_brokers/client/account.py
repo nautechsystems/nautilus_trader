@@ -161,9 +161,9 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         """
         self.logAnswer(current_fn_name(), vars())
         self._account_ids = {a for a in accounts_list.split(",") if a}
-        if self._next_valid_order_id >= 0 and not self._is_ib_ready.is_set():
+        if self._next_valid_order_id >= 0 and not self._is_ib_connected.is_set():
             self._log.info("`is_ib_ready` set by managedAccounts", LogColor.BLUE)
-            self._is_ib_ready.set()
+            self._is_ib_connected.set()
 
     def position(
         self,

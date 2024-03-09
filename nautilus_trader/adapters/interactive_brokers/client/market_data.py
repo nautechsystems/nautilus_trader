@@ -798,9 +798,9 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         self.logAnswer(current_fn_name(), vars())
         self._end_request(req_id)
-        if req_id == 1 and not self._is_ib_ready.is_set():  # probe successful
+        if req_id == 1 and not self._is_ib_connected.is_set():  # probe successful
             self._log.info(f"`is_ib_ready` set by historicalDataEnd {req_id=}", LogColor.BLUE)
-            self._is_ib_ready.set()
+            self._is_ib_connected.set()
 
     def historicalDataUpdate(self, req_id: int, bar: BarData) -> None:
         """

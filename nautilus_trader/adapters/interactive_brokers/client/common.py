@@ -493,7 +493,7 @@ class BaseMixin:
     _subscriptions: Subscriptions
     _event_subscriptions: dict[str, Callable]
     _eclient: EClient
-    _is_ib_ready: asyncio.Event
+    _is_ib_connected: asyncio.Event
     _degrade: Callable
     _end_request: Callable
     _await_request: Callable

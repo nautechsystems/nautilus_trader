@@ -155,9 +155,9 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         """
         self.logAnswer(current_fn_name(), vars())
         self._next_valid_order_id = max(self._next_valid_order_id, order_id, 101)
-        if self.accounts() and not self._is_ib_ready.is_set():
+        if self.accounts() and not self._is_ib_connected.is_set():
             self._log.info("`is_ib_ready` set by nextValidId", LogColor.BLUE)
-            self._is_ib_ready.set()
+            self._is_ib_connected.set()
 
     def openOrder(
         self,
