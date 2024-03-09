@@ -225,9 +225,13 @@ instrument_provider=InstrumentProviderConfig(
 
 ## Order books
 
+```{note}
+The Nautilus team is currently working on this section.
+```
+
 Order books can be maintained at full or partial depths depending on the
 subscription options. WebSocket stream throttling is different between
-Spot and Futures exchanges, Nautilus will automatically use the higher streaming
+Spot and Futures exchanges, Nautilus will automatically use the highest streaming
 rate possible:
 
 - Spot 100ms
@@ -236,10 +240,6 @@ rate possible:
 There is a limitation of one order book per instrument per trader instance.
 As stream subscriptions may vary, the latest order book data (deltas or snapshots)
 subscription will be used by the Binance data client.
-
-```{note}
-The Nautilus team is currently working on this section.
-```
 
 Order book snapshot rebuilds will be triggered:
 - On initial subscription of the order book data
