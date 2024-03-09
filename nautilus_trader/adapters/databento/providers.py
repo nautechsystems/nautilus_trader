@@ -151,16 +151,16 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             )
 
         try:
-            live_client.start(callback=receive_instruments, callback_pyo3=print)
+            await asyncio.wait_for(
+                live_client.start(callback=receive_instruments, callback_pyo3=print),
+                timeout=5.0,
+            )
         except ValueError as e:
             if success_msg in str(e):
                 # Expected on decode completion, continue
                 self._log.info(success_msg)
             else:
                 self._log.error(repr(e))
-
-        # Temporary hack
-        await asyncio.sleep(5.0)
 
         instruments = instruments_from_pyo3(pyo3_instruments)
 
