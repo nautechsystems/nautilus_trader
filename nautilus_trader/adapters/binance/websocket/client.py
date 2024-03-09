@@ -15,6 +15,7 @@
 
 import asyncio
 import json
+from collections.abc import Awaitable
 from collections.abc import Callable
 from typing import Any
 
@@ -38,6 +39,8 @@ class BinanceWebSocketClient:
         The base URL for the WebSocket connection.
     handler : Callable[[bytes], None]
         The callback handler for message events.
+    handler_reconnect : Callable[..., Awaitable[None]], optional
+        The callback handler to be called on reconnect.
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
 
@@ -52,6 +55,7 @@ class BinanceWebSocketClient:
         clock: LiveClock,
         base_url: str,
         handler: Callable[[bytes], None],
+        handler_reconnect: Callable[..., Awaitable[None]] | None,
         loop: asyncio.AbstractEventLoop,
     ) -> None:
         self._clock = clock
@@ -59,6 +63,7 @@ class BinanceWebSocketClient:
 
         self._base_url: str = base_url
         self._handler: Callable[[bytes], None] = handler
+        self._handler_reconnect: Callable[..., Awaitable[None]] | None = handler_reconnect
         self._loop = loop
 
         self._streams: list[str] = []
@@ -158,6 +163,9 @@ class BinanceWebSocketClient:
 
         # Re-subscribe to all streams
         self._loop.create_task(self._subscribe_all())
+
+        if self._handler_reconnect is not None:
+            self._loop.create_task(self._handler_reconnect())  # type: ignore
 
     async def disconnect(self) -> None:
         """

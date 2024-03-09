@@ -157,12 +157,14 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._ws_client = BinanceWebSocketClient(
             clock=clock,
             handler=self._handle_ws_message,
+            handler_reconnect=self._reconnect,
             base_url=base_url_ws,
             loop=self._loop,
         )
 
         # Hot caches
         self._instrument_ids: dict[str, InstrumentId] = {}
+        self._book_depths: dict[InstrumentId, int | None] = {}
         self._book_buffer: dict[
             InstrumentId,
             list[OrderBookDelta | OrderBookDeltas],
@@ -240,6 +242,13 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 except asyncio.CancelledError:
                     self._log.debug("Canceled `update_instruments` task.")
                     return
+
+    async def _reconnect(self) -> None:
+        coros = []
+        for instrument_id in self._book_depths:
+            coros.append(self._order_book_snapshot_then_deltas(instrument_id))
+
+        await asyncio.gather(*coros)
 
     async def _disconnect(self) -> None:
         # Cancel update instruments task
@@ -346,7 +355,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             depth=depth,
         )
 
-    async def _subscribe_order_book(  # noqa (too complex)
+    async def _subscribe_order_book(  # (too complex)
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
@@ -364,10 +373,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         valid_speeds = [100, 1000]
         if self._binance_account_type.is_futures:
             if update_speed is None:
-                update_speed = 0  # default 0 ms for futures.
+                update_speed = 0  # Default 0 ms for futures
             valid_speeds = [0, 100, 250, 500]  # 0ms option for futures exists but not documented?
         elif update_speed is None:
-            update_speed = 100  # default 100ms for spot
+            update_speed = 100  # Default 100ms for spot
         if update_speed not in valid_speeds:
             self._log.error(
                 "Cannot subscribe to order book:"
@@ -380,10 +389,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             # Reasonable default for full book, which works for Spot and Futures
             depth = 1000
 
-        # Add delta stream buffer
-        self._book_buffer[instrument_id] = []
-
-        snapshot: OrderBookDeltas | None = None
         if 0 < depth <= 20:
             if depth not in (5, 10, 20):
                 self._log.error(
@@ -403,7 +408,22 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 speed=update_speed,
             )
 
-        snapshot = await self._http_market.request_order_book_snapshot(
+        self._book_depths[instrument_id] = depth
+
+        await self._order_book_snapshot_then_deltas(instrument_id)
+
+    async def _order_book_snapshot_then_deltas(self, instrument_id: InstrumentId) -> None:
+        # Add delta feed buffer
+        self._book_buffer[instrument_id] = []
+
+        depth = self._book_depths[instrument_id]
+
+        self._log.info(
+            f"OrderBook snapshot rebuild for {instrument_id} @ depth {depth} starting",
+            LogColor.BLUE,
+        )
+
+        snapshot: OrderBookDeltas = await self._http_market.request_order_book_snapshot(
             instrument_id=instrument_id,
             limit=depth,
             ts_init=self._clock.timestamp_ns(),
@@ -415,6 +435,11 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             if snapshot and deltas.sequence <= snapshot.sequence:
                 continue
             self._handle_data(deltas)
+
+        self._log.info(
+            f"OrderBook snapshot rebuild for {instrument_id} completed",
+            LogColor.BLUE,
+        )
 
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         await self._ws_client.subscribe_book_ticker(instrument_id.symbol.value)
@@ -921,8 +946,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         )
         if book_buffer is not None:
             book_buffer.append(book_deltas)
-        else:
-            self._handle_data(book_deltas)
+            return
+
+        self._handle_data(book_deltas)
 
     def _handle_book_ticker(self, raw: bytes) -> None:
         msg = self._decoder_quote_msg.decode(raw)
