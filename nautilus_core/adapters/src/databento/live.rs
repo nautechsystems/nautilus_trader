@@ -223,7 +223,7 @@ impl DatabentoFeedHandler {
                     Ok(decoded) => decoded,
                     Err(e) => {
                         error!("Error decoding record: {e}");
-                        (None, None)
+                        continue;
                     }
                 };
 
@@ -281,8 +281,8 @@ impl DatabentoFeedHandler {
 
     async fn send_msg(&mut self, msg: LiveMessage) {
         match self.tx.send(msg).await {
-            Ok(_) => {}
-            Err(e) => error!("Error sending message: {:?}", e),
+            Ok(()) => {}
+            Err(e) => error!("Error sending message: {e:?}"),
         }
     }
 }

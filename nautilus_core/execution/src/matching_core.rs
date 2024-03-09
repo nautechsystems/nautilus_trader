@@ -71,14 +71,17 @@ impl OrderMatchingCore {
 
     // -- QUERIES ---------------------------------------------------------------------------------
 
+    #[must_use]
     pub fn price_precision(&self) -> u8 {
         self.price_increment.precision
     }
 
+    #[must_use]
     pub fn get_orders_bid(&self) -> &[PassiveOrderType] {
         self.orders_bid.as_slice()
     }
 
+    #[must_use]
     pub fn get_orders_ask(&self) -> &[PassiveOrderType] {
         self.orders_ask.as_slice()
     }
@@ -158,6 +161,7 @@ impl OrderMatchingCore {
         }
     }
 
+    #[must_use]
     pub fn is_limit_matched(&self, order: &LimitOrderType) -> bool {
         match order.get_order_side() {
             OrderSide::Buy => self.ask.map_or(false, |a| a <= order.get_limit_px()),
@@ -166,6 +170,7 @@ impl OrderMatchingCore {
         }
     }
 
+    #[must_use]
     pub fn is_stop_matched(&self, order: &StopOrderType) -> bool {
         match order.get_order_side() {
             OrderSide::Buy => self.ask.map_or(false, |a| a >= order.get_stop_px()),

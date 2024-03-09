@@ -162,7 +162,7 @@ pub fn decode_optional_price(value: i64, precision: u8) -> Result<Option<Price>>
 pub fn decode_optional_quantity_i32(value: i32) -> Result<Option<Quantity>> {
     match value {
         i32::MAX => Ok(None),
-        _ => Ok(Some(Quantity::new(value as f64, 0)?)),
+        _ => Ok(Some(Quantity::new(f64::from(value), 0)?)),
     }
 }
 
@@ -900,8 +900,8 @@ pub fn decode_imbalance_msg(
         Price::from_raw(msg.ref_price, price_precision)?,
         Price::from_raw(msg.cont_book_clr_price, price_precision)?,
         Price::from_raw(msg.auct_interest_clr_price, price_precision)?,
-        Quantity::new(msg.paired_qty as f64, 0)?,
-        Quantity::new(msg.total_imbalance_qty as f64, 0)?,
+        Quantity::new(f64::from(msg.paired_qty), 0)?,
+        Quantity::new(f64::from(msg.total_imbalance_qty), 0)?,
         parse_order_side(msg.side),
         msg.significant_imbalance as c_char,
         msg.hd.ts_event,

@@ -128,7 +128,7 @@ impl DatabentoLiveClient {
 
     #[pyo3(name = "load_glbx_exchange_map")]
     fn py_load_glbx_exchange_map(&mut self, map: HashMap<Symbol, Venue>) -> PyResult<()> {
-        self.glbx_exchange_map = map.clone();
+        self.glbx_exchange_map.clone_from(&map);
         self.send_command(LiveCommand::UpdateGlbx(map))
     }
 
@@ -199,13 +199,13 @@ impl DatabentoLiveClient {
         pyo3_asyncio::tokio::future_into_py(py, async move {
             let feed_handle = tokio::task::spawn(async move { feed_handler.run().await });
             match Self::process_messages(rx_msg, callback, callback_pyo3).await {
-                Ok(_) => debug!("Recv handler completed"),
+                Ok(()) => debug!("Recv handler completed"),
                 Err(e) => error!("Recv handler error: {e}"),
             }
 
             match feed_handle.await {
                 Ok(result) => match result {
-                    Ok(_) => info!("Feed handler completed"),
+                    Ok(()) => info!("Feed handler completed"),
                     Err(e) => error!("Feed handler error: {e}"),
                 },
                 Err(e) => error!("Feed handler error: {e}"),
