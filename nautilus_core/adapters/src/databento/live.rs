@@ -13,11 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::HashMap,
-    ffi::CStr,
-    sync::mpsc::{Receiver, Sender},
-};
+use std::{collections::HashMap, ffi::CStr};
 
 use anyhow::{anyhow, Result};
 use databento::{
@@ -39,7 +35,7 @@ use nautilus_model::{
     instruments::InstrumentType,
 };
 use tokio::time::{timeout, Duration};
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info};
 use ustr::Ustr;
 
 use super::{
@@ -72,8 +68,8 @@ pub enum LiveMessage {
 pub struct DatabentoFeedHandler {
     key: String,
     dataset: String,
-    rx: Receiver<LiveCommand>,
-    tx: Sender<LiveMessage>,
+    rx: std::sync::mpsc::Receiver<LiveCommand>,
+    tx: tokio::sync::mpsc::Sender<LiveMessage>,
     publisher_venue_map: IndexMap<PublisherId, Venue>,
     glbx_exchange_map: HashMap<Symbol, Venue>,
     replay: bool,
@@ -84,8 +80,8 @@ impl DatabentoFeedHandler {
     pub fn new(
         key: String,
         dataset: String,
-        rx: Receiver<LiveCommand>,
-        tx: Sender<LiveMessage>,
+        rx: std::sync::mpsc::Receiver<LiveCommand>,
+        tx: tokio::sync::mpsc::Sender<LiveMessage>,
         publisher_venue_map: IndexMap<PublisherId, Venue>,
         glbx_exchange_map: HashMap<Symbol, Venue>,
     ) -> Self {
@@ -101,7 +97,7 @@ impl DatabentoFeedHandler {
     }
 
     pub async fn run(&mut self) -> Result<()> {
-        debug!("Running feed handler...");
+        debug!("Running feed handler");
         let clock = get_atomic_clock_realtime();
         let mut symbol_map = PitSymbolMap::new();
         let mut instrument_id_map: HashMap<u32, InstrumentId> = HashMap::new();
@@ -127,13 +123,13 @@ impl DatabentoFeedHandler {
         loop {
             // Check for any commands received
             if let Ok(cmd) = self.rx.recv() {
+                debug!("Received command: {:?}", cmd);
                 match cmd {
                     LiveCommand::Subscribe(sub) => {
                         if !self.replay & sub.start.is_some() {
                             self.replay = true;
                         }
                         client.subscribe(&sub).await.map_err(to_pyruntime_err)?;
-                        debug!("{:?}", sub);
                     }
                     LiveCommand::UpdateGlbx(map) => self.glbx_exchange_map = map,
                     LiveCommand::Start => {
@@ -171,7 +167,7 @@ impl DatabentoFeedHandler {
                 Err(e) => {
                     // Fail the session entirely for now. Consider refining
                     // this strategy to handle specific errors more gracefully.
-                    self.send_msg(LiveMessage::Error(anyhow!(e)));
+                    self.send_msg(LiveMessage::Error(anyhow!(e))).await;
                     break;
                 }
             };
@@ -192,7 +188,7 @@ impl DatabentoFeedHandler {
                     &self.glbx_exchange_map,
                     clock,
                 )?;
-                self.send_msg(LiveMessage::Instrument(data));
+                self.send_msg(LiveMessage::Instrument(data)).await;
             } else if let Some(msg) = record.get::<dbn::ImbalanceMsg>() {
                 let data = handle_imbalance_msg(
                     msg,
@@ -203,7 +199,7 @@ impl DatabentoFeedHandler {
                     &mut instrument_id_map,
                     clock,
                 )?;
-                self.send_msg(LiveMessage::Imbalance(data));
+                self.send_msg(LiveMessage::Imbalance(data)).await;
             } else if let Some(msg) = record.get::<dbn::StatMsg>() {
                 let data = handle_statistics_msg(
                     msg,
@@ -214,16 +210,22 @@ impl DatabentoFeedHandler {
                     &mut instrument_id_map,
                     clock,
                 )?;
-                self.send_msg(LiveMessage::Statistics(data));
+                self.send_msg(LiveMessage::Statistics(data)).await;
             } else {
-                let (mut data1, data2) = handle_record(
+                let (mut data1, data2) = match handle_record(
                     record,
                     &symbol_map,
                     &self.publisher_venue_map,
                     &self.glbx_exchange_map,
                     &mut instrument_id_map,
                     clock,
-                )?;
+                ) {
+                    Ok(decoded) => decoded,
+                    Err(e) => {
+                        error!("Error decoding record: {e}");
+                        (None, None)
+                    }
+                };
 
                 if let Some(msg) = record.get::<dbn::MboMsg>() {
                     // SAFETY: An MBO message will always produce a delta
@@ -265,21 +267,20 @@ impl DatabentoFeedHandler {
                 };
 
                 if let Some(data) = data1 {
-                    self.send_msg(LiveMessage::Data(data));
+                    self.send_msg(LiveMessage::Data(data)).await;
                 };
 
                 if let Some(data) = data2 {
-                    self.send_msg(LiveMessage::Data(data));
+                    self.send_msg(LiveMessage::Data(data)).await;
                 };
-            };
+            }
         }
 
         Ok(())
     }
 
-    fn send_msg(&mut self, msg: LiveMessage) {
-        trace!("Sending message {:?}", msg);
-        match self.tx.send(msg) {
+    async fn send_msg(&mut self, msg: LiveMessage) {
+        match self.tx.send(msg).await {
             Ok(_) => {}
             Err(e) => error!("Error sending message: {:?}", e),
         }
