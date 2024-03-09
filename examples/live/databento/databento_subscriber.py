@@ -33,7 +33,6 @@ from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.strategy import Strategy
@@ -143,14 +142,14 @@ class DataSubscriber(Strategy):
             #     book_type=BookType.L3_MBO,
             #     client_id=DATABENTO_CLIENT_ID,
             # )
-            self.subscribe_order_book_snapshots(
-                instrument_id=instrument_id,
-                book_type=BookType.L2_MBP,
-                depth=10,
-                client_id=DATABENTO_CLIENT_ID,
-                interval_ms=100,
-            )
-            # self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
+            # self.subscribe_order_book_snapshots(
+            #     instrument_id=instrument_id,
+            #     book_type=BookType.L2_MBP,
+            #     depth=10,
+            #     client_id=DATABENTO_CLIENT_ID,
+            #     interval_ms=100,
+            # )
+            self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
             # self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
             # self.request_quote_ticks(instrument_id)
             # self.request_trade_ticks(instrument_id)
