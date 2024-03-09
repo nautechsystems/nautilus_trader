@@ -65,6 +65,11 @@ pub enum LiveMessage {
     Error(anyhow::Error),
 }
 
+/// Handles a raw TCP data feed from the Databento LSG for a single dataset.
+///
+/// [`LiveCommand`] messages are recieved synchronously across a channel,
+/// decoded records are sent asynchronously on a tokio channel as [`LiveMessage`]s
+/// back to a message processing task.
 pub struct DatabentoFeedHandler {
     key: String,
     dataset: String,
@@ -76,6 +81,7 @@ pub struct DatabentoFeedHandler {
 }
 
 impl DatabentoFeedHandler {
+    /// Initialize a new instance of the [`DatabentoFeedHandler`].
     #[must_use]
     pub fn new(
         key: String,
@@ -96,6 +102,7 @@ impl DatabentoFeedHandler {
         }
     }
 
+    /// Run the feed handler to begin listening for commands and processing messages.
     pub async fn run(&mut self) -> Result<()> {
         debug!("Running feed handler");
         let clock = get_atomic_clock_realtime();
