@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Implemented Binance order book snapshot rebuilds on websocket reconnect (see integration guide)
 - Added additional validations for `OrderMatchingEngine` (will now raise a `RuntimeError` when a price or size precision for `OrderFilled` does not match the instruments precisions)
 - Added `LoggingConfig.use_pyo3` option for pyo3 based logging initialization (worse performance but allows visibility into logs originating from Rust)
 
@@ -20,6 +21,7 @@ None
 - Fixed Interactive Brokers connection error logging (#1524), thanks @benjaminsingleton
 - Fixed `SimulationModuleConfig` location and missing re-export from `config` subpackage
 - Fixed logging `StdoutWriter` from also writing error logs (writers were duplicating error logs)
+- Fixed `BinanceWebSocketClient` to [new specification](https://binance-docs.github.io/apidocs/futures/en/#websocket-market-streams) which requires responding to pings with a pong containing the pings payload
 
 ---
 

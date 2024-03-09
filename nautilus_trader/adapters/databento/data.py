@@ -140,6 +140,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._buffered_mbo_subscriptions: dict[Dataset, list[InstrumentId]] = defaultdict(list)
 
         # Tasks
+        self._live_client_futures: set[asyncio.Future] = set()
         self._update_dataset_ranges_interval_seconds: int = 60 * 60  # Once per hour (hard coded)
         self._update_dataset_ranges_task: asyncio.Task | None = None
 
@@ -187,7 +188,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._update_dataset_ranges_task = None
 
         # Close all live clients
-        futures: list[asyncio.Future] = []
         for dataset, live_client in self._live_clients.items():
             if not live_client.is_running:
                 continue
@@ -200,7 +200,10 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._log.info(f"Stopping {dataset} MBO/L3 live feed...", LogColor.BLUE)
             live_client.close()
 
-        await asyncio.gather(*futures)
+        try:
+            await asyncio.gather(*self._live_client_futures)
+        except asyncio.CancelledError:
+            pass  # Expected
 
     async def _update_dataset_ranges(self) -> None:
         while True:
@@ -278,10 +281,13 @@ class DatabentoDataClient(LiveMarketDataClient):
     ) -> None:
         if not self._has_subscribed.get(dataset):
             self._log.debug(f"Starting {dataset} live client...", LogColor.MAGENTA)
-            live_client.start(
-                callback=self._handle_msg,
-                callback_pyo3=self._handle_msg_pyo3,  # Imbalance and Statistics messages
+            future = asyncio.ensure_future(
+                live_client.start(
+                    callback=self._handle_msg,
+                    callback_pyo3=self._handle_msg_pyo3,  # Imbalance and Statistics messages
+                ),
             )
+            self._live_client_futures.add(future)
             self._has_subscribed[dataset] = True
             self._log.info(f"Started {dataset} live feed.", LogColor.BLUE)
 
@@ -505,10 +511,13 @@ class DatabentoDataClient(LiveMarketDataClient):
             for instrument_id in instrument_ids:
                 self._trade_tick_subscriptions.add(instrument_id)
 
-            live_client.start(
-                callback=self._handle_msg,
-                callback_pyo3=self._handle_msg_pyo3,  # Imbalance and Statistics messages
+            future = asyncio.ensure_future(
+                live_client.start(
+                    callback=self._handle_msg,
+                    callback_pyo3=self._handle_msg_pyo3,  # Imbalance and Statistics messages
+                ),
             )
+            self._live_client_futures.add(future)
         except asyncio.CancelledError:
             self._log.warning(
                 "`_subscribe_order_book_deltas_batch` was canceled while still pending.",

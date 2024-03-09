@@ -96,7 +96,7 @@ pub enum PassiveOrderType {
 }
 
 impl PartialEq for PassiveOrderType {
-    fn eq(&self, rhs: &PassiveOrderType) -> bool {
+    fn eq(&self, rhs: &Self) -> bool {
         match self {
             Self::Limit(o) => o.get_client_order_id() == rhs.get_client_order_id(),
             Self::Stop(o) => o.get_client_order_id() == rhs.get_client_order_id(),
@@ -130,7 +130,7 @@ pub enum LimitOrderType {
 }
 
 impl PartialEq for LimitOrderType {
-    fn eq(&self, rhs: &LimitOrderType) -> bool {
+    fn eq(&self, rhs: &Self) -> bool {
         match self {
             Self::Limit(o) => o.client_order_id == rhs.get_client_order_id(),
             Self::MarketToLimit(o) => o.client_order_id == rhs.get_client_order_id(),

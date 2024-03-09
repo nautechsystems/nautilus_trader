@@ -15,6 +15,7 @@
 
 import asyncio
 import json
+from collections.abc import Awaitable
 from collections.abc import Callable
 from typing import Any
 
@@ -38,6 +39,8 @@ class BinanceWebSocketClient:
         The base URL for the WebSocket connection.
     handler : Callable[[bytes], None]
         The callback handler for message events.
+    handler_reconnect : Callable[..., Awaitable[None]], optional
+        The callback handler to be called on reconnect.
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
 
@@ -52,6 +55,7 @@ class BinanceWebSocketClient:
         clock: LiveClock,
         base_url: str,
         handler: Callable[[bytes], None],
+        handler_reconnect: Callable[..., Awaitable[None]] | None,
         loop: asyncio.AbstractEventLoop,
     ) -> None:
         self._clock = clock
@@ -59,6 +63,7 @@ class BinanceWebSocketClient:
 
         self._base_url: str = base_url
         self._handler: Callable[[bytes], None] = handler
+        self._handler_reconnect: Callable[..., Awaitable[None]] | None = handler_reconnect
         self._loop = loop
 
         self._streams: list[str] = []
@@ -122,6 +127,7 @@ class BinanceWebSocketClient:
             handler=self._handler,
             heartbeat=60,
             headers=[],
+            ping_handler=self._handle_ping,
         )
 
         self._inner = await WebSocketClient.connect(
@@ -131,6 +137,18 @@ class BinanceWebSocketClient:
         self._is_connecting = False
         self._log.info(f"Connected to {self._base_url}.", LogColor.BLUE)
         self._log.info(f"Subscribed to {initial_stream}.", LogColor.BLUE)
+
+    def _handle_ping(self, raw: bytes) -> None:
+        self._loop.create_task(self.send_pong(raw))
+
+    async def send_pong(self, raw: bytes) -> None:
+        """
+        Send the given raw payload to the server as a PONG message.
+        """
+        if self._inner is None:
+            return
+
+        await self._inner.send_pong(raw)
 
     # TODO: Temporarily synch
     def reconnect(self) -> None:
@@ -145,6 +163,9 @@ class BinanceWebSocketClient:
 
         # Re-subscribe to all streams
         self._loop.create_task(self._subscribe_all())
+
+        if self._handler_reconnect is not None:
+            self._loop.create_task(self._handler_reconnect())  # type: ignore
 
     async def disconnect(self) -> None:
         """
@@ -458,7 +479,7 @@ class BinanceWebSocketClient:
         message = self._create_subscribe_msg(streams=[stream])
         self._log.debug(f"SENDING: {message}")
 
-        self._inner.send_text(json.dumps(message))
+        await self._inner.send_text(json.dumps(message))
         self._log.info(f"Subscribed to {stream}.", LogColor.BLUE)
 
     async def _subscribe_all(self) -> None:
@@ -469,7 +490,7 @@ class BinanceWebSocketClient:
         message = self._create_subscribe_msg(streams=self._streams)
         self._log.debug(f"SENDING: {message}")
 
-        self._inner.send_text(json.dumps(message))
+        await self._inner.send_text(json.dumps(message))
         for stream in self._streams:
             self._log.info(f"Subscribed to {stream}.", LogColor.BLUE)
 
@@ -487,7 +508,7 @@ class BinanceWebSocketClient:
         message = self._create_unsubscribe_msg(streams=[stream])
         self._log.debug(f"SENDING: {message}")
 
-        self._inner.send_text(json.dumps(message))
+        await self._inner.send_text(json.dumps(message))
         self._log.info(f"Unsubscribed from {stream}.", LogColor.BLUE)
 
     def _create_subscribe_msg(self, streams: list[str]) -> dict[str, Any]:
