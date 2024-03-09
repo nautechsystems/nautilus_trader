@@ -15,7 +15,6 @@
 
 use std::{collections::HashMap, fs, str::FromStr};
 
-use anyhow::anyhow;
 use databento::live::Subscription;
 use indexmap::IndexMap;
 use nautilus_core::{
@@ -104,9 +103,8 @@ fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
 impl DatabentoLiveClient {
     #[new]
     pub fn py_new(key: String, dataset: String, publishers_path: String) -> anyhow::Result<Self> {
-        let file_content = fs::read_to_string(publishers_path)?;
-        let publishers_vec: Vec<DatabentoPublisher> = serde_json::from_str(&file_content)?;
-
+        let publishers_json = fs::read_to_string(publishers_path)?;
+        let publishers_vec: Vec<DatabentoPublisher> = serde_json::from_str(&publishers_json)?;
         let publisher_venue_map = publishers_vec
             .into_iter()
             .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
@@ -170,20 +168,19 @@ impl DatabentoLiveClient {
         callback_pyo3: PyObject,
     ) -> PyResult<&'py PyAny> {
         if self.is_closed {
-            return Err(to_pyruntime_err("Client was already closed"));
+            return Err(to_pyruntime_err("Client is already closed"));
         };
         if self.is_running {
-            return Err(to_pyruntime_err("Client was already running"));
+            return Err(to_pyruntime_err("Client is already running"));
         };
         self.is_running = true;
 
         let (tx_msg, rx_msg) = tokio::sync::mpsc::channel::<LiveMessage>(100_000);
 
         // Consume the receiver
-        let rx_cmd = self
-            .rx_cmd
-            .take()
-            .ok_or_else(|| anyhow!("Client already started"))?;
+        // SAFETY: We guard the client from being started more than once with the
+        // `is_running` flag, so here it is safe to unwrap the command receiver.
+        let rx_cmd = self.rx_cmd.take().unwrap();
 
         let mut feed_handler = DatabentoFeedHandler::new(
             self.key.clone(),
@@ -199,8 +196,8 @@ impl DatabentoLiveClient {
         pyo3_asyncio::tokio::future_into_py(py, async move {
             let feed_handle = tokio::task::spawn(async move { feed_handler.run().await });
             match Self::process_messages(rx_msg, callback, callback_pyo3).await {
-                Ok(()) => debug!("Recv handler completed"),
-                Err(e) => error!("Recv handler error: {e}"),
+                Ok(()) => debug!("Message processing completed"),
+                Err(e) => error!("Message processing error: {e}"),
             }
 
             match feed_handle.await {
@@ -219,6 +216,9 @@ impl DatabentoLiveClient {
     fn py_close(&mut self) -> PyResult<()> {
         if !self.is_running {
             return Err(to_pyruntime_err("Client was never started"));
+        };
+        if self.is_closed {
+            return Err(to_pyruntime_err("Client is already closed"));
         };
 
         self.send_command(LiveCommand::Close)?;
