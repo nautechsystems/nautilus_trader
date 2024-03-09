@@ -179,6 +179,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._ws_client = BinanceWebSocketClient(
             clock=clock,
             handler=self._handle_user_ws_message,
+            handler_reconnect=None,
             base_url=base_url_ws,
             loop=self._loop,
         )
@@ -298,7 +299,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             self._ping_listen_keys_task.cancel()
             self._ping_listen_keys_task = None
 
-        # if self._ws_client.is_connected:
         await self._ws_client.disconnect()
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------

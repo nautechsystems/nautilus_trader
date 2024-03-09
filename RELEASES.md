@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Implemented Binance order book snapshot rebuilds on websocket reconnect (see integration guide)
 - Added additional validations for `OrderMatchingEngine` (will now raise a `RuntimeError` when a price or size precision for `OrderFilled` does not match the instruments precisions)
 - Added `LoggingConfig.use_pyo3` option for pyo3 based logging initialization (worse performance but allows visibility into logs originating from Rust)
 
