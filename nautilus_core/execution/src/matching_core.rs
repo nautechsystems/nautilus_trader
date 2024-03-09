@@ -16,12 +16,11 @@
 #![allow(dead_code)] // Under development
 
 use nautilus_model::{
-    enums::OrderSide,
     identifiers::instrument_id::InstrumentId,
     orders::{
         base::{
-            GetLimitPrice, GetOrderSide, GetStopPrice, LimitOrderType, PassiveOrderType,
-            StopOrderType,
+            GetClientOrderId, GetLimitPrice, GetOrderSide, GetStopPrice, LimitOrderType,
+            OrderError, OrderSideFixed, PassiveOrderType, StopOrderType,
         },
         market::MarketOrder,
     },
@@ -42,18 +41,18 @@ pub struct OrderMatchingCore {
     pub last: Option<Price>,
     orders_bid: Vec<PassiveOrderType>,
     orders_ask: Vec<PassiveOrderType>,
-    trigger_stop_order: fn(&StopOrderType),
-    fill_market_order: fn(&MarketOrder),
-    fill_limit_order: fn(&LimitOrderType),
+    trigger_stop_order: Option<fn(&StopOrderType)>,
+    fill_market_order: Option<fn(&MarketOrder)>,
+    fill_limit_order: Option<fn(&LimitOrderType)>,
 }
 
 impl OrderMatchingCore {
     pub fn new(
         instrument_id: InstrumentId,
         price_increment: Price,
-        trigger_stop_order: fn(&StopOrderType),
-        fill_market_order: fn(&MarketOrder),
-        fill_limit_order: fn(&LimitOrderType),
+        trigger_stop_order: Option<fn(&StopOrderType)>,
+        fill_market_order: Option<fn(&MarketOrder)>,
+        fill_limit_order: Option<fn(&LimitOrderType)>,
     ) -> Self {
         Self {
             instrument_id,
@@ -96,34 +95,45 @@ impl OrderMatchingCore {
         self.orders_ask.clear();
     }
 
-    pub fn add_order(&mut self, order: PassiveOrderType) {
+    pub fn add_order(&mut self, order: PassiveOrderType) -> Result<(), OrderError> {
         match order.get_order_side() {
-            OrderSide::Buy => self.orders_bid.push(order),
-            OrderSide::Sell => self.orders_ask.push(order),
-            _ => panic!("Invalid order side"), // Design-time error
+            OrderSideFixed::Buy => {
+                self.orders_bid.push(order);
+                Ok(())
+            }
+            OrderSideFixed::Sell => {
+                self.orders_ask.push(order);
+                Ok(())
+            }
         }
     }
 
-    pub fn delete_order(&mut self, order: &PassiveOrderType) {
+    pub fn delete_order(&mut self, order: &PassiveOrderType) -> Result<(), OrderError> {
         match order.get_order_side() {
-            OrderSide::Buy => {
+            OrderSideFixed::Buy => {
                 let index = self
                     .orders_bid
                     .iter()
                     .position(|o| o == order)
-                    .expect("Error: order not found");
+                    .ok_or(OrderError::NotFound(order.get_client_order_id()))?;
                 self.orders_bid.remove(index);
+                Ok(())
             }
-            OrderSide::Sell => {
+            OrderSideFixed::Sell => {
                 let index = self
                     .orders_ask
                     .iter()
                     .position(|o| o == order)
-                    .expect("Error: order {} not found");
+                    .ok_or(OrderError::NotFound(order.get_client_order_id()))?;
                 self.orders_ask.remove(index);
+                Ok(())
             }
-            _ => panic!("Invalid order side"), // Design-time error
         }
+    }
+
+    pub fn iterate(&self) {
+        self.iterate_bids();
+        self.iterate_asks();
     }
 
     pub fn iterate_bids(&self) {
@@ -164,18 +174,107 @@ impl OrderMatchingCore {
     #[must_use]
     pub fn is_limit_matched(&self, order: &LimitOrderType) -> bool {
         match order.get_order_side() {
-            OrderSide::Buy => self.ask.map_or(false, |a| a <= order.get_limit_px()),
-            OrderSide::Sell => self.bid.map_or(false, |b| b >= order.get_limit_px()),
-            _ => panic!("Invalid order side"), // Design-time error
+            OrderSideFixed::Buy => self.ask.map_or(false, |a| a <= order.get_limit_px()),
+            OrderSideFixed::Sell => self.bid.map_or(false, |b| b >= order.get_limit_px()),
         }
     }
 
     #[must_use]
     pub fn is_stop_matched(&self, order: &StopOrderType) -> bool {
         match order.get_order_side() {
-            OrderSide::Buy => self.ask.map_or(false, |a| a >= order.get_stop_px()),
-            OrderSide::Sell => self.bid.map_or(false, |b| b <= order.get_stop_px()),
-            _ => panic!("Invalid order side"), // Design-time error
+            OrderSideFixed::Buy => self.ask.map_or(false, |a| a >= order.get_stop_px()),
+            OrderSideFixed::Sell => self.bid.map_or(false, |b| b <= order.get_stop_px()),
         }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use nautilus_model::{
+        enums::OrderSide, orders::stubs::TestOrderStubs, types::quantity::Quantity,
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    fn create_matching_core(
+        instrument_id: InstrumentId,
+        price_increment: Price,
+    ) -> OrderMatchingCore {
+        OrderMatchingCore::new(instrument_id, price_increment, None, None, None)
+    }
+
+    #[rstest]
+    #[case(None, None, Price::from("100.00"), OrderSide::Buy, false)]
+    #[case(None, None, Price::from("100.00"), OrderSide::Sell, false)]
+    #[case(
+        Some(Price::from("100.00")),
+        Some(Price::from("101.00")),
+        Price::from("100.00"),
+        OrderSide::Buy,
+        false
+    )]
+    #[case(
+        Some(Price::from("100.00")),
+        Some(Price::from("101.00")),
+        Price::from("101.00"),  // <-- Price at ask
+        OrderSide::Buy,
+        true
+    )]
+    #[case(
+        Some(Price::from("100.00")),
+        Some(Price::from("101.00")),
+        Price::from("102.00"),// <-- Price higher than ask (marketable)
+        OrderSide::Buy,
+        true
+    )]
+    #[case(
+        Some(Price::from("100.00")),
+        Some(Price::from("101.00")),
+        Price::from("101.00"),
+        OrderSide::Sell,
+        false
+    )]
+    #[case(
+        Some(Price::from("100.00")),
+        Some(Price::from("101.00")),
+        Price::from("100.00"),  // <-- Price at bid
+        OrderSide::Sell,
+        true
+    )]
+    #[case(
+        Some(Price::from("100.00")),
+        Some(Price::from("101.00")),
+        Price::from("99.00"),// <-- Price below bid (marketable)
+        OrderSide::Sell,
+        true
+    )]
+    fn test_is_limit_matched(
+        #[case] bid: Option<Price>,
+        #[case] ask: Option<Price>,
+        #[case] price: Price,
+        #[case] order_side: OrderSide,
+        #[case] expected: bool,
+    ) {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+        matching_core.bid = bid;
+        matching_core.ask = ask;
+
+        let order = TestOrderStubs::limit_order(
+            instrument_id,
+            order_side,
+            price,
+            Quantity::from("100"),
+            None,
+            None,
+        );
+
+        let result = matching_core.is_limit_matched(&LimitOrderType::Limit(order));
+
+        assert_eq!(result, expected);
     }
 }
