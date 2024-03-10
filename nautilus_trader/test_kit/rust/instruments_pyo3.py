@@ -211,11 +211,11 @@ class TestInstrumentProviderPyo3:
             activation = pd.Timestamp("2021-12-25", tz=pytz.utc)
         if expiration is None:
             expiration = pd.Timestamp("2022-3-25", tz=pytz.utc)
-
-        instrument_id_str = f"BTCUSDT_{expiration.strftime('%y%m%d')}.BINANCE"
+        symbol = f"BTCUSDT_{expiration.strftime('%y%m%d')}"
+        instrument_id_str = f"{symbol}.BINANCE"
         return CryptoFuture(
             id=InstrumentId.from_str(instrument_id_str),
-            raw_symbol=Symbol("BTCUSDT"),
+            raw_symbol=Symbol(symbol),
             underlying=_BTC,
             quote_currency=_USDT,
             settlement_currency=_USDT,
@@ -225,6 +225,10 @@ class TestInstrumentProviderPyo3:
             size_precision=6,
             price_increment=Price.from_str("0.01"),
             size_increment=Quantity.from_str("0.000001"),
+            maker_fee=Decimal("0"),
+            taker_fee=Decimal("0"),
+            margin_init=Decimal("0"),
+            margin_maint=Decimal("0"),
             lot_size=None,
             max_quantity=Quantity.from_str("9000"),
             min_quantity=Quantity.from_str("0.00001"),
