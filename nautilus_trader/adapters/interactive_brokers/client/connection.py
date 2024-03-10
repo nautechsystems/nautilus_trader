@@ -40,16 +40,13 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
 
     """
 
-    async def _connect(self):
+    async def _connect(self) -> None:
         """
-        Establish the socket connection with TWS/Gateway. It initializes the connection,
-        connects the socket, sends and receives version information, and then sets a
-        flag that the connection has been successfully established.
+        Establish the socket connection with TWS/Gateway.
 
-        Raises
-        ------
-        Exception
-            For any unexpected errors during the connection.
+        This initializes the connection, connects the socket, sends and receives version
+        information, and then sets a flag that the connection has been successfully
+        established.
 
         """
         try:
@@ -76,7 +73,10 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             self._eclient.disconnect()
             await self._handle_reconnect()
 
-    async def _disconnect(self):
+    async def _disconnect(self) -> None:
+        """
+        Disconnect from TWS/Gateway and clear the `_is_ib_connected` flag.
+        """
         try:
             self._eclient.disconnect()
             self._is_ib_connected.clear()
@@ -84,15 +84,18 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         except Exception as e:
             self._log.error(f"Disconnection failed: {e}")
 
-    async def _reconnect_attempt(self):
+    async def _reconnect_attempt(self) -> None:
+        """
+        Attempt to reconnect to TWS/Gateway.
+        """
         self._reconnect_attempts += 1
         self._log.info(
             f"Attempt {self._reconnect_attempts}: Attempting to reconnect in {self._reconnect_delay} seconds...",
         )
         await asyncio.sleep(self._reconnect_delay)
-        await self.connect()
+        await self._connect()
 
-    async def _handle_reconnect(self):
+    async def _handle_reconnect(self) -> None:
         while not self._is_ib_connected.is_set():
             await self._reconnect_attempt()
             if (
@@ -117,7 +120,6 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         self._eclient._host = self._host
         self._eclient._port = self._port
         self._eclient.clientId = self._client_id
-        self._connection_attempt_counter += 1
         self._log.info(
             f"Connecting to {self._host}:{self._port} with client id:{self._client_id}",
         )

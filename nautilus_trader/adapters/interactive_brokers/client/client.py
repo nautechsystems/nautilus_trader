@@ -150,6 +150,11 @@ class InteractiveBrokersClient(
     def _start(self) -> None:
         """
         Start the client.
+
+        This method is called when the client is first initialized and when the client
+        is reset. It sets up the client and starts the connection watchdog, incoming
+        message reader, and internal message queue processing tasks.
+
         """
         self._log.info("Starting InteractiveBrokersClient ...")
         self._loop.run_until_complete(self.connect())
@@ -160,6 +165,9 @@ class InteractiveBrokersClient(
         self._is_client_ready.set()
 
     def _start_incoming_msg_reader(self) -> None:
+        """
+        Start the incoming message reader task.
+        """
         if self._tws_incoming_msg_reader_task:
             self._tws_incoming_msg_reader_task.cancel()
         self._tws_incoming_msg_reader_task = self._create_task(
@@ -167,6 +175,9 @@ class InteractiveBrokersClient(
         )
 
     def _start_internal_msg_queue(self) -> None:
+        """
+        Start the internal message queue processing task.
+        """
         if self._internal_msg_queue_task:
             self._internal_msg_queue_task.cancel()
         self._internal_msg_queue_task = self._create_task(
@@ -195,14 +206,14 @@ class InteractiveBrokersClient(
 
     def _reset(self) -> None:
         """
-        Reset the client state and restart connection watchdog.
+        Reset the client and restart it.
         """
         self._stop()
         self._start()
 
     def _resume(self) -> None:
         """
-        Resume the client.
+        Resume the client and resubscribe all subscriptions.
         """
         self._is_client_ready.set()
         self._loop.run_until_complete(self._resubscribe_all())
@@ -267,6 +278,9 @@ class InteractiveBrokersClient(
             self._log.debug("Client connection watchdog task was canceled.")
 
     async def _handle_disconnected(self) -> None:
+        """
+        Handle the disconnection of the client from TWS/Gateway.
+        """
         if self.is_running:
             self._degrade()
         self._is_ib_connected.clear()

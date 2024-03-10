@@ -500,6 +500,7 @@ class BaseMixin:
     _next_req_id: Callable
     logAnswer: Callable
     _reset: Callable
+    _stop: Callable
     _create_task: Callable
     _start_client_tasks_and_tws_api: Callable
 
@@ -507,8 +508,10 @@ class BaseMixin:
     accounts: Callable
 
     # Connection
-    _connection_attempt_counter: int
-    _contract_for_probe: IBContract
+    _reconnect_attempts: int
+    _reconnect_delay: int
+    _max_reconnect_attempts: int
+    _indefinite_reconnect: bool
 
     # MarketData
     _bar_type_to_last_bar: dict[str, BarData | None]
