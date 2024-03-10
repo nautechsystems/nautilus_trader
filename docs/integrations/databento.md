@@ -117,7 +117,7 @@ Nautilus data includes at *least* two timestamps (required by the `Data` contrac
 - `ts_init` - The UNIX timestamp (nanoseconds) when the data object was initialized
 
 When decoding and normalizing Databento to Nautilus we generally assign the Databento `ts_recv` value to the Nautilus
-`ts_event` field, as this timestamp is much more reliable and consistent, and is guaranteed to be monotonically increasing per symbol.
+`ts_event` field, as this timestamp is much more reliable and consistent, and is guaranteed to be monotonically increasing per instrument.
 
 See the following Databento docs for further information:
 - [Databento standards and conventions - timestamps](https://docs.databento.com/knowledge-base/new-users/standards-conventions/timestamps)
@@ -165,11 +165,11 @@ object, which occurs during the replay startup sequence.
 
 This schema represents the top-of-book only. Like with MBO messages, some
 messages carry trade information, and so when decoding MBP-1 messages Nautilus 
-will produce a `QuoteTick` and optionally a `TradeTick`.
+will produce a `QuoteTick` and also a `TradeTick` if the message is a trade.
 
 ### OHLCV (bar aggregates)
 
-The Databento bar aggregation schemas are timestamped at the **open** of the bar interval.
+The Databento bar aggregation messages are timestamped at the **open** of the bar interval.
 The Nautilus decoder will normalize the `ts_event` timestamps to the **close** of the bar
 (original `ts_event` + bar interval).
 
@@ -201,7 +201,7 @@ There are two `DatabentoLiveClient`s per Databento dataset:
 ```{note}
 There is currently a limitation that all MBO (order book deltas) subscriptions for a dataset have to be made at
 node startup, to then be able to replay data from the beginning of the session. If subsequent subscriptions
-arrive after start, then they will be ignored and an error logged.
+arrive after start, then an error will be logged (and the subscription ignored).
 
 There is no such limitation for any of the other Databento schemas.
 ```
@@ -224,7 +224,8 @@ config = TradingNodeConfig(
     data_clients={
         DATABENTO: {
             "api_key": None,  # 'DATABENTO_API_KEY' env var
-            "http_gateway": None,  # Override for the default HTTP gateway
+            "http_gateway": None,  # Override for the default HTTP historical gateway
+            "live_gateway": None,  # Override for the default raw TCP real-time gateway
             "instrument_provider": InstrumentProviderConfig(load_all=True),
             "instrument_ids": None,  # Nautilus instrument IDs to load on start
             "parent_symbols": None,  # Databento parent symbols to load on start
@@ -254,7 +255,7 @@ node.build()
 
 - `api_key` - The Databento API secret key. If ``None`` then will source the `DATABENTO_API_KEY` environment variable
 - `http_gateway` - The historical HTTP client gateway override (useful for testing and typically not needed by most users)
-- `live_gateway` - The live client gateway override (useful for testing and typically not needed by most users)
+- `live_gateway` - The raw TCP real-time client gateway override (useful for testing and typically not needed by most users)
 - `parent_symbols` - The Databento parent symbols to subscribe to instrument definitions for on start. This is a map of Databento dataset keys -> to a sequence of the parent symbols, e.g. {'GLBX.MDP3', ['ES.FUT', 'ES.OPT']} (for all E-mini S&P 500 futures and options products)
 - `instrument_ids` - The instrument IDs to request instrument definitions for on start
 - `timeout_initial_load` - The timeout (seconds) to wait for instruments to load (concurrently per dataset).

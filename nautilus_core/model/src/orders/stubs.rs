@@ -17,6 +17,7 @@ use std::str::FromStr;
 
 use nautilus_core::uuid::UUID4;
 
+use super::limit::LimitOrder;
 use crate::{
     enums::{LiquiditySide, OrderSide, TimeInForce},
     events::order::filled::OrderFilled,
@@ -134,5 +135,48 @@ impl TestOrderStubs {
             None,
         )
         .unwrap()
+    }
+
+    #[must_use]
+    pub fn limit_order(
+        instrument_id: InstrumentId,
+        order_side: OrderSide,
+        price: Price,
+        quantity: Quantity,
+        client_order_id: Option<ClientOrderId>,
+        time_in_force: Option<TimeInForce>,
+    ) -> LimitOrder {
+        let trader = trader_id();
+        let strategy = strategy_id_ema_cross();
+        let client_order_id =
+            client_order_id.unwrap_or(ClientOrderId::from("O-20200814-102234-001-001-1"));
+        let time_in_force = time_in_force.unwrap_or(TimeInForce::Gtc);
+        LimitOrder::new(
+            trader,
+            strategy,
+            instrument_id,
+            client_order_id,
+            order_side,
+            quantity,
+            price,
+            time_in_force,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            12_321_312_321_312,
+        )
     }
 }

@@ -15,6 +15,7 @@
 
 use nautilus_core::time::UnixNanos;
 use serde::{Deserialize, Serialize};
+use strum::Display;
 
 use crate::{
     events::order::{
@@ -28,7 +29,7 @@ use crate::{
     identifiers::{client_order_id::ClientOrderId, strategy_id::StrategyId},
 };
 
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Display, Debug, Serialize, Deserialize)]
 pub enum OrderEvent {
     OrderInitialized(OrderInitialized),
     OrderDenied(OrderDenied),

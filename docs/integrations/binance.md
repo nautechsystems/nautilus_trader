@@ -223,6 +223,37 @@ instrument_provider=InstrumentProviderConfig(
 )
 ```
 
+## Order books
+
+```{note}
+The Nautilus team is currently working on this section.
+```
+
+Order books can be maintained at full or partial depths depending on the
+subscription options. WebSocket stream throttling is different between
+Spot and Futures exchanges, Nautilus will automatically use the highest streaming
+rate possible:
+
+- Spot 100ms
+- Futures 0ms (unthrottled)
+
+There is a limitation of one order book per instrument per trader instance.
+As stream subscriptions may vary, the latest order book data (deltas or snapshots)
+subscription will be used by the Binance data client.
+
+Order book snapshot rebuilds will be triggered:
+- On initial subscription of the order book data
+- On data websocket reconnects
+
+The sequence of events is as follows:
+- Deltas will start buffered
+- Snapshot is requested and awaited
+- Snapshot response is parsed to `OrderBookDeltas`
+- Snapshot deltas are sent to the `DataEngine`
+- Buffered deltas are iterated, dropping those where the sequence number is not greater than the last delta in the snapshot
+- Deltas will stop buffering
+- Remaining deltas are sent to the `DataEngine`
+
 ## Binance specific data
 
 It's possible to subscribe to Binance specific data streams as they become available to the
