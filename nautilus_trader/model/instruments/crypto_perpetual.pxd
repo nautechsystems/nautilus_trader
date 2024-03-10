@@ -30,3 +30,6 @@ cdef class CryptoPerpetual(Instrument):
 
     @staticmethod
     cdef dict to_dict_c(CryptoPerpetual obj)
+
+    @staticmethod
+    cdef CryptoPerpetual from_pyo3_c(pyo3_instrument)
