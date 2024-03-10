@@ -42,15 +42,18 @@ As with the other integration adapters, most users will simply define a configur
 and won't need to necessarily work with these lower level components directly.
 ```
 
-## Documentation
+## Databento documentation
 
-Databento provides extensive documentation for users which can be found in the knowledge base https://docs.databento.com/knowledge-base/new-users.
+Databento provides extensive documentation for users which can be found in the [Databento knowledge base](https://docs.databento.com/knowledge-base/new-users).
 It's recommended you also refer to the Databento documentation in conjunction with this Nautilus integration guide.
 
 ## Databento Binary Encoding (DBN)
 
+Databento Binary Encoding (DBN) is an extremely fast message encoding and storage format for normalized market data.
+The [DBN specification](https://docs.databento.com/knowledge-base/new-users/dbn-encoding) includes a simple, self-describing metadata header and a fixed set of struct definitions,
+which enforce a standardized way to normalize market data.
+
 The integration provides a decoder which can convert DBN format data to Nautilus objects.
-You can read more about the DBN format [here](https://docs.databento.com/knowledge-base/new-users/dbn-encoding).
 
 The same Rust implemented Nautilus decoder is used for:
 - Loading and decoding DBN files from disk
@@ -84,7 +87,7 @@ by either the original source venue, or internally by Databento during normaliza
 It's important to realize that this is different to the Nautilus `InstrumentId`
 which is a string made up of a symbol + venue with a period separator i.e. `"{symbol}.{venue}"`.
 
-The Nautilus decoder will use the Databento `raw_symbol` for the Nautilus `symbol` and an [ISO 10383 MIC (Market Identification Code)](https://www.iso20022.org/market-identifier-codes)
+The Nautilus decoder will use the Databento `raw_symbol` for the Nautilus `symbol` and an [ISO 10383 MIC](https://www.iso20022.org/market-identifier-codes) (Market Identification Code)
 from the Databento instrument definition message for the Nautilus `venue`.
 
 Databento datasets are identified with a *dataset code* which is not the same
@@ -92,15 +95,17 @@ as a venue identifier. You can read more about Databento dataset naming conventi
 
 Of particular note is for CME Globex MDP 3.0 data (`GLBX.MDP3` dataset code), the `venue` that
 Nautilus will use is the CME exchange code provided by instrument definition messages (which the Interactive Brokers adapter can map):
-- `CBCM` - XCME-XCBT inter-exchange spread
-- `NYUM` - XNYM-DUMX inter-exchange spread
-- `XCBT` - Chicago Board of Trade (CBOT)
-- `XCEC` - Commodities Exchange Center (COMEX)
-- `XCME` - Chicago Mercantile Exchange (CME)
-- `XFXS` - CME FX Link spread
-- `XNYM` - New York Mercantile Exchange (NYMEX)
+- `CBCM` - **XCME-XCBT inter-exchange spread**
+- `NYUM` - **XNYM-DUMX inter-exchange spread**
+- `XCBT` - **Chicago Board of Trade (CBOT)**
+- `XCEC` - **Commodities Exchange Center (COMEX)**
+- `XCME` - **Chicago Mercantile Exchange (CME)**
+- `XFXS` - **CME FX Link spread**
+- `XNYM` - **New York Mercantile Exchange (NYMEX)**
 
+```{note}
 Other venue MICs can be found in the `venue` field of responses from the [metadata.list_publishers](https://docs.databento.com/api-reference-historical/metadata/metadata-list-publishers?historical=http&live=python) endpoint.
+```
 
 ## Timestamps
 
@@ -119,9 +124,11 @@ Nautilus data includes at *least* two timestamps (required by the `Data` contrac
 When decoding and normalizing Databento to Nautilus we generally assign the Databento `ts_recv` value to the Nautilus
 `ts_event` field, as this timestamp is much more reliable and consistent, and is guaranteed to be monotonically increasing per instrument.
 
+```{note}
 See the following Databento docs for further information:
 - [Databento standards and conventions - timestamps](https://docs.databento.com/knowledge-base/new-users/standards-conventions/timestamps)
 - [Databento timestamping guide](https://docs.databento.com/knowledge-base/data-integrity/timestamping/timestamps-on-databento-and-how-to-use-them)
+```
 
 ## Data types
 
@@ -177,7 +184,7 @@ The Nautilus decoder will normalize the `ts_event` timestamps to the **close** o
 
 The Databento `imbalance` and `statistics` schemas cannot be represented as a built-in Nautilus data types
 and so they have specific types defined in Rust `DatabentoImbalance` and `DatabentoStatistics`.
-Python bindings are provided via pyo3 and so the types behaves a little differently to a built-in Nautilus
+Python bindings are provided via pyo3 (Rust) and so the types behaves a little differently to a built-in Nautilus
 data types, where all attributes are pyo3 provided objects and not directly compatible
 with certain methods which may expect a Cython provided type. There are pyo3 -> legacy Cython
 object conversion methods available, which can be found in the API reference.
@@ -237,6 +244,69 @@ than converting DBN -> Nautilus on the fly for every backtest run).
 
 ```{note}
 Performance benchmarks are under development.
+```
+
+## Loading DBN data
+
+You can load DBN files and convert the records to Nautilus objects using the
+`DatabentoDataLoader` class. There are two main purposes for doing so:
+
+- Pass the converted data to `BacktestEngine.add_data` directly for backtesting
+- Pass the converted data to `ParquetDataCatalog.write_data` for later streaming use with a `BacktestNode`
+
+### DBN data to a BacktestEngine
+
+This code snippet demonstrates how to load DBN data and pass to a `BacktestEngine`.
+Since the `BacktestEngine` needs an instrument added, we'll use a test instrument 
+provided by the `TestInstrumentProvider` (you could also pass an instrument object 
+which was parsed from a DBN file too).
+The data is a month of TSLA (Tesla Inc) trades on the Nasdaq exchange:
+
+```python
+# Add instrument
+TSLA_NASDAQ = TestInstrumentProvider.equity(symbol="TSLA")
+engine.add_instrument(TSLA_NASDAQ)
+
+# Decode data to legacy Cython objects
+loader = DatabentoDataLoader()
+trades = loader.from_dbn_file(
+    path=TEST_DATA_DIR / "databento" / "temp" / "tsla-xnas-20240107-20240206.trades.dbn.zst",
+    instrument_id=TSLA_NASDAQ.id,
+)
+
+# Add data
+engine.add_data(trades)
+```
+
+### DBN data to a ParquetDataCatalog
+
+This code snippet demonstrates how to load DBN data and write to a `ParquetDataCatalog`.
+We pass a value of false for the `as_legacy_cython` flag, which will ensure the
+DBN records are decoded as pyo3 (Rust) objects. It's worth noting that legacy Cython
+objects can also be passed to `write_data`, but these need to be converted back to
+pyo3 objects under the hood (so passing pyo3 objects is an optimization).
+
+```python
+# Initialize the catalog interface
+# (will use the `NAUTILUS_PATH` env var as the path)
+catalog = ParquetDataCatalog.from_env()
+
+instrument_id = InstrumentId.from_str("TSLA.XNAS")
+
+# Decode data to pyo3 objects
+loader = DatabentoDataLoader()
+trades = loader.from_dbn_file(
+    path=TEST_DATA_DIR / "databento" / "temp" / "tsla-xnas-20240107-20240206.trades.dbn.zst",
+    instrument_id=instrument_id,
+    as_legacy_cython=False,  # This is an optimization for writing to the catalog
+)
+
+# Write data
+catalog.write_data(trades)
+```
+
+```{note}
+See also the [Data concepts guide](../concepts/data.md).
 ```
 
 ## Real-time client architecture
