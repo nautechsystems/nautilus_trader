@@ -29,7 +29,7 @@ cdef class OrderList:
     cdef readonly StrategyId strategy_id
     """The strategy ID associated with the list.\n\n:returns: `StrategyId`"""
     cdef readonly list orders
-    """The orders contained in the list.\n\n:returns: `list[Order]`"""
+    """The contained orders list.\n\n:returns: `list[Order]`"""
     cdef readonly Order first
     """The first order in the list (typically the parent).\n\n:returns: `list[Order]`"""
     cdef readonly uint64_t ts_init
