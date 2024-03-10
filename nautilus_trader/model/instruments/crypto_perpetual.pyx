@@ -235,6 +235,7 @@ cdef class CryptoPerpetual(Instrument):
             "price_increment": str(obj.price_increment),
             "size_precision": obj.size_precision,
             "size_increment": str(obj.size_increment),
+            "lot_size": str(obj.lot_size),
             "max_quantity": str(obj.max_quantity) if obj.max_quantity is not None else None,
             "min_quantity": str(obj.min_quantity) if obj.min_quantity is not None else None,
             "max_notional": obj.max_notional.to_str() if obj.max_notional is not None else None,
@@ -245,6 +246,7 @@ cdef class CryptoPerpetual(Instrument):
             "margin_maint": str(obj.margin_maint),
             "maker_fee": str(obj.maker_fee),
             "taker_fee": str(obj.taker_fee),
+
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "info": obj.info,

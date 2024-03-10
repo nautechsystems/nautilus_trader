@@ -23,7 +23,7 @@ use nautilus_core::{
     time::UnixNanos,
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal::{Decimal};
 
 use crate::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
@@ -169,7 +169,7 @@ impl CryptoPerpetual {
 
     #[getter]
     #[pyo3(name = "lot_size")]
-    fn py_lot_size(&self) -> Option<Quantity> {
+    fn py_lot_size(&self) -> Quantity {
         self.lot_size
     }
 
@@ -244,16 +244,14 @@ impl CryptoPerpetual {
         dict.set_item("size_precision", self.size_precision)?;
         dict.set_item("price_increment", self.price_increment.to_string())?;
         dict.set_item("size_increment", self.size_increment.to_string())?;
-        dict.set_item("maker_fee", self.maker_fee.to_f64())?;
-        dict.set_item("taker_fee", self.taker_fee.to_f64())?;
-        dict.set_item("margin_init", self.margin_init.to_f64())?;
-        dict.set_item("margin_maint", self.margin_maint.to_f64())?;
+        dict.set_item("maker_fee", self.maker_fee.to_string())?;
+        dict.set_item("taker_fee", self.taker_fee.to_string())?;
+        dict.set_item("margin_init", self.margin_init.to_string())?;
+        dict.set_item("margin_maint", self.margin_maint.to_string())?;
+        dict.set_item("info",PyDict::new(py))?;
         dict.set_item("ts_event", self.ts_event)?;
         dict.set_item("ts_init", self.ts_init)?;
-        match self.lot_size {
-            Some(value) => dict.set_item("lot_size", value.to_string())?,
-            None => dict.set_item("lot_size", py.None())?,
-        }
+        dict.set_item("lot_size", self.lot_size.to_string())?;
         match self.max_quantity {
             Some(value) => dict.set_item("max_quantity", value.to_string())?,
             None => dict.set_item("max_quantity", py.None())?,

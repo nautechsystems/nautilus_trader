@@ -13,7 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.nautilus_pyo3 import CryptoPerpetual
+from nautilus_trader.core.nautilus_pyo3 import CryptoPerpetual as CryptoPerpetualPyo3
+
+from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
@@ -32,7 +34,7 @@ def test_hash():
 
 def test_to_dict():
     result = _ETHUSDT_PERP.to_dict()
-    assert CryptoPerpetual.from_dict(result) == _ETHUSDT_PERP
+    assert CryptoPerpetualPyo3.from_dict(result) == _ETHUSDT_PERP
     assert result == {
         "type": "CryptoPerpetual",
         "id": "ETHUSDT-PERP.BINANCE",
@@ -42,7 +44,7 @@ def test_to_dict():
         "settlement_currency": "USDT",
         "is_inverse": False,
         "price_precision": 2,
-        "size_precision": 0,
+        "size_precision": 3,
         "price_increment": "0.01",
         "size_increment": "0.001",
         "lot_size": None,
@@ -52,10 +54,21 @@ def test_to_dict():
         "min_notional": "10.00000000 USDT",
         "max_price": "15000.0",
         "min_price": "1.0",
-        "maker_fee": 0.0002,
-        "margin_init": 1.0,
-        "margin_maint": 0.35,
-        "taker_fee": 0.0004,
+        "maker_fee": "0.0002",
+        "margin_init": "1.00",
+        "margin_maint": "0.35",
+        "taker_fee": "0.0004",
+        "info": {},
         "ts_event": 0,
         "ts_init": 0,
     }
+
+
+def test_pyo3_cython_conversion():
+    crypto_perpetual_pyo3 = TestInstrumentProviderPyo3.ethusdt_perp_binance()
+    crypto_perpetual_pyo3_dict = crypto_perpetual_pyo3.to_dict()
+    crypto_perpetual_cython = CryptoPerpetual.from_dict(crypto_perpetual_pyo3_dict)
+    crypto_perpetual_cython_dict = CryptoPerpetual.to_dict(crypto_perpetual_cython)
+    crypto_perpetual_pyo3_back = CryptoPerpetualPyo3.from_dict(crypto_perpetual_cython_dict)
+    assert crypto_perpetual_pyo3 == crypto_perpetual_pyo3_back
+    assert crypto_perpetual_pyo3_dict == crypto_perpetual_cython_dict

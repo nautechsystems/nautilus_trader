@@ -97,7 +97,7 @@ class TestInstrumentProviderPyo3:
             settlement_currency=_USDT,
             is_inverse=False,
             price_precision=2,
-            size_precision=0,
+            size_precision=3,
             price_increment=Price.from_str("0.01"),
             size_increment=Quantity.from_str("0.001"),
             lot_size=None,
