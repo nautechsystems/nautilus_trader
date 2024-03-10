@@ -19,6 +19,8 @@ from nautilus_trader.adapters.databento.constants import DATABENTO
 from nautilus_trader.adapters.databento.constants import DATABENTO_CLIENT_ID
 from nautilus_trader.adapters.databento.factories import DatabentoLiveDataClientFactory
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
+from nautilus_trader.core.nautilus_pyo3 import DatabentoImbalance
+from nautilus_trader.core.nautilus_pyo3 import DatabentoStatistics
 
 
 __all__ = [
@@ -28,4 +30,6 @@ __all__ = [
     "DatabentoDataLoader",
     "DatabentoDataClientConfig",
     "DatabentoLiveDataClientFactory",
+    "DatabentoStatistics",
+    "DatabentoImbalance",
 ]

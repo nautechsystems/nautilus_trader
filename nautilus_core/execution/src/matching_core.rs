@@ -227,7 +227,7 @@ mod tests {
     #[case(
         Some(Price::from("100.00")),
         Some(Price::from("101.00")),
-        Price::from("102.00"),// <-- Price higher than ask (marketable)
+        Price::from("102.00"),  // <-- Price higher than ask (marketable)
         OrderSide::Buy,
         true
     )]
@@ -248,7 +248,7 @@ mod tests {
     #[case(
         Some(Price::from("100.00")),
         Some(Price::from("101.00")),
-        Price::from("99.00"),// <-- Price below bid (marketable)
+        Price::from("99.00"),  // <-- Price below bid (marketable)
         OrderSide::Sell,
         true
     )]

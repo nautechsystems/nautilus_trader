@@ -374,8 +374,42 @@ class DatabentoDataClient(LiveMarketDataClient):
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     async def _subscribe(self, data_type: DataType) -> None:
-        # Replace method in child class, for exchange specific data types.
-        raise NotImplementedError(f"Cannot subscribe to {data_type.type} (not implemented).")
+        if data_type.type == DatabentoImbalance:
+            await self._subscribe_imbalance(data_type)
+        elif data_type.type == DatabentoStatistics:
+            await self._subscribe_statistics(data_type)
+        else:
+            raise NotImplementedError(
+                f"Cannot subscribe to {data_type.type} (not implemented).",
+            )
+
+    async def _subscribe_imbalance(self, data_type: DataType) -> None:
+        try:
+            # TODO: Create `DatabentoTimeSeriesParams`
+            instrument_id: InstrumentId = data_type.metadata["instrument_id"]
+            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+            live_client = self._get_live_client(dataset)
+            live_client.subscribe(
+                schema=DatabentoSchema.IMBALANCE.value,
+                symbols=instrument_id.symbol.value,
+            )
+            await self._check_live_client_started(dataset, live_client)
+        except asyncio.CancelledError:
+            self._log.warning("`_subscribe_imbalance` was canceled while still pending.")
+
+    async def _subscribe_statistics(self, data_type: DataType) -> None:
+        try:
+            # TODO: Create `DatabentoTimeSeriesParams`
+            instrument_id: InstrumentId = data_type.metadata["instrument_id"]
+            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+            live_client = self._get_live_client(dataset)
+            live_client.subscribe(
+                schema=DatabentoSchema.IMBALANCE.value,
+                symbols=instrument_id.symbol.value,
+            )
+            await self._check_live_client_started(dataset, live_client)
+        except asyncio.CancelledError:
+            self._log.warning("`_subscribe_imbalance` was canceled while still pending.")
 
     async def _subscribe_instruments(self) -> None:
         # Replace method in child class, for exchange specific data types.
@@ -610,7 +644,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _unsubscribe(self, data_type: DataType) -> None:
         raise NotImplementedError(
-            f"Cannot unsubscribe from {data_type} (not implemented).",
+            f"Cannot unsubscribe from {data_type}, unsubscribing not supported by Databento.",
         )
 
     async def _unsubscribe_instruments(self) -> None:
@@ -655,8 +689,73 @@ class DatabentoDataClient(LiveMarketDataClient):
         )
 
     async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
-        raise NotImplementedError(
-            f"Cannot request {data_type} (not implemented).",
+        if data_type.type == DatabentoImbalance:
+            await self._request_imbalance(data_type, correlation_id)
+        elif data_type.type == DatabentoStatistics:
+            await self._request_statistics(data_type, correlation_id)
+        else:
+            raise NotImplementedError(
+                f"Cannot request {data_type.type} (not implemented).",
+            )
+
+    async def _request_imbalance(self, data_type: DataType, correlation_id: UUID4) -> None:
+        instrument_id: InstrumentId = data_type.metadata["instrument_id"]
+        start = data_type.metadata.get("start")
+        end = data_type.metadata.get("end")
+
+        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+        _, available_end = await self._get_dataset_range(dataset)
+
+        start = start or available_end - pd.Timedelta(days=2)
+        end = end or available_end
+
+        self._log.info(
+            f"Requesting {instrument_id} imbalance: "
+            f"dataset={dataset}, start={start}, end={end}",
+            LogColor.BLUE,
+        )
+
+        pyo3_imbalances = await self._http_client.get_range_imbalance(
+            dataset=dataset,
+            symbols=instrument_id.symbol.value,
+            start=start.value,
+            end=end.value,
+        )
+
+        self._handle_data_response(
+            data_type=data_type,
+            data=pyo3_imbalances,
+            correlation_id=correlation_id,
+        )
+
+    async def _request_statistics(self, data_type: DataType, correlation_id: UUID4) -> None:
+        instrument_id: InstrumentId = data_type.metadata["instrument_id"]
+        start = data_type.metadata.get("start")
+        end = data_type.metadata.get("end")
+
+        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+        _, available_end = await self._get_dataset_range(dataset)
+
+        start = start or available_end - pd.Timedelta(days=2)
+        end = end or available_end
+
+        self._log.info(
+            f"Requesting {instrument_id} statistics: "
+            f"dataset={dataset}, start={start}, end={end}",
+            LogColor.BLUE,
+        )
+
+        pyo3_statistics = await self._http_client.get_range_statistics(
+            dataset=dataset,
+            symbols=instrument_id.symbol.value,
+            start=start.value,
+            end=end.value,
+        )
+
+        self._handle_data_response(
+            data_type=data_type,
+            data=pyo3_statistics,
+            correlation_id=correlation_id,
         )
 
     async def _request_instrument(
