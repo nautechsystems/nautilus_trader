@@ -22,6 +22,7 @@ from ibapi.utils import current_fn_name
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.adapters.interactive_brokers.client.common import IBPosition
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.model.position import Position
 
 
@@ -161,7 +162,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         self.logAnswer(current_fn_name(), vars())
         self._account_ids = {a for a in accounts_list.split(",") if a}
         if self._next_valid_order_id >= 0 and not self._is_ib_connected.is_set():
-            self._log.debug("`_is_ib_connected` set by managedAccounts")
+            self._log.debug("`_is_ib_connected` set by `managedAccounts`.", LogColor.BLUE)
             self._is_ib_connected.set()
 
     def position(

@@ -155,7 +155,7 @@ class InteractiveBrokersClient(
         message reader, and internal message queue processing tasks.
 
         """
-        self._log.info(f"Starting InteractiveBrokersClient for client id: {self._client_id}...")
+        self._log.info(f"Starting InteractiveBrokersClient: {self._client_id}...")
         self._loop.run_until_complete(self._connect())
         self._start_tws_incoming_msg_reader()
         self._start_internal_msg_queue()
@@ -187,6 +187,7 @@ class InteractiveBrokersClient(
         """
         Stop the client and cancel running tasks.
         """
+        self._log.info(f"Stopping InteractiveBrokersClient {self._client_id}...")
         # Cancel tasks
         for task in [
             self._connection_watchdog_task,
@@ -207,6 +208,7 @@ class InteractiveBrokersClient(
         """
         Reset the client and restart it.
         """
+        self._log.info(f"Resetting InteractiveBrokersClient: {self._client_id}...")
         self._stop()
         self._start()
 
@@ -214,6 +216,7 @@ class InteractiveBrokersClient(
         """
         Resume the client and resubscribe all subscriptions.
         """
+        self._log.info(f"Resuming InteractiveBrokersClient: {self._client_id}...")
         self._is_client_ready.set()
         self._loop.run_until_complete(self._resubscribe_all())
 
@@ -221,6 +224,7 @@ class InteractiveBrokersClient(
         """
         Degrade the client when connectivity is lost.
         """
+        self._log.info(f"Degrading InteractiveBrokersClient: {self._client_id}...")
         self._is_client_ready.clear()
         self._account_ids = set()
 
@@ -287,6 +291,7 @@ class InteractiveBrokersClient(
         """
         if self.is_running:
             self._degrade()
+        self._log.debug("`_is_ib_connected` unset by `_handle_disconnected`.", LogColor.BLUE)
         self._is_ib_connected.clear()
         await self._handle_reconnect()
         self._resume()
@@ -459,6 +464,10 @@ class InteractiveBrokersClient(
             while True:
                 await self.wait_until_ready()
                 if not self._eclient.conn or not self._eclient.conn.isConnected():
+                    self._log.debug(
+                        "`_is_ib_connected` unset by `_run_tws_incoming_msg_reader`.",
+                        LogColor.BLUE,
+                    )
                     self._is_ib_connected.clear()
                     continue
                 data = await self._loop.run_in_executor(None, self._eclient.conn.recvMsg)

@@ -27,6 +27,7 @@ from ibapi.server_versions import MIN_CLIENT_VER
 from ibapi.utils import current_fn_name
 
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
+from nautilus_trader.common.enums import LogColor
 
 
 class InteractiveBrokersClientConnectionMixin(BaseMixin):
@@ -66,6 +67,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
                 f"with client id: {self._client_id}.",
             )
             self._is_ib_connected.set()
+            self._log.debug("`_is_ib_connected` set by `_connect`.", LogColor.BLUE)
         except asyncio.CancelledError:
             self._log.info("Connection cancelled.")
             self._eclient.disconnect()
@@ -82,6 +84,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         """
         try:
             self._eclient.disconnect()
+            self._log.debug("`_is_ib_connected` unset by `_disconnect`.", LogColor.BLUE)
             self._is_ib_connected.clear()
             self._log.info("Disconnected from Interactive Brokers API.")
         except Exception as e:
@@ -229,4 +232,5 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         for future in self._requests.get_futures():
             if not future.done():
                 future.set_exception(ConnectionError("Socket disconnected."))
+        self._log.debug("`_is_ib_connected` unset by `connectionClosed`.", LogColor.BLUE)
         self._is_ib_connected.clear()
