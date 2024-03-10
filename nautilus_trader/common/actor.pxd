@@ -95,8 +95,8 @@ cdef class Actor(Component):
     cpdef void on_quote_tick(self, QuoteTick tick)
     cpdef void on_trade_tick(self, TradeTick tick)
     cpdef void on_bar(self, Bar bar)
-    cpdef void on_data(self, Data data)
-    cpdef void on_historical_data(self, Data data)
+    cpdef void on_data(self, data)
+    cpdef void on_historical_data(self, data)
     cpdef void on_event(self, Event event)
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
@@ -244,7 +244,7 @@ cdef class Actor(Component):
     cpdef void handle_venue_status(self, VenueStatus data)
     cpdef void handle_instrument_status(self, InstrumentStatus data)
     cpdef void handle_instrument_close(self, InstrumentClose data)
-    cpdef void handle_historical_data(self, Data data)
+    cpdef void handle_historical_data(self, data)
     cpdef void handle_event(self, Event event)
 
 # -- HANDLERS -------------------------------------------------------------------------------------

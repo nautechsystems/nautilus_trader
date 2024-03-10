@@ -2434,6 +2434,22 @@ class DatabentoHistoricalClient:
         end: int | None = None,
         limit: int | None = None,
     ) -> list[Bar]: ...
+    async def get_range_imbalance(
+        self,
+        dataset: str,
+        symbols: str,
+        start: int,
+        end: int | None = None,
+        limit: int | None = None,
+    ) -> list[DatabentoImbalance]: ...
+    async def get_range_statistics(
+        self,
+        dataset: str,
+        symbols: str,
+        start: int,
+        end: int | None = None,
+        limit: int | None = None,
+    ) -> list[DatabentoStatistics]: ...
 
 class DatabentoLiveClient:
     def __init__(

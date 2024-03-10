@@ -14,8 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from enum import Enum
-from enum import IntFlag
-from enum import unique
 
 
 class DatabentoSchema(Enum):
@@ -37,73 +35,3 @@ class DatabentoSchema(Enum):
     STATISTICS = "statistics"
     STATUS = "status"
     IMBALANCE = "imbalance"
-
-
-class DatabentoRecordFlags(IntFlag):
-    """
-    Represents Databento record flags.
-
-    F_LAST
-        Last message in the packet from the venue for a given Databento `instrument_id`.
-    F_SNAPSHOT
-        Message sourced from a replay, such as a snapshot server.
-    F_MBP
-        Aggregated price level message, not an individual order.
-    F_BAD_TS_RECV
-        The `ts_recv` value is inaccurate (clock issues or reordering).
-
-    Other bits are reserved and have no current meaning.
-
-    """
-
-    F_LAST = 128
-    F_SNAPSHOT = 32
-    F_MBP = 16
-    F_BAD_TS_RECV = 8
-
-
-@unique
-class DatabentoInstrumentClass(Enum):
-    """
-    Represents a Databento instrument class.
-    """
-
-    BOND = "B"
-    CALL = "C"
-    FUTURE = "F"
-    STOCK = "K"
-    MIXED_SPREAD = "M"
-    PUT = "P"
-    FUTURE_SPREAD = "S"
-    OPTION_SPREAD = "T"
-    FX_SPOT = "X"
-
-
-@unique
-class DatabentoStatisticType(Enum):
-    """
-    Represents a Databento statistic type.
-    """
-
-    OPENING_PRICE = 1
-    INDICATIVE_OPENING_PRICE = 2
-    SETTLEMENT_PRICE = 3
-    TRADING_SESSION_LOW_PRICE = 4
-    TRADING_SESSION_HIGH_PRICE = 5
-    CLEARED_VOLUME = 6
-    LOWEST_OFFER = 7
-    HIGHEST_BID = 8
-    OPEN_INTEREST = 9
-    FIXING_PRICE = 10
-    CLOSE_PRICE = 11
-    NET_CHANGE = 12
-
-
-@unique
-class DatabentoStatisticUpdateAction(Enum):
-    """
-    Represents a Databento statistic update action.
-    """
-
-    ADDED = 1
-    DELETED = 2
