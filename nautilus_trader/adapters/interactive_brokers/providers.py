@@ -102,6 +102,9 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
     ) -> list[ContractDetails]:
         try:
             details = await self._client.get_contract_details(contract=contract)
+            if not details:
+                self._log.error(f"No contract details returned for {contract}.")
+                return []
             [qualified] = details
             self._log.info(
                 f"Contract qualified for {qualified.contract.localSymbol}."

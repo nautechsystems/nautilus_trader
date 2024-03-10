@@ -18,7 +18,6 @@ import functools
 import os
 from collections.abc import Callable
 from collections.abc import Coroutine
-from inspect import iscoroutinefunction
 from typing import Any
 
 from ibapi import comm
@@ -156,15 +155,15 @@ class InteractiveBrokersClient(
         message reader, and internal message queue processing tasks.
 
         """
-        self._log.info("Starting InteractiveBrokersClient ...")
-        self._loop.run_until_complete(self.connect())
-        self._start_incoming_msg_reader()
+        self._log.info(f"Starting InteractiveBrokersClient for client id: {self._client_id}...")
+        self._loop.run_until_complete(self._connect())
+        self._start_tws_incoming_msg_reader()
         self._start_internal_msg_queue()
         self._eclient.startApi()
         self._connection_watchdog_task = self._create_task(self._run_connection_watchdog())
         self._is_client_ready.set()
 
-    def _start_incoming_msg_reader(self) -> None:
+    def _start_tws_incoming_msg_reader(self) -> None:
         """
         Start the incoming message reader task.
         """
@@ -229,16 +228,17 @@ class InteractiveBrokersClient(
         """
         Attempt to cancel and restart all subscriptions.
         """
+        self._log.debug("Resubscribing all subscriptions...")
         for subscription in self._subscriptions.get_all():
             try:
                 subscription.cancel()
-                if iscoroutinefunction(subscription.handle):
-                    await subscription.handle()
-                else:
-                    await self._loop.run_in_executor(None, subscription.handle)
+                await subscription.handle()
             except Exception as e:
                 # The exception is handled, so won't be further raised
-                self._log.exception("Failed subscription", e)
+                self._log.exception(
+                    "Failed to cancel and restart subscription: {subscription}",
+                    e,
+                )
 
     async def wait_until_ready(self, timeout: int = 300) -> None:
         """
@@ -269,10 +269,14 @@ class InteractiveBrokersClient(
             while True:
                 await asyncio.sleep(1)
                 if not self._is_ib_connected.is_set():
-                    self._log.warn("Connection watchdog detects connection lost.")
+                    self._log.error(
+                        "Connection watchdog detects connection lost. `_is_ib_connected` not set.",
+                    )
                     await self._handle_disconnected()
                 elif not self._eclient.isConnected():
-                    self._log.warn("Connection watchdog detects socket disconnected.")
+                    self._log.error(
+                        "Connection watchdog detects socket disconnected. `_eclient.isConnected()` not True.",
+                    )
                     await self._handle_disconnected()
         except asyncio.CancelledError:
             self._log.debug("Client connection watchdog task was canceled.")
@@ -449,13 +453,14 @@ class InteractiveBrokersClient(
         Continuously read messages from TWS/Gateway and then put them in the internal
         message queue for processing.
         """
-        self._log.debug("Client TWS incoming message reader starting...")
+        self._log.debug("Client TWS incoming message reader started.")
         buf = b""
         try:
             while True:
-                if not self._eclient.conn.isConnected():
-                    self._is_ib_connected.clear()
                 await self.wait_until_ready()
+                if not self._eclient.conn or not self._eclient.conn.isConnected():
+                    self._is_ib_connected.clear()
+                    continue
                 data = await self._loop.run_in_executor(None, self._eclient.conn.recvMsg)
                 buf += data
                 while buf:
@@ -470,7 +475,7 @@ class InteractiveBrokersClient(
         except asyncio.CancelledError:
             self._log.debug("Client TWS incoming message reader was cancelled.")
         except Exception as e:
-            self._log.exception(f"Unhandled exception in Client TWS incoming message reader: {e}")
+            self._log.exception("Unhandled exception in Client TWS incoming message reader", e)
         finally:
             self._log.debug("Client TWS incoming message reader stopped.")
 
@@ -479,17 +484,13 @@ class InteractiveBrokersClient(
         Continuously process messages from the internal incoming message queue.
         """
         self._log.debug(
-            "Client internal message queue starting...",
+            "Client internal message queue started.",
         )
         try:
             while True:
-                if not self._internal_msg_queue.empty():
-                    pass
-                elif self._internal_msg_queue.empty():
+                if self._internal_msg_queue.empty():
+                    await asyncio.sleep(0)
                     continue
-                else:
-                    await self.wait_until_ready()
-
                 msg = await self._internal_msg_queue.get()
                 self._process_message(msg)
                 self._internal_msg_queue.task_done()

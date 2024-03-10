@@ -61,11 +61,14 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             await self._receive_server_info()
             self._eclient.setConnState(EClient.CONNECTED)
             self._log.info(
-                f"Connected to Interactive Brokers ({self._eclient.serverVersion_}) "
-                f"at {self._eclient.connTime} from {self._host}:{self._port} "
+                f"Connected to Interactive Brokers (v{self._eclient.serverVersion_}) "
+                f"at {self._eclient.connTime.decode()} from {self._host}:{self._port} "
                 f"with client id: {self._client_id}.",
             )
             self._is_ib_connected.set()
+        except asyncio.CancelledError:
+            self._log.info("Connection cancelled.")
+            self._eclient.disconnect()
         except Exception as e:
             self._log.error(f"Connection failed: {e}")
             if self._eclient.wrapper:
@@ -120,9 +123,6 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         self._eclient._host = self._host
         self._eclient._port = self._port
         self._eclient.clientId = self._client_id
-        self._log.info(
-            f"Connecting to {self._host}:{self._port} with client id:{self._client_id}",
-        )
 
     async def _connect_socket(self) -> None:
         """
@@ -133,6 +133,9 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
 
         """
         self._eclient.conn = Connection(self._host, self._port)
+        self._log.info(
+            f"Connecting to {self._host}:{self._port} with client id: {self._client_id}",
+        )
         await self._loop.run_in_executor(None, self._eclient.conn.connect)
 
     async def _send_version_info(self) -> None:
@@ -184,9 +187,9 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
                 break
 
             retries_remaining -= 1
-            self._log.debug(
-                "Failed to receive server version information."
-                f"Retries remaining={retries_remaining}).",
+            self._log.warning(
+                "Failed to receive server version information. "
+                f"Retries remaining: {retries_remaining}.",
             )
             await asyncio.sleep(1)
 
@@ -194,6 +197,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             raise ConnectionError(
                 "Max retry attempts reached. Failed to receive server version information.",
             )
+            self._log.info("")
 
     def _process_server_version(self, fields: list[str]) -> None:
         """
