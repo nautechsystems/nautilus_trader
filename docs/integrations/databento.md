@@ -173,6 +173,54 @@ The Databento bar aggregation messages are timestamped at the **open** of the ba
 The Nautilus decoder will normalize the `ts_event` timestamps to the **close** of the bar
 (original `ts_event` + bar interval).
 
+### Imbalance & Statistics
+
+The Databento `imbalance` and `statistics` schemas cannot be represented as a built-in Nautilus data types
+and so they have specific types defined in Rust `DatabentoImbalance` and `DatabentoStatistics`.
+Python bindings are provided via pyo3 and so the types behaves a little differently to a built-in Nautilus
+data types, where all attributes are pyo3 provided objects and not directly compatible
+with certain methods which may expect a Cython provided type. There are pyo3 -> legacy Cython
+object conversion methods available, which can be found in the API reference.
+
+Here is a general pattern for converting a pyo3 `Price` to a Cython `Price`:
+```python
+price = Price.from_raw(pyo3_price.raw, pyo3_price.precision)
+```
+
+Additionally requesting for and subscribing to these data types requires the use of the 
+lower level generic methods for custom data types. The following example subscribes to the `imbalance`
+schema for the `AAPL.XNAS` instrument (Apple Inc trading on the Nasdaq exchange):
+
+```python
+from nautilus_trader.adapters.databento import DATABENTO_CLIENT_ID
+from nautilus_trader.adapters.databento import DatabentoImbalance
+from nautilus_trader.model.data import DataType
+
+instrument_id = InstrumentId.from_str("AAPL.XNAS")
+self.subscribe_data(
+    data_type=DataType(DatabentoImbalance, metadata={"instrument_id": instrument_id}),
+    client_id=DATABENTO_CLIENT_ID,
+)
+```
+
+Or requesting the previous days `statistics` schema for the `ES.FUT` parent symbol (all active E-mini S&P 500 futures contracts on the CME Globex exchange):
+
+```python
+from nautilus_trader.adapters.databento import DATABENTO_CLIENT_ID
+from nautilus_trader.adapters.databento import DatabentoStatisics
+from nautilus_trader.model.data import DataType
+
+instrument_id = InstrumentId.from_str("ES.FUT.XCME")
+metadata = {
+    "instrument_id": instrument_id,
+    "start": "2024-03-06",
+}
+self.request_data(
+    data_type=DataType(DatabentoImbalance, metadata=metadata),
+    client_id=DATABENTO_CLIENT_ID,
+)
+```
+
 ## Performance considerations
 
 When backtesting with Databento DBN data, there are two options:

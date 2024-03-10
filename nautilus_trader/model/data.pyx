@@ -1193,7 +1193,7 @@ cdef class DataType:
     Raises
     ------
     ValueError
-        If `type` is not a subclass of `Data`.
+        If `type` is not either a subclass of `Data` or meets the `Data` contract.
     TypeError
         If `metadata` contains a key or value which is not hashable.
 
@@ -1206,7 +1206,8 @@ cdef class DataType:
 
     def __init__(self, type type not None, dict metadata = None) -> None:  # noqa (shadows built-in type)
         if not issubclass(type, Data):
-            raise TypeError("`type` was not a subclass of `Data`")
+            if not (hasattr(type, "ts_event") and hasattr(type, "ts_init")):
+                raise TypeError("`type` was not a subclass of `Data`")
 
         self.type = type
         self.metadata = metadata or {}

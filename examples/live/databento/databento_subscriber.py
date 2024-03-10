@@ -14,6 +14,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Any
+
 from nautilus_trader.adapters.databento import DATABENTO
 from nautilus_trader.adapters.databento import DATABENTO_CLIENT_ID
 from nautilus_trader.adapters.databento import DatabentoDataClientConfig
@@ -28,8 +30,6 @@ from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.book import OrderBook
-
-# from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -47,13 +47,13 @@ instrument_ids = [
     InstrumentId.from_str("ESH4.XCME"),
     # InstrumentId.from_str("ESM4.XCME"),
     # InstrumentId.from_str("ESU4.XCME"),
-    # InstrumentId.from_str("AAPL.XCHI"),
+    # InstrumentId.from_str("AAPL.XNAS"),
 ]
 
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(log_level="INFO", use_pyo3=True),
+    logging=LoggingConfig(log_level="INFO", use_pyo3=False),
     exec_engine=LiveExecEngineConfig(
         reconciliation=False,  # Not applicable
         inflight_check_interval_ms=0,  # Not applicable
@@ -84,7 +84,7 @@ config_node = TradingNodeConfig(
             http_gateway=None,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_ids=instrument_ids,
-            parent_symbols={"GLBX.MDP3": {"ES.FUT", "ES.OPT"}},
+            # parent_symbols={"GLBX.MDP3": {"ES.FUT", "ES.OPT"}},
         ),
     },
     timeout_connection=10.0,
@@ -153,7 +153,27 @@ class DataSubscriber(Strategy):
             # self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
             # self.request_quote_ticks(instrument_id)
             # self.request_trade_ticks(instrument_id)
+
+            # from nautilus_trader.model.data import BarType
             # self.request_bars(BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"))
+
+            # # Imbalance
+            # from nautilus_trader.adapters.databento import DatabentoImbalance
+            #
+            # metadata = {"instrument_id": instrument_id}
+            # self.request_data(
+            #     data_type=DataType(type=DatabentoImbalance, metadata=metadata),
+            #     client_id=DATABENTO_CLIENT_ID,
+            # )
+
+            # # Statistics
+            # from nautilus_trader.adapters.databento import DatabentoStatistics
+            #
+            # metadata = {"instrument_id": instrument_id}
+            # self.request_data(
+            #     data_type=DataType(type=DatabentoStatistics, metadata=metadata),
+            #     client_id=DATABENTO_CLIENT_ID,
+            # )
 
         # self.request_instruments(venue=Venue("GLBX"), client_id=DATABENTO_CLIENT_ID)
         # self.request_instruments(venue=Venue("XCHI"), client_id=DATABENTO_CLIENT_ID)
@@ -163,7 +183,10 @@ class DataSubscriber(Strategy):
         """
         Actions to be performed when the strategy is stopped.
         """
-        # Databento does not yet support live data unsubscribing
+        # Databento does not support live data unsubscribing
+
+    def on_historical_data(self, data: Any) -> None:
+        self.log.info(repr(data), LogColor.CYAN)
 
     def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         """
