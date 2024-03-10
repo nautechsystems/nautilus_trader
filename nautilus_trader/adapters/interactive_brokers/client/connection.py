@@ -40,7 +40,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
 
     """
 
-    async def connect(self):
+    async def _connect(self):
         """
         Establish the socket connection with TWS/Gateway. It initializes the connection,
         connects the socket, sends and receives version information, and then sets a
@@ -71,9 +71,12 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             self._is_ib_connected.set()
         except Exception as e:
             self._log.error(f"Connection failed: {e}")
+            if self._eclient.wrapper:
+                self._eclient.wrapper.error(NO_VALID_ID, CONNECT_FAIL.code(), CONNECT_FAIL.msg())
+            self._eclient.disconnect()
             await self._handle_reconnect()
 
-    async def disconnect(self):
+    async def _disconnect(self):
         try:
             self._eclient.disconnect()
             self._is_ib_connected.clear()
@@ -81,29 +84,26 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         except Exception as e:
             self._log.error(f"Disconnection failed: {e}")
 
+    async def _reconnect_attempt(self):
+        self._reconnect_attempts += 1
+        self._log.info(
+            f"Attempt {self._reconnect_attempts}: Attempting to reconnect in {self._reconnect_delay} seconds...",
+        )
+        await asyncio.sleep(self._reconnect_delay)
+        await self.connect()
+
     async def _handle_reconnect(self):
-        if self._reconnect_attempts < self._max_reconnect_attempts:
-            self._reconnect_attempts += 1
-            backoff_delay = self._reconnect_delay * (2 ** (self._reconnect_attempts - 1))
-            self._log.info(
-                f"Attempt {self._reconnect_attempts}: reconnecting in {backoff_delay:.2f} seconds...",
-            )
-            await asyncio.sleep(backoff_delay)
-            await self.connect()
-            self._reconnect_attempts = 0
+        while not self._is_ib_connected.is_set():
+            await self._reconnect_attempt()
+            if (
+                not self._indefinite_reconnect
+                and self._reconnect_attempts >= self._max_reconnect_attempts
+            ):
+                self._log.error("Max reconnection attempts reached. Connection failed.")
+                self._stop()
+                break
         else:
-            self._log.error("Max reconnection attempts reached. Connection failed.")
-
-    async def _handle_connection_established(self):
-        self._start_client_tasks_and_tws_api()
-        self._get_account_ids()
-        self._connection_watchdog_task = self._create_task(self._run_connection_watchdog())
-        await self._subscribe_all()
-
-    async def _handle_connection_lost(self):
-        self._is_ib_connected.clear()
-        await self._handle_reconnect()
-        await self.resubscribe_all()
+            self._reconnect_attempts = 0
 
     def _initialize_connection_params(self) -> None:
         """
@@ -210,44 +210,6 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         self._eclient.serverVersion_ = server_version
         self._eclient.decoder.serverVersion = server_version
 
-    async def _probe_for_connectivity(self) -> None:
-        """
-        Perform a connectivity probe to TWS using a historical data request if the
-        client is degraded.
-        """
-        # Probe connectivity. Sometime restored event will not be received from TWS without this
-        self._eclient.reqHistoricalData(
-            reqId=1,
-            contract=self._contract_for_probe,
-            endDateTime="",
-            durationStr="30 S",
-            barSizeSetting="5 secs",
-            whatToShow="MIDPOINT",
-            useRTH=False,
-            formatDate=2,
-            keepUpToDate=False,
-            chartOptions=[],
-        )
-        await asyncio.sleep(15)
-        self._eclient.cancelHistoricalData(1)
-
-    def _handle_connection_error(self, e):
-        """
-        Handle any connection errors that occur during the connection setup. Logs the
-        error, notifies the wrapper of the connection failure, and disconnects the
-        client.
-
-        Parameters
-        ----------
-        e : Exception
-            The exception that occurred during the connection process.
-
-        """
-        if self._eclient.wrapper:
-            self._eclient.wrapper.error(NO_VALID_ID, CONNECT_FAIL.code(), CONNECT_FAIL.msg())
-        self._eclient.disconnect()
-        self._log.error(f"Connection failed: {e}")
-
     # -- EWrapper overrides -----------------------------------------------------------------------
     def connectionClosed(self) -> None:
         """
@@ -261,4 +223,4 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         for future in self._requests.get_futures():
             if not future.done():
                 future.set_exception(ConnectionError("Socket disconnected."))
-        self._eclient.reset()
+        self._is_ib_connected.clear()
