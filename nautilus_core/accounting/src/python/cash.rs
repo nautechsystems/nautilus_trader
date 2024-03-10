@@ -16,6 +16,7 @@
 use std::collections::HashMap;
 
 use nautilus_core::python::to_pyvalue_err;
+use nautilus_model::enums::AccountType;
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
@@ -28,6 +29,7 @@ use nautilus_model::{
     position::Position,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
+use pyo3::types::{PyDict, PyList};
 use pyo3::{basic::CompareOp, prelude::*};
 
 use crate::account::{cash::CashAccount, Account};
@@ -82,6 +84,12 @@ impl CashAccount {
     #[pyo3(name = "id")]
     fn py_id(&self) -> AccountId {
         self.id
+    }
+
+    #[getter]
+    #[pyo3(name = "account_type")]
+    fn py_account_type(&self) -> AccountType {
+        self.account_type
     }
 
     #[getter]
@@ -363,5 +371,41 @@ impl CashAccount {
             // throw error unsupported instrument
             Err(to_pyvalue_err("Unsupported instrument type"))
         }
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_dict")]
+    fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
+        let dict = values.as_ref(py);
+        let events = dict.get_item("events")?.unwrap().extract::<Py<PyList>>()?;
+        let calculate_account_state: bool = dict
+            .get_item("calculate_account_state")?
+            .unwrap()
+            .extract::<bool>()?;
+        let mut native_events: Vec<AccountState> = Vec::new();
+        for event_item in events.as_ref(py).iter() {
+            let event_dict = event_item.downcast::<PyDict>()?;
+            let event = AccountState::py_from_dict(py, event_dict.into())?;
+            native_events.push(event);
+        }
+        if native_events.is_empty() {
+            return Err(to_pyvalue_err("No events found in the dictionary"));
+        }
+        let init_event = native_events[0].clone();
+        let mut account = CashAccount::new(init_event, calculate_account_state)?;
+        for event in native_events.iter().skip(1) {
+            account.apply(event.clone());
+        }
+        Ok(account)
+    }
+
+    #[pyo3(name = "to_dict")]
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let dict = PyDict::new(py);
+        dict.set_item("calculate_account_state", self.calculate_account_state)?;
+        let events_list: PyResult<Vec<PyObject>> =
+            self.events.iter().map(|item| item.py_to_dict(py)).collect();
+        dict.set_item("events", events_list.unwrap())?;
+        Ok(dict.into())
     }
 }

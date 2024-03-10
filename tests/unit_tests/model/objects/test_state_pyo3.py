@@ -34,15 +34,16 @@ def test_cash_account_state():
         "balances": [
             {
                 "type": "AccountBalance",
-                "free": "1500000.00 USD",
-                "locked": "25000.00 USD",
-                "total": "1525000.00 USD",
+                "free": "1500000",
+                "locked": "25000",
+                "total": "1525000",
                 "currency": "USD",
             },
         ],
         "event_id": "91762096-b188-49ea-8562-8d8a4cc22ff2",
         "margins": [],
-        "is_reported": True,
+        "reported": True,
+        "info": {},
         "ts_init": 0,
         "ts_event": 0,
     }
@@ -60,23 +61,24 @@ def test_margin_account_state():
         "balances": [
             {
                 "type": "AccountBalance",
-                "free": "1500000.00 USD",
-                "locked": "25000.00 USD",
-                "total": "1525000.00 USD",
+                "free": "1500000",
+                "locked": "25000",
+                "total": "1525000",
                 "currency": "USD",
             },
         ],
         "margins": [
             {
                 "currency": "USD",
-                "initial": "1.00 USD",
+                "initial": "1",
                 "instrument_id": "AUD/USD.SIM",
-                "maintenance": "1.00 USD",
+                "maintenance": "1",
                 "type": "MarginBalance",
             },
         ],
         "event_id": "91762096-b188-49ea-8562-8d8a4cc22ff2",
-        "is_reported": True,
+        "reported": True,
+        "info": {},
         "ts_init": 0,
         "ts_event": 0,
     }

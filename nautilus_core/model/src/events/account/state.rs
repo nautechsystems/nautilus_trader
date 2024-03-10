@@ -40,7 +40,7 @@ pub struct AccountState {
     pub base_currency: Option<Currency>,
     pub balances: Vec<AccountBalance>,
     pub margins: Vec<MarginBalance>,
-    pub is_reported: bool,
+    pub reported: bool,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
@@ -53,7 +53,7 @@ impl AccountState {
         account_type: AccountType,
         balances: Vec<AccountBalance>,
         margins: Vec<MarginBalance>,
-        is_reported: bool,
+        reported: bool,
         event_id: UUID4,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -65,7 +65,7 @@ impl AccountState {
             base_currency,
             balances,
             margins,
-            is_reported,
+            reported,
             event_id,
             ts_event,
             ts_init,
@@ -81,7 +81,7 @@ impl Display for AccountState {
             self.account_id,
             self.account_type,
             self.base_currency.map_or_else(|| "None".to_string(), |base_currency | format!("{}", base_currency.code)),
-            self.is_reported,
+            self.reported,
             self.balances.iter().map(|b| format!("{b}")).collect::<Vec<String>>().join(","),
             self.margins.iter().map(|m| format!("{m}")).collect::<Vec<String>>().join(","),
             self.event_id
@@ -93,7 +93,13 @@ impl PartialEq for AccountState {
     fn eq(&self, other: &Self) -> bool {
         self.account_id == other.account_id
             && self.account_type == other.account_type
+            && self.base_currency == other.base_currency
+            && self.balances == other.balances
+            && self.margins == other.margins
+            && self.reported == other.reported
             && self.event_id == other.event_id
+            && self.ts_event == other.ts_event
+            && self.ts_init == other.ts_init
     }
 }
 

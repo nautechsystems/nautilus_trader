@@ -14,7 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 import pytest
 
+from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.core.nautilus_pyo3 import AccountId
+from nautilus_trader.core.nautilus_pyo3 import CashAccount as CashAccountPyo3
 from nautilus_trader.core.nautilus_pyo3 import Currency
 from nautilus_trader.core.nautilus_pyo3 import LiquiditySide
 from nautilus_trader.core.nautilus_pyo3 import Money
@@ -242,3 +244,10 @@ def test_calculate_commission_fx_taker():
 
     # Assert
     assert result == Money(5294, JPY)
+
+
+def test_pyo3_cython_conversion():
+    account_pyo3 = TestAccountingProviderPyo3.cash_account_million_usd()
+    account_cython = CashAccount.from_dict(account_pyo3.to_dict())
+    account_pyo3_back = CashAccountPyo3.from_dict(CashAccount.to_dict(account_cython))
+    assert account_pyo3 == account_pyo3_back
