@@ -27,7 +27,7 @@ cdef class OrderList:
     order_list_id : OrderListId
         The order list ID.
     orders : list[Order]
-        The order bulk for the list.
+        The contained orders list.
 
     Raises
     ------
