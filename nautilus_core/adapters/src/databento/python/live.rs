@@ -27,6 +27,7 @@ use nautilus_model::{
 };
 use pyo3::prelude::*;
 use time::OffsetDateTime;
+use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
 use super::loader::convert_instrument_to_pyobject;
@@ -48,15 +49,16 @@ pub struct DatabentoLiveClient {
     pub is_running: bool,
     #[pyo3(get)]
     pub is_closed: bool,
-    tx_cmd: std::sync::mpsc::Sender<LiveCommand>,
-    rx_cmd: Option<std::sync::mpsc::Receiver<LiveCommand>>,
+    cmd_tx: mpsc::UnboundedSender<LiveCommand>,
+    cmd_rx: Option<mpsc::UnboundedReceiver<LiveCommand>>,
+    buffer_size: usize,
     publisher_venue_map: IndexMap<u16, Venue>,
     glbx_exchange_map: HashMap<Symbol, Venue>,
 }
 
 impl DatabentoLiveClient {
     async fn process_messages(
-        mut rx: tokio::sync::mpsc::Receiver<LiveMessage>,
+        mut rx: mpsc::Receiver<LiveMessage>,
         callback: PyObject,
         callback_pyo3: PyObject,
     ) -> PyResult<()> {
@@ -84,11 +86,12 @@ impl DatabentoLiveClient {
                 LiveMessage::Error(e) => return Err(to_pyruntime_err(e)),
             };
         }
+        rx.close();
         Ok(())
     }
 
     fn send_command(&self, cmd: LiveCommand) -> PyResult<()> {
-        self.tx_cmd.send(cmd).map_err(to_pyruntime_err)
+        self.cmd_tx.send(cmd).map_err(to_pyruntime_err)
     }
 }
 
@@ -110,13 +113,17 @@ impl DatabentoLiveClient {
             .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
             .collect::<IndexMap<u16, Venue>>();
 
-        let (tx_cmd, rx_cmd) = std::sync::mpsc::channel::<LiveCommand>();
+        let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<LiveCommand>();
+
+        // Hard coded to a reasonable size for now
+        let buffer_size = 100_000;
 
         Ok(Self {
             key,
             dataset,
-            tx_cmd,
-            rx_cmd: Some(rx_cmd),
+            cmd_tx,
+            cmd_rx: Some(cmd_rx),
+            buffer_size,
             is_running: false,
             is_closed: false,
             publisher_venue_map,
@@ -175,18 +182,18 @@ impl DatabentoLiveClient {
         };
         self.is_running = true;
 
-        let (tx_msg, rx_msg) = tokio::sync::mpsc::channel::<LiveMessage>(100_000);
+        let (msg_tx, msg_rx) = mpsc::channel::<LiveMessage>(self.buffer_size);
 
         // Consume the receiver
         // SAFETY: We guard the client from being started more than once with the
         // `is_running` flag, so here it is safe to unwrap the command receiver.
-        let rx_cmd = self.rx_cmd.take().unwrap();
+        let cmd_rx = self.cmd_rx.take().unwrap();
 
         let mut feed_handler = DatabentoFeedHandler::new(
             self.key.clone(),
             self.dataset.clone(),
-            rx_cmd,
-            tx_msg,
+            cmd_rx,
+            msg_tx,
             self.publisher_venue_map.clone(),
             HashMap::new(),
         );
@@ -194,18 +201,23 @@ impl DatabentoLiveClient {
         self.send_command(LiveCommand::Start)?;
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            let feed_handle = tokio::task::spawn(async move { feed_handler.run().await });
-            match Self::process_messages(rx_msg, callback, callback_pyo3).await {
-                Ok(()) => debug!("Message processing completed"),
-                Err(e) => error!("Message processing error: {e}"),
-            }
+            let rt = pyo3_asyncio::tokio::get_runtime();
+            let (feed_handle, proc_handle) = tokio::join!(
+                rt.spawn(async move { feed_handler.run().await }),
+                Self::process_messages(msg_rx, callback, callback_pyo3)
+            );
 
-            match feed_handle.await {
+            match feed_handle {
                 Ok(result) => match result {
                     Ok(()) => info!("Feed handler completed"),
                     Err(e) => error!("Feed handler error: {e}"),
                 },
                 Err(e) => error!("Feed handler error: {e}"),
+            }
+
+            match proc_handle {
+                Ok(()) => debug!("Message processing completed"),
+                Err(e) => error!("Message processing error: {e}"),
             }
 
             Ok(())

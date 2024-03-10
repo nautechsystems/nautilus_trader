@@ -34,7 +34,10 @@ use nautilus_model::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
     instruments::InstrumentType,
 };
-use tokio::time::{timeout, Duration};
+use tokio::{
+    sync::mpsc,
+    time::{timeout, Duration},
+};
 use tracing::{debug, error, info};
 use ustr::Ustr;
 
@@ -73,8 +76,8 @@ pub enum LiveMessage {
 pub struct DatabentoFeedHandler {
     key: String,
     dataset: String,
-    rx: std::sync::mpsc::Receiver<LiveCommand>,
-    tx: tokio::sync::mpsc::Sender<LiveMessage>,
+    cmd_rx: mpsc::UnboundedReceiver<LiveCommand>,
+    msg_tx: mpsc::Sender<LiveMessage>,
     publisher_venue_map: IndexMap<PublisherId, Venue>,
     glbx_exchange_map: HashMap<Symbol, Venue>,
     replay: bool,
@@ -86,16 +89,16 @@ impl DatabentoFeedHandler {
     pub fn new(
         key: String,
         dataset: String,
-        rx: std::sync::mpsc::Receiver<LiveCommand>,
-        tx: tokio::sync::mpsc::Sender<LiveMessage>,
+        rx: mpsc::UnboundedReceiver<LiveCommand>,
+        tx: mpsc::Sender<LiveMessage>,
         publisher_venue_map: IndexMap<PublisherId, Venue>,
         glbx_exchange_map: HashMap<Symbol, Venue>,
     ) -> Self {
         Self {
             key,
             dataset,
-            rx,
-            tx,
+            cmd_rx: rx,
+            msg_tx: tx,
             publisher_venue_map,
             glbx_exchange_map,
             replay: false,
@@ -129,7 +132,7 @@ impl DatabentoFeedHandler {
 
         loop {
             // Check for any commands received
-            if let Ok(cmd) = self.rx.recv() {
+            if let Some(cmd) = self.cmd_rx.recv().await {
                 debug!("Received command: {:?}", cmd);
                 match cmd {
                     LiveCommand::Subscribe(sub) => {
@@ -153,6 +156,7 @@ impl DatabentoFeedHandler {
                             client.close().await.map_err(to_pyruntime_err)?;
                             debug!("Closed");
                         }
+                        self.cmd_rx.close();
                         return Ok(());
                     }
                 }
@@ -287,9 +291,16 @@ impl DatabentoFeedHandler {
     }
 
     async fn send_msg(&mut self, msg: LiveMessage) {
-        match self.tx.send(msg).await {
+        match self.msg_tx.try_send(msg) {
             Ok(()) => {}
-            Err(e) => error!("Error sending message: {e:?}"),
+            Err(e) => match e {
+                tokio::sync::mpsc::error::TrySendError::Full(_) => {
+                    error!("Error sending message: channel is full");
+                }
+                tokio::sync::mpsc::error::TrySendError::Closed(_) => {
+                    error!("Error sending message: channel is closed");
+                }
+            },
         }
     }
 }
