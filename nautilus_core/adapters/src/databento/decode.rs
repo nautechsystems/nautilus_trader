@@ -198,13 +198,18 @@ pub fn decode_equity_v1(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
+        msg.ts_recv, // More accurate and reliable timestamp
+        ts_init,
+        None,
+        None,
+        None,
+        None,
         Some(Quantity::new(msg.min_lot_size_round_lot.into(), 0)?),
         None,        // TBD
         None,        // TBD
         None,        // TBD
         None,        // TBD
-        msg.ts_recv, // More accurate and reliable timestamp
-        ts_init,
+
     )
 }
 
@@ -735,13 +740,18 @@ pub fn decode_equity(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
+        msg.ts_recv, // More accurate and reliable timestamp
+        ts_init,
+        None,
+        None,
+        None,
+        None,
         Some(Quantity::new(msg.min_lot_size_round_lot.into(), 0)?),
         None,        // TBD
         None,        // TBD
         None,        // TBD
         None,        // TBD
-        msg.ts_recv, // More accurate and reliable timestamp
-        ts_init,
+
     )
 }
 
