@@ -1224,8 +1224,8 @@ dependencies = [
  "datafusion-common",
  "paste",
  "sqlparser",
- "strum 0.26.1",
- "strum_macros 0.26.1",
+ "strum 0.26.2",
+ "strum_macros 0.26.2",
 ]
 
 [[package]]
@@ -1357,7 +1357,7 @@ dependencies = [
  "pyo3",
  "serde",
  "streaming-iterator",
- "strum 0.26.1",
+ "strum 0.26.2",
  "thiserror",
  "time",
  "tokio",
@@ -2457,7 +2457,7 @@ dependencies = [
  "serde",
  "serde_json",
  "streaming-iterator",
- "strum 0.26.1",
+ "strum 0.26.2",
  "thiserror",
  "time",
  "tokio",
@@ -2496,7 +2496,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
- "strum 0.26.1",
+ "strum 0.26.2",
  "sysinfo",
  "tempfile",
  "tokio",
@@ -2542,7 +2542,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "strum 0.26.1",
+ "strum 0.26.2",
  "thiserror",
  "tracing",
  "ustr",
@@ -2557,7 +2557,7 @@ dependencies = [
  "nautilus-model",
  "pyo3",
  "rstest",
- "strum 0.26.1",
+ "strum 0.26.2",
 ]
 
 [[package]]
@@ -2596,7 +2596,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "strum 0.26.1",
+ "strum 0.26.2",
  "tabled",
  "thiserror",
  "thousands",
@@ -4446,11 +4446,11 @@ checksum = "290d54ea6f91c969195bdbcd7442c8c2a2ba87da8bf60a7ee86a235d4bc1e125"
 
 [[package]]
 name = "strum"
-version = "0.26.1"
+version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "723b93e8addf9aa965ebe2d11da6d7540fa2283fcea14b3371ff055f7ba13f5f"
+checksum = "5d8cec3501a5194c432b2b7976db6b7d10ec95c253208b45f83f7136aa985e29"
 dependencies = [
- "strum_macros 0.26.1",
+ "strum_macros 0.26.2",
 ]
 
 [[package]]
@@ -4468,9 +4468,9 @@ dependencies = [
 
 [[package]]
 name = "strum_macros"
-version = "0.26.1"
+version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a3417fc93d76740d974a01654a09777cb500428cc874ca9f45edfe0c4d4cd18"
+checksum = "c6cf59daf282c0a494ba14fd21610a0325f9f90ec9d1231dea26bcb1d696c946"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -5157,9 +5157,9 @@ checksum = "830b7e5d4d90034032940e4ace0d9a9a057e7a45cd94e6c007832e39edb82f6d"
 
 [[package]]
 name = "value-bag"
-version = "1.7.0"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "126e423afe2dd9ac52142e7e9d5ce4135d7e13776c529d27fd6bc49f19e3280b"
+checksum = "8fec26a25bd6fca441cdd0f769fd7f891bae119f996de31f86a5eddccef54c1d"
 
 [[package]]
 name = "vcpkg"
@@ -5304,9 +5304,9 @@ dependencies = [
 
 [[package]]
 name = "whoami"
-version = "1.5.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fec781d48b41f8163426ed18e8fc2864c12937df9ce54c88ede7bd47270893e"
+checksum = "a44ab49fad634e88f55bf8f9bb3abd2f27d7204172a112c7c9987e01c1c94ea9"
 dependencies = [
  "redox_syscall",
  "wasite",
