@@ -38,7 +38,7 @@ use tokio::{
     sync::mpsc,
     time::{timeout, Duration},
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, trace};
 use ustr::Ustr;
 
 use super::{
@@ -152,11 +152,12 @@ impl DatabentoFeedHandler {
                         debug!("Started");
                     }
                     LiveCommand::Close => {
+                        self.cmd_rx.close();
+                        debug!("Closed command receiver");
                         if running {
                             client.close().await.map_err(to_pyruntime_err)?;
-                            debug!("Closed");
+                            debug!("Closed client");
                         }
-                        self.cmd_rx.close();
                         return Ok(());
                     }
                 }
@@ -166,6 +167,7 @@ impl DatabentoFeedHandler {
                 continue;
             };
 
+            // Await the next record with a timeout
             let result = timeout(timeout_duration, client.next_record()).await;
             let record_opt = match result {
                 Ok(record_opt) => record_opt,
@@ -291,16 +293,10 @@ impl DatabentoFeedHandler {
     }
 
     async fn send_msg(&mut self, msg: LiveMessage) {
-        match self.msg_tx.try_send(msg) {
+        trace!("Sending {:?}", msg);
+        match self.msg_tx.send(msg).await {
             Ok(()) => {}
-            Err(e) => match e {
-                tokio::sync::mpsc::error::TrySendError::Full(_) => {
-                    error!("Error sending message: channel is full");
-                }
-                tokio::sync::mpsc::error::TrySendError::Closed(_) => {
-                    error!("Error sending message: channel is closed");
-                }
-            },
+            Err(e) => error!("Error sending message: {e}"),
         }
     }
 }

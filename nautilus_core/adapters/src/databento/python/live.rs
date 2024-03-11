@@ -28,7 +28,7 @@ use nautilus_model::{
 use pyo3::prelude::*;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
 use super::loader::convert_instrument_to_pyobject;
 use crate::databento::{
@@ -87,6 +87,8 @@ impl DatabentoLiveClient {
             };
         }
         rx.close();
+        debug!("Closed message receiver");
+
         Ok(())
     }
 
@@ -201,23 +203,19 @@ impl DatabentoLiveClient {
         self.send_command(LiveCommand::Start)?;
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            let rt = pyo3_asyncio::tokio::get_runtime();
-            let (feed_handle, proc_handle) = tokio::join!(
-                rt.spawn(async move { feed_handler.run().await }),
-                Self::process_messages(msg_rx, callback, callback_pyo3)
+            let (proc_handle, feed_handle) = tokio::join!(
+                Self::process_messages(msg_rx, callback, callback_pyo3),
+                feed_handler.run(),
             );
-
-            match feed_handle {
-                Ok(result) => match result {
-                    Ok(()) => info!("Feed handler completed"),
-                    Err(e) => error!("Feed handler error: {e}"),
-                },
-                Err(e) => error!("Feed handler error: {e}"),
-            }
 
             match proc_handle {
                 Ok(()) => debug!("Message processing completed"),
                 Err(e) => error!("Message processing error: {e}"),
+            }
+
+            match feed_handle {
+                Ok(()) => debug!("Feed handler completed"),
+                Err(e) => error!("Feed handler error: {e}"),
             }
 
             Ok(())
