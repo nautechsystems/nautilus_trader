@@ -47,6 +47,7 @@ pub struct OrderMatchingCore {
 }
 
 impl OrderMatchingCore {
+    #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         price_increment: Price,
