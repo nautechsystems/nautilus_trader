@@ -44,9 +44,9 @@ def test_account_balance_to_from_dict():
     assert account_balance == AccountBalance.from_dict(result_dict)
     assert result_dict == {
         "type": "AccountBalance",
-        "free": "1500000.00 USD",
-        "locked": "25000.00 USD",
-        "total": "1525000.00 USD",
+        "free": "1500000.00",
+        "locked": "25000.00",
+        "total": "1525000.00",
         "currency": "USD",
     }
 
@@ -78,8 +78,8 @@ def test_margin_balance_to_from_dict():
     assert margin_balance == MarginBalance.from_dict(result_dict)
     assert result_dict == {
         "type": "MarginBalance",
-        "initial": "1.00 USD",
-        "maintenance": "1.00 USD",
+        "initial": "1.00",
+        "maintenance": "1.00",
         "instrument_id": "AUD/USD.SIM",
         "currency": "USD",
     }
