@@ -66,6 +66,7 @@ pub enum LiveMessage {
     Imbalance(DatabentoImbalance),
     Statistics(DatabentoStatistics),
     Error(anyhow::Error),
+    Close,
 }
 
 /// Handles a raw TCP data feed from the Databento LSG for a single dataset.
@@ -116,13 +117,25 @@ impl DatabentoFeedHandler {
         let mut buffered_deltas: HashMap<InstrumentId, Vec<OrderBookDelta>> = HashMap::new();
         let mut deltas_count = 0_u64;
 
-        let mut client = databento::LiveClient::builder()
-            .key(self.key.clone())?
-            .dataset(self.dataset.clone())
-            .upgrade_policy(VersionUpgradePolicy::Upgrade)
-            .build()
-            .await
-            .map_err(to_pyruntime_err)?;
+        debug!("Connecting inner client...");
+        let result = timeout(
+            Duration::from_secs(5), // Hard coded timeout for now
+            databento::LiveClient::builder()
+                .key(self.key.clone())?
+                .dataset(self.dataset.clone())
+                .upgrade_policy(VersionUpgradePolicy::Upgrade)
+                .build(),
+        )
+        .await?;
+        info!("Inner client connected");
+
+        let mut client = match result {
+            Ok(client) => client,
+            Err(_) => {
+                self.cmd_rx.close();
+                return Err(anyhow!("Timeout connecting to LSG"));
+            }
+        };
 
         // Timeout awaiting the next record before checking for a command
         let timeout_duration = Duration::from_millis(1);
@@ -152,11 +165,12 @@ impl DatabentoFeedHandler {
                         debug!("Started");
                     }
                     LiveCommand::Close => {
+                        self.msg_tx.send(LiveMessage::Close).await?;
                         self.cmd_rx.close();
                         debug!("Closed command receiver");
                         if running {
                             client.close().await.map_err(to_pyruntime_err)?;
-                            debug!("Closed client");
+                            debug!("Closed inner client");
                         }
                         return Ok(());
                     }
