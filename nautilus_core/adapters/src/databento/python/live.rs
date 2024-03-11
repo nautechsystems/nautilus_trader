@@ -179,10 +179,10 @@ impl DatabentoLiveClient {
         callback_pyo3: PyObject,
     ) -> PyResult<&'py PyAny> {
         if self.is_closed {
-            return Err(to_pyruntime_err("Client is already closed"));
+            return Err(to_pyruntime_err("Client already closed"));
         };
         if self.is_running {
-            return Err(to_pyruntime_err("Client is already running"));
+            return Err(to_pyruntime_err("Client already running"));
         };
 
         debug!("Starting client");
@@ -230,10 +230,10 @@ impl DatabentoLiveClient {
     #[pyo3(name = "close")]
     fn py_close(&mut self) -> PyResult<()> {
         if !self.is_running {
-            return Err(to_pyruntime_err("Client was never started"));
+            return Err(to_pyruntime_err("Client never started"));
         };
         if self.is_closed {
-            return Err(to_pyruntime_err("Client is already closed"));
+            return Err(to_pyruntime_err("Client already closed"));
         };
 
         debug!("Closing client");
