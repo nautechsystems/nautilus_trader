@@ -28,7 +28,7 @@ use nautilus_model::{
 use pyo3::prelude::*;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
-use tracing::{debug, error};
+use tracing::{debug, error, trace};
 
 use super::loader::convert_instrument_to_pyobject;
 use crate::databento::{
@@ -65,6 +65,7 @@ impl DatabentoLiveClient {
         debug!("Processing messages...");
         // Continue to process messages until channel is hung up
         while let Some(msg) = rx.recv().await {
+            trace!("Received message: {:?}", msg);
             match msg {
                 LiveMessage::Data(data) => Python::with_gil(|py| {
                     let py_obj = data_to_pycapsule(py, data);
@@ -83,6 +84,7 @@ impl DatabentoLiveClient {
                     let py_obj = data.into_py(py);
                     call_python(py, &callback_pyo3, py_obj);
                 }),
+                LiveMessage::Close => break,
                 LiveMessage::Error(e) => return Err(to_pyruntime_err(e)),
             };
         }
@@ -182,6 +184,9 @@ impl DatabentoLiveClient {
         if self.is_running {
             return Err(to_pyruntime_err("Client is already running"));
         };
+
+        debug!("Starting client");
+
         self.is_running = true;
 
         let (msg_tx, msg_rx) = mpsc::channel::<LiveMessage>(self.buffer_size);
@@ -209,8 +214,8 @@ impl DatabentoLiveClient {
             );
 
             match proc_handle {
-                Ok(()) => debug!("Message processing completed"),
-                Err(e) => error!("Message processing error: {e}"),
+                Ok(()) => debug!("Message processor completed"),
+                Err(e) => error!("Message processor error: {e}"),
             }
 
             match feed_handle {
@@ -230,6 +235,8 @@ impl DatabentoLiveClient {
         if self.is_closed {
             return Err(to_pyruntime_err("Client is already closed"));
         };
+
+        debug!("Closing client");
 
         self.send_command(LiveCommand::Close)?;
 
