@@ -10,6 +10,10 @@ documentation.workspace = true
 name = "nautilus_adapters"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
+[[bin]]
+name = "sandbox"
+path = "src/databento/bin/sandbox.rs"
+
 [dependencies]
 nautilus-common = { path = "../common" }
 nautilus-core = { path = "../core" }

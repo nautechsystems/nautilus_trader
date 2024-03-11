@@ -44,8 +44,7 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 instrument_ids = [
-    InstrumentId.from_str("ESH4.XCME"),
-    # InstrumentId.from_str("ESM4.XCME"),
+    InstrumentId.from_str("ESM4.XCME"),
     # InstrumentId.from_str("ESU4.XCME"),
     # InstrumentId.from_str("AAPL.XNAS"),
 ]
@@ -84,7 +83,7 @@ config_node = TradingNodeConfig(
             http_gateway=None,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_ids=instrument_ids,
-            # parent_symbols={"GLBX.MDP3": {"ES.FUT", "ES.OPT"}},
+            parent_symbols={"GLBX.MDP3": {"ES.FUT", "ES.OPT"}},
         ),
     },
     timeout_connection=10.0,
@@ -137,6 +136,8 @@ class DataSubscriber(Strategy):
 
         """
         for instrument_id in self.instrument_ids:
+            # from nautilus_trader.model.enums import BookType
+            #
             # self.subscribe_order_book_deltas(
             #     instrument_id=instrument_id,
             #     book_type=BookType.L3_MBO,

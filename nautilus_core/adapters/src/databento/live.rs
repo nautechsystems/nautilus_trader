@@ -35,7 +35,7 @@ use nautilus_model::{
     instruments::InstrumentType,
 };
 use tokio::{
-    sync::mpsc,
+    sync::mpsc::{self, error::TryRecvError},
     time::{timeout, Duration},
 };
 use tracing::{debug, error, info, trace};
@@ -117,7 +117,6 @@ impl DatabentoFeedHandler {
         let mut buffered_deltas: HashMap<InstrumentId, Vec<OrderBookDelta>> = HashMap::new();
         let mut deltas_count = 0_u64;
 
-        debug!("Connecting inner client...");
         let result = timeout(
             Duration::from_secs(5), // Hard coded timeout for now
             databento::LiveClient::builder()
@@ -127,11 +126,12 @@ impl DatabentoFeedHandler {
                 .build(),
         )
         .await?;
-        info!("Inner client connected");
+        info!("Connected");
 
         let mut client = match result {
             Ok(client) => client,
             Err(_) => {
+                self.msg_tx.send(LiveMessage::Close).await?;
                 self.cmd_rx.close();
                 return Err(anyhow!("Timeout connecting to LSG"));
             }
@@ -144,36 +144,40 @@ impl DatabentoFeedHandler {
         let mut running = false;
 
         loop {
-            // Check for any commands received
-            if let Some(cmd) = self.cmd_rx.recv().await {
-                debug!("Received command: {:?}", cmd);
-                match cmd {
-                    LiveCommand::Subscribe(sub) => {
-                        if !self.replay & sub.start.is_some() {
-                            self.replay = true;
+            match self.cmd_rx.try_recv() {
+                Ok(cmd) => {
+                    debug!("Received command: {:?}", cmd);
+                    match cmd {
+                        LiveCommand::Subscribe(sub) => {
+                            if !self.replay & sub.start.is_some() {
+                                self.replay = true;
+                            }
+                            client.subscribe(&sub).await.map_err(to_pyruntime_err)?;
                         }
-                        client.subscribe(&sub).await.map_err(to_pyruntime_err)?;
-                    }
-                    LiveCommand::UpdateGlbx(map) => self.glbx_exchange_map = map,
-                    LiveCommand::Start => {
-                        buffering_start = match self.replay {
-                            true => Some(clock.get_time_ns()),
-                            false => None,
-                        };
-                        client.start().await.map_err(to_pyruntime_err)?;
-                        running = true;
-                        debug!("Started");
-                    }
-                    LiveCommand::Close => {
-                        self.msg_tx.send(LiveMessage::Close).await?;
-                        self.cmd_rx.close();
-                        debug!("Closed command receiver");
-                        if running {
-                            client.close().await.map_err(to_pyruntime_err)?;
-                            debug!("Closed inner client");
+                        LiveCommand::UpdateGlbx(map) => self.glbx_exchange_map = map,
+                        LiveCommand::Start => {
+                            buffering_start = match self.replay {
+                                true => Some(clock.get_time_ns()),
+                                false => None,
+                            };
+                            client.start().await.map_err(to_pyruntime_err)?;
+                            running = true;
+                            debug!("Started");
                         }
-                        return Ok(());
+                        LiveCommand::Close => {
+                            self.msg_tx.send(LiveMessage::Close).await?;
+                            if running {
+                                client.close().await.map_err(to_pyruntime_err)?;
+                                debug!("Closed inner client");
+                            }
+                            break;
+                        }
                     }
+                }
+                Err(TryRecvError::Empty) => {} // No command yet
+                Err(TryRecvError::Disconnected) => {
+                    debug!("Disconnected");
+                    break;
                 }
             }
 
@@ -262,9 +266,12 @@ impl DatabentoFeedHandler {
 
                         // TODO: Temporary for debugging
                         deltas_count += 1;
-                        println!(
+                        trace!(
                             "Buffering delta: {} {} {:?} flags={}",
-                            deltas_count, delta.ts_event, buffering_start, msg.flags,
+                            deltas_count,
+                            delta.ts_event,
+                            buffering_start,
+                            msg.flags,
                         );
 
                         // Check if last message in the packet
@@ -303,11 +310,14 @@ impl DatabentoFeedHandler {
             }
         }
 
+        self.cmd_rx.close();
+        debug!("Closed command receiver");
+
         Ok(())
     }
 
     async fn send_msg(&mut self, msg: LiveMessage) {
-        trace!("Sending {:?}", msg);
+        trace!("Sending {msg:?}");
         match self.msg_tx.send(msg).await {
             Ok(()) => {}
             Err(e) => error!("Error sending message: {e}"),
@@ -316,11 +326,11 @@ impl DatabentoFeedHandler {
 }
 
 fn handle_error_msg(msg: &dbn::ErrorMsg) {
-    error!("{:?}", msg);
+    error!("{msg:?}");
 }
 
 fn handle_system_msg(msg: &dbn::SystemMsg) {
-    info!("{:?}", msg);
+    info!("{msg:?}");
 }
 
 fn handle_symbol_mapping_msg(
