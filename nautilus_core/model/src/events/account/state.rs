@@ -93,13 +93,7 @@ impl PartialEq for AccountState {
     fn eq(&self, other: &Self) -> bool {
         self.account_id == other.account_id
             && self.account_type == other.account_type
-            && self.base_currency == other.base_currency
-            && self.balances == other.balances
-            && self.margins == other.margins
-            && self.reported == other.reported
             && self.event_id == other.event_id
-            && self.ts_event == other.ts_event
-            && self.ts_init == other.ts_init
     }
 }
 
