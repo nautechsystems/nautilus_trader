@@ -155,7 +155,7 @@ class InteractiveBrokersClient(
         message reader, and internal message queue processing tasks.
 
         """
-        self._log.info(f"Starting InteractiveBrokersClient: {self._client_id}...")
+        self._log.info(f"Starting InteractiveBrokersClient ({self._client_id})...")
         self._loop.run_until_complete(self._connect())
         self._start_tws_incoming_msg_reader()
         self._start_internal_msg_queue()
@@ -187,7 +187,7 @@ class InteractiveBrokersClient(
         """
         Stop the client and cancel running tasks.
         """
-        self._log.info(f"Stopping InteractiveBrokersClient {self._client_id}...")
+        self._log.info(f"Stopping InteractiveBrokersClient ({self._client_id})...")
         # Cancel tasks
         for task in [
             self._connection_watchdog_task,
@@ -208,7 +208,7 @@ class InteractiveBrokersClient(
         """
         Reset the client and restart it.
         """
-        self._log.info(f"Resetting InteractiveBrokersClient: {self._client_id}...")
+        self._log.info(f"Resetting InteractiveBrokersClient ({self._client_id})...")
         self._stop()
         self._start()
 
@@ -216,15 +216,15 @@ class InteractiveBrokersClient(
         """
         Resume the client and resubscribe all subscriptions.
         """
-        self._log.info(f"Resuming InteractiveBrokersClient: {self._client_id}...")
+        self._log.info(f"Resuming InteractiveBrokersClient ({self._client_id})...")
         self._is_client_ready.set()
-        self._loop.run_until_complete(self._resubscribe_all())
+        asyncio.create_task(self._resubscribe_all())
 
     def _degrade(self) -> None:
         """
         Degrade the client when connectivity is lost.
         """
-        self._log.info(f"Degrading InteractiveBrokersClient: {self._client_id}...")
+        self._log.info(f"Degrading InteractiveBrokersClient ({self._client_id})...")
         self._is_client_ready.clear()
         self._account_ids = set()
 
@@ -236,11 +236,11 @@ class InteractiveBrokersClient(
         for subscription in self._subscriptions.get_all():
             try:
                 subscription.cancel()
-                await subscription.handle()
+                subscription.handle()
             except Exception as e:
                 # The exception is handled, so won't be further raised
                 self._log.exception(
-                    "Failed to cancel and restart subscription: {subscription}",
+                    f"Failed to cancel and restart subscription: {subscription}",
                     e,
                 )
 
@@ -255,7 +255,7 @@ class InteractiveBrokersClient(
 
         """
         try:
-            if not all([self._is_ib_connected.is_set(), self._is_client_ready.is_set()]):
+            if not self._is_ib_connected.is_set() or not self._is_client_ready.is_set():
                 await asyncio.wait_for(self._is_client_ready.wait(), timeout)
         except asyncio.TimeoutError as e:
             self._log.error(f"Client is not ready. {e}")
@@ -291,6 +291,7 @@ class InteractiveBrokersClient(
         """
         if self.is_running:
             self._degrade()
+        self._eclient.disconnect()
         self._log.debug("`_is_ib_connected` unset by `_handle_disconnected`.", LogColor.BLUE)
         self._is_ib_connected.clear()
         await self._handle_reconnect()
@@ -418,7 +419,11 @@ class InteractiveBrokersClient(
         try:
             return await asyncio.wait_for(request.future, timeout)
         except asyncio.TimeoutError as e:
-            self._log.info(f"Request timed out for {request}")
+            self._log.warning(f"Request timed out for {request}. Ending request.")
+            self._end_request(request.req_id, success=False, exception=e)
+            return None
+        except ConnectionError as e:
+            self._log.error(f"Connection error during {request}. Ending request.")
             self._end_request(request.req_id, success=False, exception=e)
             return None
 
@@ -462,13 +467,13 @@ class InteractiveBrokersClient(
         buf = b""
         try:
             while True:
-                await self.wait_until_ready()
                 if not self._eclient.conn or not self._eclient.conn.isConnected():
                     self._log.debug(
                         "`_is_ib_connected` unset by `_run_tws_incoming_msg_reader`.",
                         LogColor.BLUE,
                     )
                     self._is_ib_connected.clear()
+                    await asyncio.sleep(1)
                     continue
                 data = await self._loop.run_in_executor(None, self._eclient.conn.recvMsg)
                 buf += data
