@@ -158,7 +158,7 @@ impl DerefMut for CashAccount {
 
 impl PartialEq for CashAccount {
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id && self.events == other.events
+        self.id == other.id
     }
 }
 
