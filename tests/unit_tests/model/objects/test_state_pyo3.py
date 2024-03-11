@@ -34,9 +34,9 @@ def test_cash_account_state():
         "balances": [
             {
                 "type": "AccountBalance",
-                "free": "1500000",
-                "locked": "25000",
-                "total": "1525000",
+                "free": "1500000.00",
+                "locked": "25000.00",
+                "total": "1525000.00",
                 "currency": "USD",
             },
         ],
@@ -61,18 +61,18 @@ def test_margin_account_state():
         "balances": [
             {
                 "type": "AccountBalance",
-                "free": "1500000",
-                "locked": "25000",
-                "total": "1525000",
+                "free": "1500000.00",
+                "locked": "25000.00",
+                "total": "1525000.00",
                 "currency": "USD",
             },
         ],
         "margins": [
             {
                 "currency": "USD",
-                "initial": "1",
+                "initial": "1.00",
                 "instrument_id": "AUD/USD.SIM",
-                "maintenance": "1",
+                "maintenance": "1.00",
                 "type": "MarginBalance",
             },
         ],

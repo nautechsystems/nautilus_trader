@@ -86,9 +86,9 @@ impl AccountBalance {
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(AccountBalance))?;
-        dict.set_item("total", self.total.as_f64().to_string())?;
-        dict.set_item("locked", self.locked.as_f64().to_string())?;
-        dict.set_item("free", self.free.as_f64().to_string())?;
+        dict.set_item("total", format!("{:.*}",self.total.currency.precision as usize,self.total.as_f64()))?;
+        dict.set_item("locked", format!("{:.*}",self.locked.currency.precision as usize,self.locked.as_f64()))?;
+        dict.set_item("free", format!("{:.*}",self.free.currency.precision as usize,self.free.as_f64()))?;
         dict.set_item("currency", self.currency.code.to_string())?;
         Ok(dict.into())
     }
@@ -152,8 +152,8 @@ impl MarginBalance {
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(MarginBalance))?;
-        dict.set_item("initial", self.initial.as_f64().to_string())?;
-        dict.set_item("maintenance", self.maintenance.as_f64().to_string())?;
+        dict.set_item("initial", format!("{:.*}",self.initial.currency.precision as usize,self.initial.as_f64()))?;
+        dict.set_item("maintenance", format!("{:.*}",self.maintenance.currency.precision as usize,self.maintenance.as_f64()))?;
         dict.set_item("currency", self.currency.code.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;
         Ok(dict.into())
