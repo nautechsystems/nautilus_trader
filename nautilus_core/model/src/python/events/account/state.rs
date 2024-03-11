@@ -99,7 +99,7 @@ impl AccountState {
             self.account_type,
             self.base_currency.map_or_else(|| "None".to_string(), |base_currency | format!("{}", base_currency.code)),            self.balances.iter().map(|b| format!("{b}")).collect::<Vec<String>>().join(","),
             self.margins.iter().map(|m| format!("{m}")).collect::<Vec<String>>().join(","),
-            self.reported,
+            self.is_reported,
             self.event_id,
         )
     }
@@ -112,7 +112,7 @@ impl AccountState {
             self.account_type,
             self.base_currency.map_or_else(|| "None".to_string(), |base_currency | format!("{}", base_currency.code)),            self.balances.iter().map(|b| format!("{b}")).collect::<Vec<String>>().join(","),
             self.margins.iter().map(|m| format!("{m}")).collect::<Vec<String>>().join(","),
-            self.reported,
+            self.is_reported,
             self.event_id,
         )
     }
@@ -179,7 +179,7 @@ impl AccountState {
             self.margins.iter().map(|m| m.py_to_dict(py)).collect();
         dict.set_item("balances", balances_dict?)?;
         dict.set_item("margins", margins_dict?)?;
-        dict.set_item("reported", self.reported)?;
+        dict.set_item("reported", self.is_reported)?;
         dict.set_item("event_id", self.event_id.to_string())?;
         dict.set_item("info", PyDict::new(py))?;
         dict.set_item("ts_event", self.ts_event.to_u64())?;

@@ -29,7 +29,7 @@ use nautilus_model::{
     position::Position,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
-use pyo3::types::{PyDict};
+use pyo3::types::PyDict;
 use pyo3::{basic::CompareOp, prelude::*};
 
 use crate::account::{cash::CashAccount, Account};
