@@ -14,36 +14,53 @@
 // -------------------------------------------------------------------------------------------------
 
 use crate::account::cash::CashAccount;
+use crate::account::margin::MarginAccount;
 use crate::account::Account;
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::events::account::state::AccountState;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-#[pyclass]
-pub struct AccountingTransformer {}
-
-#[pymethods]
-impl AccountingTransformer {
-    #[staticmethod]
-    fn cash_account_from_account_events(
-        py: Python<'_>,
-        events: Vec<Py<PyDict>>,
-        calculate_account_state: bool,
-    ) -> PyResult<CashAccount> {
-        let account_events = events
-            .into_iter()
-            .map(|obj| AccountState::py_from_dict(py, obj))
-            .collect::<PyResult<Vec<AccountState>>>()
-            .unwrap();
-        if account_events.is_empty() {
-            return Err(to_pyvalue_err("No account events"));
-        }
-        let init_event = account_events[0].clone();
-        let mut cash_account = CashAccount::new(init_event, calculate_account_state)?;
-        for event in account_events.iter().skip(1) {
-            cash_account.apply(event.clone());
-        }
-        Ok(cash_account)
+#[pyfunction]
+pub fn cash_account_from_account_events(
+    py: Python<'_>,
+    events: Vec<Py<PyDict>>,
+    calculate_account_state: bool,
+) -> PyResult<CashAccount> {
+    let account_events = events
+        .into_iter()
+        .map(|obj| AccountState::py_from_dict(py, obj))
+        .collect::<PyResult<Vec<AccountState>>>()
+        .unwrap();
+    if account_events.is_empty() {
+        return Err(to_pyvalue_err("No account events"));
     }
+    let init_event = account_events[0].clone();
+    let mut cash_account = CashAccount::new(init_event, calculate_account_state)?;
+    for event in account_events.iter().skip(1) {
+        cash_account.apply(event.clone());
+    }
+    Ok(cash_account)
+}
+
+#[pyfunction]
+pub fn margin_account_from_account_events(
+    py: Python<'_>,
+    events: Vec<Py<PyDict>>,
+    calculate_account_state: bool,
+) -> PyResult<MarginAccount> {
+    let account_events = events
+        .into_iter()
+        .map(|obj| AccountState::py_from_dict(py, obj))
+        .collect::<PyResult<Vec<AccountState>>>()
+        .unwrap();
+    if account_events.is_empty() {
+        return Err(to_pyvalue_err("No account events"));
+    }
+    let init_event = account_events[0].clone();
+    let mut margin_account = MarginAccount::new(init_event, calculate_account_state)?;
+    for event in account_events.iter().skip(1) {
+        margin_account.apply(event.clone());
+    }
+    Ok(margin_account)
 }
