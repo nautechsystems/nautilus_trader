@@ -19,6 +19,7 @@ use std::{
 };
 
 use anyhow::Result;
+use rust_decimal::Decimal;
 use nautilus_core::time::UnixNanos;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -45,13 +46,17 @@ pub struct Equity {
     pub currency: Currency,
     pub price_precision: u8,
     pub price_increment: Price,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+    pub maker_fee: Decimal,
+    pub taker_fee: Decimal,
+    pub margin_init: Decimal,
+    pub margin_maint: Decimal,
     pub lot_size: Option<Quantity>,
     pub max_quantity: Option<Quantity>,
     pub min_quantity: Option<Quantity>,
     pub max_price: Option<Price>,
     pub min_price: Option<Price>,
-    pub ts_event: UnixNanos,
-    pub ts_init: UnixNanos,
 }
 
 impl Equity {
@@ -63,13 +68,17 @@ impl Equity {
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
         min_price: Option<Price>,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
     ) -> Result<Self> {
         Ok(Self {
             id,
@@ -78,13 +87,17 @@ impl Equity {
             currency,
             price_precision,
             price_increment,
+            ts_event,
+            ts_init,
+            maker_fee: maker_fee.unwrap_or(0.into()),
+            taker_fee: taker_fee.unwrap_or(0.into()),
+            margin_init: margin_init.unwrap_or(0.into()),
+            margin_maint: margin_maint.unwrap_or(0.into()),
             lot_size,
             max_quantity,
             min_quantity,
             max_price,
             min_price,
-            ts_event,
-            ts_init,
         })
     }
 }

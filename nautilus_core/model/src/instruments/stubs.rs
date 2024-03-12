@@ -278,13 +278,17 @@ pub fn equity_aapl() -> Equity {
         Currency::from("USD"),
         2,
         Price::from("0.01"),
-        Some(Quantity::from(1)),
-        None,
-        None,
-        None,
-        None,
         0,
         0,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
     )
     .unwrap()
 }

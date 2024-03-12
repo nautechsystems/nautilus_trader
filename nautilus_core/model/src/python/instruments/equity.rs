@@ -23,6 +23,7 @@ use nautilus_core::{
     time::UnixNanos,
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
@@ -43,6 +44,10 @@ impl Equity {
         price_increment: Price,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
         isin: Option<String>,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
@@ -57,13 +62,17 @@ impl Equity {
             currency,
             price_precision,
             price_increment,
+            ts_event,
+            ts_init,
+            maker_fee,
+            taker_fee,
+            margin_init,
+            margin_maint,
             lot_size,
             max_quantity,
             min_quantity,
             max_price,
             min_price,
-            ts_event,
-            ts_init,
         )
         .map_err(to_pyvalue_err)
     }
@@ -185,6 +194,10 @@ impl Equity {
         dict.set_item("price_increment", self.price_increment.to_string())?;
         dict.set_item("ts_event", self.ts_event)?;
         dict.set_item("ts_init", self.ts_init)?;
+        dict.set_item("maker_fee", self.maker_fee.to_string())?;
+        dict.set_item("taker_fee",self.taker_fee.to_string())?;
+        dict.set_item("margin_init", self.margin_init.to_string())?;
+        dict.set_item("margin_maint",self.margin_maint.to_string())?;
         match &self.isin {
             Some(value) => dict.set_item("isin", value.to_string())?,
             None => dict.set_item("isin", py.None())?,
