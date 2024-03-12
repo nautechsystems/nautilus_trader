@@ -194,6 +194,30 @@ impl CurrencyPair {
     }
 
     #[getter]
+    #[pyo3(name = "maker_fee")]
+    fn py_maker_fee(&self) -> Decimal {
+        self.maker_fee
+    }
+
+    #[getter]
+    #[pyo3(name = "taker_fee")]
+    fn py_taker_fee(&self) -> Decimal {
+        self.taker_fee
+    }
+
+    #[getter]
+    #[pyo3(name = "margin_maint")]
+    fn py_margin_maint(&self) -> Decimal {
+        self.margin_maint
+    }
+
+    #[getter]
+    #[pyo3(name = "margin_init")]
+    fn py_margin_init(&self) -> Decimal {
+        self.margin_init
+    }
+
+    #[getter]
     #[pyo3(name = "ts_event")]
     fn py_ts_event(&self) -> UnixNanos {
         self.ts_event
@@ -223,10 +247,11 @@ impl CurrencyPair {
         dict.set_item("size_precision", self.size_precision)?;
         dict.set_item("price_increment", self.price_increment.to_string())?;
         dict.set_item("size_increment", self.size_increment.to_string())?;
-        dict.set_item("maker_fee", self.maker_fee.to_f64())?;
-        dict.set_item("taker_fee", self.taker_fee.to_f64())?;
-        dict.set_item("margin_init", self.margin_init.to_f64())?;
-        dict.set_item("margin_maint", self.margin_maint.to_f64())?;
+        dict.set_item("maker_fee", self.maker_fee.to_string())?;
+        dict.set_item("taker_fee", self.taker_fee.to_string())?;
+        dict.set_item("margin_init", self.margin_init.to_string())?;
+        dict.set_item("margin_maint", self.margin_maint.to_string())?;
+        dict.set_item("info",PyDict::new(py))?;
         dict.set_item("ts_event", self.ts_event)?;
         dict.set_item("ts_init", self.ts_init)?;
         match self.lot_size {

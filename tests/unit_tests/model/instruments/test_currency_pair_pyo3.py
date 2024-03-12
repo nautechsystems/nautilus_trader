@@ -13,7 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.nautilus_pyo3 import CurrencyPair
+from nautilus_trader.core.nautilus_pyo3 import CurrencyPair as CurrencyPairPyo3
+
+from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
@@ -32,7 +34,7 @@ def test_hash():
 
 def test_to_dict():
     result = _BTCUSDT.to_dict()
-    assert CurrencyPair.from_dict(result) == _BTCUSDT
+    assert CurrencyPairPyo3.from_dict(result) == _BTCUSDT
     assert result == {
         "type": "CurrencyPair",
         "id": "BTCUSDT.BINANCE",
@@ -50,10 +52,21 @@ def test_to_dict():
         "min_notional": None,
         "min_price": "0.01",
         "max_price": "1000000",
-        "maker_fee": 0.001,
-        "margin_init": 0.05,
-        "margin_maint": 0.025,
-        "taker_fee": 0.001,
+        "maker_fee": "0.001",
+        "margin_init": "0.0500",
+        "margin_maint": "0.0250",
+        "taker_fee": "0.001",
+        "info": {},
         "ts_event": 0,
         "ts_init": 0,
     }
+
+
+def test_pyo3_cython_conversion():
+    currency_pair_pyo3 = TestInstrumentProviderPyo3.btcusdt_binance()
+    currency_pair_pyo3_dict = currency_pair_pyo3.to_dict()
+    currency_pair_cython = CurrencyPair.from_dict(currency_pair_pyo3_dict)
+    currency_pair_cython_dict = CurrencyPair.to_dict(currency_pair_cython)
+    currency_pair_pyo3_back = CurrencyPairPyo3.from_dict(currency_pair_cython_dict)
+    assert currency_pair_cython_dict == currency_pair_pyo3_dict
+    assert currency_pair_pyo3 == currency_pair_pyo3_back
