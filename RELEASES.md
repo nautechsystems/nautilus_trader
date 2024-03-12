@@ -23,6 +23,7 @@ None
 - Fixed logging `StdoutWriter` from also writing error logs (writers were duplicating error logs)
 - Fixed `BinanceWebSocketClient` to [new specification](https://binance-docs.github.io/apidocs/futures/en/#websocket-market-streams) which requires responding to pings with a pong containing the pings payload
 - Fixed Binance Futures `AccountBalance` calculations based on wallet and available balance
+- Fixed `ExecAlgorithm` circular import issue for installed wheels (importing from `execution.algorithm` was a circular import)
 
 ---
 
