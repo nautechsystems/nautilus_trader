@@ -113,7 +113,6 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
                 break
         else:
             self._reconnect_attempts = 0
-            self._eclient.reqManagedAccts()
 
     def _initialize_connection_params(self) -> None:
         """

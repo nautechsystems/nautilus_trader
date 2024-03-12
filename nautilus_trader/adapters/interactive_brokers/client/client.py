@@ -18,6 +18,7 @@ import functools
 import os
 from collections.abc import Callable
 from collections.abc import Coroutine
+from inspect import iscoroutinefunction
 from typing import Any
 
 from ibapi import comm
@@ -158,7 +159,7 @@ class InteractiveBrokersClient(
         self._log.info(f"Starting InteractiveBrokersClient ({self._client_id})...")
         self._loop.run_until_complete(self._connect())
         self._start_tws_incoming_msg_reader()
-        self._start_internal_msg_queue()
+        self._start_internal_msg_queue_processor()
         self._eclient.startApi()
         self._connection_watchdog_task = self._create_task(self._run_connection_watchdog())
         self._is_client_ready.set()
@@ -173,7 +174,7 @@ class InteractiveBrokersClient(
             self._run_tws_incoming_msg_reader(),
         )
 
-    def _start_internal_msg_queue(self) -> None:
+    def _start_internal_msg_queue_processor(self) -> None:
         """
         Start the internal message queue processing task.
         """
@@ -218,7 +219,6 @@ class InteractiveBrokersClient(
         """
         self._log.info(f"Resuming InteractiveBrokersClient ({self._client_id})...")
         self._is_client_ready.set()
-        asyncio.create_task(self._resubscribe_all())
 
     def _degrade(self) -> None:
         """
@@ -236,13 +236,12 @@ class InteractiveBrokersClient(
         for subscription in self._subscriptions.get_all():
             try:
                 subscription.cancel()
-                subscription.handle()
+                if iscoroutinefunction(subscription.handle):
+                    await subscription.handle()
+                else:
+                    await self._loop.run_in_executor(None, subscription.handle)
             except Exception as e:
-                # The exception is handled, so won't be further raised
-                self._log.exception(
-                    f"Failed to cancel and restart subscription: {subscription}",
-                    e,
-                )
+                self._log.exception(f"Failed to resubscribe to {subscription}", e)
 
     async def wait_until_ready(self, timeout: int = 300) -> None:
         """
@@ -274,12 +273,12 @@ class InteractiveBrokersClient(
                 await asyncio.sleep(1)
                 if not self._is_ib_connected.is_set():
                     self._log.error(
-                        "Connection watchdog detects connection lost. `_is_ib_connected` not set.",
+                        "Connection watchdog detects connection lost. self._is_ib_connected.is_set() is False.",
                     )
                     await self._handle_disconnected()
                 elif not self._eclient.isConnected():
                     self._log.error(
-                        "Connection watchdog detects socket disconnected. `_eclient.isConnected()` not True.",
+                        "Connection watchdog detects socket disconnected. self._eclient.isConnected() is False.",
                     )
                     await self._handle_disconnected()
         except asyncio.CancelledError:
@@ -291,10 +290,13 @@ class InteractiveBrokersClient(
         """
         if self.is_running:
             self._degrade()
-        self._eclient.disconnect()
         self._log.debug("`_is_ib_connected` unset by `_handle_disconnected`.", LogColor.BLUE)
         self._is_ib_connected.clear()
+        await asyncio.sleep(5)
         await self._handle_reconnect()
+        self._start_tws_incoming_msg_reader()
+        self._start_internal_msg_queue_processor()
+        await self._resubscribe_all()
         self._resume()
 
     def _create_task(
