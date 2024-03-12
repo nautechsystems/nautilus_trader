@@ -39,8 +39,6 @@ from nautilus_trader.common.component import remove_instance_component_clocks
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
-from nautilus_trader.execution.algorithm import ExecAlgorithm
-from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import StrategyId
@@ -103,11 +101,15 @@ class Trader(Component):
         portfolio: Portfolio,
         data_engine: DataEngine,
         risk_engine: RiskEngine,
-        exec_engine: ExecutionEngine,
+        exec_engine: Any,
         clock: Clock,
         has_controller: bool = False,
         loop: asyncio.AbstractEventLoop | None = None,
     ) -> None:
+        # Import here to avoid circular import issues
+        from nautilus_trader.execution.engine import ExecutionEngine
+
+        PyCondition.type(exec_engine, ExecutionEngine, "exec_engine")
         super().__init__(
             clock=clock,
             component_id=trader_id,
@@ -124,7 +126,7 @@ class Trader(Component):
 
         self._actors: dict[ComponentId, Actor] = {}
         self._strategies: dict[StrategyId, Strategy] = {}
-        self._exec_algorithms: dict[ExecAlgorithmId, ExecAlgorithm] = {}
+        self._exec_algorithms: dict[ExecAlgorithmId, Any] = {}
         self._has_controller: bool = has_controller
 
     @property
@@ -161,7 +163,7 @@ class Trader(Component):
         """
         return list(self._strategies.values())
 
-    def exec_algorithms(self) -> list[ExecAlgorithm]:
+    def exec_algorithms(self) -> list[Any]:  # ExecutonAlgorithm (circular import issues)
         """
         Return the execution algorithms loaded in the trader.
 
@@ -440,7 +442,7 @@ class Trader(Component):
         for strategy in strategies:
             self.add_strategy(strategy)
 
-    def add_exec_algorithm(self, exec_algorithm: ExecAlgorithm) -> None:
+    def add_exec_algorithm(self, exec_algorithm: Any) -> None:
         """
         Add the given execution algorithm to the trader.
 
@@ -487,7 +489,7 @@ class Trader(Component):
 
         self._log.info(f"Registered ExecAlgorithm {exec_algorithm}.")
 
-    def add_exec_algorithms(self, exec_algorithms: list[ExecAlgorithm]) -> None:
+    def add_exec_algorithms(self, exec_algorithms: list[Any]) -> None:
         """
         Add the given execution algorithms to the trader.
 
