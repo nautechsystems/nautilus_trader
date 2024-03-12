@@ -17,6 +17,7 @@ import pytest
 
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceCandlestick
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesBalanceInfo
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data import BarSpecification
@@ -211,3 +212,125 @@ class TestBinanceCommonParsing:
 
         # Assert
         assert bar.bar_type == expected_type
+
+
+def test_binance_futures_parse_to_balances() -> None:
+    # Arrange
+    balance_infos = [
+        BinanceFuturesBalanceInfo(
+            asset="FDUSD",
+            walletBalance="0.00000000",
+            unrealizedProfit="0.00000000",
+            marginBalance="0.00000000",
+            maintMargin="0.00000000",
+            initialMargin="0.00000000",
+            positionInitialMargin="0.00000000",
+            openOrderInitialMargin="0.00000000",
+            crossWalletBalance="0.00000000",
+            crossUnPnl="0.00000000",
+            availableBalance="145.00731942",
+            maxWithdrawAmount="0.00000000",
+            marginAvailable=True,
+            updateTime=0,
+        ),
+        BinanceFuturesBalanceInfo(
+            asset="BNB",
+            walletBalance="0.00000000",
+            unrealizedProfit="0.00000000",
+            marginBalance="0.00000000",
+            maintMargin="0.00000000",
+            initialMargin="0.00000000",
+            positionInitialMargin="0.00000000",
+            openOrderInitialMargin="0.00000000",
+            crossWalletBalance="0.00000000",
+            crossUnPnl="0.00000000",
+            availableBalance="0.26632926",
+            maxWithdrawAmount="0.00000000",
+            marginAvailable=True,
+            updateTime=0,
+        ),
+        BinanceFuturesBalanceInfo(
+            asset="USDT",
+            walletBalance="0.00000000",
+            unrealizedProfit="0.00000000",
+            marginBalance="0.00000000",
+            maintMargin="0.00000000",
+            initialMargin="2.19077500",
+            positionInitialMargin="0.00000000",
+            openOrderInitialMargin="2.19077500",
+            crossWalletBalance="0.00000000",
+            crossUnPnl="0.00000000",
+            availableBalance="144.65930217",
+            maxWithdrawAmount="0.00000000",
+            marginAvailable=True,
+            updateTime=1709962270029,
+        ),
+        BinanceFuturesBalanceInfo(
+            asset="USDC",
+            walletBalance="0.00000000",
+            unrealizedProfit="0.00000000",
+            marginBalance="0.00000000",
+            maintMargin="0.00000000",
+            initialMargin="0.00000000",
+            positionInitialMargin="0.00000000",
+            openOrderInitialMargin="0.00000000",
+            crossWalletBalance="0.00000000",
+            crossUnPnl="0.00000000",
+            availableBalance="141.87086959",
+            maxWithdrawAmount="0.00000000",
+            marginAvailable=True,
+            updateTime=0,
+        ),
+        BinanceFuturesBalanceInfo(
+            asset="BUSD",
+            walletBalance="0.00000000",
+            unrealizedProfit="0.00000000",
+            marginBalance="0.00000000",
+            maintMargin="0.00000000",
+            initialMargin="0.00000000",
+            positionInitialMargin="0.00000000",
+            openOrderInitialMargin="0.00000000",
+            crossWalletBalance="0.00000000",
+            crossUnPnl="0.00000000",
+            availableBalance="142.12699008",
+            maxWithdrawAmount="0.00000000",
+            marginAvailable=True,
+            updateTime=0,
+        ),
+        BinanceFuturesBalanceInfo(
+            asset="ETH",
+            walletBalance="0.03856162",
+            unrealizedProfit="0.00000000",
+            marginBalance="0.03856162",
+            maintMargin="0.00000000",
+            initialMargin="0.00000000",
+            positionInitialMargin="0.00000000",
+            openOrderInitialMargin="0.00000000",
+            crossWalletBalance="0.03856162",
+            crossUnPnl="0.00000000",
+            availableBalance="0.03436859",
+            maxWithdrawAmount="0.03436859",
+            marginAvailable=True,
+            updateTime=1709962270029,
+        ),
+        BinanceFuturesBalanceInfo(
+            asset="BTC",
+            walletBalance="0.00000000",
+            unrealizedProfit="0.00000000",
+            marginBalance="0.00000000",
+            maintMargin="0.00000000",
+            initialMargin="0.00000000",
+            positionInitialMargin="0.00000000",
+            openOrderInitialMargin="0.00000000",
+            crossWalletBalance="0.00000000",
+            crossUnPnl="0.00000000",
+            availableBalance="0.00192305",
+            maxWithdrawAmount="0.00000000",
+            marginAvailable=True,
+            updateTime=0,
+        ),
+    ]
+
+    # Act, Assert (`AccountBalance` asserts invariants)
+    for info in balance_infos:
+        info.parse_to_account_balance()
