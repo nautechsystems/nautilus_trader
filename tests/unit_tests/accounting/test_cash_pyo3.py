@@ -16,7 +16,6 @@ import pytest
 
 from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.core.nautilus_pyo3 import AccountId
-from nautilus_trader.core.nautilus_pyo3 import AccountingTransformer
 from nautilus_trader.core.nautilus_pyo3 import Currency
 from nautilus_trader.core.nautilus_pyo3 import LiquiditySide
 from nautilus_trader.core.nautilus_pyo3 import Money
@@ -24,6 +23,7 @@ from nautilus_trader.core.nautilus_pyo3 import OrderSide
 from nautilus_trader.core.nautilus_pyo3 import Position
 from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import Quantity
+from nautilus_trader.core.nautilus_pyo3 import cash_account_from_account_events
 from nautilus_trader.test_kit.rust.accounting_pyo3 import TestAccountingProviderPyo3
 from nautilus_trader.test_kit.rust.events_pyo3 import TestEventsProviderPyo3
 from nautilus_trader.test_kit.rust.identifiers_pyo3 import TestIdProviderPyo3
@@ -250,7 +250,7 @@ def test_pyo3_cython_conversion():
     account_pyo3 = TestAccountingProviderPyo3.cash_account_million_usd()
     account_cython = CashAccount.from_dict(account_pyo3.to_dict())
     account_cython_dict = CashAccount.to_dict(account_cython)
-    account_pyo3_back = AccountingTransformer.cash_account_from_account_events(
+    account_pyo3_back = cash_account_from_account_events(
         events=account_cython_dict["events"],
         calculate_account_state=account_cython_dict["calculate_account_state"],
     )

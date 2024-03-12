@@ -305,11 +305,6 @@ class Position:
     def notional_value(self, price: Price) -> Money: ...
 
 
-class AccountingTransformer:
-    @classmethod
-    def cash_account_from_account_events(cls, events: list[dict],calculate_account_state) -> CashAccount: ...
-
-
 class MarginAccount:
     def __init__(
         self,
@@ -399,6 +394,11 @@ class CashAccount:
         fill: OrderFilled,
         position: Position | None = None
     ) -> list[Money]: ...
+
+### Accounting transformers
+def cash_account_from_account_events(events: list[dict],calculate_account_state) -> CashAccount: ...
+
+def margin_account_from_account_events(events: list[dict],calculate_account_state) -> MarginAccount: ...
 
 
 ### Data types

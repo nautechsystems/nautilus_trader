@@ -72,3 +72,9 @@ cdef class MarginAccount(Account):
         Price price,
         bint use_quote_for_inverse=*,
     )
+
+    @staticmethod
+    cdef dict to_dict_c(MarginAccount obj)
+
+    @staticmethod
+    cdef MarginAccount from_dict_c(dict values)
