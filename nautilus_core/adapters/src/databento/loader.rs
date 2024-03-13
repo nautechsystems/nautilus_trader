@@ -13,13 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, env, fs, path::PathBuf};
+use std::{env, fs, path::PathBuf};
 
 use anyhow::Result;
 use dbn::{
     compat::InstrumentDefMsgV1,
     decode::{dbn::Decoder, DbnMetadata, DecodeStream},
-    Publisher,
 };
 use indexmap::IndexMap;
 use nautilus_model::{
@@ -66,7 +65,6 @@ pub struct DatabentoDataLoader {
     publishers_map: IndexMap<PublisherId, DatabentoPublisher>,
     venue_dataset_map: IndexMap<Venue, Dataset>,
     publisher_venue_map: IndexMap<PublisherId, Venue>,
-    glbx_exchange_map: HashMap<Symbol, Venue>,
 }
 
 impl DatabentoDataLoader {
@@ -75,7 +73,6 @@ impl DatabentoDataLoader {
             publishers_map: IndexMap::new(),
             venue_dataset_map: IndexMap::new(),
             publisher_venue_map: IndexMap::new(),
-            glbx_exchange_map: HashMap::new(),
         };
 
         // Load publishers
@@ -116,28 +113,12 @@ impl DatabentoDataLoader {
             })
             .collect::<IndexMap<Venue, Ustr>>();
 
-        // Insert CME Globex exchanges
-        let glbx = Dataset::from("GLBX.MDP3");
-        self.venue_dataset_map.insert(Venue::CBCM(), glbx);
-        self.venue_dataset_map.insert(Venue::GLBX(), glbx);
-        self.venue_dataset_map.insert(Venue::NYUM(), glbx);
-        self.venue_dataset_map.insert(Venue::XCBT(), glbx);
-        self.venue_dataset_map.insert(Venue::XCEC(), glbx);
-        self.venue_dataset_map.insert(Venue::XCME(), glbx);
-        self.venue_dataset_map.insert(Venue::XFXS(), glbx);
-        self.venue_dataset_map.insert(Venue::XNYM(), glbx);
-
         self.publisher_venue_map = publishers
             .into_iter()
             .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
             .collect::<IndexMap<u16, Venue>>();
 
         Ok(())
-    }
-
-    // Return the map of CME Globex symbols to exchange venues.
-    pub fn load_glbx_exchange_map(&mut self, map: HashMap<Symbol, Venue>) {
-        self.glbx_exchange_map = map;
     }
 
     /// Return the internal Databento publishers currently held by the loader.
@@ -156,12 +137,6 @@ impl DatabentoDataLoader {
     #[must_use]
     pub fn get_venue_for_publisher(&self, publisher_id: PublisherId) -> Option<&Venue> {
         self.publisher_venue_map.get(&publisher_id)
-    }
-
-    // Return the venue which matches the given `publisher_id` (if found).
-    #[must_use]
-    pub fn get_glbx_exchange_map(&self) -> HashMap<Symbol, Venue> {
-        self.glbx_exchange_map.clone()
     }
 
     pub fn schema_from_file(&self, path: PathBuf) -> Result<Option<String>> {
@@ -192,23 +167,11 @@ impl DatabentoDataLoader {
                     };
                     let symbol = Symbol { value: raw_symbol };
 
-                    let publisher = rec.hd.publisher().expect("Invalid `publisher` for record");
-                    let venue = match publisher {
-                        Publisher::GlbxMdp3Glbx => {
-                            // SAFETY: GLBX instruments have a valid `exchange` field
-                            let exchange = rec.exchange().unwrap();
-                            let venue = Venue::from_code(exchange).unwrap_or_else(|_| {
-                                panic!("`Venue` not found for exchange {exchange}")
-                            });
-                            self.glbx_exchange_map.insert(symbol, venue);
-                            venue
-                        }
-                        _ => *self
-                            .publisher_venue_map
-                            .get(&msg.hd.publisher_id)
-                            .expect("`Venue` not found `publisher_id`"),
-                    };
-                    let instrument_id = InstrumentId::new(symbol, venue);
+                    let venue = self
+                        .publisher_venue_map
+                        .get(&msg.hd.publisher_id)
+                        .expect("`Venue` not found `publisher_id`");
+                    let instrument_id = InstrumentId::new(symbol, *venue);
 
                     match decode_instrument_def_msg_v1(rec, instrument_id, msg.ts_recv) {
                         Ok(data) => Some(Ok(data)),
@@ -246,7 +209,6 @@ impl DatabentoDataLoader {
                             &record,
                             &metadata,
                             &self.publisher_venue_map,
-                            &self.glbx_exchange_map,
                         )
                         .unwrap(), // TODO: Panic on error for now
                     };
@@ -292,7 +254,6 @@ impl DatabentoDataLoader {
                             &record,
                             &metadata,
                             &self.publisher_venue_map,
-                            &self.glbx_exchange_map,
                         )
                         .unwrap(), // TODO: Panic on error for now
                     };
@@ -335,7 +296,6 @@ impl DatabentoDataLoader {
                             &record,
                             &metadata,
                             &self.publisher_venue_map,
-                            &self.glbx_exchange_map,
                         )
                         .unwrap(), // TODO: Panic on error for now
                     };

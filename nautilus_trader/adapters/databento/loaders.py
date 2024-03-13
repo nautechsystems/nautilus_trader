@@ -68,21 +68,6 @@ class DatabentoDataLoader:
         """
         self._pyo3_loader.load_publishers(str(path))
 
-    def load_glbx_exchange_map(
-        self,
-        map: dict[nautilus_pyo3.Symbol, nautilus_pyo3.Venue],
-    ) -> None:
-        """
-        Load the given CME Globex symbol to exchange venue map.
-
-        Parameters
-        ----------
-        map : dict[nautilus_pyo3.Symbol, nautilus_pyo3.Venue]
-            The map to load.
-
-        """
-        self._pyo3_loader.load_glbx_exchange_map(map)
-
     def get_publishers(self) -> dict[int, nautilus_pyo3.DatabentoPublisher]:
         """
         Return the internal Databento publishers currently held by the loader.
@@ -118,17 +103,6 @@ class DatabentoDataLoader:
             raise ValueError(f"No Databento dataset for venue '{venue}'")
 
         return dataset
-
-    def get_glbx_exchange_map(self) -> dict[nautilus_pyo3.Symbol, nautilus_pyo3.Venue]:
-        """
-        Return the internal CME Globex exchange venue map.
-
-        Returns
-        -------
-        dict[nautilus_pyo3.Symbol, nautilus_pyo3.Venue]
-
-        """
-        return self._pyo3_loader.get_glbx_exchange_map()
 
     def from_dbn_file(  # noqa: C901 (too complex)
         self,

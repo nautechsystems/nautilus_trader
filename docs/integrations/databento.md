@@ -93,8 +93,8 @@ from the Databento instrument definition message for the Nautilus `venue`.
 Databento datasets are identified with a *dataset code* which is not the same
 as a venue identifier. You can read more about Databento dataset naming conventions [here](https://docs.databento.com/api-reference-historical/basics/datasets).
 
-Of particular note is for CME Globex MDP 3.0 data (`GLBX.MDP3` dataset code), the `venue` that
-Nautilus will use is the CME exchange code provided by instrument definition messages (which the Interactive Brokers adapter can map):
+Of particular note is for CME Globex MDP 3.0 data (`GLBX.MDP3` dataset code), the following
+exchanges are all grouped under the `GLBX` venue:
 - `CBCM` - **XCME-XCBT inter-exchange spread**
 - `NYUM` - **XNYM-DUMX inter-exchange spread**
 - `XCBT` - **Chicago Board of Trade (CBOT)**
@@ -217,7 +217,7 @@ from nautilus_trader.adapters.databento import DATABENTO_CLIENT_ID
 from nautilus_trader.adapters.databento import DatabentoStatisics
 from nautilus_trader.model.data import DataType
 
-instrument_id = InstrumentId.from_str("ES.FUT.XCME")
+instrument_id = InstrumentId.from_str("ES.FUT.GLBX")
 metadata = {
     "instrument_id": instrument_id,
     "start": "2024-03-06",

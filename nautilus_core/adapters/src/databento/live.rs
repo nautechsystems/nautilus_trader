@@ -53,7 +53,6 @@ use crate::databento::{
 #[derive(Debug)]
 pub enum LiveCommand {
     Subscribe(Subscription),
-    UpdateGlbx(HashMap<Symbol, Venue>),
     Start,
     Close,
 }
@@ -80,7 +79,6 @@ pub struct DatabentoFeedHandler {
     cmd_rx: mpsc::UnboundedReceiver<LiveCommand>,
     msg_tx: mpsc::Sender<LiveMessage>,
     publisher_venue_map: IndexMap<PublisherId, Venue>,
-    glbx_exchange_map: HashMap<Symbol, Venue>,
     replay: bool,
 }
 
@@ -93,7 +91,6 @@ impl DatabentoFeedHandler {
         rx: mpsc::UnboundedReceiver<LiveCommand>,
         tx: mpsc::Sender<LiveMessage>,
         publisher_venue_map: IndexMap<PublisherId, Venue>,
-        glbx_exchange_map: HashMap<Symbol, Venue>,
     ) -> Self {
         Self {
             key,
@@ -101,7 +98,6 @@ impl DatabentoFeedHandler {
             cmd_rx: rx,
             msg_tx: tx,
             publisher_venue_map,
-            glbx_exchange_map,
             replay: false,
         }
     }
@@ -144,6 +140,11 @@ impl DatabentoFeedHandler {
         let mut running = false;
 
         loop {
+            if self.msg_tx.is_closed() {
+                debug!("Message channel was closed: stopping");
+                break;
+            };
+
             match self.cmd_rx.try_recv() {
                 Ok(cmd) => {
                     debug!("Received command: {:?}", cmd);
@@ -154,7 +155,6 @@ impl DatabentoFeedHandler {
                             }
                             client.subscribe(&sub).await.map_err(to_pyruntime_err)?;
                         }
-                        LiveCommand::UpdateGlbx(map) => self.glbx_exchange_map = map,
                         LiveCommand::Start => {
                             buffering_start = match self.replay {
                                 true => Some(clock.get_time_ns()),
@@ -213,12 +213,7 @@ impl DatabentoFeedHandler {
                 instrument_id_map.remove(&msg.hd.instrument_id);
                 handle_symbol_mapping_msg(msg, &mut symbol_map, &mut instrument_id_map);
             } else if let Some(msg) = record.get::<dbn::InstrumentDefMsg>() {
-                let data = handle_instrument_def_msg(
-                    msg,
-                    &self.publisher_venue_map,
-                    &self.glbx_exchange_map,
-                    clock,
-                )?;
+                let data = handle_instrument_def_msg(msg, &self.publisher_venue_map, clock)?;
                 self.send_msg(LiveMessage::Instrument(data)).await;
             } else if let Some(msg) = record.get::<dbn::ImbalanceMsg>() {
                 let data = handle_imbalance_msg(
@@ -226,7 +221,6 @@ impl DatabentoFeedHandler {
                     &record,
                     &symbol_map,
                     &self.publisher_venue_map,
-                    &self.glbx_exchange_map,
                     &mut instrument_id_map,
                     clock,
                 )?;
@@ -237,7 +231,6 @@ impl DatabentoFeedHandler {
                     &record,
                     &symbol_map,
                     &self.publisher_venue_map,
-                    &self.glbx_exchange_map,
                     &mut instrument_id_map,
                     clock,
                 )?;
@@ -247,7 +240,6 @@ impl DatabentoFeedHandler {
                     record,
                     &symbol_map,
                     &self.publisher_venue_map,
-                    &self.glbx_exchange_map,
                     &mut instrument_id_map,
                     clock,
                 ) {
@@ -351,7 +343,6 @@ fn update_instrument_id_map(
     record: &dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    glbx_exchange_map: &HashMap<Symbol, Venue>,
     instrument_id_map: &mut HashMap<u32, InstrumentId>,
 ) -> InstrumentId {
     let header = record.header();
@@ -370,12 +361,9 @@ fn update_instrument_id_map(
     };
 
     let publisher_id = header.publisher_id;
-    let venue = match glbx_exchange_map.get(&symbol) {
-        Some(venue) => venue,
-        None => publisher_venue_map
-            .get(&publisher_id)
-            .unwrap_or_else(|| panic!("No venue found for `publisher_id` {publisher_id}")),
-    };
+    let venue = publisher_venue_map
+        .get(&publisher_id)
+        .unwrap_or_else(|| panic!("No venue found for `publisher_id` {publisher_id}"));
     let instrument_id = InstrumentId::new(symbol, *venue);
 
     instrument_id_map.insert(header.instrument_id, instrument_id);
@@ -385,7 +373,6 @@ fn update_instrument_id_map(
 fn handle_instrument_def_msg(
     msg: &dbn::InstrumentDefMsg,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    glbx_exchange_map: &HashMap<Symbol, Venue>,
     clock: &AtomicTime,
 ) -> Result<InstrumentType> {
     let c_str: &CStr = unsafe { CStr::from_ptr(msg.raw_symbol.as_ptr()) };
@@ -396,12 +383,9 @@ fn handle_instrument_def_msg(
     };
 
     let publisher_id = msg.header().publisher_id;
-    let venue = match glbx_exchange_map.get(&symbol) {
-        Some(venue) => venue,
-        None => publisher_venue_map
-            .get(&publisher_id)
-            .unwrap_or_else(|| panic!("No venue found for `publisher_id` {publisher_id}")),
-    };
+    let venue = publisher_venue_map
+        .get(&publisher_id)
+        .unwrap_or_else(|| panic!("No venue found for `publisher_id` {publisher_id}"));
     let instrument_id = InstrumentId::new(symbol, *venue);
     let ts_init = clock.get_time_ns();
 
@@ -413,17 +397,11 @@ fn handle_imbalance_msg(
     record: &dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    glbx_exchange_map: &HashMap<Symbol, Venue>,
     instrument_id_map: &mut HashMap<u32, InstrumentId>,
     clock: &AtomicTime,
 ) -> anyhow::Result<DatabentoImbalance> {
-    let instrument_id = update_instrument_id_map(
-        record,
-        symbol_map,
-        publisher_venue_map,
-        glbx_exchange_map,
-        instrument_id_map,
-    );
+    let instrument_id =
+        update_instrument_id_map(record, symbol_map, publisher_venue_map, instrument_id_map);
 
     let price_precision = 2; // Hard coded for now
     let ts_init = clock.get_time_ns();
@@ -436,17 +414,11 @@ fn handle_statistics_msg(
     record: &dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    glbx_exchange_map: &HashMap<Symbol, Venue>,
     instrument_id_map: &mut HashMap<u32, InstrumentId>,
     clock: &AtomicTime,
 ) -> anyhow::Result<DatabentoStatistics> {
-    let instrument_id = update_instrument_id_map(
-        record,
-        symbol_map,
-        publisher_venue_map,
-        glbx_exchange_map,
-        instrument_id_map,
-    );
+    let instrument_id =
+        update_instrument_id_map(record, symbol_map, publisher_venue_map, instrument_id_map);
 
     let price_precision = 2; // Hard coded for now
     let ts_init = clock.get_time_ns();
@@ -458,17 +430,11 @@ fn handle_record(
     record: dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    glbx_exchange_map: &HashMap<Symbol, Venue>,
     instrument_id_map: &mut HashMap<u32, InstrumentId>,
     clock: &AtomicTime,
 ) -> anyhow::Result<(Option<Data>, Option<Data>)> {
-    let instrument_id = update_instrument_id_map(
-        &record,
-        symbol_map,
-        publisher_venue_map,
-        glbx_exchange_map,
-        instrument_id_map,
-    );
+    let instrument_id =
+        update_instrument_id_map(&record, symbol_map, publisher_venue_map, instrument_id_map);
 
     let price_precision = 2; // Hard coded for now
     let ts_init = clock.get_time_ns();
