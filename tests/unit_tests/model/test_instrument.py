@@ -473,7 +473,7 @@ def test_pyo3_future_to_legacy_future() -> None:
 
     # Assert
     assert isinstance(instrument, FuturesContract)
-    assert instrument.id == InstrumentId.from_str("ESZ1.XCME")
+    assert instrument.id == InstrumentId.from_str("ESZ1.GLBX")
 
 
 def test_pyo3_option_to_legacy_option() -> None:

@@ -319,7 +319,7 @@ class TestInstrumentProviderPyo3:
         if expiration is None:
             expiration = pd.Timestamp("2021-12-17", tz=pytz.utc)
         return FuturesContract(
-            id=InstrumentId.from_str("ESZ1.XCME"),
+            id=InstrumentId.from_str("ESZ1.GLBX"),
             raw_symbol=Symbol("ESZ1"),
             asset_class=AssetClass.INDEX,
             underlying="ES",
@@ -348,7 +348,7 @@ class TestInstrumentProviderPyo3:
         if expiration is None:
             expiration = pd.Timestamp("2024-6-21T13:30:00", tz=pytz.utc)
         return FuturesSpread(
-            id=InstrumentId.from_str("ESM4-ESU4.XCME"),
+            id=InstrumentId.from_str("ESM4-ESU4.GLBX"),
             raw_symbol=Symbol("ESM4-ESU4"),
             asset_class=AssetClass.INDEX,
             underlying="ES",
@@ -378,7 +378,7 @@ class TestInstrumentProviderPyo3:
         if expiration is None:
             expiration = pd.Timestamp("2024-02-23T22:59:00", tz=pytz.utc)
         return OptionsSpread(
-            id=InstrumentId.from_str("UD:U$: GN 2534559.XCME"),
+            id=InstrumentId.from_str("UD:U$: GN 2534559.GLBX"),
             raw_symbol=Symbol("UD:U$: GN 2534559"),
             asset_class=AssetClass.FX,
             underlying="SR3",

@@ -36,7 +36,7 @@ def test_to_dict():
     assert FuturesSpread.from_dict(result) == _ES_FUTURES_SPREAD
     assert result == {
         "type": "FuturesSpread",
-        "id": "ESM4-ESU4.XCME",
+        "id": "ESM4-ESU4.GLBX",
         "raw_symbol": "ESM4-ESU4",
         "asset_class": "INDEX",
         "underlying": "ES",
@@ -60,4 +60,4 @@ def test_to_dict():
 def test_legacy_futures_contract_from_pyo3():
     future = LegacyFuturesSpread.from_pyo3(_ES_FUTURES_SPREAD)
 
-    assert future.id.value == "ESM4-ESU4.XCME"
+    assert future.id.value == "ESM4-ESU4.GLBX"
