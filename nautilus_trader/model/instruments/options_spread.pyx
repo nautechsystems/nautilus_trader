@@ -72,7 +72,7 @@ cdef class OptionsSpread(Instrument):
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     exchange : str, optional
-        The instruments ISO 10383 Market Identifier Code (MIC).
+        The exchange ISO 10383 Market Identifier Code (MIC) where the instrument trades.
     info : dict[str, object], optional
         The additional instrument information.
 
