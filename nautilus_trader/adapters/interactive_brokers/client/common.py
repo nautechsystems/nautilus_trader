@@ -494,15 +494,18 @@ class BaseMixin:
     _event_subscriptions: dict[str, Callable]
     _eclient: EClient
     _is_ib_connected: asyncio.Event
+    _start: Callable
+    _startup: Callable
+    _reset: Callable
+    _stop: Callable
+    _resume: Callable
     _degrade: Callable
     _end_request: Callable
     _await_request: Callable
     _next_req_id: Callable
-    logAnswer: Callable
-    _reset: Callable
-    _stop: Callable
+    _resubscribe_all: Callable
     _create_task: Callable
-    _start_client_tasks_and_tws_api: Callable
+    logAnswer: Callable
 
     # Account
     accounts: Callable

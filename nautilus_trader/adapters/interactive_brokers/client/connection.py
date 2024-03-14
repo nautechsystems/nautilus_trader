@@ -66,8 +66,6 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
                 f"at {self._eclient.connTime.decode()} from {self._host}:{self._port} "
                 f"with client id: {self._client_id}.",
             )
-            self._is_ib_connected.set()
-            self._log.debug("`_is_ib_connected` set by `_connect`.", LogColor.BLUE)
         except asyncio.CancelledError:
             self._log.info("Connection cancelled.")
             self._eclient.disconnect()
@@ -99,18 +97,20 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             f"Attempt {self._reconnect_attempts}: Attempting to reconnect in {self._reconnect_delay} seconds...",
         )
         await asyncio.sleep(self._reconnect_delay)
-        await self._connect()
+        await self._startup()
+        await self._resubscribe_all()
+        self._resume()
 
     async def _handle_reconnect(self) -> None:
         while not self._is_ib_connected.is_set():
-            await self._reconnect_attempt()
             if (
                 not self._indefinite_reconnect
-                and self._reconnect_attempts >= self._max_reconnect_attempts
+                and self._reconnect_attempts > self._max_reconnect_attempts
             ):
                 self._log.error("Max reconnection attempts reached. Connection failed.")
                 self._stop()
                 break
+            await self._reconnect_attempt()
         else:
             self._reconnect_attempts = 0
 
@@ -139,7 +139,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         self._log.info(
             f"Connecting to {self._host}:{self._port} with client id: {self._client_id}",
         )
-        await self._loop.run_in_executor(None, self._eclient.conn.connect)
+        await asyncio.to_thread(self._eclient.conn.connect)
 
     async def _send_version_info(self) -> None:
         """
@@ -156,10 +156,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             v100version += f" {self._eclient.connectionOptions}"
         msg = comm.make_msg(v100version)
         msg2 = str.encode(v100prefix, "ascii") + msg
-        await self._loop.run_in_executor(
-            None,
-            functools.partial(self._eclient.conn.sendMsg, msg2),
-        )
+        await asyncio.to_thread(functools.partial(self._eclient.conn.sendMsg, msg2))
 
     async def _receive_server_info(self) -> None:
         """
@@ -178,7 +175,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         fields: list[str] = []
 
         while retries_remaining > 0:
-            buf = await self._loop.run_in_executor(None, self._eclient.conn.recvMsg)
+            buf = await asyncio.to_thread(self._eclient.conn.recvMsg)
             if len(buf) > 0:
                 _, msg, _ = comm.read_msg(buf)
                 fields.extend(comm.read_fields(msg))

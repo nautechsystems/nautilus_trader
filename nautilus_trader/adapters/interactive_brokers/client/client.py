@@ -108,7 +108,7 @@ class InteractiveBrokersClient(
         # Tasks
         self._connection_watchdog_task: asyncio.Task | None = None
         self._tws_incoming_msg_reader_task: asyncio.Task | None = None
-        self._internal_msg_queue_task: asyncio.Task | None = None
+        self._internal_msg_queue_processor_task: asyncio.Task | None = None
         self._internal_msg_queue: asyncio.Queue = asyncio.Queue()
 
         # Event flags
@@ -157,11 +157,16 @@ class InteractiveBrokersClient(
 
         """
         self._log.info(f"Starting InteractiveBrokersClient ({self._client_id})...")
-        self._loop.run_until_complete(self._connect())
+        self._loop.run_until_complete(self._startup())
+
+    async def _startup(self):
+        self._log.info(f"Starting InteractiveBrokersClient ({self._client_id})...")
+        await self._connect()
         self._start_tws_incoming_msg_reader()
         self._start_internal_msg_queue_processor()
         self._eclient.startApi()
-        self._connection_watchdog_task = self._create_task(self._run_connection_watchdog())
+        await asyncio.wait_for(self._is_ib_connected.wait(), 15)
+        self._start_connection_watchdog()
         self._is_client_ready.set()
 
     def _start_tws_incoming_msg_reader(self) -> None:
@@ -178,10 +183,20 @@ class InteractiveBrokersClient(
         """
         Start the internal message queue processing task.
         """
-        if self._internal_msg_queue_task:
-            self._internal_msg_queue_task.cancel()
-        self._internal_msg_queue_task = self._create_task(
-            self._run_internal_msg_queue(),
+        if self._internal_msg_queue_processor_task:
+            self._internal_msg_queue_processor_task.cancel()
+        self._internal_msg_queue_processor_task = self._create_task(
+            self._run_internal_msg_queue_processor(),
+        )
+
+    def _start_connection_watchdog(self) -> None:
+        """
+        Start the connection watchdog task.
+        """
+        if self._connection_watchdog_task:
+            self._connection_watchdog_task.cancel()
+        self._connection_watchdog_task = self._create_task(
+            self._run_connection_watchdog(),
         )
 
     def _stop(self) -> None:
@@ -193,7 +208,7 @@ class InteractiveBrokersClient(
         for task in [
             self._connection_watchdog_task,
             self._tws_incoming_msg_reader_task,
-            self._internal_msg_queue_task,
+            self._internal_msg_queue_processor_task,
         ]:
             if task and not task.cancelled():
                 task.cancel()
@@ -218,6 +233,7 @@ class InteractiveBrokersClient(
         Resume the client and resubscribe all subscriptions.
         """
         self._log.info(f"Resuming InteractiveBrokersClient ({self._client_id})...")
+        # self._loop.run_until_complete(self._resubscribe_all())
         self._is_client_ready.set()
 
     def _degrade(self) -> None:
@@ -239,7 +255,7 @@ class InteractiveBrokersClient(
                 if iscoroutinefunction(subscription.handle):
                     await subscription.handle()
                 else:
-                    await self._loop.run_in_executor(None, subscription.handle)
+                    await asyncio.to_thread(subscription.handle)
             except Exception as e:
                 self._log.exception(f"Failed to resubscribe to {subscription}", e)
 
@@ -271,32 +287,26 @@ class InteractiveBrokersClient(
         try:
             while True:
                 await asyncio.sleep(1)
-                if not self._is_ib_connected.is_set():
+                if not self._is_ib_connected.is_set() or not self._eclient.isConnected():
                     self._log.error(
-                        "Connection watchdog detects connection lost. self._is_ib_connected.is_set() is False.",
+                        "Connection watchdog detects connection lost.",
                     )
-                    await self._handle_disconnected()
-                elif not self._eclient.isConnected():
-                    self._log.error(
-                        "Connection watchdog detects socket disconnected. self._eclient.isConnected() is False.",
-                    )
-                    await self._handle_disconnected()
+                    await self._handle_disconnection()
         except asyncio.CancelledError:
             self._log.debug("Client connection watchdog task was canceled.")
 
-    async def _handle_disconnected(self) -> None:
+    async def _handle_disconnection(self) -> None:
         """
         Handle the disconnection of the client from TWS/Gateway.
         """
         if self.is_running:
             self._degrade()
-        self._log.debug("`_is_ib_connected` unset by `_handle_disconnected`.", LogColor.BLUE)
-        self._is_ib_connected.clear()
+        if not self._is_ib_connected.is_set():
+            self._log.debug("`_is_ib_connected` unset by `_handle_disconnection`.", LogColor.BLUE)
+            self._is_ib_connected.clear()
         await asyncio.sleep(5)
         await self._handle_reconnect()
-        self._start_tws_incoming_msg_reader()
-        self._start_internal_msg_queue_processor()
-        await self._resubscribe_all()
+
         self._resume()
 
     def _create_task(
@@ -468,16 +478,8 @@ class InteractiveBrokersClient(
         self._log.debug("Client TWS incoming message reader started.")
         buf = b""
         try:
-            while True:
-                if not self._eclient.conn or not self._eclient.conn.isConnected():
-                    self._log.debug(
-                        "`_is_ib_connected` unset by `_run_tws_incoming_msg_reader`.",
-                        LogColor.BLUE,
-                    )
-                    self._is_ib_connected.clear()
-                    await asyncio.sleep(1)
-                    continue
-                data = await self._loop.run_in_executor(None, self._eclient.conn.recvMsg)
+            while self._eclient.conn and self._eclient.conn.isConnected():
+                data = await asyncio.to_thread(self._eclient.conn.recvMsg)
                 buf += data
                 while buf:
                     _, msg, buf = comm.read_msg(buf)
@@ -493,9 +495,15 @@ class InteractiveBrokersClient(
         except Exception as e:
             self._log.exception("Unhandled exception in Client TWS incoming message reader", e)
         finally:
+            if self._is_ib_connected.is_set() and not self.is_disposed:
+                self._log.debug(
+                    "`_is_ib_connected` unset by `_run_tws_incoming_msg_reader`.",
+                    LogColor.BLUE,
+                )
+                self._is_ib_connected.clear()
             self._log.debug("Client TWS incoming message reader stopped.")
 
-    async def _run_internal_msg_queue(self) -> None:
+    async def _run_internal_msg_queue_processor(self) -> None:
         """
         Continuously process messages from the internal incoming message queue.
         """
@@ -503,10 +511,9 @@ class InteractiveBrokersClient(
             "Client internal message queue started.",
         )
         try:
-            while True:
-                if self._internal_msg_queue.empty():
-                    await asyncio.sleep(0)
-                    continue
+            while (
+                self._eclient.conn and self._eclient.conn.isConnected()
+            ) or not self._internal_msg_queue.empty():
                 msg = await self._internal_msg_queue.get()
                 self._process_message(msg)
                 self._internal_msg_queue.task_done()
