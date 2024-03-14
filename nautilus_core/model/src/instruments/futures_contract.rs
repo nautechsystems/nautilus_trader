@@ -41,7 +41,7 @@ pub struct FuturesContract {
     pub id: InstrumentId,
     pub raw_symbol: Symbol,
     pub asset_class: AssetClass,
-    /// The exchanges ISO 10383 Market Identifier Code (MIC) where the instrument trades.
+    /// The exchange ISO 10383 Market Identifier Code (MIC) where the instrument trades.
     pub exchange: Option<Ustr>,
     pub underlying: Ustr,
     pub activation_ns: UnixNanos,

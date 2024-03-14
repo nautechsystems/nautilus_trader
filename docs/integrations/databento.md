@@ -87,14 +87,15 @@ by either the original source venue, or internally by Databento during normaliza
 It's important to realize that this is different to the Nautilus `InstrumentId`
 which is a string made up of a symbol + venue with a period separator i.e. `"{symbol}.{venue}"`.
 
-The Nautilus decoder will use the Databento `raw_symbol` for the Nautilus `symbol` and an [ISO 10383 MIC](https://www.iso20022.org/market-identifier-codes) (Market Identification Code)
+The Nautilus decoder will use the Databento `raw_symbol` for the Nautilus `symbol` and an [ISO 10383 MIC](https://www.iso20022.org/market-identifier-codes) (Market Identifier Code)
 from the Databento instrument definition message for the Nautilus `venue`.
 
 Databento datasets are identified with a *dataset code* which is not the same
 as a venue identifier. You can read more about Databento dataset naming conventions [here](https://docs.databento.com/api-reference-historical/basics/datasets).
 
 Of particular note is for CME Globex MDP 3.0 data (`GLBX.MDP3` dataset code), the following
-exchanges are all grouped under the `GLBX` venue:
+exchanges are all grouped under the `GLBX` venue. These mappings can be determined from the
+instruments `exchange` field:
 - `CBCM` - **XCME-XCBT inter-exchange spread**
 - `NYUM` - **XNYM-DUMX inter-exchange spread**
 - `XCBT` - **Chicago Board of Trade (CBOT)**
