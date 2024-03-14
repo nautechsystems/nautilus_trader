@@ -24,6 +24,7 @@ use nautilus_core::{
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::prelude::ToPrimitive;
+use ustr::Ustr;
 
 use crate::{
     enums::AssetClass,
@@ -55,11 +56,13 @@ impl OptionsSpread {
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
         min_price: Option<Price>,
+        exchange: Option<String>,
     ) -> PyResult<Self> {
         Self::new(
             id,
             raw_symbol,
             asset_class,
+            exchange.map(|e| Ustr::from(&e)),
             underlying.into(),
             strategy_type.into(),
             activation_ns,
@@ -114,6 +117,12 @@ impl OptionsSpread {
     #[pyo3(name = "asset_class")]
     fn py_asset_class(&self) -> AssetClass {
         self.asset_class
+    }
+
+    #[getter]
+    #[pyo3(name = "exchange")]
+    fn py_exchange(&self) -> Option<String> {
+        self.exchange.map(|e| e.to_string())
     }
 
     #[getter]
@@ -245,6 +254,10 @@ impl OptionsSpread {
         match self.min_price {
             Some(value) => dict.set_item("min_price", value.to_string())?,
             None => dict.set_item("min_price", py.None())?,
+        }
+        match self.exchange {
+            Some(value) => dict.set_item("exchange", value.to_string())?,
+            None => dict.set_item("exchange", py.None())?,
         }
         Ok(dict.into())
     }

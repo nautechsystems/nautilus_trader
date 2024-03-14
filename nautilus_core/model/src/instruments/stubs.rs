@@ -297,6 +297,7 @@ pub fn futures_contract_es() -> FuturesContract {
         InstrumentId::from("ESZ1.GLBX"),
         Symbol::from("ESZ1"),
         AssetClass::Index,
+        Some(Ustr::from("XCME")),
         Ustr::from("ES"),
         activation.timestamp_nanos_opt().unwrap() as UnixNanos,
         expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
@@ -327,6 +328,7 @@ pub fn futures_spread_es() -> FuturesSpread {
         InstrumentId::from("ESM4-ESU4.GLBX"),
         Symbol::from("ESM4-ESU4"),
         AssetClass::Index,
+        Some(Ustr::from("XCME")),
         Ustr::from("ES"),
         Ustr::from("EQ"),
         activation.timestamp_nanos_opt().unwrap() as UnixNanos,
@@ -358,6 +360,7 @@ pub fn options_contract_appl() -> OptionsContract {
         InstrumentId::from("AAPL211217C00150000.OPRA"),
         Symbol::from("AAPL211217C00150000"),
         AssetClass::Equity,
+        Some(Ustr::from("GMNI")), // Nasdaq GEMX
         Ustr::from("AAPL"),
         OptionKind::Call,
         activation.timestamp_nanos_opt().unwrap() as UnixNanos,
@@ -390,6 +393,7 @@ pub fn options_spread() -> OptionsSpread {
         InstrumentId::from("UD:U$: GN 2534559.GLBX"),
         Symbol::from("UD:U$: GN 2534559"),
         AssetClass::FX,
+        Some(Ustr::from("XCME")),
         Ustr::from("SR3"), // British Pound futures (option on futures)
         Ustr::from("GN"),
         activation.timestamp_nanos_opt().unwrap() as UnixNanos,

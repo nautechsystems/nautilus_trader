@@ -18,6 +18,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 
 cdef class Equity(Instrument):
     cdef readonly str isin
+    """The instruments International Securities Identification Number (ISIN).\n\n:returns: `str` or ``None``"""
 
     @staticmethod
     cdef Equity from_dict_c(dict values)

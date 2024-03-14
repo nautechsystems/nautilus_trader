@@ -39,6 +39,7 @@ def test_to_dict():
         "id": "UD:U$: GN 2534559.GLBX",
         "raw_symbol": "UD:U$: GN 2534559",
         "asset_class": "FX",
+        "exchange": "XCME",
         "underlying": "SR3",
         "strategy_type": "GN",
         "activation_ns": 1699304047000000000,

@@ -53,6 +53,7 @@ def test_to_dict():
         "min_quantity": None,
         "ts_event": 0,
         "ts_init": 0,
+        "exchange": "XCME",
     }
 
 

@@ -47,7 +47,7 @@ cdef class Equity(Instrument):
     lot_size : Quantity
         The rounded lot unit size (standard/board).
     isin : str, optional
-        The International Securities Identification Number (ISIN).
+        The instruments International Securities Identification Number (ISIN).
     margin_init : Decimal, optional
         The initial (order) margin requirement in percentage of order value.
     margin_maint : Decimal, optional
@@ -71,6 +71,9 @@ cdef class Equity(Instrument):
         If `price_increment` is not positive (> 0).
     ValueError
         If `lot_size` is not positive (> 0).
+    ValueError
+        If `isin` is not ``None`` and not a valid string.
+
     """
 
     def __init__(
@@ -90,6 +93,8 @@ cdef class Equity(Instrument):
         taker_fee: Decimal | None = None,
         dict info = None,
     ):
+        if isin is not None:
+            Condition.valid_string(isin, "isin")
         super().__init__(
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
