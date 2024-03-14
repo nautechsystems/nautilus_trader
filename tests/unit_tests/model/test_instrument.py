@@ -206,6 +206,7 @@ class TestInstrument:
             "price_increment": "0.01",
             "size_precision": 6,
             "size_increment": "0.000001",
+            "lot_size": "1",
             "max_quantity": "9000.000000",
             "min_quantity": "0.000001",
             "max_notional": None,

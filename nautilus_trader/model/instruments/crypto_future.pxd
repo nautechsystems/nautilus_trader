@@ -34,3 +34,6 @@ cdef class CryptoFuture(Instrument):
 
     @staticmethod
     cdef dict to_dict_c(CryptoFuture obj)
+
+    @staticmethod
+    cdef CryptoFuture from_pyo3_c(pyo3_instrument)

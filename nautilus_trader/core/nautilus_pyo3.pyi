@@ -1065,6 +1065,10 @@ class CryptoFuture:
         size_precision: int,
         price_increment: Price,
         size_increment: Quantity,
+        maker_fee: Decimal,
+        taker_fee: Decimal,
+        margin_init: Decimal,
+        margin_maint: Decimal,
         ts_event: int,
         ts_init: int,
         lot_size: Quantity | None = None,
@@ -1075,6 +1079,8 @@ class CryptoFuture:
         max_price: Price | None = None,
         min_price: Price | None = None,
     ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> CryptoFuture: ...
     @property
     def id(self) -> InstrumentId: ...
     @property

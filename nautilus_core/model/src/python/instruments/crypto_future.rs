@@ -24,6 +24,7 @@ use nautilus_core::{
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 
 use crate::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
@@ -47,6 +48,10 @@ impl CryptoFuture {
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
+        maker_fee: Decimal,
+        taker_fee: Decimal,
+        margin_init: Decimal,
+        margin_maint: Decimal,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
         lot_size: Option<Quantity>,
@@ -69,6 +74,10 @@ impl CryptoFuture {
             size_precision,
             price_increment,
             size_increment,
+            maker_fee,
+            taker_fee,
+            margin_init,
+            margin_maint,
             lot_size,
             max_quantity,
             min_quantity,
@@ -170,7 +179,7 @@ impl CryptoFuture {
     #[getter]
     #[pyo3(name = "lot_size")]
     fn py_lot_size(&self) -> Option<Quantity> {
-        self.lot_size
+        Some(self.lot_size)
     }
 
     #[getter]
@@ -210,6 +219,36 @@ impl CryptoFuture {
     }
 
     #[getter]
+    #[pyo3(name = "margin_init")]
+    fn py_margin_init(&self) -> Decimal {
+        self.margin_init
+    }
+
+    #[getter]
+    #[pyo3(name = "margin_maint")]
+    fn py_margin_maint(&self) -> Decimal {
+        self.margin_maint
+    }
+
+    #[getter]
+    #[pyo3(name = "maker_fee")]
+    fn py_maker_fee(&self) -> Decimal {
+        self.maker_fee
+    }
+
+    #[getter]
+    #[pyo3(name = "taker_fee")]
+    fn py_taker_fee(&self) -> Decimal {
+        self.taker_fee
+    }
+
+    #[getter]
+    #[pyo3(name = "info")]
+    fn py_info(&self, py: Python<'_>) -> PyResult<PyObject> {
+        Ok(PyDict::new(py).into())
+    }
+
+    #[getter]
     #[pyo3(name = "ts_event")]
     fn py_ts_event(&self) -> UnixNanos {
         self.ts_event
@@ -245,12 +284,14 @@ impl CryptoFuture {
         dict.set_item("size_precision", self.size_precision)?;
         dict.set_item("price_increment", self.price_increment.to_string())?;
         dict.set_item("size_increment", self.size_increment.to_string())?;
+        dict.set_item("margin_init", self.margin_init.to_string())?;
+        dict.set_item("margin_maint", self.margin_maint.to_string())?;
+        dict.set_item("lot_size", self.lot_size.to_string())?;
+        dict.set_item("info", PyDict::new(py))?;
+        dict.set_item("maker_fee", self.maker_fee.to_string())?;
+        dict.set_item("taker_fee", self.taker_fee.to_string())?;
         dict.set_item("ts_event", self.ts_event)?;
         dict.set_item("ts_init", self.ts_init)?;
-        match self.lot_size {
-            Some(value) => dict.set_item("lot_size", value.to_string())?,
-            None => dict.set_item("lot_size", py.None())?,
-        }
         match self.max_quantity {
             Some(value) => dict.set_item("max_quantity", value.to_string())?,
             None => dict.set_item("max_quantity", py.None())?,
