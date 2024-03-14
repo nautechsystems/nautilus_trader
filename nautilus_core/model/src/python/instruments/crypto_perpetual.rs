@@ -221,6 +221,18 @@ impl CryptoPerpetual {
         self.ts_init
     }
 
+    #[getter]
+    #[pyo3(name = "margin_init")]
+    fn py_margin_init(&self) -> Decimal {
+        self.margin_init
+    }
+
+    #[getter]
+    #[pyo3(name = "margin_maint")]
+    fn py_margin_maint(&self) -> Decimal {
+        self.margin_maint
+    }
+
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {

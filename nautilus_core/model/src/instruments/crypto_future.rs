@@ -20,6 +20,7 @@ use std::{
 
 use anyhow::Result;
 use nautilus_core::time::UnixNanos;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use super::Instrument;
@@ -48,7 +49,11 @@ pub struct CryptoFuture {
     pub size_precision: u8,
     pub price_increment: Price,
     pub size_increment: Quantity,
-    pub lot_size: Option<Quantity>,
+    pub maker_fee: Decimal,
+    pub taker_fee: Decimal,
+    pub margin_init: Decimal,
+    pub margin_maint: Decimal,
+    pub lot_size: Quantity,
     pub max_quantity: Option<Quantity>,
     pub min_quantity: Option<Quantity>,
     pub max_notional: Option<Money>,
@@ -73,6 +78,10 @@ impl CryptoFuture {
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
+        maker_fee: Decimal,
+        taker_fee: Decimal,
+        margin_init: Decimal,
+        margin_maint: Decimal,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
@@ -95,7 +104,11 @@ impl CryptoFuture {
             size_precision,
             price_increment,
             size_increment,
-            lot_size,
+            maker_fee,
+            taker_fee,
+            margin_init,
+            margin_maint,
+            lot_size: lot_size.unwrap_or(Quantity::from(1)),
             max_quantity,
             min_quantity,
             max_notional,
@@ -177,7 +190,7 @@ impl Instrument for CryptoFuture {
     }
 
     fn lot_size(&self) -> Option<Quantity> {
-        self.lot_size
+        Some(self.lot_size)
     }
 
     fn max_quantity(&self) -> Option<Quantity> {
