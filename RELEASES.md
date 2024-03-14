@@ -6,9 +6,10 @@ Released on TBD (UTC).
 - Implemented Binance order book snapshot rebuilds on websocket reconnect (see integration guide)
 - Added additional validations for `OrderMatchingEngine` (will now raise a `RuntimeError` when a price or size precision for `OrderFilled` does not match the instruments precisions)
 - Added `LoggingConfig.use_pyo3` option for pyo3 based logging initialization (worse performance but allows visibility into logs originating from Rust)
+- Added `exchange` field to `FuturesContract`, `FuturesSpread`, `OptionsContract` and `OptionsSpread` (optional)
 
 ### Breaking Changes
-None
+- Changed Arrow schema adding `exchange` field for `FuturesContract`, `FuturesSpread`, `OptionsContract` and `OptionsSpread`
 
 ### Fixes
 - Fixed `MessageBus` handling of subscriptions after a topic has been published on (was previously dropping messages for these late subscribers)

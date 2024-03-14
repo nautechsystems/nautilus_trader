@@ -215,6 +215,7 @@ pub fn decode_futures_contract_v1(
 ) -> anyhow::Result<FuturesContract> {
     let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
+    let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
     let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
     let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
 
@@ -222,6 +223,7 @@ pub fn decode_futures_contract_v1(
         instrument_id,
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
+        Some(exchange),
         underlying,
         msg.activation,
         msg.expiration,
@@ -246,6 +248,7 @@ pub fn decode_futures_spread_v1(
 ) -> anyhow::Result<FuturesSpread> {
     let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
+    let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
     let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
     let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
     let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
@@ -254,6 +257,7 @@ pub fn decode_futures_spread_v1(
         instrument_id,
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
+        Some(exchange),
         underlying,
         strategy_type,
         msg.activation,
@@ -279,6 +283,7 @@ pub fn decode_options_contract_v1(
 ) -> anyhow::Result<OptionsContract> {
     let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
+    let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
     let asset_class_opt = match instrument_id.venue.value.as_str() {
         "OPRA" => Some(AssetClass::Equity),
         _ => {
@@ -293,6 +298,7 @@ pub fn decode_options_contract_v1(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
+        Some(exchange),
         underlying,
         parse_option_kind(msg.instrument_class)?,
         msg.activation,
@@ -319,6 +325,7 @@ pub fn decode_options_spread_v1(
 ) -> anyhow::Result<OptionsSpread> {
     let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
+    let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
     let asset_class_opt = match instrument_id.venue.value.as_str() {
         "OPRA" => Some(AssetClass::Equity),
         _ => {
@@ -334,6 +341,7 @@ pub fn decode_options_spread_v1(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
+        Some(exchange),
         underlying,
         strategy_type,
         msg.activation,
@@ -752,6 +760,7 @@ pub fn decode_futures_contract(
 ) -> anyhow::Result<FuturesContract> {
     let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
+    let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
     let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
     let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
 
@@ -759,6 +768,7 @@ pub fn decode_futures_contract(
         instrument_id,
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
+        Some(exchange),
         underlying,
         msg.activation,
         msg.expiration,
@@ -783,6 +793,7 @@ pub fn decode_futures_spread(
 ) -> anyhow::Result<FuturesSpread> {
     let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
+    let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
     let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
     let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
     let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
@@ -791,6 +802,7 @@ pub fn decode_futures_spread(
         instrument_id,
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
+        Some(exchange),
         underlying,
         strategy_type,
         msg.activation,
@@ -816,6 +828,7 @@ pub fn decode_options_contract(
 ) -> anyhow::Result<OptionsContract> {
     let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
+    let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
     let asset_class_opt = match instrument_id.venue.value.as_str() {
         "OPRA" => Some(AssetClass::Equity),
         _ => {
@@ -830,6 +843,7 @@ pub fn decode_options_contract(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
+        Some(exchange),
         underlying,
         parse_option_kind(msg.instrument_class)?,
         msg.activation,
@@ -863,6 +877,7 @@ pub fn decode_options_spread(
             asset_class
         }
     };
+    let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
     let underlying = unsafe { raw_ptr_to_ustr(msg.underlying.as_ptr())? };
     let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
     let currency = Currency::from_str(&currency_str)?;
@@ -871,6 +886,7 @@ pub fn decode_options_spread(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
+        Some(exchange),
         underlying,
         strategy_type,
         msg.activation,

@@ -255,6 +255,7 @@ class TestInstrument:
             "id": "ESZ3.GLBX",
             "raw_symbol": "ESZ3",
             "asset_class": "INDEX",
+            "exchange": "XCME",
             "underlying": "ES",
             "currency": "USD",
             "activation_ns": 1622842200000000000,
@@ -269,6 +270,7 @@ class TestInstrument:
             "size_precision": 0,
             "ts_event": 1622842200000000000,
             "ts_init": 1622842200000000000,
+            "info": None,
         }
 
     def test_option_instrument_to_dict(self):
@@ -282,6 +284,8 @@ class TestInstrument:
             "id": "AAPL211217C00150000.OPRA",
             "raw_symbol": "AAPL211217C00150000",
             "asset_class": "EQUITY",
+            "exchange": "GMNI",
+            "underlying": "AAPL",
             "currency": "USD",
             "activation_ns": 1631836800000000000,
             "expiration_ns": 1639699200000000000,
@@ -297,7 +301,7 @@ class TestInstrument:
             "strike_price": "149.00",
             "ts_event": 0,
             "ts_init": 0,
-            "underlying": "AAPL",
+            "info": None,
         }
 
     @pytest.mark.parametrize(

@@ -70,6 +70,8 @@ cdef class FuturesSpread(Instrument):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
+    exchange : str, optional
+        The instruments ISO 10383 Market Identifier Code (MIC).
     info : dict[str, object], optional
         The additional instrument information.
 
@@ -105,11 +107,14 @@ cdef class FuturesSpread(Instrument):
         uint64_t expiration_ns,
         uint64_t ts_event,
         uint64_t ts_init,
+        str exchange = None,
         dict info = None,
     ):
         Condition.valid_string(underlying, "underlying")
         Condition.valid_string(strategy_type, "strategy_type")
         Condition.positive_int(multiplier, "multiplier")
+        if exchange is not None:
+            Condition.valid_string(exchange, "exchange")
         super().__init__(
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
@@ -137,6 +142,7 @@ cdef class FuturesSpread(Instrument):
             ts_init=ts_init,
             info=info,
         )
+        self.exchange = exchange
         self.underlying = underlying
         self.strategy_type = strategy_type
         self.activation_ns = activation_ns
@@ -149,6 +155,7 @@ cdef class FuturesSpread(Instrument):
             f"raw_symbol={self.raw_symbol}, "
             f"asset_class={asset_class_to_str(self.asset_class)}, "
             f"instrument_class={instrument_class_to_str(self.instrument_class)}, "
+            f"exchange={self.exchange}, "
             f"quote_currency={self.quote_currency}, "
             f"underlying={self.underlying}, "
             f"strategy_type={self.strategy_type}, "
@@ -209,6 +216,8 @@ cdef class FuturesSpread(Instrument):
             expiration_ns=values["expiration_ns"],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            exchange=values["exchange"],
+            info=values.get("info"),
         )
 
     @staticmethod
@@ -234,6 +243,8 @@ cdef class FuturesSpread(Instrument):
             "margin_maint": str(obj.margin_maint),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "exchange": obj.exchange,
+            "info": obj.info,
         }
 
     @staticmethod
@@ -253,6 +264,7 @@ cdef class FuturesSpread(Instrument):
             expiration_ns=pyo3_instrument.expiration_ns,
             ts_event=pyo3_instrument.ts_event,
             ts_init=pyo3_instrument.ts_init,
+            exchange=pyo3_instrument.exchange,
         )
 
     @staticmethod

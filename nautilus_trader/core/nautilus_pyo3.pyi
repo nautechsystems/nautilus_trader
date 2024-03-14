@@ -1184,12 +1184,12 @@ class Equity:
         self,
         id: InstrumentId,
         raw_symbol: Symbol,
-        isin: str,
         currency: Currency,
         price_precision: int,
         price_increment: Price,
         ts_event: int,
         ts_init: int,
+        isin: str | None = None,
         lot_size: Quantity | None = None,
         max_quantity: Quantity | None = None,
         min_quantity: Quantity | None = None,
@@ -1234,6 +1234,8 @@ class FuturesContract:
         min_quantity: Quantity | None = None,
         max_price: Price | None = None,
         min_price: Price | None = None,
+        exchange: str | None = None,
+        info: dict[str, Any] | None = None,
     ) -> None: ...
     @property
     def id(self) -> InstrumentId: ...
@@ -1274,6 +1276,8 @@ class FuturesSpread:
         min_quantity: Quantity | None = None,
         max_price: Price | None = None,
         min_price: Price | None = None,
+        exchange: str | None = None,
+        info: dict[str, Any] | None = None,
     ) -> None: ...
     @property
     def id(self) -> InstrumentId: ...
@@ -1315,6 +1319,8 @@ class OptionsContract:
         min_quantity: Quantity | None = None,
         max_price: Price | None = None,
         min_price: Price | None = None,
+        exchange: str | None = None,
+        info: dict[str, Any] | None = None,
     ) -> None : ...
     @property
     def id(self) -> InstrumentId: ...
@@ -1355,6 +1361,8 @@ class OptionsSpread:
         min_quantity: Quantity | None = None,
         max_price: Price | None = None,
         min_price: Price | None = None,
+        exchange: str | None = None,
+        info: dict[str, Any] | None = None,
     ) -> None : ...
     @property
     def id(self) -> InstrumentId: ...
