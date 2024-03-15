@@ -168,6 +168,7 @@ class TestInstrument:
             "quote_currency": "USD",
             "settlement_currency": "BTC",
             "is_inverse": True,
+            "lot_size": "1",
             "price_precision": 1,
             "price_increment": "0.5",
             "size_precision": 0,
