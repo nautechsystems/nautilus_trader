@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.189.0"
+version = "1.190.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -78,12 +78,12 @@ ib = ["nautilus_ibapi", "async-timeout", "defusedxml"]
 optional = true
 
 [tool.poetry.group.dev.dependencies]
-black = "^24.2.0"
+black = "^24.3.0"
 docformatter = "^1.7.5"
 mypy = "^1.9.0"
 pandas-stubs = "^2.1.4"
 pre-commit = "^3.6.2"
-ruff = "^0.3.2"
+ruff = "^0.3.3"
 types-pytz = "^2023.3"
 types-requests = "^2.31"
 types-toml = "^0.10.2"
