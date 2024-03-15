@@ -91,13 +91,13 @@ class TestInstrumentProviderPyo3:
     def ethusdt_perp_binance() -> CryptoPerpetual:
         return CryptoPerpetual(
             id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
-            symbol=Symbol("ETHUSDT"),
+            symbol=Symbol("ETHUSDT-PERP"),
             base_currency=_ETH,
             quote_currency=_USDT,
             settlement_currency=_USDT,
             is_inverse=False,
             price_precision=2,
-            size_precision=0,
+            size_precision=3,
             price_increment=Price.from_str("0.01"),
             size_increment=Quantity.from_str("0.001"),
             lot_size=None,
