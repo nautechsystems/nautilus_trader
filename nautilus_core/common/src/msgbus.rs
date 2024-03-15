@@ -168,13 +168,12 @@ pub struct MessageBus {
 
 impl MessageBus {
     /// Initializes a new instance of the [`MessageBus`].
-    #[must_use]
     pub fn new(
         trader_id: TraderId,
         instance_id: UUID4,
         name: Option<String>,
         config: Option<HashMap<String, serde_json::Value>>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let config = config.unwrap_or_default();
         let has_backing = config
             .get("database")
@@ -183,16 +182,14 @@ impl MessageBus {
             let (tx, rx) = channel::<BusMessage>();
             let _join_handler = thread::Builder::new()
                 .name("msgbus".to_string())
-                .spawn(move || {
-                    Self::handle_messages(rx, trader_id, instance_id, config);
-                })
+                .spawn(move || Self::handle_messages(rx, trader_id, instance_id, config))
                 .expect("Error spawning `msgbus` thread");
             Some(tx)
         } else {
             None
         };
 
-        Self {
+        Ok(Self {
             tx,
             trader_id,
             instance_id,
@@ -206,7 +203,7 @@ impl MessageBus {
             endpoints: IndexMap::new(),
             correlation_index: IndexMap::new(),
             has_backing,
-        }
+        })
     }
 
     /// Returns the registered endpoint addresses.
@@ -412,7 +409,7 @@ impl MessageBus {
         trader_id: TraderId,
         instance_id: UUID4,
         config: HashMap<String, serde_json::Value>,
-    ) {
+    ) -> anyhow::Result<()> {
         let database_config = config
             .get("database")
             .expect("No `MessageBusConfig` `database` config specified");
@@ -436,8 +433,8 @@ fn handle_messages_with_redis_if_enabled(
     trader_id: TraderId,
     instance_id: UUID4,
     config: HashMap<String, Value>,
-) {
-    handle_messages_with_redis(rx, trader_id, instance_id, config);
+) -> anyhow::Result<()> {
+    handle_messages_with_redis(rx, trader_id, instance_id, config)
 }
 
 /// Handles messages using a default method if the "redis" feature is not enabled.
