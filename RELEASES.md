@@ -1,6 +1,6 @@
 # NautilusTrader 1.189.0 Beta
 
-Released on TBD (UTC).
+Released on 15th March 2024 (UTC).
 
 ### Enhancements
 - Implemented Binance order book snapshot rebuilds on websocket reconnect (see integration guide)
