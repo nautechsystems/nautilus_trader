@@ -260,7 +260,7 @@ It's possible to subscribe to Binance specific data streams as they become avail
 adapter over time.
 
 ```{note}
-Tickers and bars are not considered 'Binance specific' and can be subscribed to in the normal way.
+Bars are not considered 'Binance specific' and can be subscribed to in the normal way.
 However, as more adapters are built out which need for example mark price and funding rate updates, then these
 methods may eventually become first-class (not requiring custom/generic subscriptions as below).
 ```
