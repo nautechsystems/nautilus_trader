@@ -80,12 +80,10 @@ pub unsafe extern "C" fn msgbus_new(
     let name = optional_cstr_to_str(name_ptr).map(|s| s.to_string());
     let instance_id = UUID4::from(cstr_to_str(instance_id_ptr));
     let config = optional_bytes_to_json(config_ptr);
-    MessageBus_API(Box::new(MessageBus::new(
-        trader_id,
-        instance_id,
-        name,
-        config,
-    )))
+    MessageBus_API(Box::new(
+        MessageBus::new(trader_id, instance_id, name, config)
+            .expect("Error initializing `MessageBus`"),
+    ))
 }
 
 #[no_mangle]

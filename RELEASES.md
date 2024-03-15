@@ -3,7 +3,9 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Improved Redis cache adapter and message bus error handling and logging
+- Added `DatabaseConfig.timeout` config option for timeout seconds to wait for a new connection
+- Upgraded `redis` crate to 0.25.1 which bumps up TLS dependencies
 
 ### Breaking Changes
 None
@@ -20,7 +22,7 @@ Released on 15th March 2024 (UTC).
 ### Enhancements
 - Implemented Binance order book snapshot rebuilds on websocket reconnect (see integration guide)
 - Added additional validations for `OrderMatchingEngine` (will now raise a `RuntimeError` when a price or size precision for `OrderFilled` does not match the instruments precisions)
-- Added `LoggingConfig.use_pyo3` option for pyo3 based logging initialization (worse performance but allows visibility into logs originating from Rust)
+- Added `LoggingConfig.use_pyo3` config option for pyo3 based logging initialization (worse performance but allows visibility into logs originating from Rust)
 - Added `exchange` field to `FuturesContract`, `FuturesSpread`, `OptionsContract` and `OptionsSpread` (optional)
 
 ### Breaking Changes
