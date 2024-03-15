@@ -16,9 +16,8 @@
 use std::collections::HashMap;
 
 use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::enums::AccountType;
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide},
+    enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
     identifiers::account_id::AccountId,
     instruments::{
@@ -29,8 +28,7 @@ use nautilus_model::{
     position::Position,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
-use pyo3::types::PyDict;
-use pyo3::{basic::CompareOp, prelude::*};
+use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::account::{cash::CashAccount, Account};
 
