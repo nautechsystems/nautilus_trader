@@ -13,11 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{python::to_pyvalue_err, time::UnixNanos, uuid::UUID4};
-use pyo3::types::PyList;
-use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
-use rust_decimal::prelude::ToPrimitive;
 use std::str::FromStr;
+
+use nautilus_core::{python::to_pyvalue_err, time::UnixNanos, uuid::UUID4};
+use pyo3::{
+    basic::CompareOp,
+    prelude::*,
+    types::{PyDict, PyList},
+};
+use rust_decimal::prelude::ToPrimitive;
 
 use crate::{
     enums::AccountType,
@@ -151,7 +155,7 @@ impl AccountState {
         let event_id: &str = dict.get_item("event_id")?.unwrap().extract()?;
         let ts_event: u64 = dict.get_item("ts_event")?.unwrap().extract()?;
         let ts_init: u64 = dict.get_item("ts_init")?.unwrap().extract()?;
-        let account = AccountState::new(
+        let account = Self::new(
             AccountId::from_str(account_id).unwrap(),
             AccountType::from_str(account_type).unwrap(),
             balances,

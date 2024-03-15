@@ -53,6 +53,7 @@ pub struct DatabentoLiveClient {
 }
 
 impl DatabentoLiveClient {
+    #[must_use]
     pub fn is_closed(&self) -> bool {
         self.cmd_tx.is_closed()
     }

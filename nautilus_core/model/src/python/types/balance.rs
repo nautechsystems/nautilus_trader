@@ -13,15 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
-use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use std::str::FromStr;
 
-use crate::types::currency::Currency;
+use nautilus_core::python::to_pyvalue_err;
+use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
+
 use crate::{
     identifiers::instrument_id::InstrumentId,
     types::{
         balance::{AccountBalance, MarginBalance},
+        currency::Currency,
         money::Money,
     },
 };
@@ -73,7 +74,7 @@ impl AccountBalance {
         let locked_str: &str = dict.get_item("locked")?.unwrap().extract()?;
         let locked: f64 = locked_str.parse::<f64>().unwrap();
         let currency = Currency::from_str(currency)?;
-        let account_balance = AccountBalance::new(
+        let account_balance = Self::new(
             Money::new(total, currency)?,
             Money::new(locked, currency)?,
             Money::new(free, currency)?,
@@ -160,7 +161,7 @@ impl MarginBalance {
         let maintenance: f64 = maintenance_str.parse::<f64>().unwrap();
         let instrument_id_str: &str = dict.get_item("instrument_id")?.unwrap().extract()?;
         let currency = Currency::from_str(currency)?;
-        let account_balance = MarginBalance::new(
+        let account_balance = Self::new(
             Money::new(initial, currency)?,
             Money::new(maintenance, currency)?,
             InstrumentId::from_str(instrument_id_str).unwrap(),

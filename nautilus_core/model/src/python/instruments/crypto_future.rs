@@ -23,8 +23,7 @@ use nautilus_core::{
     time::UnixNanos,
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
-use rust_decimal::prelude::ToPrimitive;
-use rust_decimal::Decimal;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 
 use crate::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
