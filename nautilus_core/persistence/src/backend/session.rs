@@ -22,7 +22,6 @@ use datafusion::{
 use futures::StreamExt;
 use nautilus_core::ffi::cvec::CVec;
 use nautilus_model::data::{Data, HasTsInit};
-use pyo3::prelude::*;
 
 use super::kmerge_batch::{EagerStream, ElementBatchIter, KMerge};
 use crate::arrow::{
@@ -55,7 +54,7 @@ pub type QueryResult = KMerge<EagerStream<std::vec::IntoIter<Data>>, Data, TsIni
 /// a Vec of data by types that implement [`DecodeDataFromRecordBatch`].
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.persistence")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.persistence")
 )]
 pub struct DataBackendSession {
     pub chunk_size: usize,
@@ -174,7 +173,7 @@ unsafe impl Send for DataBackendSession {}
 
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.persistence")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.persistence")
 )]
 pub struct DataQueryResult {
     pub chunk: Option<CVec>,

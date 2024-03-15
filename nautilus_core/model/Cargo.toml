@@ -26,20 +26,9 @@ thiserror = { workspace = true }
 thousands = { workspace = true }
 ustr = { workspace = true }
 chrono = { workspace = true }
-derive_builder = "0.13.1"
+derive_builder = "0.20.0"
 evalexpr = "11.3.0"
 tabled = "0.15.0"
-
-[features]
-extension-module = [
-  "pyo3/extension-module",
-  "nautilus-core/extension-module",
-]
-ffi = ["cbindgen"]
-python = ["pyo3"]
-stubs = ["rstest"]
-trivial_copy = []  # Enables deriving the `Copy` trait for data types (should be included in default)
-default = ["ffi", "python", "stubs", "trivial_copy"]
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -48,6 +37,17 @@ iai = { workspace = true }
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
+
+[features]
+extension-module = [
+  "pyo3/extension-module",
+  "nautilus-core/extension-module",
+]
+ffi = ["cbindgen", "nautilus-core/ffi"]
+python = ["pyo3", "nautilus-core/python"]
+stubs = ["rstest"]
+trivial_copy = []  # Enables deriving the `Copy` trait for data types (should be included in default)
+default = ["trivial_copy"]
 
 [[bench]]
 name = "criterion_fixed_precision_benchmark"

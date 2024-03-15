@@ -1193,7 +1193,7 @@ cdef class DataType:
     Raises
     ------
     ValueError
-        If `type` is not a subclass of `Data`.
+        If `type` is not either a subclass of `Data` or meets the `Data` contract.
     TypeError
         If `metadata` contains a key or value which is not hashable.
 
@@ -1206,7 +1206,8 @@ cdef class DataType:
 
     def __init__(self, type type not None, dict metadata = None) -> None:  # noqa (shadows built-in type)
         if not issubclass(type, Data):
-            raise TypeError("`type` was not a subclass of `Data`")
+            if not (hasattr(type, "ts_event") and hasattr(type, "ts_init")):
+                raise TypeError("`type` was not a subclass of `Data`")
 
         self.type = type
         self.metadata = metadata or {}
@@ -2062,8 +2063,10 @@ cdef class OrderBookDelta(Data):
         for delta in deltas:
             if pyo3_instrument_id is None:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(delta.instrument_id.value)
-                price_prec = delta.order.price.precision
-                size_prec = delta.order.size.precision
+            if price_prec == 0:
+                price_prec = delta._mem.order.price.precision
+            if size_prec == 0:
+                size_prec = delta._mem.order.size.precision
 
             pyo3_book_order = nautilus_pyo3.BookOrder(
                nautilus_pyo3.OrderSide(order_side_to_str(delta._mem.order.side)),

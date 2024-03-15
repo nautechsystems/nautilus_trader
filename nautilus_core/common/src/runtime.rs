@@ -13,22 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use dotenv::dotenv;
-use nautilus_persistence::db::database::{Database, DatabaseEngine};
+use std::sync::OnceLock;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // load envs if exists
-    dotenv().ok();
+use tokio::runtime::Runtime;
 
-    let db = Database::new(Some(DatabaseEngine::POSTGRES), None).await;
+static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
-    db.execute("DROP SCHEMA IF EXISTS nautilus CASCADE;")
-        .await
-        .map_err(|e| e.to_string())?;
-    db.execute("DROP ROLE IF EXISTS nautilus;")
-        .await
-        .map_err(|e| e.to_string())?;
-    println!("Dropped nautilus schema and role.");
-    Ok(())
+pub fn get_runtime() -> &'static tokio::runtime::Runtime {
+    // Using default configuration values for now
+    RUNTIME.get_or_init(|| Runtime::new().expect("Failed to create tokio runtime"))
 }

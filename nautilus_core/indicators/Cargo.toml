@@ -12,13 +12,13 @@ crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 nautilus-core = { path = "../core" }
-nautilus-model = { path = "../model" }
+nautilus-model = { path = "../model", features = ["stubs"] }
 anyhow = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 strum = { workspace = true }
 
 [dev-dependencies]
-rstest.workspace = true
+rstest = { workspace = true }
 
 [features]
 extension-module = [
@@ -26,5 +26,5 @@ extension-module = [
     "nautilus-core/extension-module",
     "nautilus-model/extension-module",
 ]
-python = ["pyo3"]
-default = ["python"]
+python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]
+default = []

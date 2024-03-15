@@ -17,20 +17,14 @@ use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
     hash::Hash,
-    str::FromStr,
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{python::to_pyvalue_err, serialization::Serializable, time::UnixNanos};
-use pyo3::prelude::*;
+use nautilus_core::{serialization::Serializable, time::UnixNanos};
 use serde::{Deserialize, Serialize};
 
-use super::order::{BookOrder, OrderId, NULL_ORDER};
-use crate::{
-    enums::{BookAction, FromU8, OrderSide},
-    identifiers::instrument_id::InstrumentId,
-    types::{price::Price, quantity::Quantity},
-};
+use super::order::{BookOrder, NULL_ORDER};
+use crate::{enums::BookAction, identifiers::instrument_id::InstrumentId};
 
 /// Represents a single change/delta in an order book.
 #[repr(C)]
@@ -128,61 +122,6 @@ impl OrderBookDelta {
         metadata.insert("ts_init".to_string(), "UInt64".to_string());
         metadata
     }
-
-    /// Create a new [`OrderBookDelta`] extracted from the given [`PyAny`].
-    pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
-        let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
-        let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
-        let instrument_id = InstrumentId::from_str(instrument_id_str)
-            .map_err(to_pyvalue_err)
-            .unwrap();
-
-        let action_obj: &PyAny = obj.getattr("action")?.extract()?;
-        let action_u8 = action_obj.getattr("value")?.extract()?;
-        let action = BookAction::from_u8(action_u8).unwrap();
-
-        let flags: u8 = obj.getattr("flags")?.extract()?;
-        let sequence: u64 = obj.getattr("sequence")?.extract()?;
-        let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
-        let ts_init: UnixNanos = obj.getattr("ts_init")?.extract()?;
-
-        let order_pyobject = obj.getattr("order")?;
-        let order: BookOrder = if order_pyobject.is_none() {
-            NULL_ORDER
-        } else {
-            let side_obj: &PyAny = order_pyobject.getattr("side")?.extract()?;
-            let side_u8 = side_obj.getattr("value")?.extract()?;
-            let side = OrderSide::from_u8(side_u8).unwrap();
-
-            let price_py: &PyAny = order_pyobject.getattr("price")?;
-            let price_raw: i64 = price_py.getattr("raw")?.extract()?;
-            let price_prec: u8 = price_py.getattr("precision")?.extract()?;
-            let price = Price::from_raw(price_raw, price_prec).map_err(to_pyvalue_err)?;
-
-            let size_py: &PyAny = order_pyobject.getattr("size")?;
-            let size_raw: u64 = size_py.getattr("raw")?.extract()?;
-            let size_prec: u8 = size_py.getattr("precision")?.extract()?;
-            let size = Quantity::from_raw(size_raw, size_prec).map_err(to_pyvalue_err)?;
-
-            let order_id: OrderId = order_pyobject.getattr("order_id")?.extract()?;
-            BookOrder {
-                side,
-                price,
-                size,
-                order_id,
-            }
-        };
-
-        Ok(Self::new(
-            instrument_id,
-            action,
-            order,
-            flags,
-            sequence,
-            ts_event,
-            ts_init,
-        ))
-    }
 }
 
 impl Display for OrderBookDelta {
@@ -210,8 +149,9 @@ impl Serializable for OrderBookDelta {}
 pub mod stubs {
     use rstest::fixture;
 
-    use super::{BookAction, BookOrder, OrderBookDelta, OrderSide};
+    use super::{BookAction, BookOrder, OrderBookDelta};
     use crate::{
+        enums::OrderSide,
         identifiers::instrument_id::InstrumentId,
         types::{price::Price, quantity::Quantity},
     };
@@ -247,11 +187,13 @@ pub mod stubs {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use nautilus_core::serialization::Serializable;
     use rstest::rstest;
 
-    use super::{stubs::*, *};
     use crate::{
-        enums::OrderSide,
+        data::{delta::OrderBookDelta, order::BookOrder, stubs::*},
+        enums::{BookAction, OrderSide},
+        identifiers::instrument_id::InstrumentId,
         types::{price::Price, quantity::Quantity},
     };
 

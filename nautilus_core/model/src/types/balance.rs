@@ -16,7 +16,6 @@
 use std::fmt::{Display, Formatter};
 
 use anyhow::Result;
-use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -27,7 +26,7 @@ use crate::{
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct AccountBalance {
     pub currency: Currency,
@@ -69,7 +68,7 @@ impl PartialEq for AccountBalance {
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct MarginBalance {
     pub initial: Money,

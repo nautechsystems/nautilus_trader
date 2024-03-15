@@ -14,8 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import pytest
+from betfair_parser.spec.common import OrderSide as BetSide
 
 from nautilus_trader.accounting.accounts.betting import BettingAccount
+from nautilus_trader.adapters.betfair.parsing.common import bet_side_to_order_side
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
@@ -23,7 +25,6 @@ from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import order_side_from_str
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
@@ -192,12 +193,12 @@ class TestBettingAccount:
     @pytest.mark.parametrize(
         ("price", "quantity", "side", "locked_balance"),
         [
-            ("1.25", 10, "BUY", "10"),
-            ("2.00", 10, "BUY", "10"),
-            ("10.0", 20, "BUY", "20"),
-            ("1.25", 10, "SELL", "2.5"),
-            ("2.0", 10, "SELL", "10"),
-            ("10.0", 10, "SELL", "90"),
+            ("1.60", 10, BetSide.BACK, "10"),
+            ("2.00", 10, BetSide.BACK, "10"),
+            ("10.0", 20, BetSide.BACK, "20"),
+            ("1.25", 10, BetSide.LAY, "2.5"),
+            ("2.0", 10, BetSide.LAY, "10"),
+            ("10.0", 10, BetSide.LAY, "90"),
         ],
     )
     def test_calculate_balance_locked(self, price, quantity, side, locked_balance):
@@ -208,7 +209,7 @@ class TestBettingAccount:
         # Act
         result = account.calculate_balance_locked(
             instrument=self.instrument,
-            side=order_side_from_str(side),
+            side=bet_side_to_order_side(side),
             quantity=Quantity.from_int(quantity),
             price=Price.from_str(price),
         )
@@ -270,12 +271,12 @@ class TestBettingAccount:
     @pytest.mark.parametrize(
         "side, price, quantity, expected",
         [
-            (OrderSide.BUY, 5.0, 100.0, -100),
-            (OrderSide.BUY, 1.50, 100.0, -100),
-            (OrderSide.SELL, 5.0, 100.0, -400),
-            (OrderSide.SELL, 1.5, 100.0, -50),
-            (OrderSide.SELL, 5.0, 300.0, -1200),
-            (OrderSide.SELL, 10.0, 100.0, -900),
+            (BetSide.BACK, 5.0, 100.0, -100),
+            (BetSide.BACK, 1.50, 100.0, -100),
+            (BetSide.LAY, 5.0, 100.0, -400),
+            (BetSide.LAY, 1.5, 100.0, -50),
+            (BetSide.LAY, 5.0, 300.0, -1200),
+            (BetSide.LAY, 10.0, 100.0, -900),
         ],
     )
     def test_balance_impact(self, side, price, quantity, expected):
@@ -288,7 +289,7 @@ class TestBettingAccount:
             instrument=instrument,
             quantity=Quantity(quantity, instrument.size_precision),
             price=Price(price, instrument.price_precision),
-            order_side=side,
+            order_side=bet_side_to_order_side(side),
         )
 
         # Assert

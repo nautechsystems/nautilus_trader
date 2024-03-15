@@ -263,9 +263,9 @@ class TestBacktestConfigParsing:
         print("token:", token)
         value: bytes = self.backtest_config.json()
         print("token_value:", value.decode())
-        assert token == "1d758e23defb5a69e2449ed03216ef7727c50e12c23730cc0309087ee7e71994"  # UNIX
+        assert token == "1d758e23defb5a69e2449ed03216ef7727c50e12c23730cc0309087ee7e71994"
 
-    @pytest.mark.skip(reason="fix after merge")
+    @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     @pytest.mark.parametrize(
         ("config_func", "keys", "kw", "expected"),
         [
@@ -273,31 +273,25 @@ class TestBacktestConfigParsing:
                 TestConfigStubs.venue_config,
                 (),
                 {},
-                ("7919596b3762fd98d79afa64976a292d408313816d38ec26ebd29e31049b92f9",),
+                ("8c41b4ffb879421b580df2ae01ce5079f4b85e9e7fcdbd531342e7ca68537f93",),
             ),
             (
                 TestConfigStubs.backtest_data_config,
                 ("catalog",),
                 {},
-                (
-                    "8485d8c61bb15514769412bc4c0fb0a662617b3245d751c40e3627a1b6762ba0",  # UNIX
-                    "d32e5785aad958ec163da39ba501a8fbe654fd973ada46e21907631824369ce4",  # Windows
-                ),
+                ("aad6794664f7690691f1ca3c9da8d8051b21a3bab7877fc9c594a78871cb76a8",),
             ),
             (
                 TestConfigStubs.backtest_engine_config,
                 ("catalog",),
                 {"persist": True},
-                (
-                    "90f34a9e9474a35a365fa6ffb4bd8586f443a98ff845dec019ed9c857774f6cb",
-                    "11048af3175c58d841d1e936e6075d053d8d445d889ab653229208033f60307d",
-                ),
+                ("fa93b3a2e7e7004b9d287227928371a90de574bf9e32c43d4dd60abbd7f292f9",),
             ),
             (
                 TestConfigStubs.risk_engine_config,
                 (),
                 {},
-                ("962367da58082b349922801d5fea53526f1c35149a042c84fde2fc69c8fb46cf",),
+                ("0e2e102195b32171d558b122264aed0a024b381fa6f31c6fff5958218c2644c4",),
             ),
             (
                 TestConfigStubs.exec_engine_config,
@@ -309,16 +303,13 @@ class TestBacktestConfigParsing:
                 TestConfigStubs.streaming_config,
                 ("catalog",),
                 {},
-                (
-                    "a1d857e553be89e5e6336fa7d1ee2c55032ada5d63193ecc959b216b4afc3f18",
-                    "1f1564863058e883768f311e4724fa1f4ddcab0faf717d262a586f734403dc11",
-                ),
+                ("c287d8e433d931f014895daa4400171a67c30b8c61d94f51be60ad162bdef6cd",),
             ),
         ],
     )
     def test_tokenize_config(self, config_func, keys, kw, expected) -> None:
         config = config_func(**{k: getattr(self, k) for k in keys}, **kw)
-        token = tokenize_config(config.dict())
+        token = tokenize_config(config)
         assert token in expected
 
     def test_backtest_main_cli(self, mocker) -> None:

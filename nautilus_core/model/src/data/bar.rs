@@ -22,7 +22,8 @@ use std::{
 
 use indexmap::IndexMap;
 use nautilus_core::{serialization::Serializable, time::UnixNanos};
-use pyo3::prelude::*;
+#[cfg(feature = "python")]
+use pyo3::{PyAny, PyResult};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{

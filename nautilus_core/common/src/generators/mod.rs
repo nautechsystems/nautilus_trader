@@ -17,10 +17,10 @@ pub mod client_order_id;
 pub mod order_list_id;
 pub mod position_id;
 
-use chrono::{Datelike, NaiveDateTime, Timelike};
+use chrono::{DateTime, Datelike, Timelike};
 
 fn get_datetime_tag(unix_ms: u64) -> String {
-    let now_utc = NaiveDateTime::from_timestamp_millis(unix_ms as i64).unwrap();
+    let now_utc = DateTime::from_timestamp_millis(unix_ms as i64).unwrap();
     format!(
         "{}{:02}{:02}-{:02}{:02}",
         now_utc.year(),

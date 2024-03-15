@@ -21,6 +21,8 @@ from nautilus_trader.model.objects cimport Price
 
 
 cdef class OptionsSpread(Instrument):
+    cdef readonly str exchange
+    """The exchang ISO 10383 Market Identifier Code (MIC) where the instrument trades.\n\n:returns: `str` or ``None``"""
     cdef readonly str underlying
     """The underlying asset for the contract.\n\n:returns: `str`"""
     cdef readonly str strategy_type

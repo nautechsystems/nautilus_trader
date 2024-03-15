@@ -27,25 +27,12 @@ use nautilus_model::identifiers::trader_id::TraderId;
 use crate::{
     enums::{LogColor, LogLevel},
     logging::{
-        self, headers, logging_set_bypass, map_log_level_to_filter, parse_component_levels,
-        writer::FileWriterConfig, LoggerConfig,
+        self, headers,
+        logger::{self, LoggerConfig},
+        logging_set_bypass, map_log_level_to_filter, parse_component_levels,
+        writer::FileWriterConfig,
     },
 };
-
-/// Initializes tracing.
-///
-/// Tracing is meant to be used to trace/debug async Rust code. It can be
-/// configured to filter modules and write up to a specific level only using
-/// by passing a configuration using the `RUST_LOG` environment variable.
-///
-/// # Safety
-///
-/// Should only be called once during an applications run, ideally at the
-/// beginning of the run.
-#[no_mangle]
-pub extern "C" fn tracing_init() {
-    logging::init_tracing();
-}
 
 /// Initializes logging.
 ///
@@ -119,7 +106,7 @@ pub unsafe extern "C" fn logger_log(
     let component = cstr_to_ustr(component_ptr);
     let message = cstr_to_str(message_ptr);
 
-    logging::log(level, color, component, message);
+    logger::log(level, color, component, message);
 }
 
 /// Logs the Nautilus system header.

@@ -16,6 +16,7 @@
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     hash::{Hash, Hasher},
+    str::FromStr,
 };
 
 use nautilus_core::{
@@ -23,15 +24,77 @@ use nautilus_core::{
     serialization::Serializable,
     time::UnixNanos,
 };
-use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
+use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use super::data_to_pycapsule;
 use crate::{
-    data::{delta::OrderBookDelta, order::BookOrder, Data},
-    enums::BookAction,
+    data::{
+        delta::OrderBookDelta,
+        order::{BookOrder, OrderId, NULL_ORDER},
+        Data,
+    },
+    enums::{BookAction, FromU8, OrderSide},
     identifiers::instrument_id::InstrumentId,
     python::common::PY_MODULE_MODEL,
+    types::{price::Price, quantity::Quantity},
 };
+
+impl OrderBookDelta {
+    /// Create a new [`OrderBookDelta`] extracted from the given [`PyAny`].
+    pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
+        let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
+        let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
+        let instrument_id = InstrumentId::from_str(instrument_id_str)
+            .map_err(to_pyvalue_err)
+            .unwrap();
+
+        let action_obj: &PyAny = obj.getattr("action")?.extract()?;
+        let action_u8 = action_obj.getattr("value")?.extract()?;
+        let action = BookAction::from_u8(action_u8).unwrap();
+
+        let flags: u8 = obj.getattr("flags")?.extract()?;
+        let sequence: u64 = obj.getattr("sequence")?.extract()?;
+        let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
+        let ts_init: UnixNanos = obj.getattr("ts_init")?.extract()?;
+
+        let order_pyobject = obj.getattr("order")?;
+        let order: BookOrder = if order_pyobject.is_none() {
+            NULL_ORDER
+        } else {
+            let side_obj: &PyAny = order_pyobject.getattr("side")?.extract()?;
+            let side_u8 = side_obj.getattr("value")?.extract()?;
+            let side = OrderSide::from_u8(side_u8).unwrap();
+
+            let price_py: &PyAny = order_pyobject.getattr("price")?;
+            let price_raw: i64 = price_py.getattr("raw")?.extract()?;
+            let price_prec: u8 = price_py.getattr("precision")?.extract()?;
+            let price = Price::from_raw(price_raw, price_prec).map_err(to_pyvalue_err)?;
+
+            let size_py: &PyAny = order_pyobject.getattr("size")?;
+            let size_raw: u64 = size_py.getattr("raw")?.extract()?;
+            let size_prec: u8 = size_py.getattr("precision")?.extract()?;
+            let size = Quantity::from_raw(size_raw, size_prec).map_err(to_pyvalue_err)?;
+
+            let order_id: OrderId = order_pyobject.getattr("order_id")?.extract()?;
+            BookOrder {
+                side,
+                price,
+                size,
+                order_id,
+            }
+        };
+
+        Ok(Self::new(
+            instrument_id,
+            action,
+            order,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        ))
+    }
+}
 
 #[pymethods]
 impl OrderBookDelta {
@@ -226,7 +289,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::data::delta::stubs::stub_delta;
+    use crate::data::stubs::*;
 
     #[rstest]
     fn test_as_dict(stub_delta: OrderBookDelta) {

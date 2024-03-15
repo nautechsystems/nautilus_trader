@@ -29,14 +29,13 @@ use nautilus_model::{
         balance::AccountBalance, currency::Currency, money::Money, price::Price, quantity::Quantity,
     },
 };
-use pyo3::prelude::*;
 
 use crate::account::{base::BaseAccount, Account};
 
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.accounting")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.accounting")
 )]
 pub struct CashAccount {
     pub base: BaseAccount,

@@ -130,9 +130,6 @@ cdef extern from "../includes/common.h":
     cdef struct TestClock:
         pass
 
-    cdef struct PyCallableWrapper_t:
-        PyObject *ptr;
-
     # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
     #
     # This struct wraps `TestClock` in a way that makes it compatible with C function
@@ -182,10 +179,8 @@ cdef extern from "../includes/common.h":
     cdef struct TimeEventHandler_t:
         # The event.
         TimeEvent_t event;
-        # The Python callable pointer.
-        PyObject *callback_ptr;
-
-    PyCallableWrapper_t dummy_callable(PyCallableWrapper_t c);
+        # The callable raw pointer.
+        char *callback_ptr;
 
     # Returns whether the core logger is enabled.
     uint8_t logging_is_initialized();
@@ -359,18 +354,6 @@ cdef extern from "../includes/common.h":
     # - Assumes `ptr` is a valid C string pointer.
     LogColor log_color_from_cstr(const char *ptr);
 
-    # Initializes tracing.
-    #
-    # Tracing is meant to be used to trace/debug async Rust code. It can be
-    # configured to filter modules and write up to a specific level only using
-    # by passing a configuration using the `RUST_LOG` environment variable.
-    #
-    # # Safety
-    #
-    # Should only be called once during an applications run, ideally at the
-    # beginning of the run.
-    void tracing_init();
-
     # Initializes logging.
     #
     # Logging should be used for Python and sync Rust logic which is most of
@@ -527,8 +510,6 @@ cdef extern from "../includes/common.h":
     #
     # - Assumes `pattern_ptr` is a valid C string pointer.
     CVec msgbus_matching_callbacks(MessageBus_API *bus, const char *pattern_ptr);
-
-    void vec_pycallable_drop(CVec v);
 
     # # Safety
     #

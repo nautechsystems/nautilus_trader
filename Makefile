@@ -70,11 +70,15 @@ docs-python: install-just-deps-all
 
 .PHONY: docs-rust
 docs-rust:
-	(cd nautilus_core && RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --no-deps)
+	(cd nautilus_core && RUSTDOCFLAGS="--enable-index-page -Zunstable-options --deny warnings" cargo +nightly doc --no-deps)
 
 .PHONY: clippy
 clippy:
 	(cd nautilus_core && cargo clippy --fix --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used)
+
+.PHONY: clippy-nightly
+clippy-nightly:
+	(cd nautilus_core && cargo +nightly clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used)
 
 .PHONY: cargo-build
 cargo-build:

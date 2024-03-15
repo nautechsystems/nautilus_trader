@@ -24,15 +24,15 @@ It's advised to conduct some of your own testing with small amounts of capital b
 running strategies which are able to access larger capital allocations.
 ```
 
-| Name                                                      | ID          | Type                    | Status                                                  | Docs                                                              |
-| :-------------------------------------------------------- | :---------- | :---------------------- | :------------------------------------------------------ | :---------------------------------------------------------------- |
-| [Betfair](https://betfair.com)                            | `BETFAIR`   | Sports Betting Exchange | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/betfair.html) |
-| [Binance](https://binance.com)                            | `BINANCE`   | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-| [Binance US](https://binance.us)                          | `BINANCE`   | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-| [Binance Futures](https://www.binance.com/en/futures)     | `BINANCE`   | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-| [Bybit](https://www.bybit.com)                            | `BYBIT`     | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) |                                                                   |
-| [Databento](https://databento.com)                        | `DATABENTO` | Data provider           | ![status](https://img.shields.io/badge/building-orange) |                                                                   |
-| [Interactive Brokers](https://www.interactivebrokers.com) | `IB`        | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/ib.html)      |
+| Name                                                      | ID                    | Type                    | Status                                                  | Docs                                                                |
+| :-------------------------------------------------------- | :-------------------- | :---------------------- | :------------------------------------------------------ | :------------------------------------------------------------------ |
+| [Betfair](https://betfair.com)                            | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/betfair.html)   |
+| [Binance](https://binance.com)                            | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html)   |
+| [Binance US](https://binance.us)                          | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html)   |
+| [Binance Futures](https://www.binance.com/en/futures)     | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html)   |
+| [Bybit](https://www.bybit.com)                            | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) |                                                                     |
+| [Databento](https://databento.com)                        | `DATABENTO`           | Data provider           | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/databento.html) |
+| [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/ib.html)        |
 
 ## Implementation goals
 
@@ -60,5 +60,5 @@ a warning or error when a user attempts to perform said action
 All integrations must be compatible with the NautilusTrader API at the system boundary,
 this means there is some normalization and standardization needed.
 
-- All symbols will match the native/local symbol for the exchange, unless there are conflicts (such as Binance using the same symbol for both Spot and Perpetual Futures markets).
-- All timestamps will be either normalized to UNIX nanoseconds, or clearly marked as UNIX milliseconds by appending `_ms` to param and property names.
+- All symbols will match the raw/native/local symbol for the exchange, unless there are conflicts (such as Binance using the same symbol for both Spot and Perpetual Futures markets)
+- All timestamps will be either normalized to UNIX nanoseconds, or clearly marked as UNIX milliseconds by appending `_ms` to param and property names

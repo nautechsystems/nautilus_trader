@@ -22,6 +22,7 @@ from nautilus_trader.model.tick_scheme.base cimport TickScheme
 cdef class TieredTickScheme(TickScheme):
     cdef list tiers
     cdef int max_ticks_per_tier
+    cdef int price_precision
     cdef int tick_count
 
     cdef readonly np.ndarray ticks

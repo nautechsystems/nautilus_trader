@@ -37,7 +37,7 @@ First, download and load the data by running the next cell (this should take ~ 1
 
 ```bash
 !apt-get update && apt-get install curl -y
-!curl https://raw.githubusercontent.com/nautechsystems/nautilus_data/main/scripts/hist_data_to_catalog.py | python - 
+!curl https://raw.githubusercontent.com/nautechsystems/nautilus_data/main/nautilus_data/hist_data_to_catalog.py | python -
 ```
 
 ## Connecting to the ParquetDataCatalog
@@ -56,10 +56,10 @@ catalog.instruments()
 
 ## Writing a trading strategy
 
-NautilusTrader includes a handful of indicators built-in, in this example we will use a MACD indicator to 
-build a simple trading strategy. 
+NautilusTrader includes many indicators built-in, in this example we will use the MACD indicator to 
+build a simple trading strategy.
 
-You can read more about [MACD here](https://www.investopedia.com/terms/m/macd.asp), so this 
+You can read more about [MACD here](https://www.investopedia.com/terms/m/macd.asp), this 
 indicator merely serves as an example without any expected alpha. There is also a way of
 registering indicators to receive certain data types, however in this example we manually pass the received
 `QuoteTick` to the indicator in the `on_quote_tick` method.
@@ -167,9 +167,9 @@ class MACDStrategy(Strategy):
 
 ## Configuring Backtests
 
-Now that we have a trading strategy and data, we can begin to configure a backtest run! Nautilus uses a `BacktestNode` 
-to orchestrate backtest runs, which requires some setup. This may seem a little complex at first, 
-however this is necessary for the capabilities that Nautilus strives for.
+Now that we have a trading strategy and data, we can begin to configure a backtest run. 
+
+Nautilus uses a `BacktestNode` to orchestrate backtest runs, which requires some setup.
 
 To configure a `BacktestNode`, we first need to create an instance of a `BacktestRunConfig`, configuring the 
 following (minimal) aspects of the backtest:
@@ -178,7 +178,7 @@ following (minimal) aspects of the backtest:
 - `venues` - The simulated execution venues (exchanges or brokers) available in the backtest
 - `data` - The input data we would like to perform the backtest on
 
-There are many more configurable features which will be described later in the docs, for now this will get us up and running.
+There are many more configuration options which are described the docs, for now this will get us up and running.
 
 ## Venue
 
@@ -205,7 +205,7 @@ venue = BacktestVenueConfig(
 
 ## Instruments
 
-Second, we need to know about the instruments that we would like to load data for, we can use the `ParquetDataCatalog` for this:
+Second, we need to specify the instruments that we would like to load data for, we can use the `ParquetDataCatalog` for this:
 
 ```python
 instruments = catalog.instruments()
@@ -237,7 +237,7 @@ data = BacktestDataConfig(
 
 Then, we need a `BacktestEngineConfig` which represents the configuration of our core trading system.
 Here we need to pass our trading strategies, we can also adjust the log level 
-and configure many other components (however, it's also fine to use the defaults):
+and configure many other components (however, it's also fine to use the sensible defaults):
 
 Strategies are added via the `ImportableStrategyConfig`, which allows importing strategies from arbitrary files or 
 user packages. In this instance, our `MACDStrategy` is defined in the current module, which python refers to as `__main__`.

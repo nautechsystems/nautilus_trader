@@ -674,10 +674,10 @@ async def test_duplicate_trade_id(exec_client, setup_order_state, fill_events, c
 @pytest.mark.parametrize(
     ("side", "price", "quantity", "free"),
     [
-        (OrderSide.BUY, Price.from_str("2.0"), Quantity.from_str("100"), 900),
-        (OrderSide.BUY, Price.from_str("5.0"), Quantity.from_str("50"), 950),
-        (OrderSide.SELL, Price.from_str("1.2"), Quantity.from_str("100"), 980),
-        (OrderSide.SELL, Price.from_str("5.0"), Quantity.from_str("100"), 600),
+        (OrderSide.SELL, Price.from_str("2.0"), Quantity.from_str("100"), 9900),
+        (OrderSide.SELL, Price.from_str("5.0"), Quantity.from_str("50"), 9950),
+        (OrderSide.BUY, Price.from_str("1.2"), Quantity.from_str("100"), 9980),
+        (OrderSide.BUY, Price.from_str("5.0"), Quantity.from_str("100"), 9600),
     ],
 )
 @pytest.mark.asyncio()
@@ -724,9 +724,9 @@ async def test_betfair_back_order_reduces_balance(
     await asyncio.sleep(0)
 
     # Assert
-    assert balance_pre_order.free == Money(1000.0, GBP)
+    assert balance_pre_order.free == Money(10000.0, GBP)
     assert balance_order.free == Money(free, GBP)
-    assert balance_cancel.free == Money(1000.0, GBP)
+    assert balance_cancel.free == Money(10000.0, GBP)
 
 
 @pytest.mark.asyncio()
@@ -945,7 +945,7 @@ async def test_fok_order_found_in_cache(exec_client, setup_order_state, strategy
         instrument=instrument,
         order_side=OrderSide.SELL,
         price=Price(9.6000000, BETFAIR_PRICE_PRECISION),
-        quantity=Quantity(2.8000, 4),
+        quantity=Quantity(2.8000, 2),
         time_in_force=TimeInForce.FOK,
         client_order_id=client_order_id,
     )
@@ -1006,6 +1006,37 @@ async def test_generate_order_status_reports_executable(exec_client):
     assert reports[1].quantity == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
     assert reports[1].order_status == OrderStatus.ACCEPTED
     assert reports[1].filled_qty == 0.0
+    assert reports[1].time_in_force == TimeInForce.DAY
+
+
+@pytest.mark.asyncio
+async def test_generate_order_status_reports_executable_limit_on_close(exec_client):
+    # Arrange
+    mock_betfair_request(
+        exec_client._client,
+        BetfairResponses.list_current_orders_on_close_execution_complete(),
+    )
+
+    # Act
+    reports = await exec_client.generate_order_status_reports()
+
+    # Assert
+    assert len(reports) == 2
+
+    # Back
+    assert reports[0].order_side == OrderSide.SELL
+    assert reports[0].price == Price(5.0, BETFAIR_PRICE_PRECISION)
+    assert reports[0].quantity == Quantity(20.0, BETFAIR_QUANTITY_PRECISION)
+    assert reports[0].order_status == OrderStatus.ACCEPTED
+    assert reports[0].filled_qty == Quantity(20.0, BETFAIR_QUANTITY_PRECISION)
+    assert reports[0].time_in_force == TimeInForce.DAY
+
+    # Lay
+    assert reports[1].order_side == OrderSide.BUY
+    assert reports[1].price == Price(1.5, BETFAIR_PRICE_PRECISION)
+    assert reports[1].quantity == Quantity(50.0, BETFAIR_QUANTITY_PRECISION)
+    assert reports[1].order_status == OrderStatus.ACCEPTED
+    assert reports[1].filled_qty == Quantity(50.0, BETFAIR_QUANTITY_PRECISION)
     assert reports[1].time_in_force == TimeInForce.DAY
 
 

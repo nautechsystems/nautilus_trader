@@ -39,6 +39,7 @@ def test_to_dict():
         "id": "AAPL211217C00150000.OPRA",
         "raw_symbol": "AAPL211217C00150000",
         "asset_class": "EQUITY",
+        "exchange": "GMNI",
         "underlying": "AAPL",
         "option_kind": "CALL",
         "activation_ns": 1631836800000000000,

@@ -25,6 +25,8 @@ import pandas as pd
 import pytz
 from fsspec.implementations.local import LocalFileSystem
 
+from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
+from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import secs_to_nanos
@@ -521,6 +523,7 @@ class TestInstrumentProvider:
             instrument_id=InstrumentId(symbol=Symbol(raw_symbol), venue=Venue("GLBX")),
             raw_symbol=Symbol(raw_symbol),
             asset_class=AssetClass.INDEX,
+            exchange="XCME",
             currency=USD,
             price_precision=2,
             price_increment=Price.from_str("0.25"),
@@ -538,11 +541,13 @@ class TestInstrumentProvider:
         symbol: str = "ESZ1",
         underlying: str = "ES",
         venue: str = "GLBX",
+        exchange: str = "XCME",
     ) -> FuturesContract:
         return FuturesContract(
             instrument_id=InstrumentId(symbol=Symbol(symbol), venue=Venue(venue)),
             raw_symbol=Symbol(symbol),
             asset_class=AssetClass.INDEX,
+            exchange=exchange,
             currency=USD,
             price_precision=2,
             price_increment=Price.from_str("0.01"),
@@ -561,6 +566,7 @@ class TestInstrumentProvider:
             instrument_id=InstrumentId(symbol=Symbol("AAPL211217C00150000"), venue=Venue("OPRA")),
             raw_symbol=Symbol("AAPL211217C00150000"),
             asset_class=AssetClass.EQUITY,
+            exchange="GMNI",
             currency=USD,
             price_precision=2,
             price_increment=Price.from_str("0.01"),
@@ -610,6 +616,8 @@ class TestInstrumentProvider:
             selection_id=50214,
             selection_name="Kansas City Chiefs",
             currency="GBP",
+            price_precision=BETFAIR_PRICE_PRECISION,
+            size_precision=BETFAIR_QUANTITY_PRECISION,
             ts_event=0,
             ts_init=0,
         )

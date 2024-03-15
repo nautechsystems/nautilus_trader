@@ -19,15 +19,20 @@ pub mod deltas;
 pub mod depth;
 pub mod order;
 pub mod quote;
+#[cfg(feature = "stubs")]
+pub mod stubs;
 pub mod trade;
 
 use nautilus_core::time::UnixNanos;
 
 use self::{
-    bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10,
-    quote::QuoteTick, trade::TradeTick,
+    bar::Bar,
+    delta::OrderBookDelta,
+    deltas::{OrderBookDeltas, OrderBookDeltas_API},
+    depth::OrderBookDepth10,
+    quote::QuoteTick,
+    trade::TradeTick,
 };
-use crate::ffi::data::deltas::OrderBookDeltas_API;
 
 #[repr(C)]
 #[derive(Clone, Debug)]

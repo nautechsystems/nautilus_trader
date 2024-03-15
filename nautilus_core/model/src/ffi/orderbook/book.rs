@@ -23,16 +23,15 @@ use nautilus_core::ffi::{cvec::CVec, string::str_to_cstr};
 use super::{container::OrderBookContainer, level::Level_API};
 use crate::{
     data::{
-        delta::OrderBookDelta, depth::OrderBookDepth10, order::BookOrder, quote::QuoteTick,
-        trade::TradeTick,
+        delta::OrderBookDelta, deltas::OrderBookDeltas_API, depth::OrderBookDepth10,
+        order::BookOrder, quote::QuoteTick, trade::TradeTick,
     },
     enums::{BookType, OrderSide},
-    ffi::data::deltas::OrderBookDeltas_API,
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
 
-/// Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBook`].
+/// Provides a C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
 ///
 /// This struct wraps `OrderBook` in a way that makes it compatible with C function
 /// calls, enabling interaction with `OrderBook` in a C environment.
@@ -257,8 +256,8 @@ pub extern "C" fn orderbook_simulate_fills(book: &OrderBook_API, order: BookOrde
 }
 
 #[no_mangle]
-pub extern "C" fn orderbook_check_integrity(book: &OrderBook_API) {
-    book.check_integrity().unwrap();
+pub extern "C" fn orderbook_check_integrity(book: &OrderBook_API) -> u8 {
+    u8::from(book.check_integrity().is_ok())
 }
 
 // TODO: This struct implementation potentially leaks memory
@@ -272,7 +271,7 @@ pub extern "C" fn vec_fills_drop(v: CVec) {
     drop(data); // Memory freed here
 }
 
-/// Returns a pretty printed [`OrderBook`] number of levels per side, as a C string pointer.
+/// Returns a pretty printed `OrderBook` number of levels per side, as a C string pointer.
 #[no_mangle]
 pub extern "C" fn orderbook_pprint_to_cstr(
     book: &OrderBook_API,

@@ -5,10 +5,10 @@ a trading domain:
 
 - `OrderBookDelta` (L1/L2/L3) - Most granular order book updates
 - `OrderBookDeltas` (L1/L2/L3) - Bundles multiple order book deltas
+- `OrderBookDepth10` - Aggregated order book snapshot (10 levels per side)
 - `QuoteTick` - Top-of-book best bid and ask prices and sizes
 - `TradeTick` - A single trade/match event between counterparties
 - `Bar` - OHLCV 'bar' data, aggregated using a specific *method*
-- `Ticker` - General base class for a symbol ticker
 - `Instrument` - General base class for a tradable instrument
 - `VenueStatus` - A venue level status event
 - `InstrumentStatus` - An instrument level status event

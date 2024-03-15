@@ -721,7 +721,7 @@ cdef extern from "../includes/model.h":
     cdef struct SyntheticInstrument_API:
         SyntheticInstrument *_0;
 
-    # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBook`].
+    # Provides a C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
     #
     # This struct wraps `OrderBook` in a way that makes it compatible with C function
     # calls, enabling interaction with `OrderBook` in a C environment.
@@ -1531,11 +1531,11 @@ cdef extern from "../includes/model.h":
 
     CVec orderbook_simulate_fills(const OrderBook_API *book, BookOrder_t order);
 
-    void orderbook_check_integrity(const OrderBook_API *book);
+    uint8_t orderbook_check_integrity(const OrderBook_API *book);
 
     void vec_fills_drop(CVec v);
 
-    # Returns a pretty printed [`OrderBook`] number of levels per side, as a C string pointer.
+    # Returns a pretty printed `OrderBook` number of levels per side, as a C string pointer.
     const char *orderbook_pprint_to_cstr(const OrderBook_API *book, uintptr_t num_levels);
 
     Level_API level_new(OrderSide order_side, Price_t price, CVec orders);

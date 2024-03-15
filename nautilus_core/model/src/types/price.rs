@@ -23,7 +23,6 @@ use std::{
 
 use anyhow::Result;
 use nautilus_core::{correctness::check_f64_in_range_inclusive, parsing::precision_from_str};
-use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
@@ -44,7 +43,7 @@ pub const ERROR_PRICE: Price = Price {
 #[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Price {
     pub raw: i64,

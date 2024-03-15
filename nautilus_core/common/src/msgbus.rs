@@ -25,9 +25,12 @@ use indexmap::IndexMap;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use ustr::Ustr;
 
-use crate::{handlers::MessageHandler, redis::handle_messages_with_redis};
+use crate::handlers::MessageHandler;
+#[cfg(feature = "redis")]
+use crate::redis::handle_messages_with_redis;
 
 // Represents a subscription to a particular topic.
 //
@@ -178,9 +181,12 @@ impl MessageBus {
             .map_or(false, |v| v != &serde_json::Value::Null);
         let tx = if has_backing {
             let (tx, rx) = channel::<BusMessage>();
-            thread::spawn(move || {
-                Self::handle_messages(rx, trader_id, instance_id, config);
-            });
+            let _join_handler = thread::Builder::new()
+                .name("msgbus".to_string())
+                .spawn(move || {
+                    Self::handle_messages(rx, trader_id, instance_id, config);
+                })
+                .expect("Error spawning `msgbus` thread");
             Some(tx)
         } else {
             None
@@ -417,10 +423,32 @@ impl MessageBus {
             .expect("`MessageBusConfig` database `type` must be a valid string");
 
         match backing_type {
-            "redis" => handle_messages_with_redis(rx, trader_id, instance_id, config),
+            "redis" => handle_messages_with_redis_if_enabled(rx, trader_id, instance_id, config),
             other => panic!("Unsupported message bus backing database type '{other}'"),
         }
     }
+}
+
+/// Handles messages using Redis if the `redis` feature is enabled.
+#[cfg(feature = "redis")]
+fn handle_messages_with_redis_if_enabled(
+    rx: Receiver<BusMessage>,
+    trader_id: TraderId,
+    instance_id: UUID4,
+    config: HashMap<String, Value>,
+) {
+    handle_messages_with_redis(rx, trader_id, instance_id, config);
+}
+
+/// Handles messages using a default method if the "redis" feature is not enabled.
+#[cfg(not(feature = "redis"))]
+fn handle_messages_with_redis_if_enabled(
+    _rx: Receiver<BusMessage>,
+    _trader_id: TraderId,
+    _instance_id: UUID4,
+    _config: HashMap<String, Value>,
+) {
+    panic!("`redis` feature is not enabled");
 }
 
 /// Match a topic and a string pattern
@@ -458,6 +486,7 @@ pub fn is_matching(topic: &Ustr, pattern: &Ustr) -> bool {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+#[cfg(not(feature = "python"))]
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;

@@ -20,7 +20,6 @@ use std::{
 
 use anyhow::Result;
 use nautilus_core::time::UnixNanos;
-use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -35,13 +34,15 @@ use crate::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
 pub struct OptionsSpread {
     pub id: InstrumentId,
     pub raw_symbol: Symbol,
     pub asset_class: AssetClass,
+    /// The exchange ISO 10383 Market Identifier Code (MIC) where the instrument trades.
+    pub exchange: Option<Ustr>,
     pub underlying: Ustr,
     pub strategy_type: Ustr,
     pub activation_ns: UnixNanos,
@@ -65,6 +66,7 @@ impl OptionsSpread {
         id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
+        exchange: Option<Ustr>,
         underlying: Ustr,
         strategy_type: Ustr,
         activation_ns: UnixNanos,
@@ -85,6 +87,7 @@ impl OptionsSpread {
             id,
             raw_symbol,
             asset_class,
+            exchange,
             underlying,
             strategy_type,
             activation_ns,

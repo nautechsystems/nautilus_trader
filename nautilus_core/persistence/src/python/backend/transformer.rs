@@ -204,11 +204,25 @@ impl DataTransformer {
         // Take first element and extract metadata
         // SAFETY: Unwrap safe as already checked that `data` not empty
         let first = data.first().unwrap();
-        let metadata = OrderBookDelta::get_metadata(
-            &first.instrument_id,
-            first.order.price.precision,
-            first.order.size.precision,
-        );
+        let mut price_precision = first.order.price.precision;
+        let mut size_precision = first.order.size.precision;
+
+        // Check if price and size precision are both zero
+        if price_precision == 0 && size_precision == 0 {
+            // If both are zero, try the second delta if available
+            if data.len() > 1 {
+                let second = &data[1];
+                price_precision = second.order.price.precision;
+                size_precision = second.order.size.precision;
+            } else {
+                // If there is no second delta, use zero precision
+                price_precision = 0;
+                size_precision = 0;
+            }
+        }
+
+        let metadata =
+            OrderBookDelta::get_metadata(&first.instrument_id, price_precision, size_precision);
 
         let result: Result<RecordBatch, ArrowError> =
             OrderBookDelta::encode_batch(&metadata, &data);

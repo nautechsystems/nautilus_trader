@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_model::enums::PriceType;
-use pyo3::prelude::*;
 use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 
 use crate::{
@@ -31,6 +30,7 @@ pub mod ema;
 pub mod hma;
 pub mod rma;
 pub mod sma;
+pub mod vidya;
 pub mod wma;
 
 #[repr(C)]
@@ -53,7 +53,7 @@ pub mod wma;
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
 pub enum MovingAverageType {
     Simple,

@@ -36,7 +36,7 @@ def test_to_dict():
     assert FuturesContract.from_dict(result) == _ES_FUTURE
     assert result == {
         "type": "FuturesContract",
-        "id": "ESZ1.XCME",
+        "id": "ESZ1.GLBX",
         "raw_symbol": "ESZ1",
         "asset_class": "INDEX",
         "underlying": "ES",
@@ -53,10 +53,11 @@ def test_to_dict():
         "min_quantity": None,
         "ts_event": 0,
         "ts_init": 0,
+        "exchange": "XCME",
     }
 
 
 def test_legacy_futures_contract_from_pyo3():
     future = LegacyFuturesContract.from_pyo3(_ES_FUTURE)
 
-    assert future.id.value == "ESZ1.XCME"
+    assert future.id.value == "ESZ1.GLBX"

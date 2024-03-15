@@ -17,7 +17,6 @@ use std::fmt::Display;
 
 use anyhow::Result;
 use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
-use pyo3::prelude::*;
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
@@ -26,7 +25,10 @@ use crate::{
 
 #[repr(C)]
 #[derive(Debug)]
-#[pyclass(module = "nautilus_trader.core.nautilus.pyo3.indicators")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+)]
 pub struct ChandeMomentumOscillator {
     pub period: usize,
     pub ma_type: MovingAverageType,

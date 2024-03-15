@@ -37,7 +37,6 @@ use nautilus_model::{
         quantity::Quantity,
     },
 };
-use pyo3::prelude::*;
 use rust_decimal::prelude::ToPrimitive;
 
 use crate::account::{base::BaseAccount, Account};
@@ -45,7 +44,7 @@ use crate::account::{base::BaseAccount, Account};
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.accounting")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.accounting")
 )]
 pub struct MarginAccount {
     pub base: BaseAccount,

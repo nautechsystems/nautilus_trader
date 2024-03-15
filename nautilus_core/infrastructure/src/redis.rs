@@ -24,7 +24,6 @@ use anyhow::{anyhow, bail, Result};
 use nautilus_common::redis::{get_buffer_interval, get_redis_url};
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
-use pyo3::prelude::*;
 use redis::{Commands, Connection, Pipeline};
 use serde_json::json;
 
@@ -66,7 +65,7 @@ const INDEX_POSITIONS_CLOSED: &str = "index:positions_closed";
 
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
 )]
 pub struct RedisCacheDatabase {
     pub trader_id: TraderId,
@@ -91,9 +90,12 @@ impl CacheDatabase for RedisCacheDatabase {
         let trader_key = get_trader_key(trader_id, instance_id, &config);
         let trader_key_clone = trader_key.clone();
 
-        thread::spawn(move || {
-            Self::handle_messages(rx, trader_key_clone, config);
-        });
+        let _join_handle = thread::Builder::new()
+            .name("cache".to_string())
+            .spawn(move || {
+                Self::handle_messages(rx, trader_key_clone, config);
+            })
+            .expect("Error spawning `cache` thread");
 
         Ok(RedisCacheDatabase {
             trader_id,

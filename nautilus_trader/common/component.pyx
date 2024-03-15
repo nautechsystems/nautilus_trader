@@ -35,6 +35,7 @@ import pytz
 
 from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.common.config import NautilusConfig
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.rust.common import ComponentState as PyComponentState
 
 cimport numpy as np
@@ -113,7 +114,6 @@ from nautilus_trader.core.rust.common cimport test_clock_timestamp_ns
 from nautilus_trader.core.rust.common cimport test_clock_timestamp_us
 from nautilus_trader.core.rust.common cimport time_event_new
 from nautilus_trader.core.rust.common cimport time_event_to_cstr
-from nautilus_trader.core.rust.common cimport tracing_init
 from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.core cimport nanos_to_millis
@@ -683,12 +683,14 @@ cdef class TestClock(Clock):
             TimeEvent event
             TimeEventHandler_t raw_handler
             TimeEventHandler event_handler
+            PyObject *raw_callback
         for i in range(raw_handler_vec.len):
             raw_handler = <TimeEventHandler_t>raw_handlers[i]
             event = TimeEvent.from_mem_c(raw_handler.event)
 
             # Cast raw `PyObject *` to a `PyObject`
-            callback = <object>raw_handler.callback_ptr
+            raw_callback = <PyObject *>raw_handler.callback_ptr
+            callback = <object>raw_callback
 
             event_handler = TimeEventHandler(event, callback)
             event_handlers.append(event_handler)
@@ -1021,14 +1023,6 @@ cpdef str log_level_to_str(LogLevel value):
     return cstr_to_pystr(log_level_to_cstr(value))
 
 
-cpdef void init_tracing():
-    """
-    Initialize tracing for async Rust.
-
-    """
-    tracing_init()
-
-
 cpdef void init_logging(
     TraderId trader_id = None,
     str machine_id = None,
@@ -1106,8 +1100,22 @@ cpdef void init_logging(
         )
 
 
+LOGGING_PYO3 = False
+
+
 cpdef bint is_logging_initialized():
+    if LOGGING_PYO3:
+        return True
     return <bint>logging_is_initialized()
+
+
+cpdef bint is_logging_pyo3():
+    return LOGGING_PYO3
+
+
+cpdef void set_logging_pyo3(bint value):
+    global LOGGING_PYO3
+    LOGGING_PYO3 = value
 
 
 cdef class Logger:
@@ -1155,6 +1163,15 @@ cdef class Logger:
             The log message color.
 
         """
+        if LOGGING_PYO3:
+            nautilus_pyo3.logger_log(
+                nautilus_pyo3.LogLevel.DEBUG,
+                nautilus_pyo3.LogColor(log_color_to_str(color)),
+                self._name,
+                message,
+            )
+            return
+
         if not logging_is_initialized():
             return
 
@@ -1180,6 +1197,15 @@ cdef class Logger:
             The log message color.
 
         """
+        if LOGGING_PYO3:
+            nautilus_pyo3.logger_log(
+                nautilus_pyo3.LogLevel.INFO,
+                nautilus_pyo3.LogColor(log_color_to_str(color)),
+                self._name,
+                message,
+            )
+            return
+
         if not logging_is_initialized():
             return
 
@@ -1206,6 +1232,15 @@ cdef class Logger:
             The log message color.
 
         """
+        if LOGGING_PYO3:
+            nautilus_pyo3.logger_log(
+                nautilus_pyo3.LogLevel.WARNING,
+                nautilus_pyo3.LogColor(log_color_to_str(color)),
+                self._name,
+                message,
+            )
+            return
+
         if not logging_is_initialized():
             return
 
@@ -1232,6 +1267,15 @@ cdef class Logger:
             The log message color.
 
         """
+        if LOGGING_PYO3:
+            nautilus_pyo3.logger_log(
+                nautilus_pyo3.LogLevel.ERROR,
+                nautilus_pyo3.LogColor(log_color_to_str(color)),
+                self._name,
+                message,
+            )
+            return
+
         if not logging_is_initialized():
             return
 
@@ -1286,15 +1330,8 @@ cpdef void log_header(
     )
 
 
-cpdef void log_sysinfo(
-    TraderId trader_id,
-    str machine_id,
-    UUID4 instance_id,
-    str component,
-):
-    logging_log_sysinfo(
-        pystr_to_cstr(component),
-    )
+cpdef void log_sysinfo(str component):
+    logging_log_sysinfo(pystr_to_cstr(component))
 
 
 
@@ -2410,7 +2447,7 @@ cdef class MessageBus:
 
         # Get all subscriptions matching topic pattern
         cdef Subscription[:] subs = self._patterns.get(topic)
-        if subs is None:
+        if subs is None or len(subs) == 0:  # Cannot use truthiness on array
             # Add the topic pattern and get matching subscribers
             subs = self._resolve_subscriptions(topic)
 
@@ -2441,7 +2478,8 @@ cdef class MessageBus:
     cdef Subscription[:] _resolve_subscriptions(self, str topic):
         cdef list subs_list = []
         cdef Subscription existing_sub
-        for existing_sub in self._subscriptions:
+        # Copy to handle subscription changes on iteration
+        for existing_sub in self._subscriptions.copy():
             if is_matching(topic, existing_sub.topic):
                 subs_list.append(existing_sub)
 
@@ -2612,6 +2650,7 @@ cdef class Throttler:
 
     The internal buffer queue is unbounded and so a bounded queue should be
     upstream.
+
     """
 
     def __init__(
@@ -2622,7 +2661,7 @@ cdef class Throttler:
         Clock clock not None,
         output_send not None: Callable[[Any], None],
         output_drop: Callable[[Any], None] | None = None,
-    ):
+    ) -> None:
         Condition.valid_string(name, "name")
         Condition.positive_int(limit, "limit")
         Condition.positive(interval.total_seconds(), "interval.total_seconds()")
@@ -2649,7 +2688,7 @@ cdef class Throttler:
         self._log.info("READY.")
 
     @property
-    def qsize(self):
+    def qsize(self) -> int:
         """
         Return the qsize of the internal buffer.
 
@@ -2663,6 +2702,7 @@ cdef class Throttler:
     cpdef void reset(self):
         """
         Reset the state of the throttler.
+
         """
         self._buffer.clear()
         self._warm = False
@@ -2684,8 +2724,8 @@ cdef class Throttler:
             if self.sent_count < 2:
                 return 0
 
-        cdef int64_t spread = self._clock.timestamp_ns() - self._timestamps[-1]
-        cdef int64_t diff = max_uint64(0, self._interval_ns - spread)
+        cdef int64_t diff = self._clock.timestamp_ns() - self._timestamps[-1]
+        diff = max_uint64(0, self._interval_ns - diff)
         cdef double used = <double>diff / <double>self._interval_ns
 
         if not self._warm:
@@ -2724,7 +2764,7 @@ cdef class Throttler:
                 return 0
             self._warm = True
 
-        cdef int64_t diff = self._timestamps[0] - self._timestamps[-1]
+        cdef int64_t diff = self._clock.timestamp_ns() - self._timestamps[-1]
         return self._interval_ns - diff
 
     cdef void _limit_msg(self, msg):

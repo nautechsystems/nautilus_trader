@@ -21,11 +21,14 @@ import pytz
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.rust.model cimport AssetClass
 from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport OptionKind
 from nautilus_trader.model.functions cimport asset_class_from_str
 from nautilus_trader.model.functions cimport asset_class_to_str
+from nautilus_trader.model.functions cimport instrument_class_from_str
+from nautilus_trader.model.functions cimport instrument_class_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -68,6 +71,8 @@ cdef class OptionsSpread(Instrument):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
+    exchange : str, optional
+        The exchange ISO 10383 Market Identifier Code (MIC) where the instrument trades.
     info : dict[str, object], optional
         The additional instrument information.
 
@@ -103,11 +108,14 @@ cdef class OptionsSpread(Instrument):
         uint64_t expiration_ns,
         uint64_t ts_event,
         uint64_t ts_init,
+        str exchange = None,
         dict info = None,
     ):
         Condition.valid_string(underlying, "underlying")
         Condition.valid_string(strategy_type, "strategy_type")
         Condition.positive_int(multiplier, "multiplier")
+        if exchange is not None:
+            Condition.valid_string(exchange, "exchange")
         super().__init__(
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
@@ -135,10 +143,35 @@ cdef class OptionsSpread(Instrument):
             ts_init=ts_init,
             info=info,
         )
+        self.exchange = exchange
         self.underlying = underlying
         self.strategy_type = strategy_type
         self.activation_ns = activation_ns
         self.expiration_ns = expiration_ns
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}"
+            f"(id={self.id.to_str()}, "
+            f"raw_symbol={self.raw_symbol}, "
+            f"asset_class={asset_class_to_str(self.asset_class)}, "
+            f"instrument_class={instrument_class_to_str(self.instrument_class)}, "
+            f"exchange={self.exchange}, "
+            f"currency={self.quote_currency}, "
+            f"underlying={self.underlying}, "
+            f"strategy_type={self.strategy_type}, "
+            f"activation={format_iso8601(self.activation_utc)}, "
+            f"expiration={format_iso8601(self.expiration_utc)}, "
+            f"price_precision={self.price_precision}, "
+            f"price_increment={self.price_increment}, "
+            f"multiplier={self.multiplier}, "
+            f"lot_size={self.lot_size}, "
+            f"margin_init={self.margin_init}, "
+            f"margin_maint={self.margin_maint}, "
+            f"maker_fee={self.maker_fee}, "
+            f"taker_fee={self.taker_fee}, "
+            f"info={self.info})"
+        )
 
     @property
     def activation_utc(self) -> pd.Timestamp:
@@ -186,6 +219,8 @@ cdef class OptionsSpread(Instrument):
             expiration_ns=values["expiration_ns"],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            exchange=values["exchange"],
+            info=values.get("info"),
         )
 
     @staticmethod
@@ -210,6 +245,8 @@ cdef class OptionsSpread(Instrument):
             "margin_maint": str(obj.margin_maint),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "exchange": obj.exchange,
+            "info": obj.info,
         }
 
     @staticmethod
@@ -230,6 +267,7 @@ cdef class OptionsSpread(Instrument):
             expiration_ns=pyo3_instrument.expiration_ns,
             ts_event=pyo3_instrument.ts_event,
             ts_init=pyo3_instrument.ts_init,
+            exchange=pyo3_instrument.exchange,
         )
 
     @staticmethod

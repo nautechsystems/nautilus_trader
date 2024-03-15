@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from nautilus_trader.core.nautilus_pyo3 import AccountState
 from nautilus_trader.test_kit.rust.events_pyo3 import TestEventsProviderPyo3
 
@@ -33,15 +34,16 @@ def test_cash_account_state():
         "balances": [
             {
                 "type": "AccountBalance",
-                "free": "1500000.00 USD",
-                "locked": "25000.00 USD",
-                "total": "1525000.00 USD",
+                "free": "1500000.00",
+                "locked": "25000.00",
+                "total": "1525000.00",
                 "currency": "USD",
             },
         ],
         "event_id": "91762096-b188-49ea-8562-8d8a4cc22ff2",
         "margins": [],
-        "is_reported": True,
+        "reported": True,
+        "info": {},
         "ts_init": 0,
         "ts_event": 0,
     }
@@ -59,23 +61,24 @@ def test_margin_account_state():
         "balances": [
             {
                 "type": "AccountBalance",
-                "free": "1500000.00 USD",
-                "locked": "25000.00 USD",
-                "total": "1525000.00 USD",
+                "free": "1500000.00",
+                "locked": "25000.00",
+                "total": "1525000.00",
                 "currency": "USD",
             },
         ],
         "margins": [
             {
                 "currency": "USD",
-                "initial": "1.00 USD",
+                "initial": "1.00",
                 "instrument_id": "AUD/USD.SIM",
-                "maintenance": "1.00 USD",
+                "maintenance": "1.00",
                 "type": "MarginBalance",
             },
         ],
         "event_id": "91762096-b188-49ea-8562-8d8a4cc22ff2",
-        "is_reported": True,
+        "reported": True,
+        "info": {},
         "ts_init": 0,
         "ts_event": 0,
     }

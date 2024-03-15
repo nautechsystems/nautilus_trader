@@ -120,6 +120,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         cache: Cache,
         clock: LiveClock,
         instrument_provider: BetfairInstrumentProvider,
+        request_account_state_period: int = 300,
     ) -> None:
         super().__init__(
             loop=loop,
@@ -136,6 +137,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         self._instrument_provider: BetfairInstrumentProvider = instrument_provider
         self._client: BetfairHttpClient = client
+        self.request_account_state_period = request_account_state_period
         self.stream = BetfairOrderStreamClient(
             http_client=self._client,
             message_handler=self.handle_order_stream_update,
@@ -159,9 +161,12 @@ class BetfairExecutionClient(LiveExecutionClient):
         await self._client.connect()
         self._log.info("BetfairHttpClient login successful.", LogColor.GREEN)
 
+        # Start scheduled account state updates
+        self.create_task(self.account_state_updates())
+
+        # Connections and start-up checks
         aws = [
             self.stream.connect(),
-            self.connection_account_state(),
             self.check_account_currency(),
             self.load_venue_id_mapping_from_cache(),
         ]
@@ -186,6 +191,29 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._log.info("Reconnected.")
 
     # -- ACCOUNT HANDLERS -------------------------------------------------------------------------
+
+    async def account_state_updates(self) -> None:
+        while True:
+            self._log.debug("Requesting account state")
+            account_state = await self.request_account_state()
+            self._log.debug(f"Received account state: {account_state}")
+            self._send_account_state(account_state)
+            self._log.debug("Sent account state")
+            await asyncio.sleep(self.request_account_state_period)
+
+    async def request_account_state(self) -> AccountState:
+        account_details = await self._client.get_account_details()
+        account_funds = await self._client.get_account_funds()
+        timestamp = self._clock.timestamp_ns()
+        account_state: AccountState = betfair_account_to_account_state(
+            account_detail=account_details,
+            account_funds=account_funds,
+            event_id=UUID4(),
+            reported=True,
+            ts_event=timestamp,
+            ts_init=timestamp,
+        )
+        return account_state
 
     async def connection_account_state(self) -> None:
         account_details = await self._client.get_account_details()

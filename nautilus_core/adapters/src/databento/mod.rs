@@ -15,6 +15,8 @@
 
 pub mod common;
 pub mod decode;
+pub mod enums;
+pub mod live;
 pub mod loader;
 pub mod symbology;
 pub mod types;

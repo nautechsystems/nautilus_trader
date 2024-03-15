@@ -37,8 +37,6 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.live.data_client import LiveMarketDataClient
-from nautilus_trader.model.data import CustomData
-from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -130,6 +128,15 @@ class BetfairDataClient(LiveMarketDataClient):
         self._log.debug("scheduling heartbeat")
         self.create_task(self._post_connect_heartbeat())
 
+        # Check for any global filters in instrument provider to subscribe
+        if self.instrument_provider._config.event_type_ids:
+            await self._stream.send_subscription_message(
+                event_type_ids=self.instrument_provider._config.event_type_ids,
+                country_codes=self.instrument_provider._config.country_codes,
+                market_types=self.instrument_provider._config.market_types,
+            )
+            self.subscription_status = SubscriptionStatus.SUBSCRIBED
+
     async def _post_connect_heartbeat(self):
         for _ in range(3):
             await self._stream.send(msgspec.json.encode({"op": "heartbeat"}))
@@ -176,6 +183,10 @@ class BetfairDataClient(LiveMarketDataClient):
             )
             return
 
+        if self.subscription_status == SubscriptionStatus.SUBSCRIBED:
+            self._log.debug("Already subscribed")
+            return
+
         # If this is the first subscription request we're receiving, schedule a
         # subscription after a short delay to allow other strategies to send
         # their subscriptions (every change triggers a full snapshot).
@@ -207,7 +218,7 @@ class BetfairDataClient(LiveMarketDataClient):
         pass  # Subscribed as part of orderbook
 
     async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
-        self._log.info("Skipping subscribe_instrument, betfair subscribes as part of orderbook")
+        self._log.debug("Skipping subscribe_instrument, betfair subscribes as part of orderbook")
         return
 
     async def _subscribe_instruments(self) -> None:
@@ -253,15 +264,7 @@ class BetfairDataClient(LiveMarketDataClient):
         for data in updates:
             self._log.debug(f"{data=}")
             PyCondition.type(data, Data, "data")
-            if isinstance(data, self.custom_data_types):
-                # Not a regular data type
-                custom_data = CustomData(
-                    DataType(data.__class__, {"instrument_id": data.instrument_id}),
-                    data,
-                )
-                self._handle_data(custom_data)
-            else:
-                self._handle_data(data)
+            self._handle_data(data)
 
     def _check_stream_unhealthy(self, update: MCM) -> None:
         if update.stream_unreliable:
@@ -270,15 +273,17 @@ class BetfairDataClient(LiveMarketDataClient):
         if update.mc is not None:
             for mc in update.mc:
                 if mc.con:
-                    self._log.warning(
-                        "Conflated stream - consuming data too slow (data received is delayed)",
-                    )
+                    ms_delay = self._clock.timestamp_ms() - update.pt
+                    self._log.warning(f"Conflated stream - data received is delayed ({ms_delay}ms)")
 
     def _handle_status_message(self, update: Status) -> None:
         if update.status_code == "FAILURE" and update.connection_closed:
-            self._log.warning(str(update))
+            self._log.error(f"Error connecting to betfair: {update.error_message}")
             if update.error_code == "MAX_CONNECTION_LIMIT_EXCEEDED":
                 raise RuntimeError("No more connections available")
             else:
                 self._log.info("Attempting reconnect")
-                self.create_task(self._stream.connect())
+                if self._stream.is_connected:
+                    self._log.info("stream connected, disconnecting.")
+                    self.create_task(self._stream.disconnect())
+                self.create_task(self._connect())

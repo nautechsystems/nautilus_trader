@@ -29,6 +29,8 @@ from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
 from nautilus_trader.adapters.databento.enums import DatabentoSchema
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
+from nautilus_trader.adapters.databento.types import DatabentoImbalance
+from nautilus_trader.adapters.databento.types import DatabentoStatistics
 from nautilus_trader.adapters.databento.types import Dataset
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
@@ -186,18 +188,22 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._update_dataset_ranges_task = None
 
         # Close all live clients
-        futures: list[asyncio.Future] = []
         for dataset, live_client in self._live_clients.items():
+            if not live_client.is_running:
+                continue
             self._log.info(f"Stopping {dataset} live feed...", LogColor.BLUE)
-            future = asyncio.ensure_future(live_client.close())
-            futures.append(future)
+            live_client.close()
 
         for dataset, live_client in self._live_clients_mbo.items():
+            if not live_client.is_running:
+                continue
             self._log.info(f"Stopping {dataset} MBO/L3 live feed...", LogColor.BLUE)
-            future = asyncio.ensure_future(live_client.close())
-            futures.append(future)
+            live_client.close()
 
-        await asyncio.gather(*futures)
+        try:
+            await asyncio.gather(*self._live_client_futures)
+        except asyncio.CancelledError:
+            pass  # Expected
 
     async def _update_dataset_ranges(self) -> None:
         while True:
@@ -246,8 +252,6 @@ class DatabentoDataClient(LiveMarketDataClient):
                 dataset=dataset,
                 publishers_path=str(PUBLISHERS_PATH),
             )
-            glbx_exchange_map = self._loader.get_glbx_exchange_map()
-            live_client.load_glbx_exchange_map(glbx_exchange_map)
             self._live_clients[dataset] = live_client
 
         return live_client
@@ -262,8 +266,6 @@ class DatabentoDataClient(LiveMarketDataClient):
                 dataset=dataset,
                 publishers_path=str(PUBLISHERS_PATH),
             )
-            glbx_exchange_map = self._loader.get_glbx_exchange_map()
-            live_client.load_glbx_exchange_map(glbx_exchange_map)
             self._live_clients_mbo[dataset] = live_client
 
         return live_client
@@ -276,7 +278,10 @@ class DatabentoDataClient(LiveMarketDataClient):
         if not self._has_subscribed.get(dataset):
             self._log.debug(f"Starting {dataset} live client...", LogColor.MAGENTA)
             future = asyncio.ensure_future(
-                live_client.start(callback=self._handle_record, replay=False),
+                live_client.start(
+                    callback=self._handle_msg,
+                    callback_pyo3=self._handle_msg_pyo3,  # Imbalance and Statistics messages
+                ),
             )
             self._live_client_futures.add(future)
             self._has_subscribed[dataset] = True
@@ -365,8 +370,42 @@ class DatabentoDataClient(LiveMarketDataClient):
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     async def _subscribe(self, data_type: DataType) -> None:
-        # Replace method in child class, for exchange specific data types.
-        raise NotImplementedError(f"Cannot subscribe to {data_type.type} (not implemented).")
+        if data_type.type == DatabentoImbalance:
+            await self._subscribe_imbalance(data_type)
+        elif data_type.type == DatabentoStatistics:
+            await self._subscribe_statistics(data_type)
+        else:
+            raise NotImplementedError(
+                f"Cannot subscribe to {data_type.type} (not implemented).",
+            )
+
+    async def _subscribe_imbalance(self, data_type: DataType) -> None:
+        try:
+            # TODO: Create `DatabentoTimeSeriesParams`
+            instrument_id: InstrumentId = data_type.metadata["instrument_id"]
+            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+            live_client = self._get_live_client(dataset)
+            live_client.subscribe(
+                schema=DatabentoSchema.IMBALANCE.value,
+                symbols=instrument_id.symbol.value,
+            )
+            await self._check_live_client_started(dataset, live_client)
+        except asyncio.CancelledError:
+            self._log.warning("`_subscribe_imbalance` was canceled while still pending.")
+
+    async def _subscribe_statistics(self, data_type: DataType) -> None:
+        try:
+            # TODO: Create `DatabentoTimeSeriesParams`
+            instrument_id: InstrumentId = data_type.metadata["instrument_id"]
+            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+            live_client = self._get_live_client(dataset)
+            live_client.subscribe(
+                schema=DatabentoSchema.STATISTICS.value,
+                symbols=instrument_id.symbol.value,
+            )
+            await self._check_live_client_started(dataset, live_client)
+        except asyncio.CancelledError:
+            self._log.warning("`_subscribe_imbalance` was canceled while still pending.")
 
     async def _subscribe_instruments(self) -> None:
         # Replace method in child class, for exchange specific data types.
@@ -376,14 +415,10 @@ class DatabentoDataClient(LiveMarketDataClient):
         try:
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
-            future = asyncio.ensure_future(
-                live_client.subscribe(
-                    schema=DatabentoSchema.DEFINITION.value,
-                    symbols=instrument_id.symbol.value,
-                ),
+            live_client.subscribe(
+                schema=DatabentoSchema.DEFINITION.value,
+                symbols=instrument_id.symbol.value,
             )
-            self._live_client_futures.add(future)
-            await future
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_instrument` was canceled while still pending.")
@@ -395,15 +430,11 @@ class DatabentoDataClient(LiveMarketDataClient):
     ) -> None:
         try:
             live_client = self._get_live_client(dataset)
-            future = asyncio.ensure_future(
-                live_client.subscribe(
-                    schema=DatabentoSchema.DEFINITION.value,
-                    symbols=",".join(sorted(parent_symbols)),
-                    stype_in="parent",
-                ),
+            live_client.subscribe(
+                schema=DatabentoSchema.DEFINITION.value,
+                symbols=",".join(sorted(parent_symbols)),
+                stype_in="parent",
             )
-            self._live_client_futures.add(future)
-            await future
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_parent_symbols` was canceled while still pending.")
@@ -415,14 +446,10 @@ class DatabentoDataClient(LiveMarketDataClient):
     ) -> None:
         try:
             live_client = self._get_live_client(dataset)
-            future = asyncio.ensure_future(
-                live_client.subscribe(
-                    schema=DatabentoSchema.DEFINITION.value,
-                    symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
-                ),
+            live_client.subscribe(
+                schema=DatabentoSchema.DEFINITION.value,
+                symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
             )
-            self._live_client_futures.add(future)
-            await future
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_instrument_ids` was canceled while still pending.")
@@ -500,22 +527,26 @@ class DatabentoDataClient(LiveMarketDataClient):
             start = self._clock.utc_now().normalize()
 
             self._log.info(f"Replaying MBO/L3 feeds from {start}.", LogColor.BLUE)
-
-            future = asyncio.ensure_future(
-                live_client.subscribe(
-                    schema=DatabentoSchema.MBO.value,
-                    symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
-                    start=start.value,
-                ),
+            self._log.warning(
+                "Replaying MBO/L3 feeds is under development and not considered usable.",
             )
-            self._live_client_futures.add(future)
-            await future
+
+            live_client.subscribe(
+                schema=DatabentoSchema.MBO.value,
+                symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
+                start=0,  # Replay from start of weekly session
+            )
 
             # Add trade tick subscriptions for all instruments (MBO data includes trades)
             for instrument_id in instrument_ids:
                 self._trade_tick_subscriptions.add(instrument_id)
 
-            future = asyncio.ensure_future(live_client.start(self._handle_record, replay=True))
+            future = asyncio.ensure_future(
+                live_client.start(
+                    callback=self._handle_msg,
+                    callback_pyo3=self._handle_msg_pyo3,  # Imbalance and Statistics messages
+                ),
+            )
             self._live_client_futures.add(future)
         except asyncio.CancelledError:
             self._log.warning(
@@ -545,14 +576,10 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
-            future = asyncio.ensure_future(
-                live_client.subscribe(
-                    schema=schema,
-                    symbols=",".join(sorted([instrument_id.symbol.value])),
-                ),
+            live_client.subscribe(
+                schema=schema,
+                symbols=",".join(sorted([instrument_id.symbol.value])),
             )
-            self._live_client_futures.add(future)
-            await future
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_order_book_snapshots` was canceled while still pending.")
@@ -563,14 +590,10 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
-            future = asyncio.ensure_future(
-                live_client.subscribe(
-                    schema=DatabentoSchema.MBP_1.value,
-                    symbols=",".join(sorted([instrument_id.symbol.value])),
-                ),
+            live_client.subscribe(
+                schema=DatabentoSchema.MBP_1.value,
+                symbols=",".join(sorted([instrument_id.symbol.value])),
             )
-            self._live_client_futures.add(future)
-            await future
 
             # Add trade tick subscriptions for instrument (MBP-1 data includes trades)
             self._trade_tick_subscriptions.add(instrument_id)
@@ -588,14 +611,10 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
-            future = asyncio.ensure_future(
-                live_client.subscribe(
-                    schema=DatabentoSchema.TRADES.value,
-                    symbols=instrument_id.symbol.value,
-                ),
+            live_client.subscribe(
+                schema=DatabentoSchema.TRADES.value,
+                symbols=instrument_id.symbol.value,
             )
-            self._live_client_futures.add(future)
-            await future
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_trade_ticks` was canceled while still pending.")
@@ -611,21 +630,17 @@ class DatabentoDataClient(LiveMarketDataClient):
                 return
 
             live_client = self._get_live_client(dataset)
-            future = asyncio.ensure_future(
-                live_client.subscribe(
-                    schema=schema.value,
-                    symbols=bar_type.instrument_id.symbol.value,
-                ),
+            live_client.subscribe(
+                schema=schema.value,
+                symbols=bar_type.instrument_id.symbol.value,
             )
-            self._live_client_futures.add(future)
-            await future
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_bars` was canceled while still pending.")
 
     async def _unsubscribe(self, data_type: DataType) -> None:
         raise NotImplementedError(
-            f"Cannot unsubscribe from {data_type} (not implemented).",
+            f"Cannot unsubscribe from {data_type}, unsubscribing not supported by Databento.",
         )
 
     async def _unsubscribe_instruments(self) -> None:
@@ -670,8 +685,73 @@ class DatabentoDataClient(LiveMarketDataClient):
         )
 
     async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
-        raise NotImplementedError(
-            f"Cannot request {data_type} (not implemented).",
+        if data_type.type == DatabentoImbalance:
+            await self._request_imbalance(data_type, correlation_id)
+        elif data_type.type == DatabentoStatistics:
+            await self._request_statistics(data_type, correlation_id)
+        else:
+            raise NotImplementedError(
+                f"Cannot request {data_type.type} (not implemented).",
+            )
+
+    async def _request_imbalance(self, data_type: DataType, correlation_id: UUID4) -> None:
+        instrument_id: InstrumentId = data_type.metadata["instrument_id"]
+        start = data_type.metadata.get("start")
+        end = data_type.metadata.get("end")
+
+        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+        _, available_end = await self._get_dataset_range(dataset)
+
+        start = start or available_end - pd.Timedelta(days=2)
+        end = end or available_end
+
+        self._log.info(
+            f"Requesting {instrument_id} imbalance: "
+            f"dataset={dataset}, start={start}, end={end}",
+            LogColor.BLUE,
+        )
+
+        pyo3_imbalances = await self._http_client.get_range_imbalance(
+            dataset=dataset,
+            symbols=instrument_id.symbol.value,
+            start=start.value,
+            end=end.value,
+        )
+
+        self._handle_data_response(
+            data_type=data_type,
+            data=pyo3_imbalances,
+            correlation_id=correlation_id,
+        )
+
+    async def _request_statistics(self, data_type: DataType, correlation_id: UUID4) -> None:
+        instrument_id: InstrumentId = data_type.metadata["instrument_id"]
+        start = data_type.metadata.get("start")
+        end = data_type.metadata.get("end")
+
+        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+        _, available_end = await self._get_dataset_range(dataset)
+
+        start = start or available_end - pd.Timedelta(days=2)
+        end = end or available_end
+
+        self._log.info(
+            f"Requesting {instrument_id} statistics: "
+            f"dataset={dataset}, start={start}, end={end}",
+            LogColor.BLUE,
+        )
+
+        pyo3_statistics = await self._http_client.get_range_statistics(
+            dataset=dataset,
+            symbols=instrument_id.symbol.value,
+            start=start.value,
+            end=end.value,
+        )
+
+        self._handle_data_response(
+            data_type=data_type,
+            data=pyo3_statistics,
+            correlation_id=correlation_id,
         )
 
     async def _request_instrument(
@@ -865,7 +945,23 @@ class DatabentoDataClient(LiveMarketDataClient):
             correlation_id=correlation_id,
         )
 
-    def _handle_record(
+    def _handle_msg_pyo3(
+        self,
+        record: object,
+    ) -> None:
+        # TODO: Improve the efficiency of this
+        if isinstance(record, DatabentoImbalance):
+            instrument_id = InstrumentId.from_str(record.instrument_id.value)
+            data = DataType(DatabentoImbalance, metadata={"instrument_id": instrument_id})
+        elif isinstance(record, DatabentoStatistics):
+            instrument_id = InstrumentId.from_str(record.instrument_id.value)
+            data = DataType(DatabentoStatistics, metadata={"instrument_id": instrument_id})
+        else:
+            raise RuntimeError(f"Cannot handle pyo3 record `{record!r}`")
+
+        self._handle_data(data)
+
+    def _handle_msg(
         self,
         pycapsule: object,
     ) -> None:

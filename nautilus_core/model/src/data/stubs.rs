@@ -13,16 +13,37 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use anyhow::Result;
-use dotenv::dotenv;
-use nautilus_persistence::db::database::{init_db_schema, Database};
+use rstest::fixture;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // load envs if exists
-    dotenv().ok();
-    let db = Database::new(None, None).await;
-    let sql_schema_dir = "../schema";
-    init_db_schema(&db, sql_schema_dir).await?;
-    Ok(())
+use super::OrderBookDelta;
+use crate::{
+    data::order::BookOrder,
+    enums::{BookAction, OrderSide},
+    identifiers::instrument_id::InstrumentId,
+    types::{price::Price, quantity::Quantity},
+};
+
+#[fixture]
+pub fn stub_delta() -> OrderBookDelta {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let action = BookAction::Add;
+    let price = Price::from("100.00");
+    let size = Quantity::from("10");
+    let side = OrderSide::Buy;
+    let order_id = 123_456;
+    let flags = 0;
+    let sequence = 1;
+    let ts_event = 1;
+    let ts_init = 2;
+
+    let order = BookOrder::new(side, price, size, order_id);
+    OrderBookDelta::new(
+        instrument_id,
+        action,
+        order,
+        flags,
+        sequence,
+        ts_event,
+        ts_init,
+    )
 }

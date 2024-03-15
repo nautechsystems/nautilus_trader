@@ -13,49 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ops::{Deref, DerefMut};
-
 use nautilus_core::{ffi::cvec::CVec, time::UnixNanos};
 
 use crate::{
-    data::{delta::OrderBookDelta, deltas::OrderBookDeltas},
+    data::{
+        delta::OrderBookDelta,
+        deltas::{OrderBookDeltas, OrderBookDeltas_API},
+    },
     enums::BookAction,
     identifiers::instrument_id::InstrumentId,
 };
-
-/// Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
-///
-/// This struct wraps `OrderBookDeltas` in a way that makes it compatible with C function
-/// calls, enabling interaction with `OrderBookDeltas` in a C environment.
-///
-/// It implements the `Deref` trait, allowing instances of `OrderBookDeltas_API` to be
-/// dereferenced to `OrderBookDeltas`, providing access to `OrderBookDeltas`'s methods without
-/// having to manually access the underlying `OrderBookDeltas` instance.
-#[repr(C)]
-#[derive(Debug, Clone)]
-#[allow(non_camel_case_types)]
-pub struct OrderBookDeltas_API(Box<OrderBookDeltas>);
-
-impl OrderBookDeltas_API {
-    #[must_use]
-    pub fn new(deltas: OrderBookDeltas) -> Self {
-        Self(Box::new(deltas))
-    }
-}
-
-impl Deref for OrderBookDeltas_API {
-    type Target = OrderBookDeltas;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for OrderBookDeltas_API {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
 
 /// Creates a new `OrderBookDeltas` object from a `CVec` of `OrderBookDelta`.
 ///

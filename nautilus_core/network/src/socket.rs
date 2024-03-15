@@ -39,7 +39,7 @@ type TcpReader = ReadHalf<MaybeTlsStream<TcpStream>>;
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 pub struct SocketConfig {
     /// The URL to connect to.
@@ -92,7 +92,7 @@ impl SocketConfig {
 /// the received byte stream.
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 struct SocketClientInner {
     config: SocketConfig,
@@ -294,7 +294,7 @@ impl Drop for SocketClientInner {
 
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 pub struct SocketClient {
     writer: SharedTcpWriter,

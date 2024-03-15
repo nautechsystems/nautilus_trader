@@ -13,10 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, fs, num::NonZeroU64, sync::Arc};
+use std::{fs, num::NonZeroU64, sync::Arc};
 
 use databento::historical::timeseries::GetRangeParams;
-use dbn::Publisher;
 use indexmap::IndexMap;
 use nautilus_core::{
     python::to_pyvalue_err,
@@ -26,6 +25,7 @@ use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick, Data},
     enums::BarAggregation,
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
+    types::currency::Currency,
 };
 use pyo3::{
     exceptions::PyException,
@@ -37,14 +37,17 @@ use tokio::sync::Mutex;
 use super::loader::convert_instrument_to_pyobject;
 use crate::databento::{
     common::get_date_time_range,
-    decode::{decode_instrument_def_msg, decode_record, raw_ptr_to_ustr},
+    decode::{
+        decode_imbalance_msg, decode_instrument_def_msg, decode_record, decode_statistics_msg,
+        raw_ptr_to_ustr,
+    },
     symbology::decode_nautilus_instrument_id,
-    types::{DatabentoPublisher, PublisherId},
+    types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, PublisherId},
 };
 
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
 )]
 pub struct DatabentoHistoricalClient {
     #[pyo3(get)]
@@ -52,22 +55,18 @@ pub struct DatabentoHistoricalClient {
     clock: &'static AtomicTime,
     inner: Arc<Mutex<databento::HistoricalClient>>,
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
-    glbx_exchange_map: Arc<HashMap<Symbol, Venue>>,
 }
 
 #[pymethods]
 impl DatabentoHistoricalClient {
     #[new]
-    fn py_new(key: String, publishers_path: &str) -> PyResult<Self> {
+    fn py_new(key: String, publishers_path: &str) -> anyhow::Result<Self> {
         let client = databento::HistoricalClient::builder()
-            .key(key.clone())
-            .map_err(to_pyvalue_err)?
-            .build()
-            .map_err(to_pyvalue_err)?;
+            .key(key.clone())?
+            .build()?;
 
         let file_content = fs::read_to_string(publishers_path)?;
-        let publishers_vec: Vec<DatabentoPublisher> =
-            serde_json::from_str(&file_content).map_err(to_pyvalue_err)?;
+        let publishers_vec: Vec<DatabentoPublisher> = serde_json::from_str(&file_content)?;
 
         let publisher_venue_map = publishers_vec
             .into_iter()
@@ -78,19 +77,8 @@ impl DatabentoHistoricalClient {
             clock: get_atomic_clock_realtime(),
             inner: Arc::new(Mutex::new(client)),
             publisher_venue_map: Arc::new(publisher_venue_map),
-            glbx_exchange_map: Arc::new(HashMap::new()),
             key,
         })
-    }
-
-    #[pyo3(name = "load_glbx_exchange_map")]
-    fn py_load_glbx_exchange_map(&mut self, map: HashMap<Symbol, Venue>) {
-        self.glbx_exchange_map = Arc::new(map);
-    }
-
-    #[pyo3(name = "get_glbx_exchange_map")]
-    fn py_get_glbx_exchange_map(&self) -> HashMap<Symbol, Venue> {
-        self.glbx_exchange_map.as_ref().clone()
     }
 
     #[pyo3(name = "get_dataset_range")]
@@ -126,6 +114,7 @@ impl DatabentoHistoricalClient {
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
 
+        let end = end.unwrap_or(self.clock.get_time_ns());
         let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
@@ -155,18 +144,10 @@ impl DatabentoHistoricalClient {
                 let symbol = Symbol { value: raw_symbol };
 
                 let publisher = msg.hd.publisher().expect("Invalid `publisher` for record");
-                let venue = match publisher {
-                    Publisher::GlbxMdp3Glbx => {
-                        // SAFETY: GLBX instruments have a valid `exchange` field
-                        let exchange = msg.exchange().unwrap();
-                        Venue::from_code(exchange)
-                            .unwrap_or_else(|_| panic!("`Venue` not found for exchange {exchange}"))
-                    }
-                    _ => *publisher_venue_map
-                        .get(&msg.hd.publisher_id)
-                        .unwrap_or_else(|| panic!("`Venue` not found for `publisher` {publisher}")),
-                };
-                let instrument_id = InstrumentId::new(symbol, venue);
+                let venue = publisher_venue_map
+                    .get(&msg.hd.publisher_id)
+                    .unwrap_or_else(|| panic!("`Venue` not found for `publisher` {publisher}"));
+                let instrument_id = InstrumentId::new(symbol, *venue);
 
                 let result = decode_instrument_def_msg(msg, instrument_id, ts_init);
                 match result {
@@ -198,6 +179,7 @@ impl DatabentoHistoricalClient {
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
 
+        let end = end.unwrap_or(self.clock.get_time_ns());
         let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
@@ -207,9 +189,8 @@ impl DatabentoHistoricalClient {
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = 2; // TODO: Hard coded for now
+        let price_precision = Currency::USD().precision; // TODO: Hard coded for now
         let publisher_venue_map = self.publisher_venue_map.clone();
-        let glbx_exchange_map = self.glbx_exchange_map.clone();
         let ts_init = self.clock.get_time_ns();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
@@ -224,18 +205,13 @@ impl DatabentoHistoricalClient {
             let mut result: Vec<QuoteTick> = Vec::new();
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::Mbp1Msg>().await {
-                let rec_ref = dbn::RecordRef::from(msg);
-                let instrument_id = decode_nautilus_instrument_id(
-                    &rec_ref,
-                    msg.hd.publisher_id,
-                    &metadata,
-                    &publisher_venue_map,
-                    &glbx_exchange_map,
-                )
-                .map_err(to_pyvalue_err)?;
+                let record = dbn::RecordRef::from(msg);
+                let instrument_id =
+                    decode_nautilus_instrument_id(&record, &metadata, &publisher_venue_map)
+                        .map_err(to_pyvalue_err)?;
 
                 let (data, _) = decode_record(
-                    &rec_ref,
+                    &record,
                     instrument_id,
                     price_precision,
                     Some(ts_init),
@@ -267,6 +243,7 @@ impl DatabentoHistoricalClient {
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
 
+        let end = end.unwrap_or(self.clock.get_time_ns());
         let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
@@ -276,9 +253,8 @@ impl DatabentoHistoricalClient {
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = 2; // TODO: Hard coded for now
+        let price_precision = Currency::USD().precision; // TODO: Hard coded for now
         let publisher_venue_map = self.publisher_venue_map.clone();
-        let glbx_exchange_map = self.glbx_exchange_map.clone();
         let ts_init = self.clock.get_time_ns();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
@@ -293,18 +269,13 @@ impl DatabentoHistoricalClient {
             let mut result: Vec<TradeTick> = Vec::new();
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::TradeMsg>().await {
-                let rec_ref = dbn::RecordRef::from(msg);
-                let instrument_id = decode_nautilus_instrument_id(
-                    &rec_ref,
-                    msg.hd.publisher_id,
-                    &metadata,
-                    &publisher_venue_map,
-                    &glbx_exchange_map,
-                )
-                .map_err(to_pyvalue_err)?;
+                let record = dbn::RecordRef::from(msg);
+                let instrument_id =
+                    decode_nautilus_instrument_id(&record, &metadata, &publisher_venue_map)
+                        .map_err(to_pyvalue_err)?;
 
                 let (data, _) = decode_record(
-                    &rec_ref,
+                    &record,
                     instrument_id,
                     price_precision,
                     Some(ts_init),
@@ -345,6 +316,7 @@ impl DatabentoHistoricalClient {
             BarAggregation::Day => dbn::Schema::Ohlcv1D,
             _ => panic!("Invalid `BarAggregation` for request, was {aggregation}"),
         };
+        let end = end.unwrap_or(self.clock.get_time_ns());
         let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
@@ -354,9 +326,8 @@ impl DatabentoHistoricalClient {
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = 2; // TODO: Hard coded for now
+        let price_precision = Currency::USD().precision; // TODO: Hard coded for now
         let publisher_venue_map = self.publisher_venue_map.clone();
-        let glbx_exchange_map = self.glbx_exchange_map.clone();
         let ts_init = self.clock.get_time_ns();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
@@ -371,18 +342,13 @@ impl DatabentoHistoricalClient {
             let mut result: Vec<Bar> = Vec::new();
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::OhlcvMsg>().await {
-                let rec_ref = dbn::RecordRef::from(msg);
-                let instrument_id = decode_nautilus_instrument_id(
-                    &rec_ref,
-                    msg.hd.publisher_id,
-                    &metadata,
-                    &publisher_venue_map,
-                    &glbx_exchange_map,
-                )
-                .map_err(to_pyvalue_err)?;
+                let record = dbn::RecordRef::from(msg);
+                let instrument_id =
+                    decode_nautilus_instrument_id(&record, &metadata, &publisher_venue_map)
+                        .map_err(to_pyvalue_err)?;
 
                 let (data, _) = decode_record(
-                    &rec_ref,
+                    &record,
                     instrument_id,
                     price_precision,
                     Some(ts_init),
@@ -396,6 +362,115 @@ impl DatabentoHistoricalClient {
                     }
                     _ => panic!("Invalid data element not `Bar`, was {data:?}"),
                 }
+            }
+
+            Python::with_gil(|py| Ok(result.into_py(py)))
+        })
+    }
+
+    #[pyo3(name = "get_range_imbalance")]
+    #[allow(clippy::too_many_arguments)]
+    fn py_get_range_imbalance<'py>(
+        &self,
+        py: Python<'py>,
+        dataset: String,
+        symbols: String,
+        start: UnixNanos,
+        end: Option<UnixNanos>,
+        limit: Option<u64>,
+    ) -> PyResult<&'py PyAny> {
+        let client = self.inner.clone();
+
+        let end = end.unwrap_or(self.clock.get_time_ns());
+        let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
+        let params = GetRangeParams::builder()
+            .dataset(dataset)
+            .date_time_range(time_range)
+            .symbols(symbols)
+            .schema(dbn::Schema::Imbalance)
+            .limit(limit.and_then(NonZeroU64::new))
+            .build();
+
+        let price_precision = Currency::USD().precision; // TODO: Hard coded for now
+        let publisher_venue_map = self.publisher_venue_map.clone();
+        let ts_init = self.clock.get_time_ns();
+
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut client = client.lock().await; // TODO: Use a client pool
+            let mut decoder = client
+                .timeseries()
+                .get_range(&params)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            let metadata = decoder.metadata().clone();
+            let mut result: Vec<DatabentoImbalance> = Vec::new();
+
+            while let Ok(Some(msg)) = decoder.decode_record::<dbn::ImbalanceMsg>().await {
+                let record = dbn::RecordRef::from(msg);
+                let instrument_id =
+                    decode_nautilus_instrument_id(&record, &metadata, &publisher_venue_map)
+                        .map_err(to_pyvalue_err)?;
+
+                let imbalance = decode_imbalance_msg(msg, instrument_id, price_precision, ts_init)
+                    .map_err(to_pyvalue_err)?;
+
+                result.push(imbalance);
+            }
+
+            Python::with_gil(|py| Ok(result.into_py(py)))
+        })
+    }
+
+    #[pyo3(name = "get_range_statistics")]
+    #[allow(clippy::too_many_arguments)]
+    fn py_get_range_statistics<'py>(
+        &self,
+        py: Python<'py>,
+        dataset: String,
+        symbols: String,
+        start: UnixNanos,
+        end: Option<UnixNanos>,
+        limit: Option<u64>,
+    ) -> PyResult<&'py PyAny> {
+        let client = self.inner.clone();
+
+        let end = end.unwrap_or(self.clock.get_time_ns());
+        let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
+        let params = GetRangeParams::builder()
+            .dataset(dataset)
+            .date_time_range(time_range)
+            .symbols(symbols)
+            .schema(dbn::Schema::Statistics)
+            .limit(limit.and_then(NonZeroU64::new))
+            .build();
+
+        let price_precision = Currency::USD().precision; // TODO: Hard coded for now
+        let publisher_venue_map = self.publisher_venue_map.clone();
+        let ts_init = self.clock.get_time_ns();
+
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut client = client.lock().await; // TODO: Use a client pool
+            let mut decoder = client
+                .timeseries()
+                .get_range(&params)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            let metadata = decoder.metadata().clone();
+            let mut result: Vec<DatabentoStatistics> = Vec::new();
+
+            while let Ok(Some(msg)) = decoder.decode_record::<dbn::StatMsg>().await {
+                let record = dbn::RecordRef::from(msg);
+                let instrument_id =
+                    decode_nautilus_instrument_id(&record, &metadata, &publisher_venue_map)
+                        .map_err(to_pyvalue_err)?;
+
+                let statistics =
+                    decode_statistics_msg(msg, instrument_id, price_precision, ts_init)
+                        .map_err(to_pyvalue_err)?;
+
+                result.push(statistics);
             }
 
             Python::with_gil(|py| Ok(result.into_py(py)))

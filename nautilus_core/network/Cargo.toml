@@ -19,11 +19,11 @@ pyo3-asyncio = { workspace = true, optional = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
 dashmap = "5.5.3"
-futures-util = "0.3.29"
-http = "1.0.0"
+futures-util = "0.3.30"
+http = "1.1.0"
 hyper = "1.2.0"
 nonzero_ext = "0.3.0"
-reqwest = "0.11.24"
+reqwest = "0.11.26"
 tokio-tungstenite = { path = "./tokio-tungstenite", features = ["rustls-tls-native-roots"] }
 
 [dev-dependencies]

@@ -448,7 +448,7 @@ cdef class Actor(Component):
         """
         # Optionally override in subclass
 
-    cpdef void on_data(self, Data data):
+    cpdef void on_data(self, data):
         """
         Actions to be performed when running and receives data.
 
@@ -464,7 +464,7 @@ cdef class Actor(Component):
         """
         # Optionally override in subclass
 
-    cpdef void on_historical_data(self, Data data):
+    cpdef void on_historical_data(self, data):
         """
         Actions to be performed when running and receives historical data.
 
@@ -2773,7 +2773,7 @@ cdef class Actor(Component):
                 self._log.exception(f"Error on handling {repr(data)}", e)
                 raise
 
-    cpdef void handle_historical_data(self, Data data):
+    cpdef void handle_historical_data(self, data):
         """
         Handle the given historical data.
 
@@ -2821,7 +2821,6 @@ cdef class Actor(Component):
                 raise
 
     cpdef void _handle_data_response(self, DataResponse response):
-        cdef Data data
         if isinstance(response.data, list):
             for data in response.data:
                 self.handle_historical_data(data)
