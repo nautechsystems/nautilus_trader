@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.nautilus_pyo3 import Equity
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.model.instruments import Equity as LegacyEquity
+from nautilus_trader.model.instruments import Equity
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
@@ -38,7 +38,7 @@ def test_hash():
 
 def test_to_dict():
     result = _AAPL_EQUITY.to_dict()
-    assert Equity.from_dict(result) == _AAPL_EQUITY
+    assert nautilus_pyo3.Equity.from_dict(result) == _AAPL_EQUITY
     assert result == {
         "type": "Equity",
         "id": "AAPL.XNAS",
@@ -47,6 +47,10 @@ def test_to_dict():
         "currency": "USD",
         "price_precision": 2,
         "price_increment": "0.01",
+        "maker_fee": "0",
+        "taker_fee": "0",
+        "margin_init": "0",
+        "margin_maint": "0",
         "lot_size": "100",
         "max_quantity": None,
         "min_quantity": None,
@@ -58,6 +62,16 @@ def test_to_dict():
 
 
 def test_legacy_equity_from_pyo3():
-    equity = LegacyEquity.from_pyo3(_AAPL_EQUITY)
+    equity = Equity.from_pyo3(_AAPL_EQUITY)
 
     assert equity.id.value == "AAPL.XNAS"
+
+
+def test_pyo3_cython_conversion():
+    equity_pyo3 = TestInstrumentProviderPyo3.aapl_equity()
+    equity_pyo3_dict = equity_pyo3.to_dict()
+    equity_cython = Equity.from_pyo3(equity_pyo3)
+    equity_cython_dict = Equity.to_dict(equity_cython)
+    equity_pyo3_back = nautilus_pyo3.Equity.from_dict(equity_cython_dict)
+    assert equity_cython_dict == equity_pyo3_dict
+    assert equity_pyo3 == equity_pyo3_back
