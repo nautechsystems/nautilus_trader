@@ -785,9 +785,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.2"
+version = "4.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b230ab84b0ffdf890d5a10abdbc8b83ae1c4918275daea1ab8801f71536b2651"
+checksum = "949626d00e063efc93b6dca932419ceb5432f99769911c0b995f7e884c778813"
 dependencies = [
  "clap_builder",
 ]
@@ -938,7 +938,7 @@ dependencies = [
  "anes",
  "cast",
  "ciborium",
- "clap 4.5.2",
+ "clap 4.5.3",
  "criterion-plot",
  "is-terminal",
  "itertools 0.10.5",
@@ -1750,9 +1750,9 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "h2"
-version = "0.3.24"
+version = "0.3.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb2c4422095b67ee78da96fbb51a4cc413b3b25883c7717ff7ca1ab31022c9c9"
+checksum = "4fbd2820c5e49886948654ab546d0688ff24530286bdcf8fca3cefb16d4618eb"
 dependencies = [
  "bytes",
  "fnv",
@@ -1769,9 +1769,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31d030e59af851932b72ceebadf4a2b5986dba4c3b99dd2493f8273a0f151943"
+checksum = "51ee2dd2e4f378392eeff5d51618cd9a63166a2513846bbc55f21cfacd9199d4"
 dependencies = [
  "bytes",
  "fnv",
@@ -1966,7 +1966,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-util",
- "h2 0.3.24",
+ "h2 0.3.25",
  "http 0.2.12",
  "http-body 0.4.6",
  "httparse",
@@ -1989,7 +1989,7 @@ dependencies = [
  "bytes",
  "futures-channel",
  "futures-util",
- "h2 0.4.2",
+ "h2 0.4.3",
  "http 1.1.0",
  "http-body 1.0.0",
  "httparse",
@@ -2409,7 +2409,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-accounting"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2425,7 +2425,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-adapters"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2457,7 +2457,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "cbindgen",
  "nautilus-common",
@@ -2471,7 +2471,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2497,7 +2497,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2516,7 +2516,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -2540,7 +2540,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "nautilus-core",
@@ -2552,7 +2552,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "nautilus-common",
@@ -2567,7 +2567,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2595,7 +2595,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2620,7 +2620,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -2644,7 +2644,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "nautilus-accounting",
  "nautilus-adapters",
@@ -3565,7 +3565,7 @@ dependencies = [
  "encoding_rs",
  "futures-core",
  "futures-util",
- "h2 0.3.24",
+ "h2 0.3.25",
  "http 0.2.12",
  "http-body 0.4.6",
  "hyper 0.14.28",
