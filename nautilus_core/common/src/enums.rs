@@ -203,26 +203,40 @@ pub enum LogLevel {
 )]
 pub enum LogColor {
     /// The default/normal log color.
-    #[strum(serialize = "")]
+    #[strum(serialize = "NORMAL")]
     Normal = 0,
     /// The green log color, typically used with [`LogLevel::Info`] log levels and associated with success events.
-    #[strum(serialize = "\x1b[92m")]
+    #[strum(serialize = "GREEN")]
     Green = 1,
     /// The blue log color, typically used with [`LogLevel::Info`] log levels and associated with user actions.
-    #[strum(serialize = "\x1b[94m")]
+    #[strum(serialize = "BLUE")]
     Blue = 2,
     /// The magenta log color, typically used with [`LogLevel::Info`] log levels.
-    #[strum(serialize = "\x1b[35m")]
+    #[strum(serialize = "MAGENTA")]
     Magenta = 3,
     /// The cyan log color, typically used with [`LogLevel::Info`] log levels.
-    #[strum(serialize = "\x1b[36m")]
+    #[strum(serialize = "CYAN")]
     Cyan = 4,
     /// The yellow log color, typically used with [`LogLevel::Warning`] log levels.
-    #[strum(serialize = "\x1b[1;33m")]
+    #[strum(serialize = "YELLOW")]
     Yellow = 5,
     /// The red log color, typically used with [`LogLevel::Error`] level.
-    #[strum(serialize = "\x1b[1;31m")]
+    #[strum(serialize = "RED")]
     Red = 6,
+}
+
+impl LogColor {
+    pub fn as_ansi(&self) -> &str {
+        match *self {
+            Self::Normal => "",
+            Self::Green => "\x1b[92m",
+            Self::Blue => "\x1b[94m",
+            Self::Magenta => "\x1b[35m",
+            Self::Cyan => "\x1b[36m",
+            Self::Yellow => "\x1b[1;33m",
+            Self::Red => "\x1b[1;31m",
+        }
+    }
 }
 
 impl From<u8> for LogColor {

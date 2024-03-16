@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Improved Binance execution client ping listen key error handling and logging
 - Improved Redis cache adapter and message bus error handling and logging
 - Added `DatabaseConfig.timeout` config option for timeout seconds to wait for a new connection
 - Upgraded `redis` crate to 0.25.1 which bumps up TLS dependencies
@@ -11,7 +12,7 @@ Released on TBD (UTC).
 None
 
 ### Fixes
-None
+- Fixed JSON format for log file output (was missing `timestamp` and `trader\_id`)
 
 ---
 
