@@ -37,6 +37,7 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
+#[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")

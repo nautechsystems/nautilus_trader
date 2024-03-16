@@ -93,6 +93,7 @@ fn order_side_to_fixed(side: OrderSide) -> OrderSideFixed {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum PassiveOrderType {
     Limit(LimitOrderType),
     Stop(StopOrderType),
@@ -107,6 +108,7 @@ impl PartialEq for PassiveOrderType {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum LimitOrderType {
     Limit(LimitOrder),
     MarketToLimit(MarketToLimitOrder),
@@ -125,6 +127,7 @@ impl PartialEq for LimitOrderType {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum StopOrderType {
     StopMarket(StopMarketOrder),
     StopLimit(StopLimitOrder),
@@ -132,6 +135,19 @@ pub enum StopOrderType {
     LimitIfTouched(LimitIfTouchedOrder),
     TrailingStopMarket(TrailingStopMarketOrder),
     TrailingStopLimit(TrailingStopLimitOrder),
+}
+
+impl PartialEq for StopOrderType {
+    fn eq(&self, rhs: &Self) -> bool {
+        match self {
+            Self::StopMarket(o) => o.client_order_id == rhs.get_client_order_id(),
+            Self::StopLimit(o) => o.client_order_id == rhs.get_client_order_id(),
+            Self::MarketIfTouched(o) => o.client_order_id == rhs.get_client_order_id(),
+            Self::LimitIfTouched(o) => o.client_order_id == rhs.get_client_order_id(),
+            Self::TrailingStopMarket(o) => o.client_order_id == rhs.get_client_order_id(),
+            Self::TrailingStopLimit(o) => o.client_order_id == rhs.get_client_order_id(),
+        }
+    }
 }
 
 pub trait GetClientOrderId {
