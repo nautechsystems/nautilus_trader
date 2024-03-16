@@ -312,12 +312,16 @@ pub fn decode_options_contract_v1(
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(1.0, 0)?, // TBD
+        0,
+        Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
         None,                   // TBD
         None,                   // TBD
         None,                   // TBD
-        msg.ts_recv,            // More accurate and reliable timestamp
+        None,
+        None,
+        msg.ts_recv, // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -861,7 +865,11 @@ pub fn decode_options_contract(
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(1.0, 0)?, // TBD
+        0,
         Quantity::new(1.0, 0)?, // TBD
+        Quantity::new(1.0, 0)?, // TBD
+        None,                   // TBD
+        None,                   // TBD
         None,                   // TBD
         None,                   // TBD
         None,                   // TBD
