@@ -36,8 +36,9 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
 
     This class is responsible for establishing and maintaining the socket connection,
     handling server communication, monitoring the connection's health, and managing
-    reconnections. When a connection is established, the `_is_ib_connected` event is set,
-    and if the connection is lost, the `_is_ib_connected` event is cleared.
+    reconnections. When a connection is established and the client finishes initializing,
+    the `_is_ib_connected` event is set, and if the connection is lost, the
+    `_is_ib_connected` event is cleared.
 
     """
 
@@ -68,12 +69,12 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             )
         except asyncio.CancelledError:
             self._log.info("Connection cancelled.")
-            self._eclient.disconnect()
+            await self._disconnect()
         except Exception as e:
             self._log.error(f"Connection failed: {e}")
             if self._eclient.wrapper:
                 self._eclient.wrapper.error(NO_VALID_ID, CONNECT_FAIL.code(), CONNECT_FAIL.msg())
-            self._eclient.disconnect()
+            await self._disconnect()
             await self._handle_reconnect()
 
     async def _disconnect(self) -> None:
@@ -82,26 +83,17 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         """
         try:
             self._eclient.disconnect()
-            self._log.debug("`_is_ib_connected` unset by `_disconnect`.", LogColor.BLUE)
-            self._is_ib_connected.clear()
+            if self._is_ib_connected.is_set():
+                self._log.debug("`_is_ib_connected` unset by `_disconnect`.", LogColor.BLUE)
+                self._is_ib_connected.clear()
             self._log.info("Disconnected from Interactive Brokers API.")
         except Exception as e:
             self._log.error(f"Disconnection failed: {e}")
 
-    async def _reconnect_attempt(self) -> None:
+    async def _handle_reconnect(self) -> None:
         """
         Attempt to reconnect to TWS/Gateway.
         """
-        self._reconnect_attempts += 1
-        self._log.info(
-            f"Attempt {self._reconnect_attempts}: Attempting to reconnect in {self._reconnect_delay} seconds...",
-        )
-        await asyncio.sleep(self._reconnect_delay)
-        await self._startup()
-        await self._resubscribe_all()
-        self._resume()
-
-    async def _handle_reconnect(self) -> None:
         while not self._is_ib_connected.is_set():
             if (
                 not self._indefinite_reconnect
@@ -110,7 +102,14 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
                 self._log.error("Max reconnection attempts reached. Connection failed.")
                 self._stop()
                 break
-            await self._reconnect_attempt()
+            self._reconnect_attempts += 1
+            self._log.info(
+                f"Attempt {self._reconnect_attempts}: Attempting to reconnect in {self._reconnect_delay} seconds...",
+            )
+            await asyncio.sleep(self._reconnect_delay)
+            await self._startup()
+            await self._resubscribe_all()
+            self._resume()
         else:
             self._reconnect_attempts = 0
 
@@ -229,5 +228,6 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         for future in self._requests.get_futures():
             if not future.done():
                 future.set_exception(ConnectionError("Socket disconnected."))
-        self._log.debug("`_is_ib_connected` unset by `connectionClosed`.", LogColor.BLUE)
-        self._is_ib_connected.clear()
+        if self._is_ib_connected.is_set():
+            self._log.debug("`_is_ib_connected` unset by `connectionClosed`.", LogColor.BLUE)
+            self._is_ib_connected.clear()

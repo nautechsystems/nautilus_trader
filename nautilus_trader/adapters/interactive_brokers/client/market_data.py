@@ -16,6 +16,7 @@
 import functools
 from collections.abc import Callable
 from decimal import Decimal
+from inspect import iscoroutinefunction
 from typing import Any
 
 import pandas as pd
@@ -125,7 +126,10 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             )
             if not subscription:
                 return None
-            subscription.handle()
+            if iscoroutinefunction(subscription.handle):
+                await subscription.handle()
+            else:
+                subscription.handle()
             return subscription
         else:
             self._log.info(f"Subscription already exists for {subscription}")

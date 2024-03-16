@@ -16,7 +16,10 @@
 import functools
 from unittest.mock import Mock
 
+import pytest
 
+
+@pytest.mark.asyncio
 def test_ib_is_ready_by_notification_1101(ib_client):
     # Arrange
     ib_client._is_ib_connected.clear()

@@ -145,7 +145,6 @@ class InteractiveBrokersClient(
 
         # Start client
         self._request_id_seq: int = 10000
-        self._start()
 
     def _start(self) -> None:
         """
@@ -156,18 +155,31 @@ class InteractiveBrokersClient(
         message reader, and internal message queue processing tasks.
 
         """
+        if not self._loop.is_running():
+            self._log.warning("Started when loop is not running.")
+
         self._log.info(f"Starting InteractiveBrokersClient ({self._client_id})...")
         self._loop.run_until_complete(self._startup())
+        self._is_client_ready.set()
 
     async def _startup(self):
-        self._log.info(f"Starting InteractiveBrokersClient ({self._client_id})...")
-        await self._connect()
-        self._start_tws_incoming_msg_reader()
-        self._start_internal_msg_queue_processor()
-        self._eclient.startApi()
-        await asyncio.wait_for(self._is_ib_connected.wait(), 15)
-        self._start_connection_watchdog()
-        self._is_client_ready.set()
+        try:
+            self._log.info(f"Starting InteractiveBrokersClient ({self._client_id})...")
+            await self._connect()
+            self._start_tws_incoming_msg_reader()
+            self._start_internal_msg_queue_processor()
+            self._eclient.startApi()
+            # TWS/Gateway will send a managedAccounts message upon successful connection,
+            # which will set the `_is_ib_connected` event.
+            await asyncio.wait_for(self._is_ib_connected.wait(), 15)
+            self._start_connection_watchdog()
+            self._is_client_ready.set()
+        except asyncio.TimeoutError:
+            self._log.error("Client failed to initialize. Connection timeout.")
+            self._stop()
+        except Exception as e:
+            self._log.exception("Unhandled exception in client startup", e)
+            self._stop()
 
     def _start_tws_incoming_msg_reader(self) -> None:
         """
@@ -205,13 +217,17 @@ class InteractiveBrokersClient(
         """
         self._log.info(f"Stopping InteractiveBrokersClient ({self._client_id})...")
         # Cancel tasks
-        for task in [
+        tasks = [
             self._connection_watchdog_task,
             self._tws_incoming_msg_reader_task,
             self._internal_msg_queue_processor_task,
-        ]:
+        ]
+        for task in tasks:
             if task and not task.cancelled():
                 task.cancel()
+
+        gather_all = asyncio.gather(*tasks)
+        self._loop.run_until_complete(gather_all)
 
         self._eclient.disconnect()
         self._is_client_ready.clear()
@@ -233,7 +249,7 @@ class InteractiveBrokersClient(
         Resume the client and resubscribe all subscriptions.
         """
         self._log.info(f"Resuming InteractiveBrokersClient ({self._client_id})...")
-        # self._loop.run_until_complete(self._resubscribe_all())
+        self._loop.run_until_complete(self._resubscribe_all())
         self._is_client_ready.set()
 
     def _degrade(self) -> None:
@@ -246,7 +262,7 @@ class InteractiveBrokersClient(
 
     async def _resubscribe_all(self) -> None:
         """
-        Attempt to cancel and restart all subscriptions.
+        Cancel and restart all subscriptions.
         """
         self._log.debug("Resubscribing all subscriptions...")
         for subscription in self._subscriptions.get_all():
@@ -512,10 +528,13 @@ class InteractiveBrokersClient(
         )
         try:
             while (
-                self._eclient.conn and self._eclient.conn.isConnected()
-            ) or not self._internal_msg_queue.empty():
+                self._eclient.conn
+                and self._eclient.conn.isConnected()
+                or not self._internal_msg_queue.empty()
+            ):
                 msg = await self._internal_msg_queue.get()
-                self._process_message(msg)
+                if not self._process_message(msg):
+                    break
                 self._internal_msg_queue.task_done()
         except asyncio.CancelledError:
             log_msg = f"Internal message queue processing stopped. (qsize={self._internal_msg_queue.qsize()})."
@@ -529,7 +548,7 @@ class InteractiveBrokersClient(
         finally:
             self._log.debug("Client TWS incoming message reader stopped.")
 
-    def _process_message(self, msg: str) -> None:
+    def _process_message(self, msg: str) -> bool:
         """
         Process a single message from TWS/Gateway.
 
@@ -538,6 +557,10 @@ class InteractiveBrokersClient(
         msg : str
             The message to be processed.
 
+        Returns
+        -------
+        bool
+
         """
         if len(msg) > MAX_MSG_LEN:
             self._eclient.wrapper.error(
@@ -545,7 +568,7 @@ class InteractiveBrokersClient(
                 BAD_LENGTH.code(),
                 f"{BAD_LENGTH.msg()}:{len(msg)}:{msg}",
             )
-            return None
+            return False
         fields: tuple[bytes] = comm.read_fields(msg)
         self._log.debug(f"Msg received: {msg}")
         self._log.debug(f"Msg received fields: {fields}")
@@ -555,7 +578,7 @@ class InteractiveBrokersClient(
         # method from the EWrapper. Many of those methods are overridden in the client
         # manager and handler classes to support custom processing required for Nautilus.
         self._eclient.decoder.interpret(fields)
-        return None
+        return True
 
     def _next_req_id(self) -> int:
         """

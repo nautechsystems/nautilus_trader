@@ -4,10 +4,10 @@ Interactive Brokers (IB) is a trading platform that allows trading across a wide
 
 The TWS API serves as an interface to IB's standalone trading applications: TWS and IB Gateway. Both can be downloaded from the IB website. If you haven't installed TWS or IB Gateway yet, refer to the [Initial Setup](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/#tws-download) guide. In NautilusTrader, you'll establish a connection to one of these applications via the `InteractiveBrokersClient`.
 
-Alternatively, you can start with a [dockerized version](https://github.com/gnzsnz/ib-gateway-docker) of the IB Gateway, particularly useful when deploying trading strategies on a hosted cloud platform. This requires having [Docker](https://www.docker.com/) installed on your machine, along with the [docker](https://pypi.org/project/docker/) Python package, which NautilusTrader conveniently includes as an extra package.
+Alternatively, you can start with a [dockerized version](https://github.com/gnzsnz/ib-gateway-docker) of the IB Gateway, which is particularly useful when deploying trading strategies on a hosted cloud platform. This requires having [Docker](https://www.docker.com/) installed on your machine, along with the [docker](https://pypi.org/project/docker/) Python package, which NautilusTrader conveniently includes as an extra package.
 
 ```{note}
-The standalone TWS and IB Gateway applications necessitate manual input of username, password, and trading mode (live or paper) at startup. The dockerized version of the IB Gateway handles these steps programmatically.
+The standalone TWS and IB Gateway applications require the manual input of username, password, and trading mode (live or paper) at startup. The dockerized version of the IB Gateway handles these steps programmatically.
 ```
 
 ## Installation
