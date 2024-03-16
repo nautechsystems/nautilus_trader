@@ -1238,10 +1238,14 @@ class FuturesContract:
         currency: Currency,
         price_precision: int,
         price_increment: Price,
+        size_precision: int,
+        size_increment: Quantity,
         multiplier: Quantity,
         lot_size: Quantity,
         ts_event: int,
         ts_init: int,
+        margin_init: Decimal | None = None,
+        margin_maint: Decimal | None = None,
         max_quantity: Quantity | None = None,
         min_quantity: Quantity | None = None,
         max_price: Price | None = None,
@@ -1249,6 +1253,8 @@ class FuturesContract:
         exchange: str | None = None,
         info: dict[str, Any] | None = None,
     ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> CryptoFuture: ...
     @property
     def id(self) -> InstrumentId: ...
     @property

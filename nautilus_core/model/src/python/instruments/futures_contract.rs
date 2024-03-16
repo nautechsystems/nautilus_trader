@@ -23,7 +23,7 @@ use nautilus_core::{
     time::UnixNanos,
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 use ustr::Ustr;
 
 use crate::{
@@ -47,10 +47,14 @@ impl FuturesContract {
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
+        size_precision: u8,
+        size_increment: Quantity,
         multiplier: Quantity,
         lot_size: Quantity,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
@@ -68,12 +72,16 @@ impl FuturesContract {
             currency,
             price_precision,
             price_increment,
+            size_increment,
+            size_precision,
             multiplier,
             lot_size,
             max_quantity,
             min_quantity,
             max_price,
             min_price,
+            margin_init,
+            margin_maint,
             ts_event,
             ts_init,
         )
@@ -196,6 +204,18 @@ impl FuturesContract {
     }
 
     #[getter]
+    #[pyo3(name = "size_increment")]
+    fn py_size_increment(&self) -> Quantity {
+        self.size_increment
+    }
+
+    #[getter]
+    #[pyo3(name = "size_precision")]
+    fn py_size_precision(&self) -> u8 {
+        self.size_precision
+    }
+
+    #[getter]
     #[pyo3(name = "ts_event")]
     fn py_ts_event(&self) -> UnixNanos {
         self.ts_event
@@ -205,6 +225,24 @@ impl FuturesContract {
     #[pyo3(name = "ts_init")]
     fn py_ts_init(&self) -> UnixNanos {
         self.ts_init
+    }
+
+    #[getter]
+    #[pyo3(name = "margin_init")]
+    fn py_margin_init(&self) -> Decimal {
+        self.margin_init
+    }
+
+    #[getter]
+    #[pyo3(name = "margin_maint")]
+    fn py_margin_maint(&self) -> Decimal {
+        self.margin_maint
+    }
+
+    #[getter]
+    #[pyo3(name = "info")]
+    fn py_info(&self, py: Python<'_>) -> PyResult<PyObject> {
+        Ok(PyDict::new(py).into())
     }
 
     #[staticmethod]
@@ -226,8 +264,13 @@ impl FuturesContract {
         dict.set_item("currency", self.currency.code.to_string())?;
         dict.set_item("price_precision", self.price_precision)?;
         dict.set_item("price_increment", self.price_increment.to_string())?;
+        dict.set_item("size_increment", self.size_increment.to_string())?;
+        dict.set_item("size_precision", self.size_precision)?;
         dict.set_item("multiplier", self.multiplier.to_string())?;
-        dict.set_item("lot_size", self.multiplier.to_string())?;
+        dict.set_item("lot_size", self.lot_size.to_string())?;
+        dict.set_item("margin_init", self.margin_init.to_string())?;
+        dict.set_item("margin_maint", self.margin_maint.to_string())?;
+        dict.set_item("info", PyDict::new(py))?;
         dict.set_item("ts_event", self.ts_event)?;
         dict.set_item("ts_init", self.ts_init)?;
         match self.max_quantity {
