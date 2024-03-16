@@ -1286,6 +1286,8 @@ class FuturesSpread:
         currency: Currency,
         price_precision: int,
         price_increment: Price,
+        size_precision: int,
+        size_increment: Quantity,
         multiplier: Quantity,
         lot_size: Quantity,
         ts_event: int,
@@ -1294,9 +1296,13 @@ class FuturesSpread:
         min_quantity: Quantity | None = None,
         max_price: Price | None = None,
         min_price: Price | None = None,
+        margin_init: Decimal | None = None,
+        margin_maint: Decimal | None = None,
         exchange: str | None = None,
         info: dict[str, Any] | None = None,
     ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> FuturesSpread: ...
     @property
     def id(self) -> InstrumentId: ...
     @property

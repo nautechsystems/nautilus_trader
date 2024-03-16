@@ -367,6 +367,8 @@ class TestInstrumentProviderPyo3:
             currency=_USD,
             price_precision=2,
             price_increment=Price.from_str("0.01"),
+            size_precision=0,
+            size_increment=Quantity.from_str("1"),
             multiplier=Quantity.from_int(1),
             lot_size=Quantity.from_int(1),
             max_quantity=None,
