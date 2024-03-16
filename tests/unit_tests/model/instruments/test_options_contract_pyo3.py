@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.nautilus_pyo3 import OptionsContract
-from nautilus_trader.model.instruments import OptionsContract as LegacyOptionsContract
+from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
@@ -33,7 +33,7 @@ def test_hash():
 
 def test_to_dict():
     result = _AAPL_OPTION.to_dict()
-    assert OptionsContract.from_dict(result) == _AAPL_OPTION
+    assert nautilus_pyo3.OptionsContract.from_dict(result) == _AAPL_OPTION
     assert result == {
         "type": "OptionsContract",
         "id": "AAPL211217C00150000.OPRA",
@@ -48,18 +48,35 @@ def test_to_dict():
         "currency": "USDT",
         "price_precision": 2,
         "price_increment": "0.01",
+        "size_increment": "1",
+        "size_precision": 0,
         "multiplier": "1",
         "lot_size": "1",
         "max_quantity": None,
-        "min_quantity": None,
+        "min_quantity": "1",
         "max_price": None,
         "min_price": None,
+        "margin_init": "0",
+        "margin_maint": "0",
+        "info": {},
         "ts_event": 0,
         "ts_init": 0,
     }
 
 
 def test_legacy_options_contract_from_pyo3():
-    option = LegacyOptionsContract.from_pyo3(_AAPL_OPTION)
+    option = OptionsContract.from_pyo3(_AAPL_OPTION)
 
     assert option.id.value == "AAPL211217C00150000.OPRA"
+
+
+def test_pyo3_cython_conversion():
+    options_contract_pyo3 = TestInstrumentProviderPyo3.aapl_option()
+    options_contract_pyo3_dict = options_contract_pyo3.to_dict()
+    options_contract_cython = OptionsContract.from_pyo3(options_contract_pyo3)
+    options_contract_cython_dict = OptionsContract.to_dict(options_contract_cython)
+    options_contract_pyo3_back = nautilus_pyo3.OptionsContract.from_dict(
+        options_contract_cython_dict,
+    )
+    assert options_contract_cython_dict == options_contract_pyo3_dict
+    assert options_contract_pyo3 == options_contract_pyo3_back
