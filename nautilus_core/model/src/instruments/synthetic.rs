@@ -18,7 +18,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::anyhow;
 use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
 use nautilus_core::time::UnixNanos;
 
@@ -55,7 +55,7 @@ impl SyntheticInstrument {
         formula: String,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> Result<Self, anyhow::Error> {
+    ) -> anyhow::Result<Self> {
         let price_increment = Price::new(10f64.powi(-i32::from(price_precision)), price_precision)?;
 
         // Extract variables from the component instruments
@@ -95,7 +95,7 @@ impl SyntheticInstrument {
     /// Calculates the price of the synthetic instrument based on the given component input prices
     /// provided as a map.
     #[allow(dead_code)]
-    pub fn calculate_from_map(&mut self, inputs: &HashMap<String, f64>) -> Result<Price> {
+    pub fn calculate_from_map(&mut self, inputs: &HashMap<String, f64>) -> anyhow::Result<Price> {
         let mut input_values = Vec::new();
 
         for variable in &self.variables {
@@ -113,7 +113,7 @@ impl SyntheticInstrument {
 
     /// Calculates the price of the synthetic instrument based on the given component input prices
     /// provided as an array of `f64` values.
-    pub fn calculate(&mut self, inputs: &[f64]) -> Result<Price> {
+    pub fn calculate(&mut self, inputs: &[f64]) -> anyhow::Result<Price> {
         if inputs.len() != self.variables.len() {
             return Err(anyhow!("Invalid number of input values"));
         }

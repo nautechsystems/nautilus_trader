@@ -235,8 +235,6 @@ pub fn decode_futures_contract_v1(
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(1.0, 0)?, // TBD
-        2,
-        Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
         None,                   // TBD
@@ -273,8 +271,6 @@ pub fn decode_futures_spread_v1(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(1.0, 0)?, // TBD
-        0,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
@@ -320,8 +316,6 @@ pub fn decode_options_contract_v1(
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(1.0, 0)?, // TBD
-        0,
-        Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
         None,                   // TBD
@@ -365,8 +359,6 @@ pub fn decode_options_spread_v1(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(1.0, 0)?, // TBD
-        0,                      // TBD
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
@@ -800,8 +792,6 @@ pub fn decode_futures_contract(
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(1.0, 0)?, // TBD
-        2,                      // TBD
-        Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,
         None,        // TBD
@@ -838,8 +828,6 @@ pub fn decode_futures_spread(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(1.0, 0)?, // TBD
-        0,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
@@ -885,8 +873,6 @@ pub fn decode_options_contract(
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(1.0, 0)?, // TBD
-        0,
-        Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD
         None,                   // TBD
@@ -930,8 +916,6 @@ pub fn decode_options_spread(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(1.0, 0)?, // TBD
-        0,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,                   // TBD

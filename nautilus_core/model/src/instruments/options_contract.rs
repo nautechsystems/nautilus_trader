@@ -18,8 +18,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use anyhow::Result;
-use nautilus_core::time::UnixNanos;
+use nautilus_core::{correctness::check_u8_equal, time::UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -81,8 +80,6 @@ impl OptionsContract {
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
-        size_increment: Quantity,
-        size_precision: u8,
         multiplier: Quantity,
         lot_size: Quantity,
         max_quantity: Option<Quantity>,
@@ -93,7 +90,14 @@ impl OptionsContract {
         margin_maint: Option<Decimal>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
+        check_u8_equal(
+            price_precision,
+            price_increment.precision,
+            "price_precision",
+            "price_increment.precision",
+        )?;
+
         Ok(Self {
             id,
             raw_symbol,
@@ -107,8 +111,8 @@ impl OptionsContract {
             currency,
             price_precision,
             price_increment,
-            size_precision,
-            size_increment,
+            size_precision: 0,
+            size_increment: Quantity::from("1"),
             multiplier,
             lot_size,
             max_quantity,

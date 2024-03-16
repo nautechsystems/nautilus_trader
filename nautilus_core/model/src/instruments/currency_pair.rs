@@ -18,8 +18,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use anyhow::Result;
-use nautilus_core::time::UnixNanos;
+use nautilus_core::{correctness::check_u8_equal, time::UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -85,7 +84,20 @@ impl CurrencyPair {
         min_price: Option<Price>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
+        check_u8_equal(
+            price_precision,
+            price_increment.precision,
+            "price_precision",
+            "price_increment.precision",
+        )?;
+        check_u8_equal(
+            size_precision,
+            size_increment.precision,
+            "size_precision",
+            "size_increment.precision",
+        )?;
+
         Ok(Self {
             id,
             raw_symbol,

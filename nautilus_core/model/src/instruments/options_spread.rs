@@ -18,8 +18,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use anyhow::Result;
-use nautilus_core::time::UnixNanos;
+use nautilus_core::{correctness::check_u8_equal, time::UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -79,8 +78,6 @@ impl OptionsSpread {
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
-        size_increment: Quantity,
-        size_precision: u8,
         multiplier: Quantity,
         lot_size: Quantity,
         margin_init: Option<Decimal>,
@@ -91,7 +88,14 @@ impl OptionsSpread {
         min_price: Option<Price>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
+        check_u8_equal(
+            price_precision,
+            price_increment.precision,
+            "price_precision",
+            "price_increment.precision",
+        )?;
+
         Ok(Self {
             id,
             raw_symbol,
@@ -104,8 +108,8 @@ impl OptionsSpread {
             currency,
             price_precision,
             price_increment,
-            size_precision,
-            size_increment,
+            size_precision: 0,
+            size_increment: Quantity::from("1"),
             multiplier,
             lot_size,
             margin_init: margin_init.unwrap_or(0.into()),
