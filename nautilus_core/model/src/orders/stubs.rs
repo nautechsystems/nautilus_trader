@@ -17,9 +17,9 @@ use std::str::FromStr;
 
 use nautilus_core::uuid::UUID4;
 
-use super::limit::LimitOrder;
+use super::{limit::LimitOrder, stop_market::StopMarketOrder};
 use crate::{
-    enums::{LiquiditySide, OrderSide, TimeInForce},
+    enums::{LiquiditySide, OrderSide, TimeInForce, TriggerType},
     events::order::filled::OrderFilled,
     identifiers::{
         account_id::AccountId,
@@ -149,7 +149,7 @@ impl TestOrderStubs {
         let trader = trader_id();
         let strategy = strategy_id_ema_cross();
         let client_order_id =
-            client_order_id.unwrap_or(ClientOrderId::from("O-20200814-102234-001-001-1"));
+            client_order_id.unwrap_or(ClientOrderId::from("O-19700101-010000-001-001-1"));
         let time_in_force = time_in_force.unwrap_or(TimeInForce::Gtc);
         LimitOrder::new(
             trader,
@@ -162,6 +162,50 @@ impl TestOrderStubs {
             time_in_force,
             None,
             false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            12_321_312_321_312,
+        )
+    }
+
+    #[must_use]
+    pub fn stop_market_order(
+        instrument_id: InstrumentId,
+        order_side: OrderSide,
+        trigger_price: Price,
+        quantity: Quantity,
+        trigger_type: Option<TriggerType>,
+        client_order_id: Option<ClientOrderId>,
+        time_in_force: Option<TimeInForce>,
+    ) -> StopMarketOrder {
+        let trader = trader_id();
+        let strategy = strategy_id_ema_cross();
+        let client_order_id =
+            client_order_id.unwrap_or(ClientOrderId::from("O-19700101-010000-001-001-1"));
+        let time_in_force = time_in_force.unwrap_or(TimeInForce::Gtc);
+        StopMarketOrder::new(
+            trader,
+            strategy,
+            instrument_id,
+            client_order_id,
+            order_side,
+            quantity,
+            trigger_price,
+            trigger_type.unwrap_or(TriggerType::BidAsk),
+            time_in_force,
+            None,
             false,
             false,
             None,
