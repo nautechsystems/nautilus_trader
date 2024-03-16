@@ -13,6 +13,7 @@ None
 
 ### Fixes
 - Fixed JSON format for log file output (was missing `timestamp` and `trader\_id`)
+- Fixed `ChandeMomentumOscillator` indicator divide by zero error
 
 ---
 

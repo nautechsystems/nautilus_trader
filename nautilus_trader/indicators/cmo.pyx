@@ -96,9 +96,13 @@ cdef class ChandeMomentumOscillator(Indicator):
             if self._average_gain.initialized and self._average_loss.initialized:
                 self._set_initialized(True)
 
+        cdef double divisor
         if self.initialized:
-            self.value = 100.0 * (self._average_gain.value - self._average_loss.value)
-            self.value = self.value / (self._average_gain.value + self._average_loss.value)
+            divisor = self._average_gain.value + self._average_loss.value
+            if divisor == 0.0:
+                self.value = 0.0
+            else:
+                self.value = 100.0 * (self._average_gain.value - self._average_loss.value) / divisor
 
         self._previous_close = close
 
