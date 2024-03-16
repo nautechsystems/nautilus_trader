@@ -143,8 +143,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         self._eclient.reqIds(-1)
         return order_id
 
-    # -- EWrapper overrides -----------------------------------------------------------------------
-    def nextValidId(self, order_id: int) -> None:
+    def process_next_valid_id(self, *, order_id: int) -> None:
         """
         Receive the next valid order id.
 
@@ -153,14 +152,14 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         Important: the next valid order ID is only valid at the time it is received.
 
         """
-        self.logAnswer(current_fn_name(), vars())
         self._next_valid_order_id = max(self._next_valid_order_id, order_id, 101)
         if self.accounts() and not self._is_ib_ready.is_set():
             self._log.info("`is_ib_ready` set by nextValidId", LogColor.BLUE)
             self._is_ib_ready.set()
 
-    def openOrder(
+    def process_open_order(
         self,
+        *,
         order_id: int,
         contract: Contract,
         order: IBOrder,
@@ -169,7 +168,6 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         """
         Feed in currently open orders.
         """
-        self.logAnswer(current_fn_name(), vars())
         # Handle response to on-demand request
         if request := self._requests.get(name="OpenOrders"):
             order.contract = IBContract(**contract.__dict__)
@@ -201,16 +199,16 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                 order_state=order_state,
             )
 
-    def openOrderEnd(self) -> None:
+    def process_open_order_end(self) -> None:
         """
         Notifies the end of the open orders' reception.
         """
-        self.logAnswer(current_fn_name(), vars())
         if request := self._requests.get(name="OpenOrders"):
             self._end_request(request.req_id)
 
-    def orderStatus(
+    def process_order_status(
         self,
+        *,
         order_id: int,
         status: str,
         filled: Decimal,
@@ -239,8 +237,9 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                     order_status=status,
                 )
 
-    def execDetails(
+    def process_exec_details(
         self,
+        *,
         req_id: int,
         contract: Contract,
         execution: Execution,
@@ -248,7 +247,6 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         """
         Provide the executions that happened in the prior 24 hours.
         """
-        self.logAnswer(current_fn_name(), vars())
         if not (cache := self._exec_id_details.get(execution.execId, None)):
             self._exec_id_details[execution.execId] = {}
             cache = self._exec_id_details[execution.execId]
@@ -266,14 +264,14 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             )
             cache.pop(execution.execId, None)
 
-    def commissionReport(
+    def process_commission_report(
         self,
+        *,
         commission_report: CommissionReport,
     ) -> None:
         """
         Provide the CommissionReport of an Execution.
         """
-        self.logAnswer(current_fn_name(), vars())
         if not (cache := self._exec_id_details.get(commission_report.execId, None)):
             self._exec_id_details[commission_report.execId] = {}
             cache = self._exec_id_details[commission_report.execId]
