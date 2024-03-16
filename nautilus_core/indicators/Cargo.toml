@@ -26,5 +26,9 @@ extension-module = [
     "nautilus-core/extension-module",
     "nautilus-model/extension-module",
 ]
-python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]
+python = [
+    "pyo3",
+    "nautilus-core/python",
+    "nautilus-model/python",
+]
 default = []
