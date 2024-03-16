@@ -20,6 +20,7 @@ use std::{
 
 use anyhow::Result;
 use nautilus_core::time::UnixNanos;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -50,8 +51,12 @@ pub struct OptionsSpread {
     pub currency: Currency,
     pub price_precision: u8,
     pub price_increment: Price,
+    pub size_increment: Quantity,
+    pub size_precision: u8,
     pub multiplier: Quantity,
     pub lot_size: Quantity,
+    pub margin_init: Decimal,
+    pub margin_maint: Decimal,
     pub max_quantity: Option<Quantity>,
     pub min_quantity: Option<Quantity>,
     pub max_price: Option<Price>,
@@ -74,8 +79,12 @@ impl OptionsSpread {
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
+        size_increment: Quantity,
+        size_precision: u8,
         multiplier: Quantity,
         lot_size: Quantity,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
@@ -95,10 +104,14 @@ impl OptionsSpread {
             currency,
             price_precision,
             price_increment,
+            size_precision,
+            size_increment,
             multiplier,
             lot_size,
+            margin_init: margin_init.unwrap_or(0.into()),
+            margin_maint: margin_maint.unwrap_or(0.into()),
             max_quantity,
-            min_quantity,
+            min_quantity: Some(min_quantity.unwrap_or(1.into())),
             max_price,
             min_price,
             ts_event,
