@@ -226,9 +226,6 @@ class InteractiveBrokersClient(
             if task and not task.cancelled():
                 task.cancel()
 
-        gather_all = asyncio.gather(*tasks)
-        self._loop.run_until_complete(gather_all)
-
         self._eclient.disconnect()
         self._is_client_ready.clear()
         self._account_ids = set()
@@ -238,7 +235,7 @@ class InteractiveBrokersClient(
 
     def _reset(self) -> None:
         """
-        Reset the client and restart it.
+        Restart the client.
         """
         self._log.info(f"Resetting InteractiveBrokersClient ({self._client_id})...")
         self._stop()

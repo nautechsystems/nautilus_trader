@@ -24,6 +24,7 @@ use nautilus_core::{time::duration_since_unix_epoch, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
 use redis::*;
 use serde_json::{json, Value};
+use tracing::debug;
 
 use crate::msgbus::BusMessage;
 
@@ -36,10 +37,15 @@ pub fn handle_messages_with_redis(
     trader_id: TraderId,
     instance_id: UUID4,
     config: HashMap<String, Value>,
-) {
+) -> anyhow::Result<()> {
+    debug!("Initializing trader_id={trader_id}, instance_id={instance_id}, config={config:?}");
     let redis_url = get_redis_url(&config);
-    let client = redis::Client::open(redis_url).unwrap();
-    let mut conn = client.get_connection().unwrap();
+    let default_timeout = 20;
+    let timeout = get_timeout_duration(&config, default_timeout);
+    let client = redis::Client::open(redis_url)?;
+    let mut conn = client.get_connection_with_timeout(timeout)?;
+    debug!("Connected");
+
     let stream_name = get_stream_name(trader_id, instance_id, &config);
 
     // Autotrimming
@@ -68,7 +74,7 @@ pub fn handle_messages_with_redis(
                 autotrim_duration,
                 &mut last_trim_index,
                 &mut buffer,
-            );
+            )?;
             last_drain = Instant::now();
         } else {
             // Continue to receive and handle messages until channel is hung up
@@ -88,8 +94,10 @@ pub fn handle_messages_with_redis(
             autotrim_duration,
             &mut last_trim_index,
             &mut buffer,
-        );
+        )?;
     }
+
+    Ok(())
 }
 
 fn drain_buffer(
@@ -98,7 +106,7 @@ fn drain_buffer(
     autotrim_duration: Option<Duration>,
     last_trim_index: &mut HashMap<String, usize>,
     buffer: &mut VecDeque<BusMessage>,
-) {
+) -> anyhow::Result<()> {
     let mut pipe = redis::pipe();
     pipe.atomic();
 
@@ -133,9 +141,7 @@ fn drain_buffer(
         }
     }
 
-    if let Err(e) = pipe.query::<()>(conn) {
-        eprintln!("{e}");
-    }
+    pipe.query::<()>(conn).map_err(anyhow::Error::from)
 }
 
 pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
@@ -166,6 +172,15 @@ pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
         host.unwrap(),
         port.unwrap(),
     )
+}
+
+pub fn get_timeout_duration(config: &HashMap<String, Value>, default: u64) -> Duration {
+    let timeout_seconds = config
+        .get("database")
+        .and_then(|database| database.get("timeout").and_then(|v| v.as_u64()))
+        .unwrap_or(default);
+
+    Duration::from_secs(timeout_seconds)
 }
 
 pub fn get_buffer_interval(config: &HashMap<String, Value>) -> Duration {

@@ -15,11 +15,13 @@
 
 import pytest
 
+from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.core.nautilus_pyo3 import AccountId
 from nautilus_trader.core.nautilus_pyo3 import Currency
 from nautilus_trader.core.nautilus_pyo3 import Money
 from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import Quantity
+from nautilus_trader.core.nautilus_pyo3 import margin_account_from_account_events
 from nautilus_trader.test_kit.rust.accounting_pyo3 import TestAccountingProviderPyo3
 from nautilus_trader.test_kit.rust.identifiers_pyo3 import TestIdProviderPyo3
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
@@ -162,3 +164,14 @@ def test_calculate_maintenance_margin_with_no_leverage():
     )
 
     assert result == Money(0.03697710, BTC)
+
+
+def test_pyo3_cython_conversion():
+    account_pyo3 = TestAccountingProviderPyo3.margin_account()
+    account_cython = MarginAccount.from_dict(account_pyo3.to_dict())
+    account_cython_dict = MarginAccount.to_dict(account_cython)
+    account_pyo3_back = margin_account_from_account_events(
+        events=account_cython_dict["events"],
+        calculate_account_state=account_cython_dict["calculate_account_state"],
+    )
+    assert account_pyo3 == account_pyo3_back

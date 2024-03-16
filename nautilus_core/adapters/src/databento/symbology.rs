@@ -13,10 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
 use anyhow::{anyhow, bail, Result};
-use dbn::{Publisher, Record};
+use dbn::Record;
 use indexmap::IndexMap;
 use nautilus_model::identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue};
 
@@ -26,22 +24,13 @@ pub fn decode_nautilus_instrument_id(
     record: &dbn::RecordRef,
     metadata: &dbn::Metadata,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    glbx_exchange_map: &HashMap<Symbol, Venue>,
 ) -> Result<InstrumentId> {
     let publisher = record.publisher().expect("Invalid `publisher` for record");
     let publisher_id = publisher as PublisherId;
     let venue = publisher_venue_map
         .get(&publisher_id)
         .ok_or_else(|| anyhow!("`Venue` not found for `publisher_id` {publisher_id}"))?;
-    let mut instrument_id = get_nautilus_instrument_id_for_record(record, metadata, *venue)?;
-
-    if publisher == Publisher::GlbxMdp3Glbx {
-        // Source actual exchange from GLBX instrument
-        // definitions if they were loaded.
-        if let Some(venue) = glbx_exchange_map.get(&instrument_id.symbol) {
-            instrument_id.venue = *venue;
-        }
-    };
+    let instrument_id = get_nautilus_instrument_id_for_record(record, metadata, *venue)?;
 
     Ok(instrument_id)
 }

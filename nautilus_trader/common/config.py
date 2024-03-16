@@ -249,6 +249,8 @@ class DatabaseConfig(NautilusConfig, frozen=True):
         The account password for the database connection.
     ssl : bool, default False
         If database should use an SSL enabled connection.
+    timeout : int, default 20
+        The timeout (seconds) to wait for a new connection.
 
     Notes
     -----
@@ -262,6 +264,7 @@ class DatabaseConfig(NautilusConfig, frozen=True):
     username: str | None = None
     password: str | None = None
     ssl: bool = False
+    timeout: int | None = 20
 
 
 class MessageBusConfig(NautilusConfig, frozen=True):

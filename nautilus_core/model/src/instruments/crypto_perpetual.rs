@@ -52,7 +52,7 @@ pub struct CryptoPerpetual {
     pub taker_fee: Decimal,
     pub margin_init: Decimal,
     pub margin_maint: Decimal,
-    pub lot_size: Option<Quantity>,
+    pub lot_size: Quantity,
     pub max_quantity: Option<Quantity>,
     pub min_quantity: Option<Quantity>,
     pub max_notional: Option<Money>,
@@ -105,7 +105,7 @@ impl CryptoPerpetual {
             taker_fee,
             margin_init,
             margin_maint,
-            lot_size,
+            lot_size: lot_size.unwrap_or(Quantity::from(1)),
             max_quantity,
             min_quantity,
             max_notional,
@@ -186,7 +186,7 @@ impl Instrument for CryptoPerpetual {
     }
 
     fn lot_size(&self) -> Option<Quantity> {
-        self.lot_size
+        Some(self.lot_size)
     }
 
     fn max_quantity(&self) -> Option<Quantity> {

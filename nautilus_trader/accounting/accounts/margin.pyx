@@ -64,6 +64,42 @@ cdef class MarginAccount(Account):
         self._leverages: dict[InstrumentId, Decimal] = {}
         self._margins: dict[InstrumentId, MarginBalance] = {m.instrument_id: m for m in event.margins}
 
+    @staticmethod
+    cdef dict to_dict_c(MarginAccount obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "MarginAccount",
+            "calculate_account_state": obj.calculate_account_state,
+            "events": [AccountState.to_dict_c(event) for event in obj.events_c()]
+        }
+
+    @staticmethod
+    def to_dict(MarginAccount obj):
+        return MarginAccount.to_dict_c(obj)
+
+    @staticmethod
+    cdef MarginAccount from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        calculate_account_state = values["calculate_account_state"]
+        events = values["events"]
+        events = values["events"]
+        if len(events) == 0:
+            return None
+        init_event = events[0]
+        other_events = events[1:]
+        account = MarginAccount(
+            event=AccountState.from_dict_c(init_event),
+            calculate_account_state=calculate_account_state
+        )
+        for event in other_events:
+            account.apply(AccountState.from_dict_c(event))
+        return account
+
+    @staticmethod
+    def from_dict(dict values):
+        return MarginAccount.from_dict_c(values)
+
+
 # -- QUERIES --------------------------------------------------------------------------------------
 
     cpdef dict margins(self):

@@ -62,6 +62,41 @@ cdef class CashAccount(Account):
 
         self._balances_locked: dict[InstrumentId, Money] = {}
 
+    @staticmethod
+    cdef dict to_dict_c(CashAccount obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "CashAccount",
+            "calculate_account_state":obj.calculate_account_state,
+            "events": [AccountState.to_dict_c(event) for event in obj.events_c()]
+        }
+
+    @staticmethod
+    def to_dict(CashAccount obj):
+        return CashAccount.to_dict_c(obj)
+
+
+    @staticmethod
+    cdef CashAccount from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        calculate_account_state = values["calculate_account_state"]
+        events = values["events"]
+        if len(events) == 0:
+            return None
+        init_event = events[0]
+        other_events = events[1:]
+        account = CashAccount(
+            event=AccountState.from_dict_c(init_event),
+            calculate_account_state=calculate_account_state
+        )
+        for event in other_events:
+            account.apply(AccountState.from_dict_c(event))
+        return account
+
+    @staticmethod
+    def from_dict(dict values):
+        return CashAccount.from_dict_c(values)
+
     cpdef void update_balance_locked(self, InstrumentId instrument_id, Money locked):
         """
         Update the balance locked for the given instrument ID.

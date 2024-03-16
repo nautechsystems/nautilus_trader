@@ -21,7 +21,7 @@ use nautilus_model::{
         bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
         trade::TradeTick, Data,
     },
-    identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
+    identifiers::{instrument_id::InstrumentId, venue::Venue},
     instruments::InstrumentType,
 };
 use pyo3::{
@@ -47,11 +47,6 @@ impl DatabentoDataLoader {
         self.load_publishers(path_buf)
     }
 
-    #[pyo3(name = "load_glbx_exchange_map")]
-    fn py_load_glbx_exchange_map(&mut self, map: HashMap<Symbol, Venue>) {
-        self.load_glbx_exchange_map(map);
-    }
-
     #[must_use]
     #[pyo3(name = "get_publishers")]
     fn py_get_publishers(&self) -> HashMap<u16, DatabentoPublisher> {
@@ -73,11 +68,6 @@ impl DatabentoDataLoader {
     fn py_get_venue_for_publisher(&self, publisher_id: PublisherId) -> Option<String> {
         self.get_venue_for_publisher(publisher_id)
             .map(std::string::ToString::to_string)
-    }
-
-    #[pyo3(name = "get_glbx_exchange_map")]
-    fn py_get_glbx_exchange_map(&self) -> HashMap<Symbol, Venue> {
-        self.get_glbx_exchange_map()
     }
 
     #[pyo3(name = "schema_for_file")]

@@ -46,7 +46,7 @@ config_node = TradingNodeConfig(
         # log_level_file="DEBUG",
         # log_file_format="json",
         log_colors=True,
-        use_pyo3=False,
+        use_pyo3=True,
     ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
@@ -54,12 +54,12 @@ config_node = TradingNodeConfig(
         filter_position_reports=True,
     ),
     cache=CacheConfig(
-        # database=DatabaseConfig(),
+        # database=DatabaseConfig(timeout=2),
         timestamps_as_iso8601=True,
         flush_on_start=False,
     ),
     # message_bus=MessageBusConfig(
-    #     database=DatabaseConfig(),
+    #     database=DatabaseConfig(timeout=2),
     #     encoding="json",
     #     timestamps_as_iso8601=True,
     #     streams_prefix="quoters",

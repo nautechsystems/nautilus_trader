@@ -13,12 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{
-    python::{serialization::from_dict_pyo3, to_pyvalue_err},
-    time::UnixNanos,
-    uuid::UUID4,
+use std::str::FromStr;
+
+use nautilus_core::{python::to_pyvalue_err, time::UnixNanos, uuid::UUID4};
+use pyo3::{
+    basic::CompareOp,
+    prelude::*,
+    types::{PyDict, PyList},
 };
-use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::prelude::ToPrimitive;
 
 use crate::{
@@ -60,6 +62,31 @@ impl AccountState {
         .map_err(to_pyvalue_err)
     }
 
+    #[getter]
+    fn account_id(&self) -> AccountId {
+        self.account_id
+    }
+
+    #[getter]
+    fn account_type(&self) -> AccountType {
+        self.account_type
+    }
+
+    #[getter]
+    fn base_currency(&self) -> Option<Currency> {
+        self.base_currency
+    }
+
+    #[getter]
+    fn balances(&self) -> Vec<AccountBalance> {
+        self.balances.clone()
+    }
+
+    #[getter]
+    fn margins(&self) -> Vec<MarginBalance> {
+        self.margins.clone()
+    }
+
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
             CompareOp::Eq => self.eq(other).into_py(py),
@@ -96,12 +123,55 @@ impl AccountState {
 
     #[staticmethod]
     #[pyo3(name = "from_dict")]
-    fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        from_dict_pyo3(py, values)
+    pub fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
+        // from_dict_pyo3(py, values)
+        let dict = values.as_ref(py);
+        let account_id: &str = dict.get_item("account_id")?.unwrap().extract()?;
+        let account_type: &str = dict.get_item("account_type")?.unwrap().extract::<&str>()?;
+        let base_currency: &str = dict.get_item("base_currency")?.unwrap().extract::<&str>()?;
+        let balances_list: Py<PyList> = dict
+            .get_item("balances")?
+            .unwrap()
+            .extract::<Py<PyList>>()?;
+        let balances: Vec<AccountBalance> = balances_list
+            .as_ref(py)
+            .iter()
+            .map(|b| {
+                let balance_dict = b.extract::<Py<PyDict>>()?;
+                AccountBalance::py_from_dict(py, balance_dict)
+            })
+            .collect::<PyResult<Vec<AccountBalance>>>()?;
+        let margins_list: Py<PyList> =
+            dict.get_item("margins")?.unwrap().extract::<Py<PyList>>()?;
+        let margins: Vec<MarginBalance> = margins_list
+            .as_ref(py)
+            .iter()
+            .map(|m| {
+                let margin_dict = m.extract::<Py<PyDict>>()?;
+                MarginBalance::py_from_dict(py, margin_dict)
+            })
+            .collect::<PyResult<Vec<MarginBalance>>>()?;
+        let reported: bool = dict.get_item("reported")?.unwrap().extract()?;
+        let event_id: &str = dict.get_item("event_id")?.unwrap().extract()?;
+        let ts_event: u64 = dict.get_item("ts_event")?.unwrap().extract()?;
+        let ts_init: u64 = dict.get_item("ts_init")?.unwrap().extract()?;
+        let account = Self::new(
+            AccountId::from_str(account_id).unwrap(),
+            AccountType::from_str(account_type).unwrap(),
+            balances,
+            margins,
+            reported,
+            UUID4::from_str(event_id).unwrap(),
+            ts_event,
+            ts_init,
+            Some(Currency::from_str(base_currency)?),
+        )
+        .unwrap();
+        Ok(account)
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(AccountState))?;
         dict.set_item("account_id", self.account_id.to_string())?;
@@ -113,8 +183,9 @@ impl AccountState {
             self.margins.iter().map(|m| m.py_to_dict(py)).collect();
         dict.set_item("balances", balances_dict?)?;
         dict.set_item("margins", margins_dict?)?;
-        dict.set_item("is_reported", self.is_reported)?;
+        dict.set_item("reported", self.is_reported)?;
         dict.set_item("event_id", self.event_id.to_string())?;
+        dict.set_item("info", PyDict::new(py))?;
         dict.set_item("ts_event", self.ts_event.to_u64())?;
         dict.set_item("ts_init", self.ts_init.to_u64())?;
         match self.base_currency {

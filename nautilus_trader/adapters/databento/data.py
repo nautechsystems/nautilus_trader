@@ -252,8 +252,6 @@ class DatabentoDataClient(LiveMarketDataClient):
                 dataset=dataset,
                 publishers_path=str(PUBLISHERS_PATH),
             )
-            glbx_exchange_map = self._loader.get_glbx_exchange_map()
-            live_client.load_glbx_exchange_map(glbx_exchange_map)
             self._live_clients[dataset] = live_client
 
         return live_client
@@ -268,8 +266,6 @@ class DatabentoDataClient(LiveMarketDataClient):
                 dataset=dataset,
                 publishers_path=str(PUBLISHERS_PATH),
             )
-            glbx_exchange_map = self._loader.get_glbx_exchange_map()
-            live_client.load_glbx_exchange_map(glbx_exchange_map)
             self._live_clients_mbo[dataset] = live_client
 
         return live_client
@@ -404,7 +400,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
-                schema=DatabentoSchema.IMBALANCE.value,
+                schema=DatabentoSchema.STATISTICS.value,
                 symbols=instrument_id.symbol.value,
             )
             await self._check_live_client_started(dataset, live_client)

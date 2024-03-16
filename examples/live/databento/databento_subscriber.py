@@ -44,16 +44,15 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 instrument_ids = [
-    InstrumentId.from_str("ESH4.XCME"),
-    # InstrumentId.from_str("ESM4.XCME"),
-    # InstrumentId.from_str("ESU4.XCME"),
+    InstrumentId.from_str("ESM4.GLBX"),
+    # InstrumentId.from_str("ESU4.GLBX"),
     # InstrumentId.from_str("AAPL.XNAS"),
 ]
 
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(log_level="INFO", use_pyo3=False),
+    logging=LoggingConfig(log_level="INFO", use_pyo3=True),
     exec_engine=LiveExecEngineConfig(
         reconciliation=False,  # Not applicable
         inflight_check_interval_ms=0,  # Not applicable
@@ -87,7 +86,7 @@ config_node = TradingNodeConfig(
             # parent_symbols={"GLBX.MDP3": {"ES.FUT", "ES.OPT"}},
         ),
     },
-    timeout_connection=10.0,
+    timeout_connection=20.0,
     timeout_reconciliation=10.0,  # Not applicable
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,
@@ -137,6 +136,9 @@ class DataSubscriber(Strategy):
 
         """
         for instrument_id in self.instrument_ids:
+            # from nautilus_trader.model.enums import BookType
+
+            #
             # self.subscribe_order_book_deltas(
             #     instrument_id=instrument_id,
             #     book_type=BookType.L3_MBO,
@@ -149,6 +151,7 @@ class DataSubscriber(Strategy):
             #     client_id=DATABENTO_CLIENT_ID,
             #     interval_ms=100,
             # )
+
             self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
             # self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
             # self.request_quote_ticks(instrument_id)
@@ -170,6 +173,10 @@ class DataSubscriber(Strategy):
             # from nautilus_trader.adapters.databento import DatabentoStatistics
             #
             # metadata = {"instrument_id": instrument_id}
+            # self.subscribe_data(
+            #     data_type=DataType(type=DatabentoStatistics, metadata=metadata),
+            #     client_id=DATABENTO_CLIENT_ID,
+            # )
             # self.request_data(
             #     data_type=DataType(type=DatabentoStatistics, metadata=metadata),
             #     client_id=DATABENTO_CLIENT_ID,

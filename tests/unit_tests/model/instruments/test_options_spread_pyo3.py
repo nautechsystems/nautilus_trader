@@ -36,9 +36,10 @@ def test_to_dict():
     assert OptionsSpread.from_dict(result) == _OPTIONS_SPREAD
     assert result == {
         "type": "OptionsSpread",
-        "id": "UD:U$: GN 2534559.XCME",
+        "id": "UD:U$: GN 2534559.GLBX",
         "raw_symbol": "UD:U$: GN 2534559",
         "asset_class": "FX",
+        "exchange": "XCME",
         "underlying": "SR3",
         "strategy_type": "GN",
         "activation_ns": 1699304047000000000,
@@ -60,4 +61,4 @@ def test_to_dict():
 def test_legacy_options_contract_from_pyo3():
     option = LegacyOptionsSpread.from_pyo3(_OPTIONS_SPREAD)
 
-    assert option.id.value == "UD:U$: GN 2534559.XCME"
+    assert option.id.value == "UD:U$: GN 2534559.GLBX"

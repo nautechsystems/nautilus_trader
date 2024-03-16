@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide},
+    enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
     identifiers::account_id::AccountId,
     instruments::{
@@ -28,7 +28,7 @@ use nautilus_model::{
     position::Position,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
-use pyo3::{basic::CompareOp, prelude::*};
+use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::account::{cash::CashAccount, Account};
 
@@ -82,6 +82,12 @@ impl CashAccount {
     #[pyo3(name = "id")]
     fn py_id(&self) -> AccountId {
         self.id
+    }
+
+    #[getter]
+    #[pyo3(name = "account_type")]
+    fn py_account_type(&self) -> AccountType {
+        self.account_type
     }
 
     #[getter]
@@ -363,5 +369,15 @@ impl CashAccount {
             // throw error unsupported instrument
             Err(to_pyvalue_err("Unsupported instrument type"))
         }
+    }
+
+    #[pyo3(name = "to_dict")]
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let dict = PyDict::new(py);
+        dict.set_item("calculate_account_state", self.calculate_account_state)?;
+        let events_list: PyResult<Vec<PyObject>> =
+            self.events.iter().map(|item| item.py_to_dict(py)).collect();
+        dict.set_item("events", events_list.unwrap())?;
+        Ok(dict.into())
     }
 }

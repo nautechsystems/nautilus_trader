@@ -68,7 +68,7 @@ def test_loader_definition_glbx_futures() -> None:
     assert isinstance(data[0], FuturesContract)
     assert isinstance(data[1], FuturesContract)
     instrument = data[0]
-    assert instrument.id == InstrumentId.from_str("ESM3.XCME")
+    assert instrument.id == InstrumentId.from_str("ESM3.GLBX")
     assert instrument.raw_symbol == Symbol("ESM3")
     assert instrument.asset_class == AssetClass.INDEX
     assert instrument.instrument_class == InstrumentClass.FUTURE
@@ -129,7 +129,7 @@ def test_loader_definition_glbx_options() -> None:
     assert isinstance(data[0], OptionsContract)
     assert isinstance(data[1], OptionsContract)
     instrument = data[0]
-    assert instrument.id == InstrumentId.from_str("ESM4 C4250.XCME")
+    assert instrument.id == InstrumentId.from_str("ESM4 C4250.GLBX")
     assert instrument.raw_symbol == Symbol("ESM4 C4250")
     assert instrument.asset_class == AssetClass.COMMODITY  # <-- TODO: This should be EQUITY
     assert instrument.instrument_class == InstrumentClass.OPTION

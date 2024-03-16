@@ -10,6 +10,10 @@ documentation.workspace = true
 name = "nautilus_adapters"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
+[[bin]]
+name = "sandbox"
+path = "src/databento/bin/sandbox.rs"
+
 [dependencies]
 nautilus-common = { path = "../common" }
 nautilus-core = { path = "../core" }
@@ -34,7 +38,7 @@ ustr = { workspace = true }
 databento = { version = "0.7.1", optional = true }
 dbn = { version = "0.16.0", optional = true, features = ["python"] }
 streaming-iterator = "0.1.9"
-time = "0.3.31"
+time = "0.3.34"
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -48,12 +52,16 @@ extension-module = [
   "nautilus-model/extension-module",
 ]
 databento = ["dep:databento", "dbn", "python"]
-ffi = ["nautilus-core/ffi", "nautilus-model/ffi", "nautilus-common/ffi"]
+ffi = [
+  "nautilus-common/ffi",
+  "nautilus-core/ffi",
+  "nautilus-model/ffi",
+]
 python = [
   "pyo3",
   "pyo3-asyncio",
+  "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-model/python",
-  "nautilus-common/python",
 ]
 default = ["ffi", "python"]

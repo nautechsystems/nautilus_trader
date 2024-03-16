@@ -34,8 +34,11 @@ use nautilus_model::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
     instruments::InstrumentType,
 };
-use tokio::time::{timeout, Duration};
-use tracing::{debug, error, info};
+use tokio::{
+    sync::mpsc::{self, error::TryRecvError},
+    time::{timeout, Duration},
+};
+use tracing::{debug, error, info, trace};
 use ustr::Ustr;
 
 use super::{
@@ -50,7 +53,6 @@ use crate::databento::{
 #[derive(Debug)]
 pub enum LiveCommand {
     Subscribe(Subscription),
-    UpdateGlbx(HashMap<Symbol, Venue>),
     Start,
     Close,
 }
@@ -63,6 +65,7 @@ pub enum LiveMessage {
     Imbalance(DatabentoImbalance),
     Statistics(DatabentoStatistics),
     Error(anyhow::Error),
+    Close,
 }
 
 /// Handles a raw TCP data feed from the Databento LSG for a single dataset.
@@ -73,10 +76,9 @@ pub enum LiveMessage {
 pub struct DatabentoFeedHandler {
     key: String,
     dataset: String,
-    rx: std::sync::mpsc::Receiver<LiveCommand>,
-    tx: tokio::sync::mpsc::Sender<LiveMessage>,
+    cmd_rx: mpsc::UnboundedReceiver<LiveCommand>,
+    msg_tx: mpsc::Sender<LiveMessage>,
     publisher_venue_map: IndexMap<PublisherId, Venue>,
-    glbx_exchange_map: HashMap<Symbol, Venue>,
     replay: bool,
 }
 
@@ -86,18 +88,16 @@ impl DatabentoFeedHandler {
     pub fn new(
         key: String,
         dataset: String,
-        rx: std::sync::mpsc::Receiver<LiveCommand>,
-        tx: tokio::sync::mpsc::Sender<LiveMessage>,
+        rx: mpsc::UnboundedReceiver<LiveCommand>,
+        tx: mpsc::Sender<LiveMessage>,
         publisher_venue_map: IndexMap<PublisherId, Venue>,
-        glbx_exchange_map: HashMap<Symbol, Venue>,
     ) -> Self {
         Self {
             key,
             dataset,
-            rx,
-            tx,
+            cmd_rx: rx,
+            msg_tx: tx,
             publisher_venue_map,
-            glbx_exchange_map,
             replay: false,
         }
     }
@@ -113,13 +113,25 @@ impl DatabentoFeedHandler {
         let mut buffered_deltas: HashMap<InstrumentId, Vec<OrderBookDelta>> = HashMap::new();
         let mut deltas_count = 0_u64;
 
-        let mut client = databento::LiveClient::builder()
-            .key(self.key.clone())?
-            .dataset(self.dataset.clone())
-            .upgrade_policy(VersionUpgradePolicy::Upgrade)
-            .build()
-            .await
-            .map_err(to_pyruntime_err)?;
+        let result = timeout(
+            Duration::from_secs(5), // Hard coded timeout for now
+            databento::LiveClient::builder()
+                .key(self.key.clone())?
+                .dataset(self.dataset.clone())
+                .upgrade_policy(VersionUpgradePolicy::Upgrade)
+                .build(),
+        )
+        .await?;
+        info!("Connected");
+
+        let mut client = match result {
+            Ok(client) => client,
+            Err(_) => {
+                self.msg_tx.send(LiveMessage::Close).await?;
+                self.cmd_rx.close();
+                return Err(anyhow!("Timeout connecting to LSG"));
+            }
+        };
 
         // Timeout awaiting the next record before checking for a command
         let timeout_duration = Duration::from_millis(1);
@@ -128,33 +140,44 @@ impl DatabentoFeedHandler {
         let mut running = false;
 
         loop {
-            // Check for any commands received
-            if let Ok(cmd) = self.rx.recv() {
-                debug!("Received command: {:?}", cmd);
-                match cmd {
-                    LiveCommand::Subscribe(sub) => {
-                        if !self.replay & sub.start.is_some() {
-                            self.replay = true;
+            if self.msg_tx.is_closed() {
+                debug!("Message channel was closed: stopping");
+                break;
+            };
+
+            match self.cmd_rx.try_recv() {
+                Ok(cmd) => {
+                    debug!("Received command: {:?}", cmd);
+                    match cmd {
+                        LiveCommand::Subscribe(sub) => {
+                            if !self.replay & sub.start.is_some() {
+                                self.replay = true;
+                            }
+                            client.subscribe(&sub).await.map_err(to_pyruntime_err)?;
                         }
-                        client.subscribe(&sub).await.map_err(to_pyruntime_err)?;
-                    }
-                    LiveCommand::UpdateGlbx(map) => self.glbx_exchange_map = map,
-                    LiveCommand::Start => {
-                        buffering_start = match self.replay {
-                            true => Some(clock.get_time_ns()),
-                            false => None,
-                        };
-                        client.start().await.map_err(to_pyruntime_err)?;
-                        running = true;
-                        debug!("Started");
-                    }
-                    LiveCommand::Close => {
-                        if running {
-                            client.close().await.map_err(to_pyruntime_err)?;
-                            debug!("Closed");
+                        LiveCommand::Start => {
+                            buffering_start = match self.replay {
+                                true => Some(clock.get_time_ns()),
+                                false => None,
+                            };
+                            client.start().await.map_err(to_pyruntime_err)?;
+                            running = true;
+                            debug!("Started");
                         }
-                        return Ok(());
+                        LiveCommand::Close => {
+                            self.msg_tx.send(LiveMessage::Close).await?;
+                            if running {
+                                client.close().await.map_err(to_pyruntime_err)?;
+                                debug!("Closed inner client");
+                            }
+                            break;
+                        }
                     }
+                }
+                Err(TryRecvError::Empty) => {} // No command yet
+                Err(TryRecvError::Disconnected) => {
+                    debug!("Disconnected");
+                    break;
                 }
             }
 
@@ -162,6 +185,7 @@ impl DatabentoFeedHandler {
                 continue;
             };
 
+            // Await the next record with a timeout
             let result = timeout(timeout_duration, client.next_record()).await;
             let record_opt = match result {
                 Ok(record_opt) => record_opt,
@@ -189,12 +213,7 @@ impl DatabentoFeedHandler {
                 instrument_id_map.remove(&msg.hd.instrument_id);
                 handle_symbol_mapping_msg(msg, &mut symbol_map, &mut instrument_id_map);
             } else if let Some(msg) = record.get::<dbn::InstrumentDefMsg>() {
-                let data = handle_instrument_def_msg(
-                    msg,
-                    &self.publisher_venue_map,
-                    &self.glbx_exchange_map,
-                    clock,
-                )?;
+                let data = handle_instrument_def_msg(msg, &self.publisher_venue_map, clock)?;
                 self.send_msg(LiveMessage::Instrument(data)).await;
             } else if let Some(msg) = record.get::<dbn::ImbalanceMsg>() {
                 let data = handle_imbalance_msg(
@@ -202,7 +221,6 @@ impl DatabentoFeedHandler {
                     &record,
                     &symbol_map,
                     &self.publisher_venue_map,
-                    &self.glbx_exchange_map,
                     &mut instrument_id_map,
                     clock,
                 )?;
@@ -213,7 +231,6 @@ impl DatabentoFeedHandler {
                     &record,
                     &symbol_map,
                     &self.publisher_venue_map,
-                    &self.glbx_exchange_map,
                     &mut instrument_id_map,
                     clock,
                 )?;
@@ -223,7 +240,6 @@ impl DatabentoFeedHandler {
                     record,
                     &symbol_map,
                     &self.publisher_venue_map,
-                    &self.glbx_exchange_map,
                     &mut instrument_id_map,
                     clock,
                 ) {
@@ -242,9 +258,12 @@ impl DatabentoFeedHandler {
 
                         // TODO: Temporary for debugging
                         deltas_count += 1;
-                        println!(
+                        trace!(
                             "Buffering delta: {} {} {:?} flags={}",
-                            deltas_count, delta.ts_event, buffering_start, msg.flags,
+                            deltas_count,
+                            delta.ts_event,
+                            buffering_start,
+                            msg.flags,
                         );
 
                         // Check if last message in the packet
@@ -283,23 +302,27 @@ impl DatabentoFeedHandler {
             }
         }
 
+        self.cmd_rx.close();
+        debug!("Closed command receiver");
+
         Ok(())
     }
 
     async fn send_msg(&mut self, msg: LiveMessage) {
-        match self.tx.send(msg).await {
+        trace!("Sending {msg:?}");
+        match self.msg_tx.send(msg).await {
             Ok(()) => {}
-            Err(e) => error!("Error sending message: {e:?}"),
+            Err(e) => error!("Error sending message: {e}"),
         }
     }
 }
 
 fn handle_error_msg(msg: &dbn::ErrorMsg) {
-    error!("{:?}", msg);
+    error!("{msg:?}");
 }
 
 fn handle_system_msg(msg: &dbn::SystemMsg) {
-    info!("{:?}", msg);
+    info!("{msg:?}");
 }
 
 fn handle_symbol_mapping_msg(
@@ -320,7 +343,6 @@ fn update_instrument_id_map(
     record: &dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    glbx_exchange_map: &HashMap<Symbol, Venue>,
     instrument_id_map: &mut HashMap<u32, InstrumentId>,
 ) -> InstrumentId {
     let header = record.header();
@@ -339,12 +361,9 @@ fn update_instrument_id_map(
     };
 
     let publisher_id = header.publisher_id;
-    let venue = match glbx_exchange_map.get(&symbol) {
-        Some(venue) => venue,
-        None => publisher_venue_map
-            .get(&publisher_id)
-            .unwrap_or_else(|| panic!("No venue found for `publisher_id` {publisher_id}")),
-    };
+    let venue = publisher_venue_map
+        .get(&publisher_id)
+        .unwrap_or_else(|| panic!("No venue found for `publisher_id` {publisher_id}"));
     let instrument_id = InstrumentId::new(symbol, *venue);
 
     instrument_id_map.insert(header.instrument_id, instrument_id);
@@ -354,7 +373,6 @@ fn update_instrument_id_map(
 fn handle_instrument_def_msg(
     msg: &dbn::InstrumentDefMsg,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    glbx_exchange_map: &HashMap<Symbol, Venue>,
     clock: &AtomicTime,
 ) -> Result<InstrumentType> {
     let c_str: &CStr = unsafe { CStr::from_ptr(msg.raw_symbol.as_ptr()) };
@@ -365,12 +383,9 @@ fn handle_instrument_def_msg(
     };
 
     let publisher_id = msg.header().publisher_id;
-    let venue = match glbx_exchange_map.get(&symbol) {
-        Some(venue) => venue,
-        None => publisher_venue_map
-            .get(&publisher_id)
-            .unwrap_or_else(|| panic!("No venue found for `publisher_id` {publisher_id}")),
-    };
+    let venue = publisher_venue_map
+        .get(&publisher_id)
+        .unwrap_or_else(|| panic!("No venue found for `publisher_id` {publisher_id}"));
     let instrument_id = InstrumentId::new(symbol, *venue);
     let ts_init = clock.get_time_ns();
 
@@ -382,17 +397,11 @@ fn handle_imbalance_msg(
     record: &dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    glbx_exchange_map: &HashMap<Symbol, Venue>,
     instrument_id_map: &mut HashMap<u32, InstrumentId>,
     clock: &AtomicTime,
 ) -> anyhow::Result<DatabentoImbalance> {
-    let instrument_id = update_instrument_id_map(
-        record,
-        symbol_map,
-        publisher_venue_map,
-        glbx_exchange_map,
-        instrument_id_map,
-    );
+    let instrument_id =
+        update_instrument_id_map(record, symbol_map, publisher_venue_map, instrument_id_map);
 
     let price_precision = 2; // Hard coded for now
     let ts_init = clock.get_time_ns();
@@ -405,17 +414,11 @@ fn handle_statistics_msg(
     record: &dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    glbx_exchange_map: &HashMap<Symbol, Venue>,
     instrument_id_map: &mut HashMap<u32, InstrumentId>,
     clock: &AtomicTime,
 ) -> anyhow::Result<DatabentoStatistics> {
-    let instrument_id = update_instrument_id_map(
-        record,
-        symbol_map,
-        publisher_venue_map,
-        glbx_exchange_map,
-        instrument_id_map,
-    );
+    let instrument_id =
+        update_instrument_id_map(record, symbol_map, publisher_venue_map, instrument_id_map);
 
     let price_precision = 2; // Hard coded for now
     let ts_init = clock.get_time_ns();
@@ -427,17 +430,11 @@ fn handle_record(
     record: dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    glbx_exchange_map: &HashMap<Symbol, Venue>,
     instrument_id_map: &mut HashMap<u32, InstrumentId>,
     clock: &AtomicTime,
 ) -> anyhow::Result<(Option<Data>, Option<Data>)> {
-    let instrument_id = update_instrument_id_map(
-        &record,
-        symbol_map,
-        publisher_venue_map,
-        glbx_exchange_map,
-        instrument_id_map,
-    );
+    let instrument_id =
+        update_instrument_id_map(&record, symbol_map, publisher_venue_map, instrument_id_map);
 
     let price_precision = 2; // Hard coded for now
     let ts_init = clock.get_time_ns();

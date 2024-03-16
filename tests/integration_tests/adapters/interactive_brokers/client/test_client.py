@@ -21,6 +21,7 @@ from unittest.mock import patch
 
 import pytest
 
+from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
 from nautilus_trader.test_kit.functions import eventually
 
 
@@ -65,6 +66,7 @@ def test_stop(ib_client):
 
     # Act
     ib_client.stop()
+    ensure_all_tasks_completed()
 
     # Assert
     assert ib_client.is_stopped

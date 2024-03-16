@@ -40,3 +40,9 @@ cdef class CashAccount(Account):
         Price price,
         bint use_quote_for_inverse=*,
     )
+
+    @staticmethod
+    cdef dict to_dict_c(CashAccount obj)
+
+    @staticmethod
+    cdef CashAccount from_dict_c(dict values)

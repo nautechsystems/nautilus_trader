@@ -47,7 +47,7 @@ cdef class Equity(Instrument):
     lot_size : Quantity
         The rounded lot unit size (standard/board).
     isin : str, optional
-        The International Securities Identification Number (ISIN).
+        The instruments International Securities Identification Number (ISIN).
     margin_init : Decimal, optional
         The initial (order) margin requirement in percentage of order value.
     margin_maint : Decimal, optional
@@ -71,6 +71,9 @@ cdef class Equity(Instrument):
         If `price_increment` is not positive (> 0).
     ValueError
         If `lot_size` is not positive (> 0).
+    ValueError
+        If `isin` is not ``None`` and not a valid string.
+
     """
 
     def __init__(
@@ -88,8 +91,12 @@ cdef class Equity(Instrument):
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
         dict info = None,
     ):
+        if isin is not None:
+            Condition.valid_string(isin, "isin")
         super().__init__(
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
@@ -103,8 +110,8 @@ cdef class Equity(Instrument):
             size_increment=Quantity.from_int_c(1),
             multiplier=Quantity.from_int_c(1),
             lot_size=lot_size,
-            max_quantity=None,
-            min_quantity=Quantity.from_int_c(1),
+            max_quantity=max_quantity,
+            min_quantity=min_quantity,
             max_notional=None,
             min_notional=None,
             max_price=None,
@@ -130,10 +137,10 @@ cdef class Equity(Instrument):
             price_increment=Price.from_str(values["price_increment"]),
             lot_size=Quantity.from_str(values["lot_size"]),
             isin=values.get("isin"),  # Can be None,
-            margin_init=Decimal(values.get("margin_init", 0)),  # Can be None,
-            margin_maint=Decimal(values.get("margin_maint", 0)),  # Can be None,
-            maker_fee=Decimal(values.get("maker_fee", 0)),  # Can be None,
-            taker_fee=Decimal(values.get("taker_fee", 0)),  # Can be None,
+            margin_init=Decimal(values.get("margin_init", 0)) if values.get("margin_init") is not None else None,
+            margin_maint=Decimal(values.get("margin_maint", 0)) if values.get("margin_maint") is not None else None,
+            maker_fee=Decimal(values.get("maker_fee", 0)) if values.get("maker_fee") is not None else None,
+            taker_fee=Decimal(values.get("taker_fee", 0))  if values.get("taker_fee") is not None else None,
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -154,6 +161,10 @@ cdef class Equity(Instrument):
             "margin_maint": str(obj.margin_maint),
             "maker_fee": str(obj.maker_fee),
             "taker_fee": str(obj.taker_fee),
+            "min_price": str(obj.min_price) if obj.min_price is not None else None,
+            "max_price": str(obj.max_price) if obj.max_price is not None else None,
+            "max_quantity": str(obj.max_quantity) if obj.max_quantity is not None else None,
+            "min_quantity": str(obj.min_quantity) if obj.min_quantity is not None else None,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
