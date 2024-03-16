@@ -41,9 +41,9 @@ pub struct OrderMatchingCore {
     pub last: Option<Price>,
     orders_bid: Vec<PassiveOrderType>,
     orders_ask: Vec<PassiveOrderType>,
-    trigger_stop_order: Option<fn(&StopOrderType)>,
-    fill_market_order: Option<fn(&MarketOrder)>,
-    fill_limit_order: Option<fn(&LimitOrderType)>,
+    trigger_stop_order: Option<fn(StopOrderType)>,
+    fill_market_order: Option<fn(MarketOrder)>,
+    fill_limit_order: Option<fn(LimitOrderType)>,
 }
 
 impl OrderMatchingCore {
@@ -51,9 +51,9 @@ impl OrderMatchingCore {
     pub fn new(
         instrument_id: InstrumentId,
         price_increment: Price,
-        trigger_stop_order: Option<fn(&StopOrderType)>,
-        fill_market_order: Option<fn(&MarketOrder)>,
-        fill_limit_order: Option<fn(&LimitOrderType)>,
+        trigger_stop_order: Option<fn(StopOrderType)>,
+        fill_market_order: Option<fn(MarketOrder)>,
+        fill_limit_order: Option<fn(LimitOrderType)>,
     ) -> Self {
         Self {
             instrument_id,
@@ -162,13 +162,17 @@ impl OrderMatchingCore {
 
     pub fn match_limit_order(&self, order: &LimitOrderType) {
         if self.is_limit_matched(order) {
-            // self.fill_limit_order.call(o)
+            if let Some(func) = self.fill_limit_order {
+                func(order.clone()); // TODO: Remove this clone (will need a lifetime)
+            }
         }
     }
 
     pub fn match_stop_order(&self, order: &StopOrderType) {
         if self.is_stop_matched(order) {
-            // self.fill_stop_order.call(o)
+            if let Some(func) = self.trigger_stop_order {
+                func(order.clone()); // TODO: Remove this clone (will need a lifetime)
+            }
         }
     }
 
@@ -194,12 +198,17 @@ impl OrderMatchingCore {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use nautilus_model::{
         enums::OrderSide, orders::stubs::TestOrderStubs, types::quantity::Quantity,
     };
     use rstest::rstest;
 
     use super::*;
+
+    static TRIGGERED_STOPS: Mutex<Vec<StopOrderType>> = Mutex::new(Vec::new());
+    static FILLED_LIMITS: Mutex<Vec<LimitOrderType>> = Mutex::new(Vec::new());
 
     fn create_matching_core(
         instrument_id: InstrumentId,
@@ -209,12 +218,131 @@ mod tests {
     }
 
     #[rstest]
+    fn test_add_order_bid_side() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+
+        let order = TestOrderStubs::limit_order(
+            instrument_id,
+            OrderSide::Buy,
+            Price::from("100.00"),
+            Quantity::from("100"),
+            None,
+            None,
+        );
+
+        let passive_order = PassiveOrderType::Limit(LimitOrderType::Limit(order));
+        matching_core.add_order(passive_order.clone()).unwrap();
+
+        assert!(matching_core.get_orders_bid().contains(&passive_order));
+        assert!(!matching_core.get_orders_ask().contains(&passive_order));
+        assert_eq!(matching_core.get_orders_bid().len(), 1);
+        assert!(matching_core.get_orders_ask().is_empty());
+    }
+
+    #[rstest]
+    fn test_add_order_ask_side() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+
+        let order = TestOrderStubs::limit_order(
+            instrument_id,
+            OrderSide::Sell,
+            Price::from("100.00"),
+            Quantity::from("100"),
+            None,
+            None,
+        );
+
+        let passive_order = PassiveOrderType::Limit(LimitOrderType::Limit(order));
+        matching_core.add_order(passive_order.clone()).unwrap();
+
+        assert!(matching_core.get_orders_ask().contains(&passive_order));
+        assert!(!matching_core.get_orders_bid().contains(&passive_order));
+        assert_eq!(matching_core.get_orders_ask().len(), 1);
+        assert!(matching_core.get_orders_bid().is_empty());
+    }
+
+    #[rstest]
+    fn test_reset() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+
+        let order = TestOrderStubs::limit_order(
+            instrument_id,
+            OrderSide::Sell,
+            Price::from("100.00"),
+            Quantity::from("100"),
+            None,
+            None,
+        );
+
+        let passive_order = PassiveOrderType::Limit(LimitOrderType::Limit(order));
+        matching_core.add_order(passive_order).unwrap();
+        matching_core.bid = Some(Price::from("100.00"));
+        matching_core.ask = Some(Price::from("100.00"));
+        matching_core.last = Some(Price::from("100.00"));
+
+        matching_core.reset();
+
+        assert!(matching_core.bid.is_none());
+        assert!(matching_core.ask.is_none());
+        assert!(matching_core.last.is_none());
+        assert!(matching_core.get_orders_bid().is_empty());
+        assert!(matching_core.get_orders_ask().is_empty());
+    }
+
+    #[rstest]
+    fn test_delete_order_when_not_exists() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+
+        let order = TestOrderStubs::limit_order(
+            instrument_id,
+            OrderSide::Buy,
+            Price::from("100.00"),
+            Quantity::from("100"),
+            None,
+            None,
+        );
+
+        let passive_order = PassiveOrderType::Limit(LimitOrderType::Limit(order));
+        let result = matching_core.delete_order(&passive_order);
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy)]
+    #[case(OrderSide::Sell)]
+    fn test_delete_order_when_exists(#[case] order_side: OrderSide) {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+
+        let order = TestOrderStubs::limit_order(
+            instrument_id,
+            order_side,
+            Price::from("100.00"),
+            Quantity::from("100"),
+            None,
+            None,
+        );
+
+        let passive_order = PassiveOrderType::Limit(LimitOrderType::Limit(order));
+        matching_core.add_order(passive_order.clone()).unwrap();
+        matching_core.delete_order(&passive_order).unwrap();
+
+        assert!(matching_core.get_orders_ask().is_empty());
+        assert!(matching_core.get_orders_bid().is_empty());
+    }
+
+    #[rstest]
     #[case(None, None, Price::from("100.00"), OrderSide::Buy, false)]
     #[case(None, None, Price::from("100.00"), OrderSide::Sell, false)]
     #[case(
         Some(Price::from("100.00")),
         Some(Price::from("101.00")),
-        Price::from("100.00"),
+        Price::from("100.00"),  // Price below ask
         OrderSide::Buy,
         false
     )]
@@ -228,14 +356,14 @@ mod tests {
     #[case(
         Some(Price::from("100.00")),
         Some(Price::from("101.00")),
-        Price::from("102.00"),  // <-- Price higher than ask (marketable)
+        Price::from("102.00"),  // <-- Price above ask (marketable)
         OrderSide::Buy,
         true
     )]
     #[case(
         Some(Price::from("100.00")),
         Some(Price::from("101.00")),
-        Price::from("101.00"),
+        Price::from("101.00"), // <-- Price above bid
         OrderSide::Sell,
         false
     )]
@@ -277,5 +405,155 @@ mod tests {
         let result = matching_core.is_limit_matched(&LimitOrderType::Limit(order));
 
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(None, None, Price::from("100.00"), OrderSide::Buy, false)]
+    #[case(None, None, Price::from("100.00"), OrderSide::Sell, false)]
+    #[case(
+        Some(Price::from("100.00")),
+        Some(Price::from("101.00")),
+        Price::from("102.00"),  // Trigger above ask
+        OrderSide::Buy,
+        false
+    )]
+    #[case(
+        Some(Price::from("100.00")),
+        Some(Price::from("101.00")),
+        Price::from("101.00"),  // <-- Trigger at ask
+        OrderSide::Buy,
+        true
+    )]
+    #[case(
+        Some(Price::from("100.00")),
+        Some(Price::from("101.00")),
+        Price::from("100.00"),  // <-- Trigger below ask
+        OrderSide::Buy,
+        true
+    )]
+    #[case(
+        Some(Price::from("100.00")),
+        Some(Price::from("101.00")),
+        Price::from("99.00"),  // Trigger below bid
+        OrderSide::Sell,
+        false
+    )]
+    #[case(
+        Some(Price::from("100.00")),
+        Some(Price::from("101.00")),
+        Price::from("100.00"),  // <-- Trigger at bid
+        OrderSide::Sell,
+        true
+    )]
+    #[case(
+        Some(Price::from("100.00")),
+        Some(Price::from("101.00")),
+        Price::from("101.00"),  // <-- Trigger above bid
+        OrderSide::Sell,
+        true
+    )]
+    fn test_is_stop_matched(
+        #[case] bid: Option<Price>,
+        #[case] ask: Option<Price>,
+        #[case] trigger_price: Price,
+        #[case] order_side: OrderSide,
+        #[case] expected: bool,
+    ) {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+        matching_core.bid = bid;
+        matching_core.ask = ask;
+
+        let order = TestOrderStubs::stop_market_order(
+            instrument_id,
+            order_side,
+            trigger_price,
+            Quantity::from("100"),
+            None,
+            None,
+            None,
+        );
+
+        let result = matching_core.is_stop_matched(&StopOrderType::StopMarket(order));
+
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy)]
+    #[case(OrderSide::Sell)]
+    fn test_match_stop_order_when_triggered(#[case] order_side: OrderSide) {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let trigger_price = Price::from("100.00");
+
+        fn trigger_stop_order_handler(order: StopOrderType) {
+            let order = order;
+            TRIGGERED_STOPS.lock().unwrap().push(order);
+        }
+
+        let mut matching_core = OrderMatchingCore::new(
+            instrument_id,
+            Price::from("0.01"),
+            Some(trigger_stop_order_handler),
+            None,
+            None,
+        );
+
+        matching_core.bid = Some(Price::from("100.00"));
+        matching_core.ask = Some(Price::from("100.00"));
+
+        let order = TestOrderStubs::stop_market_order(
+            instrument_id,
+            order_side,
+            trigger_price,
+            Quantity::from("100"),
+            None,
+            None,
+            None,
+        );
+
+        matching_core.match_stop_order(&StopOrderType::StopMarket(order.clone()));
+
+        let triggered_stops = TRIGGERED_STOPS.lock().unwrap();
+        assert_eq!(triggered_stops.len(), 1);
+        assert_eq!(triggered_stops[0], StopOrderType::StopMarket(order));
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy)]
+    #[case(OrderSide::Sell)]
+    fn test_match_limit_order_when_triggered(#[case] order_side: OrderSide) {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let price = Price::from("100.00");
+
+        fn fill_limit_order_handler(order: LimitOrderType) {
+            FILLED_LIMITS.lock().unwrap().push(order);
+        }
+
+        let mut matching_core = OrderMatchingCore::new(
+            instrument_id,
+            Price::from("0.01"),
+            None,
+            None,
+            Some(fill_limit_order_handler),
+        );
+
+        matching_core.bid = Some(Price::from("100.00"));
+        matching_core.ask = Some(Price::from("100.00"));
+
+        let order = TestOrderStubs::limit_order(
+            instrument_id,
+            order_side,
+            price,
+            Quantity::from("100.00"),
+            None,
+            None,
+        );
+
+        matching_core.match_limit_order(&LimitOrderType::Limit(order.clone()));
+
+        let filled_limits = FILLED_LIMITS.lock().unwrap();
+        assert_eq!(filled_limits.len(), 1);
+        assert_eq!(filled_limits[0], LimitOrderType::Limit(order));
     }
 }
