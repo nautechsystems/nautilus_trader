@@ -2469,6 +2469,7 @@ dependencies = [
  "cbindgen",
  "nautilus-common",
  "nautilus-core",
+ "nautilus-execution",
  "nautilus-model",
  "pyo3",
  "rstest",
