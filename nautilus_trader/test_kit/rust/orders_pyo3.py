@@ -14,24 +14,29 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
+from nautilus_trader.core.nautilus_pyo3 import ExecAlgorithmId
+from nautilus_trader.core.nautilus_pyo3 import InstrumentId
+from nautilus_trader.core.nautilus_pyo3 import LimitOrder
 from nautilus_trader.core.nautilus_pyo3 import MarketOrder
 from nautilus_trader.core.nautilus_pyo3 import OrderSide
+from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import Quantity
 from nautilus_trader.core.nautilus_pyo3 import StrategyId
 from nautilus_trader.core.nautilus_pyo3 import TimeInForce
+from nautilus_trader.core.nautilus_pyo3 import TraderId
 from nautilus_trader.test_kit.rust.identifiers_pyo3 import TestIdProviderPyo3
 
 
 class TestOrderProviderPyo3:
     @staticmethod
     def market_order(
-        instrument_id=None,
-        order_side=None,
-        quantity=None,
-        trader_id=None,
+        instrument_id: InstrumentId | None = None,
+        order_side: OrderSide | None = None,
+        quantity: Quantity | None = None,
+        trader_id: TraderId | None = None,
         strategy_id: StrategyId | None = None,
         client_order_id: ClientOrderId | None = None,
-        time_in_force=None,
+        time_in_force: TimeInForce | None = None,
     ) -> MarketOrder:
         return MarketOrder(
             trader_id=trader_id or TestIdProviderPyo3.trader_id(),
@@ -49,4 +54,34 @@ class TestOrderProviderPyo3:
             linked_order_ids=None,
             parent_order_id=None,
             tags=None,
+        )
+
+    @staticmethod
+    def limit_order(
+        instrument_id: InstrumentId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        trader_id: TraderId | None = None,
+        strategy_id: StrategyId | None = None,
+        client_order_id: ClientOrderId | None = None,
+        time_in_force: TimeInForce | None = None,
+        exec_algorithm_id: ExecAlgorithmId | None = None,
+    ) -> LimitOrder:
+        return LimitOrder(
+            trader_id=trader_id or TestIdProviderPyo3.trader_id(),
+            strategy_id=strategy_id or TestIdProviderPyo3.strategy_id(),
+            instrument_id=instrument_id or TestIdProviderPyo3.audusd_id(),
+            client_order_id=client_order_id or TestIdProviderPyo3.client_order_id(1),
+            order_side=order_side or OrderSide.BUY,
+            quantity=quantity or Quantity.from_str("100"),
+            time_in_force=time_in_force or TimeInForce.GTC,
+            price=price,
+            post_only=False,
+            reduce_only=False,
+            quote_quantity=False,
+            init_id=TestIdProviderPyo3.uuid(),
+            ts_init=0,
+            exec_algorithm_id=exec_algorithm_id,
+            exec_spawn_id=TestIdProviderPyo3.client_order_id(1),
         )

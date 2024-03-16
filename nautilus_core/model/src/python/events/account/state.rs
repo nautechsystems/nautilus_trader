@@ -124,7 +124,6 @@ impl AccountState {
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     pub fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        // from_dict_pyo3(py, values)
         let dict = values.as_ref(py);
         let account_id: &str = dict.get_item("account_id")?.unwrap().extract()?;
         let account_type: &str = dict.get_item("account_type")?.unwrap().extract::<&str>()?;

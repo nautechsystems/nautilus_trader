@@ -500,6 +500,10 @@ pub trait Order {
     fn is_pending_cancel(&self) -> bool {
         self.status() == OrderStatus::PendingCancel
     }
+    fn is_spawned(&self) -> bool {
+        self.exec_algorithm_id().is_some()
+            && self.exec_spawn_id().unwrap() != self.client_order_id()
+    }
 }
 
 impl<T> From<&T> for OrderInitialized
@@ -631,11 +635,11 @@ impl OrderCore {
             order_type,
             quantity,
             time_in_force,
-            liquidity_side: None,
+            liquidity_side: Some(LiquiditySide::NoLiquiditySide),
             is_reduce_only: reduce_only,
             is_quote_quantity: quote_quantity,
-            emulation_trigger,
-            contingency_type,
+            emulation_trigger: emulation_trigger.or(Some(TriggerType::NoTrigger)),
+            contingency_type: contingency_type.or(Some(ContingencyType::NoContingency)),
             order_list_id,
             linked_order_ids,
             parent_order_id,
@@ -837,6 +841,10 @@ impl OrderCore {
     #[must_use]
     pub fn commissions(&self) -> HashMap<Currency, Money> {
         self.commissions.clone()
+    }
+
+    pub fn init_event(&self) -> Option<&OrderEvent> {
+        self.events.first()
     }
 }
 

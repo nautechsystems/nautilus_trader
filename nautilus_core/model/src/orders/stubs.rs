@@ -149,7 +149,7 @@ impl TestOrderStubs {
         let trader = trader_id();
         let strategy = strategy_id_ema_cross();
         let client_order_id =
-            client_order_id.unwrap_or(ClientOrderId::from("O-19700101-010000-001-001-1"));
+            client_order_id.unwrap_or(ClientOrderId::from("O-19700101-0000-000-001-1"));
         let time_in_force = time_in_force.unwrap_or(TimeInForce::Gtc);
         LimitOrder::new(
             trader,
@@ -173,7 +173,7 @@ impl TestOrderStubs {
             None,
             None,
             None,
-            None,
+            Some(client_order_id),
             None,
             UUID4::new(),
             12_321_312_321_312,
