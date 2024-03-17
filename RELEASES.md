@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added `DatabaseConfig.timeout` config option for timeout seconds to wait for a new connection
 - Added CSV tick and bar data loaders params, thanks @rterbush
+- Implemented `LogGuard` to ensure global logger is flushed on termination, thanks @ayush-sb and @twitu
 - Improved Binance execution client ping listen key error handling and logging
 - Improved Redis cache adapter and message bus error handling and logging
 - Improved Interactive Brokers client connectivity resilience and component lifecycle, thanks @benjaminsingleton
