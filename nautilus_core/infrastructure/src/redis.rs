@@ -20,14 +20,15 @@ use std::{
     time::{Duration, Instant},
 };
 
-use nautilus_common::redis::{get_buffer_interval, get_redis_url, get_timeout_duration};
+use nautilus_common::{
+    cache::{CacheDatabase, DatabaseCommand, DatabaseOperation},
+    redis::{get_buffer_interval, get_redis_url, get_timeout_duration},
+};
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use redis::{Commands, Connection, Pipeline};
 use serde_json::json;
 use tracing::debug;
-
-use crate::cache::{CacheDatabase, DatabaseCommand, DatabaseOperation};
 
 // Error constants
 const CHANNEL_TX_FAILED: &str = "Failed to send to channel";

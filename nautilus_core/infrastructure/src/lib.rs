@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod cache;
-
 #[cfg(feature = "python")]
 pub mod python;
 
