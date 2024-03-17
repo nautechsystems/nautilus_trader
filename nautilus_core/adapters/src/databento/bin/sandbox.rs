@@ -1,8 +1,7 @@
 use std::env;
 
-use databento::dbn::{MboMsg, TradeMsg};
 use databento::{
-    dbn::{Dataset::GlbxMdp3, SType, Schema},
+    dbn::{Dataset::GlbxMdp3, MboMsg, SType, Schema, TradeMsg},
     live::Subscription,
     LiveClient,
 };

@@ -164,7 +164,7 @@ impl AccountState {
             UUID4::from_str(event_id).unwrap(),
             ts_event,
             ts_init,
-            Some(Currency::from_str(base_currency)?),
+            Some(Currency::from_str(base_currency).map_err(to_pyvalue_err)?),
         )
         .unwrap();
         Ok(account)
