@@ -251,7 +251,6 @@ class InteractiveBrokersClient(
         Resume the client and resubscribe to all subscriptions.
         """
         self._log.info(f"Resuming InteractiveBrokersClient ({self._client_id})...")
-        self._loop.run_until_complete(self._resubscribe_all())
         self._is_client_ready.set()
 
     def _degrade(self) -> None:

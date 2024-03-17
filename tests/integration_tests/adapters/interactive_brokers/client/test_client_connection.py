@@ -51,5 +51,4 @@ async def test_connect_fail(ib_client):
         CONNECT_FAIL.code(),
         CONNECT_FAIL.msg(),
     )
-    ib_client._disconnect.assert_awaited_once()
     ib_client._handle_reconnect.assert_awaited_once()

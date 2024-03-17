@@ -73,7 +73,6 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             self._log.error(f"Connection failed: {e}")
             if self._eclient.wrapper:
                 self._eclient.wrapper.error(NO_VALID_ID, CONNECT_FAIL.code(), CONNECT_FAIL.msg())
-            await self._disconnect()
             await self._handle_reconnect()
 
     async def _disconnect(self) -> None:
