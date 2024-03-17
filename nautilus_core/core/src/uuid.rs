@@ -23,6 +23,9 @@ use std::{
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
+/// The maximum length of ASCII characters for a `UUID4` string value.
+const UUID4_LEN: usize = 36;
+
 /// Represents a pseudo-random UUID (universally unique identifier)
 /// version 4 based on a 128-bit label as specified in RFC 4122.
 #[repr(C)]
@@ -33,7 +36,7 @@ use uuid::Uuid;
 )]
 pub struct UUID4 {
     /// The UUID v4 C string value as a fixed-length byte array.
-    pub(crate) value: [u8; 37],
+    pub(crate) value: [u8; UUID4_LEN + 1],
 }
 
 impl UUID4 {
@@ -42,7 +45,7 @@ impl UUID4 {
         let uuid = Uuid::new_v4();
         let c_string = CString::new(uuid.to_string()).expect("`CString` conversion failed");
         let bytes = c_string.as_bytes_with_nul();
-        let mut value = [0; 37];
+        let mut value = [0; UUID4_LEN + 1];
         value[..bytes.len()].copy_from_slice(bytes);
 
         Self { value }
@@ -62,7 +65,7 @@ impl FromStr for UUID4 {
         let uuid = Uuid::parse_str(s).map_err(|_| "Invalid UUID string")?;
         let c_string = CString::new(uuid.to_string()).expect("`CString` conversion failed");
         let bytes = c_string.as_bytes_with_nul();
-        let mut value = [0; 37];
+        let mut value = [0; UUID4_LEN + 1];
         value[..bytes.len()].copy_from_slice(bytes);
 
         Ok(Self { value })
@@ -123,7 +126,7 @@ mod tests {
         let uuid_string = uuid.to_string();
         let uuid_parsed = Uuid::parse_str(&uuid_string).expect("Uuid::parse_str failed");
         assert_eq!(uuid_parsed.get_version().unwrap(), uuid::Version::Random);
-        assert_eq!(uuid_parsed.to_string().len(), 36);
+        assert_eq!(uuid_parsed.to_string().len(), UUID4_LEN);
     }
 
     #[rstest]
