@@ -22,6 +22,9 @@ use std::{
 use nautilus_core::correctness::check_valid_string;
 use serde::{Deserialize, Deserializer, Serialize};
 
+/// The maximum length of ASCII characters for a `TradeId` string value.
+const TRADE_ID_LEN: usize = 36;
+
 /// Represents a valid trade match ID (assigned by a trading venue).
 ///
 /// Maximum length is 36 characters.
@@ -37,7 +40,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 )]
 pub struct TradeId {
     /// The trade match ID C string value as a fixed-length byte array.
-    pub(crate) value: [u8; 37],
+    pub(crate) value: [u8; TRADE_ID_LEN + 1],
 }
 
 impl TradeId {
@@ -53,10 +56,12 @@ impl TradeId {
         // TODO: Temporarily make this 65 to accommodate Betfair trade IDs
         // TODO: Extract this to single function
         let bytes = cstr.as_bytes_with_nul();
-        if bytes.len() > 37 {
-            anyhow::bail!("Condition failed: value exceeds maximum trade ID length of 36");
+        if bytes.len() > TRADE_ID_LEN + 1 {
+            anyhow::bail!(
+                "Condition failed: value exceeds maximum trade ID length of {TRADE_ID_LEN}"
+            );
         }
-        let mut value = [0; 37];
+        let mut value = [0; TRADE_ID_LEN + 1];
         value[..bytes.len()].copy_from_slice(bytes);
 
         Ok(Self { value })
