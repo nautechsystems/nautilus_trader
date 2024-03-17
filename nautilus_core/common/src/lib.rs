@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod cache;
 pub mod clock;
 pub mod enums;
 pub mod factories;
