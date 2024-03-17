@@ -694,8 +694,8 @@ pub fn decode_instrument_def_msg_v1(
             instrument_id,
             ts_init,
         )?)),
-        'B' => anyhow::bail!("Unsupported `instrument_class` 'B' (BOND)"),
-        'X' => anyhow::bail!("Unsupported `instrument_class` 'X' (FX_SPOT)"),
+        'B' => anyhow::bail!("Unsupported `instrument_class` 'B' (Bond)"),
+        'X' => anyhow::bail!("Unsupported `instrument_class` 'X' (FX spot)"),
         _ => anyhow::bail!(
             "Unsupported `instrument_class` '{}'",
             msg.instrument_class as u8 as char
@@ -734,8 +734,8 @@ pub fn decode_instrument_def_msg(
             instrument_id,
             ts_init,
         )?)),
-        'B' => anyhow::bail!("Unsupported `instrument_class` 'B' (BOND)"),
-        'X' => anyhow::bail!("Unsupported `instrument_class` 'X' (FX_SPOT)"),
+        'B' => anyhow::bail!("Unsupported `instrument_class` 'B' (Bond)"),
+        'X' => anyhow::bail!("Unsupported `instrument_class` 'X' (FX spot)"),
         _ => anyhow::bail!(
             "Unsupported `instrument_class` '{}'",
             msg.instrument_class as u8 as char
