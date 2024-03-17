@@ -85,6 +85,7 @@ impl CacheDatabase for RedisCacheDatabase {
     ) -> anyhow::Result<RedisCacheDatabase> {
         debug!("Initializing trader_id={trader_id}, instance_id={instance_id}, config={config:?}");
         let redis_url = get_redis_url(&config);
+        debug!("redis_url {redis_url}");
         let default_timeout = 20;
         let timeout = get_timeout_duration(&config, default_timeout);
         let client = redis::Client::open(redis_url)?;
