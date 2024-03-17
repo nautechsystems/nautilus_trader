@@ -35,7 +35,7 @@ pub struct ClientId {
 
 impl ClientId {
     pub fn new(s: &str) -> anyhow::Result<Self> {
-        check_valid_string(s, "`ClientId` value")?;
+        check_valid_string(s, "value")?;
 
         Ok(Self {
             value: Ustr::from(s),

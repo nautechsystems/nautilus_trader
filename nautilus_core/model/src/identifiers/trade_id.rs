@@ -51,10 +51,8 @@ impl TradeId {
     }
 
     pub fn from_cstr(cstr: CString) -> anyhow::Result<Self> {
-        check_valid_string(cstr.to_str()?, "`TradeId` value")?;
+        check_valid_string(cstr.to_str()?, "value")?;
 
-        // TODO: Temporarily make this 65 to accommodate Betfair trade IDs
-        // TODO: Extract this to single function
         let bytes = cstr.as_bytes_with_nul();
         if bytes.len() > TRADE_ID_LEN + 1 {
             anyhow::bail!(

@@ -21,7 +21,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::{correctness::check_f64_in_range_inclusive, parsing::precision_from_str};
+use nautilus_core::{correctness::check_in_range_inclusive_f64, parsing::precision_from_str};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
@@ -51,7 +51,7 @@ pub struct Price {
 
 impl Price {
     pub fn new(value: f64, precision: u8) -> anyhow::Result<Self> {
-        check_f64_in_range_inclusive(value, PRICE_MIN, PRICE_MAX, "`Price` value")?;
+        check_in_range_inclusive_f64(value, PRICE_MIN, PRICE_MAX, "value")?;
         check_fixed_precision(precision)?;
 
         Ok(Self {

@@ -140,7 +140,7 @@ impl TestTimer {
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
     ) -> Self {
-        check_valid_string(name, "`TestTimer` name").unwrap();
+        check_valid_string(name, "name").unwrap();
 
         Self {
             name: Ustr::from(name),
@@ -232,7 +232,7 @@ impl LiveTimer {
         stop_time_ns: Option<UnixNanos>,
         callback: EventHandler,
     ) -> Self {
-        check_valid_string(name, "`TestTimer` name").unwrap();
+        check_valid_string(name, "name").unwrap();
 
         Self {
             name: Ustr::from(name),

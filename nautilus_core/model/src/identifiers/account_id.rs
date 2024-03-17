@@ -41,8 +41,8 @@ pub struct AccountId {
 
 impl AccountId {
     pub fn new(s: &str) -> anyhow::Result<Self> {
-        check_valid_string(s, "`accountid` value")?;
-        check_string_contains(s, "-", "`AccountId` value")?;
+        check_valid_string(s, "value")?;
+        check_string_contains(s, "-", "value")?;
 
         Ok(Self {
             value: Ustr::from(s),

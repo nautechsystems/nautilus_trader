@@ -41,8 +41,8 @@ pub struct TraderId {
 
 impl TraderId {
     pub fn new(s: &str) -> anyhow::Result<Self> {
-        check_valid_string(s, "`TraderId` value")?;
-        check_string_contains(s, "-", "`TraderId` value")?;
+        check_valid_string(s, "value")?;
+        check_string_contains(s, "-", "value")?;
 
         Ok(Self {
             value: Ustr::from(s),

@@ -18,7 +18,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::{correctness::check_u8_equal, time::UnixNanos};
+use nautilus_core::{correctness::check_equal_u8, time::UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -89,13 +89,13 @@ impl CryptoPerpetual {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
-        check_u8_equal(
+        check_equal_u8(
             price_precision,
             price_increment.precision,
             "price_precision",
             "price_increment.precision",
         )?;
-        check_u8_equal(
+        check_equal_u8(
             size_precision,
             size_increment.precision,
             "size_precision",

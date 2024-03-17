@@ -35,7 +35,7 @@ pub struct ExecAlgorithmId {
 
 impl ExecAlgorithmId {
     pub fn new(s: &str) -> anyhow::Result<Self> {
-        check_valid_string(s, "`ExecAlgorithmId` value")?;
+        check_valid_string(s, "value")?;
 
         Ok(Self {
             value: Ustr::from(s),

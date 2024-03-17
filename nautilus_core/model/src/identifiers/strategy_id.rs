@@ -41,9 +41,9 @@ pub struct StrategyId {
 
 impl StrategyId {
     pub fn new(s: &str) -> anyhow::Result<Self> {
-        check_valid_string(s, "`StrategyId` value")?;
+        check_valid_string(s, "value")?;
         if s != "EXTERNAL" {
-            check_string_contains(s, "-", "`StrategyId` value")?;
+            check_string_contains(s, "-", "value")?;
         }
 
         Ok(Self {

@@ -22,28 +22,28 @@ const FAILED: &str = "Condition failed:";
 /// - If `s` is an empty string.
 /// - If `s` consists solely of whitespace characters.
 /// - If `s` contains one or more non-ASCII characters.
-pub fn check_valid_string(s: &str, desc: &str) -> anyhow::Result<()> {
+pub fn check_valid_string(s: &str, param: &str) -> anyhow::Result<()> {
     if s.is_empty() {
-        anyhow::bail!("{FAILED} invalid string for {desc}, was empty")
+        anyhow::bail!("{FAILED} invalid string for '{param}', was empty")
     } else if s.chars().all(char::is_whitespace) {
-        anyhow::bail!("{FAILED} invalid string for {desc}, was all whitespace",)
+        anyhow::bail!("{FAILED} invalid string for '{param}', was all whitespace",)
     } else if !s.is_ascii() {
-        anyhow::bail!("{FAILED} invalid string for {desc} contained a non-ASCII char, was '{s}'",)
+        anyhow::bail!("{FAILED} invalid string for '{param}' contained a non-ASCII char, was '{s}'",)
     } else {
         Ok(())
     }
 }
 
 /// Validates that the string `s` contains the pattern `pat`.
-pub fn check_string_contains(s: &str, pat: &str, desc: &str) -> anyhow::Result<()> {
+pub fn check_string_contains(s: &str, pat: &str, param: &str) -> anyhow::Result<()> {
     if !s.contains(pat) {
-        anyhow::bail!("{FAILED} invalid string for {desc} did not contain '{pat}', was '{s}'")
+        anyhow::bail!("{FAILED} invalid string for '{param}' did not contain '{pat}', was '{s}'")
     }
     Ok(())
 }
 
 /// Validates that `u8` values are equal.
-pub fn check_u8_equal(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) -> anyhow::Result<()> {
+pub fn check_equal_u8(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) -> anyhow::Result<()> {
     if lhs != rhs {
         anyhow::bail!(
             "{FAILED} '{lhs_param}' u8 of {lhs} was not equal to '{rhs_param}' u8 of {rhs}"
@@ -52,48 +52,64 @@ pub fn check_u8_equal(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) -> any
     Ok(())
 }
 
-/// Validates that the `u8` value is in the inclusive range [`l`, `r`].
-pub fn check_u8_in_range_inclusive(value: u8, l: u8, r: u8, desc: &str) -> anyhow::Result<()> {
-    if value < l || value > r {
-        anyhow::bail!("{FAILED} invalid u8 for {desc} not in range [{l}, {r}], was {value}")
+/// Validates that the `u64` value is positive (> 0).
+pub fn check_positive_u64(value: u64, param: &str) -> anyhow::Result<()> {
+    if value == 0 {
+        anyhow::bail!("{FAILED} invalid u64 for '{param}' not positive, was {value}")
     }
     Ok(())
 }
 
-/// Validates that the `u64` value is in the inclusive range [`l`, `r`].
-pub fn check_u64_in_range_inclusive(value: u64, l: u64, r: u64, desc: &str) -> anyhow::Result<()> {
-    if value < l || value > r {
-        anyhow::bail!("{FAILED} invalid u64 for {desc} not in range [{l}, {r}], was {value}")
-    }
-    Ok(())
-}
-
-/// Validates that the `i64` value is in the inclusive range [`l`, `r`].
-pub fn check_i64_in_range_inclusive(value: i64, l: i64, r: i64, desc: &str) -> anyhow::Result<()> {
-    if value < l || value > r {
-        anyhow::bail!("{FAILED} invalid i64 for {desc} not in range [{l}, {r}], was {value}")
-    }
-    Ok(())
-}
-
-/// Validates that the `f64` value is in the inclusive range [`l`, `r`].
-pub fn check_f64_in_range_inclusive(value: f64, l: f64, r: f64, desc: &str) -> anyhow::Result<()> {
-    if value.is_nan() || value.is_infinite() {
-        anyhow::bail!("{FAILED} invalid f64 for {desc}, was {value}")
-    }
-    if value < l || value > r {
-        anyhow::bail!("{FAILED} invalid f64 for {desc} not in range [{l}, {r}], was {value}")
+/// Validates that the `i64` value is positive (> 0).
+pub fn check_positive_i64(value: i64, param: &str) -> anyhow::Result<()> {
+    if value <= 0 {
+        anyhow::bail!("{FAILED} invalid i64 for '{param}' not positive, was {value}")
     }
     Ok(())
 }
 
 /// Validates that the `f64` value is non-negative.
-pub fn check_f64_non_negative(value: f64, desc: &str) -> anyhow::Result<()> {
+pub fn check_non_negative_f64(value: f64, param: &str) -> anyhow::Result<()> {
     if value.is_nan() || value.is_infinite() {
-        anyhow::bail!("{FAILED} invalid f64 for {desc}, was {value}")
+        anyhow::bail!("{FAILED} invalid f64 for '{param}', was {value}")
     }
     if value < 0.0 {
-        anyhow::bail!("{FAILED} invalid f64 for {desc} negative, was {value}")
+        anyhow::bail!("{FAILED} invalid f64 for '{param}' negative, was {value}")
+    }
+    Ok(())
+}
+
+/// Validates that the `u8` value is in the inclusive range [`l`, `r`].
+pub fn check_in_range_inclusive_u8(value: u8, l: u8, r: u8, param: &str) -> anyhow::Result<()> {
+    if value < l || value > r {
+        anyhow::bail!("{FAILED} invalid u8 for '{param}' not in range [{l}, {r}], was {value}")
+    }
+    Ok(())
+}
+
+/// Validates that the `u64` value is in the inclusive range [`l`, `r`].
+pub fn check_in_range_inclusive_u64(value: u64, l: u64, r: u64, param: &str) -> anyhow::Result<()> {
+    if value < l || value > r {
+        anyhow::bail!("{FAILED} invalid u64 for '{param}' not in range [{l}, {r}], was {value}")
+    }
+    Ok(())
+}
+
+/// Validates that the `i64` value is in the inclusive range [`l`, `r`].
+pub fn check_in_range_inclusive_i64(value: i64, l: i64, r: i64, param: &str) -> anyhow::Result<()> {
+    if value < l || value > r {
+        anyhow::bail!("{FAILED} invalid i64 for '{param}' not in range [{l}, {r}], was {value}")
+    }
+    Ok(())
+}
+
+/// Validates that the `f64` value is in the inclusive range [`l`, `r`].
+pub fn check_in_range_inclusive_f64(value: f64, l: f64, r: f64, param: &str) -> anyhow::Result<()> {
+    if value.is_nan() || value.is_infinite() {
+        anyhow::bail!("{FAILED} invalid f64 for '{param}', was {value}")
+    }
+    if value < l || value > r {
+        anyhow::bail!("{FAILED} invalid f64 for '{param}' not in range [{l}, {r}], was {value}")
     }
     Ok(())
 }
@@ -148,7 +164,7 @@ mod tests {
         #[case] r: u8,
         #[case] desc: &str,
     ) {
-        assert!(check_u8_in_range_inclusive(value, l, r, desc).is_ok());
+        assert!(check_in_range_inclusive_u8(value, l, r, desc).is_ok());
     }
 
     #[rstest]
@@ -160,7 +176,7 @@ mod tests {
         #[case] lhs_param: &str,
         #[case] rhs_param: &str,
     ) {
-        assert!(check_u8_equal(lhs, rhs, lhs_param, rhs_param).is_err());
+        assert!(check_equal_u8(lhs, rhs, lhs_param, rhs_param).is_err());
     }
 
     #[rstest]
@@ -171,7 +187,7 @@ mod tests {
         #[case] lhs_param: &str,
         #[case] rhs_param: &str,
     ) {
-        assert!(check_u8_equal(lhs, rhs, lhs_param, rhs_param).is_ok());
+        assert!(check_equal_u8(lhs, rhs, lhs_param, rhs_param).is_ok());
     }
 
     #[rstest]
@@ -183,7 +199,7 @@ mod tests {
         #[case] r: u8,
         #[case] desc: &str,
     ) {
-        assert!(check_u8_in_range_inclusive(value, l, r, desc).is_err());
+        assert!(check_in_range_inclusive_u8(value, l, r, desc).is_err());
     }
 
     #[rstest]
@@ -196,7 +212,7 @@ mod tests {
         #[case] r: u64,
         #[case] desc: &str,
     ) {
-        assert!(check_u64_in_range_inclusive(value, l, r, desc).is_ok());
+        assert!(check_in_range_inclusive_u64(value, l, r, desc).is_ok());
     }
 
     #[rstest]
@@ -208,7 +224,7 @@ mod tests {
         #[case] r: u64,
         #[case] desc: &str,
     ) {
-        assert!(check_u64_in_range_inclusive(value, l, r, desc).is_err());
+        assert!(check_in_range_inclusive_u64(value, l, r, desc).is_err());
     }
 
     #[rstest]
@@ -221,7 +237,7 @@ mod tests {
         #[case] r: i64,
         #[case] desc: &str,
     ) {
-        assert!(check_i64_in_range_inclusive(value, l, r, desc).is_ok());
+        assert!(check_in_range_inclusive_i64(value, l, r, desc).is_ok());
     }
 
     #[rstest]
@@ -233,14 +249,14 @@ mod tests {
         #[case] r: i64,
         #[case] desc: &str,
     ) {
-        assert!(check_i64_in_range_inclusive(value, l, r, desc).is_err());
+        assert!(check_in_range_inclusive_i64(value, l, r, desc).is_err());
     }
 
     #[rstest]
     #[case(0.0, "value")]
     #[case(1.0, "value")]
     fn test_f64_non_negative_when_valid_values(#[case] value: f64, #[case] desc: &str) {
-        assert!(check_f64_non_negative(value, desc).is_ok());
+        assert!(check_non_negative_f64(value, desc).is_ok());
     }
 
     #[rstest]
@@ -249,6 +265,6 @@ mod tests {
     #[case(f64::NEG_INFINITY, "value")]
     #[case(-0.1, "value")]
     fn test_f64_non_negative_when_invalid_values(#[case] value: f64, #[case] desc: &str) {
-        assert!(check_f64_non_negative(value, desc).is_err());
+        assert!(check_non_negative_f64(value, desc).is_err());
     }
 }
