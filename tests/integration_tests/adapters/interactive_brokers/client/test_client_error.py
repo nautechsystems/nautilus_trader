@@ -22,10 +22,10 @@ def test_ib_is_ready_by_notification_1101(ib_client):
     ib_client._is_ib_ready.clear()
 
     # Act
-    ib_client.error(
-        -1,
-        1101,
-        "Connectivity between IB and Trader Workstation has been restored",
+    ib_client.process_error(
+        req_id=-1,
+        error_code=1101,
+        error_string="Connectivity between IB and Trader Workstation has been restored",
     )
 
     # Assert
@@ -37,10 +37,10 @@ def test_ib_is_ready_by_notification_1102(ib_client):
     ib_client._is_ib_ready.clear()
 
     # Act
-    ib_client.error(
-        -1,
-        1102,
-        "Connectivity between IB and Trader Workstation has been restored",
+    ib_client.process_error(
+        req_id=-1,
+        error_code=1102,
+        error_string="Connectivity between IB and Trader Workstation has been restored",
     )
 
     # Assert
@@ -54,7 +54,11 @@ def test_ib_is_not_ready_by_error_10182(ib_client):
     ib_client._subscriptions.add(req_id, "EUR.USD", ib_client._eclient.reqHistoricalData, {})
 
     # Act
-    ib_client.error(req_id, 10182, "Failed to request live updates (disconnected).")
+    ib_client.process_error(
+        req_id=req_id,
+        error_code=10182,
+        error_string="Failed to request live updates (disconnected).",
+    )
 
     # Assert
     assert not ib_client._is_ib_ready.is_set()
@@ -80,10 +84,10 @@ def test_ib_is_not_ready_by_error_10189(ib_client):
     )
 
     # Act
-    ib_client.error(
-        req_id,
-        10189,
-        "Failed to request tick-by-tick data.BidAsk tick-by-tick requests are not supported for EUR.USD.",
+    ib_client.process_error(
+        req_id=req_id,
+        error_code=10189,
+        error_string="Failed to request tick-by-tick data.BidAsk tick-by-tick requests are not supported for EUR.USD.",
     )
 
     # Assert

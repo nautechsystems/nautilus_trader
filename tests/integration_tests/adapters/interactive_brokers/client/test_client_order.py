@@ -119,11 +119,11 @@ def test_openOrder(ib_client):
     order_state = IBTestExecStubs.ib_order_state(state="PreSubmitted")
 
     # Act
-    ib_client.openOrder(
-        order_id,
-        contract,
-        order,
-        order_state,
+    ib_client.process_open_order(
+        order_id=order_id,
+        contract=contract,
+        order=order,
+        order_state=order_state,
     )
 
     # Assert
@@ -142,18 +142,18 @@ def test_orderStatus(ib_client):
     ib_client._event_subscriptions.get = MagicMock(return_value=handler_func)
 
     # Act
-    ib_client.orderStatus(
-        1,
-        "Filled",
-        Decimal("100"),
-        Decimal("0"),
-        100.0,
-        1916994655,
-        0,
-        100.0,
-        1,
-        "",
-        0.0,
+    ib_client.process_order_status(
+        order_id=1,
+        status="Filled",
+        filled=Decimal("100"),
+        remaining=Decimal("0"),
+        avg_fill_price=100.0,
+        perm_id=1916994655,
+        parent_id=0,
+        last_fill_price=100.0,
+        client_id=1,
+        why_held="",
+        mkt_cap_price=0.0,
     )
 
     # Assert
