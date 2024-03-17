@@ -18,7 +18,12 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::{correctness::check_equal_u8, time::UnixNanos};
+use nautilus_core::{
+    correctness::{
+        check_equal_u8, check_positive_i64, check_valid_string, check_valid_string_optional,
+    },
+    time::UnixNanos,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -89,12 +94,16 @@ impl FuturesSpread {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
+        check_valid_string_optional(exchange.map(|u| u.as_str()), stringify!(isin))?;
+        check_valid_string(underlying.as_str(), stringify!(underlying))?;
+        check_valid_string(strategy_type.as_str(), stringify!(strategy_type))?;
         check_equal_u8(
             price_precision,
             price_increment.precision,
-            "price_precision",
-            "price_increment.precision",
+            stringify!(price_precision),
+            stringify!(price_increment.precision),
         )?;
+        check_positive_i64(price_increment.raw, stringify!(price_increment.raw))?;
 
         Ok(Self {
             id,

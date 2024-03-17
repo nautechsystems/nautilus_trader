@@ -15,9 +15,9 @@
 
 const FAILED: &str = "Condition failed:";
 
-/// Validates the string `s` contains only ASCII characters and has symantic meaning.
+/// Validates the string `s` contains only ASCII characters and has semantic meaning.
 ///
-/// # Panics
+/// # Errors
 ///
 /// - If `s` is an empty string.
 /// - If `s` consists solely of whitespace characters.
@@ -32,6 +32,20 @@ pub fn check_valid_string(s: &str, param: &str) -> anyhow::Result<()> {
     } else {
         Ok(())
     }
+}
+
+/// Validates the string `s` if Some, contains only ASCII characters and has semantic meaning.
+///
+/// # Errors
+///
+/// - If `s` is an empty string.
+/// - If `s` consists solely of whitespace characters.
+/// - If `s` contains one or more non-ASCII characters.
+pub fn check_valid_string_optional(s: Option<&str>, param: &str) -> anyhow::Result<()> {
+    if let Some(s) = s {
+        check_valid_string(s, param)?;
+    }
+    Ok(())
 }
 
 /// Validates the string `s` contains the pattern `pat`.
