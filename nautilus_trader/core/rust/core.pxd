@@ -12,6 +12,11 @@ cdef extern from "../includes/core.h":
 
     const uint64_t NANOSECONDS_IN_MICROSECOND # = 1000
 
+    # Represents a pseudo-random UUID (universally unique identifier)
+    # version 4 based on a 128-bit label as specified in RFC 4122.
+    cdef struct UUID4_t:
+        pass
+
     # `CVec` is a C compatible struct that stores an opaque pointer to a block of
     # memory, it's length and the capacity of the vector it was allocated from.
     #
@@ -26,12 +31,6 @@ cdef extern from "../includes/core.h":
         # The capacity of vector from which it was allocated.
         # Used when deallocating the memory
         uintptr_t cap;
-
-    # Represents a pseudo-random UUID (universally unique identifier)
-    # version 4 based on a 128-bit label as specified in RFC 4122.
-    cdef struct UUID4_t:
-        # The UUID v4 C string value as a fixed-length byte array.
-        uint8_t value[37];
 
     # Converts seconds to nanoseconds (ns).
     uint64_t secs_to_nanos(double secs);

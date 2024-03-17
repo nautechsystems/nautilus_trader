@@ -14,6 +14,12 @@
 #define NANOSECONDS_IN_MICROSECOND 1000
 
 /**
+ * Represents a pseudo-random UUID (universally unique identifier)
+ * version 4 based on a 128-bit label as specified in RFC 4122.
+ */
+typedef struct UUID4_t UUID4_t;
+
+/**
  * `CVec` is a C compatible struct that stores an opaque pointer to a block of
  * memory, it's length and the capacity of the vector it was allocated from.
  *
@@ -36,17 +42,6 @@ typedef struct CVec {
      */
     uintptr_t cap;
 } CVec;
-
-/**
- * Represents a pseudo-random UUID (universally unique identifier)
- * version 4 based on a 128-bit label as specified in RFC 4122.
- */
-typedef struct UUID4_t {
-    /**
-     * The UUID v4 C string value as a fixed-length byte array.
-     */
-    uint8_t value[37];
-} UUID4_t;
 
 /**
  * Converts seconds to nanoseconds (ns).
