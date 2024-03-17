@@ -170,7 +170,8 @@ class InteractiveBrokersClient(
             self._start_internal_msg_queue_processor()
             self._eclient.startApi()
             # TWS/Gateway will send a managedAccounts message upon successful connection,
-            # which will set the `_is_ib_connected` event.
+            # which will set the `_is_ib_connected` event. This typically takes a few
+            # seconds, so we wait for it here.
             await asyncio.wait_for(self._is_ib_connected.wait(), 15)
             self._start_connection_watchdog()
             self._is_client_ready.set()
@@ -243,7 +244,7 @@ class InteractiveBrokersClient(
 
     def _resume(self) -> None:
         """
-        Resume the client and resubscribe all subscriptions.
+        Resume the client and resubscribe to all subscriptions.
         """
         self._log.info(f"Resuming InteractiveBrokersClient ({self._client_id})...")
         self._loop.run_until_complete(self._resubscribe_all())
@@ -283,7 +284,7 @@ class InteractiveBrokersClient(
 
         """
         try:
-            if not self._is_ib_connected.is_set() or not self._is_client_ready.is_set():
+            if not self._is_client_ready.is_set():
                 await asyncio.wait_for(self._is_client_ready.wait(), timeout)
         except asyncio.TimeoutError as e:
             self._log.error(f"Client is not ready. {e}")

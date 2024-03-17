@@ -37,7 +37,6 @@ from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_t
 from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
 from nautilus_trader.adapters.interactive_brokers.parsing.data import what_to_show
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
-from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -802,9 +801,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         self.logAnswer(current_fn_name(), vars())
         self._end_request(req_id)
-        if req_id == 1 and not self._is_ib_connected.is_set():  # probe successful
-            self._log.debug("`_is_ib_connected` set by `historicalDataEnd`.", LogColor.BLUE)
-            self._is_ib_connected.set()
 
     def historicalDataUpdate(self, req_id: int, bar: BarData) -> None:
         """
