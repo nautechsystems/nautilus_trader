@@ -377,6 +377,16 @@ cdef extern from "../includes/model.h":
     cdef struct SyntheticInstrument:
         pass
 
+    # Represents a valid trade match ID (assigned by a trading venue).
+    #
+    # Maximum length is 36 characters.
+    # Can correspond to the `TradeID <1003> field` of the FIX protocol.
+    #
+    # The unique ID assigned to the trade entity once it is received or matched by
+    # the exchange or central counterparty.
+    cdef struct TradeId_t:
+        pass
+
     # Represents a valid ticker symbol ID for a tradable financial market instrument.
     cdef struct Symbol_t:
         # The ticker symbol ID value.
@@ -488,17 +498,6 @@ cdef extern from "../includes/model.h":
         uint64_t ts_event;
         # The UNIX timestamp (nanoseconds) when the data object was initialized.
         uint64_t ts_init;
-
-    # Represents a valid trade match ID (assigned by a trading venue).
-    #
-    # Maximum length is 36 characters.
-    # Can correspond to the `TradeID <1003> field` of the FIX protocol.
-    #
-    # The unique ID assigned to the trade entity once it is received or matched by
-    # the exchange or central counterparty.
-    cdef struct TradeId_t:
-        # The trade match ID C string value as a fixed-length byte array.
-        uint8_t value[37];
 
     # Represents a single trade tick in a financial market.
     cdef struct TradeTick_t:
