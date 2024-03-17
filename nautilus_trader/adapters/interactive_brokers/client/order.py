@@ -20,7 +20,6 @@ from ibapi.contract import Contract
 from ibapi.execution import Execution
 from ibapi.order import Order as IBOrder
 from ibapi.order_state import OrderState as IBOrderState
-from ibapi.utils import current_fn_name
 
 from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
@@ -227,7 +226,6 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         Note: Often there are duplicate orderStatus messages.
 
         """
-        self.logAnswer(current_fn_name(), vars())
         order_ref = self._order_id_to_order_ref.get(order_id, None)
         if order_ref:
             name = f"orderStatus-{order_ref.account_id}"
