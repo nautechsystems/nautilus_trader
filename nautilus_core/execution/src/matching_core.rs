@@ -342,7 +342,7 @@ mod tests {
     #[case(
         Some(Price::from("100.00")),
         Some(Price::from("101.00")),
-        Price::from("100.00"),  // Price below ask
+        Price::from("100.00"),  // <-- Price below ask
         OrderSide::Buy,
         false
     )]
@@ -413,7 +413,7 @@ mod tests {
     #[case(
         Some(Price::from("100.00")),
         Some(Price::from("101.00")),
-        Price::from("102.00"),  // Trigger above ask
+        Price::from("102.00"),  // <-- Trigger above ask
         OrderSide::Buy,
         false
     )]
