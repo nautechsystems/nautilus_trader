@@ -39,7 +39,7 @@ pub struct Venue {
 
 impl Venue {
     pub fn new(s: &str) -> anyhow::Result<Self> {
-        check_valid_string(s, "`Venue` value")?;
+        check_valid_string(s, "value")?;
 
         Ok(Self {
             value: Ustr::from(s),
@@ -56,7 +56,7 @@ impl Venue {
     pub fn from_code(code: &str) -> anyhow::Result<Self> {
         let map_guard = VENUE_MAP
             .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire lock on `VENUE_MAP`: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("Error acquiring lock on `VENUE_MAP`: {e}"))?;
         map_guard
             .get(code)
             .copied()

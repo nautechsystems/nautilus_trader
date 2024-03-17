@@ -35,7 +35,7 @@ pub struct ComponentId {
 
 impl ComponentId {
     pub fn new(s: &str) -> anyhow::Result<Self> {
-        check_valid_string(s, "`ComponentId` value")?;
+        check_valid_string(s, "value")?;
 
         Ok(Self {
             value: Ustr::from(s),

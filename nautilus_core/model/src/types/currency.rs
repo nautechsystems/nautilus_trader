@@ -47,8 +47,8 @@ impl Currency {
         name: &str,
         currency_type: CurrencyType,
     ) -> anyhow::Result<Self> {
-        check_valid_string(code, "`Currency` code")?;
-        check_valid_string(name, "`Currency` name")?;
+        check_valid_string(code, "code")?;
+        check_valid_string(name, "name")?;
         check_fixed_precision(precision)?;
 
         Ok(Self {
@@ -152,7 +152,7 @@ mod tests {
     use crate::{enums::CurrencyType, types::currency::Currency};
 
     #[rstest]
-    #[should_panic(expected = "`Currency` code")]
+    #[should_panic(expected = "code")]
     fn test_invalid_currency_code() {
         let _ = Currency::new("", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
     }
