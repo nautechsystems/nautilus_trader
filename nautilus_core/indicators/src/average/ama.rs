@@ -15,7 +15,6 @@
 
 use std::fmt::Display;
 
-use anyhow::Result;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -110,7 +109,7 @@ impl AdaptiveMovingAverage {
         period_fast: usize,
         period_slow: usize,
         price_type: Option<PriceType>,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
         // Inputs don't require validation, however we return a `Result`
         // to standardize with other indicators which do need validation.
         Ok(Self {

@@ -23,6 +23,9 @@ use std::{
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
+/// The maximum length of ASCII characters for a `UUID4` string value (includes null terminator).
+const UUID4_LEN: usize = 37;
+
 /// Represents a pseudo-random UUID (universally unique identifier)
 /// version 4 based on a 128-bit label as specified in RFC 4122.
 #[repr(C)]
@@ -32,8 +35,8 @@ use uuid::Uuid;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.core")
 )]
 pub struct UUID4 {
-    /// The UUID v4 C string value as a fixed-length byte array.
-    pub(crate) value: [u8; 37],
+    /// The UUID v4 value as a fixed-length C string byte array (includes null terminator).
+    pub(crate) value: [u8; 37], // cbindgen issue using the constant in the array
 }
 
 impl UUID4 {
@@ -42,7 +45,7 @@ impl UUID4 {
         let uuid = Uuid::new_v4();
         let c_string = CString::new(uuid.to_string()).expect("`CString` conversion failed");
         let bytes = c_string.as_bytes_with_nul();
-        let mut value = [0; 37];
+        let mut value = [0; UUID4_LEN];
         value[..bytes.len()].copy_from_slice(bytes);
 
         Self { value }
@@ -50,7 +53,7 @@ impl UUID4 {
 
     #[must_use]
     pub fn to_cstr(&self) -> &CStr {
-        // SAFETY: Unwrap safe as we always store valid C strings
+        // SAFETY: We always store valid C strings
         CStr::from_bytes_with_nul(&self.value).unwrap()
     }
 }
@@ -62,7 +65,7 @@ impl FromStr for UUID4 {
         let uuid = Uuid::parse_str(s).map_err(|_| "Invalid UUID string")?;
         let c_string = CString::new(uuid.to_string()).expect("`CString` conversion failed");
         let bytes = c_string.as_bytes_with_nul();
-        let mut value = [0; 37];
+        let mut value = [0; UUID4_LEN];
         value[..bytes.len()].copy_from_slice(bytes);
 
         Ok(Self { value })

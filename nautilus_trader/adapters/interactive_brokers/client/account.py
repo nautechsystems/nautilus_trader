@@ -17,7 +17,6 @@ import functools
 from decimal import Decimal
 
 from ibapi.account_summary_tags import AccountSummaryTags
-from ibapi.utils import current_fn_name
 
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.adapters.interactive_brokers.client.common import IBPosition
@@ -134,10 +133,9 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
                 positions.append(position)
         return positions
 
-    # -- EWrapper overrides -----------------------------------------------------------------------
-
-    def accountSummary(
+    def process_account_summary(
         self,
+        *,
         req_id: int,
         account_id: str,
         tag: str,
@@ -147,27 +145,26 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         """
         Receive account information.
         """
-        self.logAnswer(current_fn_name(), vars())
         name = f"accountSummary-{account_id}"
         if handler := self._event_subscriptions.get(name, None):
             handler(tag, value, currency)
 
-    def managedAccounts(self, accounts_list: str) -> None:
+    def process_managed_accounts(self, *, accounts_list: str) -> None:
         """
         Receive a comma-separated string with the managed account ids.
 
         Occurs automatically on initial API client connection.
 
         """
-        self.logAnswer(current_fn_name(), vars())
         self._account_ids = {a for a in accounts_list.split(",") if a}
         self._log.debug(f"Managed accounts set: {self._account_ids}")
         if self._next_valid_order_id >= 0 and not self._is_ib_connected.is_set():
             self._log.debug("`_is_ib_connected` set by `managedAccounts`.", LogColor.BLUE)
             self._is_ib_connected.set()
 
-    def position(
+    def process_position(
         self,
+        *,
         account_id: str,
         contract: IBContract,
         position: Decimal,
@@ -176,14 +173,12 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         """
         Provide the portfolio's open positions.
         """
-        self.logAnswer(current_fn_name(), vars())
         if request := self._requests.get(name="OpenPositions"):
             request.result.append(IBPosition(account_id, contract, position, avg_cost))
 
-    def positionEnd(self) -> None:
+    def process_position_end(self) -> None:
         """
         Indicate that all the positions have been transmitted.
         """
-        self.logAnswer(current_fn_name(), vars())
         if request := self._requests.get(name="OpenPositions"):
             self._end_request(request.req_id)

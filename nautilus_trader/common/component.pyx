@@ -59,6 +59,7 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.common cimport ComponentState
 from nautilus_trader.core.rust.common cimport ComponentTrigger
 from nautilus_trader.core.rust.common cimport LogColor
+from nautilus_trader.core.rust.common cimport LogGuard_API
 from nautilus_trader.core.rust.common cimport LogLevel
 from nautilus_trader.core.rust.common cimport TimeEventHandler_t
 from nautilus_trader.core.rust.common cimport component_state_from_cstr
@@ -82,7 +83,7 @@ from nautilus_trader.core.rust.common cimport log_color_from_cstr
 from nautilus_trader.core.rust.common cimport log_color_to_cstr
 from nautilus_trader.core.rust.common cimport log_level_from_cstr
 from nautilus_trader.core.rust.common cimport log_level_to_cstr
-from nautilus_trader.core.rust.common cimport logger_flush
+from nautilus_trader.core.rust.common cimport logger_drop
 from nautilus_trader.core.rust.common cimport logger_log
 from nautilus_trader.core.rust.common cimport logging_clock_set_realtime_mode
 from nautilus_trader.core.rust.common cimport logging_clock_set_static_mode
@@ -1023,7 +1024,19 @@ cpdef str log_level_to_str(LogLevel value):
     return cstr_to_pystr(log_level_to_cstr(value))
 
 
-cpdef void init_logging(
+cdef class LogGuard:
+    """
+    Provides a `LogGuard` which serves as a token to signal the initialization
+    of the logging system. It also ensures that the global logger is flushed
+    of any buffered records when the instance is destroyed.
+    """
+
+    def __del__(self) -> None:
+        if self._mem._0 != NULL:
+            logger_drop(self._mem)
+
+
+cpdef LogGuard init_logging(
     TraderId trader_id = None,
     str machine_id = None,
     UUID4 instance_id = None,
@@ -1043,7 +1056,8 @@ cpdef void init_logging(
     Acts as an interface into the logging system implemented in Rust with the `log` crate.
 
     This function should only be called once per process, at the beginning of the application
-    run.
+    run. Subsequent calls will raise a `RuntimeError`, as there can only be one `LogGuard`
+    per initialized system.
 
     Parameters
     ----------
@@ -1076,6 +1090,15 @@ cpdef void init_logging(
     print_config : bool, default False
         If the core logging configuration should be printed to stdout on initialization.
 
+    Returns
+    -------
+    LogGuard
+
+    Raises
+    ------
+    RuntimeError
+        If the logging system has already been initialized.
+
     """
     if trader_id is None:
         trader_id = TraderId("TRADER-000")
@@ -1084,20 +1107,27 @@ cpdef void init_logging(
     if instance_id is None:
         instance_id = UUID4()
 
-    if not logging_is_initialized():
-        logging_init(
-            trader_id._mem,
-            instance_id._mem,
-            level_stdout,
-            level_file,
-            pystr_to_cstr(directory) if directory else NULL,
-            pystr_to_cstr(file_name) if file_name else NULL,
-            pystr_to_cstr(file_format) if file_format else NULL,
-            pybytes_to_cstr(msgspec.json.encode(component_levels)) if component_levels else NULL,
-            colors,
-            bypass,
-            print_config,
-        )
+    if logging_is_initialized():
+        raise RuntimeError("Logging system already initialized")
+
+    cdef LogGuard_API log_guard_api = logging_init(
+        trader_id._mem,
+        instance_id._mem,
+        level_stdout,
+        level_file,
+        pystr_to_cstr(directory) if directory else NULL,
+        pystr_to_cstr(file_name) if file_name else NULL,
+        pystr_to_cstr(file_format) if file_format else NULL,
+        pybytes_to_cstr(msgspec.json.encode(component_levels)) if component_levels else NULL,
+        colors,
+        bypass,
+        print_config,
+    )
+
+    cdef LogGuard log_guard = LogGuard.__new__(LogGuard)
+    log_guard._mem = log_guard_api
+    return log_guard
+
 
 
 LOGGING_PYO3 = False

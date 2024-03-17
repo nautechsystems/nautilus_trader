@@ -24,7 +24,6 @@ from ibapi.connection import Connection
 from ibapi.errors import CONNECT_FAIL
 from ibapi.server_versions import MAX_CLIENT_VER
 from ibapi.server_versions import MIN_CLIENT_VER
-from ibapi.utils import current_fn_name
 
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.common.enums import LogColor
@@ -215,8 +214,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         self._eclient.serverVersion_ = server_version
         self._eclient.decoder.serverVersion = server_version
 
-    # -- EWrapper overrides -----------------------------------------------------------------------
-    def connectionClosed(self) -> None:
+    def process_connection_closed(self) -> None:
         """
         Indicate the API connection has closed.
 
@@ -224,7 +222,6 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         automatically but must be triggered by API client code.
 
         """
-        self.logAnswer(current_fn_name(), vars())
         for future in self._requests.get_futures():
             if not future.done():
                 future.set_exception(ConnectionError("Socket disconnected."))

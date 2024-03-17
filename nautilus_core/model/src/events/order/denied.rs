@@ -15,7 +15,6 @@
 
 use std::fmt::{Display, Formatter};
 
-use anyhow::Result;
 use derive_builder::Builder;
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
@@ -56,7 +55,7 @@ impl OrderDenied {
         event_id: UUID4,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             trader_id,
             strategy_id,

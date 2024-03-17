@@ -30,8 +30,7 @@ rstest = { workspace = true }
 cbindgen = { workspace = true, optional = true }
 
 [features]
+default = []
 extension-module = ["pyo3/extension-module"]
 ffi = ["cbindgen"]
 python = ["pyo3"]
-default = []
-

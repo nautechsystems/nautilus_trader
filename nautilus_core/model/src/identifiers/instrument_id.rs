@@ -19,7 +19,6 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::identifiers::{symbol::Symbol, venue::Venue};
@@ -55,16 +54,16 @@ impl InstrumentId {
 impl FromStr for InstrumentId {
     type Err = anyhow::Error;
 
-    fn from_str(s: &str) -> Result<Self> {
+    fn from_str(s: &str) -> anyhow::Result<Self> {
         match s.rsplit_once('.') {
             Some((symbol_part, venue_part)) => Ok(Self {
                 symbol: Symbol::new(symbol_part)
-                    .map_err(|e| anyhow!(err_message(s, e.to_string())))?,
+                    .map_err(|e| anyhow::anyhow!(err_message(s, e.to_string())))?,
                 venue: Venue::new(venue_part)
-                    .map_err(|e| anyhow!(err_message(s, e.to_string())))?,
+                    .map_err(|e| anyhow::anyhow!(err_message(s, e.to_string())))?,
             }),
             None => {
-                bail!(err_message(
+                anyhow::bail!(err_message(
                     s,
                     "Missing '.' separator between symbol and venue components".to_string()
                 ))

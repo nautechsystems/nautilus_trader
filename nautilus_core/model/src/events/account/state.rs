@@ -15,7 +15,6 @@
 
 use std::fmt::{Display, Formatter};
 
-use anyhow::Result;
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
 
@@ -58,7 +57,7 @@ impl AccountState {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
         base_currency: Option<Currency>,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             account_id,
             account_type,

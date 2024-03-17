@@ -41,7 +41,7 @@ To achieve this, two main components are necessary:
 ### Data loaders
 
 Data loader components are typically specific for the raw source/format and per integration. For instance, Binance order book data is stored in its raw CSV file form with
-an entirely different format to [Databento Binary Encoding (DBN)](https://docs.databento.com/knowledge-base/new-users/dbn-encoding/getting-started-with-dbn) files.
+an entirely different format to [Databento Binary Encoding (DBN)](https://databento.com/docs/knowledge-base/new-users/dbn-encoding/getting-started-with-dbn) files.
 
 ### Data wranglers
 

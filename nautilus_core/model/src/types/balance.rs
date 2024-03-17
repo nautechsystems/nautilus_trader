@@ -15,7 +15,6 @@
 
 use std::fmt::{Display, Formatter};
 
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -36,7 +35,7 @@ pub struct AccountBalance {
 }
 
 impl AccountBalance {
-    pub fn new(total: Money, locked: Money, free: Money) -> Result<Self> {
+    pub fn new(total: Money, locked: Money, free: Money) -> anyhow::Result<Self> {
         assert!(total == locked + free,
                 "Total balance is not equal to the sum of locked and free balances: {total} != {locked} + {free}"
             );
@@ -78,7 +77,11 @@ pub struct MarginBalance {
 }
 
 impl MarginBalance {
-    pub fn new(initial: Money, maintenance: Money, instrument_id: InstrumentId) -> Result<Self> {
+    pub fn new(
+        initial: Money,
+        maintenance: Money,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             initial,
             maintenance,

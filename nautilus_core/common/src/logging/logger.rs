@@ -291,17 +291,23 @@ impl Log for Logger {
 
 #[allow(clippy::too_many_arguments)]
 impl Logger {
-    pub fn init_with_env(trader_id: TraderId, instance_id: UUID4, file_config: FileWriterConfig) {
+    #[must_use]
+    pub fn init_with_env(
+        trader_id: TraderId,
+        instance_id: UUID4,
+        file_config: FileWriterConfig,
+    ) -> LogGuard {
         let config = LoggerConfig::from_env();
-        Logger::init_with_config(trader_id, instance_id, config, file_config);
+        Logger::init_with_config(trader_id, instance_id, config, file_config)
     }
 
+    #[must_use]
     pub fn init_with_config(
         trader_id: TraderId,
         instance_id: UUID4,
         config: LoggerConfig,
         file_config: FileWriterConfig,
-    ) {
+    ) -> LogGuard {
         let (tx, rx) = channel::<LogEvent>();
 
         let logger = Self {
@@ -340,6 +346,8 @@ impl Logger {
                 eprintln!("Cannot set logger because of error: {e}")
             }
         }
+
+        LogGuard::new()
     }
 
     fn handle_messages(
@@ -453,6 +461,31 @@ pub fn log(level: LogLevel, color: LogColor, component: Ustr, message: &str) {
     }
 }
 
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
+#[derive(Debug)]
+pub struct LogGuard {}
+
+impl LogGuard {
+    pub fn new() -> Self {
+        LogGuard {}
+    }
+}
+
+impl Default for LogGuard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for LogGuard {
+    fn drop(&mut self) {
+        log::logger().flush();
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -539,7 +572,7 @@ mod tests {
             ..Default::default()
         };
 
-        Logger::init_with_config(
+        let log_guard = Logger::init_with_config(
             TraderId::from("TRADER-001"),
             UUID4::new(),
             config,
@@ -582,6 +615,8 @@ mod tests {
             Duration::from_secs(2),
         );
 
+        drop(log_guard); // Ensure log buffers are flushed
+
         assert_eq!(
             log_contents,
             "1970-01-20T02:20:00.000000000Z [INFO] TRADER-001.RiskEngine: This is a test.\n"
@@ -598,7 +633,7 @@ mod tests {
             ..Default::default()
         };
 
-        Logger::init_with_config(
+        let log_guard = Logger::init_with_config(
             TraderId::from("TRADER-001"),
             UUID4::new(),
             config,
@@ -631,6 +666,8 @@ mod tests {
             Duration::from_secs(3),
         );
 
+        drop(log_guard); // Ensure log buffers are flushed
+
         assert!(
             std::fs::read_dir(&temp_dir)
                 .expect("Failed to read directory")
@@ -652,7 +689,7 @@ mod tests {
             ..Default::default()
         };
 
-        Logger::init_with_config(
+        let log_guard = Logger::init_with_config(
             TraderId::from("TRADER-001"),
             UUID4::new(),
             config,
@@ -686,6 +723,8 @@ mod tests {
             },
             Duration::from_secs(2),
         );
+
+        drop(log_guard); // Ensure log buffers are flushed
 
         assert_eq!(
         log_contents,

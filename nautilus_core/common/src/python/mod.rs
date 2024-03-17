@@ -21,8 +21,6 @@ pub mod versioning;
 
 use pyo3::prelude::*;
 
-use crate::logging::{logger::LoggerConfig, writer::FileWriterConfig};
-
 /// Loaded as nautilus_pyo3.common
 #[pymodule]
 pub fn common(_: Python<'_>, m: &PyModule) -> PyResult<()> {
@@ -31,8 +29,9 @@ pub fn common(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::enums::LogColor>()?;
     m.add_class::<crate::enums::LogLevel>()?;
     m.add_class::<crate::enums::LogFormat>()?;
-    m.add_class::<LoggerConfig>()?;
-    m.add_class::<FileWriterConfig>()?;
+    m.add_class::<crate::logging::logger::LoggerConfig>()?;
+    m.add_class::<crate::logging::logger::LogGuard>()?;
+    m.add_class::<crate::logging::writer::FileWriterConfig>()?;
     m.add_function(wrap_pyfunction!(logging::py_init_tracing, m)?)?;
     m.add_function(wrap_pyfunction!(logging::py_init_logging, m)?)?;
     m.add_function(wrap_pyfunction!(logging::py_logger_log, m)?)?;

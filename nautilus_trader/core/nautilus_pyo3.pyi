@@ -197,6 +197,14 @@ def convert_to_snake_case(s: str) -> str:
 
 ### Logging
 
+class LogGuard:
+    """
+    Provides a `LogGuard` which serves as a token to signal the initialization
+    of the logging system. It also ensures that the global logger is flushed
+    of any buffered records when the instance is destroyed.
+
+    """
+
 def init_tracing() -> None:
     ...
 
@@ -212,7 +220,7 @@ def init_logging(
     is_colored: bool | None = None,
     is_bypassed: bool | None = None,
     print_config: bool | None = None,
-) -> None: ...
+) -> LogGuard: ...
 
 def log_header(
     trader_id: TraderId,
@@ -1242,6 +1250,8 @@ class FuturesContract:
         lot_size: Quantity,
         ts_event: int,
         ts_init: int,
+        margin_init: Decimal | None = None,
+        margin_maint: Decimal | None = None,
         max_quantity: Quantity | None = None,
         min_quantity: Quantity | None = None,
         max_price: Price | None = None,
@@ -1249,6 +1259,8 @@ class FuturesContract:
         exchange: str | None = None,
         info: dict[str, Any] | None = None,
     ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> CryptoFuture: ...
     @property
     def id(self) -> InstrumentId: ...
     @property
@@ -1288,9 +1300,13 @@ class FuturesSpread:
         min_quantity: Quantity | None = None,
         max_price: Price | None = None,
         min_price: Price | None = None,
+        margin_init: Decimal | None = None,
+        margin_maint: Decimal | None = None,
         exchange: str | None = None,
         info: dict[str, Any] | None = None,
     ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> FuturesSpread: ...
     @property
     def id(self) -> InstrumentId: ...
     @property
@@ -1331,9 +1347,13 @@ class OptionsContract:
         min_quantity: Quantity | None = None,
         max_price: Price | None = None,
         min_price: Price | None = None,
+        margin_init: Decimal | None = None,
+        margin_maint: Decimal | None = None,
         exchange: str | None = None,
         info: dict[str, Any] | None = None,
     ) -> None : ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OptionsContract: ...
     @property
     def id(self) -> InstrumentId: ...
     @property
@@ -1373,9 +1393,13 @@ class OptionsSpread:
         min_quantity: Quantity | None = None,
         max_price: Price | None = None,
         min_price: Price | None = None,
+        margin_init: Decimal | None = None,
+        margin_maint: Decimal | None = None,
         exchange: str | None = None,
         info: dict[str, Any] | None = None,
     ) -> None : ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OptionsContract: ...
     @property
     def id(self) -> InstrumentId: ...
     @property

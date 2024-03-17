@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.nautilus_pyo3 import FuturesSpread
-from nautilus_trader.model.instruments import FuturesSpread as LegacyFuturesSpread
+from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.model.instruments import FuturesSpread
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
@@ -33,7 +33,7 @@ def test_hash():
 
 def test_to_dict():
     result = _ES_FUTURES_SPREAD.to_dict()
-    assert FuturesSpread.from_dict(result) == _ES_FUTURES_SPREAD
+    assert nautilus_pyo3.FuturesSpread.from_dict(result) == _ES_FUTURES_SPREAD
     assert result == {
         "type": "FuturesSpread",
         "id": "ESM4-ESU4.GLBX",
@@ -46,12 +46,17 @@ def test_to_dict():
         "currency": "USD",
         "price_precision": 2,
         "price_increment": "0.01",
+        "size_increment": "1",
+        "size_precision": 0,
         "multiplier": "1",
         "lot_size": "1",
         "max_price": None,
         "max_quantity": None,
         "min_price": None,
-        "min_quantity": None,
+        "min_quantity": "1",
+        "margin_init": "0",
+        "margin_maint": "0",
+        "info": {},
         "ts_event": 0,
         "ts_init": 0,
         "exchange": "XCME",
@@ -59,6 +64,16 @@ def test_to_dict():
 
 
 def test_legacy_futures_contract_from_pyo3():
-    future = LegacyFuturesSpread.from_pyo3(_ES_FUTURES_SPREAD)
+    future = FuturesSpread.from_pyo3(_ES_FUTURES_SPREAD)
 
     assert future.id.value == "ESM4-ESU4.GLBX"
+
+
+def test_pyo3_cython_conversion():
+    futures_spread_pyo3 = TestInstrumentProviderPyo3.futures_spread_es()
+    futures_spread_pyo3_dict = futures_spread_pyo3.to_dict()
+    futures_spread_cython = FuturesSpread.from_pyo3(futures_spread_pyo3)
+    futures_spread_cython_dict = FuturesSpread.to_dict(futures_spread_cython)
+    futures_spread_pyo3_back = nautilus_pyo3.FuturesSpread.from_dict(futures_spread_cython_dict)
+    assert futures_spread_pyo3_dict == futures_spread_cython_dict
+    assert futures_spread_pyo3 == futures_spread_pyo3_back

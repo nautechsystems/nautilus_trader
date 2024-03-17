@@ -53,7 +53,6 @@ pub struct LimitOrder {
 }
 
 impl LimitOrder {
-    #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
@@ -81,8 +80,8 @@ impl LimitOrder {
         tags: Option<Ustr>,
         init_id: UUID4,
         ts_init: UnixNanos,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
             core: OrderCore::new(
                 trader_id,
                 strategy_id,
@@ -111,7 +110,7 @@ impl LimitOrder {
             is_post_only: post_only,
             display_qty,
             trigger_instrument_id,
-        }
+        })
     }
 }
 
@@ -380,5 +379,6 @@ impl From<OrderInitialized> for LimitOrder {
             event.event_id,
             event.ts_event,
         )
+        .unwrap() // SAFETY: From can panic
     }
 }

@@ -30,7 +30,6 @@ from ibapi.common import BarData
 from ibapi.errors import BAD_LENGTH
 from ibapi.execution import Execution
 from ibapi.utils import current_fn_name
-from ibapi.wrapper import EWrapper
 
 # fmt: off
 from nautilus_trader.adapters.interactive_brokers.client.account import InteractiveBrokersClientAccountMixin
@@ -43,6 +42,7 @@ from nautilus_trader.adapters.interactive_brokers.client.contract import Interac
 from nautilus_trader.adapters.interactive_brokers.client.error import InteractiveBrokersClientErrorMixin
 from nautilus_trader.adapters.interactive_brokers.client.market_data import InteractiveBrokersClientMarketDataMixin
 from nautilus_trader.adapters.interactive_brokers.client.order import InteractiveBrokersClientOrderMixin
+from nautilus_trader.adapters.interactive_brokers.client.wrapper import InteractiveBrokersEWrapper
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import Component
@@ -63,7 +63,6 @@ class InteractiveBrokersClient(
     InteractiveBrokersClientOrderMixin,
     InteractiveBrokersClientContractMixin,
     InteractiveBrokersClientErrorMixin,
-    EWrapper,
 ):
     """
     A client component that interfaces with the Interactive Brokers TWS or Gateway.
@@ -99,7 +98,12 @@ class InteractiveBrokersClient(
         self._client_id = client_id
 
         # TWS API
-        self._eclient: EClient = EClient(wrapper=self)
+        self._eclient: EClient = EClient(
+            wrapper=InteractiveBrokersEWrapper(
+                nautilus_logger=self._log,
+                client=self,
+            ),
+        )
 
         # EClient Overrides
         self._eclient.sendMsg = self.sendMsg
@@ -611,16 +615,3 @@ class InteractiveBrokersClient(
         else:
             prms = fnParams
         self._log.debug(f"TWS API prepared request: function={fnName} data={prms}")
-
-    # -- EWrapper overrides -----------------------------------------------------------------------
-
-    def logAnswer(self, fnName, fnParams):
-        """
-        Override the logging for EWrapper.logAnswer.
-        """
-        if "self" in fnParams:
-            prms = dict(fnParams)
-            del prms["self"]
-        else:
-            prms = fnParams
-        self._log.debug(f"Msg handled: function={fnName} data={prms}")

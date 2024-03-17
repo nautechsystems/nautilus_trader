@@ -15,7 +15,7 @@
 
 use std::{fs, str::FromStr};
 
-use databento::live::Subscription;
+use databento::{dbn, live::Subscription};
 use indexmap::IndexMap;
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},

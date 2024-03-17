@@ -3,9 +3,13 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `DatabaseConfig.timeout` config option for timeout seconds to wait for a new connection
+- Added CSV tick and bar data loaders params, thanks @rterbush
+- Implemented `LogGuard` to ensure global logger is flushed on termination, thanks @ayush-sb and @twitu
 - Improved Binance execution client ping listen key error handling and logging
 - Improved Redis cache adapter and message bus error handling and logging
-- Added `DatabaseConfig.timeout` config option for timeout seconds to wait for a new connection
+- Improved Interactive Brokers client connectivity resilience and component lifecycle, thanks @benjaminsingleton
+- Refactored `InteractiveBrokersEWrapper`, thanks @rsmb7z
 - Upgraded `redis` crate to 0.25.1 which bumps up TLS dependencies
 
 ### Breaking Changes
@@ -13,6 +17,7 @@ None
 
 ### Fixes
 - Fixed JSON format for log file output (was missing `timestamp` and `trader\_id`)
+- Fixed `DatabaseConfig` port JSON parsing for Redis (was always falling back to the default 6379)
 - Fixed `ChandeMomentumOscillator` indicator divide by zero error
 
 ---

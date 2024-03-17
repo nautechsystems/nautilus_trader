@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 
+use nautilus_common::cache::CacheDatabase;
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
     uuid::UUID4,
@@ -22,7 +23,7 @@ use nautilus_core::{
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::{prelude::*, types::PyBytes};
 
-use crate::{cache::CacheDatabase, redis::RedisCacheDatabase};
+use crate::redis::RedisCacheDatabase;
 
 #[pymethods]
 impl RedisCacheDatabase {

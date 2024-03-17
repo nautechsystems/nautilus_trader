@@ -15,7 +15,6 @@
 
 use std::fmt::{Display, Formatter};
 
-use anyhow::Result;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -97,7 +96,7 @@ fn _get_weights(size: usize) -> Vec<f64> {
 }
 
 impl HullMovingAverage {
-    pub fn new(period: usize, price_type: Option<PriceType>) -> Result<Self> {
+    pub fn new(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
         let period_halved = period / 2;
         let period_sqrt = (period as f64).sqrt() as usize;
 

@@ -47,7 +47,7 @@ class DatabentoDataLoader:
 
     References
     ----------
-    https://docs.databento.com/knowledge-base/new-users/dbn-encoding
+    https://databento.com/docs/knowledge-base/new-users/dbn-encoding
 
     """
 

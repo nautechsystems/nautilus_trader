@@ -265,6 +265,24 @@ class TestInstrumentProviderPyo3:
         )
 
     @staticmethod
+    def aapl_equity() -> Equity:
+        return Equity(
+            id=InstrumentId.from_str("AAPL.XNAS"),
+            raw_symbol=Symbol("AAPL"),
+            isin="US0378331005",
+            currency=_USD,
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            lot_size=Quantity.from_int(100),
+            max_quantity=None,
+            min_quantity=None,
+            max_price=None,
+            min_price=None,
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
     def aapl_option(
         activation: pd.Timestamp | None = None,
         expiration: pd.Timestamp | None = None,
@@ -288,24 +306,6 @@ class TestInstrumentProviderPyo3:
             price_increment=Price.from_str("0.01"),
             multiplier=Quantity.from_int(1),
             lot_size=Quantity.from_int(1),
-            max_quantity=None,
-            min_quantity=None,
-            max_price=None,
-            min_price=None,
-            ts_event=0,
-            ts_init=0,
-        )
-
-    @staticmethod
-    def aapl_equity() -> Equity:
-        return Equity(
-            id=InstrumentId.from_str("AAPL.XNAS"),
-            raw_symbol=Symbol("AAPL"),
-            isin="US0378331005",
-            currency=_USD,
-            price_precision=2,
-            price_increment=Price.from_str("0.01"),
-            lot_size=Quantity.from_int(100),
             max_quantity=None,
             min_quantity=None,
             max_price=None,

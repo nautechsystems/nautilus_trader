@@ -18,7 +18,6 @@ use std::{
     hash::Hash,
 };
 
-use anyhow::Result;
 use nautilus_core::correctness::check_valid_string;
 use ustr::Ustr;
 
@@ -35,11 +34,11 @@ pub struct Symbol {
 }
 
 impl Symbol {
-    pub fn new(s: &str) -> Result<Self> {
-        check_valid_string(s, "`Symbol` value")?;
+    pub fn new(value: &str) -> anyhow::Result<Self> {
+        check_valid_string(value, stringify!(value))?;
 
         Ok(Self {
-            value: Ustr::from(s),
+            value: Ustr::from(value),
         })
     }
 

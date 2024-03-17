@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use anyhow::{anyhow, bail, Result};
+use databento::dbn;
 use dbn::Record;
 use indexmap::IndexMap;
 use nautilus_model::identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue};
@@ -24,12 +24,12 @@ pub fn decode_nautilus_instrument_id(
     record: &dbn::RecordRef,
     metadata: &dbn::Metadata,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-) -> Result<InstrumentId> {
+) -> anyhow::Result<InstrumentId> {
     let publisher = record.publisher().expect("Invalid `publisher` for record");
     let publisher_id = publisher as PublisherId;
     let venue = publisher_venue_map
         .get(&publisher_id)
-        .ok_or_else(|| anyhow!("`Venue` not found for `publisher_id` {publisher_id}"))?;
+        .ok_or_else(|| anyhow::anyhow!("`Venue` not found for `publisher_id` {publisher_id}"))?;
     let instrument_id = get_nautilus_instrument_id_for_record(record, metadata, *venue)?;
 
     Ok(instrument_id)
@@ -39,7 +39,7 @@ pub fn get_nautilus_instrument_id_for_record(
     record: &dbn::RecordRef,
     metadata: &dbn::Metadata,
     venue: Venue,
-) -> Result<InstrumentId> {
+) -> anyhow::Result<InstrumentId> {
     let (instrument_id, nanoseconds) = if let Some(msg) = record.get::<dbn::MboMsg>() {
         (msg.hd.instrument_id, msg.ts_recv)
     } else if let Some(msg) = record.get::<dbn::TradeMsg>() {
@@ -55,7 +55,7 @@ pub fn get_nautilus_instrument_id_for_record(
     } else if let Some(msg) = record.get::<dbn::StatMsg>() {
         (msg.hd.instrument_id, msg.ts_recv)
     } else {
-        bail!("DBN message type is not currently supported")
+        anyhow::bail!("DBN message type is not currently supported")
     };
 
     let duration = time::Duration::nanoseconds(nanoseconds as i64);
@@ -66,7 +66,7 @@ pub fn get_nautilus_instrument_id_for_record(
     let symbol_map = metadata.symbol_map_for_date(date)?;
     let raw_symbol = symbol_map
         .get(instrument_id)
-        .ok_or_else(|| anyhow!("No raw symbol found for {instrument_id}"))?;
+        .ok_or_else(|| anyhow::anyhow!("No raw symbol found for {instrument_id}"))?;
 
     let symbol = Symbol::from_str_unchecked(raw_symbol);
 

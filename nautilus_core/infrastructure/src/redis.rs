@@ -20,15 +20,15 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{anyhow, bail, Result};
-use nautilus_common::redis::{get_buffer_interval, get_redis_url, get_timeout_duration};
+use nautilus_common::{
+    cache::{CacheDatabase, DatabaseCommand, DatabaseOperation},
+    redis::{get_buffer_interval, get_redis_url, get_timeout_duration},
+};
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use redis::{Commands, Connection, Pipeline};
 use serde_json::json;
 use tracing::debug;
-
-use crate::cache::{CacheDatabase, DatabaseCommand, DatabaseOperation};
 
 // Error constants
 const CHANNEL_TX_FAILED: &str = "Failed to send to channel";
@@ -82,7 +82,7 @@ impl CacheDatabase for RedisCacheDatabase {
         trader_id: TraderId,
         instance_id: UUID4,
         config: HashMap<String, serde_json::Value>,
-    ) -> Result<RedisCacheDatabase> {
+    ) -> anyhow::Result<RedisCacheDatabase> {
         debug!("Initializing trader_id={trader_id}, instance_id={instance_id}, config={config:?}");
         let redis_url = get_redis_url(&config);
         let default_timeout = 20;
@@ -110,21 +110,21 @@ impl CacheDatabase for RedisCacheDatabase {
         })
     }
 
-    fn flushdb(&mut self) -> Result<()> {
+    fn flushdb(&mut self) -> anyhow::Result<()> {
         match redis::cmd(FLUSHDB).query::<()>(&mut self.conn) {
             Ok(_) => Ok(()),
             Err(e) => Err(e.into()),
         }
     }
 
-    fn keys(&mut self, pattern: &str) -> Result<Vec<String>> {
+    fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
         match self.conn.keys(pattern) {
             Ok(keys) => Ok(keys),
             Err(e) => Err(e.into()),
         }
     }
 
-    fn read(&mut self, key: &str) -> Result<Vec<Vec<u8>>> {
+    fn read(&mut self, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
         let collection = get_collection_key(key)?;
         let key = format!("{}{DELIMITER}{}", self.trader_key, key);
 
@@ -139,31 +139,31 @@ impl CacheDatabase for RedisCacheDatabase {
             POSITIONS => read_list(&mut self.conn, &key),
             ACTORS => read_string(&mut self.conn, &key),
             STRATEGIES => read_string(&mut self.conn, &key),
-            _ => bail!("Unsupported operation: `read` for collection '{collection}'"),
+            _ => anyhow::bail!("Unsupported operation: `read` for collection '{collection}'"),
         }
     }
 
-    fn insert(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> Result<()> {
+    fn insert(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Insert, key, payload);
         match self.tx.send(op) {
             Ok(_) => Ok(()),
-            Err(e) => bail!("{CHANNEL_TX_FAILED}: {e}"),
+            Err(e) => anyhow::bail!("{CHANNEL_TX_FAILED}: {e}"),
         }
     }
 
-    fn update(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> Result<()> {
+    fn update(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Update, key, payload);
         match self.tx.send(op) {
             Ok(_) => Ok(()),
-            Err(e) => bail!("{CHANNEL_TX_FAILED}: {e}"),
+            Err(e) => anyhow::bail!("{CHANNEL_TX_FAILED}: {e}"),
         }
     }
 
-    fn delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> Result<()> {
+    fn delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Delete, key, payload);
         match self.tx.send(op) {
             Ok(_) => Ok(()),
-            Err(e) => bail!("{CHANNEL_TX_FAILED}: {e}"),
+            Err(e) => anyhow::bail!("{CHANNEL_TX_FAILED}: {e}"),
         }
     }
 
@@ -274,7 +274,7 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
     }
 }
 
-fn read_index(conn: &mut Connection, key: &str) -> Result<Vec<Vec<u8>>> {
+fn read_index(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
     let index_key = get_index_key(key)?;
     match index_key {
         INDEX_ORDER_IDS => read_set(conn, key),
@@ -288,11 +288,11 @@ fn read_index(conn: &mut Connection, key: &str) -> Result<Vec<Vec<u8>>> {
         INDEX_POSITIONS => read_set(conn, key),
         INDEX_POSITIONS_OPEN => read_set(conn, key),
         INDEX_POSITIONS_CLOSED => read_set(conn, key),
-        _ => bail!("Index unknown '{index_key}' on read"),
+        _ => anyhow::bail!("Index unknown '{index_key}' on read"),
     }
 }
 
-fn read_string(conn: &mut Connection, key: &str) -> Result<Vec<Vec<u8>>> {
+fn read_string(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
     let result: Vec<u8> = conn.get(key)?;
 
     if result.is_empty() {
@@ -302,25 +302,30 @@ fn read_string(conn: &mut Connection, key: &str) -> Result<Vec<Vec<u8>>> {
     }
 }
 
-fn read_set(conn: &mut Connection, key: &str) -> Result<Vec<Vec<u8>>> {
+fn read_set(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
     let result: Vec<Vec<u8>> = conn.smembers(key)?;
     Ok(result)
 }
 
-fn read_hset(conn: &mut Connection, key: &str) -> Result<Vec<Vec<u8>>> {
+fn read_hset(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
     let result: HashMap<String, String> = conn.hgetall(key)?;
     let json = serde_json::to_string(&result)?;
     Ok(vec![json.into_bytes()])
 }
 
-fn read_list(conn: &mut Connection, key: &str) -> Result<Vec<Vec<u8>>> {
+fn read_list(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
     let result: Vec<Vec<u8>> = conn.lrange(key, 0, -1)?;
     Ok(result)
 }
 
-fn insert(pipe: &mut Pipeline, collection: &str, key: &str, value: Vec<&[u8]>) -> Result<()> {
+fn insert(
+    pipe: &mut Pipeline,
+    collection: &str,
+    key: &str,
+    value: Vec<&[u8]>,
+) -> anyhow::Result<()> {
     if value.is_empty() {
-        bail!("Empty `payload` for `insert`")
+        anyhow::bail!("Empty `payload` for `insert`")
     }
 
     match collection {
@@ -369,11 +374,11 @@ fn insert(pipe: &mut Pipeline, collection: &str, key: &str, value: Vec<&[u8]>) -
             insert_string(pipe, key, value[0]);
             Ok(())
         }
-        _ => bail!("Unsupported operation: `insert` for collection '{collection}'"),
+        _ => anyhow::bail!("Unsupported operation: `insert` for collection '{collection}'"),
     }
 }
 
-fn insert_index(pipe: &mut Pipeline, key: &str, value: &[&[u8]]) -> Result<()> {
+fn insert_index(pipe: &mut Pipeline, key: &str, value: &[&[u8]]) -> anyhow::Result<()> {
     let index_key = get_index_key(key)?;
     match index_key {
         INDEX_ORDER_IDS => {
@@ -420,7 +425,7 @@ fn insert_index(pipe: &mut Pipeline, key: &str, value: &[&[u8]]) -> Result<()> {
             insert_set(pipe, key, value[0]);
             Ok(())
         }
-        _ => bail!("Index unknown '{index_key}' on insert"),
+        _ => anyhow::bail!("Index unknown '{index_key}' on insert"),
     }
 }
 
@@ -440,9 +445,14 @@ fn insert_list(pipe: &mut Pipeline, key: &str, value: &[u8]) {
     pipe.rpush(key, value);
 }
 
-fn update(pipe: &mut Pipeline, collection: &str, key: &str, value: Vec<&[u8]>) -> Result<()> {
+fn update(
+    pipe: &mut Pipeline,
+    collection: &str,
+    key: &str,
+    value: Vec<&[u8]>,
+) -> anyhow::Result<()> {
     if value.is_empty() {
-        bail!("Empty `payload` for `update`")
+        anyhow::bail!("Empty `payload` for `update`")
     }
 
     match collection {
@@ -458,7 +468,7 @@ fn update(pipe: &mut Pipeline, collection: &str, key: &str, value: Vec<&[u8]>) -
             update_list(pipe, key, value[0]);
             Ok(())
         }
-        _ => bail!("Unsupported operation: `update` for collection '{collection}'"),
+        _ => anyhow::bail!("Unsupported operation: `update` for collection '{collection}'"),
     }
 }
 
@@ -471,7 +481,7 @@ fn delete(
     collection: &str,
     key: &str,
     value: Option<Vec<&[u8]>>,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     match collection {
         INDEX => remove_index(pipe, key, value),
         ACTORS => {
@@ -482,12 +492,12 @@ fn delete(
             delete_string(pipe, key);
             Ok(())
         }
-        _ => bail!("Unsupported operation: `delete` for collection '{collection}'"),
+        _ => anyhow::bail!("Unsupported operation: `delete` for collection '{collection}'"),
     }
 }
 
-fn remove_index(pipe: &mut Pipeline, key: &str, value: Option<Vec<&[u8]>>) -> Result<()> {
-    let value = value.ok_or_else(|| anyhow!("Empty `payload` for `delete` '{key}'"))?;
+fn remove_index(pipe: &mut Pipeline, key: &str, value: Option<Vec<&[u8]>>) -> anyhow::Result<()> {
+    let value = value.ok_or_else(|| anyhow::anyhow!("Empty `payload` for `delete` '{key}'"))?;
     let index_key = get_index_key(key)?;
 
     match index_key {
@@ -515,7 +525,7 @@ fn remove_index(pipe: &mut Pipeline, key: &str, value: Option<Vec<&[u8]>>) -> Re
             remove_from_set(pipe, key, value[0]);
             Ok(())
         }
-        _ => bail!("Unsupported index operation: remove from '{index_key}'"),
+        _ => anyhow::bail!("Unsupported index operation: remove from '{index_key}'"),
     }
 }
 
@@ -548,16 +558,20 @@ fn get_trader_key(
     key
 }
 
-fn get_collection_key(key: &str) -> Result<&str> {
+fn get_collection_key(key: &str) -> anyhow::Result<&str> {
     key.split_once(DELIMITER)
         .map(|(collection, _)| collection)
-        .ok_or_else(|| anyhow!("Invalid `key`, missing a '{DELIMITER}' delimiter, was {key}"))
+        .ok_or_else(|| {
+            anyhow::anyhow!("Invalid `key`, missing a '{DELIMITER}' delimiter, was {key}")
+        })
 }
 
-fn get_index_key(key: &str) -> Result<&str> {
+fn get_index_key(key: &str) -> anyhow::Result<&str> {
     key.split_once(DELIMITER)
         .map(|(_, index_key)| index_key)
-        .ok_or_else(|| anyhow!("Invalid `key`, missing a '{DELIMITER}' delimiter, was {key}"))
+        .ok_or_else(|| {
+            anyhow::anyhow!("Invalid `key`, missing a '{DELIMITER}' delimiter, was {key}")
+        })
 }
 
 // This function can be used when we handle cache serialization in Rust
@@ -575,13 +589,13 @@ fn get_encoding(config: &HashMap<String, serde_json::Value>) -> String {
 fn deserialize_payload(
     encoding: &str,
     payload: &[u8],
-) -> Result<HashMap<String, serde_json::Value>> {
+) -> anyhow::Result<HashMap<String, serde_json::Value>> {
     match encoding {
         "msgpack" => rmp_serde::from_slice(payload)
-            .map_err(|e| anyhow!("Failed to deserialize msgpack `payload`: {e}")),
+            .map_err(|e| anyhow::anyhow!("Failed to deserialize msgpack `payload`: {e}")),
         "json" => serde_json::from_slice(payload)
-            .map_err(|e| anyhow!("Failed to deserialize json `payload`: {e}")),
-        _ => Err(anyhow!("Unsupported encoding: {encoding}")),
+            .map_err(|e| anyhow::anyhow!("Failed to deserialize json `payload`: {e}")),
+        _ => Err(anyhow::anyhow!("Unsupported encoding: {encoding}")),
     }
 }
 

@@ -39,6 +39,8 @@ iai = { workspace = true }
 cbindgen = { workspace = true, optional = true }
 
 [features]
+default = ["trivial_copy"]
+trivial_copy = []  # Enables deriving the `Copy` trait for data types (should be included in default)
 extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
@@ -46,8 +48,6 @@ extension-module = [
 ffi = ["cbindgen", "nautilus-core/ffi"]
 python = ["pyo3", "nautilus-core/python"]
 stubs = ["rstest"]
-trivial_copy = []  # Enables deriving the `Copy` trait for data types (should be included in default)
-default = ["trivial_copy"]
 
 [[bench]]
 name = "criterion_fixed_precision_benchmark"

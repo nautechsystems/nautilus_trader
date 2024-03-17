@@ -26,6 +26,7 @@ rstest = { workspace = true}
 cbindgen = { workspace = true, optional = true }
 
 [features]
+default = ["ffi", "python"]
 extension-module = [
     "pyo3/extension-module",
     "nautilus-common/extension-module",
@@ -47,4 +48,3 @@ python = [
     "nautilus-execution/python",
     "nautilus-model/python",
 ]
-default = ["ffi", "python"]

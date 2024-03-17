@@ -29,6 +29,7 @@ from nautilus_trader.core.rust.common cimport ComponentState
 from nautilus_trader.core.rust.common cimport ComponentTrigger
 from nautilus_trader.core.rust.common cimport LiveClock_API
 from nautilus_trader.core.rust.common cimport LogColor
+from nautilus_trader.core.rust.common cimport LogGuard_API
 from nautilus_trader.core.rust.common cimport LogLevel
 from nautilus_trader.core.rust.common cimport MessageBus_API
 from nautilus_trader.core.rust.common cimport TestClock_API
@@ -136,7 +137,12 @@ cpdef str log_color_to_str(LogColor value)
 cpdef LogLevel log_level_from_str(str value)
 cpdef str log_level_to_str(LogLevel value)
 
-cpdef void init_logging(
+
+cdef class LogGuard:
+    cdef LogGuard_API _mem
+
+
+cpdef LogGuard init_logging(
     TraderId trader_id=*,
     str machine_id=*,
     UUID4 instance_id=*,

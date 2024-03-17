@@ -23,6 +23,7 @@ nautilus-persistence = { path = "../persistence" , features = ["python"] }
 pyo3 = { workspace = true }
 
 [features]
+default = []
 extension-module = [
     "pyo3/extension-module",
     "nautilus-accounting/extension-module",
@@ -41,4 +42,3 @@ ffi = [
     "nautilus-model/ffi",
     "nautilus-persistence/ffi",
 ]
-default = []

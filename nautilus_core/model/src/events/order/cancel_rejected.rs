@@ -15,7 +15,6 @@
 
 use std::fmt::Display;
 
-use anyhow::Result;
 use derive_builder::Builder;
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
@@ -62,7 +61,7 @@ impl OrderCancelRejected {
         reconciliation: bool,
         venue_order_id: Option<VenueOrderId>,
         account_id: Option<AccountId>,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             trader_id,
             strategy_id,
