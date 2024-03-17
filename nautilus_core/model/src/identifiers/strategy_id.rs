@@ -18,6 +18,9 @@ use std::fmt::{Debug, Display, Formatter};
 use nautilus_core::correctness::{check_string_contains, check_valid_string};
 use ustr::Ustr;
 
+/// The identifier for all 'external' strategy IDs (not local to this system instance).
+const EXTERNAL_STRATEGY_ID: &str = "EXTERNAL";
+
 /// Represents a valid strategy ID.
 ///
 /// Must be correctly formatted with two valid strings either side of a hyphen.
@@ -42,13 +45,25 @@ pub struct StrategyId {
 impl StrategyId {
     pub fn new(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
-        if value != "EXTERNAL" {
+        if value != EXTERNAL_STRATEGY_ID {
             check_string_contains(value, "-", stringify!(value))?;
         }
 
         Ok(Self {
             value: Ustr::from(value),
         })
+    }
+
+    #[must_use]
+    pub fn external() -> Self {
+        Self {
+            value: Ustr::from(EXTERNAL_STRATEGY_ID),
+        }
+    }
+
+    #[must_use]
+    pub fn is_external(&self) -> bool {
+        self.value == EXTERNAL_STRATEGY_ID
     }
 
     #[must_use]
@@ -98,6 +113,16 @@ mod tests {
     fn test_string_reprs(strategy_id_ema_cross: StrategyId) {
         assert_eq!(strategy_id_ema_cross.to_string(), "EMACross-001");
         assert_eq!(format!("{strategy_id_ema_cross}"), "EMACross-001");
+    }
+
+    #[rstest]
+    fn test_get_external() {
+        assert_eq!(StrategyId::external().value, "EXTERNAL");
+    }
+
+    #[rstest]
+    fn test_is_external() {
+        assert!(StrategyId::external().is_external());
     }
 
     #[rstest]
