@@ -465,7 +465,6 @@ pub fn log(level: LogLevel, color: LogColor, component: Ustr, message: &str) {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
-#[repr(C)]
 #[derive(Debug)]
 pub struct LogGuard {}
 
