@@ -1,10 +1,10 @@
 # Databento
 
 ```{warning}
-We are currently working on this integration guide - consider it incomplete for now.
+We are currently working on this integration guide.
 ```
 
-NautilusTrader provides an adapter for integrating with the Databento API and [Databento Binary Encoding (DBN)](https://docs.databento.com/knowledge-base/new-users/dbn-encoding) format data.
+NautilusTrader provides an adapter for integrating with the Databento API and [Databento Binary Encoding (DBN)](https://databento.com/docs/knowledge-base/new-users/dbn-encoding) format data.
 As Databento is purely a market data provider, there is no execution client provided - although a sandbox environment with simulated execution could still be set up.
 It's also possible to match Databento data with Interactive Brokers execution, or to calculate traditional asset class signals for crypto trading.
 
@@ -17,7 +17,7 @@ The capabilities of this adapter include:
 [Databento](https://databento.com/signup) currently offers 125 USD in free data credits (historical data only) for new account sign-ups.
 
 With careful requests, this is more than enough for testing and evaluation purposes.
-It's recommended you make use of the [/metadata.get_cost](https://docs.databento.com/api-reference-historical/metadata/metadata-get-cost) endpoint.
+It's recommended you make use of the [/metadata.get_cost](https://databento.com/docs/api-reference-historical/metadata/metadata-get-cost) endpoint.
 ```
 
 ## Overview
@@ -44,13 +44,13 @@ and won't need to necessarily work with these lower level components directly.
 
 ## Databento documentation
 
-Databento provides extensive documentation for users which can be found in the [Databento knowledge base](https://docs.databento.com/knowledge-base/new-users).
-It's recommended you also refer to the Databento documentation in conjunction with this Nautilus integration guide.
+Databento provides extensive documentation for users which can be found in the [Databento knowledge base](https://databento.com/docs/knowledge-base/new-users).
+It's recommended you also refer to this Databento documentation in conjunction with this NautilusTrader integration guide.
 
 ## Databento Binary Encoding (DBN)
 
 Databento Binary Encoding (DBN) is an extremely fast message encoding and storage format for normalized market data.
-The [DBN specification](https://docs.databento.com/knowledge-base/new-users/dbn-encoding) includes a simple, self-describing metadata header and a fixed set of struct definitions,
+The [DBN specification](https://databento.com/docs/knowledge-base/new-users/dbn-encoding) includes a simple, self-describing metadata header and a fixed set of struct definitions,
 which enforce a standardized way to normalize market data.
 
 The integration provides a decoder which can convert DBN format data to Nautilus objects.
@@ -91,7 +91,7 @@ The Nautilus decoder will use the Databento `raw_symbol` for the Nautilus `symbo
 from the Databento instrument definition message for the Nautilus `venue`.
 
 Databento datasets are identified with a *dataset code* which is not the same
-as a venue identifier. You can read more about Databento dataset naming conventions [here](https://docs.databento.com/api-reference-historical/basics/datasets).
+as a venue identifier. You can read more about Databento dataset naming conventions [here](https://databento.com/docs/api-reference-historical/basics/datasets).
 
 Of particular note is for CME Globex MDP 3.0 data (`GLBX.MDP3` dataset code), the following
 exchanges are all grouped under the `GLBX` venue. These mappings can be determined from the
@@ -105,7 +105,7 @@ instruments `exchange` field:
 - `XNYM` - **New York Mercantile Exchange (NYMEX)**
 
 ```{note}
-Other venue MICs can be found in the `venue` field of responses from the [metadata.list_publishers](https://docs.databento.com/api-reference-historical/metadata/metadata-list-publishers?historical=http&live=python) endpoint.
+Other venue MICs can be found in the `venue` field of responses from the [metadata.list_publishers](https://databento.com/docs/api-reference-historical/metadata/metadata-list-publishers?historical=http&live=python) endpoint.
 ```
 
 ## Timestamps
@@ -127,14 +127,18 @@ When decoding and normalizing Databento to Nautilus we generally assign the Data
 
 ```{note}
 See the following Databento docs for further information:
-- [Databento standards and conventions - timestamps](https://docs.databento.com/knowledge-base/new-users/standards-conventions/timestamps)
-- [Databento timestamping guide](https://docs.databento.com/knowledge-base/data-integrity/timestamping/timestamps-on-databento-and-how-to-use-them)
+- [Databento standards and conventions - timestamps](https://databento.com/docs/knowledge-base/new-users/standards-conventions/timestamps)
+- [Databento timestamping guide](https://databento.com/docs/knowledge-base/data-integrity/timestamping/timestamps-on-databento-and-how-to-use-them)
 ```
 
 ## Data types
 
 The following section discusses Databento schema -> Nautilus data type equivalence
 and considerations.
+
+```{note}
+See the Databento [list of fields by schema guide](https://databento.com/docs/knowledge-base/new-users/fields-by-schema).
+```
 
 ### Instrument definitions
 
@@ -143,17 +147,17 @@ decoded to the appropriate Nautilus `Instrument` types.
 
 The following Databento instrument classes are supported by NautilusTrader:
 
-| Databento instrument class | Nautilus instrument type     |
-|----------------------------|------------------------------|
-| STOCK                      | `Equity`                     |
-| FUTURE                     | `FuturesContract`            |
-| CALL                       | `OptionsContract`            |
-| PUT                        | `OptionsContract`            |
-| FUTURESPREAD               | `FuturesSpread`              |
-| OPTIONSPREAD               | `OptionsSpread`              |
-| MIXEDSPREAD                | `OptionsSpread`              |
-| FXSPOT                     | `CurrencyPair`               |
-| BOND                       | Not yet available            |
+| Databento instrument class | Code |  Nautilus instrument type    |
+|----------------------------|------|------------------------------|
+| Stock                      | `K`  | `Equity`                     |
+| Future                     | `F`  | `FuturesContract`            |
+| Call                       | `C`  | `OptionsContract`            |
+| Put                        | `P`  | `OptionsContract`            |
+| Future spread              | `S`  | `FuturesSpread`              |
+| Option spread              | `T`  | `OptionsSpread`              |
+| Mixed spread               | `M`  | `OptionsSpread`              |
+| FX spot                    | `X`  | `CurrencyPair`               |
+| Bond                       | `B`  | Not yet available            |
 
 ### MBO (market by order)
 
@@ -171,9 +175,9 @@ object, which occurs during the replay startup sequence.
 
 ### MBP-1 (market by price, top-of-book)
 
-This schema represents the top-of-book only. Like with MBO messages, some
+This schema represents the top-of-book only (quotes *and* trades). Like with MBO messages, some
 messages carry trade information, and so when decoding MBP-1 messages Nautilus 
-will produce a `QuoteTick` and also a `TradeTick` if the message is a trade.
+will produce a `QuoteTick` and *also* a `TradeTick` if the message is a trade.
 
 ### OHLCV (bar aggregates)
 
@@ -183,9 +187,9 @@ The Nautilus decoder will normalize the `ts_event` timestamps to the **close** o
 
 ### Imbalance & Statistics
 
-The Databento `imbalance` and `statistics` schemas cannot be represented as a built-in Nautilus data types
+The Databento `imbalance` and `statistics` schemas cannot be represented as a built-in Nautilus data types,
 and so they have specific types defined in Rust `DatabentoImbalance` and `DatabentoStatistics`.
-Python bindings are provided via pyo3 (Rust) and so the types behaves a little differently to a built-in Nautilus
+Python bindings are provided via pyo3 (Rust) so the types behave a little differently to a built-in Nautilus
 data types, where all attributes are pyo3 provided objects and not directly compatible
 with certain methods which may expect a Cython provided type. There are pyo3 -> legacy Cython
 object conversion methods available, which can be found in the API reference.
@@ -244,7 +248,7 @@ the Nautilus Parquet data from disk, which achieves extremely high through-put (
 than converting DBN -> Nautilus on the fly for every backtest run).
 
 ```{note}
-Performance benchmarks are under development.
+Performance benchmarks are currently under development.
 ```
 
 ## Loading DBN data
