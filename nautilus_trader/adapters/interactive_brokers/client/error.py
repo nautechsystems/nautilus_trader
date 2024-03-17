@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from inspect import iscoroutinefunction
+from typing import Final
 
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.common.enums import LogColor
@@ -32,11 +33,11 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
 
     """
 
-    WARNING_CODES = {1101, 1102, 110, 165, 202, 399, 404, 434, 492, 10167}
-    CLIENT_ERRORS = {502, 503, 504, 10038, 10182, 1100, 2110}
-    CONNECTIVITY_LOST_CODES = {1100, 1300, 2110}
-    CONNECTIVITY_RESTORED_CODES = {1101, 1102}
-    ORDER_REJECTION_CODES = {201, 203, 321, 10289, 10293}
+    WARNING_CODES: Final[set[int]] = {1101, 1102, 110, 165, 202, 399, 404, 434, 492, 10167}
+    CLIENT_ERRORS: Final[set[int]] = {502, 503, 504, 10038, 10182, 1100, 2110}
+    CONNECTIVITY_LOST_CODES: Final[set[int]] = {1100, 1300, 2110}
+    CONNECTIVITY_RESTORED_CODES: Final[set[int]] = {1101, 1102}
+    ORDER_REJECTION_CODES: Final[set[int]] = {201, 203, 321, 10289, 10293}
 
     def _log_message(
         self,

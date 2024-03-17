@@ -90,6 +90,7 @@ class InteractiveBrokersClient(
             component_name=f"{type(self).__name__}-{client_id:03d}",
             msgbus=msgbus,
         )
+
         # Config
         self._loop = loop
         self._cache = cache
@@ -132,7 +133,7 @@ class InteractiveBrokersClient(
 
         # ConnectionMixin
         self._reconnect_attempts: int = 0
-        self._max_reconnect_attempts: int | None = int(os.getenv("IB_MAX_RECONNECT_ATTEMPTS", 0))
+        self._max_reconnect_attempts: int = int(os.getenv("IB_MAX_RECONNECT_ATTEMPTS", 0))
         self._indefinite_reconnect: bool = False if self._max_reconnect_attempts else True
         self._reconnect_delay: int = 5  # seconds
 
