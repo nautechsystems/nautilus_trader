@@ -84,13 +84,21 @@ class InteractiveBrokersEWrapper(EWrapper):
 
     def marketDataType(self, reqId: TickerId, marketDataType: int):
         """
-        Receive notification when market data toggles between frozen and real-time.
+        Receives notification when the market data type changes.
 
-        TWS calls `marketDataType(type)` where `type` can be Frozen or RealTime, to signal a switch in
-        market data status for a subscription from frozen to real-time or vice versa. This event is only
-        triggered by such changes. Each subscription may receive its own notification through
-        `marketDataType()`, which takes a `reqId` parameter, reflecting the diverse trading schedules of
-        different contracts.
+        This method is called when TWS sends a marketDataType(type) callback to the API,
+        where type is set to Frozen or RealTime, to announce that market data has been
+        switched between frozen and real-time. This notification occurs only when market
+        data switches between real-time and frozen. The marketDataType() callback accepts
+        a reqId parameter and is sent per every subscription because different contracts
+        can generally trade on a different schedule.
+
+        Parameters
+        ----------
+        reqId : TickerId
+            The request's identifier.
+        marketDataType : int
+            The type of market data being received. Possible values are 1 for real-time streaming, 2 for frozen market data.
 
         """
         self.logAnswer(current_fn_name(), vars())
@@ -106,16 +114,35 @@ class InteractiveBrokersEWrapper(EWrapper):
         """
         Market data tick price callback.
 
-        Handles all price related ticks.
+        Parameters
+        ----------
+        reqId : TickerId
+            The request's identifier.
+        tickType : TickType
+            The type of tick being received.
+        price : float
+            The price of the tick.
+        attrib : TickAttrib
+            The tick's attributes.
 
         """
         self.logAnswer(current_fn_name(), vars())
 
     def tickSize(self, reqId: TickerId, tickType: TickType, size: Decimal):
         """
-        Market data tick size callback.
+        Handle tick size-related market data.
 
-        Handles all size-related ticks.
+        This method is responsible for handling all size-related ticks from the market data.
+        Each tick represents a change in the market size for a specific type of data.
+
+        Parameters
+        ----------
+        reqId : TickerId
+            The request's identifier.
+        tickType : TickType
+            The type of tick being received.
+        size : Decimal
+            The size of the tick.
 
         """
         self.logAnswer(current_fn_name(), vars())
@@ -145,26 +172,32 @@ class InteractiveBrokersEWrapper(EWrapper):
         dividendImpact: float,
         dividendsToLastTradeDate: float,
     ):
-        self.logAnswer(current_fn_name(), vars())
         """
-        Market data call back for Exchange for Physical.
+        Market data callback for Exchange for Physical.
 
-        tickerId -      The request's identifier.
-        tickType -      The type of tick being received.
-        basisPoints -   Annualized basis points, which is representative of
-            the financing rate that can be directly compared to broker rates.
-        formattedBasisPoints -  Annualized basis points as a formatted string
-            that depicts them in percentage form.
-        impliedFuture - The implied Futures price.
-        holdDays -  The number of hold days until the lastTradeDate of the EFP.
-        futureLastTradeDate -   The expiration date of the single stock future.
-        dividendImpact - The dividend impact upon the annualized basis points
-            interest rate.
-        dividendsToLastTradeDate - The dividends expected until the expiration
-            of the single stock future.
+        Parameters
+        ----------
+        reqId : TickerId
+            The request's identifier.
+        tickType : TickType
+            The type of tick being received.
+        basisPoints : float
+            Annualized basis points, representative of the financing rate that can be directly be
+            compared to broker rates.
+        formattedBasisPoints : str
+            Annualized basis points as a formatted string depicting them in percentage form.
+        totalDividends : float
+            The total dividends.
+        holdDays : int
+            The number of hold days until the lastTradeDate of the EFP.
+        futureLastTradeDate : str
+            The expiration date of the single stock future.
+        dividendImpact : float
+            The dividend impact upon the annualized basis points interest rate.
+        dividendsToLastTradeDate : float
+            The dividends expected until the expiration of the single stock future.
 
         """
-
         self.logAnswer(current_fn_name(), vars())
 
     def orderStatus(
