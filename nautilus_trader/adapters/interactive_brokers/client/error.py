@@ -16,6 +16,7 @@
 from inspect import iscoroutinefunction
 
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
+from nautilus_trader.common.enums import LogColor
 
 
 class InteractiveBrokersClientErrorMixin(BaseMixin):
@@ -59,12 +60,8 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
             Indicates whether the message is a warning or an error.
 
         """
-        msg_type = "Warning" if is_warning else "Error"
-        msg = f"{msg_type} {error_code} {req_id=}: {error_string}"
-        if is_warning:
-            self._log.info(msg)
-        else:
-            self._log.error(msg)
+        msg = f"{error_string} (code: {error_code}, {req_id=})."
+        self._log.warning(msg) if is_warning else self._log.error(msg)
 
     def process_error(
         self,
@@ -92,6 +89,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
 
         """
         is_warning = error_code in self.WARNING_CODES or 2100 <= error_code < 2200
+        error_string = error_string.replace("\n", " ")
         self._log_message(error_code, req_id, error_string, is_warning)
 
         if req_id != -1:
@@ -104,12 +102,19 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
             else:
                 self._log.warning(f"Unhandled error: {error_code} for req_id {req_id}")
         elif error_code in self.CLIENT_ERRORS or error_code in self.CONNECTIVITY_LOST_CODES:
-            self._log.warning(f"Client or Connectivity Lost Error: {error_string}")
-            if self._is_ib_ready.is_set():
-                self._is_ib_ready.clear()
+            if self._is_ib_connected.is_set():
+                self._log.debug(
+                    f"`_is_ib_connected` unset by code {error_code} in `_process_error`.",
+                    LogColor.BLUE,
+                )
+                self._is_ib_connected.clear()
         elif error_code in self.CONNECTIVITY_RESTORED_CODES:
-            if not self._is_ib_ready.is_set():
-                self._is_ib_ready.set()
+            if not self._is_ib_connected.is_set():
+                self._log.debug(
+                    f"`_is_ib_connected` set by code {error_code} in `_process_error`.",
+                    LogColor.BLUE,
+                )
+                self._is_ib_connected.set()
 
     def _handle_subscription_error(self, req_id: int, error_code: int, error_string: str) -> None:
         """
@@ -141,9 +146,11 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
         elif error_code == 10182:
             # Handle disconnection error
             self._log.warning(f"{error_code}: {error_string}")
-            if self._is_ib_ready.is_set():
-                self._log.info(f"`is_ib_ready` cleared by {subscription.name}")
-                self._is_ib_ready.clear()
+            if self._is_ib_connected.is_set():
+                self._log.info(
+                    f"`_is_ib_connected` unset by {subscription.name} in `_handle_subscription_error`.",
+                )
+                self._is_ib_connected.clear()
         else:
             # Log unknown subscription errors
             self._log.warning(

@@ -1,13 +1,13 @@
 # Interactive Brokers
 
-Interactive Brokers (IB) is a trading platform that allows trading across a wide range of financial instruments, including stocks, options, futures, currencies, bonds, funds, and cryptocurrencies. NautilusTrader offers an adapter to integrate with IB using their [Trader Workstation (TWS) API](https://interactivebrokers.github.io/tws-api/index.html) through their Python library, [ibapi](https://github.com/nautechsystems/ibapi).
+Interactive Brokers (IB) is a trading platform that allows trading across a wide range of financial instruments, including stocks, options, futures, currencies, bonds, funds, and cryptocurrencies. NautilusTrader offers an adapter to integrate with IB using their [Trader Workstation (TWS) API](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/) through their Python library, [ibapi](https://github.com/nautechsystems/ibapi).
 
-The TWS API serves as an interface to IB's standalone trading applications: TWS and IB Gateway. Both can be downloaded from the IB website. If you haven't installed TWS or IB Gateway yet, refer to the [Initial Setup](https://interactivebrokers.github.io/tws-api/initial_setup.html) guide. In NautilusTrader, you'll establish a connection to one of these applications via the `InteractiveBrokersClient`.
+The TWS API serves as an interface to IB's standalone trading applications: TWS and IB Gateway. Both can be downloaded from the IB website. If you haven't installed TWS or IB Gateway yet, refer to the [Initial Setup](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/#tws-download) guide. In NautilusTrader, you'll establish a connection to one of these applications via the `InteractiveBrokersClient`.
 
-Alternatively, you can start with a [dockerized version](https://github.com/gnzsnz/ib-gateway-docker) of the IB Gateway, particularly useful when deploying trading strategies on a hosted cloud platform. This requires having [Docker](https://www.docker.com/) installed on your machine, along with the [docker](https://pypi.org/project/docker/) Python package, which NautilusTrader conveniently includes as an extra package.
+Alternatively, you can start with a [dockerized version](https://github.com/gnzsnz/ib-gateway-docker) of the IB Gateway, which is particularly useful when deploying trading strategies on a hosted cloud platform. This requires having [Docker](https://www.docker.com/) installed on your machine, along with the [docker](https://pypi.org/project/docker/) Python package, which NautilusTrader conveniently includes as an extra package.
 
 ```{note}
-The standalone TWS and IB Gateway applications necessitate manual input of username, password, and trading mode (live or paper) at startup. The dockerized version of the IB Gateway handles these steps programmatically.
+The standalone TWS and IB Gateway applications require manually inputting username, password, and trading mode (live or paper) at startup. The dockerized version of the IB Gateway handles these steps programmatically.
 ```
 
 ## Installation
@@ -87,7 +87,7 @@ To troubleshoot TWS API incoming message issues, consider starting at the `Inter
 
 ## Instruments & Contracts
 
-In IB, a NautilusTrader `Instrument` is equivalent to a [Contract](https://interactivebrokers.github.io/tws-api/contracts.html). Contracts can be either a [basic contract](https://interactivebrokers.github.io/tws-api/classIBApi_1_1Contract.html) or a more [detailed](https://interactivebrokers.github.io/tws-api/classIBApi_1_1ContractDetails.html) version (ContractDetails). The adapter models these using `IBContract` and `IBContractDetails` classes. The latter includes critical data like order types and trading hours, which are absent in the basic contract. As a result, `IBContractDetails` can be converted to an `Instrument` while `IBContract` cannot.
+In IB, a NautilusTrader `Instrument` is equivalent to a [Contract](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/#contracts). Contracts can be either a [basic contract](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/#contract-object) or a more [detailed](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/#contract-details) version (ContractDetails). The adapter models these using `IBContract` and `IBContractDetails` classes. The latter includes critical data like order types and trading hours, which are absent in the basic contract. As a result, `IBContractDetails` can be converted to an `Instrument` while `IBContract` cannot.
 
 To search for contract information, use the [IB Contract Information Center](https://pennies.interactivebrokers.com/cstools/contract_info/).
 
@@ -195,7 +195,7 @@ instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
 
 ### Data Client
 
-`InteractiveBrokersDataClient` interfaces with IB for streaming and retrieving market data. Upon connection, it configures the [market data type](https://interactivebrokers.github.io/tws-api/market_data_type.html) and loads instruments based on the settings in `InteractiveBrokersInstrumentProviderConfig`. This client can subscribe to and unsubscribe from various market data types, including quote ticks, trade ticks, and bars.
+`InteractiveBrokersDataClient` interfaces with IB for streaming and retrieving market data. Upon connection, it configures the [market data type](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/#delayed-market-data) and loads instruments based on the settings in `InteractiveBrokersInstrumentProviderConfig`. This client can subscribe to and unsubscribe from various market data types, including quote ticks, trade ticks, and bars.
 
 Configurable through `InteractiveBrokersDataClientConfig`, it allows adjustments for handling revised bars, trading hours preferences, and market data types (e.g., `IBMarketDataTypeEnum.REALTIME` or `IBMarketDataTypeEnum.DELAYED_FROZEN`).
 
