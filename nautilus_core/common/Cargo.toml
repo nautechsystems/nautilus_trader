@@ -39,6 +39,7 @@ tempfile = { workspace = true }
 cbindgen = { workspace = true, optional = true }
 
 [features]
+default = []
 extension-module = [
     "pyo3/extension-module",
     "nautilus-core/extension-module",
@@ -48,4 +49,3 @@ ffi = ["cbindgen", "nautilus-core/ffi", "nautilus-model/ffi"]
 python = ["pyo3", "pyo3-asyncio", "nautilus-core/python", "nautilus-model/python"]
 stubs = ["rstest", "nautilus-model/stubs"]
 redis = ["dep:redis"]
-default = []

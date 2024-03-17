@@ -25,6 +25,7 @@ tracing = {workspace = true }
 rstest = { workspace = true }
 
 [features]
+default = ["redis"]
 extension-module = [
     "pyo3/extension-module",
     "nautilus-common/extension-module",
@@ -33,4 +34,3 @@ extension-module = [
 ]
 python = ["pyo3"]
 redis = ["dep:redis"]
-default = ["redis"]

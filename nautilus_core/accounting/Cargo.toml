@@ -27,6 +27,7 @@ rstest = { workspace = true }
 cbindgen = { workspace = true, optional = true }
 
 [features]
+default = []
 extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
@@ -34,4 +35,3 @@ extension-module = [
   "nautilus-common/extension-module",
 ]
 python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]
-default = []
