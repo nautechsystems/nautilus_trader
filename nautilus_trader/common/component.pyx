@@ -1091,7 +1091,7 @@ cpdef LogGuard init_logging(
 
     Returns
     -------
-    LogGuard or ``None``
+    LogGuard
 
     """
     if trader_id is None:
