@@ -44,7 +44,7 @@ use crate::{
 ///
 /// It implements the `Deref` trait, allowing instances of `LogGuard_API` to be
 /// dereferenced to `LogGuard`, providing access to `LogGuard`'s methods without
-/// having to manually access the underlying `LogGuard` instance.]
+/// having to manually access the underlying `LogGuard` instance.
 #[repr(C)]
 #[allow(non_camel_case_types)]
 pub struct LogGuard_API(Box<LogGuard>);

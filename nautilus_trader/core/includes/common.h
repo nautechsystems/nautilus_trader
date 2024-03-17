@@ -260,7 +260,7 @@ typedef struct LiveClock_API {
  *
  * It implements the `Deref` trait, allowing instances of `LogGuard_API` to be
  * dereferenced to `LogGuard`, providing access to `LogGuard`'s methods without
- * having to manually access the underlying `LogGuard` instance.]
+ * having to manually access the underlying `LogGuard` instance.
  */
 typedef struct LogGuard_API {
     struct LogGuard *_0;
