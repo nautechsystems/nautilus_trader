@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import asyncio
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -28,11 +31,21 @@ from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBr
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 
 
 # fmt: on
+
+
+@pytest.fixture()
+def event_loop():
+    loop = asyncio.get_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.set_debug(True)
+    yield loop
+    ensure_all_tasks_completed()
 
 
 @pytest.fixture()
@@ -73,9 +86,9 @@ def exec_client_config():
 
 
 @pytest.fixture()
-def ib_client(data_client_config, loop, msgbus, cache, clock):
+def ib_client(data_client_config, event_loop, msgbus, cache, clock):
     client = InteractiveBrokersClient(
-        loop=loop,
+        loop=event_loop,
         msgbus=msgbus,
         cache=cache,
         clock=clock,
@@ -84,7 +97,18 @@ def ib_client(data_client_config, loop, msgbus, cache, clock):
         client_id=data_client_config.ibg_client_id,
     )
     yield client
-    client._stop()
+    if client.is_running:
+        client._stop()
+
+
+@pytest.fixture()
+def ib_client_running(ib_client):
+    ib_client._is_ib_connected.set()
+    ib_client._connect = AsyncMock()
+    ib_client._eclient = MagicMock()
+    ib_client._account_ids = {"DU123456,"}
+    ib_client.start()
+    yield ib_client
 
 
 @pytest.fixture()
@@ -96,11 +120,11 @@ def instrument_provider(ib_client):
 
 
 @pytest.fixture()
-def data_client(mocker, data_client_config, venue, loop, msgbus, cache, clock):
+def data_client(mocker, data_client_config, venue, event_loop, msgbus, cache, clock):
     mocker.patch(
         "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
         return_value=InteractiveBrokersClient(
-            loop=loop,
+            loop=event_loop,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -110,23 +134,27 @@ def data_client(mocker, data_client_config, venue, loop, msgbus, cache, clock):
         ),
     )
     client = InteractiveBrokersLiveDataClientFactory.create(
-        loop=loop,
+        loop=event_loop,
         name=venue.value,
         config=data_client_config,
         msgbus=msgbus,
         cache=cache,
         clock=clock,
     )
-    client._client.start()
+    client._client._is_ib_connected.set()
+    client._client._connect = AsyncMock()
+    client._client._eclient = MagicMock()
+    client._client._account_ids = {"DU123456,"}
+    # client._client.start()
     return client
 
 
 @pytest.fixture()
-def exec_client(mocker, exec_client_config, venue, loop, msgbus, cache, clock):
+def exec_client(mocker, exec_client_config, venue, event_loop, msgbus, cache, clock):
     mocker.patch(
         "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
         return_value=InteractiveBrokersClient(
-            loop=loop,
+            loop=event_loop,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -136,16 +164,18 @@ def exec_client(mocker, exec_client_config, venue, loop, msgbus, cache, clock):
         ),
     )
     client = InteractiveBrokersLiveExecClientFactory.create(
-        loop=loop,
+        loop=event_loop,
         name=venue.value,
         config=exec_client_config,
         msgbus=msgbus,
         cache=cache,
         clock=clock,
     )
-    client._client.start()
-    client._client.process_managed_accounts(accounts_list="DU123456,")
-    client._client.process_next_valid_id(order_id=1)
+    client._client._is_ib_connected.set()
+    client._client._connect = AsyncMock()
+    client._client._eclient = MagicMock()
+    client._client._account_ids = {"DU123456,"}
+    # client._client.start()
     return client
 
 

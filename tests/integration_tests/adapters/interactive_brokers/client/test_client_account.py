@@ -64,7 +64,8 @@ async def test_process_account_id(ib_client):
     ]
     with patch("ibapi.comm.read_msg", side_effect=[(None, msg, b"") for msg in test_messages]):
         # Act
-        ib_client._start_client_tasks_and_tws_api()
+        ib_client._start_tws_incoming_msg_reader()
+        ib_client._start_internal_msg_queue_processor()
 
         # Assert
         await eventually(lambda: "DU1234567" in ib_client.accounts())

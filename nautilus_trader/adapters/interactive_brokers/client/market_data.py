@@ -16,6 +16,7 @@
 import functools
 from collections.abc import Callable
 from decimal import Decimal
+from inspect import iscoroutinefunction
 from typing import Any
 
 import pandas as pd
@@ -35,7 +36,6 @@ from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_t
 from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
 from nautilus_trader.adapters.interactive_brokers.parsing.data import what_to_show
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
-from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -124,7 +124,10 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             )
             if not subscription:
                 return None
-            subscription.handle()
+            if iscoroutinefunction(subscription.handle):
+                await subscription.handle()
+            else:
+                subscription.handle()
             return subscription
         else:
             self._log.info(f"Subscription already exists for {subscription}")
@@ -793,9 +796,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         Mark the end of receiving historical bars.
         """
         self._end_request(req_id)
-        if req_id == 1 and not self._is_ib_ready.is_set():  # probe successful
-            self._log.info(f"`is_ib_ready` set by historicalDataEnd {req_id=}", LogColor.BLUE)
-            self._is_ib_ready.set()
 
     def process_historical_data_update(self, *, req_id: int, bar: BarData) -> None:
         """
