@@ -188,10 +188,10 @@ def test_execDetails(ib_client):
     ib_client._event_subscriptions.get = MagicMock(return_value=handler_func)
 
     # Act
-    ib_client.execDetails(
-        req_id,
-        contract,
-        execution,
+    ib_client.process_exec_details(
+        req_id=req_id,
+        contract=contract,
+        execution=execution,
     )
 
     # Assert
@@ -223,7 +223,7 @@ def test_commissionReport(ib_client):
     ib_client._event_subscriptions.get = MagicMock(return_value=handler_func)
 
     # Act
-    ib_client.commissionReport(commission_report)
+    ib_client.process_commission_report(commission_report=commission_report)
 
     # Assert
     handler_func.assert_called_with(
