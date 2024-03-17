@@ -27,7 +27,6 @@ pub mod synthetic;
 #[cfg(feature = "stubs")]
 pub mod stubs;
 
-use anyhow::Result;
 use nautilus_core::time::UnixNanos;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -99,12 +98,12 @@ pub trait Instrument: Any + 'static + Send {
     fn ts_init(&self) -> UnixNanos;
 
     /// Creates a new price from the given `value` with the correct price precision for the instrument.
-    fn make_price(&self, value: f64) -> Result<Price> {
+    fn make_price(&self, value: f64) -> anyhow::Result<Price> {
         Price::new(value, self.price_precision())
     }
 
     /// Creates a new quantity from the given `value` with the correct size precision for the instrument.
-    fn make_qty(&self, value: f64) -> Result<Quantity> {
+    fn make_qty(&self, value: f64) -> anyhow::Result<Quantity> {
         Quantity::new(value, self.size_precision())
     }
 

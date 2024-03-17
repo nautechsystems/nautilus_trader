@@ -18,7 +18,6 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use anyhow::Result;
 use derive_builder::Builder;
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
@@ -154,7 +153,7 @@ impl OrderInitialized {
         exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Ustr>,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             trader_id,
             strategy_id,

@@ -15,7 +15,6 @@
 
 use std::fmt::Display;
 
-use anyhow::Result;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -79,7 +78,7 @@ impl Indicator for ExponentialMovingAverage {
 }
 
 impl ExponentialMovingAverage {
-    pub fn new(period: usize, price_type: Option<PriceType>) -> Result<Self> {
+    pub fn new(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
         // Inputs don't require validation, however we return a `Result`
         // to standardize with other indicators which do need validation.
         Ok(Self {

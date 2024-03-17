@@ -15,7 +15,6 @@
 
 use std::fmt::{Display, Formatter};
 
-use anyhow::Result;
 use derive_builder::Builder;
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
@@ -68,7 +67,7 @@ impl OrderUpdated {
         account_id: Option<AccountId>,
         price: Option<Price>,
         trigger_price: Option<Price>,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             trader_id,
             strategy_id,

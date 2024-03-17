@@ -15,7 +15,6 @@
 
 use std::fmt::{Debug, Display, Formatter};
 
-use anyhow::Result;
 use nautilus_core::correctness::{check_string_contains, check_valid_string};
 use ustr::Ustr;
 
@@ -41,7 +40,7 @@ pub struct StrategyId {
 }
 
 impl StrategyId {
-    pub fn new(s: &str) -> Result<Self> {
+    pub fn new(s: &str) -> anyhow::Result<Self> {
         check_valid_string(s, "`StrategyId` value")?;
         if s != "EXTERNAL" {
             check_string_contains(s, "-", "`StrategyId` value")?;

@@ -15,7 +15,6 @@
 
 use std::fmt::{Debug, Display};
 
-use anyhow::Result;
 use nautilus_model::data::bar::Bar;
 
 use crate::{
@@ -89,7 +88,7 @@ impl AverageTrueRange {
         ma_type: Option<MovingAverageType>,
         use_previous: Option<bool>,
         value_floor: Option<f64>,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             period,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),

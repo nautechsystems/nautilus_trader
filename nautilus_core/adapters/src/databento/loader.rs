@@ -15,7 +15,6 @@
 
 use std::{env, fs, path::PathBuf};
 
-use anyhow::Result;
 use dbn::{
     compat::InstrumentDefMsgV1,
     decode::{dbn::Decoder, DbnMetadata, DecodeStream},
@@ -68,7 +67,7 @@ pub struct DatabentoDataLoader {
 }
 
 impl DatabentoDataLoader {
-    pub fn new(path: Option<PathBuf>) -> Result<Self> {
+    pub fn new(path: Option<PathBuf>) -> anyhow::Result<Self> {
         let mut loader = Self {
             publishers_map: IndexMap::new(),
             venue_dataset_map: IndexMap::new(),
@@ -93,7 +92,7 @@ impl DatabentoDataLoader {
     }
 
     /// Load the publishers data from the file at the given `path`.
-    pub fn load_publishers(&mut self, path: PathBuf) -> Result<()> {
+    pub fn load_publishers(&mut self, path: PathBuf) -> anyhow::Result<()> {
         let file_content = fs::read_to_string(path)?;
         let publishers: Vec<DatabentoPublisher> = serde_json::from_str(&file_content)?;
 
@@ -139,7 +138,7 @@ impl DatabentoDataLoader {
         self.publisher_venue_map.get(&publisher_id)
     }
 
-    pub fn schema_from_file(&self, path: PathBuf) -> Result<Option<String>> {
+    pub fn schema_from_file(&self, path: PathBuf) -> anyhow::Result<Option<String>> {
         let decoder = Decoder::from_zstd_file(path)?;
         let metadata = decoder.metadata();
         Ok(metadata.schema.map(|schema| schema.to_string()))
@@ -148,7 +147,7 @@ impl DatabentoDataLoader {
     pub fn read_definition_records(
         &mut self,
         path: PathBuf,
-    ) -> Result<impl Iterator<Item = Result<InstrumentType>> + '_> {
+    ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<InstrumentType>> + '_> {
         let mut decoder = Decoder::from_zstd_file(path)?;
         decoder.set_upgrade_policy(dbn::VersionUpgradePolicy::Upgrade);
         let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsgV1>();
@@ -188,7 +187,7 @@ impl DatabentoDataLoader {
         path: PathBuf,
         instrument_id: Option<InstrumentId>,
         include_trades: bool,
-    ) -> Result<impl Iterator<Item = Result<(Option<Data>, Option<Data>)>> + '_>
+    ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<(Option<Data>, Option<Data>)>> + '_>
     where
         T: dbn::Record + dbn::HasRType + 'static,
     {
@@ -233,7 +232,7 @@ impl DatabentoDataLoader {
         &self,
         path: PathBuf,
         instrument_id: Option<InstrumentId>,
-    ) -> Result<impl Iterator<Item = Result<DatabentoImbalance>> + '_>
+    ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<DatabentoImbalance>> + '_>
     where
         T: dbn::Record + dbn::HasRType + 'static,
     {
@@ -275,7 +274,7 @@ impl DatabentoDataLoader {
         &self,
         path: PathBuf,
         instrument_id: Option<InstrumentId>,
-    ) -> Result<impl Iterator<Item = Result<DatabentoStatistics>> + '_>
+    ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<DatabentoStatistics>> + '_>
     where
         T: dbn::Record + dbn::HasRType + 'static,
     {

@@ -18,7 +18,6 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use anyhow::anyhow;
 use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
 use nautilus_core::time::UnixNanos;
 
@@ -85,7 +84,7 @@ impl SyntheticInstrument {
         evalexpr::build_operator_tree(formula).is_ok()
     }
 
-    pub fn change_formula(&mut self, formula: String) -> Result<(), anyhow::Error> {
+    pub fn change_formula(&mut self, formula: String) -> anyhow::Result<()> {
         let operator_tree = evalexpr::build_operator_tree(&formula)?;
         self.formula = formula;
         self.operator_tree = operator_tree;
@@ -115,7 +114,7 @@ impl SyntheticInstrument {
     /// provided as an array of `f64` values.
     pub fn calculate(&mut self, inputs: &[f64]) -> anyhow::Result<Price> {
         if inputs.len() != self.variables.len() {
-            return Err(anyhow!("Invalid number of input values"));
+            return Err(anyhow::anyhow!("Invalid number of input values"));
         }
 
         for (variable, input) in self.variables.iter().zip(inputs) {
@@ -127,7 +126,7 @@ impl SyntheticInstrument {
 
         match result {
             Value::Float(price) => Price::new(price, self.price_precision),
-            _ => Err(anyhow!(
+            _ => Err(anyhow::anyhow!(
                 "Failed to evaluate formula to a floating point number"
             )),
         }

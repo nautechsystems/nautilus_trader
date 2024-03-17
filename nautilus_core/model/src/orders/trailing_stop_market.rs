@@ -57,7 +57,6 @@ pub struct TrailingStopMarketOrder {
 }
 
 impl TrailingStopMarketOrder {
-    #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
@@ -87,8 +86,8 @@ impl TrailingStopMarketOrder {
         tags: Option<Ustr>,
         init_id: UUID4,
         ts_init: UnixNanos,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
             core: OrderCore::new(
                 trader_id,
                 strategy_id,
@@ -121,7 +120,7 @@ impl TrailingStopMarketOrder {
             trigger_instrument_id,
             is_triggered: false,
             ts_triggered: None,
-        }
+        })
     }
 }
 
@@ -391,6 +390,6 @@ impl From<OrderInitialized> for TrailingStopMarketOrder {
             event.tags,
             event.event_id,
             event.ts_event,
-        )
+        ).unwrap() // SAFETY: From can panic
     }
 }

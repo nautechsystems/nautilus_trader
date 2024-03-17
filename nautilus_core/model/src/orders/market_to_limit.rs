@@ -52,7 +52,6 @@ pub struct MarketToLimitOrder {
 }
 
 impl MarketToLimitOrder {
-    #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
@@ -77,8 +76,8 @@ impl MarketToLimitOrder {
         tags: Option<Ustr>,
         init_id: UUID4,
         ts_init: UnixNanos,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
             core: OrderCore::new(
                 trader_id,
                 strategy_id,
@@ -106,7 +105,7 @@ impl MarketToLimitOrder {
             expire_time,
             is_post_only: post_only,
             display_qty,
-        }
+        })
     }
 }
 
@@ -370,5 +369,6 @@ impl From<OrderInitialized> for MarketToLimitOrder {
             event.event_id,
             event.ts_event,
         )
+        .unwrap() // SAFETY: From can panic
     }
 }

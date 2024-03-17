@@ -18,7 +18,6 @@ use std::{
     hash::Hash,
 };
 
-use anyhow::{anyhow, Result};
 use nautilus_core::correctness::check_valid_string;
 use ustr::Ustr;
 
@@ -39,7 +38,7 @@ pub struct Venue {
 }
 
 impl Venue {
-    pub fn new(s: &str) -> Result<Self> {
+    pub fn new(s: &str) -> anyhow::Result<Self> {
         check_valid_string(s, "`Venue` value")?;
 
         Ok(Self {
@@ -54,14 +53,14 @@ impl Venue {
         }
     }
 
-    pub fn from_code(code: &str) -> Result<Self> {
+    pub fn from_code(code: &str) -> anyhow::Result<Self> {
         let map_guard = VENUE_MAP
             .lock()
-            .map_err(|e| anyhow!("Failed to acquire lock on `VENUE_MAP`: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("Failed to acquire lock on `VENUE_MAP`: {e}"))?;
         map_guard
             .get(code)
             .copied()
-            .ok_or_else(|| anyhow!("Unknown venue code: {code}"))
+            .ok_or_else(|| anyhow::anyhow!("Unknown venue code: {code}"))
     }
 
     #[must_use]

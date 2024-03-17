@@ -178,6 +178,7 @@ impl TestOrderStubs {
             UUID4::new(),
             12_321_312_321_312,
         )
+        .unwrap()
     }
 
     #[must_use]
@@ -222,5 +223,6 @@ impl TestOrderStubs {
             UUID4::new(),
             12_321_312_321_312,
         )
+        .unwrap()
     }
 }

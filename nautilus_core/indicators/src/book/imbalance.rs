@@ -15,7 +15,6 @@
 
 use std::fmt::Display;
 
-use anyhow::Result;
 use nautilus_model::{
     orderbook::{book_mbo::OrderBookMbo, book_mbp::OrderBookMbp},
     types::quantity::Quantity,
@@ -72,7 +71,7 @@ impl Indicator for BookImbalanceRatio {
 }
 
 impl BookImbalanceRatio {
-    pub fn new() -> Result<Self> {
+    pub fn new() -> anyhow::Result<Self> {
         // Inputs don't require validation, however we return a `Result`
         // to standardize with other indicators which do need validation.
         Ok(Self {

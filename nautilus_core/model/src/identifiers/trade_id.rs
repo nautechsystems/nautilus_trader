@@ -19,7 +19,6 @@ use std::{
     hash::Hash,
 };
 
-use anyhow::{bail, Result};
 use nautilus_core::correctness::check_valid_string;
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -42,20 +41,20 @@ pub struct TradeId {
 }
 
 impl TradeId {
-    pub fn new(s: &str) -> Result<Self> {
+    pub fn new(s: &str) -> anyhow::Result<Self> {
         let cstr = CString::new(s).expect("`CString` conversion failed");
 
         Self::from_cstr(cstr)
     }
 
-    pub fn from_cstr(cstr: CString) -> Result<Self> {
+    pub fn from_cstr(cstr: CString) -> anyhow::Result<Self> {
         check_valid_string(cstr.to_str()?, "`TradeId` value")?;
 
         // TODO: Temporarily make this 65 to accommodate Betfair trade IDs
         // TODO: Extract this to single function
         let bytes = cstr.as_bytes_with_nul();
         if bytes.len() > 37 {
-            bail!("Condition failed: value exceeds maximum trade ID length of 36");
+            anyhow::bail!("Condition failed: value exceeds maximum trade ID length of 36");
         }
         let mut value = [0; 37];
         value[..bytes.len()].copy_from_slice(bytes);
