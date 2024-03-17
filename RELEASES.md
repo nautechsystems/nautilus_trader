@@ -3,9 +3,11 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `DatabaseConfig.timeout` config option for timeout seconds to wait for a new connection
 - Improved Binance execution client ping listen key error handling and logging
 - Improved Redis cache adapter and message bus error handling and logging
-- Added `DatabaseConfig.timeout` config option for timeout seconds to wait for a new connection
+- Improved Interactive Brokers client connectivity resilience and component lifecycle, thanks @benjaminsingleton
+- Refactored `InteractiveBrokersEWrapper`, thanks @rsmb7z
 - Upgraded `redis` crate to 0.25.1 which bumps up TLS dependencies
 
 ### Breaking Changes
