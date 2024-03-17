@@ -144,8 +144,8 @@ def exec_client(mocker, exec_client_config, venue, loop, msgbus, cache, clock):
         clock=clock,
     )
     client._client.start()
-    client._client.managedAccounts("DU123456,")
-    client._client.nextValidId(1)
+    client._client.process_managed_accounts(accounts_list="DU123456,")
+    client._client.process_next_valid_id(order_id=1)
     return client
 
 

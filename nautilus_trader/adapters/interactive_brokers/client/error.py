@@ -66,7 +66,14 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
         else:
             self._log.error(msg)
 
-    def _process_error(self, req_id: int, error_code: int, error_string: str) -> None:
+    def process_error(
+        self,
+        *,
+        req_id: int,
+        error_code: int,
+        error_string: str,
+        advanced_order_reject_json: str = "",
+    ) -> None:
         """
         Process an error based on its code, request ID, and message. Depending on the
         error code, this method delegates to specific error handlers or performs general
@@ -80,6 +87,8 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
             The error code.
         error_string : str
             The error message string.
+        advanced_order_reject_json : str
+            The JSON string for advanced order rejection.
 
         """
         is_warning = error_code in self.WARNING_CODES or 2100 <= error_code < 2200
@@ -197,17 +206,3 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
                 f"Unhandled order warning or error code: {error_code} (req_id {req_id}) - "
                 f"{error_string}",
             )
-
-    # -- EWrapper overrides -----------------------------------------------------------------------
-
-    def error(
-        self,
-        req_id: int,
-        error_code: int,
-        error_string: str,
-        advanced_order_reject_json: str = "",
-    ) -> None:
-        """
-        Errors sent by TWS API are received here.
-        """
-        self._process_error(req_id, error_code, error_string)

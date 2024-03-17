@@ -19,7 +19,6 @@ from typing import Any
 from ibapi.common import SetOfFloat
 from ibapi.common import SetOfString
 from ibapi.contract import ContractDetails
-from ibapi.utils import current_fn_name
 
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
@@ -140,9 +139,9 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
             self._log.info(f"Request already exist for {request}")
             return None
 
-    # -- EWrapper overrides -----------------------------------------------------------------------
-    def contractDetails(
+    def process_contract_details(
         self,
+        *,
         req_id: int,
         contract_details: ContractDetails,
     ) -> None:
@@ -151,21 +150,20 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
         contracts matching the requested via EClientSocket::reqContractDetails.
         For example, one can obtain the whole option chain with it.
         """
-        self.logAnswer(current_fn_name(), vars())
         if not (request := self._requests.get(req_id=req_id)):
             return
         request.result.append(contract_details)
 
-    def contractDetailsEnd(self, req_id: int) -> None:
+    def process_contract_details_end(self, *, req_id: int) -> None:
         """
         After all contracts matching the request were returned, this method will mark
         the end of their reception.
         """
-        self.logAnswer(current_fn_name(), vars())
         self._end_request(req_id)
 
-    def securityDefinitionOptionParameter(
+    def process_security_definition_option_parameter(
         self,
+        *,
         req_id: int,
         exchange: str,
         underlying_con_id: int,
@@ -180,27 +178,24 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
         securityDefinitionOptionParameter if multiple exchanges are specified in
         reqSecDefOptParams.
         """
-        self.logAnswer(current_fn_name(), vars())
         if request := self._requests.get(req_id=req_id):
             request.result.append((exchange, expirations))
 
-    def securityDefinitionOptionParameterEnd(self, req_id: int) -> None:
+    def process_security_definition_option_parameter_end(self, *, req_id: int) -> None:
         """
         Call when all callbacks to securityDefinitionOptionParameter are complete.
         """
-        self.logAnswer(current_fn_name(), vars())
         self._end_request(req_id)
 
-    def symbolSamples(
+    def process_symbol_samples(
         self,
+        *,
         req_id: int,
         contract_descriptions: list,
     ) -> None:
         """
         Return an array of sample contract descriptions.
         """
-        self.logAnswer(current_fn_name(), vars())
-
         if request := self._requests.get(req_id=req_id):
             for contract_description in contract_descriptions:
                 request.result.append(IBContract(**contract_description.contract.__dict__))

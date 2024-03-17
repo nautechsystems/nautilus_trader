@@ -420,14 +420,14 @@ def test_tickByTickBidAsk(ib_client):
     ib_client._handle_data = Mock()
 
     # Act
-    ib_client.tickByTickBidAsk(
-        1,
-        1704067200,
-        100.01,
-        100.02,
-        Decimal(100),
-        Decimal(200),
-        TickAttribBidAsk(),
+    ib_client.process_tick_by_tick_bid_ask(
+        req_id=1,
+        time=1704067200,
+        bid_price=100.01,
+        ask_price=100.02,
+        bid_size=Decimal(100),
+        ask_size=Decimal(200),
+        tick_attrib_bid_ask=TickAttribBidAsk(),
     )
 
     # Assert
@@ -453,15 +453,15 @@ def test_tickByTickAllLast(ib_client):
     ib_client._handle_data = Mock()
 
     # Act
-    ib_client.tickByTickAllLast(
-        1,
-        "Last",
-        1704067200,
-        100.01,
-        Decimal(100),
-        TickAttribLast(),
-        "",
-        "",
+    ib_client.process_tick_by_tick_all_last(
+        req_id=1,
+        tick_type="Last",
+        time=1704067200,
+        price=100.01,
+        size=Decimal(100),
+        tick_attrib_last=TickAttribLast(),
+        exchange="",
+        special_conditions="",
     )
 
     # Assert
@@ -488,16 +488,16 @@ def test_realtimeBar(ib_client):
     ib_client._handle_data = Mock()
 
     # Act
-    ib_client.realtimeBar(
-        1,
-        1704067200,
-        100.01,
-        101.00,
-        99.01,
-        100.50,
-        Decimal(100),
-        Decimal(-1),
-        Decimal(-1),
+    ib_client.process_realtime_bar(
+        req_id=1,
+        time=1704067200,
+        open_=100.01,
+        high=101.00,
+        low=99.01,
+        close=100.50,
+        volume=Decimal(100),
+        wap=Decimal(-1),
+        count=Decimal(-1),
     )
 
     # Assert
