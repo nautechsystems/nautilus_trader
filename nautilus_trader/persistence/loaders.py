@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from os import PathLike
+from typing import Any
 
 import pandas as pd
 
@@ -27,7 +28,9 @@ class CSVTickDataLoader:
     def load(
         file_path: PathLike[str] | str,
         index_col: str | int = "timestamp",
-        format: str = "mixed",
+        parse_dates: bool = True,
+        datetime_format: str = "mixed",
+        **kwargs: Any,
     ) -> pd.DataFrame:
         """
         Return a tick `pandas.DataFrame` loaded from the given CSV `file_path`.
@@ -36,10 +39,14 @@ class CSVTickDataLoader:
         ----------
         file_path : str, path object or file-like object
             The path to the CSV file.
-        index_col : str | int, default 'timestamp'
-            The index column.
-        format : str, default 'mixed'
+        index_col : str or int, default 'timestamp'
+            The column to use as the row labels of the DataFrame.
+        parse_dates : bool, default True
+            If True, attempt to parse the index.
+        datetime_format : str, default 'mixed'
             The timestamp column format.
+        **kwargs : Any
+            The additional parameters to be passed to pd.read_csv.
 
         Returns
         -------
@@ -49,9 +56,10 @@ class CSVTickDataLoader:
         df = pd.read_csv(
             file_path,
             index_col=index_col,
-            parse_dates=True,
+            parse_dates=parse_dates,
+            **kwargs,
         )
-        df.index = pd.to_datetime(df.index, format=format)
+        df.index = pd.to_datetime(df.index, format=datetime_format)
         return df
 
 
@@ -61,7 +69,12 @@ class CSVBarDataLoader:
     """
 
     @staticmethod
-    def load(file_path: PathLike[str] | str) -> pd.DataFrame:
+    def load(
+        file_path: PathLike[str] | str,
+        index_col: str | int = "timestamp",
+        parse_dates: bool = True,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
         """
         Return the bar `pandas.DataFrame` loaded from the given CSV `file_path`.
 
@@ -69,6 +82,12 @@ class CSVBarDataLoader:
         ----------
         file_path : str, path object or file-like object
             The path to the CSV file.
+        index_col : str | int, default 'timestamp'
+            The column to use as the row labels of the DataFrame.
+        parse_dates : bool, default True
+            If True, attempt to parse the index.
+        **kwargs : Any
+            The additional parameters to be passed to pd.read_csv.
 
         Returns
         -------
@@ -77,8 +96,9 @@ class CSVBarDataLoader:
         """
         df = pd.read_csv(
             file_path,
-            index_col="timestamp",
-            parse_dates=True,
+            index_col=index_col,
+            parse_dates=parse_dates,
+            **kwargs,
         )
         df.index = pd.to_datetime(df.index, format="mixed")
         return df
