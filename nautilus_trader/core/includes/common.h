@@ -250,6 +250,20 @@ typedef struct LiveClock_API {
     struct LiveClock *_0;
 } LiveClock_API;
 
+typedef struct LogGuard {
+
+} LogGuard;
+
+/**
+ * Wrapper for LogGuard.
+ *
+ * LogGuard is an empty struct, which is not FFI-safe. To avoid errors, it is
+ * boxed.
+ */
+typedef struct LogGuard_API {
+    struct LogGuard *_0;
+} LogGuard_API;
+
 /**
  * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`MessageBus`].
  *
@@ -534,17 +548,17 @@ enum LogColor log_color_from_cstr(const char *ptr);
  * - Assume `file_format_ptr` is either NULL or a valid C string pointer.
  * - Assume `component_level_ptr` is either NULL or a valid C string pointer.
  */
-void logging_init(TraderId_t trader_id,
-                  UUID4_t instance_id,
-                  enum LogLevel level_stdout,
-                  enum LogLevel level_file,
-                  const char *directory_ptr,
-                  const char *file_name_ptr,
-                  const char *file_format_ptr,
-                  const char *component_levels_ptr,
-                  uint8_t is_colored,
-                  uint8_t is_bypassed,
-                  uint8_t print_config);
+struct LogGuard_API logging_init(TraderId_t trader_id,
+                                 UUID4_t instance_id,
+                                 enum LogLevel level_stdout,
+                                 enum LogLevel level_file,
+                                 const char *directory_ptr,
+                                 const char *file_name_ptr,
+                                 const char *file_format_ptr,
+                                 const char *component_levels_ptr,
+                                 uint8_t is_colored,
+                                 uint8_t is_bypassed,
+                                 uint8_t print_config);
 
 /**
  * Creates a new log event.
@@ -582,9 +596,9 @@ void logging_log_header(TraderId_t trader_id,
 void logging_log_sysinfo(const char *component_ptr);
 
 /**
- * Flushes global logger buffers.
+ * Flushes global logger buffers of any records.
  */
-void logger_flush(void);
+void logger_drop(struct LogGuard_API log_guard);
 
 /**
  * # Safety
