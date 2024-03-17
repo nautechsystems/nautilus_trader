@@ -55,7 +55,7 @@ use super::{
 ///  - STATISTICS -> `DatabentoStatistics`
 ///
 /// # References
-/// <https://docs.databento.com/knowledge-base/new-users/dbn-encoding>
+/// <https://databento.com/docs/knowledge-base/new-users/dbn-encoding>
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
