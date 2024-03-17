@@ -17,6 +17,7 @@ None
 
 ### Fixes
 - Fixed JSON format for log file output (was missing `timestamp` and `trader\_id`)
+- Fixed `DatabaseConfig` port JSON parsing for Redis (was always falling back to the default 6379)
 - Fixed `ChandeMomentumOscillator` indicator divide by zero error
 
 ---

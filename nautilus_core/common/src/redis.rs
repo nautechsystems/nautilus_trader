@@ -151,7 +151,7 @@ pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
     let host = database
         .get("host")
         .map(|v| v.as_str().unwrap_or("127.0.0.1"));
-    let port = database.get("port").map(|v| v.as_str().unwrap_or("6379"));
+    let port = database.get("port").map(|v| v.as_u64().unwrap_or(6379));
     let username = database
         .get("username")
         .map(|v| v.as_str().unwrap_or_default());
