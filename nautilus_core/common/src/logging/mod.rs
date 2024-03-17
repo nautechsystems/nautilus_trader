@@ -27,7 +27,7 @@ use tracing_subscriber::EnvFilter;
 use ustr::Ustr;
 
 use self::{
-    logger::{Logger, LoggerConfig},
+    logger::{LogGuard, Logger, LoggerConfig},
     writer::FileWriterConfig,
 };
 use crate::enums::LogLevel;
@@ -116,10 +116,10 @@ pub fn init_logging(
     instance_id: UUID4,
     config: LoggerConfig,
     file_config: FileWriterConfig,
-) {
+) -> LogGuard {
     LOGGING_INITIALIZED.store(true, Ordering::Relaxed);
     LOGGING_COLORED.store(config.is_colored, Ordering::Relaxed);
-    Logger::init_with_config(trader_id, instance_id, config, file_config);
+    Logger::init_with_config(trader_id, instance_id, config, file_config)
 }
 
 pub fn map_log_level_to_filter(log_level: LogLevel) -> LevelFilter {

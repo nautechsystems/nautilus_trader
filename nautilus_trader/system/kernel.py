@@ -159,6 +159,7 @@ class NautilusKernel:
 
         # Setup logging
         logging: LoggingConfig = config.logging or LoggingConfig()
+        log_guard = None
 
         if not is_logging_initialized():
             if not logging.bypass_logging:
@@ -168,7 +169,7 @@ class NautilusKernel:
                     nautilus_pyo3.init_tracing()
 
                     # Initialize logging for sync Rust and Python
-                    nautilus_pyo3.init_logging(
+                    log_guard = nautilus_pyo3.init_logging(
                         trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
                         instance_id=nautilus_pyo3.UUID4(self._instance_id.value),
                         level_stdout=nautilus_pyo3.LogLevel(logging.log_level),
@@ -187,7 +188,7 @@ class NautilusKernel:
                     )
                 else:
                     # Initialize logging for sync Rust and Python
-                    init_logging(
+                    log_guard = init_logging(
                         trader_id=self._trader_id,
                         machine_id=self._machine_id,
                         instance_id=self._instance_id,
@@ -218,6 +219,7 @@ class NautilusKernel:
                 )
 
         self._log: Logger = Logger(name=name)
+        self._log_guard = log_guard
 
         self._log.info("Building system kernel...")
 

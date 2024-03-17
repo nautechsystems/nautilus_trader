@@ -153,6 +153,16 @@ cdef extern from "../includes/common.h":
     cdef struct LiveClock_API:
         LiveClock *_0;
 
+    cdef struct LogGuard:
+        pass
+
+    # Wrapper for LogGuard.
+    #
+    # LogGuard is an empty struct, which is not FFI-safe. To avoid errors, it is
+    # boxed.
+    cdef struct LogGuard_API:
+        LogGuard *_0;
+
     # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`MessageBus`].
     #
     # This struct wraps `MessageBus` in a way that makes it compatible with C function
@@ -370,17 +380,17 @@ cdef extern from "../includes/common.h":
     # - Assume `file_name_ptr` is either NULL or a valid C string pointer.
     # - Assume `file_format_ptr` is either NULL or a valid C string pointer.
     # - Assume `component_level_ptr` is either NULL or a valid C string pointer.
-    void logging_init(TraderId_t trader_id,
-                      UUID4_t instance_id,
-                      LogLevel level_stdout,
-                      LogLevel level_file,
-                      const char *directory_ptr,
-                      const char *file_name_ptr,
-                      const char *file_format_ptr,
-                      const char *component_levels_ptr,
-                      uint8_t is_colored,
-                      uint8_t is_bypassed,
-                      uint8_t print_config);
+    LogGuard_API logging_init(TraderId_t trader_id,
+                              UUID4_t instance_id,
+                              LogLevel level_stdout,
+                              LogLevel level_file,
+                              const char *directory_ptr,
+                              const char *file_name_ptr,
+                              const char *file_format_ptr,
+                              const char *component_levels_ptr,
+                              uint8_t is_colored,
+                              uint8_t is_bypassed,
+                              uint8_t print_config);
 
     # Creates a new log event.
     #
@@ -411,8 +421,8 @@ cdef extern from "../includes/common.h":
     # - Assumes `component_ptr` is a valid C string pointer.
     void logging_log_sysinfo(const char *component_ptr);
 
-    # Flushes global logger buffers.
-    void logger_flush();
+    # Flushes global logger buffers of any records.
+    void logger_drop(LogGuard_API log_guard);
 
     # # Safety
     #

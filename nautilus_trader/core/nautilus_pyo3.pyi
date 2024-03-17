@@ -197,6 +197,14 @@ def convert_to_snake_case(s: str) -> str:
 
 ### Logging
 
+class LogGuard:
+    """
+    Provides a `LogGuard` which serves as a token to signal the initialization
+    of the logging system. It also ensures that the global logger is flushed
+    of any buffered records when the instance is destroyed.
+
+    """
+
 def init_tracing() -> None:
     ...
 
@@ -212,7 +220,7 @@ def init_logging(
     is_colored: bool | None = None,
     is_bypassed: bool | None = None,
     print_config: bool | None = None,
-) -> None: ...
+) -> LogGuard: ...
 
 def log_header(
     trader_id: TraderId,
