@@ -104,6 +104,9 @@ cdef extern from "../includes/common.h":
     cdef struct LiveClock:
         pass
 
+    cdef struct LogGuard:
+        pass
+
     # Provides a generic message bus to facilitate various messaging patterns.
     #
     # The bus provides both a producer and consumer API for Pub/Sub, Req/Rep, as
@@ -153,13 +156,14 @@ cdef extern from "../includes/common.h":
     cdef struct LiveClock_API:
         LiveClock *_0;
 
-    cdef struct LogGuard:
-        pass
-
-    # Wrapper for LogGuard.
+    # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`LogGuard`].
     #
-    # LogGuard is an empty struct, which is not FFI-safe. To avoid errors, it is
-    # boxed.
+    # This struct wraps `LogGuard` in a way that makes it compatible with C function
+    # calls, enabling interaction with `LogGuard` in a C environment.
+    #
+    # It implements the `Deref` trait, allowing instances of `LogGuard_API` to be
+    # dereferenced to `LogGuard`, providing access to `LogGuard`'s methods without
+    # having to manually access the underlying `LogGuard` instance.]
     cdef struct LogGuard_API:
         LogGuard *_0;
 

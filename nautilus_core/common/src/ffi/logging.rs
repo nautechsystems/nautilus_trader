@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::c_char;
+use std::{
+    ffi::c_char,
+    ops::{Deref, DerefMut},
+};
 
 use nautilus_core::{
     ffi::{
@@ -34,13 +37,31 @@ use crate::{
     },
 };
 
-/// Wrapper for LogGuard.
+/// Provides a C compatible Foreign Function Interface (FFI) for an underlying [`LogGuard`].
 ///
-/// LogGuard is an empty struct, which is not FFI-safe. To avoid errors, it is
-/// boxed.
+/// This struct wraps `LogGuard` in a way that makes it compatible with C function
+/// calls, enabling interaction with `LogGuard` in a C environment.
+///
+/// It implements the `Deref` trait, allowing instances of `LogGuard_API` to be
+/// dereferenced to `LogGuard`, providing access to `LogGuard`'s methods without
+/// having to manually access the underlying `LogGuard` instance.]
 #[repr(C)]
 #[allow(non_camel_case_types)]
 pub struct LogGuard_API(Box<LogGuard>);
+
+impl Deref for LogGuard_API {
+    type Target = LogGuard;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for LogGuard_API {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 /// Initializes logging.
 ///

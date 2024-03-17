@@ -195,6 +195,8 @@ typedef enum LogLevel {
 
 typedef struct LiveClock LiveClock;
 
+typedef struct LogGuard LogGuard;
+
 /**
  * Provides a generic message bus to facilitate various messaging patterns.
  *
@@ -250,15 +252,15 @@ typedef struct LiveClock_API {
     struct LiveClock *_0;
 } LiveClock_API;
 
-typedef struct LogGuard {
-
-} LogGuard;
-
 /**
- * Wrapper for LogGuard.
+ * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`LogGuard`].
  *
- * LogGuard is an empty struct, which is not FFI-safe. To avoid errors, it is
- * boxed.
+ * This struct wraps `LogGuard` in a way that makes it compatible with C function
+ * calls, enabling interaction with `LogGuard` in a C environment.
+ *
+ * It implements the `Deref` trait, allowing instances of `LogGuard_API` to be
+ * dereferenced to `LogGuard`, providing access to `LogGuard`'s methods without
+ * having to manually access the underlying `LogGuard` instance.]
  */
 typedef struct LogGuard_API {
     struct LogGuard *_0;
