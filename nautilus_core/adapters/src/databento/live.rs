@@ -16,6 +16,7 @@
 use std::{collections::HashMap, ffi::CStr};
 
 use databento::{
+    dbn,
     dbn::{PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy},
     live::Subscription,
 };

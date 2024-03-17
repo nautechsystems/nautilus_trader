@@ -1,11 +1,11 @@
 use std::env;
 
+use databento::dbn::{MboMsg, TradeMsg};
 use databento::{
     dbn::{Dataset::GlbxMdp3, SType, Schema},
     live::Subscription,
     LiveClient,
 };
-use dbn::{MboMsg, TradeMsg};
 use time::OffsetDateTime;
 
 #[tokio::main]
