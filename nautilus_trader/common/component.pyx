@@ -1056,7 +1056,8 @@ cpdef LogGuard init_logging(
     Acts as an interface into the logging system implemented in Rust with the `log` crate.
 
     This function should only be called once per process, at the beginning of the application
-    run.
+    run. Subsequent calls will raise a `RuntimeError`, as there can only be one `LogGuard`
+    per initialized system.
 
     Parameters
     ----------
@@ -1092,6 +1093,11 @@ cpdef LogGuard init_logging(
     Returns
     -------
     LogGuard
+
+    Raises
+    ------
+    RuntimeError
+        If the logging system has already been initialized.
 
     """
     if trader_id is None:
