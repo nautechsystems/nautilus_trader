@@ -20,6 +20,7 @@ use std::{
     str::FromStr,
 };
 
+use databento::dbn;
 use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, time::UnixNanos};
 use nautilus_model::{
     data::{

@@ -15,6 +15,7 @@
 
 use std::ffi::c_char;
 
+use databento::dbn;
 use nautilus_core::time::UnixNanos;
 use nautilus_model::{
     enums::OrderSide,

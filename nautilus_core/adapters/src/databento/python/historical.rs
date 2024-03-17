@@ -15,7 +15,7 @@
 
 use std::{fs, num::NonZeroU64, sync::Arc};
 
-use databento::historical::timeseries::GetRangeParams;
+use databento::{dbn, historical::timeseries::GetRangeParams};
 use indexmap::IndexMap;
 use nautilus_core::{
     python::to_pyvalue_err,

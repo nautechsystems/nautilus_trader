@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use databento::dbn;
 use dbn::Record;
 use indexmap::IndexMap;
 use nautilus_model::identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue};
