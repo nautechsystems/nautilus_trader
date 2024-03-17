@@ -60,13 +60,16 @@ pub struct DatabentoHistoricalClient {
 #[pymethods]
 impl DatabentoHistoricalClient {
     #[new]
-    fn py_new(key: String, publishers_path: &str) -> anyhow::Result<Self> {
+    fn py_new(key: String, publishers_path: &str) -> PyResult<Self> {
         let client = databento::HistoricalClient::builder()
-            .key(key.clone())?
-            .build()?;
+            .key(key.clone())
+            .map_err(to_pyvalue_err)?
+            .build()
+            .map_err(to_pyvalue_err)?;
 
         let file_content = fs::read_to_string(publishers_path)?;
-        let publishers_vec: Vec<DatabentoPublisher> = serde_json::from_str(&file_content)?;
+        let publishers_vec: Vec<DatabentoPublisher> =
+            serde_json::from_str(&file_content).map_err(to_pyvalue_err)?;
 
         let publisher_venue_map = publishers_vec
             .into_iter()
