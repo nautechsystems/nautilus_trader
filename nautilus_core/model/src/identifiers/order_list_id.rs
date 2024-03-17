@@ -34,11 +34,11 @@ pub struct OrderListId {
 }
 
 impl OrderListId {
-    pub fn new(s: &str) -> anyhow::Result<Self> {
-        check_valid_string(s, "value")?;
+    pub fn new(value: &str) -> anyhow::Result<Self> {
+        check_valid_string(value, stringify!(value))?;
 
         Ok(Self {
-            value: Ustr::from(s),
+            value: Ustr::from(value),
         })
     }
 }
