@@ -18,7 +18,6 @@ use std::{
     hash::Hash,
 };
 
-use anyhow::Result;
 use nautilus_core::correctness::check_valid_string;
 use ustr::Ustr;
 
@@ -35,7 +34,7 @@ pub struct ClientOrderId {
 }
 
 impl ClientOrderId {
-    pub fn new(s: &str) -> Result<Self> {
+    pub fn new(s: &str) -> anyhow::Result<Self> {
         check_valid_string(s, "`ClientOrderId` value")?;
 
         Ok(Self {

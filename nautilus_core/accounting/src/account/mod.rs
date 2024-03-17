@@ -15,7 +15,6 @@
 
 use std::collections::HashMap;
 
-use anyhow::Result;
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
@@ -48,14 +47,14 @@ pub trait Account {
         quantity: Quantity,
         price: Price,
         use_quote_for_inverse: Option<bool>,
-    ) -> Result<Money>;
+    ) -> anyhow::Result<Money>;
 
     fn calculate_pnls<T: Instrument>(
         &self,
         instrument: T,
         fill: OrderFilled,
         position: Option<Position>,
-    ) -> Result<Vec<Money>>;
+    ) -> anyhow::Result<Vec<Money>>;
 
     fn calculate_commission<T: Instrument>(
         &self,
@@ -64,7 +63,7 @@ pub trait Account {
         last_px: Price,
         liquidity_side: LiquiditySide,
         use_quote_for_inverse: Option<bool>,
-    ) -> Result<Money>;
+    ) -> anyhow::Result<Money>;
 }
 
 pub mod base;

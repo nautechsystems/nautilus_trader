@@ -15,7 +15,6 @@
 
 use std::time::{Duration, UNIX_EPOCH};
 
-use anyhow::{anyhow, Result};
 use chrono::{
     prelude::{DateTime, Utc},
     Datelike, NaiveDate, SecondsFormat, TimeDelta, Weekday,
@@ -93,8 +92,9 @@ pub fn unix_nanos_to_iso8601(timestamp_ns: u64) -> String {
     dt.to_rfc3339_opts(SecondsFormat::Nanos, true)
 }
 
-pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> Result<UnixNanos> {
-    let date = NaiveDate::from_ymd_opt(year, month, day).ok_or_else(|| anyhow!("Invalid date"))?;
+pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> anyhow::Result<UnixNanos> {
+    let date =
+        NaiveDate::from_ymd_opt(year, month, day).ok_or_else(|| anyhow::anyhow!("Invalid date"))?;
     let current_weekday = date.weekday().number_from_monday();
 
     // Calculate the offset in days for closest weekday (Mon-Fri)
@@ -110,19 +110,19 @@ pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> Result<UnixNanos> 
     // Convert to UNIX nanoseconds
     let unix_timestamp_ns = last_closest
         .and_hms_nano_opt(0, 0, 0, 0)
-        .ok_or_else(|| anyhow!("Failed `and_hms_nano_opt`"))?;
+        .ok_or_else(|| anyhow::anyhow!("Failed `and_hms_nano_opt`"))?;
 
     Ok(unix_timestamp_ns
         .and_utc()
         .timestamp_nanos_opt()
-        .ok_or_else(|| anyhow!("Failed `timestamp_nanos_opt`"))? as UnixNanos)
+        .ok_or_else(|| anyhow::anyhow!("Failed `timestamp_nanos_opt`"))? as UnixNanos)
 }
 
-pub fn is_within_last_24_hours(timestamp_ns: UnixNanos) -> Result<bool> {
+pub fn is_within_last_24_hours(timestamp_ns: UnixNanos) -> anyhow::Result<bool> {
     let seconds = timestamp_ns / NANOSECONDS_IN_SECOND;
     let nanoseconds = (timestamp_ns % NANOSECONDS_IN_SECOND) as u32;
     let timestamp = DateTime::from_timestamp(seconds as i64, nanoseconds)
-        .ok_or_else(|| anyhow!("Invalid timestamp {timestamp_ns}"))?;
+        .ok_or_else(|| anyhow::anyhow!("Invalid timestamp {timestamp_ns}"))?;
     let now = Utc::now();
 
     Ok(now.signed_duration_since(timestamp) <= TimeDelta::try_days(1).unwrap())

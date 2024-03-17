@@ -20,7 +20,6 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::{anyhow, bail, Result};
 use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, time::UnixNanos};
 use nautilus_model::{
     data::{
@@ -94,29 +93,31 @@ pub fn parse_aggressor_side(c: c_char) -> AggressorSide {
     }
 }
 
-pub fn parse_book_action(c: c_char) -> Result<BookAction> {
+pub fn parse_book_action(c: c_char) -> anyhow::Result<BookAction> {
     match c as u8 as char {
         'A' => Ok(BookAction::Add),
         'C' => Ok(BookAction::Delete),
         'F' => Ok(BookAction::Update),
         'M' => Ok(BookAction::Update),
         'R' => Ok(BookAction::Clear),
-        _ => bail!("Invalid `BookAction`, was '{c}'"),
+        _ => anyhow::bail!("Invalid `BookAction`, was '{c}'"),
     }
 }
 
-pub fn parse_option_kind(c: c_char) -> Result<OptionKind> {
+pub fn parse_option_kind(c: c_char) -> anyhow::Result<OptionKind> {
     match c as u8 as char {
         'C' => Ok(OptionKind::Call),
         'P' => Ok(OptionKind::Put),
-        _ => bail!("Invalid `OptionKind`, was '{c}'"),
+        _ => anyhow::bail!("Invalid `OptionKind`, was '{c}'"),
     }
 }
 
-pub fn parse_cfi_iso10926(value: &str) -> Result<(Option<AssetClass>, Option<InstrumentClass>)> {
+pub fn parse_cfi_iso10926(
+    value: &str,
+) -> anyhow::Result<(Option<AssetClass>, Option<InstrumentClass>)> {
     let chars: Vec<char> = value.chars().collect();
     if chars.len() < 3 {
-        bail!("Value string is too short");
+        anyhow::bail!("Value string is too short");
     }
 
     let cfi_category = chars[0];
@@ -145,21 +146,21 @@ pub fn parse_cfi_iso10926(value: &str) -> Result<(Option<AssetClass>, Option<Ins
     Ok((asset_class, instrument_class))
 }
 
-pub fn decode_price(value: i64, precision: u8) -> Result<Price> {
+pub fn decode_price(value: i64, precision: u8) -> anyhow::Result<Price> {
     match value {
         0 | i64::MAX => Price::new(10f64.powi(-i32::from(precision)), precision),
         _ => Price::from_raw(value, precision),
     }
 }
 
-pub fn decode_optional_price(value: i64, precision: u8) -> Result<Option<Price>> {
+pub fn decode_optional_price(value: i64, precision: u8) -> anyhow::Result<Option<Price>> {
     match value {
         i64::MAX => Ok(None),
         _ => Ok(Some(Price::from_raw(value, precision)?)),
     }
 }
 
-pub fn decode_optional_quantity_i32(value: i32) -> Result<Option<Quantity>> {
+pub fn decode_optional_quantity_i32(value: i32) -> anyhow::Result<Option<Quantity>> {
     match value {
         i32::MAX => Ok(None),
         _ => Ok(Some(Quantity::new(f64::from(value), 0)?)),
@@ -169,18 +170,18 @@ pub fn decode_optional_quantity_i32(value: i32) -> Result<Option<Quantity>> {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
-pub unsafe fn raw_ptr_to_string(ptr: *const c_char) -> Result<String> {
+pub unsafe fn raw_ptr_to_string(ptr: *const c_char) -> anyhow::Result<String> {
     let c_str: &CStr = unsafe { CStr::from_ptr(ptr) };
-    let str_slice: &str = c_str.to_str().map_err(|e| anyhow!(e))?;
+    let str_slice: &str = c_str.to_str().map_err(|e| anyhow::anyhow!(e))?;
     Ok(str_slice.to_owned())
 }
 
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
-pub unsafe fn raw_ptr_to_ustr(ptr: *const c_char) -> Result<Ustr> {
+pub unsafe fn raw_ptr_to_ustr(ptr: *const c_char) -> anyhow::Result<Ustr> {
     let c_str: &CStr = unsafe { CStr::from_ptr(ptr) };
-    let str_slice: &str = c_str.to_str().map_err(|e| anyhow!(e))?;
+    let str_slice: &str = c_str.to_str().map_err(|e| anyhow::anyhow!(e))?;
     Ok(Ustr::from(str_slice))
 }
 
@@ -549,7 +550,7 @@ pub fn decode_bar_type(
             // ohlcv-1d
             BarType::new(instrument_id, BAR_SPEC_1D, AggregationSource::External)
         }
-        _ => bail!(
+        _ => anyhow::bail!(
             "`rtype` is not a supported bar aggregation, was {}",
             msg.hd.rtype
         ),
@@ -576,7 +577,7 @@ pub fn decode_ts_event_adjustment(msg: &dbn::OhlcvMsg) -> anyhow::Result<UnixNan
             // ohlcv-1d
             BAR_CLOSE_ADJUSTMENT_1D
         }
-        _ => bail!(
+        _ => anyhow::bail!(
             "`rtype` is not a supported bar aggregation, was {}",
             msg.hd.rtype
         ),
@@ -626,7 +627,7 @@ pub fn decode_record(
             (Some(delta), None) => (Some(Data::Delta(delta)), None),
             (None, Some(trade)) => (Some(Data::Trade(trade)), None),
             (None, None) => (None, None),
-            _ => bail!("Invalid `MboMsg` parsing combination"),
+            _ => anyhow::bail!("Invalid `MboMsg` parsing combination"),
         }
     } else if let Some(msg) = record.get::<dbn::TradeMsg>() {
         let ts_init = determine_timestamp(ts_init, msg.ts_recv);
@@ -648,7 +649,7 @@ pub fn decode_record(
         let bar = decode_ohlcv_msg(msg, instrument_id, price_precision, ts_init)?;
         (Some(Data::Bar(bar)), None)
     } else {
-        bail!("DBN message type is not currently supported")
+        anyhow::bail!("DBN message type is not currently supported")
     };
 
     Ok(result)
@@ -692,9 +693,9 @@ pub fn decode_instrument_def_msg_v1(
             instrument_id,
             ts_init,
         )?)),
-        'B' => bail!("Unsupported `instrument_class` 'B' (BOND)"),
-        'X' => bail!("Unsupported `instrument_class` 'X' (FX_SPOT)"),
-        _ => bail!(
+        'B' => anyhow::bail!("Unsupported `instrument_class` 'B' (BOND)"),
+        'X' => anyhow::bail!("Unsupported `instrument_class` 'X' (FX_SPOT)"),
+        _ => anyhow::bail!(
             "Unsupported `instrument_class` '{}'",
             msg.instrument_class as u8 as char
         ),
@@ -732,9 +733,9 @@ pub fn decode_instrument_def_msg(
             instrument_id,
             ts_init,
         )?)),
-        'B' => bail!("Unsupported `instrument_class` 'B' (BOND)"),
-        'X' => bail!("Unsupported `instrument_class` 'X' (FX_SPOT)"),
-        _ => bail!(
+        'B' => anyhow::bail!("Unsupported `instrument_class` 'B' (BOND)"),
+        'X' => anyhow::bail!("Unsupported `instrument_class` 'X' (FX_SPOT)"),
+        _ => anyhow::bail!(
             "Unsupported `instrument_class` '{}'",
             msg.instrument_class as u8 as char
         ),

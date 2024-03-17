@@ -15,7 +15,6 @@
 
 use std::fmt::{Display, Formatter};
 
-use anyhow::Result;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -91,7 +90,7 @@ impl VariableIndexDynamicAverage {
         period: usize,
         price_type: Option<PriceType>,
         cmo_ma_type: Option<MovingAverageType>,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),

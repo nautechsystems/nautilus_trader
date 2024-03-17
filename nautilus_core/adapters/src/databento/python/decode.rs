@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use anyhow::bail;
 use nautilus_core::time::UnixNanos;
 use nautilus_model::{
     data::{depth::OrderBookDepth10, trade::TradeTick},
@@ -72,7 +71,7 @@ pub fn py_decode_mbo_msg(
     if let Some(data) = data {
         Ok(data.into_py(py))
     } else {
-        bail!("Error decoding MBO message")
+        anyhow::bail!("Error decoding MBO message")
     }
 }
 

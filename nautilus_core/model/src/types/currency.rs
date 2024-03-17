@@ -18,7 +18,6 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::{anyhow, Result};
 use nautilus_core::correctness::check_valid_string;
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
@@ -47,7 +46,7 @@ impl Currency {
         iso4217: u16,
         name: &str,
         currency_type: CurrencyType,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
         check_valid_string(code, "`Currency` code")?;
         check_valid_string(name, "`Currency` name")?;
         check_fixed_precision(precision)?;
@@ -61,8 +60,10 @@ impl Currency {
         })
     }
 
-    pub fn register(currency: Self, overwrite: bool) -> Result<()> {
-        let mut map = CURRENCY_MAP.lock().map_err(|e| anyhow!(e.to_string()))?;
+    pub fn register(currency: Self, overwrite: bool) -> anyhow::Result<()> {
+        let mut map = CURRENCY_MAP
+            .lock()
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
         if !overwrite && map.contains_key(currency.code.as_str()) {
             // If overwrite is false and the currency already exists, simply return
@@ -74,17 +75,17 @@ impl Currency {
         Ok(())
     }
 
-    pub fn is_fiat(code: &str) -> Result<bool> {
+    pub fn is_fiat(code: &str) -> anyhow::Result<bool> {
         let currency = Self::from_str(code)?;
         Ok(currency.currency_type == CurrencyType::Fiat)
     }
 
-    pub fn is_crypto(code: &str) -> Result<bool> {
+    pub fn is_crypto(code: &str) -> anyhow::Result<bool> {
         let currency = Self::from_str(code)?;
         Ok(currency.currency_type == CurrencyType::Crypto)
     }
 
-    pub fn is_commodity_backed(code: &str) -> Result<bool> {
+    pub fn is_commodity_backed(code: &str) -> anyhow::Result<bool> {
         let currency = Self::from_str(code)?;
         Ok(currency.currency_type == CurrencyType::CommodityBacked)
     }
@@ -105,14 +106,14 @@ impl Hash for Currency {
 impl FromStr for Currency {
     type Err = anyhow::Error;
 
-    fn from_str(s: &str) -> Result<Self> {
+    fn from_str(s: &str) -> anyhow::Result<Self> {
         let map_guard = CURRENCY_MAP
             .lock()
-            .map_err(|e| anyhow!("Failed to acquire lock on `CURRENCY_MAP`: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("Failed to acquire lock on `CURRENCY_MAP`: {e}"))?;
         map_guard
             .get(s)
             .copied()
-            .ok_or_else(|| anyhow!("Unknown currency: {s}"))
+            .ok_or_else(|| anyhow::anyhow!("Unknown currency: {s}"))
     }
 }
 

@@ -15,7 +15,6 @@
 
 use std::{path::Path, str::FromStr};
 
-use anyhow::Result;
 use sqlx::{
     any::{install_default_drivers, AnyConnectOptions},
     sqlite::SqliteConnectOptions,
@@ -108,7 +107,7 @@ impl Database {
     }
 }
 
-pub async fn init_db_schema(db: &Database, schema_dir: &str) -> Result<()> {
+pub async fn init_db_schema(db: &Database, schema_dir: &str) -> anyhow::Result<()> {
     // scan all the files in the current directory
     let mut sql_files =
         std::fs::read_dir(schema_dir)?.collect::<Result<Vec<_>, std::io::Error>>()?;

@@ -60,6 +60,7 @@ impl Default for LimitOrder {
             UUID4::default(),
             0,
         )
+        .unwrap() // SAFETY: Valid default values are used
     }
 }
 
@@ -95,6 +96,7 @@ impl Default for LimitIfTouchedOrder {
             UUID4::default(),
             0,
         )
+        .unwrap() // SAFETY: Valid default values are used
     }
 }
 
@@ -122,7 +124,7 @@ impl Default for MarketOrder {
             None,
             None,
         )
-        .unwrap()
+        .unwrap() // SAFETY: Valid default values are used
     }
 }
 
@@ -156,6 +158,7 @@ impl Default for MarketIfTouchedOrder {
             UUID4::default(),
             0,
         )
+        .unwrap() // SAFETY: Valid default values are used
     }
 }
 
@@ -186,6 +189,7 @@ impl Default for MarketToLimitOrder {
             UUID4::default(),
             0,
         )
+        .unwrap() // SAFETY: Valid default values are used
     }
 }
 
@@ -221,6 +225,7 @@ impl Default for StopLimitOrder {
             UUID4::default(),
             0,
         )
+        .unwrap() // SAFETY: Valid default values are used
     }
 }
 
@@ -254,6 +259,7 @@ impl Default for StopMarketOrder {
             UUID4::default(),
             0,
         )
+        .unwrap() // SAFETY: Valid default values are used
     }
 }
 
@@ -292,6 +298,7 @@ impl Default for TrailingStopLimitOrder {
             UUID4::default(),
             0,
         )
+        .unwrap() // SAFETY: Valid default values are used
     }
 }
 
@@ -327,5 +334,6 @@ impl Default for TrailingStopMarketOrder {
             UUID4::default(),
             0,
         )
+        .unwrap() // SAFETY: Valid default values are used
     }
 }

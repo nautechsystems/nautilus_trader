@@ -15,7 +15,6 @@
 
 use std::{collections::HashMap, sync::mpsc::Receiver};
 
-use anyhow::Result;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 
@@ -61,13 +60,13 @@ pub trait CacheDatabase {
         trader_id: TraderId,
         instance_id: UUID4,
         config: HashMap<String, serde_json::Value>,
-    ) -> Result<Self::DatabaseType>;
-    fn flushdb(&mut self) -> Result<()>;
-    fn keys(&mut self, pattern: &str) -> Result<Vec<String>>;
-    fn read(&mut self, key: &str) -> Result<Vec<Vec<u8>>>;
-    fn insert(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> Result<()>;
-    fn update(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> Result<()>;
-    fn delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> Result<()>;
+    ) -> anyhow::Result<Self::DatabaseType>;
+    fn flushdb(&mut self) -> anyhow::Result<()>;
+    fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>>;
+    fn read(&mut self, key: &str) -> anyhow::Result<Vec<Vec<u8>>>;
+    fn insert(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()>;
+    fn update(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()>;
+    fn delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()>;
     fn handle_messages(
         rx: Receiver<DatabaseCommand>,
         trader_key: String,
