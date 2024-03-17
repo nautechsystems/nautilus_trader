@@ -40,12 +40,12 @@ pub struct TraderId {
 }
 
 impl TraderId {
-    pub fn new(s: &str) -> anyhow::Result<Self> {
-        check_valid_string(s, "value")?;
-        check_string_contains(s, "-", "value")?;
+    pub fn new(value: &str) -> anyhow::Result<Self> {
+        check_valid_string(value, stringify!(value))?;
+        check_string_contains(value, "-", stringify!(value))?;
 
         Ok(Self {
-            value: Ustr::from(s),
+            value: Ustr::from(value),
         })
     }
 

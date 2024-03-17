@@ -15,7 +15,7 @@
 
 const FAILED: &str = "Condition failed:";
 
-/// Validates the content of a string `s`.
+/// Validates the string `s` contains only ASCII characters and has symantic meaning.
 ///
 /// # Panics
 ///
@@ -34,7 +34,7 @@ pub fn check_valid_string(s: &str, param: &str) -> anyhow::Result<()> {
     }
 }
 
-/// Validates that the string `s` contains the pattern `pat`.
+/// Validates the string `s` contains the pattern `pat`.
 pub fn check_string_contains(s: &str, pat: &str, param: &str) -> anyhow::Result<()> {
     if !s.contains(pat) {
         anyhow::bail!("{FAILED} invalid string for '{param}' did not contain '{pat}', was '{s}'")
@@ -42,7 +42,7 @@ pub fn check_string_contains(s: &str, pat: &str, param: &str) -> anyhow::Result<
     Ok(())
 }
 
-/// Validates that `u8` values are equal.
+/// Validates the `u8` values are equal.
 pub fn check_equal_u8(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) -> anyhow::Result<()> {
     if lhs != rhs {
         anyhow::bail!(
@@ -52,7 +52,7 @@ pub fn check_equal_u8(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) -> any
     Ok(())
 }
 
-/// Validates that the `u64` value is positive (> 0).
+/// Validates the `u64` value is positive (> 0).
 pub fn check_positive_u64(value: u64, param: &str) -> anyhow::Result<()> {
     if value == 0 {
         anyhow::bail!("{FAILED} invalid u64 for '{param}' not positive, was {value}")
@@ -60,7 +60,7 @@ pub fn check_positive_u64(value: u64, param: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Validates that the `i64` value is positive (> 0).
+/// Validates the `i64` value is positive (> 0).
 pub fn check_positive_i64(value: i64, param: &str) -> anyhow::Result<()> {
     if value <= 0 {
         anyhow::bail!("{FAILED} invalid i64 for '{param}' not positive, was {value}")
@@ -68,7 +68,7 @@ pub fn check_positive_i64(value: i64, param: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Validates that the `f64` value is non-negative.
+/// Validates the `f64` value is non-negative (< 0).
 pub fn check_non_negative_f64(value: f64, param: &str) -> anyhow::Result<()> {
     if value.is_nan() || value.is_infinite() {
         anyhow::bail!("{FAILED} invalid f64 for '{param}', was {value}")
@@ -79,7 +79,7 @@ pub fn check_non_negative_f64(value: f64, param: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Validates that the `u8` value is in the inclusive range [`l`, `r`].
+/// Validates the `u8` value is in range [`l`, `r`] (inclusive).
 pub fn check_in_range_inclusive_u8(value: u8, l: u8, r: u8, param: &str) -> anyhow::Result<()> {
     if value < l || value > r {
         anyhow::bail!("{FAILED} invalid u8 for '{param}' not in range [{l}, {r}], was {value}")
@@ -87,7 +87,7 @@ pub fn check_in_range_inclusive_u8(value: u8, l: u8, r: u8, param: &str) -> anyh
     Ok(())
 }
 
-/// Validates that the `u64` value is in the inclusive range [`l`, `r`].
+/// Validates the `u64` value is range [`l`, `r`] (inclusive).
 pub fn check_in_range_inclusive_u64(value: u64, l: u64, r: u64, param: &str) -> anyhow::Result<()> {
     if value < l || value > r {
         anyhow::bail!("{FAILED} invalid u64 for '{param}' not in range [{l}, {r}], was {value}")
@@ -95,7 +95,7 @@ pub fn check_in_range_inclusive_u64(value: u64, l: u64, r: u64, param: &str) -> 
     Ok(())
 }
 
-/// Validates that the `i64` value is in the inclusive range [`l`, `r`].
+/// Validates the `i64` value is in range [`l`, `r`] (inclusive).
 pub fn check_in_range_inclusive_i64(value: i64, l: i64, r: i64, param: &str) -> anyhow::Result<()> {
     if value < l || value > r {
         anyhow::bail!("{FAILED} invalid i64 for '{param}' not in range [{l}, {r}], was {value}")
@@ -103,13 +103,26 @@ pub fn check_in_range_inclusive_i64(value: i64, l: i64, r: i64, param: &str) -> 
     Ok(())
 }
 
-/// Validates that the `f64` value is in the inclusive range [`l`, `r`].
+/// Validates the `f64` value is in range [`l`, `r`] (inclusive).
 pub fn check_in_range_inclusive_f64(value: f64, l: f64, r: f64, param: &str) -> anyhow::Result<()> {
     if value.is_nan() || value.is_infinite() {
         anyhow::bail!("{FAILED} invalid f64 for '{param}', was {value}")
     }
     if value < l || value > r {
         anyhow::bail!("{FAILED} invalid f64 for '{param}' not in range [{l}, {r}], was {value}")
+    }
+    Ok(())
+}
+
+/// Validates the `usize` value is in range [`l`, `r`] (inclusive).
+pub fn check_in_range_inclusive_usize(
+    value: usize,
+    l: usize,
+    r: usize,
+    param: &str,
+) -> anyhow::Result<()> {
+    if value < l || value > r {
+        anyhow::bail!("{FAILED} invalid usize for '{param}' not in range [{l}, {r}], was {value}")
     }
     Ok(())
 }
