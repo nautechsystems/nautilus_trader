@@ -163,7 +163,7 @@ cdef extern from "../includes/common.h":
     #
     # It implements the `Deref` trait, allowing instances of `LogGuard_API` to be
     # dereferenced to `LogGuard`, providing access to `LogGuard`'s methods without
-    # having to manually access the underlying `LogGuard` instance.]
+    # having to manually access the underlying `LogGuard` instance.
     cdef struct LogGuard_API:
         LogGuard *_0;
 
