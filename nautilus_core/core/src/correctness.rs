@@ -193,8 +193,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0, 0, "left param", "right param")]
-    #[case(1, 1, "left param", "right param")]
+    #[case(0, 0, "left", "right")]
+    #[case(1, 1, "left", "right")]
     fn test_check_equal_u8_when_equal(
         #[case] lhs: u8,
         #[case] rhs: u8,
@@ -205,8 +205,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0, 1, "left param", "right param")]
-    #[case(1, 0, "left param", "right param")]
+    #[case(0, 1, "left", "right")]
+    #[case(1, 0, "left", "right")]
     fn test_check_equal_u8_when_not_equal(
         #[case] lhs: u8,
         #[case] rhs: u8,
@@ -261,7 +261,7 @@ mod tests {
     #[case(0, 0, 0, "value")]
     #[case(0, 0, 1, "value")]
     #[case(1, 0, 1, "value")]
-    fn test_check_in_range_u8_inclusive_when_in_range(
+    fn test_check_in_range_inclusive_u8_when_in_range(
         #[case] value: u8,
         #[case] l: u8,
         #[case] r: u8,
@@ -273,7 +273,7 @@ mod tests {
     #[rstest]
     #[case(0, 1, 2, "value")]
     #[case(3, 1, 2, "value")]
-    fn test_check_in_range_u8_inclusive_when_out_of_range(
+    fn test_check_in_range_inclusive_u8_when_out_of_range(
         #[case] value: u8,
         #[case] l: u8,
         #[case] r: u8,
@@ -286,7 +286,7 @@ mod tests {
     #[case(0, 0, 0, "value")]
     #[case(0, 0, 1, "value")]
     #[case(1, 0, 1, "value")]
-    fn test_check_in_range_u64_inclusive_when_in_range(
+    fn test_check_in_range_inclusive_u64_when_in_range(
         #[case] value: u64,
         #[case] l: u64,
         #[case] r: u64,
@@ -298,7 +298,7 @@ mod tests {
     #[rstest]
     #[case(0, 1, 2, "value")]
     #[case(3, 1, 2, "value")]
-    fn test_check_in_range_u64_inclusive_when_out_of_range(
+    fn test_check_in_range_inclusive_u64_when_out_of_range(
         #[case] value: u64,
         #[case] l: u64,
         #[case] r: u64,
@@ -311,7 +311,7 @@ mod tests {
     #[case(0, 0, 0, "value")]
     #[case(0, 0, 1, "value")]
     #[case(1, 0, 1, "value")]
-    fn test_check_in_range_i64_inclusive_when_in_range(
+    fn test_check_in_range_inclusive_i64_when_in_range(
         #[case] value: i64,
         #[case] l: i64,
         #[case] r: i64,
@@ -323,12 +323,37 @@ mod tests {
     #[rstest]
     #[case(0, 1, 2, "value")]
     #[case(3, 1, 2, "value")]
-    fn test_check_in_range_i64_inclusive_when_out_of_range(
+    fn test_check_in_range_inclusive_i64_when_out_of_range(
         #[case] value: i64,
         #[case] l: i64,
         #[case] r: i64,
         #[case] param: &str,
     ) {
         assert!(check_in_range_inclusive_i64(value, l, r, param).is_err());
+    }
+
+    #[rstest]
+    #[case(0, 0, 0, "value")]
+    #[case(0, 0, 1, "value")]
+    #[case(1, 0, 1, "value")]
+    fn test_check_in_range_inclusive_usize_when_in_range(
+        #[case] value: usize,
+        #[case] l: usize,
+        #[case] r: usize,
+        #[case] param: &str,
+    ) {
+        assert!(check_in_range_inclusive_usize(value, l, r, param).is_ok());
+    }
+
+    #[rstest]
+    #[case(0, 1, 2, "value")]
+    #[case(3, 1, 2, "value")]
+    fn test_check_in_range_inclusive_usize_when_out_of_range(
+        #[case] value: usize,
+        #[case] l: usize,
+        #[case] r: usize,
+        #[case] param: &str,
+    ) {
+        assert!(check_in_range_inclusive_usize(value, l, r, param).is_err());
     }
 }
