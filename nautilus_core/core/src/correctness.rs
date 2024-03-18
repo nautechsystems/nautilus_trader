@@ -156,7 +156,7 @@ mod tests {
     #[case("a a")]
     #[case(" a ")]
     #[case("abc")]
-    fn test_valid_string_with_valid_value(#[case] s: &str) {
+    fn test_check_valid_string_with_valid_value(#[case] s: &str) {
         assert!(check_valid_string(s, "value").is_ok());
     }
 
@@ -165,50 +165,37 @@ mod tests {
     #[case(" ")] // <-- whitespace-only
     #[case("  ")] // <-- whitespace-only string
     #[case("🦀")] // <-- contains non-ASCII char
-    fn test_valid_string_with_invalid_values(#[case] s: &str) {
+    fn test_check_valid_string_with_invalid_values(#[case] s: &str) {
         assert!(check_valid_string(s, "value").is_err());
     }
 
     #[rstest]
+    #[case(None)]
+    #[case(Some(" a"))]
+    #[case(Some("a "))]
+    #[case(Some("a a"))]
+    #[case(Some(" a "))]
+    #[case(Some("abc"))]
+    fn test_check_valid_string_optional_with_valid_value(#[case] s: Option<&str>) {
+        assert!(check_valid_string_optional(s, "value").is_ok());
+    }
+
+    #[rstest]
     #[case("a", "a")]
-    fn test_string_contains_when_it_does_contain(#[case] s: &str, #[case] pat: &str) {
+    fn test_check_string_contains_when_does_contain(#[case] s: &str, #[case] pat: &str) {
         assert!(check_string_contains(s, pat, "value").is_ok());
     }
 
     #[rstest]
     #[case("a", "b")]
-    fn test_string_contains_with_invalid_values(#[case] s: &str, #[case] pat: &str) {
+    fn test_check_string_contains_when_does_not_contain(#[case] s: &str, #[case] pat: &str) {
         assert!(check_string_contains(s, pat, "value").is_err());
     }
 
     #[rstest]
-    #[case(0, 0, 0, "value")]
-    #[case(0, 0, 1, "value")]
-    #[case(1, 0, 1, "value")]
-    fn test_u8_in_range_inclusive_when_valid_values(
-        #[case] value: u8,
-        #[case] l: u8,
-        #[case] r: u8,
-        #[case] desc: &str,
-    ) {
-        assert!(check_in_range_inclusive_u8(value, l, r, desc).is_ok());
-    }
-
-    #[rstest]
-    #[case(0, 1, "left param", "right param")]
-    #[case(1, 0, "left param", "right param")]
-    fn test_u8_equal_when_invalid_values(
-        #[case] lhs: u8,
-        #[case] rhs: u8,
-        #[case] lhs_param: &str,
-        #[case] rhs_param: &str,
-    ) {
-        assert!(check_equal_u8(lhs, rhs, lhs_param, rhs_param).is_err());
-    }
-
-    #[rstest]
     #[case(0, 0, "left param", "right param")]
-    fn test_u8_equal_when_valid_values(
+    #[case(1, 1, "left param", "right param")]
+    fn test_check_equal_u8_when_equal(
         #[case] lhs: u8,
         #[case] rhs: u8,
         #[case] lhs_param: &str,
@@ -218,72 +205,47 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0, 1, 2, "value")]
-    #[case(3, 1, 2, "value")]
-    fn test_u8_in_range_inclusive_when_invalid_values(
-        #[case] value: u8,
-        #[case] l: u8,
-        #[case] r: u8,
-        #[case] desc: &str,
+    #[case(0, 1, "left param", "right param")]
+    #[case(1, 0, "left param", "right param")]
+    fn test_check_equal_u8_when_not_equal(
+        #[case] lhs: u8,
+        #[case] rhs: u8,
+        #[case] lhs_param: &str,
+        #[case] rhs_param: &str,
     ) {
-        assert!(check_in_range_inclusive_u8(value, l, r, desc).is_err());
+        assert!(check_equal_u8(lhs, rhs, lhs_param, rhs_param).is_err());
     }
 
     #[rstest]
-    #[case(0, 0, 0, "value")]
-    #[case(0, 0, 1, "value")]
-    #[case(1, 0, 1, "value")]
-    fn test_u64_in_range_inclusive_when_valid_values(
-        #[case] value: u64,
-        #[case] l: u64,
-        #[case] r: u64,
-        #[case] desc: &str,
-    ) {
-        assert!(check_in_range_inclusive_u64(value, l, r, desc).is_ok());
+    #[case(1, "value")]
+    fn test_check_positive_u64_when_positive(#[case] value: u64, #[case] param: &str) {
+        assert!(check_positive_u64(value, param).is_ok());
     }
 
     #[rstest]
-    #[case(0, 1, 2, "value")]
-    #[case(3, 1, 2, "value")]
-    fn test_u64_in_range_inclusive_when_invalid_values(
-        #[case] value: u64,
-        #[case] l: u64,
-        #[case] r: u64,
-        #[case] desc: &str,
-    ) {
-        assert!(check_in_range_inclusive_u64(value, l, r, desc).is_err());
+    #[case(0, "value")]
+    fn test_check_positive_u64_when_not_positive(#[case] value: u64, #[case] param: &str) {
+        assert!(check_positive_u64(value, param).is_err());
     }
 
     #[rstest]
-    #[case(0, 0, 0, "value")]
-    #[case(0, 0, 1, "value")]
-    #[case(1, 0, 1, "value")]
-    fn test_i64_in_range_inclusive_when_valid_values(
-        #[case] value: i64,
-        #[case] l: i64,
-        #[case] r: i64,
-        #[case] desc: &str,
-    ) {
-        assert!(check_in_range_inclusive_i64(value, l, r, desc).is_ok());
+    #[case(1, "value")]
+    fn test_check_positive_i64_when_positive(#[case] value: i64, #[case] param: &str) {
+        assert!(check_positive_i64(value, param).is_ok());
     }
 
     #[rstest]
-    #[case(0, 1, 2, "value")]
-    #[case(3, 1, 2, "value")]
-    fn test_i64_in_range_inclusive_when_invalid_values(
-        #[case] value: i64,
-        #[case] l: i64,
-        #[case] r: i64,
-        #[case] desc: &str,
-    ) {
-        assert!(check_in_range_inclusive_i64(value, l, r, desc).is_err());
+    #[case(0, "value")]
+    #[case(-1, "value")]
+    fn test_check_positive_i64_when_not_positive(#[case] value: i64, #[case] param: &str) {
+        assert!(check_positive_i64(value, param).is_err());
     }
 
     #[rstest]
     #[case(0.0, "value")]
     #[case(1.0, "value")]
-    fn test_f64_non_negative_when_valid_values(#[case] value: f64, #[case] desc: &str) {
-        assert!(check_non_negative_f64(value, desc).is_ok());
+    fn test_check_non_negative_f64_when_not_negative(#[case] value: f64, #[case] param: &str) {
+        assert!(check_non_negative_f64(value, param).is_ok());
     }
 
     #[rstest]
@@ -291,7 +253,82 @@ mod tests {
     #[case(f64::INFINITY, "value")]
     #[case(f64::NEG_INFINITY, "value")]
     #[case(-0.1, "value")]
-    fn test_f64_non_negative_when_invalid_values(#[case] value: f64, #[case] desc: &str) {
-        assert!(check_non_negative_f64(value, desc).is_err());
+    fn test_check_non_negative_f64_when_negative(#[case] value: f64, #[case] param: &str) {
+        assert!(check_non_negative_f64(value, param).is_err());
+    }
+
+    #[rstest]
+    #[case(0, 0, 0, "value")]
+    #[case(0, 0, 1, "value")]
+    #[case(1, 0, 1, "value")]
+    fn test_check_in_range_u8_inclusive_when_in_range(
+        #[case] value: u8,
+        #[case] l: u8,
+        #[case] r: u8,
+        #[case] desc: &str,
+    ) {
+        assert!(check_in_range_inclusive_u8(value, l, r, desc).is_ok());
+    }
+
+    #[rstest]
+    #[case(0, 1, 2, "value")]
+    #[case(3, 1, 2, "value")]
+    fn test_check_in_range_u8_inclusive_when_out_of_range(
+        #[case] value: u8,
+        #[case] l: u8,
+        #[case] r: u8,
+        #[case] param: &str,
+    ) {
+        assert!(check_in_range_inclusive_u8(value, l, r, param).is_err());
+    }
+
+    #[rstest]
+    #[case(0, 0, 0, "value")]
+    #[case(0, 0, 1, "value")]
+    #[case(1, 0, 1, "value")]
+    fn test_check_in_range_u64_inclusive_when_in_range(
+        #[case] value: u64,
+        #[case] l: u64,
+        #[case] r: u64,
+        #[case] param: &str,
+    ) {
+        assert!(check_in_range_inclusive_u64(value, l, r, param).is_ok());
+    }
+
+    #[rstest]
+    #[case(0, 1, 2, "value")]
+    #[case(3, 1, 2, "value")]
+    fn test_check_in_range_u64_inclusive_when_out_of_range(
+        #[case] value: u64,
+        #[case] l: u64,
+        #[case] r: u64,
+        #[case] param: &str,
+    ) {
+        assert!(check_in_range_inclusive_u64(value, l, r, param).is_err());
+    }
+
+    #[rstest]
+    #[case(0, 0, 0, "value")]
+    #[case(0, 0, 1, "value")]
+    #[case(1, 0, 1, "value")]
+    fn test_check_in_range_i64_inclusive_when_in_range(
+        #[case] value: i64,
+        #[case] l: i64,
+        #[case] r: i64,
+        #[case] param: &str,
+    ) {
+        assert!(check_in_range_inclusive_i64(value, l, r, param).is_ok());
+    }
+
+    #[rstest]
+    #[case(0, 1, 2, "value")]
+    #[case(3, 1, 2, "value")]
+    fn test_check_in_range_i64_inclusive_when_out_of_range(
+        #[case] value: i64,
+        #[case] l: i64,
+        #[case] r: i64,
+        #[case] param: &str,
+    ) {
+        assert!(check_in_range_inclusive_i64(value, l, r, param).is_err());
     }
 }
