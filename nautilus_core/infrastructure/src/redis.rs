@@ -22,13 +22,12 @@ use std::{
 
 use nautilus_common::{
     cache::{CacheDatabase, DatabaseCommand, DatabaseOperation},
-    redis::{get_buffer_interval, get_redis_url, get_timeout_duration},
+    redis::{create_redis_connection, get_buffer_interval},
 };
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use redis::{Commands, Connection, Pipeline};
-use serde_json::json;
-use tracing::debug;
+use serde_json::{json, Value};
 
 // Error constants
 const CHANNEL_TX_FAILED: &str = "Failed to send to channel";
@@ -83,14 +82,9 @@ impl CacheDatabase for RedisCacheDatabase {
         instance_id: UUID4,
         config: HashMap<String, serde_json::Value>,
     ) -> anyhow::Result<RedisCacheDatabase> {
-        debug!("Initializing trader_id={trader_id}, instance_id={instance_id}, config={config:?}");
-        let redis_url = get_redis_url(&config);
-        debug!("redis_url {redis_url}");
-        let default_timeout = 20;
-        let timeout = get_timeout_duration(&config, default_timeout);
-        let client = redis::Client::open(redis_url)?;
-        let conn = client.get_connection_with_timeout(timeout)?;
-        debug!("Connected");
+        let empty = Value::Object(serde_json::Map::new());
+        let database_config = config.get("database").unwrap_or(&empty);
+        let conn = create_redis_connection(&database_config.clone())?;
 
         let (tx, rx) = channel::<DatabaseCommand>();
         let trader_key = get_trader_key(trader_id, instance_id, &config);
@@ -173,9 +167,9 @@ impl CacheDatabase for RedisCacheDatabase {
         trader_key: String,
         config: HashMap<String, serde_json::Value>,
     ) {
-        let redis_url = get_redis_url(&config);
-        let client = redis::Client::open(redis_url).unwrap();
-        let mut conn = client.get_connection().unwrap();
+        let empty = Value::Object(serde_json::Map::new());
+        let database_config = config.get("database").unwrap_or(&empty);
+        let mut conn = create_redis_connection(&database_config.clone()).unwrap();
 
         // Buffering
         let mut buffer: VecDeque<DatabaseCommand> = VecDeque::new();
