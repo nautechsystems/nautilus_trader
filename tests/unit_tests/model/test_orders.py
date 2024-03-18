@@ -464,6 +464,7 @@ class TestOrders:
             display_qty=Quantity.from_int(20_000),
             exec_algorithm_id=ExecAlgorithmId("VWAP"),
             exec_algorithm_params={"period": 60},
+            uuid="7f77c048-5138-4817-a7bc-f0b01656bbd7",
         )
 
         # Act
@@ -489,7 +490,8 @@ class TestOrders:
             "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": None,
             "slippage": None,
-            "commissions": None,
+            "commissions": {},
+            "init_id": "7f77c048-5138-4817-a7bc-f0b01656bbd7",
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,

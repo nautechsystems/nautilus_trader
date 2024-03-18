@@ -77,6 +77,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id=*,
         dict exec_algorithm_params=*,
         str tags=*,
+        str uuid=*,
     )
 
     cpdef LimitOrder limit(
@@ -96,6 +97,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id=*,
         dict exec_algorithm_params=*,
         str tags=*,
+        str uuid= *,
     )
 
     cpdef StopMarketOrder stop_market(
@@ -114,6 +116,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id=*,
         dict exec_algorithm_params=*,
         str tags=*,
+        str uuid= *,
     )
 
     cpdef StopLimitOrder stop_limit(
@@ -135,6 +138,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id=*,
         dict exec_algorithm_params=*,
         str tags=*,
+        str uuid= *,
     )
 
     cpdef MarketToLimitOrder market_to_limit(
@@ -150,6 +154,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id=*,
         dict exec_algorithm_params=*,
         str tags=*,
+        str uuid= *,
     )
 
     cpdef MarketIfTouchedOrder market_if_touched(
@@ -168,6 +173,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id=*,
         dict exec_algorithm_params=*,
         str tags=*,
+        str uuid= *,
     )
 
     cpdef LimitIfTouchedOrder limit_if_touched(
@@ -189,6 +195,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id=*,
         dict exec_algorithm_params=*,
         str tags=*,
+        str uuid= *,
     )
 
     cpdef TrailingStopMarketOrder trailing_stop_market(
@@ -209,6 +216,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id=*,
         dict exec_algorithm_params=*,
         str tags=*,
+        str uuid= *,
     )
 
     cpdef TrailingStopLimitOrder trailing_stop_limit(
@@ -233,6 +241,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id=*,
         dict exec_algorithm_params=*,
         str tags=*,
+        str uuid= *,
     )
 
     cpdef OrderList bracket(

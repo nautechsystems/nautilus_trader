@@ -221,6 +221,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         str tags = None,
+        str uuid = None,
     ):
         """
         Create a new ``MARKET`` order.
@@ -246,6 +247,9 @@ cdef class OrderFactory:
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
+        uuid : str, optional
+            Fixed static UUID for the order.
+
 
         Returns
         -------
@@ -270,7 +274,7 @@ cdef class OrderFactory:
             time_in_force=time_in_force,
             reduce_only=reduce_only,
             quote_quantity=quote_quantity,
-            init_id=UUID4(),
+            init_id=UUID4() if uuid is None else UUID4(uuid),
             ts_init=self._clock.timestamp_ns(),
             contingency_type=ContingencyType.NO_CONTINGENCY,
             order_list_id=None,
@@ -299,6 +303,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         str tags = None,
+        str uuid = None
     ):
         """
         Create a new ``LIMIT`` order.
@@ -336,6 +341,8 @@ cdef class OrderFactory:
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
+        uuid : str, optional
+            Fixed static UUID for the order.
 
         Returns
         -------
@@ -360,7 +367,7 @@ cdef class OrderFactory:
             order_side=order_side,
             quantity=quantity,
             price=price,
-            init_id=UUID4(),
+            init_id=UUID4() if uuid is None else UUID4(uuid),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
@@ -396,6 +403,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         str tags = None,
+        str uuid = None
     ):
         """
         Create a new ``STOP_MARKET`` conditional order.
@@ -431,6 +439,8 @@ cdef class OrderFactory:
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
+        uuid : str, optional
+            Fixed static UUID for the order.
 
         Returns
         -------
@@ -458,7 +468,7 @@ cdef class OrderFactory:
             quantity=quantity,
             trigger_price=trigger_price,
             trigger_type=trigger_type,
-            init_id=UUID4(),
+            init_id=UUID4() if uuid is None else UUID4(uuid),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
@@ -495,6 +505,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         str tags = None,
+        str uuid = None,
     ):
         """
         Create a new ``STOP_LIMIT`` conditional order.
@@ -536,6 +547,8 @@ cdef class OrderFactory:
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
+        uuid : str, optional
+            Fixed static UUID for the order.
 
         Returns
         -------
@@ -566,7 +579,7 @@ cdef class OrderFactory:
             price=price,
             trigger_price=trigger_price,
             trigger_type=trigger_type,
-            init_id=UUID4(),
+            init_id=UUID4() if uuid is None else UUID4(uuid),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
@@ -599,6 +612,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         str tags = None,
+        str uuid = None,
     ):
         """
         Create a new ``MARKET`` order.
@@ -628,6 +642,8 @@ cdef class OrderFactory:
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
+        uuid : str, optional
+            Fixed static UUID for the order.
 
         Returns
         -------
@@ -681,6 +697,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         str tags = None,
+        str uuid = None,
     ):
         """
         Create a new ``MARKET_IF_TOUCHED`` (MIT) conditional order.
@@ -716,6 +733,8 @@ cdef class OrderFactory:
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
+        uuid : str, optional
+            Fixed static UUID for the order.
 
         Returns
         -------
@@ -743,7 +762,7 @@ cdef class OrderFactory:
             quantity=quantity,
             trigger_price=trigger_price,
             trigger_type=trigger_type,
-            init_id=UUID4(),
+            init_id=UUID4() if uuid is None else UUID4(uuid),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
@@ -780,6 +799,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         str tags = None,
+        str uuid = None,
     ):
         """
         Create a new ``LIMIT_IF_TOUCHED`` (LIT) conditional order.
@@ -821,6 +841,8 @@ cdef class OrderFactory:
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
+        uuid : str, optional
+            Fixed static UUID for the order.
 
         Returns
         -------
@@ -851,7 +873,7 @@ cdef class OrderFactory:
             price=price,
             trigger_price=trigger_price,
             trigger_type=trigger_type,
-            init_id=UUID4(),
+            init_id=UUID4() if uuid is None else UUID4(uuid),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
@@ -889,6 +911,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         str tags = None,
+        str uuid = None,
     ):
         """
         Create a new ``TRAILING_STOP_MARKET`` conditional order.
@@ -927,6 +950,8 @@ cdef class OrderFactory:
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
+        uuid : str, optional
+            Fixed static UUID for the order.
 
         Returns
         -------
@@ -958,7 +983,7 @@ cdef class OrderFactory:
             trigger_type=trigger_type,
             trailing_offset=trailing_offset,
             trailing_offset_type=trailing_offset_type,
-            init_id=UUID4(),
+            init_id=UUID4() if uuid is None else UUID4(uuid),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
@@ -998,6 +1023,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         str tags = None,
+        str uuid = None,
     ):
         """
         Create a new ``TRAILING_STOP_LIMIT`` conditional order.
@@ -1047,6 +1073,8 @@ cdef class OrderFactory:
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
+        uuid : str, optional
+            Fixed static UUID for the order.
 
         Returns
         -------
@@ -1082,7 +1110,7 @@ cdef class OrderFactory:
             limit_offset=limit_offset,
             trailing_offset=trailing_offset,
             trailing_offset_type=trailing_offset_type,
-            init_id=UUID4(),
+            init_id=UUID4() if uuid is None else UUID4(uuid),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
