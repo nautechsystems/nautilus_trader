@@ -38,8 +38,10 @@ pub fn handle_messages_with_redis(
     instance_id: UUID4,
     config: HashMap<String, Value>,
 ) -> anyhow::Result<()> {
-    let empty = Value::Object(serde_json::Map::new());
-    let database_config = config.get("database").unwrap_or(&empty);
+    let database_config = config
+        .get("database")
+        .ok_or(anyhow::anyhow!("No database config"))?;
+    debug!("Creating msgbus redis connection");
     let mut conn = create_redis_connection(&database_config.clone())?;
 
     let stream_name = get_stream_name(trader_id, instance_id, &config);
@@ -179,7 +181,7 @@ pub fn get_redis_url(database_config: &serde_json::Value) -> String {
 
 pub fn create_redis_connection(database_config: &serde_json::Value) -> RedisResult<Connection> {
     let redis_url = get_redis_url(database_config);
-    debug!("Connecting to redis_url {redis_url}");
+    debug!("Connecting to {redis_url}");
     let default_timeout = 20;
     let timeout = get_timeout_duration(database_config, default_timeout);
     let client = redis::Client::open(redis_url)?;

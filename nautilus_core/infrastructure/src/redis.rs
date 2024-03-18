@@ -28,6 +28,7 @@ use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use redis::{Commands, Connection, Pipeline};
 use serde_json::{json, Value};
+use tracing::debug;
 
 // Error constants
 const CHANNEL_TX_FAILED: &str = "Failed to send to channel";
@@ -82,8 +83,10 @@ impl CacheDatabase for RedisCacheDatabase {
         instance_id: UUID4,
         config: HashMap<String, serde_json::Value>,
     ) -> anyhow::Result<RedisCacheDatabase> {
-        let empty = Value::Object(serde_json::Map::new());
-        let database_config = config.get("database").unwrap_or(&empty);
+        let database_config = config
+            .get("database")
+            .ok_or(anyhow::anyhow!("No database config"))?;
+        debug!("Creating cache read redis connection");
         let conn = create_redis_connection(&database_config.clone())?;
 
         let (tx, rx) = channel::<DatabaseCommand>();
@@ -169,6 +172,7 @@ impl CacheDatabase for RedisCacheDatabase {
     ) {
         let empty = Value::Object(serde_json::Map::new());
         let database_config = config.get("database").unwrap_or(&empty);
+        debug!("Creating cache write redis connection");
         let mut conn = create_redis_connection(&database_config.clone()).unwrap();
 
         // Buffering
