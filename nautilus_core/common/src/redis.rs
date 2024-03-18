@@ -38,14 +38,9 @@ pub fn handle_messages_with_redis(
     instance_id: UUID4,
     config: HashMap<String, Value>,
 ) -> anyhow::Result<()> {
-    debug!("Initializing trader_id={trader_id}, instance_id={instance_id}, config={config:?}");
-    let redis_url = get_redis_url(&config);
-    debug!("redis_url {redis_url}");
-    let default_timeout = 20;
-    let timeout = get_timeout_duration(&config, default_timeout);
-    let client = redis::Client::open(redis_url)?;
-    let mut conn = client.get_connection_with_timeout(timeout)?;
-    debug!("Connected");
+    let empty = Value::Object(serde_json::Map::new());
+    let database_config = config.get("database").unwrap_or(&empty);
+    let mut conn = create_redis_connection(&database_config.clone())?;
 
     let stream_name = get_stream_name(trader_id, instance_id, &config);
 
@@ -145,42 +140,59 @@ fn drain_buffer(
     pipe.query::<()>(conn).map_err(anyhow::Error::from)
 }
 
-pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
-    let empty = Value::Object(serde_json::Map::new());
-    let database = config.get("database").unwrap_or(&empty);
-
-    let host = database
+pub fn get_redis_url(database_config: &serde_json::Value) -> String {
+    let host = database_config
         .get("host")
-        .map(|v| v.as_str().unwrap_or("127.0.0.1"));
-    let port = database.get("port").map(|v| v.as_u64().unwrap_or(6379));
-    let username = database
+        .and_then(|v| v.as_str())
+        .unwrap_or("127.0.0.1");
+    let port = database_config
+        .get("port")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(6379);
+    let username = database_config
         .get("username")
-        .map(|v| v.as_str().unwrap_or_default());
-    let password = database
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    let password = database_config
         .get("password")
-        .map(|v| v.as_str().unwrap_or_default());
-    let use_ssl = database.get("ssl").unwrap_or(&json!(false));
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    let use_ssl = database_config
+        .get("ssl")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let auth_part = if !username.is_empty() && !password.is_empty() {
+        format!("{}:{}@", username, password)
+    } else {
+        String::new()
+    };
 
     format!(
-        "redis{}://{}:{}@{}:{}",
-        if use_ssl.as_bool().unwrap_or(false) {
-            "s"
-        } else {
-            ""
-        },
-        username.unwrap_or(""),
-        password.unwrap_or(""),
-        host.unwrap(),
-        port.unwrap(),
+        "redis{}://{}{}:{}",
+        if use_ssl { "s" } else { "" },
+        auth_part,
+        host,
+        port
     )
 }
 
-pub fn get_timeout_duration(config: &HashMap<String, Value>, default: u64) -> Duration {
-    let timeout_seconds = config
-        .get("database")
-        .and_then(|database| database.get("timeout").and_then(|v| v.as_u64()))
-        .unwrap_or(default);
+pub fn create_redis_connection(database_config: &serde_json::Value) -> RedisResult<Connection> {
+    let redis_url = get_redis_url(database_config);
+    debug!("Connecting to redis_url {redis_url}");
+    let default_timeout = 20;
+    let timeout = get_timeout_duration(database_config, default_timeout);
+    let client = redis::Client::open(redis_url)?;
+    let conn = client.get_connection_with_timeout(timeout)?;
+    debug!("Connected");
+    Ok(conn)
+}
 
+pub fn get_timeout_duration(database_config: &serde_json::Value, default: u64) -> Duration {
+    let timeout_seconds = database_config
+        .get("timeout")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(default);
     Duration::from_secs(timeout_seconds)
 }
 
@@ -219,7 +231,6 @@ fn get_stream_name(
         .expect("Invalid configuration: `streams_prefix` is not a string");
     stream_name.push_str(stream_prefix);
     stream_name.push(DELIMITER);
-
     stream_name
 }
 
@@ -231,6 +242,97 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[rstest]
+    fn test_get_redis_url_default_values() {
+        let config = json!({});
+        let url = get_redis_url(&config);
+        assert_eq!(url, "redis://127.0.0.1:6379");
+    }
+
+    #[rstest]
+    fn test_get_redis_url_full_config_with_ssl() {
+        let config = json!({
+            "host": "example.com",
+            "port": 6380,
+            "username": "user",
+            "password": "pass",
+            "ssl": true,
+        });
+        let url = get_redis_url(&config);
+        assert_eq!(url, "rediss://user:pass@example.com:6380");
+    }
+
+    #[rstest]
+    fn test_get_redis_url_full_config_without_ssl() {
+        let config = json!({
+            "host": "example.com",
+            "port": 6380,
+            "username": "user",
+            "password": "pass",
+            "ssl": false,
+        });
+        let url = get_redis_url(&config);
+        assert_eq!(url, "redis://user:pass@example.com:6380");
+    }
+
+    #[rstest]
+    fn test_get_redis_url_missing_username_and_password() {
+        let config = json!({
+            "host": "example.com",
+            "port": 6380,
+            "ssl": false,
+        });
+        let url = get_redis_url(&config);
+        assert_eq!(url, "redis://example.com:6380");
+    }
+
+    #[rstest]
+    fn test_get_redis_url_ssl_default_false() {
+        let config = json!({
+            "host": "example.com",
+            "port": 6380,
+            "username": "user",
+            "password": "pass",
+            // "ssl" is intentionally omitted to test default behavior
+        });
+        let url = get_redis_url(&config);
+        assert_eq!(url, "redis://user:pass@example.com:6380");
+    }
+
+    #[rstest]
+    fn test_get_timeout_duration_default() {
+        let database_config = json!({});
+
+        let timeout_duration = get_timeout_duration(&database_config, 20);
+        assert_eq!(timeout_duration, Duration::from_secs(20));
+    }
+
+    #[rstest]
+    fn test_get_timeout_duration() {
+        let mut database_config = HashMap::new();
+        database_config.insert("timeout".to_string(), json!(2));
+
+        let timeout_duration = get_timeout_duration(&json!(database_config), 20);
+        assert_eq!(timeout_duration, Duration::from_secs(2));
+    }
+
+    #[rstest]
+    fn test_get_buffer_interval_default() {
+        let config = HashMap::new();
+
+        let buffer_interval = get_buffer_interval(&config);
+        assert_eq!(buffer_interval, Duration::from_millis(0));
+    }
+
+    #[rstest]
+    fn test_get_buffer_interval() {
+        let mut config = HashMap::new();
+        config.insert("buffer_interval_ms".to_string(), json!(100));
+
+        let buffer_interval = get_buffer_interval(&config);
+        assert_eq!(buffer_interval, Duration::from_millis(100));
+    }
 
     #[rstest]
     fn test_get_stream_name_with_trader_prefix_and_instance_id() {
@@ -258,21 +360,5 @@ mod tests {
 
         let key = get_stream_name(trader_id, instance_id, &config);
         assert_eq!(key, format!("streams:"));
-    }
-
-    #[rstest]
-    fn test_get_buffer_interval_default() {
-        let config = HashMap::new();
-        let buffer_interval = get_buffer_interval(&config);
-        assert_eq!(buffer_interval, Duration::from_millis(0));
-    }
-
-    #[rstest]
-    fn test_get_buffer_interval() {
-        let mut config = HashMap::new();
-        config.insert("buffer_interval_ms".to_string(), json!(100));
-
-        let buffer_interval = get_buffer_interval(&config);
-        assert_eq!(buffer_interval, Duration::from_millis(100));
     }
 }
