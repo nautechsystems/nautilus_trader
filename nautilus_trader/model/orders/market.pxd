@@ -25,3 +25,6 @@ cdef class MarketOrder(Order):
 
     @staticmethod
     cdef MarketOrder transform(Order order, uint64_t ts_init)
+
+    @staticmethod
+    cdef MarketOrder from_pyo3_c(pyo3_order)

@@ -282,7 +282,7 @@ cdef class LimitOrder(Order):
             emulation_trigger=trigger_type_from_str(str(pyo3_order.emulation_trigger)) if pyo3_order.emulation_trigger is not None else TriggerType.NO_TRIGGER,
             trigger_instrument_id=InstrumentId.from_str_c(str(pyo3_order.trigger_instrument_id)) if pyo3_order.trigger_instrument_id is not None else None,
             contingency_type=contingency_type_from_str(str(pyo3_order.contingency_type)) if pyo3_order.contingency_type is not None else ContingencyType.NO_CONTINGENCY,
-            order_list_id=OrderListId(pyo3_order.order_list_id) if pyo3_order.order_list_id is not None else None,
+            order_list_id=OrderListId(str(pyo3_order.order_list_id)) if pyo3_order.order_list_id is not None else None,
             linked_order_ids=[ClientOrderId(str(o)) for o in pyo3_order.linked_order_ids] if pyo3_order.linked_order_ids is not None else None,
             parent_order_id=ClientOrderId(str(pyo3_order.parent_order_id)) if pyo3_order.parent_order_id is not None else None,
             exec_algorithm_id=ExecAlgorithmId(str(pyo3_order.exec_algorithm_id)) if pyo3_order.exec_algorithm_id is not None else None,

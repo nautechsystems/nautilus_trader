@@ -46,14 +46,10 @@ class TestOrderProviderPyo3:
             order_side=order_side or OrderSide.BUY,
             quantity=quantity or Quantity.from_str("100"),
             time_in_force=time_in_force or TimeInForce.GTC,
+            reduce_only=False,
+            quote_quantity=False,
             init_id=TestIdProviderPyo3.uuid(),
             ts_init=0,
-            reduce_only=False,
-            contingency_type=None,
-            order_list_id=None,
-            linked_order_ids=None,
-            parent_order_id=None,
-            tags=None,
         )
 
     @staticmethod
