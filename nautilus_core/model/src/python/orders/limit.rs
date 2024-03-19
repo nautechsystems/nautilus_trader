@@ -25,7 +25,8 @@ use ustr::Ustr;
 
 use crate::{
     enums::{
-        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
+        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TriggerType,
     },
     identifiers::{
         client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
@@ -33,7 +34,7 @@ use crate::{
         trader_id::TraderId,
     },
     orders::{
-        base::{str_hashmap_to_ustr, Order},
+        base::{str_hashmap_to_ustr, Order, OrderCore},
         limit::LimitOrder,
     },
     types::{price::Price, quantity::Quantity},
@@ -104,7 +105,8 @@ impl LimitOrder {
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
             CompareOp::Eq => self.eq(other).into_py(py),
-            _ => panic!("Not implemented"),
+            CompareOp::Ne => self.ne(other).into_py(py),
+            _ => py.NotImplemented(),
         }
     }
 
@@ -358,6 +360,18 @@ impl LimitOrder {
     #[pyo3(name = "ts_init")]
     fn py_ts_init(&self) -> UnixNanos {
         self.ts_init
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "opposite_side")]
+    fn py_opposite_side(side: OrderSide) -> OrderSide {
+        OrderCore::opposite_side(side)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "closing_side")]
+    fn py_closing_side(side: PositionSide) -> OrderSide {
+        OrderCore::closing_side(side)
     }
 
     #[staticmethod]
