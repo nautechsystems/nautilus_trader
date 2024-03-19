@@ -34,3 +34,6 @@ cdef class LimitOrder(Order):
 
     @staticmethod
     cdef LimitOrder transform(Order order, uint64_t ts_init, Price price=*)
+
+    @staticmethod
+    cdef LimitOrder from_pyo3_c(pyo3_order)
