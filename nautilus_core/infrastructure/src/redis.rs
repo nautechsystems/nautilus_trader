@@ -86,7 +86,7 @@ impl CacheDatabase for RedisCacheDatabase {
         let database_config = config
             .get("database")
             .ok_or(anyhow::anyhow!("No database config"))?;
-        debug!("Creating cache read redis connection");
+        debug!("Creating cache-read redis connection");
         let conn = create_redis_connection(&database_config.clone())?;
 
         let (tx, rx) = channel::<DatabaseCommand>();
@@ -172,7 +172,7 @@ impl CacheDatabase for RedisCacheDatabase {
     ) {
         let empty = Value::Object(serde_json::Map::new());
         let database_config = config.get("database").unwrap_or(&empty);
-        debug!("Creating cache write redis connection");
+        debug!("Creating cache-write redis connection");
         let mut conn = create_redis_connection(&database_config.clone()).unwrap();
 
         // Buffering
