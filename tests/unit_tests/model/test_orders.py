@@ -464,11 +464,12 @@ class TestOrders:
             display_qty=Quantity.from_int(20_000),
             exec_algorithm_id=ExecAlgorithmId("VWAP"),
             exec_algorithm_params={"period": 60},
-            uuid="7f77c048-5138-4817-a7bc-f0b01656bbd7",
         )
 
         # Act
         result = order.to_dict()
+        # remove init_id as it non-deterministic with order-factory
+        del result["init_id"]
 
         # Assert
         assert result == {
@@ -491,7 +492,6 @@ class TestOrders:
             "avg_px": None,
             "slippage": None,
             "commissions": {},
-            "init_id": "7f77c048-5138-4817-a7bc-f0b01656bbd7",
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
