@@ -150,7 +150,7 @@ cdef extern from "../includes/model.h":
 
     # The liqudity side for a trade in a financial market.
     cpdef enum LiquiditySide:
-        # No specific liqudity side.
+        # No liquidity side specified.
         NO_LIQUIDITY_SIDE # = 0,
         # The order passively provided liqudity to the market to complete the trade (made a market).
         MAKER # = 1,
