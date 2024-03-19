@@ -58,7 +58,7 @@ click = "^8.1.7"
 fsspec = "==2023.6.0"  # Pinned due breaking changes
 msgspec = "^0.18.6"
 pandas = "^2.2.1"
-pyarrow = ">=15.0.1"
+pyarrow = ">=15.0.2"
 pytz = ">=2023.4.0"
 tqdm = "^4.66.2"
 uvloop = {version = "^0.19.0", markers = "sys_platform != 'win32'"}
