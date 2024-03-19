@@ -500,6 +500,7 @@ pub trait Order {
     fn is_pending_cancel(&self) -> bool {
         self.status() == OrderStatus::PendingCancel
     }
+
     fn is_spawned(&self) -> bool {
         self.exec_algorithm_id().is_some()
             && self.exec_spawn_id().unwrap() != self.client_order_id()
@@ -843,6 +844,7 @@ impl OrderCore {
         self.commissions.clone()
     }
 
+    #[must_use]
     pub fn init_event(&self) -> Option<&OrderEvent> {
         self.events.first()
     }
