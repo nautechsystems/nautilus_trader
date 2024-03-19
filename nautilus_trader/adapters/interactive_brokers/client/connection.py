@@ -106,10 +106,11 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             )
             await asyncio.sleep(self._reconnect_delay)
             await self._startup()
-            await self._resubscribe_all()  # should this not be done in _resume?
-            self._resume()
-        else:
-            self._reconnect_attempts = 0
+
+        self._log.info("Reconnection successful.")
+        self._reconnect_attempts = 0
+        await self._resubscribe_all()
+        self._resume()
 
     def _initialize_connection_params(self) -> None:
         """
