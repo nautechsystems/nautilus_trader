@@ -120,6 +120,12 @@ impl DerefMut for MarketOrder {
     }
 }
 
+impl PartialEq for MarketOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.client_order_id == other.client_order_id
+    }
+}
+
 impl Order for MarketOrder {
     fn status(&self) -> OrderStatus {
         self.status
