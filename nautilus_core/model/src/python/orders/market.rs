@@ -91,20 +91,17 @@ impl MarketOrder {
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
             CompareOp::Eq => self.eq(other).into_py(py),
-            _ => panic!("Not implemented"),
+            CompareOp::Ne => self.ne(other).into_py(py),
+            _ => py.NotImplemented(),
         }
     }
 
-    #[staticmethod]
-    #[pyo3(name = "opposite_side")]
-    fn py_opposite_side(side: OrderSide) -> OrderSide {
-        OrderCore::opposite_side(side)
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
-    #[staticmethod]
-    #[pyo3(name = "closing_side")]
-    fn py_closing_side(side: PositionSide) -> OrderSide {
-        OrderCore::closing_side(side)
+    fn __repr__(&self) -> String {
+        self.to_string()
     }
 
     #[pyo3(name = "signed_decimal_qty")]
@@ -261,6 +258,18 @@ impl MarketOrder {
     #[pyo3(name = "tags")]
     fn py_tags(&self) -> Option<String> {
         self.tags.map(|x| x.to_string())
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "opposite_side")]
+    fn py_opposite_side(side: OrderSide) -> OrderSide {
+        OrderCore::opposite_side(side)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "closing_side")]
+    fn py_closing_side(side: PositionSide) -> OrderSide {
+        OrderCore::closing_side(side)
     }
 
     #[pyo3(name = "to_dict")]

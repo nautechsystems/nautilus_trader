@@ -371,41 +371,6 @@ impl Order for LimitOrder {
     }
 }
 
-impl From<OrderInitialized> for LimitOrder {
-    fn from(event: OrderInitialized) -> Self {
-        Self::new(
-            event.trader_id,
-            event.strategy_id,
-            event.instrument_id,
-            event.client_order_id,
-            event.order_side,
-            event.quantity,
-            event
-                .price // TODO: Improve this error, model order domain errors
-                .expect("Error initializing order: `price` was `None` for `LimitOrder"),
-            event.time_in_force,
-            event.expire_time,
-            event.post_only,
-            event.reduce_only,
-            event.quote_quantity,
-            event.display_qty,
-            event.emulation_trigger,
-            event.trigger_instrument_id,
-            event.contingency_type,
-            event.order_list_id,
-            event.linked_order_ids,
-            event.parent_order_id,
-            event.exec_algorithm_id,
-            event.exec_algorithm_params,
-            event.exec_spawn_id,
-            event.tags,
-            event.event_id,
-            event.ts_event,
-        )
-        .unwrap()
-    }
-}
-
 impl Display for LimitOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -442,6 +407,41 @@ impl Display for LimitOrder {
                 .map_or_else(|| "None".to_string(), |id| format!("{id}")),
             self.tags
         )
+    }
+}
+
+impl From<OrderInitialized> for LimitOrder {
+    fn from(event: OrderInitialized) -> Self {
+        Self::new(
+            event.trader_id,
+            event.strategy_id,
+            event.instrument_id,
+            event.client_order_id,
+            event.order_side,
+            event.quantity,
+            event
+                .price // TODO: Improve this error, model order domain errors
+                .expect("Error initializing order: `price` was `None` for `LimitOrder"),
+            event.time_in_force,
+            event.expire_time,
+            event.post_only,
+            event.reduce_only,
+            event.quote_quantity,
+            event.display_qty,
+            event.emulation_trigger,
+            event.trigger_instrument_id,
+            event.contingency_type,
+            event.order_list_id,
+            event.linked_order_ids,
+            event.parent_order_id,
+            event.exec_algorithm_id,
+            event.exec_algorithm_params,
+            event.exec_spawn_id,
+            event.tags,
+            event.event_id,
+            event.ts_event,
+        )
+        .unwrap()
     }
 }
 
