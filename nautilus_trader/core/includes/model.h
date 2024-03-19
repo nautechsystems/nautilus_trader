@@ -276,7 +276,7 @@ typedef enum InstrumentCloseType {
  */
 typedef enum LiquiditySide {
     /**
-     * No specific liqudity side.
+     * No liquidity side specified.
      */
     NO_LIQUIDITY_SIDE = 0,
     /**
