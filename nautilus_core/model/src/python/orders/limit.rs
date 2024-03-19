@@ -497,7 +497,7 @@ impl LimitOrder {
             .map(|x| x.and_then(|inner| inner.extract::<&str>().unwrap().parse::<UUID4>().ok()))?
             .unwrap();
         let ts_init = dict.get_item("ts_init")?.unwrap().extract::<UnixNanos>()?;
-        let limit_order = LimitOrder::new(
+        let limit_order = Self::new(
             trader_id,
             strategy_id,
             instrument_id,
@@ -581,9 +581,13 @@ impl LimitOrder {
         self.linked_order_ids.clone().map_or_else(
             || dict.set_item("linked_order_ids", py.None()),
             |linked_order_ids| {
-                let lined_order_ids_list =
-                    PyList::new(py, linked_order_ids.iter().map(|item| item.to_string()));
-                dict.set_item("linked_order_ids", lined_order_ids_list)
+                let linked_order_ids_list = PyList::new(
+                    py,
+                    linked_order_ids
+                        .iter()
+                        .map(std::string::ToString::to_string),
+                );
+                dict.set_item("linked_order_ids", linked_order_ids_list)
             },
         )?;
         self.parent_order_id.map_or_else(
