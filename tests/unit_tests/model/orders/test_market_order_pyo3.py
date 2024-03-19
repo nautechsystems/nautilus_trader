@@ -15,17 +15,16 @@
 
 import pytest
 
-from nautilus_trader.core.nautilus_pyo3 import UUID4
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import AccountId
-from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.nautilus_pyo3 import MarketOrder
 from nautilus_trader.core.nautilus_pyo3 import OrderSide
 from nautilus_trader.core.nautilus_pyo3 import PositionSide
 from nautilus_trader.core.nautilus_pyo3 import Quantity
 from nautilus_trader.core.nautilus_pyo3 import StrategyId
 from nautilus_trader.core.nautilus_pyo3 import TimeInForce
 from nautilus_trader.core.nautilus_pyo3 import TraderId
+from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.test_kit.rust.orders_pyo3 import TestOrderProviderPyo3
 
 
@@ -49,7 +48,7 @@ account_id = AccountId("SIM-000")
 )
 def test_opposite_side_returns_expected_sides(side, expected):
     # Arrange, Act
-    result = MarketOrder.opposite_side(side)
+    result = nautilus_pyo3.MarketOrder.opposite_side(side)
 
     # Assert
     assert result == expected
@@ -67,7 +66,7 @@ def test_closing_side_returns_expected_sides(
     expected: OrderSide,
 ) -> None:
     # Arrange, Act
-    result = MarketOrder.closing_side(side)
+    result = nautilus_pyo3.MarketOrder.closing_side(side)
 
     # Assert
     assert result == expected
@@ -110,29 +109,39 @@ def test_would_reduce_only_with_various_values_returns_expected(
 def test_market_order_with_quantity_zero_raises_value_error():
     # Arrange, Act, Assert
     with pytest.raises(ValueError):
-        MarketOrder(
-            trader_id,
-            strategy_id,
-            AUDUSD_SIM,
-            ClientOrderId("O-123456"),
-            OrderSide.BUY,
-            Quantity.zero(),  # <- invalid
-            UUID4(),
-            0,
+        TestOrderProviderPyo3.market_order(
+            trader_id=trader_id,
+            strategy_id=strategy_id,
+            instrument_id=AUDUSD_SIM,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(0),
         )
 
 
 def test_market_order_with_invalid_tif_raises_value_error():
     # Arrange, Act, Assert
     with pytest.raises(ValueError):
-        MarketOrder(
-            trader_id,
-            strategy_id,
-            AUDUSD_SIM,
-            ClientOrderId("O-123456"),
-            OrderSide.BUY,
-            Quantity.from_int(100_000),
-            UUID4(),
-            0,
-            TimeInForce.GTD,  # <-- invalid
+        TestOrderProviderPyo3.market_order(
+            trader_id=trader_id,
+            strategy_id=strategy_id,
+            instrument_id=AUDUSD_SIM,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(0),
+            time_in_force=TimeInForce.GTD,
         )
+
+
+def test_pyo3_cython_conversion():
+    market_order_pyo3 = TestOrderProviderPyo3.market_order(
+        trader_id=trader_id,
+        strategy_id=strategy_id,
+        instrument_id=AUDUSD_SIM,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(1),
+    )
+    market_order_pyo3_dict = market_order_pyo3.to_dict()
+    market_order_cython = MarketOrder.from_pyo3(market_order_pyo3)
+    market_order_cython_dict = MarketOrder.to_dict(market_order_cython)
+    market_order_pyo3_back = nautilus_pyo3.MarketOrder.from_dict(market_order_cython_dict)
+    assert market_order_pyo3_dict == market_order_cython_dict
+    assert market_order_pyo3 == market_order_pyo3_back

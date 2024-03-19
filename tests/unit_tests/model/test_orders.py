@@ -384,6 +384,8 @@ class TestOrders:
 
         # Act
         result = order.to_dict()
+        # remove init_id as it non-deterministic with order-factory
+        del result["init_id"]
 
         # Assert
         assert result == {
@@ -405,7 +407,8 @@ class TestOrders:
             "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": None,
             "slippage": None,
-            "commissions": None,
+            "commissions": {},
+            "emulation_trigger": "NO_TRIGGER",
             "status": "INITIALIZED",
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
