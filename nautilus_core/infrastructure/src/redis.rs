@@ -116,6 +116,8 @@ impl CacheDatabase for RedisCacheDatabase {
     }
 
     fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
+        let pattern = format!("{}{DELIMITER}{}", self.trader_key, pattern);
+        debug!("Querying keys: {pattern}");
         match self.conn.keys(pattern) {
             Ok(keys) => Ok(keys),
             Err(e) => Err(e.into()),
