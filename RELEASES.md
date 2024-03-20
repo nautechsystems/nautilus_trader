@@ -9,8 +9,9 @@ Released on TBD (UTC).
 - Improved Binance execution client ping listen key error handling and logging
 - Improved Redis cache adapter and message bus error handling and logging
 - Improved Interactive Brokers client connectivity resilience and component lifecycle, thanks @benjaminsingleton
+- Improved Redis port parsing (`DatabaseConfig.port` can now be either a string or integer)
+- Redact Redis passwords in strings and logs
 - Refactored `InteractiveBrokersEWrapper`, thanks @rsmb7z
-- Redact Redis passwords in logs
 - Upgraded `redis` crate to 0.25.1 which bumps up TLS dependencies
 
 ### Breaking Changes
