@@ -149,7 +149,10 @@ pub fn get_redis_url(database_config: &serde_json::Value) -> (String, String) {
         .unwrap_or("127.0.0.1");
     let port = database_config
         .get("port")
-        .and_then(|v| v.as_u64())
+        .and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        })
         .unwrap_or(6379);
     let username = database_config
         .get("username")
