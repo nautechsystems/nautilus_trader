@@ -15,6 +15,7 @@
 
 use std::{
     collections::HashMap,
+    fmt::Display,
     ops::{Deref, DerefMut},
 };
 
@@ -93,7 +94,7 @@ impl StopLimitOrder {
                 instrument_id,
                 client_order_id,
                 order_side,
-                OrderType::LimitIfTouched,
+                OrderType::StopLimit,
                 quantity,
                 time_in_force,
                 reduce_only,
@@ -134,6 +135,12 @@ impl Deref for StopLimitOrder {
 impl DerefMut for StopLimitOrder {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.core
+    }
+}
+
+impl PartialEq for StopLimitOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.client_order_id == other.client_order_id
     }
 }
 
@@ -399,5 +406,27 @@ impl From<OrderInitialized> for StopLimitOrder {
             event.ts_event,
         )
         .unwrap() // SAFETY: From can panic
+    }
+}
+
+impl Display for StopLimitOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "StopLimitOrder({} {} {} {} @ {}-STOP[{}] {}-LIMIT {}, status={}, client_order_id={}, venue_order_id={}, position_id={}, tags={})",
+            self.side,
+            self.quantity.to_formatted_string(),
+            self.instrument_id,
+            self.order_type,
+            self.trigger_price,
+            self.trigger_type,
+            self.price,
+            self.time_in_force,
+            self.status,
+            self.client_order_id,
+            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}") ),
+            self.position_id.map_or_else(|| "None".to_string(), |position_id| format!("{position_id}")),
+            self.tags.map_or_else(|| "None".to_string(), |tags| format!("{tags}"))
+        )
     }
 }
