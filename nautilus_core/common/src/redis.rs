@@ -142,7 +142,7 @@ fn drain_buffer(
     pipe.query::<()>(conn).map_err(anyhow::Error::from)
 }
 
-pub fn get_redis_url(database_config: &serde_json::Value) -> String {
+pub fn get_redis_url(database_config: &serde_json::Value) -> (String, String) {
     let host = database_config
         .get("host")
         .and_then(|v| v.as_str())
@@ -164,24 +164,46 @@ pub fn get_redis_url(database_config: &serde_json::Value) -> String {
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let redacted_password = if password.len() > 4 {
+        format!("{}...{}", &password[..2], &password[password.len() - 2..],)
+    } else {
+        password.to_string()
+    };
+
     let auth_part = if !username.is_empty() && !password.is_empty() {
         format!("{}:{}@", username, password)
     } else {
         String::new()
     };
 
-    format!(
+    let redacted_auth_part = if !username.is_empty() && !password.is_empty() {
+        format!("{}:{}@", username, redacted_password)
+    } else {
+        String::new()
+    };
+
+    let url = format!(
         "redis{}://{}{}:{}",
         if use_ssl { "s" } else { "" },
         auth_part,
         host,
         port
-    )
+    );
+
+    let redacted_url = format!(
+        "redis{}://{}{}:{}",
+        if use_ssl { "s" } else { "" },
+        redacted_auth_part,
+        host,
+        port
+    );
+
+    (url, redacted_url)
 }
 
 pub fn create_redis_connection(database_config: &serde_json::Value) -> RedisResult<Connection> {
-    let redis_url = get_redis_url(database_config);
-    debug!("Connecting to {redis_url}");
+    let (redis_url, redacted_url) = get_redis_url(database_config);
+    debug!("Connecting to {redacted_url}");
     let default_timeout = 20;
     let timeout = get_timeout_duration(database_config, default_timeout);
     let client = redis::Client::open(redis_url)?;
@@ -248,8 +270,9 @@ mod tests {
     #[rstest]
     fn test_get_redis_url_default_values() {
         let config = json!({});
-        let url = get_redis_url(&config);
+        let (url, redacted_url) = get_redis_url(&config);
         assert_eq!(url, "redis://127.0.0.1:6379");
+        assert_eq!(redacted_url, "redis://127.0.0.1:6379");
     }
 
     #[rstest]
@@ -261,8 +284,9 @@ mod tests {
             "password": "pass",
             "ssl": true,
         });
-        let url = get_redis_url(&config);
+        let (url, redacted_url) = get_redis_url(&config);
         assert_eq!(url, "rediss://user:pass@example.com:6380");
+        assert_eq!(redacted_url, "rediss://user:pass@example.com:6380");
     }
 
     #[rstest]
@@ -270,12 +294,13 @@ mod tests {
         let config = json!({
             "host": "example.com",
             "port": 6380,
-            "username": "user",
-            "password": "pass",
+            "username": "username",
+            "password": "password",
             "ssl": false,
         });
-        let url = get_redis_url(&config);
-        assert_eq!(url, "redis://user:pass@example.com:6380");
+        let (url, redacted_url) = get_redis_url(&config);
+        assert_eq!(url, "redis://username:password@example.com:6380");
+        assert_eq!(redacted_url, "redis://username:pa...rd@example.com:6380");
     }
 
     #[rstest]
@@ -285,8 +310,9 @@ mod tests {
             "port": 6380,
             "ssl": false,
         });
-        let url = get_redis_url(&config);
+        let (url, redacted_url) = get_redis_url(&config);
         assert_eq!(url, "redis://example.com:6380");
+        assert_eq!(redacted_url, "redis://example.com:6380");
     }
 
     #[rstest]
@@ -294,12 +320,13 @@ mod tests {
         let config = json!({
             "host": "example.com",
             "port": 6380,
-            "username": "user",
-            "password": "pass",
+            "username": "username",
+            "password": "password",
             // "ssl" is intentionally omitted to test default behavior
         });
-        let url = get_redis_url(&config);
-        assert_eq!(url, "redis://user:pass@example.com:6380");
+        let (url, redacted_url) = get_redis_url(&config);
+        assert_eq!(url, "redis://username:password@example.com:6380");
+        assert_eq!(redacted_url, "redis://username:pa...rd@example.com:6380");
     }
 
     #[rstest]
