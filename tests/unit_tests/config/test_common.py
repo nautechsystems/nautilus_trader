@@ -40,6 +40,17 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
+def test_repr_with_redacted_password() -> None:
+    # Arrange
+    config = DatabaseConfig(username="username", password="password")
+
+    # Act, Assert
+    assert (
+        repr(config)
+        == "DatabaseConfig(type=redis, host=None, port=None, username=username, password=pa...rd, ssl=False, timeout=20)"
+    )
+
+
 def test_equality_hash_repr() -> None:
     # Arrange
     config1 = DatabaseConfig()
@@ -51,7 +62,7 @@ def test_equality_hash_repr() -> None:
     assert isinstance(hash(config1), int)
     assert (
         repr(config1)
-        == "DatabaseConfig(type='redis', host=None, port=None, username=None, password=None, ssl=False, timeout=20)"
+        == "DatabaseConfig(type=redis, host=None, port=None, username=None, password=None, ssl=False, timeout=20)"
     )
 
 

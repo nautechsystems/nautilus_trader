@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Improved Redis cache adapter and message bus error handling and logging
 - Improved Interactive Brokers client connectivity resilience and component lifecycle, thanks @benjaminsingleton
 - Refactored `InteractiveBrokersEWrapper`, thanks @rsmb7z
+- Redact Redis passwords in logs
 - Upgraded `redis` crate to 0.25.1 which bumps up TLS dependencies
 
 ### Breaking Changes
