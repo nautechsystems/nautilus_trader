@@ -691,7 +691,9 @@ class InteractiveBrokersEWrapper(EWrapper):
         self.logAnswer(current_fn_name(), vars())
 
     def deltaNeutralValidation(
-        self, reqId: int, deltaNeutralContract: DeltaNeutralContract
+        self,
+        reqId: int,
+        deltaNeutralContract: DeltaNeutralContract,
     ) -> None:
         """
         When accepting a Delta-Neutral RFQ (request for quote), the server sends a
@@ -1123,7 +1125,10 @@ class InteractiveBrokersEWrapper(EWrapper):
         )
 
     def historicalTicksBidAsk(
-        self, reqId: int, ticks: ListOfHistoricalTickBidAsk, done: bool
+        self,
+        reqId: int,
+        ticks: ListOfHistoricalTickBidAsk,
+        done: bool,
     ) -> None:
         """
         Return historical tick data when whatToShow is set to BID_ASK.
