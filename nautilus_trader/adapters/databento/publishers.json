@@ -364,5 +364,119 @@
     "dataset": "OPRA.PILLAR",
     "venue": "SPHR",
     "description": "OPRA - MIAX Sapphire"
+  },
+  {
+    "publisher_id": 62,
+    "dataset": "DBEQ.MAX",
+    "venue": "XCHI",
+    "description": "DBEQ Max - NYSE Chicago"
+  },
+  {
+    "publisher_id": 63,
+    "dataset": "DBEQ.MAX",
+    "venue": "XCIS",
+    "description": "DBEQ Max - NYSE National"
+  },
+  {
+    "publisher_id": 64,
+    "dataset": "DBEQ.MAX",
+    "venue": "IEXG",
+    "description": "DBEQ Max - IEX"
+  },
+  {
+    "publisher_id": 65,
+    "dataset": "DBEQ.MAX",
+    "venue": "EPRL",
+    "description": "DBEQ Max - MIAX Pearl"
+  },
+  {
+    "publisher_id": 66,
+    "dataset": "DBEQ.MAX",
+    "venue": "XNAS",
+    "description": "DBEQ Max - Nasdaq"
+  },
+  {
+    "publisher_id": 67,
+    "dataset": "DBEQ.MAX",
+    "venue": "XNYS",
+    "description": "DBEQ Max - NYSE"
+  },
+  {
+    "publisher_id": 68,
+    "dataset": "DBEQ.MAX",
+    "venue": "FINN",
+    "description": "DBEQ Max - FINRA/NYSE TRF"
+  },
+  {
+    "publisher_id": 69,
+    "dataset": "DBEQ.MAX",
+    "venue": "FINY",
+    "description": "DBEQ Max - FINRA/Nasdaq TRF Carteret"
+  },
+  {
+    "publisher_id": 70,
+    "dataset": "DBEQ.MAX",
+    "venue": "FINC",
+    "description": "DBEQ Max - FINRA/Nasdaq TRF Chicago"
+  },
+  {
+    "publisher_id": 71,
+    "dataset": "DBEQ.MAX",
+    "venue": "BATS",
+    "description": "DBEQ Max - CBOE BZX"
+  },
+  {
+    "publisher_id": 72,
+    "dataset": "DBEQ.MAX",
+    "venue": "BATY",
+    "description": "DBEQ Max - CBOE BYX"
+  },
+  {
+    "publisher_id": 73,
+    "dataset": "DBEQ.MAX",
+    "venue": "EDGA",
+    "description": "DBEQ Max - CBOE EDGA"
+  },
+  {
+    "publisher_id": 74,
+    "dataset": "DBEQ.MAX",
+    "venue": "EDGX",
+    "description": "DBEQ Max - CBOE EDGX"
+  },
+  {
+    "publisher_id": 75,
+    "dataset": "DBEQ.MAX",
+    "venue": "XBOS",
+    "description": "DBEQ Max - Nasdaq BX"
+  },
+  {
+    "publisher_id": 76,
+    "dataset": "DBEQ.MAX",
+    "venue": "XPSX",
+    "description": "DBEQ Max - Nasdaq PSX"
+  },
+  {
+    "publisher_id": 77,
+    "dataset": "DBEQ.MAX",
+    "venue": "MEMX",
+    "description": "DBEQ Max - MEMX"
+  },
+  {
+    "publisher_id": 78,
+    "dataset": "DBEQ.MAX",
+    "venue": "XASE",
+    "description": "DBEQ Max - NYSE American"
+  },
+  {
+    "publisher_id": 79,
+    "dataset": "DBEQ.MAX",
+    "venue": "ARCX",
+    "description": "DBEQ Max - NYSE Arca"
+  },
+  {
+    "publisher_id": 80,
+    "dataset": "DBEQ.MAX",
+    "venue": "LTSE",
+    "description": "DBEQ Max - Long-Term Stock Exchange"
   }
 ]
