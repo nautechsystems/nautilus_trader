@@ -137,7 +137,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         live_client.subscribe(
             schema=DatabentoSchema.DEFINITION.value,
-            symbols=",".join(sorted([i.symbol.value for i in instrument_ids])),
+            symbols=sorted([i.symbol.value for i in instrument_ids]),
             start=0,  # From start of current week (latest definitions)
         )
 
@@ -146,7 +146,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             live_client.subscribe(
                 schema=DatabentoSchema.DEFINITION.value,
                 stype_in="parent",
-                symbols=",".join(parent_symbols),
+                symbols=parent_symbols,
                 start=0,  # From start of current week (latest definitions)
             )
 
@@ -236,7 +236,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
-            symbols=ALL_SYMBOLS,
+            symbols=[ALL_SYMBOLS],
             start=pd.Timestamp(start, tz=pytz.utc).value,
             end=pd.Timestamp(end, tz=pytz.utc).value if end is not None else None,
         )
