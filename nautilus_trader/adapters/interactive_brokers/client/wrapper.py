@@ -64,7 +64,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         self._log = nautilus_logger
         self._client = client
 
-    def logAnswer(self, fnName, fnParams):
+    def logAnswer(self, fnName, fnParams) -> None:
         """
         Override the logging for EWrapper.logAnswer.
         """
@@ -81,7 +81,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         errorCode: int,
         errorString: str,
         advancedOrderRejectJson="",
-    ):
+    ) -> None:
         """
         Call this event in response to an error in communication or when TWS needs to
         send a message to the client.
@@ -94,16 +94,16 @@ class InteractiveBrokersEWrapper(EWrapper):
             advanced_order_reject_json=advancedOrderRejectJson,
         )
 
-    def winError(self, text: str, lastError: int):
+    def winError(self, text: str, lastError: int) -> None:
         self.logAnswer(current_fn_name(), vars())
 
-    def connectAck(self):
+    def connectAck(self) -> None:
         """
         Invoke this callback to signify the completion of a successful connection.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def marketDataType(self, reqId: TickerId, marketDataType: int):
+    def marketDataType(self, reqId: TickerId, marketDataType: int) -> None:
         """
         Receives notification when the market data type changes.
 
@@ -131,7 +131,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         tickType: TickType,
         price: float,
         attrib: TickAttrib,
-    ):
+    ) -> None:
         """
         Market data tick price callback.
 
@@ -149,7 +149,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def tickSize(self, reqId: TickerId, tickType: TickType, size: Decimal):
+    def tickSize(self, reqId: TickerId, tickType: TickType, size: Decimal) -> None:
         """
         Handle tick size-related market data.
 
@@ -168,17 +168,17 @@ class InteractiveBrokersEWrapper(EWrapper):
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def tickSnapshotEnd(self, reqId: int):
+    def tickSnapshotEnd(self, reqId: int) -> None:
         """
         When requesting market data snapshots, this market will indicate the snapshot
         reception is finished.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def tickGeneric(self, reqId: TickerId, tickType: TickType, value: float):
+    def tickGeneric(self, reqId: TickerId, tickType: TickType, value: float) -> None:
         self.logAnswer(current_fn_name(), vars())
 
-    def tickString(self, reqId: TickerId, tickType: TickType, value: str):
+    def tickString(self, reqId: TickerId, tickType: TickType, value: str) -> None:
         self.logAnswer(current_fn_name(), vars())
 
     def tickEFP(
@@ -192,7 +192,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         futureLastTradeDate: str,
         dividendImpact: float,
         dividendsToLastTradeDate: float,
-    ):
+    ) -> None:
         """
         Market data callback for Exchange for Physical.
 
@@ -234,7 +234,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         clientId: int,
         whyHeld: str,
         mktCapPrice: float,
-    ):
+    ) -> None:
         """
         Call this event whenever the status of an order changes. Also, fire it after
         reconnecting to TWS if the client has any open orders.
@@ -288,7 +288,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         contract: Contract,
         order: Order,
         orderState: OrderState,
-    ):
+    ) -> None:
         """
         Call this function to feed in open orders.
 
@@ -312,14 +312,14 @@ class InteractiveBrokersEWrapper(EWrapper):
             order_state=orderState,
         )
 
-    def openOrderEnd(self):
+    def openOrderEnd(self) -> None:
         """
         Call this at the end of a given request for open orders.
         """
         self.logAnswer(current_fn_name(), vars())
         self._client.process_open_order_end()
 
-    def connectionClosed(self):
+    def connectionClosed(self) -> None:
         """
         Call this function when TWS closes the socket connection with the ActiveX
         control, or when TWS is shut down.
@@ -333,7 +333,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         val: str,
         currency: str,
         accountName: str,
-    ):
+    ) -> None:
         """
         Call this function only when ReqAccountUpdates on EEClientSocket object has been
         called.
@@ -350,30 +350,30 @@ class InteractiveBrokersEWrapper(EWrapper):
         unrealizedPNL: float,
         realizedPNL: float,
         accountName: str,
-    ):
+    ) -> None:
         """
         Call this function only when reqAccountUpdates on EEClientSocket object has been
         called.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def updateAccountTime(self, timeStamp: str):
+    def updateAccountTime(self, timeStamp: str) -> None:
         self.logAnswer(current_fn_name(), vars())
 
-    def accountDownloadEnd(self, accountName: str):
+    def accountDownloadEnd(self, accountName: str) -> None:
         """
         Call this after a batch updateAccountValue() and updatePortfolio() is sent.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def nextValidId(self, orderId: int):
+    def nextValidId(self, orderId: int) -> None:
         """
         Receives next valid order id.
         """
         self.logAnswer(current_fn_name(), vars())
         self._client.process_next_valid_id(order_id=orderId)
 
-    def contractDetails(self, reqId: int, contractDetails: ContractDetails):
+    def contractDetails(self, reqId: int, contractDetails: ContractDetails) -> None:
         """
         Receives the full contract's definitions.
 
@@ -385,14 +385,14 @@ class InteractiveBrokersEWrapper(EWrapper):
         self.logAnswer(current_fn_name(), vars())
         self._client.process_contract_details(req_id=reqId, contract_details=contractDetails)
 
-    def bondContractDetails(self, reqId: int, contractDetails: ContractDetails):
+    def bondContractDetails(self, reqId: int, contractDetails: ContractDetails) -> None:
         """
         Call this function when the reqContractDetails function has been called for
         bonds.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def contractDetailsEnd(self, reqId: int):
+    def contractDetailsEnd(self, reqId: int) -> None:
         """
         Call this function once all contract details for a given request are received.
 
@@ -402,7 +402,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         self.logAnswer(current_fn_name(), vars())
         self._client.process_contract_details_end(req_id=reqId)
 
-    def execDetails(self, reqId: int, contract: Contract, execution: Execution):
+    def execDetails(self, reqId: int, contract: Contract, execution: Execution) -> None:
         """
         Fire this event when the reqExecutions() function is invoked or when an order is
         filled.
@@ -414,7 +414,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             execution=execution,
         )
 
-    def execDetailsEnd(self, reqId: int):
+    def execDetailsEnd(self, reqId: int) -> None:
         """
         Call this function once all executions have been sent to a client in response to
         reqExecutions().
@@ -429,7 +429,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         side: int,
         price: float,
         size: Decimal,
-    ):
+    ) -> None:
         """
         Return the order book.
 
@@ -464,7 +464,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         price: float,
         size: Decimal,
         isSmartDepth: bool,
-    ):
+    ) -> None:
         """
         Return the order book.
 
@@ -499,7 +499,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         msgType: int,
         newsMessage: str,
         originExch: str,
-    ):
+    ) -> None:
         """
         Provide IB's bulletins.
 
@@ -520,14 +520,14 @@ class InteractiveBrokersEWrapper(EWrapper):
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def managedAccounts(self, accountsList: str):
+    def managedAccounts(self, accountsList: str) -> None:
         """
         Receives a comma-separated string with the managed account ids.
         """
         self.logAnswer(current_fn_name(), vars())
         self._client.process_managed_accounts(accounts_list=accountsList)
 
-    def receiveFA(self, faData: FaDataType, cxml: str):
+    def receiveFA(self, faData: FaDataType, cxml: str) -> None:
         """
         Receives the Financial Advisor's configuration available in the TWS.
 
@@ -545,7 +545,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def historicalData(self, reqId: int, bar: BarData):
+    def historicalData(self, reqId: int, bar: BarData) -> None:
         """
         Return the requested historical data bars.
 
@@ -559,14 +559,14 @@ class InteractiveBrokersEWrapper(EWrapper):
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def historicalDataEnd(self, reqId: int, start: str, end: str):
+    def historicalDataEnd(self, reqId: int, start: str, end: str) -> None:
         """
         Mark the end of the reception of historical bars.
         """
         self.logAnswer(current_fn_name(), vars())
         self._client.process_historical_data_end(req_id=reqId, start=start, end=end)
 
-    def scannerParameters(self, xml: str):
+    def scannerParameters(self, xml: str) -> None:
         """
         Provide the XML-formatted parameters available to create a market scanner.
 
@@ -587,7 +587,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         benchmark: str,
         projection: str,
         legsStr: str,
-    ):
+    ) -> None:
         """
         Provide the data resulting from the market scanner request.
 
@@ -611,7 +611,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def scannerDataEnd(self, reqId: int):
+    def scannerDataEnd(self, reqId: int) -> None:
         """
         Indicate that scanner data reception has terminated.
 
@@ -634,7 +634,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         volume: Decimal,
         wap: Decimal,
         count: int,
-    ):
+    ) -> None:
         """
         Update real-time 5-second bars.
 
@@ -673,14 +673,14 @@ class InteractiveBrokersEWrapper(EWrapper):
             count=count,
         )
 
-    def currentTime(self, time: int):
+    def currentTime(self, time: int) -> None:
         """
         Obtain the IB server's system time by calling this method as a result of
         invoking `reqCurrentTime`.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def fundamentalData(self, reqId: TickerId, data: str):
+    def fundamentalData(self, reqId: TickerId, data: str) -> None:
         """
         Call this function to receive fundamental market data.
 
@@ -690,7 +690,11 @@ class InteractiveBrokersEWrapper(EWrapper):
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def deltaNeutralValidation(self, reqId: int, deltaNeutralContract: DeltaNeutralContract):
+    def deltaNeutralValidation(
+        self,
+        reqId: int,
+        deltaNeutralContract: DeltaNeutralContract,
+    ) -> None:
         """
         When accepting a Delta-Neutral RFQ (request for quote), the server sends a
         deltaNeutralValidation() message with the DeltaNeutralContract structure.
@@ -702,7 +706,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def commissionReport(self, commissionReport: CommissionReport):
+    def commissionReport(self, commissionReport: CommissionReport) -> None:
         """
         Trigger this callback in the following scenarios:
 
@@ -719,7 +723,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         contract: Contract,
         position: Decimal,
         avgCost: float,
-    ):
+    ) -> None:
         """
         Return real-time positions for all accounts in response to the reqPositions()
         method.
@@ -732,7 +736,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             avg_cost=avgCost,
         )
 
-    def positionEnd(self):
+    def positionEnd(self) -> None:
         """
         Call this once all position data for a given request has been received, serving
         as an end marker for the position() data.
@@ -747,7 +751,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         tag: str,
         value: str,
         currency: str,
-    ):
+    ) -> None:
         """
         Return the data from the TWS Account Window Summary tab in response to
         reqAccountSummary().
@@ -761,26 +765,26 @@ class InteractiveBrokersEWrapper(EWrapper):
             currency=currency,
         )
 
-    def accountSummaryEnd(self, reqId: int):
+    def accountSummaryEnd(self, reqId: int) -> None:
         """
         Call this method when all account summary data for a given request has been
         received.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def verifyCompleted(self, isSuccessful: bool, errorText: str):
+    def verifyCompleted(self, isSuccessful: bool, errorText: str) -> None:
 
         self.logAnswer(current_fn_name(), vars())
 
-    def verifyAndAuthMessageAPI(self, apiData: str, xyzChallange: str):
+    def verifyAndAuthMessageAPI(self, apiData: str, xyzChallange: str) -> None:
 
         self.logAnswer(current_fn_name(), vars())
 
-    def verifyAndAuthCompleted(self, isSuccessful: bool, errorText: str):
+    def verifyAndAuthCompleted(self, isSuccessful: bool, errorText: str) -> None:
 
         self.logAnswer(current_fn_name(), vars())
 
-    def displayGroupList(self, reqId: int, groups: str):
+    def displayGroupList(self, reqId: int, groups: str) -> None:
         """
         Receive a one-time response callback to queryDisplayGroups().
 
@@ -796,7 +800,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def displayGroupUpdated(self, reqId: int, contractInfo: str):
+    def displayGroupUpdated(self, reqId: int, contractInfo: str) -> None:
         """
         Receive a notification from TWS to the API client after subscribing to group
         events via subscribeToGroupEvents(). This notification will be resent if the
@@ -824,14 +828,14 @@ class InteractiveBrokersEWrapper(EWrapper):
         contract: Contract,
         pos: Decimal,
         avgCost: float,
-    ):
+    ) -> None:
         """
         Retrieve the position for a specific account or model, mirroring the position()
         function.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def positionMultiEnd(self, reqId: int):
+    def positionMultiEnd(self, reqId: int) -> None:
         """
         Terminate the position for a specific account or model, akin to the
         positionEnd() function.
@@ -846,14 +850,14 @@ class InteractiveBrokersEWrapper(EWrapper):
         key: str,
         value: str,
         currency: str,
-    ):
+    ) -> None:
         """
         Update the value for a specific account or model, similar to the
         updateAccountValue() function.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def accountUpdateMultiEnd(self, reqId: int):
+    def accountUpdateMultiEnd(self, reqId: int) -> None:
         """
         Download data for a specific account or model, resembling accountDownloadEnd()
         functionality.
@@ -873,7 +877,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         vega: float,
         theta: float,
         undPrice: float,
-    ):
+    ) -> None:
         """
         Invoke this function in response to market movements in an option or its
         underlier.
@@ -893,7 +897,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         multiplier: str,
         expirations: SetOfString,
         strikes: SetOfFloat,
-    ):
+    ) -> None:
         """
         Return the option chain for an underlying on a specified exchange.
 
@@ -929,7 +933,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             strikes=strikes,
         )
 
-    def securityDefinitionOptionParameterEnd(self, reqId: int):
+    def securityDefinitionOptionParameterEnd(self, reqId: int) -> None:
         """
         Invoke this after all callbacks to securityDefinitionOptionParameter have been
         completed.
@@ -943,7 +947,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         self.logAnswer(current_fn_name(), vars())
         self._client.process_security_definition_option_parameter_end(req_id=reqId)
 
-    def softDollarTiers(self, reqId: int, tiers: list):
+    def softDollarTiers(self, reqId: int, tiers: list) -> None:
         """
         Invoke this upon receiving Soft Dollar Tier configuration information.
 
@@ -959,7 +963,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def familyCodes(self, familyCodes: ListOfFamilyCode):
+    def familyCodes(self, familyCodes: ListOfFamilyCode) -> None:
         """
         Return an array of family codes.
         """
@@ -969,7 +973,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         self,
         reqId: int,
         contractDescriptions: ListOfContractDescription,
-    ):
+    ) -> None:
         """
         Return an array of sample contract descriptions.
         """
@@ -979,7 +983,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             contract_descriptions=contractDescriptions,
         )
 
-    def mktDepthExchanges(self, depthMktDataDescriptions: ListOfDepthExchanges):
+    def mktDepthExchanges(self, depthMktDataDescriptions: ListOfDepthExchanges) -> None:
         """
         Return an array of exchanges that provide depth data to UpdateMktDepthL2.
         """
@@ -993,13 +997,13 @@ class InteractiveBrokersEWrapper(EWrapper):
         articleId: str,
         headline: str,
         extraData: str,
-    ):
+    ) -> None:
         """
         Return news headlines.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def smartComponents(self, reqId: int, smartComponentMap: SmartComponentMap):
+    def smartComponents(self, reqId: int, smartComponentMap: SmartComponentMap) -> None:
         """
         Return exchange component mapping.
         """
@@ -1011,19 +1015,19 @@ class InteractiveBrokersEWrapper(EWrapper):
         minTick: float,
         bboExchange: str,
         snapshotPermissions: int,
-    ):
+    ) -> None:
         """
         Return the exchange map for a specific contract.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def newsProviders(self, newsProviders: ListOfNewsProviders):
+    def newsProviders(self, newsProviders: ListOfNewsProviders) -> None:
         """
         Return available and subscribed API news providers.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def newsArticle(self, requestId: int, articleType: int, articleText: str):
+    def newsArticle(self, requestId: int, articleType: int, articleText: str) -> None:
         """
         Return the body of a news article.
         """
@@ -1036,32 +1040,32 @@ class InteractiveBrokersEWrapper(EWrapper):
         providerCode: str,
         articleId: str,
         headline: str,
-    ):
+    ) -> None:
         """
         Return historical news headlines.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def historicalNewsEnd(self, requestId: int, hasMore: bool):
+    def historicalNewsEnd(self, requestId: int, hasMore: bool) -> None:
         """
         Signals end of historical news.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def headTimestamp(self, reqId: int, headTimestamp: str):
+    def headTimestamp(self, reqId: int, headTimestamp: str) -> None:
         """
         Return the earliest available data for a specific type of data for a given
         contract.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def histogramData(self, reqId: int, items: HistogramData):
+    def histogramData(self, reqId: int, items: HistogramData) -> None:
         """
         Return histogram data for a contract.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def historicalDataUpdate(self, reqId: int, bar: BarData):
+    def historicalDataUpdate(self, reqId: int, bar: BarData) -> None:
         """
         Return updates in real time when keepUpToDate is set to True.
         """
@@ -1071,25 +1075,25 @@ class InteractiveBrokersEWrapper(EWrapper):
             bar=bar,
         )
 
-    def rerouteMktDataReq(self, reqId: int, conId: int, exchange: str):
+    def rerouteMktDataReq(self, reqId: int, conId: int, exchange: str) -> None:
         """
         Return rerouted CFD contract information for a market data request.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def rerouteMktDepthReq(self, reqId: int, conId: int, exchange: str):
+    def rerouteMktDepthReq(self, reqId: int, conId: int, exchange: str) -> None:
         """
         Return rerouted CFD contract information for a market depth request.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def marketRule(self, marketRuleId: int, priceIncrements: ListOfPriceIncrements):
+    def marketRule(self, marketRuleId: int, priceIncrements: ListOfPriceIncrements) -> None:
         """
         Return the minimum price increment structure for a specific market rule ID.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def pnl(self, reqId: int, dailyPnL: float, unrealizedPnL: float, realizedPnL: float):
+    def pnl(self, reqId: int, dailyPnL: float, unrealizedPnL: float, realizedPnL: float) -> None:
         """
         Return the daily Profit and Loss (PnL) for the account.
         """
@@ -1103,13 +1107,13 @@ class InteractiveBrokersEWrapper(EWrapper):
         unrealizedPnL: float,
         realizedPnL: float,
         value: float,
-    ):
+    ) -> None:
         """
         Return the daily Profit and Loss (PnL) for a single position in the account.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def historicalTicks(self, reqId: int, ticks: ListOfHistoricalTick, done: bool):
+    def historicalTicks(self, reqId: int, ticks: ListOfHistoricalTick, done: bool) -> None:
         """
         Return historical tick data when whatToShow is set to MIDPOINT.
         """
@@ -1120,7 +1124,12 @@ class InteractiveBrokersEWrapper(EWrapper):
             done=done,
         )
 
-    def historicalTicksBidAsk(self, reqId: int, ticks: ListOfHistoricalTickBidAsk, done: bool):
+    def historicalTicksBidAsk(
+        self,
+        reqId: int,
+        ticks: ListOfHistoricalTickBidAsk,
+        done: bool,
+    ) -> None:
         """
         Return historical tick data when whatToShow is set to BID_ASK.
         """
@@ -1131,7 +1140,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             done=done,
         )
 
-    def historicalTicksLast(self, reqId: int, ticks: ListOfHistoricalTickLast, done: bool):
+    def historicalTicksLast(self, reqId: int, ticks: ListOfHistoricalTickLast, done: bool) -> None:
         """
         Return historical tick data when whatToShow is set to TRADES.
         """
@@ -1152,7 +1161,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         tickAttribLast: TickAttribLast,
         exchange: str,
         specialConditions: str,
-    ):
+    ) -> None:
         """
         Return tick-by-tick data for tickType set to "Last" or "AllLast".
         """
@@ -1177,7 +1186,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         bidSize: Decimal,
         askSize: Decimal,
         tickAttribBidAsk: TickAttribBidAsk,
-    ):
+    ) -> None:
         """
         Return tick-by-tick data for tickType set to "BidAsk".
         """
@@ -1192,19 +1201,19 @@ class InteractiveBrokersEWrapper(EWrapper):
             tick_attrib_bid_ask=tickAttribBidAsk,
         )
 
-    def tickByTickMidPoint(self, reqId: int, time: int, midPoint: float):
+    def tickByTickMidPoint(self, reqId: int, time: int, midPoint: float) -> None:
         """
         Return tick-by-tick data for tickType set to "MidPoint".
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def orderBound(self, reqId: int, apiClientId: int, apiOrderId: int):
+    def orderBound(self, reqId: int, apiClientId: int, apiOrderId: int) -> None:
         """
         Return the orderBound notification.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def completedOrder(self, contract: Contract, order: Order, orderState: OrderState):
+    def completedOrder(self, contract: Contract, order: Order, orderState: OrderState) -> None:
         """
         Feed in completed orders.
 
@@ -1222,22 +1231,22 @@ class InteractiveBrokersEWrapper(EWrapper):
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def completedOrdersEnd(self):
+    def completedOrdersEnd(self) -> None:
         """
         Invoke this upon completing a request for completed orders.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def replaceFAEnd(self, reqId: int, text: str):
+    def replaceFAEnd(self, reqId: int, text: str) -> None:
         """
         Invoke this at the completion of a Financial Advisor (FA) replacement operation.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def wshMetaData(self, reqId: int, dataJson: str):
+    def wshMetaData(self, reqId: int, dataJson: str) -> None:
         self.logAnswer(current_fn_name(), vars())
 
-    def wshEventData(self, reqId: int, dataJson: str):
+    def wshEventData(self, reqId: int, dataJson: str) -> None:
         self.logAnswer(current_fn_name(), vars())
 
     def historicalSchedule(
@@ -1247,13 +1256,13 @@ class InteractiveBrokersEWrapper(EWrapper):
         endDateTime: str,
         timeZone: str,
         sessions: ListOfHistoricalSessions,
-    ):
+    ) -> None:
         """
         Return historical schedule for historical data request with whatToShow=SCHEDULE.
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def userInfo(self, reqId: int, whiteBrandingId: str):
+    def userInfo(self, reqId: int, whiteBrandingId: str) -> None:
         """
         Return user info.
         """
