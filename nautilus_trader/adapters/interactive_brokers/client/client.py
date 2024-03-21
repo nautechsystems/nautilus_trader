@@ -526,7 +526,7 @@ class InteractiveBrokersClient(
         Continuously process messages from the internal incoming message queue.
         """
         self._log.debug(
-            "Client internal message queue started.",
+            "Client internal message queue processor started.",
         )
         try:
             while (
@@ -548,7 +548,7 @@ class InteractiveBrokersClient(
                 )
             )
         finally:
-            self._log.debug("Client TWS incoming message reader stopped.")
+            self._log.debug("Internal message queue processor stopped.")
 
     def _process_message(self, msg: str) -> bool:
         """
