@@ -83,7 +83,7 @@ docformatter = "^1.7.5"
 mypy = "^1.9.0"
 pandas-stubs = "^2.2.1"
 pre-commit = "^3.6.2"
-ruff = "^0.3.3"
+ruff = "^0.3.4"
 types-pytz = "^2023.3"
 types-requests = "^2.31"
 types-toml = "^0.10.2"
@@ -98,7 +98,7 @@ pytest-aiohttp = "^1.0.5"
 pytest-asyncio = "==0.21.1"  # Pinned due Cython: cannot set '__pytest_asyncio_scoped_event_loop' attribute of immutable type
 pytest-benchmark = "^4.0.0"
 pytest-cov = "^4.1.0"
-pytest-mock = "^3.12.0"
+pytest-mock = "^3.13.0"
 pytest-xdist = { version = "^3.5.0", extras = ["psutil"] }
 
 [tool.poetry.group.docs]
