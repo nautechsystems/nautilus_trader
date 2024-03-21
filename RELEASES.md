@@ -3,8 +3,9 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added Databento adapter continuous symbology support (will infer from symbols)
 - Added `DatabaseConfig.timeout` config option for timeout seconds to wait for a new connection
-- Added CSV tick and bar data loaders params, thanks @rterbush
+- Added CSV tick and bar data loader params, thanks @rterbush
 - Implemented `LogGuard` to ensure global logger is flushed on termination, thanks @ayush-sb and @twitu
 - Improved Binance execution client ping listen key error handling and logging
 - Improved Redis cache adapter and message bus error handling and logging

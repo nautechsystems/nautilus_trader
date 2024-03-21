@@ -29,6 +29,7 @@ use tracing::{debug, error, trace};
 
 use super::loader::convert_instrument_to_pyobject;
 use crate::databento::{
+    common::{check_consistent_symbology, infer_symbology_type},
     live::{DatabentoFeedHandler, LiveCommand, LiveMessage},
     types::DatabentoPublisher,
 };
@@ -150,12 +151,11 @@ impl DatabentoLiveClient {
     fn py_subscribe(
         &mut self,
         schema: String,
-        symbols: String,
-        stype_in: Option<String>,
+        symbols: Vec<&str>,
         start: Option<UnixNanos>,
     ) -> PyResult<()> {
-        let stype_in = stype_in.unwrap_or("raw_symbol".to_string());
-
+        let stype_in = infer_symbology_type(symbols.first().unwrap());
+        check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let mut sub = Subscription::builder()
             .symbols(symbols)
             .schema(dbn::Schema::from_str(&schema).map_err(to_pyvalue_err)?)

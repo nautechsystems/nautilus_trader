@@ -44,8 +44,8 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 instrument_ids = [
-    InstrumentId.from_str("ESM4.GLBX"),
-    # InstrumentId.from_str("ESU4.GLBX"),
+    # InstrumentId.from_str("ESM4.GLBX"),
+    InstrumentId.from_str("ES.c.0.GLBX"),
     # InstrumentId.from_str("AAPL.XNAS"),
 ]
 
@@ -153,7 +153,7 @@ class DataSubscriber(Strategy):
             # )
 
             self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
-            # self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
+            self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
             # self.request_quote_ticks(instrument_id)
             # self.request_trade_ticks(instrument_id)
 

@@ -2532,7 +2532,7 @@ class DatabentoHistoricalClient:
     async def get_range_instruments(
         self,
         dataset: str,
-        symbols: str,
+        symbols: list[str],
         start: int,
         end: int | None = None,
         limit: int | None = None,
@@ -2540,7 +2540,7 @@ class DatabentoHistoricalClient:
     async def get_range_quotes(
         self,
         dataset: str,
-        symbols: str,
+        symbols: list[str],
         start: int,
         end: int | None = None,
         limit: int | None = None,
@@ -2548,7 +2548,7 @@ class DatabentoHistoricalClient:
     async def get_range_trades(
         self,
         dataset: str,
-        symbols: str,
+        symbols: list[str],
         start: int,
         end: int | None = None,
         limit: int | None = None,
@@ -2556,7 +2556,7 @@ class DatabentoHistoricalClient:
     async def get_range_bars(
         self,
         dataset: str,
-        symbols: str,
+        symbols: list[str],
         aggregation: BarAggregation,
         start: int,
         end: int | None = None,
@@ -2565,7 +2565,7 @@ class DatabentoHistoricalClient:
     async def get_range_imbalance(
         self,
         dataset: str,
-        symbols: str,
+        symbols: list[str],
         start: int,
         end: int | None = None,
         limit: int | None = None,
@@ -2573,7 +2573,7 @@ class DatabentoHistoricalClient:
     async def get_range_statistics(
         self,
         dataset: str,
-        symbols: str,
+        symbols: list[str],
         start: int,
         end: int | None = None,
         limit: int | None = None,
@@ -2597,7 +2597,7 @@ class DatabentoLiveClient:
     def subscribe(
         self,
         schema: str,
-        symbols: str,
+        symbols: list[str],
         stype_in: str | None = None,
         start: int | None = None,
     ) -> dict[str, str]: ...
