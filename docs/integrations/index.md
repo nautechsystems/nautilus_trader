@@ -11,18 +11,11 @@
    binance.md
    databento.md
    ib.md
-
 ```
 
-NautilusTrader is designed in a modular way to work with 'adapters' which provide
-connectivity to data providers and/or trading venues - converting their raw API
+NautilusTrader is designed in a modular way to work with *adapters* which provide
+connectivity to trading venues and data providers - converting their raw API
 into a unified interface. The following integrations are currently supported:
-
-```{warning}
-The initial integrations for the project are currently under heavy construction. 
-It's advised to conduct some of your own testing with small amounts of capital before
-running strategies which are able to access larger capital allocations.
-```
 
 | Name                                                      | ID                    | Type                    | Status                                                  | Docs                                                                |
 | :-------------------------------------------------------- | :-------------------- | :---------------------- | :------------------------------------------------------ | :------------------------------------------------------------------ |

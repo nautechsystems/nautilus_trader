@@ -136,7 +136,7 @@ This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/
 ## Integrations
 
 NautilusTrader is designed in a modular way to work with _adapters_ which provide
-connectivity to trading venues and/or data providers - converting their raw API
+connectivity to trading venues and data providers - converting their raw API
 into a unified interface. The following integrations are currently supported:
 
 | Name                                                      | ID                    | Type                    | Status                                                  | Docs                                                                |
@@ -157,9 +157,7 @@ into a unified interface. The following integrations are currently supported:
 - `beta` - Completed to a minimally working state and in a 'beta' testing phase
 - `stable` - Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain)
 
-```{note}
 Refer to the [Integrations](https://docs.nautilustrader.io/integrations/index.html) documentation for further details.
-```
 
 ## Installation
 
