@@ -27,6 +27,7 @@ pub fn get_date_time_range(start: UnixNanos, end: UnixNanos) -> anyhow::Result<D
     )))
 }
 
+#[must_use]
 pub fn infer_symbology_type(symbol: &str) -> String {
     if symbol.ends_with(".FUT") || symbol.ends_with(".OPT") {
         return "parent".to_string();
