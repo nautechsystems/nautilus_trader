@@ -447,7 +447,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             self._log.info(f"Request already exist for {request}")
             return None
 
-    def _process_bar_data(
+    async def _process_bar_data(
         self,
         bar_type_str: str,
         bar: BarData,
@@ -496,19 +496,19 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
                 return None  # Wait for bar to close
 
             if historical:
-                ts_init = self._ib_bar_to_ts_init(bar, bar_type)
+                ts_init = await self._ib_bar_to_ts_init(bar, bar_type)
                 if ts_init >= self._clock.timestamp_ns():
                     return None  # The bar is incomplete
 
         # Process the bar
-        return self._ib_bar_to_nautilus_bar(
+        return await self._ib_bar_to_nautilus_bar(
             bar_type=bar_type,
             bar=bar,
             ts_init=ts_init,
             is_revision=not is_new_bar,
         )
 
-    def _convert_ib_bar_date_to_unix_nanos(self, bar: BarData, bar_type: BarType) -> int:
+    async def _convert_ib_bar_date_to_unix_nanos(self, bar: BarData, bar_type: BarType) -> int:
         """
         Convert the date from BarData to unix nanoseconds.
 
@@ -536,7 +536,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         return ts.value
 
-    def _ib_bar_to_ts_init(self, bar: BarData, bar_type: BarType) -> int:
+    async def _ib_bar_to_ts_init(self, bar: BarData, bar_type: BarType) -> int:
         """
         Calculate the initialization timestamp for a bar.
 
@@ -556,10 +556,10 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         int
 
         """
-        ts = self._convert_ib_bar_date_to_unix_nanos(bar, bar_type)
+        ts = await self._convert_ib_bar_date_to_unix_nanos(bar, bar_type)
         return ts + pd.Timedelta(bar_type.spec.timedelta).value
 
-    def _ib_bar_to_nautilus_bar(
+    async def _ib_bar_to_nautilus_bar(
         self,
         bar_type: BarType,
         bar: BarData,
@@ -589,7 +589,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         if not instrument:
             raise ValueError(f"No cached instrument for {bar_type.instrument_id}")
 
-        ts_event = self._convert_ib_bar_date_to_unix_nanos(bar, bar_type)
+        ts_event = await self._convert_ib_bar_date_to_unix_nanos(bar, bar_type)
         return Bar(
             bar_type=bar_type,
             open=instrument.make_price(bar.open),
@@ -602,7 +602,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             is_revision=is_revision,
         )
 
-    def _process_trade_ticks(self, req_id: int, ticks: list[HistoricalTickLast]) -> None:
+    async def _process_trade_ticks(self, req_id: int, ticks: list[HistoricalTickLast]) -> None:
         """
         Process received trade tick data, convert it to Nautilus Trader TradeTick type,
         and add it to the relevant request's result.
@@ -634,7 +634,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
             self._end_request(req_id)
 
-    def _handle_data(self, data: Data) -> None:
+    async def _handle_data(self, data: Data) -> None:
         """
         Handle and forward processed data to the appropriate destination. This method is
         a generic data handler that forwards processed market data, such as bars or
@@ -648,7 +648,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         self._msgbus.send(endpoint="DataEngine.process", msg=data)
 
-    def process_market_data_type(self, *, req_id: int, market_data_type: int) -> None:
+    async def process_market_data_type(self, *, req_id: int, market_data_type: int) -> None:
         """
         Return the market data type (real-time, frozen, delayed, delayed-frozen)
         of ticker sent by EClientSocket::reqMktData when TWS switches from real-time
@@ -659,7 +659,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         else:
             self._log.warning(f"Market DataType is {MarketDataTypeEnum.to_str(market_data_type)}")
 
-    def process_tick_by_tick_bid_ask(
+    async def process_tick_by_tick_bid_ask(
         self,
         *,
         req_id: int,
@@ -690,9 +690,9 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             ts_init=max(self._clock.timestamp_ns(), ts_event),  # `ts_event` <= `ts_init`
         )
 
-        self._handle_data(quote_tick)
+        await self._handle_data(quote_tick)
 
-    def process_tick_by_tick_all_last(
+    async def process_tick_by_tick_all_last(
         self,
         *,
         req_id: int,
@@ -728,9 +728,9 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             ts_init=max(self._clock.timestamp_ns(), ts_event),  # `ts_event` <= `ts_init`
         )
 
-        self._handle_data(trade_tick)
+        await self._handle_data(trade_tick)
 
-    def process_realtime_bar(
+    async def process_realtime_bar(
         self,
         *,
         req_id: int,
@@ -763,41 +763,41 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             is_revision=False,
         )
 
-        self._handle_data(bar)
+        await self._handle_data(bar)
 
-    def process_historical_data(self, *, req_id: int, bar: BarData) -> None:
+    async def process_historical_data(self, *, req_id: int, bar: BarData) -> None:
         """
         Return the requested historical data bars.
         """
         if request := self._requests.get(req_id=req_id):
             bar_type = BarType.from_str(request.name)
-            bar = self._ib_bar_to_nautilus_bar(
+            bar = await self._ib_bar_to_nautilus_bar(
                 bar_type=bar_type,
                 bar=bar,
-                ts_init=self._ib_bar_to_ts_init(bar, bar_type),
+                ts_init=await self._ib_bar_to_ts_init(bar, bar_type),
             )
             if bar:
                 request.result.append(bar)
         elif subscription := self._subscriptions.get(req_id=req_id):
-            bar = self._process_bar_data(
+            bar = await self._process_bar_data(
                 bar_type_str=str(subscription.name),
                 bar=bar,
                 handle_revised_bars=False,
                 historical=True,
             )
             if bar:
-                self._handle_data(bar)
+                await self._handle_data(bar)
         else:
             self._log.debug(f"Received {bar=} on {req_id=}")
             return
 
-    def process_historical_data_end(self, *, req_id: int, start: str, end: str) -> None:
+    async def process_historical_data_end(self, *, req_id: int, start: str, end: str) -> None:
         """
         Mark the end of receiving historical bars.
         """
         self._end_request(req_id)
 
-    def process_historical_data_update(self, *, req_id: int, bar: BarData) -> None:
+    async def process_historical_data_update(self, *, req_id: int, bar: BarData) -> None:
         """
         Receive bars in real-time if keepUpToDate is set as True in reqHistoricalData.
 
@@ -811,7 +811,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             return
         if not isinstance(subscription.handle, functools.partial):
             raise TypeError(f"Expecting partial type subscription method. {subscription=}")
-        if bar := self._process_bar_data(
+        if bar := await self._process_bar_data(
             bar_type_str=str(subscription.name),
             bar=bar,
             handle_revised_bars=subscription.handle.keywords.get("handle_revised_bars", False),
@@ -819,9 +819,9 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             if bar.is_single_price() and bar.open.as_double() == 0:
                 self._log.debug(f"Ignoring Zero priced {bar=}")
             else:
-                self._handle_data(bar)
+                await self._handle_data(bar)
 
-    def process_historical_ticks_bid_ask(
+    async def process_historical_ticks_bid_ask(
         self,
         *,
         req_id: int,
@@ -852,18 +852,18 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
             self._end_request(req_id)
 
-    def process_historical_ticks_last(self, *, req_id: int, ticks: list, done: bool) -> None:
+    async def process_historical_ticks_last(self, *, req_id: int, ticks: list, done: bool) -> None:
         """
         Return the requested historic trade ticks.
         """
         if not done:
             return
-        self._process_trade_ticks(req_id, ticks)
+        await self._process_trade_ticks(req_id, ticks)
 
-    def process_historical_ticks(self, *, req_id: int, ticks: list, done: bool) -> None:
+    async def process_historical_ticks(self, *, req_id: int, ticks: list, done: bool) -> None:
         """
         Return the requested historic ticks.
         """
         if not done:
             return
-        self._process_trade_ticks(req_id, ticks)
+        await self._process_trade_ticks(req_id, ticks)

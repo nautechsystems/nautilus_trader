@@ -139,7 +139,7 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
             self._log.info(f"Request already exist for {request}")
             return None
 
-    def process_contract_details(
+    async def process_contract_details(
         self,
         *,
         req_id: int,
@@ -154,14 +154,14 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
             return
         request.result.append(contract_details)
 
-    def process_contract_details_end(self, *, req_id: int) -> None:
+    async def process_contract_details_end(self, *, req_id: int) -> None:
         """
         After all contracts matching the request were returned, this method will mark
         the end of their reception.
         """
         self._end_request(req_id)
 
-    def process_security_definition_option_parameter(
+    async def process_security_definition_option_parameter(
         self,
         *,
         req_id: int,
@@ -181,13 +181,13 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
         if request := self._requests.get(req_id=req_id):
             request.result.append((exchange, expirations))
 
-    def process_security_definition_option_parameter_end(self, *, req_id: int) -> None:
+    async def process_security_definition_option_parameter_end(self, *, req_id: int) -> None:
         """
         Call when all callbacks to securityDefinitionOptionParameter are complete.
         """
         self._end_request(req_id)
 
-    def process_symbol_samples(
+    async def process_symbol_samples(
         self,
         *,
         req_id: int,
