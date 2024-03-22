@@ -160,11 +160,12 @@ class InteractiveBrokersClient(
         message reader, and internal message queue processing tasks.
 
         """
+        self._log.info(f"Starting InteractiveBrokersClient ({self._client_id})...")
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
-
-        self._log.info(f"Starting InteractiveBrokersClient ({self._client_id})...")
-        self._loop.run_until_complete(self._startup())
+            self._loop.run_until_complete(self._startup())
+        else:
+            self._create_task(self._startup())
 
     async def _startup(self):
         try:
