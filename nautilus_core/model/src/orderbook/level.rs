@@ -17,7 +17,7 @@ use std::{cmp::Ordering, collections::BTreeMap};
 
 use crate::{
     data::order::{BookOrder, OrderId},
-    orderbook::{book::BookIntegrityError, ladder::BookPrice},
+    orderbook::{error::BookIntegrityError, ladder::BookPrice},
     types::fixed::FIXED_SCALAR,
 };
 

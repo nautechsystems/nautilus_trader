@@ -19,7 +19,7 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use super::book::BookIntegrityError;
+use super::error::BookIntegrityError;
 use crate::{
     data::order::{BookOrder, OrderId},
     enums::OrderSide,

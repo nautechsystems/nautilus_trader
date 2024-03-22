@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use super::{quote::QuoteTick, trade::TradeTick};
 use crate::{
     enums::OrderSide,
-    orderbook::{book::BookIntegrityError, ladder::BookPrice},
+    orderbook::{error::BookIntegrityError, ladder::BookPrice},
     types::{price::Price, quantity::Quantity},
 };
 
