@@ -14,56 +14,27 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::time::UnixNanos;
-use thiserror::Error;
 
-use super::{
-    aggregation::pre_process_order,
-    analysis::{get_avg_px_for_quantity, get_quantity_for_price},
-    display::pprint_book,
-    ladder::BookPrice,
-    level::Level,
-};
+use super::{aggregation::pre_process_order, analysis, display::pprint_book, level::Level};
 use crate::{
     data::{
         delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10, order::BookOrder,
     },
     enums::{BookAction, BookType, OrderSide},
     identifiers::instrument_id::InstrumentId,
-    orderbook::ladder::Ladder,
+    orderbook::{error::BookIntegrityError, ladder::Ladder},
     types::{price::Price, quantity::Quantity},
 };
 
-#[derive(thiserror::Error, Debug)]
-pub enum InvalidBookOperation {
-    #[error("Invalid book operation: cannot pre-process order for {0} book")]
-    PreProcessOrder(BookType),
-    #[error("Invalid book operation: cannot add order for {0} book")]
-    Add(BookType),
-}
-
-#[derive(Error, Debug)]
-pub enum BookIntegrityError {
-    #[error("Integrity error: order not found: order_id={0}, ts_event={1}, sequence={2}")]
-    OrderNotFound(u64, u64, u64),
-    #[error("Integrity error: invalid `NoOrderSide` in book")]
-    NoOrderSide,
-    #[error("Integrity error: orders in cross [{0} {1}]")]
-    OrdersCrossed(BookPrice, BookPrice),
-    #[error("Integrity error: number of {0} orders at level > 1 for L2_MBP book, was {1}")]
-    TooManyOrders(OrderSide, usize),
-    #[error("Integrity error: number of {0} levels > 1 for L1_MBP book, was {1}")]
-    TooManyLevels(OrderSide, usize),
-}
-
-/// Provides an order book which can handle MBO (market by order, a.k.a L3)
-/// granularity data.
+/// Provides an order book which can handle both MBO (market by order / L3)
+/// and MBP (market by price / L2) granularity data.
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct OrderBook {
-    /// The order book type.
+    /// The order book type (MBP types will aggregate orders).
     pub book_type: BookType,
     /// The instrument ID for the order book.
     pub instrument_id: InstrumentId,
@@ -250,7 +221,7 @@ impl OrderBook {
             _ => panic!("Invalid `OrderSide` {order_side}"),
         };
 
-        get_avg_px_for_quantity(qty, levels)
+        analysis::get_avg_px_for_quantity(qty, levels)
     }
 
     #[must_use]
@@ -261,7 +232,7 @@ impl OrderBook {
             _ => panic!("Invalid `OrderSide` {order_side}"),
         };
 
-        get_quantity_for_price(price, order_side, levels)
+        analysis::get_quantity_for_price(price, order_side, levels)
     }
 
     #[must_use]

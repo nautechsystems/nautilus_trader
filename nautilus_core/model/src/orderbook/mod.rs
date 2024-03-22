@@ -17,5 +17,6 @@ pub mod aggregation;
 pub mod analysis;
 pub mod book;
 pub mod display;
+pub mod error;
 pub mod ladder;
 pub mod level;

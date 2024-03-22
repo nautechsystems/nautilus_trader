@@ -17,7 +17,7 @@ use super::book::OrderBook;
 use crate::{
     data::{order::BookOrder, quote::QuoteTick, trade::TradeTick},
     enums::{BookType, OrderSide},
-    orderbook::book::BookIntegrityError,
+    orderbook::error::BookIntegrityError,
 };
 
 pub fn book_update_quote_tick(book: &mut OrderBook, quote: &QuoteTick) {

@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 use super::{book::OrderBook, ladder::BookPrice, level::Level};
 use crate::{
     enums::{BookType, OrderSide},
-    orderbook::book::BookIntegrityError,
+    orderbook::error::BookIntegrityError,
     types::{price::Price, quantity::Quantity},
 };
 
