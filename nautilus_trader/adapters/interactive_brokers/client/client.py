@@ -165,7 +165,6 @@ class InteractiveBrokersClient(
 
         self._log.info(f"Starting InteractiveBrokersClient ({self._client_id})...")
         self._loop.run_until_complete(self._startup())
-        self._is_client_ready.set()
 
     async def _startup(self):
         try:
