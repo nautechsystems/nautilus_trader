@@ -29,8 +29,8 @@ use tracing::{debug, error, trace};
 
 use super::loader::convert_instrument_to_pyobject;
 use crate::databento::{
-    common::{check_consistent_symbology, infer_symbology_type},
     live::{DatabentoFeedHandler, LiveCommand, LiveMessage},
+    symbology::{check_consistent_symbology, infer_symbology_type},
     types::DatabentoPublisher,
 };
 
