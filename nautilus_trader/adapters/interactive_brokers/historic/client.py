@@ -84,10 +84,11 @@ class HistoricInteractiveBrokersClient:
             port=port,
             client_id=client_id,
         )
+        self._client.start()
 
     async def _connect(self) -> None:
         # Connect client
-        self._client.start()
+        await self._client.wait_until_ready()
         self._client.registered_nautilus_clients.add(1)
 
         # Set Market Data Type
