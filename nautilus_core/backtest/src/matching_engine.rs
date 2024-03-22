@@ -25,7 +25,7 @@ use nautilus_model::{
     enums::{AccountType, BookType, MarketStatus, OmsType},
     identifiers::{account_id::AccountId, trader_id::TraderId, venue::Venue},
     instruments::Instrument,
-    orderbook::{book_mbo::OrderBookMbo, book_mbp::OrderBookMbp},
+    orderbook::book::OrderBook,
     types::price::Price,
 };
 
@@ -51,8 +51,7 @@ pub struct OrderMatchingEngine {
     // pub cache: Cache  // TODO
     clock: &'static AtomicTime,
     msgbus: &'static MessageBus,
-    book_mbo: Option<OrderBookMbo>,
-    book_mbp: Option<OrderBookMbp>,
+    book: Option<OrderBook>,
     account_ids: HashMap<TraderId, AccountId>,
     core: OrderMatchingCore,
     target_bid: Option<Price>,

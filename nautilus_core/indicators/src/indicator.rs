@@ -20,7 +20,7 @@ use nautilus_model::{
         bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10,
         quote::QuoteTick, trade::TradeTick,
     },
-    orderbook::{book_mbo::OrderBookMbo, book_mbp::OrderBookMbp},
+    orderbook::book::OrderBook,
 };
 
 const IMPL_ERR: &str = "is not implemented for";
@@ -42,13 +42,9 @@ pub trait Indicator {
         // Eventually change this to log an error
         panic!("`handle_depth` {} `{}`", IMPL_ERR, self.name());
     }
-    fn handle_book_mbo(&mut self, book: &OrderBookMbo) {
+    fn handle_book(&mut self, book: &OrderBook) {
         // Eventually change this to log an error
         panic!("`handle_book_mbo` {} `{}`", IMPL_ERR, self.name());
-    }
-    fn handle_book_mbp(&mut self, book: &OrderBookMbp) {
-        // Eventually change this to log an error
-        panic!("`handle_book_mbp` {} `{}`", IMPL_ERR, self.name());
     }
     fn handle_quote_tick(&mut self, quote: &QuoteTick) {
         // Eventually change this to log an error
