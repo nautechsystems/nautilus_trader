@@ -115,6 +115,8 @@ class InteractiveBrokersClient(
         self._tws_incoming_msg_reader_task: asyncio.Task | None = None
         self._internal_msg_queue_processor_task: asyncio.Task | None = None
         self._internal_msg_queue: asyncio.Queue = asyncio.Queue()
+        self._msg_handler_processor_task: asyncio.Task | None = None
+        self.msg_handler_task_queue: asyncio.Queue = asyncio.Queue()
 
         # Event flags
         self._is_client_ready: asyncio.Event = asyncio.Event()
@@ -206,6 +208,11 @@ class InteractiveBrokersClient(
         self._internal_msg_queue_processor_task = self._create_task(
             self._run_internal_msg_queue_processor(),
         )
+        if self._msg_handler_processor_task:
+            self._msg_handler_processor_task.cancel()
+        self._msg_handler_processor_task = self._create_task(
+            self._run_msg_handler_processor(),
+        )
 
     def _start_connection_watchdog(self) -> None:
         """
@@ -227,6 +234,7 @@ class InteractiveBrokersClient(
             self._connection_watchdog_task,
             self._tws_incoming_msg_reader_task,
             self._internal_msg_queue_processor_task,
+            self._msg_handler_processor_task,
         ]
         for task in tasks:
             if task and not task.cancelled():
@@ -581,6 +589,38 @@ class InteractiveBrokersClient(
         # manager and handler classes to support custom processing required for Nautilus.
         self._eclient.decoder.interpret(fields)
         return True
+
+    async def _run_msg_handler_processor(self):
+        """
+        Asynchronously processes handler tasks from the message handler task queue.
+
+        Continuously retrieves and executes tasks from `msg_handler_task_queue`, which are
+        typically partial functions representing message handling operations received from the ibapi wrapper.
+        The method ensures each task is awaited, thereby executing it. After task execution, it marks
+        the task as done in the queue.
+
+        This method is designed to run indefinitely until externally cancelled, typically as part
+        of an application shutdown or when the handling context changes requiring a halt in operations.
+
+        """
+        try:
+            while True:
+                handler_task = await self.msg_handler_task_queue.get()
+                await handler_task()
+                self.msg_handler_task_queue.task_done()
+        except asyncio.CancelledError:
+            log_msg = (
+                f"Handler task processing stopped. (qsize={self.msg_handler_task_queue.qsize()})."
+            )
+            (
+                self._log.warning(log_msg)
+                if not self._internal_msg_queue.empty()
+                else self._log.debug(
+                    log_msg,
+                )
+            )
+        finally:
+            self._log.debug("Handler task processor stopped.")
 
     def _next_req_id(self) -> int:
         """
