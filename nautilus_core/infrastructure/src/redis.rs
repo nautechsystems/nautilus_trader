@@ -24,14 +24,14 @@ use nautilus_common::{
     cache::{CacheDatabase, DatabaseCommand, DatabaseOperation},
     redis::{create_redis_connection, get_buffer_interval},
 };
-use nautilus_core::uuid::UUID4;
+use nautilus_core::{correctness::check_slice_not_empty, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
 use redis::{Commands, Connection, Pipeline};
 use serde_json::{json, Value};
 use tracing::debug;
 
 // Error constants
-const CHANNEL_TX_FAILED: &str = "Failed to send to channel";
+const FAILED_TX_CHANNEL: &str = "Failed to send to channel";
 
 // Redis constants
 const FLUSHDB: &str = "FLUSHDB";
@@ -147,7 +147,7 @@ impl CacheDatabase for RedisCacheDatabase {
         let op = DatabaseCommand::new(DatabaseOperation::Insert, key, payload);
         match self.tx.send(op) {
             Ok(_) => Ok(()),
-            Err(e) => anyhow::bail!("{CHANNEL_TX_FAILED}: {e}"),
+            Err(e) => anyhow::bail!("{FAILED_TX_CHANNEL}: {e}"),
         }
     }
 
@@ -155,7 +155,7 @@ impl CacheDatabase for RedisCacheDatabase {
         let op = DatabaseCommand::new(DatabaseOperation::Update, key, payload);
         match self.tx.send(op) {
             Ok(_) => Ok(()),
-            Err(e) => anyhow::bail!("{CHANNEL_TX_FAILED}: {e}"),
+            Err(e) => anyhow::bail!("{FAILED_TX_CHANNEL}: {e}"),
         }
     }
 
@@ -163,7 +163,7 @@ impl CacheDatabase for RedisCacheDatabase {
         let op = DatabaseCommand::new(DatabaseOperation::Delete, key, payload);
         match self.tx.send(op) {
             Ok(_) => Ok(()),
-            Err(e) => anyhow::bail!("{CHANNEL_TX_FAILED}: {e}"),
+            Err(e) => anyhow::bail!("{FAILED_TX_CHANNEL}: {e}"),
         }
     }
 
@@ -325,9 +325,7 @@ fn insert(
     key: &str,
     value: Vec<&[u8]>,
 ) -> anyhow::Result<()> {
-    if value.is_empty() {
-        anyhow::bail!("Empty `payload` for `insert`")
-    }
+    check_slice_not_empty(value.as_slice(), stringify!(value))?;
 
     match collection {
         INDEX => insert_index(pipe, key, &value),
@@ -452,9 +450,7 @@ fn update(
     key: &str,
     value: Vec<&[u8]>,
 ) -> anyhow::Result<()> {
-    if value.is_empty() {
-        anyhow::bail!("Empty `payload` for `update`")
-    }
+    check_slice_not_empty(value.as_slice(), stringify!(value))?;
 
     match collection {
         ACCOUNTS => {
