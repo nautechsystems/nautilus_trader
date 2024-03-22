@@ -107,9 +107,16 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::instruments::options_spread::OptionsSpread>()?;
     m.add_class::<crate::instruments::synthetic::SyntheticInstrument>()?;
     // Order book
-    m.add_class::<crate::orderbook::book_mbo::OrderBookMbo>()?;
-    m.add_class::<crate::orderbook::book_mbp::OrderBookMbp>()?;
+    m.add_class::<crate::orderbook::book::OrderBook>()?;
     m.add_class::<crate::orderbook::level::Level>()?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::orderbook::book::py_book_update_quote_tick,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::orderbook::book::py_book_update_trade_tick,
+        m
+    )?)?;
     // Events - order
     m.add_class::<crate::events::order::denied::OrderDenied>()?;
     m.add_class::<crate::events::order::filled::OrderFilled>()?;

@@ -19,18 +19,24 @@ use pyo3::prelude::*;
 use crate::{
     data::{
         delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10, order::BookOrder,
+        quote::QuoteTick, trade::TradeTick,
     },
     enums::{BookType, OrderSide},
     identifiers::instrument_id::InstrumentId,
-    orderbook::{book_mbo::OrderBookMbo, level::Level},
+    orderbook::{
+        aggregation::{book_update_quote_tick, book_update_trade_tick},
+        analysis::book_check_integrity,
+        book::OrderBook,
+        level::Level,
+    },
     types::{price::Price, quantity::Quantity},
 };
 
 #[pymethods]
-impl OrderBookMbo {
+impl OrderBook {
     #[new]
-    fn py_new(instrument_id: InstrumentId) -> Self {
-        Self::new(instrument_id)
+    fn py_new(book_type: BookType, instrument_id: InstrumentId) -> Self {
+        Self::new(book_type, instrument_id)
     }
 
     fn __str__(&self) -> String {
@@ -136,7 +142,7 @@ impl OrderBookMbo {
 
     #[pyo3(name = "check_integrity")]
     fn py_check_integrity(&mut self) -> PyResult<()> {
-        self.check_integrity().map_err(to_pyruntime_err)
+        book_check_integrity(self).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "bids")]
@@ -200,4 +206,16 @@ impl OrderBookMbo {
     fn py_pprint(&self, num_levels: usize) -> String {
         self.pprint(num_levels)
     }
+}
+
+#[pyfunction()]
+#[pyo3(name = "book_update_quote_tick")]
+pub fn py_book_update_quote_tick(book: &mut OrderBook, quote: &QuoteTick) {
+    book_update_quote_tick(book, quote);
+}
+
+#[pyfunction()]
+#[pyo3(name = "book_update_trade_tick")]
+pub fn py_book_update_trade_tick(book: &mut OrderBook, trade: &TradeTick) {
+    book_update_trade_tick(book, trade);
 }

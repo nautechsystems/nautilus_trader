@@ -1,3 +1,19 @@
+# NautilusTrader 1.191.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+- Simplified and consolidated Rust `OrderBook` design
+
+### Breaking Changes
+- Renamed both `OrderBookMbo` and `OrderBookMbp` to `OrderBook` (consolidated)
+- Renamed `Indicator.handle_book_mbo` and `Indicator.handle_book_mbp` to `handle_book` (consolidated)
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.190.0 Beta
 
 Released on 22nd March 2024 (UTC).

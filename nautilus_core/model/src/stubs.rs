@@ -21,7 +21,7 @@ use crate::{
     enums::{LiquiditySide, OrderSide},
     identifiers::instrument_id::InstrumentId,
     instruments::{currency_pair::CurrencyPair, stubs::audusd_sim, Instrument},
-    orderbook::book_mbp::OrderBookMbp,
+    orderbook::book::OrderBook,
     orders::{
         market::MarketOrder,
         stubs::{TestOrderEventStubs, TestOrderStubs},
@@ -102,7 +102,7 @@ pub fn test_position_short(audusd_sim: CurrencyPair) -> Position {
 }
 
 #[must_use]
-pub fn stub_order_book_mbp_appl_xnas() -> OrderBookMbp {
+pub fn stub_order_book_mbp_appl_xnas() -> OrderBook {
     stub_order_book_mbp(
         InstrumentId::from("AAPL.XNAS"),
         101.0,
@@ -130,8 +130,8 @@ pub fn stub_order_book_mbp(
     size_precision: u8,
     size_increment: f64,
     num_levels: usize,
-) -> OrderBookMbp {
-    let mut book = OrderBookMbp::new(instrument_id, false);
+) -> OrderBook {
+    let mut book = OrderBook::new(crate::enums::BookType::L2_MBP, instrument_id);
 
     // Generate bids
     for i in 0..num_levels {

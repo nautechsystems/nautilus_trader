@@ -21,7 +21,6 @@ from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import BookImbalanceRatio
-from nautilus_trader.core.nautilus_pyo3 import OrderBookMbp
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import QuoteTick
@@ -114,7 +113,7 @@ class OrderBookImbalance(Strategy):
 
         # We need to initialize the Rust pyo3 objects
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value)
-        self.book = OrderBookMbp(pyo3_instrument_id, config.use_quote_ticks)
+        self.book = nautilus_pyo3.OrderBook(self.book_type, pyo3_instrument_id)
         self.imbalance = BookImbalanceRatio()
 
     def on_start(self) -> None:
@@ -146,18 +145,18 @@ class OrderBookImbalance(Strategy):
         Actions to be performed when order book deltas are received.
         """
         self.book.apply_deltas(pyo3_deltas)
-        self.imbalance.handle_book_mbp(self.book)
+        self.imbalance.handle_book(self.book)
         self.check_trigger()
 
-    def on_quote_tick(self, tick: QuoteTick) -> None:
+    def on_quote_tick(self, quote: QuoteTick) -> None:
         """
-        Actions to be performed when a delta is received.
+        Actions to be performed when a quote tick is received.
         """
-        self.book.update_quote_tick(tick)
-        self.imbalance.handle_book_mbp(self.book)
+        nautilus_pyo3.book_update_quote_tick(self.book, quote)
+        self.imbalance.handle_book(self.book)
         self.check_trigger()
 
-    def on_order_book(self, order_book: OrderBook) -> None:
+    def on_order_book(self, book: OrderBook) -> None:
         """
         Actions to be performed when an order book update is received.
         """

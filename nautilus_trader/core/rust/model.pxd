@@ -363,7 +363,9 @@ cdef extern from "../includes/model.h":
     cdef struct Level:
         pass
 
-    cdef struct OrderBookContainer:
+    # Provides an order book which can handle MBO (market by order, a.k.a L3)
+    # granularity data.
+    cdef struct OrderBook:
         pass
 
     # Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
@@ -731,7 +733,7 @@ cdef extern from "../includes/model.h":
     # dereferenced to `OrderBook`, providing access to `OrderBook`'s methods without
     # having to manually access the underlying `OrderBook` instance.
     cdef struct OrderBook_API:
-        OrderBookContainer *_0;
+        OrderBook *_0;
 
     # Provides a C compatible Foreign Function Interface (FFI) for an underlying order book[`Level`].
     #
