@@ -16,6 +16,7 @@
 import copy
 import functools
 from decimal import Decimal
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
@@ -295,7 +296,8 @@ async def test_get_historical_ticks(ib_client):
     )
 
 
-def test_ib_bar_to_nautilus_bar(ib_client):
+@pytest.mark.asyncio
+async def test_ib_bar_to_nautilus_bar(ib_client):
     # Arrange
     bar_type_str = "AAPL.NASDAQ-5-SECOND-BID-INTERNAL"
     bar_type = BarType.from_str(bar_type_str)
@@ -312,7 +314,7 @@ def test_ib_bar_to_nautilus_bar(ib_client):
     ib_client._cache.add_instrument(IBTestContractStubs.aapl_instrument())
 
     # Act
-    result = ib_client._ib_bar_to_nautilus_bar(bar_type, bar, ts_init, is_revision=False)
+    result = await ib_client._ib_bar_to_nautilus_bar(bar_type, bar, ts_init, is_revision=False)
 
     # Assert
     assert result.bar_type == BarType.from_str(bar_type_str)
@@ -326,7 +328,8 @@ def test_ib_bar_to_nautilus_bar(ib_client):
     assert result.is_revision is False
 
 
-def test_process_bar_data(ib_client):
+@pytest.mark.asyncio
+async def test_process_bar_data(ib_client):
     # Arrange
     bar_type_str = "AAPL.NASDAQ-5-SECOND-BID-INTERNAL"
     previous_bar = BarData()
@@ -345,7 +348,7 @@ def test_process_bar_data(ib_client):
     bar.date = "1704067205"
 
     # Act
-    result = ib_client._process_bar_data(
+    result = await ib_client._process_bar_data(
         bar_type_str,
         bar,
         handle_revised_bars=False,
@@ -366,7 +369,8 @@ def test_process_bar_data(ib_client):
 
 
 # @pytest.mark.skip(reason="WIP")
-def test_process_trade_ticks(ib_client):
+@pytest.mark.asyncio
+async def test_process_trade_ticks(ib_client):
     # Arrange
     mock_request = Mock(spec=Request)
     mock_request.name = ["AAPL.NASDAQ"]
@@ -386,7 +390,7 @@ def test_process_trade_ticks(ib_client):
     ticks = [trade_tick_1, trade_tick_2]
 
     # Act
-    ib_client._process_trade_ticks(request_id, ticks)
+    await ib_client._process_trade_ticks(request_id, ticks)
 
     # Assert
     assert len(mock_request.result) == 2
@@ -410,17 +414,18 @@ def test_process_trade_ticks(ib_client):
     assert result_2.ts_init == 1704067205000000000
 
 
-def test_tickByTickBidAsk(ib_client):
+@pytest.mark.asyncio
+async def test_tickByTickBidAsk(ib_client):
     # Arrange
     ib_client._clock.set_time(1704067205000000000)
     mock_subscription = Mock(spec=Subscription)
     mock_subscription.name = ["AAPL.NASDAQ"]
     ib_client._subscriptions = Mock()
     ib_client._subscriptions.get.return_value = mock_subscription
-    ib_client._handle_data = Mock()
+    ib_client._handle_data = AsyncMock()
 
     # Act
-    ib_client.process_tick_by_tick_bid_ask(
+    await ib_client.process_tick_by_tick_bid_ask(
         req_id=1,
         time=1704067200,
         bid_price=100.01,
@@ -443,17 +448,18 @@ def test_tickByTickBidAsk(ib_client):
     ib_client._handle_data.assert_called_once_with(quote_tick)
 
 
-def test_tickByTickAllLast(ib_client):
+@pytest.mark.asyncio
+async def test_tickByTickAllLast(ib_client):
     # Arrange
     ib_client._clock.set_time(1704067205000000000)
     mock_subscription = Mock(spec=Subscription)
     mock_subscription.name = ["AAPL.NASDAQ"]
     ib_client._subscriptions = Mock()
     ib_client._subscriptions.get.return_value = mock_subscription
-    ib_client._handle_data = Mock()
+    ib_client._handle_data = AsyncMock()
 
     # Act
-    ib_client.process_tick_by_tick_all_last(
+    await ib_client.process_tick_by_tick_all_last(
         req_id=1,
         tick_type="Last",
         time=1704067200,
@@ -477,7 +483,8 @@ def test_tickByTickAllLast(ib_client):
     ib_client._handle_data.assert_called_once_with(trade_tick)
 
 
-def test_realtimeBar(ib_client):
+@pytest.mark.asyncio
+async def test_realtimeBar(ib_client):
     # Arrange
     ib_client._clock.set_time(1704067205000000000)
     mock_subscription = Mock(spec=Subscription)
@@ -485,10 +492,10 @@ def test_realtimeBar(ib_client):
     mock_subscription.name = bar_type_str
     ib_client._subscriptions = Mock()
     ib_client._subscriptions.get.return_value = mock_subscription
-    ib_client._handle_data = Mock()
+    ib_client._handle_data = AsyncMock()
 
     # Act
-    ib_client.process_realtime_bar(
+    await ib_client.process_realtime_bar(
         req_id=1,
         time=1704067200,
         open_=100.01,

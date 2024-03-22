@@ -103,7 +103,8 @@ def test_next_order_id(ib_client):
     ib_client._eclient.reqIds.assert_called_with(-1)
 
 
-def test_openOrder(ib_client):
+@pytest.mark.asyncio
+async def test_openOrder(ib_client):
     # Arrange
     mock_request = Mock()
     mock_request.result = []
@@ -119,7 +120,7 @@ def test_openOrder(ib_client):
     order_state = IBTestExecStubs.ib_order_state(state="PreSubmitted")
 
     # Act
-    ib_client.process_open_order(
+    await ib_client.process_open_order(
         order_id=order_id,
         contract=contract,
         order=order,
@@ -132,7 +133,8 @@ def test_openOrder(ib_client):
     handler_mock.assert_not_called()
 
 
-def test_orderStatus(ib_client):
+@pytest.mark.asyncio
+async def test_orderStatus(ib_client):
     # Arrange
     ib_client._order_id_to_order_ref = {
         1: AccountOrderRef(order_id=1, account_id="DU123456"),
@@ -142,7 +144,7 @@ def test_orderStatus(ib_client):
     ib_client._event_subscriptions.get = MagicMock(return_value=handler_func)
 
     # Act
-    ib_client.process_order_status(
+    await ib_client.process_order_status(
         order_id=1,
         status="Filled",
         filled=Decimal("100"),
@@ -164,7 +166,8 @@ def test_orderStatus(ib_client):
     )
 
 
-def test_execDetails(ib_client):
+@pytest.mark.asyncio
+async def test_execDetails(ib_client):
     # Arrange
     req_id = 1
     contract = Mock()
@@ -188,7 +191,7 @@ def test_execDetails(ib_client):
     ib_client._event_subscriptions.get = MagicMock(return_value=handler_func)
 
     # Act
-    ib_client.process_exec_details(
+    await ib_client.process_exec_details(
         req_id=req_id,
         contract=contract,
         execution=execution,
@@ -202,7 +205,8 @@ def test_execDetails(ib_client):
     )
 
 
-def test_commissionReport(ib_client):
+@pytest.mark.asyncio
+async def test_commissionReport(ib_client):
     # Arrange
     execution = IBTestExecStubs.execution(
         order_id=1,
@@ -223,7 +227,7 @@ def test_commissionReport(ib_client):
     ib_client._event_subscriptions.get = MagicMock(return_value=handler_func)
 
     # Act
-    ib_client.process_commission_report(commission_report=commission_report)
+    await ib_client.process_commission_report(commission_report=commission_report)
 
     # Assert
     handler_func.assert_called_with(
