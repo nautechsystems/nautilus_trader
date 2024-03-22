@@ -34,6 +34,14 @@ running strategies which are able to access larger capital allocations.
 | [Databento](https://databento.com)                        | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/databento.html) |
 | [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/ib.html)        |
 
+- `ID:` The default client ID for the integrations adapter clients
+- `Type:` The type of integration (often the venue type)
+
+### Status
+- `building` - Under construction and likely not in a usable state
+- `beta` - Completed to a minimally working state and in a 'beta' testing phase
+- `stable` - Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain)
+
 ## Implementation goals
 
 The primary goal of NautilusTrader is to provide a unified trading system for 
