@@ -39,12 +39,12 @@ use tokio::sync::Mutex;
 
 use super::loader::convert_instrument_to_pyobject;
 use crate::databento::{
-    common::{check_consistent_symbology, get_date_time_range, infer_symbology_type},
+    common::get_date_time_range,
     decode::{
         decode_imbalance_msg, decode_instrument_def_msg, decode_record, decode_statistics_msg,
         raw_ptr_to_ustr,
     },
-    symbology::decode_nautilus_instrument_id,
+    symbology::{check_consistent_symbology, decode_nautilus_instrument_id, infer_symbology_type},
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, PublisherId},
 };
 
