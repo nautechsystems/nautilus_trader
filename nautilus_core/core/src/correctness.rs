@@ -13,9 +13,36 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines static condition checks similar to the *design by contract* philosophy
+//! to help ensure logical correctness.
+//!
+//! This module provides validation checking of function or method conditions.
+//!
+//! A condition is a predicate which must be true just prior to the execution of
+//! some section of code - for correct behavior as per the design specification.
+//!
+//! An [`anyhow::Result`] is returned with a descriptive message when the
+//! condition check fails.
+
 const FAILED: &str = "Condition failed:";
 
-/// Validates the string `s` contains only ASCII characters and has semantic meaning.
+/// Checks the `predicate` is true.
+pub fn check_predicate_true(predicate: bool, fail_msg: &str) -> anyhow::Result<()> {
+    if !predicate {
+        anyhow::bail!("{FAILED} {fail_msg}")
+    }
+    Ok(())
+}
+
+/// Checks the `predicate` is false.
+pub fn check_predicate_false(predicate: bool, fail_msg: &str) -> anyhow::Result<()> {
+    if predicate {
+        anyhow::bail!("{FAILED} {fail_msg}")
+    }
+    Ok(())
+}
+
+/// Checks the string `s` has semantic meaning and contains only ASCII characters.
 ///
 /// # Errors
 ///
@@ -34,7 +61,7 @@ pub fn check_valid_string(s: &str, param: &str) -> anyhow::Result<()> {
     }
 }
 
-/// Validates the string `s` if Some, contains only ASCII characters and has semantic meaning.
+/// Checks the string `s` if Some, contains only ASCII characters and has semantic meaning.
 ///
 /// # Errors
 ///
@@ -48,7 +75,7 @@ pub fn check_valid_string_optional(s: Option<&str>, param: &str) -> anyhow::Resu
     Ok(())
 }
 
-/// Validates the string `s` contains the pattern `pat`.
+/// Checks the string `s` contains the pattern `pat`.
 pub fn check_string_contains(s: &str, pat: &str, param: &str) -> anyhow::Result<()> {
     if !s.contains(pat) {
         anyhow::bail!("{FAILED} invalid string for '{param}' did not contain '{pat}', was '{s}'")
@@ -56,7 +83,7 @@ pub fn check_string_contains(s: &str, pat: &str, param: &str) -> anyhow::Result<
     Ok(())
 }
 
-/// Validates the `u8` values are equal.
+/// Checks the `u8` values are equal.
 pub fn check_equal_u8(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) -> anyhow::Result<()> {
     if lhs != rhs {
         anyhow::bail!(
@@ -66,7 +93,7 @@ pub fn check_equal_u8(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) -> any
     Ok(())
 }
 
-/// Validates the `u64` value is positive (> 0).
+/// Checks the `u64` value is positive (> 0).
 pub fn check_positive_u64(value: u64, param: &str) -> anyhow::Result<()> {
     if value == 0 {
         anyhow::bail!("{FAILED} invalid u64 for '{param}' not positive, was {value}")
@@ -74,7 +101,7 @@ pub fn check_positive_u64(value: u64, param: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Validates the `i64` value is positive (> 0).
+/// Checks the `i64` value is positive (> 0).
 pub fn check_positive_i64(value: i64, param: &str) -> anyhow::Result<()> {
     if value <= 0 {
         anyhow::bail!("{FAILED} invalid i64 for '{param}' not positive, was {value}")
@@ -82,7 +109,7 @@ pub fn check_positive_i64(value: i64, param: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Validates the `f64` value is non-negative (< 0).
+/// Checks the `f64` value is non-negative (< 0).
 pub fn check_non_negative_f64(value: f64, param: &str) -> anyhow::Result<()> {
     if value.is_nan() || value.is_infinite() {
         anyhow::bail!("{FAILED} invalid f64 for '{param}', was {value}")
@@ -93,7 +120,7 @@ pub fn check_non_negative_f64(value: f64, param: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Validates the `u8` value is in range [`l`, `r`] (inclusive).
+/// Checks the `u8` value is in range [`l`, `r`] (inclusive).
 pub fn check_in_range_inclusive_u8(value: u8, l: u8, r: u8, param: &str) -> anyhow::Result<()> {
     if value < l || value > r {
         anyhow::bail!("{FAILED} invalid u8 for '{param}' not in range [{l}, {r}], was {value}")
@@ -101,7 +128,7 @@ pub fn check_in_range_inclusive_u8(value: u8, l: u8, r: u8, param: &str) -> anyh
     Ok(())
 }
 
-/// Validates the `u64` value is range [`l`, `r`] (inclusive).
+/// Checks the `u64` value is range [`l`, `r`] (inclusive).
 pub fn check_in_range_inclusive_u64(value: u64, l: u64, r: u64, param: &str) -> anyhow::Result<()> {
     if value < l || value > r {
         anyhow::bail!("{FAILED} invalid u64 for '{param}' not in range [{l}, {r}], was {value}")
@@ -109,7 +136,7 @@ pub fn check_in_range_inclusive_u64(value: u64, l: u64, r: u64, param: &str) -> 
     Ok(())
 }
 
-/// Validates the `i64` value is in range [`l`, `r`] (inclusive).
+/// Checks the `i64` value is in range [`l`, `r`] (inclusive).
 pub fn check_in_range_inclusive_i64(value: i64, l: i64, r: i64, param: &str) -> anyhow::Result<()> {
     if value < l || value > r {
         anyhow::bail!("{FAILED} invalid i64 for '{param}' not in range [{l}, {r}], was {value}")
@@ -117,7 +144,7 @@ pub fn check_in_range_inclusive_i64(value: i64, l: i64, r: i64, param: &str) -> 
     Ok(())
 }
 
-/// Validates the `f64` value is in range [`l`, `r`] (inclusive).
+/// Checks the `f64` value is in range [`l`, `r`] (inclusive).
 pub fn check_in_range_inclusive_f64(value: f64, l: f64, r: f64, param: &str) -> anyhow::Result<()> {
     if value.is_nan() || value.is_infinite() {
         anyhow::bail!("{FAILED} invalid f64 for '{param}', was {value}")
@@ -128,7 +155,7 @@ pub fn check_in_range_inclusive_f64(value: f64, l: f64, r: f64, param: &str) -> 
     Ok(())
 }
 
-/// Validates the `usize` value is in range [`l`, `r`] (inclusive).
+/// Checks the `usize` value is in range [`l`, `r`] (inclusive).
 pub fn check_in_range_inclusive_usize(
     value: usize,
     l: usize,
@@ -141,6 +168,28 @@ pub fn check_in_range_inclusive_usize(
     Ok(())
 }
 
+/// Checks the slice is empty.
+pub fn check_slice_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> {
+    if !slice.is_empty() {
+        anyhow::bail!(
+            "{FAILED} the '{param}' slice `&[{}]` was not empty",
+            std::any::type_name::<T>()
+        )
+    }
+    Ok(())
+}
+
+/// Checks the slice is *not* empty.
+pub fn check_slice_not_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> {
+    if slice.is_empty() {
+        anyhow::bail!(
+            "{FAILED} the '{param}' slice `&[{}]` was empty",
+            std::any::type_name::<T>()
+        )
+    }
+    Ok(())
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -149,6 +198,22 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case(false, false)]
+    #[case(true, true)]
+    fn test_check_predicate_true(#[case] predicate: bool, #[case] expected: bool) {
+        let result = check_predicate_true(predicate, "the predicate was false").is_ok();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(false, true)]
+    #[case(true, false)]
+    fn test_check_predicate_false(#[case] predicate: bool, #[case] expected: bool) {
+        let result = check_predicate_false(predicate, "the predicate was true").is_ok();
+        assert_eq!(result, expected);
+    }
 
     #[rstest]
     #[case(" a")]
@@ -355,5 +420,21 @@ mod tests {
         #[case] param: &str,
     ) {
         assert!(check_in_range_inclusive_usize(value, l, r, param).is_err());
+    }
+
+    #[rstest]
+    #[case(vec![], true)]
+    #[case(vec![1_u8], false)]
+    fn test_check_slice_empty(#[case] collection: Vec<u8>, #[case] expected: bool) {
+        let result = check_slice_empty(collection.as_slice(), "param").is_ok();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(vec![], false)]
+    #[case(vec![1_u8], true)]
+    fn test_check_slice_not_empty(#[case] collection: Vec<u8>, #[case] expected: bool) {
+        let result = check_slice_not_empty(collection.as_slice(), "param").is_ok();
+        assert_eq!(result, expected);
     }
 }
