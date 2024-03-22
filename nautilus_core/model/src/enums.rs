@@ -493,8 +493,8 @@ pub enum InstrumentCloseType {
 )]
 #[allow(clippy::enum_variant_names)]
 pub enum LiquiditySide {
-    /// No specific liqudity side.
-    NoLiquiditySide = 0, // Will be replaced by `Option`
+    /// No liquidity side specified.
+    NoLiquiditySide = 0,
     /// The order passively provided liqudity to the market to complete the trade (made a market).
     Maker = 1,
     /// The order aggressively took liqudity from the market to complete the trade.

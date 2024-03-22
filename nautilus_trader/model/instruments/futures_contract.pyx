@@ -26,7 +26,6 @@ from nautilus_trader.core.rust.model cimport AssetClass
 from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.model.functions cimport asset_class_from_str
 from nautilus_trader.model.functions cimport asset_class_to_str
-from nautilus_trader.model.functions cimport instrument_class_from_str
 from nautilus_trader.model.functions cimport instrument_class_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -223,6 +222,10 @@ cdef class FuturesContract(Instrument):
             "size_precision": obj.size_precision,
             "size_increment": str(obj.size_increment),
             "multiplier": str(obj.multiplier),
+            "max_quantity": str(obj.max_quantity) if obj.max_quantity is not None else None,
+            "min_quantity": str(obj.min_quantity) if obj.min_quantity is not None else None,
+            "max_price": str(obj.max_price) if obj.max_price is not None else None,
+            "min_price": str(obj.min_price) if obj.min_price is not None else None,
             "lot_size": str(obj.lot_size),
             "underlying": obj.underlying,
             "activation_ns": obj.activation_ns,
@@ -249,6 +252,7 @@ cdef class FuturesContract(Instrument):
             underlying=pyo3_instrument.underlying,
             activation_ns=pyo3_instrument.activation_ns,
             expiration_ns=pyo3_instrument.expiration_ns,
+            info=pyo3_instrument.info,
             ts_event=pyo3_instrument.ts_event,
             ts_init=pyo3_instrument.ts_init,
             exchange=pyo3_instrument.exchange,

@@ -40,6 +40,17 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
+def test_repr_with_redacted_password() -> None:
+    # Arrange
+    config = DatabaseConfig(username="username", password="password")
+
+    # Act, Assert
+    assert (
+        repr(config)
+        == "DatabaseConfig(type=redis, host=None, port=None, username=username, password=pa...rd, ssl=False, timeout=20)"
+    )
+
+
 def test_equality_hash_repr() -> None:
     # Arrange
     config1 = DatabaseConfig()
@@ -51,7 +62,7 @@ def test_equality_hash_repr() -> None:
     assert isinstance(hash(config1), int)
     assert (
         repr(config1)
-        == "DatabaseConfig(type='redis', host=None, port=None, username=None, password=None, ssl=False)"
+        == "DatabaseConfig(type=redis, host=None, port=None, username=None, password=None, ssl=False, timeout=20)"
     )
 
 
@@ -60,7 +71,7 @@ def test_config_id() -> None:
     config = DatabaseConfig()
 
     # Act, Assert
-    assert config.id == "18a63bfe7acf0b0126940542dc4e261c58e326db70194e5c65949e26a2f5bf1b"
+    assert config.id == "c3fad60cbcd4eb9d9f19081f6f342f04a77f1328e9487f11696f9abc119ff0e1"
 
 
 def test_fully_qualified_name() -> None:
@@ -83,6 +94,7 @@ def test_dict() -> None:
         "username": None,
         "password": None,
         "ssl": False,
+        "timeout": 20,
     }
 
 
@@ -93,7 +105,7 @@ def test_json() -> None:
     # Act, Assert
     assert (
         config.json()
-        == b'{"type":"redis","host":null,"port":null,"username":null,"password":null,"ssl":false}'
+        == b'{"type":"redis","host":null,"port":null,"username":null,"password":null,"ssl":false,"timeout":20}'
     )
 
 

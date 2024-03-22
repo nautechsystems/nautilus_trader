@@ -1,3 +1,30 @@
+# NautilusTrader 1.190.0 Beta
+
+Released on 22nd March 2024 (UTC).
+
+### Enhancements
+- Added Databento adapter `continuous`, `parent` and `instrument_id` symbology support (will infer from symbols)
+- Added `DatabaseConfig.timeout` config option for timeout seconds to wait for a new connection
+- Added CSV tick and bar data loader params, thanks @rterbush
+- Implemented `LogGuard` to ensure global logger is flushed on termination, thanks @ayush-sb and @twitu
+- Improved Interactive Brokers client connectivity resilience and component lifecycle, thanks @benjaminsingleton
+- Improved Binance execution client ping listen key error handling and logging
+- Improved Redis cache adapter and message bus error handling and logging
+- Improved Redis port parsing (`DatabaseConfig.port` can now be either a string or integer)
+- Refactored `InteractiveBrokersEWrapper`, thanks @rsmb7z
+- Redact Redis passwords in strings and logs
+- Upgraded `redis` crate to 0.25.2 which bumps up TLS dependencies, and turned on `tls-rustls-webpki-roots` feature flag
+
+### Breaking Changes
+None
+
+### Fixes
+- Fixed JSON format for log file output (was missing `timestamp` and `trader\_id`)
+- Fixed `DatabaseConfig` port JSON parsing for Redis (was always defaulting to 6379)
+- Fixed `ChandeMomentumOscillator` indicator divide by zero error (both Rust and Cython versions)
+
+---
+
 # NautilusTrader 1.189.0 Beta
 
 Released on 15th March 2024 (UTC).
@@ -5,7 +32,7 @@ Released on 15th March 2024 (UTC).
 ### Enhancements
 - Implemented Binance order book snapshot rebuilds on websocket reconnect (see integration guide)
 - Added additional validations for `OrderMatchingEngine` (will now raise a `RuntimeError` when a price or size precision for `OrderFilled` does not match the instruments precisions)
-- Added `LoggingConfig.use_pyo3` option for pyo3 based logging initialization (worse performance but allows visibility into logs originating from Rust)
+- Added `LoggingConfig.use_pyo3` config option for pyo3 based logging initialization (worse performance but allows visibility into logs originating from Rust)
 - Added `exchange` field to `FuturesContract`, `FuturesSpread`, `OptionsContract` and `OptionsSpread` (optional)
 
 ### Breaking Changes

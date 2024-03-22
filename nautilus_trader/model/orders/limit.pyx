@@ -26,11 +26,15 @@ from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.functions cimport contingency_type_from_str
 from nautilus_trader.model.functions cimport contingency_type_to_str
 from nautilus_trader.model.functions cimport liquidity_side_to_str
+from nautilus_trader.model.functions cimport order_side_from_str
 from nautilus_trader.model.functions cimport order_side_to_str
 from nautilus_trader.model.functions cimport order_type_to_str
+from nautilus_trader.model.functions cimport time_in_force_from_str
 from nautilus_trader.model.functions cimport time_in_force_to_str
+from nautilus_trader.model.functions cimport trigger_type_from_str
 from nautilus_trader.model.functions cimport trigger_type_to_str
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
@@ -257,6 +261,40 @@ cdef class LimitOrder(Order):
             f"{emulation_str}"
         )
 
+    @staticmethod
+    cdef LimitOrder from_pyo3_c(pyo3_order):
+        return LimitOrder(
+            trader_id=TraderId(str(pyo3_order.trader_id)),
+            strategy_id=StrategyId(str(pyo3_order.strategy_id)),
+            instrument_id=InstrumentId.from_str_c(str(pyo3_order.instrument_id)),
+            client_order_id=ClientOrderId(str(pyo3_order.client_order_id)),
+            order_side=order_side_from_str(str(pyo3_order.side)),
+            quantity=Quantity.from_raw_c(pyo3_order.quantity.raw, pyo3_order.quantity.precision),
+            price=Price.from_raw_c(pyo3_order.price.raw, pyo3_order.price.precision),
+            init_id=UUID4(str(pyo3_order.init_id)),
+            ts_init=pyo3_order.ts_init,
+            time_in_force=time_in_force_from_str(str(pyo3_order.time_in_force)),
+            expire_time_ns=int(pyo3_order.expire_time_ns) if pyo3_order.expire_time_ns is not None else 0,
+            post_only=pyo3_order.is_post_only,
+            reduce_only=pyo3_order.is_reduce_only,
+            quote_quantity=pyo3_order.is_quote_quantity,
+            display_qty=Quantity.from_str_c(pyo3_order.display_qty) if pyo3_order.display_qty is not None else None,
+            emulation_trigger=trigger_type_from_str(str(pyo3_order.emulation_trigger)) if pyo3_order.emulation_trigger is not None else TriggerType.NO_TRIGGER,
+            trigger_instrument_id=InstrumentId.from_str_c(str(pyo3_order.trigger_instrument_id)) if pyo3_order.trigger_instrument_id is not None else None,
+            contingency_type=contingency_type_from_str(str(pyo3_order.contingency_type)) if pyo3_order.contingency_type is not None else ContingencyType.NO_CONTINGENCY,
+            order_list_id=OrderListId(str(pyo3_order.order_list_id)) if pyo3_order.order_list_id is not None else None,
+            linked_order_ids=[ClientOrderId(str(o)) for o in pyo3_order.linked_order_ids] if pyo3_order.linked_order_ids is not None else None,
+            parent_order_id=ClientOrderId(str(pyo3_order.parent_order_id)) if pyo3_order.parent_order_id is not None else None,
+            exec_algorithm_id=ExecAlgorithmId(str(pyo3_order.exec_algorithm_id)) if pyo3_order.exec_algorithm_id is not None else None,
+            exec_algorithm_params=pyo3_order.exec_algorithm_params,
+            exec_spawn_id=ClientOrderId(str(pyo3_order.exec_spawn_id)) if pyo3_order.exec_spawn_id is not None else None,
+            tags=pyo3_order.tags if pyo3_order.tags is not None else None,
+        )
+
+    @staticmethod
+    def from_pyo3(pyo3_order):
+        return LimitOrder.from_pyo3_c(pyo3_order)
+
     cpdef dict to_dict(self):
         """
         Return a dictionary representation of this object.
@@ -286,7 +324,7 @@ cdef class LimitOrder(Order):
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
             "avg_px": str(self.avg_px) if self.filled_qty.as_f64_c() > 0.0 else None,
             "slippage": str(self.slippage) if self.filled_qty.as_f64_c() > 0.0 else None,
-            "commissions": str([c.to_str() for c in self.commissions()]) if self._commissions else None,
+            "commissions": str([c.to_str() for c in self.commissions()]) if self._commissions else {},
             "status": self._fsm.state_string_c(),
             "is_post_only": self.is_post_only,
             "is_reduce_only": self.is_reduce_only,
@@ -302,6 +340,7 @@ cdef class LimitOrder(Order):
             "exec_algorithm_params": self.exec_algorithm_params,
             "exec_spawn_id": self.exec_spawn_id.to_str() if self.exec_spawn_id is not None else None,
             "tags": self.tags,
+            "init_id": str(self.init_id),
             "ts_init": self.ts_init,
             "ts_last": self.ts_last,
         }

@@ -18,12 +18,14 @@ from typing import Any
 
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import init_logging
+from nautilus_trader.common.component import is_logging_initialized
 from nautilus_trader.common.enums import LogLevel
 
 
 def test_logging(benchmark: Any) -> None:
     random.seed(45362718)
-    init_logging(level_stdout=LogLevel.ERROR, bypass=True)
+    if not is_logging_initialized:
+        init_logging(level_stdout=LogLevel.ERROR, bypass=True)
 
     logger = Logger(name="TEST_LOGGER")
 

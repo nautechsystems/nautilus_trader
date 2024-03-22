@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.nautilus_pyo3 import OptionsSpread
-from nautilus_trader.model.instruments import OptionsSpread as LegacyOptionsSpread
+from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.model.instruments import OptionsSpread
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
@@ -33,7 +33,7 @@ def test_hash():
 
 def test_to_dict():
     result = _OPTIONS_SPREAD.to_dict()
-    assert OptionsSpread.from_dict(result) == _OPTIONS_SPREAD
+    assert nautilus_pyo3.OptionsSpread.from_dict(result) == _OPTIONS_SPREAD
     assert result == {
         "type": "OptionsSpread",
         "id": "UD:U$: GN 2534559.GLBX",
@@ -47,18 +47,33 @@ def test_to_dict():
         "currency": "USDT",
         "price_precision": 2,
         "price_increment": "0.01",
+        "size_increment": "1",
+        "size_precision": 0,
         "multiplier": "1",
         "lot_size": "1",
         "max_quantity": None,
-        "min_quantity": None,
+        "min_quantity": "1",
         "max_price": None,
         "min_price": None,
+        "margin_init": "0",
+        "margin_maint": "0",
+        "info": {},
         "ts_event": 0,
         "ts_init": 0,
     }
 
 
 def test_legacy_options_contract_from_pyo3():
-    option = LegacyOptionsSpread.from_pyo3(_OPTIONS_SPREAD)
+    option = OptionsSpread.from_pyo3(_OPTIONS_SPREAD)
 
     assert option.id.value == "UD:U$: GN 2534559.GLBX"
+
+
+def test_pyo3_cython_conversion():
+    options_spread_pyo3 = TestInstrumentProviderPyo3.options_spread()
+    options_spread_pyo3_dict = options_spread_pyo3.to_dict()
+    options_spread_cython = OptionsSpread.from_pyo3(options_spread_pyo3)
+    options_spread_cython_dict = OptionsSpread.to_dict(options_spread_cython)
+    options_spread_pyo3_back = nautilus_pyo3.OptionsSpread.from_dict(options_spread_cython_dict)
+    assert options_spread_cython_dict == options_spread_pyo3_dict
+    assert options_spread_pyo3 == options_spread_pyo3_back

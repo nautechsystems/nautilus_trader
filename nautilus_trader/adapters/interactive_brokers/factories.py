@@ -103,6 +103,7 @@ def get_cached_ib_client(
             port=port,
             client_id=client_id,
         )
+        client.start()
         IB_CLIENTS[client_key] = client
     return IB_CLIENTS[client_key]
 

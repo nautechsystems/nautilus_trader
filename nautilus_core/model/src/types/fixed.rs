@@ -13,14 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use anyhow::{bail, Result};
-
 pub const FIXED_PRECISION: u8 = 9;
 pub const FIXED_SCALAR: f64 = 1_000_000_000.0; // 10.0**FIXED_PRECISION
 
-pub fn check_fixed_precision(precision: u8) -> Result<()> {
+pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
     if precision > FIXED_PRECISION {
-        bail!("Condition failed: `precision` was greater than the maximum `FIXED_PRECISION` (9), was {precision}")
+        anyhow::bail!("Condition failed: `precision` was greater than the maximum `FIXED_PRECISION` (9), was {precision}")
     }
     Ok(())
 }

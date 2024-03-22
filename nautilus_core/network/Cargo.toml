@@ -23,7 +23,7 @@ futures-util = "0.3.30"
 http = "1.1.0"
 hyper = "1.2.0"
 nonzero_ext = "0.3.0"
-reqwest = "0.11.26"
+reqwest = "0.11.27"
 tokio-tungstenite = { path = "./tokio-tungstenite", features = ["rustls-tls-native-roots"] }
 
 [dev-dependencies]
@@ -34,9 +34,9 @@ axum = "0.7.4"
 tracing-test = "0.2.4"
 
 [features]
+default = ["python"]
 extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
 ]
 python = ["pyo3", "pyo3-asyncio"]
-default = ["python"]

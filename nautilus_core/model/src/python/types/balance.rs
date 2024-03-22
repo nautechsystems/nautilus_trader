@@ -73,11 +73,11 @@ impl AccountBalance {
         let free: f64 = free_str.parse::<f64>().unwrap();
         let locked_str: &str = dict.get_item("locked")?.unwrap().extract()?;
         let locked: f64 = locked_str.parse::<f64>().unwrap();
-        let currency = Currency::from_str(currency)?;
+        let currency = Currency::from_str(currency).map_err(to_pyvalue_err)?;
         let account_balance = Self::new(
-            Money::new(total, currency)?,
-            Money::new(locked, currency)?,
-            Money::new(free, currency)?,
+            Money::new(total, currency).map_err(to_pyvalue_err)?,
+            Money::new(locked, currency).map_err(to_pyvalue_err)?,
+            Money::new(free, currency).map_err(to_pyvalue_err)?,
         )
         .unwrap();
         Ok(account_balance)
@@ -160,10 +160,10 @@ impl MarginBalance {
         let maintenance_str: &str = dict.get_item("maintenance")?.unwrap().extract()?;
         let maintenance: f64 = maintenance_str.parse::<f64>().unwrap();
         let instrument_id_str: &str = dict.get_item("instrument_id")?.unwrap().extract()?;
-        let currency = Currency::from_str(currency)?;
+        let currency = Currency::from_str(currency).map_err(to_pyvalue_err)?;
         let account_balance = Self::new(
-            Money::new(initial, currency)?,
-            Money::new(maintenance, currency)?,
+            Money::new(initial, currency).map_err(to_pyvalue_err)?,
+            Money::new(maintenance, currency).map_err(to_pyvalue_err)?,
             InstrumentId::from_str(instrument_id_str).unwrap(),
         )
         .unwrap();

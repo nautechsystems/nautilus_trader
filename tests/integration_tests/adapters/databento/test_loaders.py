@@ -52,7 +52,7 @@ def test_get_publishers() -> None:
     result = loader.get_publishers()
 
     # Assert
-    assert len(result) == 61  # From built-in map
+    assert len(result) == 80  # From built-in map
 
 
 def test_loader_definition_glbx_futures() -> None:
@@ -83,37 +83,6 @@ def test_loader_definition_glbx_futures() -> None:
     assert instrument.lot_size == 1
     assert instrument.ts_event == 1680451436501583647
     assert instrument.ts_init == 1680451436501583647
-
-
-@pytest.mark.skip(reason="WIP: Future spreads not currently supported")
-def test_loader_definition_glbx_futures_spread() -> None:
-    # Arrange
-    loader = DatabentoDataLoader()
-    path = DATABENTO_TEST_DATA_DIR / "definition-glbx-es-futspread.dbn.zst"
-
-    # Act
-    data = loader.from_dbn_file(path)
-
-    # Assert
-    assert len(data) == 2
-    assert isinstance(data[0], FuturesContract)
-    assert isinstance(data[1], FuturesContract)
-    instrument = data[0]
-    assert instrument.id == InstrumentId.from_str("ESH5-ESM5.GLBX")
-    assert instrument.raw_symbol == Symbol("ESH5-ESM5")
-    assert instrument.asset_class == AssetClass.INDEX
-    assert instrument.instrument_class == InstrumentClass.FUTURE
-    assert instrument.quote_currency == USD
-    assert not instrument.is_inverse
-    assert instrument.underlying == "ES"
-    assert instrument.price_precision == 2
-    assert instrument.price_increment == Price.from_str("0.05")
-    assert instrument.size_precision == 0
-    assert instrument.size_increment == 1
-    assert instrument.multiplier == 1
-    assert instrument.lot_size == 1
-    assert instrument.ts_event == 1690848000000000000
-    assert instrument.ts_init == 1690848000000000000
 
 
 def test_loader_definition_glbx_options() -> None:

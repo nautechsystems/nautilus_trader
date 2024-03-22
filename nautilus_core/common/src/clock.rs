@@ -184,7 +184,7 @@ impl Clock for TestClock {
         alert_time_ns: UnixNanos,
         callback: Option<EventHandler>,
     ) {
-        check_valid_string(name, "`Timer` name").unwrap();
+        check_valid_string(name, stringify!(name)).unwrap();
         assert!(
             callback.is_some() | self.default_callback.is_some(),
             "All Python callbacks were `None`"
@@ -211,7 +211,7 @@ impl Clock for TestClock {
         stop_time_ns: Option<UnixNanos>,
         callback: Option<EventHandler>,
     ) {
-        check_valid_string(name, "`Timer` name").unwrap();
+        check_valid_string(name, "name").unwrap();
         assert!(
             callback.is_some() | self.default_callback.is_some(),
             "All Python callbacks were `None`"
@@ -313,7 +313,7 @@ impl Clock for LiveClock {
         mut alert_time_ns: UnixNanos,
         callback: Option<EventHandler>,
     ) {
-        check_valid_string(name, "`Timer` name").unwrap();
+        check_valid_string(name, stringify!(name)).unwrap();
         assert!(
             callback.is_some() | self.default_callback.is_some(),
             "All Python callbacks were `None`"
@@ -345,7 +345,7 @@ impl Clock for LiveClock {
         stop_time_ns: Option<UnixNanos>,
         callback: Option<EventHandler>,
     ) {
-        check_valid_string(name, "`Timer` name").unwrap();
+        check_valid_string(name, stringify!(name)).unwrap();
         assert!(
             callback.is_some() | self.default_callback.is_some(),
             "All Python callbacks were `None`"

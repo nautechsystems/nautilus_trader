@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use anyhow::Result;
 use rstest::fixture;
 use rust_decimal::prelude::ToPrimitive;
 
@@ -37,7 +36,7 @@ pub fn calculate_commission<T: Instrument>(
     last_qty: Quantity,
     last_px: Price,
     use_quote_for_inverse: Option<bool>,
-) -> Result<Money> {
+) -> anyhow::Result<Money> {
     let liquidity_side = LiquiditySide::Taker;
     assert_ne!(
         liquidity_side,

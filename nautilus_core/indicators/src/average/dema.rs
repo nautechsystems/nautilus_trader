@@ -15,7 +15,6 @@
 
 use std::fmt::{Display, Formatter};
 
-use anyhow::Result;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -88,7 +87,7 @@ impl Indicator for DoubleExponentialMovingAverage {
 }
 
 impl DoubleExponentialMovingAverage {
-    pub fn new(period: usize, price_type: Option<PriceType>) -> Result<Self> {
+    pub fn new(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
         Ok(Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),

@@ -19,7 +19,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
-heck = "0.4.1"
+heck = "0.5.0"
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -30,8 +30,7 @@ rstest = { workspace = true }
 cbindgen = { workspace = true, optional = true }
 
 [features]
+default = []
 extension-module = ["pyo3/extension-module"]
 ffi = ["cbindgen"]
 python = ["pyo3"]
-default = []
-

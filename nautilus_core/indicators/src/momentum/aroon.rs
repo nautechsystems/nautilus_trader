@@ -18,7 +18,6 @@ use std::{
     fmt::{Debug, Display},
 };
 
-use anyhow::Result;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -92,7 +91,7 @@ impl Indicator for AroonOscillator {
 }
 
 impl AroonOscillator {
-    pub fn new(period: usize) -> Result<Self> {
+    pub fn new(period: usize) -> anyhow::Result<Self> {
         Ok(Self {
             period,
             high_inputs: VecDeque::with_capacity(period),

@@ -197,6 +197,14 @@ def convert_to_snake_case(s: str) -> str:
 
 ### Logging
 
+class LogGuard:
+    """
+    Provides a `LogGuard` which serves as a token to signal the initialization
+    of the logging system. It also ensures that the global logger is flushed
+    of any buffered records when the instance is destroyed.
+
+    """
+
 def init_tracing() -> None:
     ...
 
@@ -212,7 +220,7 @@ def init_logging(
     is_colored: bool | None = None,
     is_bypassed: bool | None = None,
     print_config: bool | None = None,
-) -> None: ...
+) -> LogGuard: ...
 
 def log_header(
     trader_id: TraderId,
@@ -866,7 +874,87 @@ class VenueOrderId:
 
 ### Orders
 
-class LimitOrder: ...
+class LimitOrder:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        time_in_force: TimeInForce,
+        post_only: bool,
+        reduce_only: bool,
+        quote_quantity: bool,
+        init_id: UUID4,
+        ts_init: int,
+        expire_time: int | None = None,
+        display_qty: Quantity | None = None,
+        emulation_trigger: TriggerType | None = None,
+        trigger_instrument_id: InstrumentId | None = None,
+        contingency_type: ContingencyType | None = None,
+        order_list_id: OrderListId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
+        exec_algorithm_id: ExecAlgorithmId | None = None,
+        exec_algorithm_params: dict[str, str] | None = None,
+        exec_spawn_id: ClientOrderId | None = None,
+        tags: str | None = None,
+    ): ...
+    def to_dict(self) -> dict[str, str]: ...
+    @property
+    def trader_id(self) -> TraderId: ...
+    @property
+    def strategy_id(self) -> StrategyId: ...
+    @property
+    def instrument_id(self) -> InstrumentId: ...
+    @property
+    def client_order_id(self) -> ClientOrderId: ...
+    @property
+    def order_type(self) -> OrderType: ...
+    @property
+    def side(self) -> OrderSide: ...
+    @property
+    def quantity(self) -> Quantity: ...
+    @property
+    def price(self) -> Price: ...
+    @property
+    def expire_time(self) -> int | None: ...
+    @property
+    def status(self) -> OrderStatus: ...
+    @property
+    def time_in_force(self) -> TimeInForce: ...
+    @property
+    def is_post_only(self) -> bool: ...
+    @property
+    def is_reduce_only(self) -> bool: ...
+    @property
+    def is_quote_quantity(self) -> bool: ...
+    @property
+    def has_price(self) -> bool: ...
+    @property
+    def has_trigger_price(self) -> bool: ...
+    @property
+    def is_passive(self) -> bool: ...
+    @property
+    def is_aggressive(self) -> bool: ...
+    @property
+    def is_open(self) -> bool: ...
+    @property
+    def is_closed(self) -> bool: ...
+    @property
+    def is_emulated(self) -> bool: ...
+    @property
+    def is_active_local(self) -> bool: ...
+    @property
+    def is_primary(self) -> bool: ...
+    @property
+    def is_spawned(self) -> bool: ...
+    def from_dict(cls, values: dict[str, str]) -> LimitOrder: ...
+
+
 class LimitIfTouchedOrder: ...
 
 class MarketOrder:
@@ -892,6 +980,7 @@ class MarketOrder:
         exec_spawn_id: ClientOrderId | None = None,
         tags: str | None = None,
     ) -> None: ...
+    def to_dict(self) -> dict[str, str]: ...
     @staticmethod
     def opposite_side(side: OrderSide) -> OrderSide: ...
     @staticmethod
@@ -1242,6 +1331,8 @@ class FuturesContract:
         lot_size: Quantity,
         ts_event: int,
         ts_init: int,
+        margin_init: Decimal | None = None,
+        margin_maint: Decimal | None = None,
         max_quantity: Quantity | None = None,
         min_quantity: Quantity | None = None,
         max_price: Price | None = None,
@@ -1249,6 +1340,8 @@ class FuturesContract:
         exchange: str | None = None,
         info: dict[str, Any] | None = None,
     ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> CryptoFuture: ...
     @property
     def id(self) -> InstrumentId: ...
     @property
@@ -1288,9 +1381,13 @@ class FuturesSpread:
         min_quantity: Quantity | None = None,
         max_price: Price | None = None,
         min_price: Price | None = None,
+        margin_init: Decimal | None = None,
+        margin_maint: Decimal | None = None,
         exchange: str | None = None,
         info: dict[str, Any] | None = None,
     ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> FuturesSpread: ...
     @property
     def id(self) -> InstrumentId: ...
     @property
@@ -1331,9 +1428,13 @@ class OptionsContract:
         min_quantity: Quantity | None = None,
         max_price: Price | None = None,
         min_price: Price | None = None,
+        margin_init: Decimal | None = None,
+        margin_maint: Decimal | None = None,
         exchange: str | None = None,
         info: dict[str, Any] | None = None,
     ) -> None : ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OptionsContract: ...
     @property
     def id(self) -> InstrumentId: ...
     @property
@@ -1373,9 +1474,13 @@ class OptionsSpread:
         min_quantity: Quantity | None = None,
         max_price: Price | None = None,
         min_price: Price | None = None,
+        margin_init: Decimal | None = None,
+        margin_maint: Decimal | None = None,
         exchange: str | None = None,
         info: dict[str, Any] | None = None,
     ) -> None : ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OptionsContract: ...
     @property
     def id(self) -> InstrumentId: ...
     @property
@@ -2427,7 +2532,7 @@ class DatabentoHistoricalClient:
     async def get_range_instruments(
         self,
         dataset: str,
-        symbols: str,
+        symbols: list[str],
         start: int,
         end: int | None = None,
         limit: int | None = None,
@@ -2435,7 +2540,7 @@ class DatabentoHistoricalClient:
     async def get_range_quotes(
         self,
         dataset: str,
-        symbols: str,
+        symbols: list[str],
         start: int,
         end: int | None = None,
         limit: int | None = None,
@@ -2443,7 +2548,7 @@ class DatabentoHistoricalClient:
     async def get_range_trades(
         self,
         dataset: str,
-        symbols: str,
+        symbols: list[str],
         start: int,
         end: int | None = None,
         limit: int | None = None,
@@ -2451,7 +2556,7 @@ class DatabentoHistoricalClient:
     async def get_range_bars(
         self,
         dataset: str,
-        symbols: str,
+        symbols: list[str],
         aggregation: BarAggregation,
         start: int,
         end: int | None = None,
@@ -2460,7 +2565,7 @@ class DatabentoHistoricalClient:
     async def get_range_imbalance(
         self,
         dataset: str,
-        symbols: str,
+        symbols: list[str],
         start: int,
         end: int | None = None,
         limit: int | None = None,
@@ -2468,7 +2573,7 @@ class DatabentoHistoricalClient:
     async def get_range_statistics(
         self,
         dataset: str,
-        symbols: str,
+        symbols: list[str],
         start: int,
         end: int | None = None,
         limit: int | None = None,
@@ -2492,7 +2597,7 @@ class DatabentoLiveClient:
     def subscribe(
         self,
         schema: str,
-        symbols: str,
+        symbols: list[str],
         stype_in: str | None = None,
         start: int | None = None,
     ) -> dict[str, str]: ...

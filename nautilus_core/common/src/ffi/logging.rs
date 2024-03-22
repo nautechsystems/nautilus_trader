@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::c_char;
+use std::{
+    ffi::c_char,
+    ops::{Deref, DerefMut},
+};
 
 use nautilus_core::{
     ffi::{
@@ -28,11 +31,37 @@ use crate::{
     enums::{LogColor, LogLevel},
     logging::{
         self, headers,
-        logger::{self, LoggerConfig},
+        logger::{self, LogGuard, LoggerConfig},
         logging_set_bypass, map_log_level_to_filter, parse_component_levels,
         writer::FileWriterConfig,
     },
 };
+
+/// Provides a C compatible Foreign Function Interface (FFI) for an underlying [`LogGuard`].
+///
+/// This struct wraps `LogGuard` in a way that makes it compatible with C function
+/// calls, enabling interaction with `LogGuard` in a C environment.
+///
+/// It implements the `Deref` trait, allowing instances of `LogGuard_API` to be
+/// dereferenced to `LogGuard`, providing access to `LogGuard`'s methods without
+/// having to manually access the underlying `LogGuard` instance.
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub struct LogGuard_API(Box<LogGuard>);
+
+impl Deref for LogGuard_API {
+    type Target = LogGuard;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for LogGuard_API {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 /// Initializes logging.
 ///
@@ -63,7 +92,7 @@ pub unsafe extern "C" fn logging_init(
     is_colored: u8,
     is_bypassed: u8,
     print_config: u8,
-) {
+) -> LogGuard_API {
     let level_stdout = map_log_level_to_filter(level_stdout);
     let level_file = map_log_level_to_filter(level_file);
 
@@ -87,7 +116,13 @@ pub unsafe extern "C" fn logging_init(
         logging_set_bypass();
     }
 
-    logging::init_logging(trader_id, instance_id, config, file_config);
+    LogGuard_API(Box::new(logging::init_logging(
+        trader_id,
+        instance_id,
+        config,
+        file_config,
+    )))
+    // logging::init_logging(trader_id, instance_id, config, file_config);
 }
 
 /// Creates a new log event.
@@ -138,8 +173,8 @@ pub unsafe extern "C" fn logging_log_sysinfo(component_ptr: *const c_char) {
     headers::log_sysinfo(component)
 }
 
-/// Flushes global logger buffers.
+/// Flushes global logger buffers of any records.
 #[no_mangle]
-pub extern "C" fn logger_flush() {
-    log::logger().flush()
+pub extern "C" fn logger_drop(log_guard: LogGuard_API) {
+    drop(log_guard)
 }

@@ -30,6 +30,7 @@ from nautilus_trader.adapters.binance.common.schemas.user import BinanceListenKe
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.http.account import BinanceAccountHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.http.user import BinanceUserDataHttpAPI
@@ -283,19 +284,23 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             while True:
                 self._log.debug(
                     f"Scheduled `ping_listen_keys` to run in "
-                    f"{self._ping_listen_keys_interval}s.",
+                    f"{self._ping_listen_keys_interval}s",
                 )
                 await asyncio.sleep(self._ping_listen_keys_interval)
                 if self._listen_key:
-                    self._log.debug(f"Pinging WebSocket listen key {self._listen_key}...")
-                    await self._http_user.keepalive_listen_key(listen_key=self._listen_key)
+                    self._log.debug(f"Pinging WebSocket listen key {self._listen_key}")
+                    try:
+                        await self._http_user.keepalive_listen_key(listen_key=self._listen_key)
+                    except BinanceClientError as ex:
+                        # We may see this if an old listen key was used for the ping
+                        self._log.error(f"Error pinging listen key: {ex}")
         except asyncio.CancelledError:
-            self._log.debug("Canceled `ping_listen_keys` task.")
+            self._log.debug("Canceled `ping_listen_keys` task")
 
     async def _disconnect(self) -> None:
         # Cancel tasks
         if self._ping_listen_keys_task:
-            self._log.debug("Canceling `ping_listen_keys` task...")
+            self._log.debug("Canceling `ping_listen_keys` task")
             self._ping_listen_keys_task.cancel()
             self._ping_listen_keys_task = None
 

@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use anyhow::{anyhow, Result};
-
 /// Returns the decimal precision inferred from the given string.
 #[must_use]
 pub fn precision_from_str(s: &str) -> u8 {
@@ -30,7 +28,7 @@ pub fn precision_from_str(s: &str) -> u8 {
 }
 
 /// Returns a usize from the given bytes.
-pub fn bytes_to_usize(bytes: &[u8]) -> Result<usize> {
+pub fn bytes_to_usize(bytes: &[u8]) -> anyhow::Result<usize> {
     // Check bytes width
     if bytes.len() >= std::mem::size_of::<usize>() {
         let mut buffer = [0u8; std::mem::size_of::<usize>()];
@@ -38,7 +36,7 @@ pub fn bytes_to_usize(bytes: &[u8]) -> Result<usize> {
 
         Ok(usize::from_le_bytes(buffer))
     } else {
-        Err(anyhow!("Not enough bytes to represent a `usize`"))
+        Err(anyhow::anyhow!("Not enough bytes to represent a `usize`"))
     }
 }
 

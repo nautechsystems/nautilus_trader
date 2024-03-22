@@ -15,7 +15,6 @@
 
 use std::fmt::{Debug, Display};
 
-use anyhow::Result;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -87,7 +86,7 @@ impl Indicator for RelativeStrengthIndex {
 }
 
 impl RelativeStrengthIndex {
-    pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Result<Self> {
+    pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> anyhow::Result<Self> {
         Ok(Self {
             period,
             ma_type: ma_type.unwrap_or(MovingAverageType::Exponential),

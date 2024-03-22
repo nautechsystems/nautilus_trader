@@ -20,9 +20,8 @@ use std::{
     hash::Hash,
 };
 
-use anyhow::Result;
 use indexmap::IndexMap;
-use nautilus_core::{correctness::check_u8_equal, serialization::Serializable, time::UnixNanos};
+use nautilus_core::{correctness::check_equal_u8, serialization::Serializable, time::UnixNanos};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -66,14 +65,14 @@ impl QuoteTick {
         ask_size: Quantity,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> Result<Self> {
-        check_u8_equal(
+    ) -> anyhow::Result<Self> {
+        check_equal_u8(
             bid_price.precision,
             ask_price.precision,
             "bid_price.precision",
             "ask_price.precision",
         )?;
-        check_u8_equal(
+        check_equal_u8(
             bid_size.precision,
             ask_size.precision,
             "bid_size.precision",

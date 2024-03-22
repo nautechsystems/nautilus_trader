@@ -15,7 +15,7 @@
 
 use std::{fs, str::FromStr};
 
-use databento::live::Subscription;
+use databento::{dbn, live::Subscription};
 use indexmap::IndexMap;
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
@@ -30,6 +30,7 @@ use tracing::{debug, error, trace};
 use super::loader::convert_instrument_to_pyobject;
 use crate::databento::{
     live::{DatabentoFeedHandler, LiveCommand, LiveMessage},
+    symbology::{check_consistent_symbology, infer_symbology_type},
     types::DatabentoPublisher,
 };
 
@@ -120,9 +121,10 @@ fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) -> PyResult<()
 #[pymethods]
 impl DatabentoLiveClient {
     #[new]
-    pub fn py_new(key: String, dataset: String, publishers_path: String) -> anyhow::Result<Self> {
+    pub fn py_new(key: String, dataset: String, publishers_path: String) -> PyResult<Self> {
         let publishers_json = fs::read_to_string(publishers_path)?;
-        let publishers_vec: Vec<DatabentoPublisher> = serde_json::from_str(&publishers_json)?;
+        let publishers_vec: Vec<DatabentoPublisher> =
+            serde_json::from_str(&publishers_json).map_err(to_pyvalue_err)?;
         let publisher_venue_map = publishers_vec
             .into_iter()
             .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
@@ -149,12 +151,11 @@ impl DatabentoLiveClient {
     fn py_subscribe(
         &mut self,
         schema: String,
-        symbols: String,
-        stype_in: Option<String>,
+        symbols: Vec<&str>,
         start: Option<UnixNanos>,
     ) -> PyResult<()> {
-        let stype_in = stype_in.unwrap_or("raw_symbol".to_string());
-
+        let stype_in = infer_symbology_type(symbols.first().unwrap());
+        check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let mut sub = Subscription::builder()
             .symbols(symbols)
             .schema(dbn::Schema::from_str(&schema).map_err(to_pyvalue_err)?)

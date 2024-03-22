@@ -18,8 +18,13 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use anyhow::Result;
-use nautilus_core::time::UnixNanos;
+use nautilus_core::{
+    correctness::{
+        check_equal_u8, check_positive_i64, check_valid_string, check_valid_string_optional,
+    },
+    time::UnixNanos,
+};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -50,8 +55,12 @@ pub struct FuturesSpread {
     pub currency: Currency,
     pub price_precision: u8,
     pub price_increment: Price,
+    pub size_increment: Quantity,
+    pub size_precision: u8,
     pub multiplier: Quantity,
     pub lot_size: Quantity,
+    pub margin_init: Decimal,
+    pub margin_maint: Decimal,
     pub max_quantity: Option<Quantity>,
     pub min_quantity: Option<Quantity>,
     pub max_price: Option<Price>,
@@ -80,9 +89,22 @@ impl FuturesSpread {
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
         min_price: Option<Price>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
+        check_valid_string_optional(exchange.map(|u| u.as_str()), stringify!(isin))?;
+        check_valid_string(underlying.as_str(), stringify!(underlying))?;
+        check_valid_string(strategy_type.as_str(), stringify!(strategy_type))?;
+        check_equal_u8(
+            price_precision,
+            price_increment.precision,
+            stringify!(price_precision),
+            stringify!(price_increment.precision),
+        )?;
+        check_positive_i64(price_increment.raw, stringify!(price_increment.raw))?;
+
         Ok(Self {
             id,
             raw_symbol,
@@ -95,10 +117,14 @@ impl FuturesSpread {
             currency,
             price_precision,
             price_increment,
+            size_precision: 0,
+            size_increment: Quantity::from("1"),
             multiplier,
             lot_size,
+            margin_init: margin_init.unwrap_or(0.into()),
+            margin_maint: margin_maint.unwrap_or(0.into()),
             max_quantity,
-            min_quantity,
+            min_quantity: Some(min_quantity.unwrap_or(1.into())),
             max_price,
             min_price,
             ts_event,

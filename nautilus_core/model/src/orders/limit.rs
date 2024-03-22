@@ -15,10 +15,12 @@
 
 use std::{
     collections::HashMap,
+    fmt::Display,
     ops::{Deref, DerefMut},
 };
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use super::base::{Order, OrderCore};
@@ -35,9 +37,13 @@ use crate::{
         venue::Venue, venue_order_id::VenueOrderId,
     },
     orders::base::OrderError,
-    types::{price::Price, quantity::Quantity},
+    types::{
+        price::Price,
+        quantity::{check_quantity_positive, Quantity},
+    },
 };
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -52,7 +58,6 @@ pub struct LimitOrder {
 }
 
 impl LimitOrder {
-    #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
@@ -80,8 +85,20 @@ impl LimitOrder {
         tags: Option<Ustr>,
         init_id: UUID4,
         ts_init: UnixNanos,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        check_quantity_positive(quantity)?;
+        if time_in_force == TimeInForce::Gtd {
+            if expire_time.is_none() {
+                anyhow::bail!("Condition failed: `expire_time` is required for `GTD` order")
+            }
+            if let Some(time) = expire_time {
+                if time == 0 {
+                    anyhow::bail!("`expire_time` for `GTD` Limit order should be higher then 0")
+                }
+            }
+        }
+
+        Ok(Self {
             core: OrderCore::new(
                 trader_id,
                 strategy_id,
@@ -106,11 +123,11 @@ impl LimitOrder {
                 ts_init,
             ),
             price,
-            expire_time,
+            expire_time: expire_time.or(Some(0)),
             is_post_only: post_only,
             display_qty,
             trigger_instrument_id,
-        }
+        })
     }
 }
 
@@ -125,6 +142,12 @@ impl Deref for LimitOrder {
 impl DerefMut for LimitOrder {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.core
+    }
+}
+
+impl PartialEq for LimitOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.client_order_id == other.client_order_id
     }
 }
 
@@ -348,6 +371,45 @@ impl Order for LimitOrder {
     }
 }
 
+impl Display for LimitOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "LimitOrder(\
+            {} {} {} {} @ {} {}, \
+            status={}, \
+            client_order_id={}, \
+            venue_order_id={}, \
+            position_id={}, \
+            exec_algorithm_id={}, \
+            exec_spawn_id={}, \
+            tags={:?}\
+            )",
+            self.side,
+            self.quantity.to_formatted_string(),
+            self.instrument_id,
+            self.order_type,
+            self.price,
+            self.time_in_force,
+            self.status,
+            self.client_order_id,
+            self.venue_order_id.map_or_else(
+                || "None".to_string(),
+                |venue_order_id| format!("{venue_order_id}")
+            ),
+            self.position_id.map_or_else(
+                || "None".to_string(),
+                |position_id| format!("{position_id}")
+            ),
+            self.exec_algorithm_id
+                .map_or_else(|| "None".to_string(), |id| format!("{id}")),
+            self.exec_spawn_id
+                .map_or_else(|| "None".to_string(), |id| format!("{id}")),
+            self.tags
+        )
+    }
+}
+
 impl From<OrderInitialized> for LimitOrder {
     fn from(event: OrderInitialized) -> Self {
         Self::new(
@@ -379,5 +441,66 @@ impl From<OrderInitialized> for LimitOrder {
             event.event_id,
             event.ts_event,
         )
+        .unwrap()
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use crate::{
+        enums::{OrderSide, TimeInForce},
+        instruments::{currency_pair::CurrencyPair, stubs::*},
+        orders::stubs::TestOrderStubs,
+        types::{price::Price, quantity::Quantity},
+    };
+
+    #[rstest]
+    fn test_display(audusd_sim: CurrencyPair) {
+        let order = TestOrderStubs::limit_order(
+            audusd_sim.id,
+            OrderSide::Buy,
+            Price::from("1.00000"),
+            Quantity::from(100_000),
+            None,
+            None,
+        );
+        assert_eq!(
+            order.to_string(),
+            "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, \
+            status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, \
+            venue_order_id=None, position_id=None, exec_algorithm_id=None, \
+            exec_spawn_id=O-19700101-0000-000-001-1, tags=None)"
+        );
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Condition failed: invalid `Quantity`, should be positive and was 0")]
+    fn test_positive_quantity_condition(audusd_sim: CurrencyPair) {
+        let _ = TestOrderStubs::limit_order(
+            audusd_sim.id,
+            OrderSide::Buy,
+            Price::from("0.8"),
+            Quantity::from(0),
+            None,
+            None,
+        );
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Condition failed: `expire_time` is required for `GTD` order")]
+    fn test_correct_expiration_with_time_in_force_gtd(audusd_sim: CurrencyPair) {
+        let _ = TestOrderStubs::limit_order(
+            audusd_sim.id,
+            OrderSide::Buy,
+            Price::from("0.8"),
+            Quantity::from(1),
+            None,
+            Some(TimeInForce::Gtd),
+        );
     }
 }

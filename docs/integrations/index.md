@@ -11,28 +11,29 @@
    binance.md
    databento.md
    ib.md
-
 ```
 
-NautilusTrader is designed in a modular way to work with 'adapters' which provide
-connectivity to data providers and/or trading venues - converting their raw API
+NautilusTrader is designed in a modular way to work with *adapters* which provide
+connectivity to trading venues and data providers - converting their raw API
 into a unified interface. The following integrations are currently supported:
-
-```{warning}
-The initial integrations for the project are currently under heavy construction. 
-It's advised to conduct some of your own testing with small amounts of capital before
-running strategies which are able to access larger capital allocations.
-```
 
 | Name                                                      | ID                    | Type                    | Status                                                  | Docs                                                                |
 | :-------------------------------------------------------- | :-------------------- | :---------------------- | :------------------------------------------------------ | :------------------------------------------------------------------ |
-| [Betfair](https://betfair.com)                            | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/betfair.html)   |
+| [Betfair](https://betfair.com)                            | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/betfair.html)   |
 | [Binance](https://binance.com)                            | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html)   |
 | [Binance US](https://binance.us)                          | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html)   |
 | [Binance Futures](https://www.binance.com/en/futures)     | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html)   |
 | [Bybit](https://www.bybit.com)                            | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) |                                                                     |
-| [Databento](https://databento.com)                        | `DATABENTO`           | Data provider           | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/databento.html) |
+| [Databento](https://databento.com)                        | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/databento.html) |
 | [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/ib.html)        |
+
+- `ID:` The default client ID for the integrations adapter clients
+- `Type:` The type of integration (often the venue type)
+
+### Status
+- `building` - Under construction and likely not in a usable state
+- `beta` - Completed to a minimally working state and in a 'beta' testing phase
+- `stable` - Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain)
 
 ## Implementation goals
 

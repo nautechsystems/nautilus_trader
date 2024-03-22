@@ -276,7 +276,7 @@ typedef enum InstrumentCloseType {
  */
 typedef enum LiquiditySide {
     /**
-     * No specific liqudity side.
+     * No liquidity side specified.
      */
     NO_LIQUIDITY_SIDE = 0,
     /**
@@ -893,14 +893,15 @@ typedef struct QuoteTick_t {
  * Represents a valid trade match ID (assigned by a trading venue).
  *
  * Maximum length is 36 characters.
- * Can correspond to the `TradeID <1003> field` of the FIX protocol.
  *
  * The unique ID assigned to the trade entity once it is received or matched by
  * the exchange or central counterparty.
+ *
+ * Can correspond to the `TradeID <1003> field` of the FIX protocol.
  */
 typedef struct TradeId_t {
     /**
-     * The trade match ID C string value as a fixed-length byte array.
+     * The trade match ID value as a fixed-length C string byte array (includes null terminator).
      */
     uint8_t value[37];
 } TradeId_t;

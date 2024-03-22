@@ -16,6 +16,7 @@
 import functools
 from collections.abc import Callable
 from decimal import Decimal
+from inspect import iscoroutinefunction
 from typing import Any
 
 import pandas as pd
@@ -25,7 +26,6 @@ from ibapi.common import HistoricalTickLast
 from ibapi.common import MarketDataTypeEnum
 from ibapi.common import TickAttribBidAsk
 from ibapi.common import TickAttribLast
-from ibapi.utils import current_fn_name
 
 # fmt: off
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
@@ -36,7 +36,6 @@ from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_t
 from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
 from nautilus_trader.adapters.interactive_brokers.parsing.data import what_to_show
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
-from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -125,7 +124,10 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             )
             if not subscription:
                 return None
-            subscription.handle()
+            if iscoroutinefunction(subscription.handle):
+                await subscription.handle()
+            else:
+                subscription.handle()
             return subscription
         else:
             self._log.info(f"Subscription already exists for {subscription}")
@@ -646,21 +648,20 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         self._msgbus.send(endpoint="DataEngine.process", msg=data)
 
-    # -- EWrapper overrides -----------------------------------------------------------------------
-    def marketDataType(self, req_id: int, market_data_type: int) -> None:
+    def process_market_data_type(self, *, req_id: int, market_data_type: int) -> None:
         """
         Return the market data type (real-time, frozen, delayed, delayed-frozen)
         of ticker sent by EClientSocket::reqMktData when TWS switches from real-time
         to frozen and back and from delayed to delayed-frozen and back.
         """
-        self.logAnswer(current_fn_name(), vars())
         if market_data_type == MarketDataTypeEnum.REALTIME:
             self._log.debug(f"Market DataType is {MarketDataTypeEnum.to_str(market_data_type)}")
         else:
             self._log.warning(f"Market DataType is {MarketDataTypeEnum.to_str(market_data_type)}")
 
-    def tickByTickBidAsk(
+    def process_tick_by_tick_bid_ask(
         self,
+        *,
         req_id: int,
         time: int,
         bid_price: float,
@@ -672,7 +673,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         Return "BidAsk" tick-by-tick real-time tick data.
         """
-        self.logAnswer(current_fn_name(), vars())
         if not (subscription := self._subscriptions.get(req_id=req_id)):
             return
 
@@ -692,8 +692,9 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         self._handle_data(quote_tick)
 
-    def tickByTickAllLast(
+    def process_tick_by_tick_all_last(
         self,
+        *,
         req_id: int,
         tick_type: str,
         time: int,
@@ -706,7 +707,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         Return "Last" or "AllLast" (trades) tick-by-tick real-time tick.
         """
-        self.logAnswer(current_fn_name(), vars())
         if not (subscription := self._subscriptions.get(req_id=req_id)):
             return
 
@@ -730,8 +730,9 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         self._handle_data(trade_tick)
 
-    def realtimeBar(
+    def process_realtime_bar(
         self,
+        *,
         req_id: int,
         time: int,
         open_: float,
@@ -745,7 +746,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         Update real-time 5 second bars.
         """
-        self.logAnswer(current_fn_name(), vars())
         if not (subscription := self._subscriptions.get(req_id=req_id)):
             return
         bar_type = BarType.from_str(subscription.name)
@@ -765,11 +765,10 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         self._handle_data(bar)
 
-    def historicalData(self, req_id: int, bar: BarData) -> None:
+    def process_historical_data(self, *, req_id: int, bar: BarData) -> None:
         """
         Return the requested historical data bars.
         """
-        self.logAnswer(current_fn_name(), vars())
         if request := self._requests.get(req_id=req_id):
             bar_type = BarType.from_str(request.name)
             bar = self._ib_bar_to_nautilus_bar(
@@ -792,17 +791,13 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             self._log.debug(f"Received {bar=} on {req_id=}")
             return
 
-    def historicalDataEnd(self, req_id: int, start: str, end: str) -> None:
+    def process_historical_data_end(self, *, req_id: int, start: str, end: str) -> None:
         """
         Mark the end of receiving historical bars.
         """
-        self.logAnswer(current_fn_name(), vars())
         self._end_request(req_id)
-        if req_id == 1 and not self._is_ib_ready.is_set():  # probe successful
-            self._log.info(f"`is_ib_ready` set by historicalDataEnd {req_id=}", LogColor.BLUE)
-            self._is_ib_ready.set()
 
-    def historicalDataUpdate(self, req_id: int, bar: BarData) -> None:
+    def process_historical_data_update(self, *, req_id: int, bar: BarData) -> None:
         """
         Receive bars in real-time if keepUpToDate is set as True in reqHistoricalData.
 
@@ -812,7 +807,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         time data.
 
         """
-        self.logAnswer(current_fn_name(), vars())
         if not (subscription := self._subscriptions.get(req_id=req_id)):
             return
         if not isinstance(subscription.handle, functools.partial):
@@ -827,8 +821,9 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             else:
                 self._handle_data(bar)
 
-    def historicalTicksBidAsk(
+    def process_historical_ticks_bid_ask(
         self,
+        *,
         req_id: int,
         ticks: list,
         done: bool,
@@ -836,7 +831,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         Return the requested historic bid/ask ticks.
         """
-        self.logAnswer(current_fn_name(), vars())
         if not done:
             return
         if request := self._requests.get(req_id=req_id):
@@ -858,20 +852,18 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
             self._end_request(req_id)
 
-    def historicalTicksLast(self, req_id: int, ticks: list, done: bool) -> None:
+    def process_historical_ticks_last(self, *, req_id: int, ticks: list, done: bool) -> None:
         """
         Return the requested historic trade ticks.
         """
-        self.logAnswer(current_fn_name(), vars())
         if not done:
             return
         self._process_trade_ticks(req_id, ticks)
 
-    def historicalTicks(self, req_id: int, ticks: list, done: bool) -> None:
+    def process_historical_ticks(self, *, req_id: int, ticks: list, done: bool) -> None:
         """
         Return the requested historic ticks.
         """
-        self.logAnswer(current_fn_name(), vars())
         if not done:
             return
         self._process_trade_ticks(req_id, ticks)

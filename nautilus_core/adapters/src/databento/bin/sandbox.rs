@@ -1,11 +1,11 @@
 use std::env;
 
 use databento::{
-    dbn::{Dataset::GlbxMdp3, SType, Schema},
+    dbn::{Dataset::GlbxMdp3, MboMsg, SType, Schema, TradeMsg},
     live::Subscription,
     LiveClient,
 };
-use dbn::TradeMsg;
+use time::OffsetDateTime;
 
 #[tokio::main]
 async fn main() {
@@ -20,9 +20,10 @@ async fn main() {
     client
         .subscribe(
             &Subscription::builder()
-                .schema(Schema::Trades)
+                .schema(Schema::Mbo)
                 .stype_in(SType::RawSymbol)
                 .symbols("ESM4")
+                .start(OffsetDateTime::from_unix_timestamp_nanos(0).unwrap())
                 .build(),
         )
         .await
@@ -30,9 +31,18 @@ async fn main() {
 
     client.start().await.unwrap();
 
+    let mut count = 0;
+
     while let Some(record) = client.next_record().await.unwrap() {
-        if let Some(trade) = record.get::<TradeMsg>() {
-            println!("{trade:#?}");
+        if let Some(msg) = record.get::<TradeMsg>() {
+            println!("{msg:#?}");
+        }
+        if let Some(msg) = record.get::<MboMsg>() {
+            println!(
+                "Received delta: {} {} flags={}",
+                count, msg.hd.ts_event, msg.flags,
+            );
+            count += 1;
         }
     }
 }

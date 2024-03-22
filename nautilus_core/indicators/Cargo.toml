@@ -21,10 +21,14 @@ strum = { workspace = true }
 rstest = { workspace = true }
 
 [features]
+default = []
 extension-module = [
     "pyo3/extension-module",
     "nautilus-core/extension-module",
     "nautilus-model/extension-module",
 ]
-python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]
-default = []
+python = [
+    "pyo3",
+    "nautilus-core/python",
+    "nautilus-model/python",
+]

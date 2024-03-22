@@ -154,34 +154,6 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         self._log.info(f"{config.use_trader_prefix=}", LogColor.BLUE)
         self._log.info(f"{config.use_instance_id=}", LogColor.BLUE)
 
-        # Database keys
-        self._key_trader      = f"{_TRADER}-{trader_id}"              # noqa
-        self._key_general     = f"{self._key_trader}:{_GENERAL}:"     # noqa
-        self._key_currencies  = f"{self._key_trader}:{_CURRENCIES}:"  # noqa
-        self._key_instruments = f"{self._key_trader}:{_INSTRUMENTS}:" # noqa
-        self._key_synthetics  = f"{self._key_trader}:{_SYNTHETICS}:"  # noqa
-        self._key_accounts    = f"{self._key_trader}:{_ACCOUNTS}:"    # noqa
-        self._key_orders      = f"{self._key_trader}:{_ORDERS}:"      # noqa
-        self._key_positions   = f"{self._key_trader}:{_POSITIONS}:"   # noqa
-        self._key_actors      = f"{self._key_trader}:{_ACTORS}:"      # noqa
-        self._key_strategies  = f"{self._key_trader}:{_STRATEGIES}:"  # noqa
-
-        self._key_index_order_ids = f"{self._key_trader}:{_INDEX_ORDER_IDS}:"
-        self._key_index_order_position = f"{self._key_trader}:{_INDEX_ORDER_POSITION}:"
-        self._key_index_order_client = f"{self._key_trader}:{_INDEX_ORDER_CLIENT}:"
-        self._key_index_orders = f"{self._key_trader}:{_INDEX_ORDERS}"
-        self._key_index_orders_open = f"{self._key_trader}:{_INDEX_ORDERS_OPEN}"
-        self._key_index_orders_closed = f"{self._key_trader}:{_INDEX_ORDERS_CLOSED}"
-        self._key_index_orders_emulated = f"{self._key_trader}:{_INDEX_ORDERS_EMULATED}"
-        self._key_index_orders_inflight = f"{self._key_trader}:{_INDEX_ORDERS_INFLIGHT}"
-        self._key_index_positions = f"{self._key_trader}:{_INDEX_POSITIONS}"
-        self._key_index_positions_open = f"{self._key_trader}:{_INDEX_POSITIONS_OPEN}"
-        self._key_index_positions_closed = f"{self._key_trader}:{_INDEX_POSITIONS_CLOSED}"
-
-        self._key_snapshots_orders = f"{self._key_trader}:{_SNAPSHOTS_ORDERS}:"
-        self._key_snapshots_positions = f"{self._key_trader}:{_SNAPSHOTS_POSITIONS}:"
-        self._key_heartbeat = f"{self._key_trader}:{_HEARTBEAT}"
-
         self._serializer = serializer
 
         self._backing = nautilus_pyo3.RedisCacheDatabase(
@@ -242,7 +214,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         cdef dict general = {}
 
-        cdef list general_keys = self._backing.keys(f"*:{_GENERAL}:*")
+        cdef list general_keys = self._backing.keys(f"{_GENERAL}:*")
         if not general_keys:
             return general
 
@@ -271,7 +243,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         cdef dict currencies = {}
 
-        cdef list currency_keys = self._backing.keys(f"*:{_CURRENCIES}*")
+        cdef list currency_keys = self._backing.keys(f"{_CURRENCIES}*")
         if not currency_keys:
             return currencies
 
@@ -299,7 +271,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         cdef dict instruments = {}
 
-        cdef list instrument_keys = self._backing.keys(f"*:{_INSTRUMENTS}*")
+        cdef list instrument_keys = self._backing.keys(f"{_INSTRUMENTS}*")
         if not instrument_keys:
             return instruments
 
@@ -327,7 +299,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         cdef dict synthetics = {}
 
-        cdef list synthetic_keys = self._backing.keys(f"*:{_SYNTHETICS}*")
+        cdef list synthetic_keys = self._backing.keys(f"{_SYNTHETICS}*")
         if not synthetic_keys:
             return synthetics
 
@@ -355,7 +327,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         cdef dict accounts = {}
 
-        cdef list account_keys = self._backing.keys(f"*:{_ACCOUNTS}*")
+        cdef list account_keys = self._backing.keys(f"{_ACCOUNTS}*")
         if not account_keys:
             return accounts
 
@@ -384,7 +356,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         cdef dict orders = {}
 
-        cdef list order_keys = self._backing.keys(f"*:{_ORDERS}*")
+        cdef list order_keys = self._backing.keys(f"{_ORDERS}*")
         if not order_keys:
             return orders
 
@@ -412,7 +384,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         cdef dict positions = {}
 
-        cdef list position_keys = self._backing.keys(f"*:{_POSITIONS}*")
+        cdef list position_keys = self._backing.keys(f"{_POSITIONS}*")
         if not position_keys:
             return positions
 

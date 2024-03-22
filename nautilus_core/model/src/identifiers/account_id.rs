@@ -18,7 +18,6 @@ use std::{
     hash::Hash,
 };
 
-use anyhow::Result;
 use nautilus_core::correctness::{check_string_contains, check_valid_string};
 use ustr::Ustr;
 
@@ -41,12 +40,12 @@ pub struct AccountId {
 }
 
 impl AccountId {
-    pub fn new(s: &str) -> Result<Self> {
-        check_valid_string(s, "`accountid` value")?;
-        check_string_contains(s, "-", "`AccountId` value")?;
+    pub fn new(value: &str) -> anyhow::Result<Self> {
+        check_valid_string(value, stringify!(value))?;
+        check_string_contains(value, "-", stringify!(value))?;
 
         Ok(Self {
-            value: Ustr::from(s),
+            value: Ustr::from(value),
         })
     }
 }

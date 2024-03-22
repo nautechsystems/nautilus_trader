@@ -43,7 +43,7 @@ typedef struct CVec {
  */
 typedef struct UUID4_t {
     /**
-     * The UUID v4 C string value as a fixed-length byte array.
+     * The UUID v4 value as a fixed-length C string byte array (includes null terminator).
      */
     uint8_t value[37];
 } UUID4_t;

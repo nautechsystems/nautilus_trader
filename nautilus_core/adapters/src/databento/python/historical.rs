@@ -13,9 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{fs, num::NonZeroU64, sync::Arc};
+use std::{fs, num::NonZeroU64, str::FromStr, sync::Arc};
 
-use databento::historical::timeseries::GetRangeParams;
+use databento::{
+    dbn::{self, SType},
+    historical::timeseries::GetRangeParams,
+};
 use indexmap::IndexMap;
 use nautilus_core::{
     python::to_pyvalue_err,
@@ -41,7 +44,7 @@ use crate::databento::{
         decode_imbalance_msg, decode_instrument_def_msg, decode_record, decode_statistics_msg,
         raw_ptr_to_ustr,
     },
-    symbology::decode_nautilus_instrument_id,
+    symbology::{check_consistent_symbology, decode_nautilus_instrument_id, infer_symbology_type},
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, PublisherId},
 };
 
@@ -60,13 +63,16 @@ pub struct DatabentoHistoricalClient {
 #[pymethods]
 impl DatabentoHistoricalClient {
     #[new]
-    fn py_new(key: String, publishers_path: &str) -> anyhow::Result<Self> {
+    fn py_new(key: String, publishers_path: &str) -> PyResult<Self> {
         let client = databento::HistoricalClient::builder()
-            .key(key.clone())?
-            .build()?;
+            .key(key.clone())
+            .map_err(to_pyvalue_err)?
+            .build()
+            .map_err(to_pyvalue_err)?;
 
         let file_content = fs::read_to_string(publishers_path)?;
-        let publishers_vec: Vec<DatabentoPublisher> = serde_json::from_str(&file_content)?;
+        let publishers_vec: Vec<DatabentoPublisher> =
+            serde_json::from_str(&file_content).map_err(to_pyvalue_err)?;
 
         let publisher_venue_map = publishers_vec
             .into_iter()
@@ -107,19 +113,22 @@ impl DatabentoHistoricalClient {
         &self,
         py: Python<'py>,
         dataset: String,
-        symbols: String,
+        symbols: Vec<&str>,
         start: UnixNanos,
         end: Option<UnixNanos>,
         limit: Option<u64>,
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
 
+        let stype_in = infer_symbology_type(symbols.first().unwrap());
+        check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns());
         let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
             .date_time_range(time_range)
             .symbols(symbols)
+            .stype_in(SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
             .schema(dbn::Schema::Definition)
             .limit(limit.and_then(NonZeroU64::new))
             .build();
@@ -172,19 +181,22 @@ impl DatabentoHistoricalClient {
         &self,
         py: Python<'py>,
         dataset: String,
-        symbols: String,
+        symbols: Vec<&str>,
         start: UnixNanos,
         end: Option<UnixNanos>,
         limit: Option<u64>,
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
 
+        let stype_in = infer_symbology_type(symbols.first().unwrap());
+        check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns());
         let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
             .date_time_range(time_range)
             .symbols(symbols)
+            .stype_in(SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
             .schema(dbn::Schema::Mbp1)
             .limit(limit.and_then(NonZeroU64::new))
             .build();
@@ -236,19 +248,22 @@ impl DatabentoHistoricalClient {
         &self,
         py: Python<'py>,
         dataset: String,
-        symbols: String,
+        symbols: Vec<&str>,
         start: UnixNanos,
         end: Option<UnixNanos>,
         limit: Option<u64>,
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
 
+        let stype_in = infer_symbology_type(symbols.first().unwrap());
+        check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns());
         let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
             .date_time_range(time_range)
             .symbols(symbols)
+            .stype_in(SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
             .schema(dbn::Schema::Trades)
             .limit(limit.and_then(NonZeroU64::new))
             .build();
@@ -301,7 +316,7 @@ impl DatabentoHistoricalClient {
         &self,
         py: Python<'py>,
         dataset: String,
-        symbols: String,
+        symbols: Vec<&str>,
         aggregation: BarAggregation,
         start: UnixNanos,
         end: Option<UnixNanos>,
@@ -309,6 +324,8 @@ impl DatabentoHistoricalClient {
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
 
+        let stype_in = infer_symbology_type(symbols.first().unwrap());
+        check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let schema = match aggregation {
             BarAggregation::Second => dbn::Schema::Ohlcv1S,
             BarAggregation::Minute => dbn::Schema::Ohlcv1M,
@@ -322,6 +339,7 @@ impl DatabentoHistoricalClient {
             .dataset(dataset)
             .date_time_range(time_range)
             .symbols(symbols)
+            .stype_in(SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
             .schema(schema)
             .limit(limit.and_then(NonZeroU64::new))
             .build();
@@ -374,19 +392,22 @@ impl DatabentoHistoricalClient {
         &self,
         py: Python<'py>,
         dataset: String,
-        symbols: String,
+        symbols: Vec<&str>,
         start: UnixNanos,
         end: Option<UnixNanos>,
         limit: Option<u64>,
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
 
+        let stype_in = infer_symbology_type(symbols.first().unwrap());
+        check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns());
         let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
             .date_time_range(time_range)
             .symbols(symbols)
+            .stype_in(SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
             .schema(dbn::Schema::Imbalance)
             .limit(limit.and_then(NonZeroU64::new))
             .build();
@@ -428,19 +449,22 @@ impl DatabentoHistoricalClient {
         &self,
         py: Python<'py>,
         dataset: String,
-        symbols: String,
+        symbols: Vec<&str>,
         start: UnixNanos,
         end: Option<UnixNanos>,
         limit: Option<u64>,
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
 
+        let stype_in = infer_symbology_type(symbols.first().unwrap());
+        check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns());
         let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
             .date_time_range(time_range)
             .symbols(symbols)
+            .stype_in(SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
             .schema(dbn::Schema::Statistics)
             .limit(limit.and_then(NonZeroU64::new))
             .build();

@@ -15,7 +15,6 @@
 
 use std::fmt::Display;
 
-use anyhow::Result;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -53,7 +52,11 @@ impl Display for WeightedMovingAverage {
 }
 
 impl WeightedMovingAverage {
-    pub fn new(period: usize, weights: Vec<f64>, price_type: Option<PriceType>) -> Result<Self> {
+    pub fn new(
+        period: usize,
+        weights: Vec<f64>,
+        price_type: Option<PriceType>,
+    ) -> anyhow::Result<Self> {
         if weights.len() != period {
             return Err(anyhow::anyhow!("Weights length must be equal to period"));
         }

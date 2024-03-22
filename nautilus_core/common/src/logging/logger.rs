@@ -24,6 +24,7 @@ use std::{
     thread,
 };
 
+use indexmap::IndexMap;
 use log::{
     debug, error, info,
     kv::{ToValue, Value},
@@ -35,7 +36,7 @@ use nautilus_core::{
     uuid::UUID4,
 };
 use nautilus_model::identifiers::trader_id::TraderId;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
 use super::{LOGGING_BYPASSED, LOGGING_REALTIME};
@@ -175,6 +176,12 @@ pub struct LogLine {
     pub message: String,
 }
 
+impl fmt::Display for LogLine {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}] {}: {}", self.level, self.component, self.message)
+    }
+}
+
 pub struct LogLineWrapper {
     line: LogLine,
     cache: Option<String>,
@@ -212,7 +219,7 @@ impl LogLineWrapper {
             format!(
                 "\x1b[1m{}\x1b[0m {}[{}] {}.{}: {}\x1b[0m\n",
                 self.timestamp,
-                &self.line.color.to_string(),
+                &self.line.color.as_ansi(),
                 self.line.level,
                 self.trader_id,
                 &self.line.component,
@@ -223,14 +230,25 @@ impl LogLineWrapper {
 
     pub fn get_json(&self) -> String {
         let json_string =
-            serde_json::to_string(&self.line).expect("Error serializing log event to string");
+            serde_json::to_string(&self).expect("Error serializing log event to string");
         format!("{json_string}\n")
     }
 }
 
-impl fmt::Display for LogLine {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}] {}: {}", self.level, self.component, self.message)
+impl Serialize for LogLineWrapper {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut json_obj = IndexMap::new();
+        json_obj.insert("timestamp".to_string(), self.timestamp.clone());
+        json_obj.insert("trader_id".to_string(), self.trader_id.to_string());
+        json_obj.insert("level".to_string(), self.line.level.to_string());
+        json_obj.insert("color".to_string(), self.line.color.to_string());
+        json_obj.insert("component".to_string(), self.line.component.to_string());
+        json_obj.insert("message".to_string(), self.line.message.to_string());
+
+        json_obj.serialize(serializer)
     }
 }
 
@@ -273,17 +291,23 @@ impl Log for Logger {
 
 #[allow(clippy::too_many_arguments)]
 impl Logger {
-    pub fn init_with_env(trader_id: TraderId, instance_id: UUID4, file_config: FileWriterConfig) {
+    #[must_use]
+    pub fn init_with_env(
+        trader_id: TraderId,
+        instance_id: UUID4,
+        file_config: FileWriterConfig,
+    ) -> LogGuard {
         let config = LoggerConfig::from_env();
-        Logger::init_with_config(trader_id, instance_id, config, file_config);
+        Logger::init_with_config(trader_id, instance_id, config, file_config)
     }
 
+    #[must_use]
     pub fn init_with_config(
         trader_id: TraderId,
         instance_id: UUID4,
         config: LoggerConfig,
         file_config: FileWriterConfig,
-    ) {
+    ) -> LogGuard {
         let (tx, rx) = channel::<LogEvent>();
 
         let logger = Self {
@@ -322,6 +346,8 @@ impl Logger {
                 eprintln!("Cannot set logger because of error: {e}")
             }
         }
+
+        LogGuard::new()
     }
 
     fn handle_messages(
@@ -435,6 +461,31 @@ pub fn log(level: LogLevel, color: LogColor, component: Ustr, message: &str) {
     }
 }
 
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
+#[derive(Debug)]
+pub struct LogGuard {}
+
+impl LogGuard {
+    pub fn new() -> Self {
+        LogGuard {}
+    }
+}
+
+impl Default for LogGuard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for LogGuard {
+    fn drop(&mut self) {
+        log::logger().flush();
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -521,7 +572,7 @@ mod tests {
             ..Default::default()
         };
 
-        Logger::init_with_config(
+        let log_guard = Logger::init_with_config(
             TraderId::from("TRADER-001"),
             UUID4::new(),
             config,
@@ -564,6 +615,8 @@ mod tests {
             Duration::from_secs(2),
         );
 
+        drop(log_guard); // Ensure log buffers are flushed
+
         assert_eq!(
             log_contents,
             "1970-01-20T02:20:00.000000000Z [INFO] TRADER-001.RiskEngine: This is a test.\n"
@@ -580,7 +633,7 @@ mod tests {
             ..Default::default()
         };
 
-        Logger::init_with_config(
+        let log_guard = Logger::init_with_config(
             TraderId::from("TRADER-001"),
             UUID4::new(),
             config,
@@ -613,6 +666,8 @@ mod tests {
             Duration::from_secs(3),
         );
 
+        drop(log_guard); // Ensure log buffers are flushed
+
         assert!(
             std::fs::read_dir(&temp_dir)
                 .expect("Failed to read directory")
@@ -634,7 +689,7 @@ mod tests {
             ..Default::default()
         };
 
-        Logger::init_with_config(
+        let log_guard = Logger::init_with_config(
             TraderId::from("TRADER-001"),
             UUID4::new(),
             config,
@@ -669,9 +724,11 @@ mod tests {
             Duration::from_secs(2),
         );
 
+        drop(log_guard); // Ensure log buffers are flushed
+
         assert_eq!(
         log_contents,
-        "{\"level\":\"INFO\",\"color\":\"Normal\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
+        "{\"timestamp\":\"1970-01-20T02:20:00.000000000Z\",\"trader_id\":\"TRADER-001\",\"level\":\"INFO\",\"color\":\"NORMAL\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
     );
     }
 }

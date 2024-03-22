@@ -15,11 +15,12 @@
 
 use std::{
     collections::HashMap,
+    fmt::Display,
     ops::{Deref, DerefMut},
 };
 
-use anyhow::{bail, Result};
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use super::base::{Order, OrderCore};
@@ -42,6 +43,7 @@ use crate::{
     },
 };
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -72,10 +74,10 @@ impl MarketOrder {
         exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Ustr>,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
         check_quantity_positive(quantity)?;
         if time_in_force == TimeInForce::Gtd {
-            bail!("{}", "GTD not supported for Market orders");
+            anyhow::bail!("{}", "GTD not supported for Market orders");
         }
 
         Ok(Self {
@@ -117,6 +119,12 @@ impl Deref for MarketOrder {
 impl DerefMut for MarketOrder {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.core
+    }
+}
+
+impl PartialEq for MarketOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.client_order_id == other.client_order_id
     }
 }
 
@@ -332,6 +340,44 @@ impl Order for MarketOrder {
     }
 }
 
+impl Display for MarketOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "MarketOrder(\
+            {} {} {} @ {} {}, \
+            status={}, \
+            client_order_id={}, \
+            venue_order_id={}, \
+            position_id={}, \
+            exec_algorithm_id={}, \
+            exec_spawn_id={}, \
+            tags={:?}\
+            )",
+            self.side,
+            self.quantity.to_formatted_string(),
+            self.instrument_id,
+            self.order_type,
+            self.time_in_force,
+            self.status,
+            self.client_order_id,
+            self.venue_order_id.map_or_else(
+                || "None".to_string(),
+                |venue_order_id| format!("{venue_order_id}")
+            ),
+            self.position_id.map_or_else(
+                || "None".to_string(),
+                |position_id| format!("{position_id}")
+            ),
+            self.exec_algorithm_id
+                .map_or_else(|| "None".to_string(), |id| format!("{id}")),
+            self.exec_spawn_id
+                .map_or_else(|| "None".to_string(), |id| format!("{id}")),
+            self.tags
+        )
+    }
+}
+
 impl From<OrderInitialized> for MarketOrder {
     fn from(event: OrderInitialized) -> Self {
         Self::new(
@@ -355,7 +401,7 @@ impl From<OrderInitialized> for MarketOrder {
             event.exec_spawn_id,
             event.tags,
         )
-        .unwrap()
+        .unwrap() // SAFETY: From can panic
     }
 }
 

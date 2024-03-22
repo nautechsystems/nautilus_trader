@@ -150,7 +150,7 @@ cdef extern from "../includes/model.h":
 
     # The liqudity side for a trade in a financial market.
     cpdef enum LiquiditySide:
-        # No specific liqudity side.
+        # No liquidity side specified.
         NO_LIQUIDITY_SIDE # = 0,
         # The order passively provided liqudity to the market to complete the trade (made a market).
         MAKER # = 1,
@@ -492,12 +492,13 @@ cdef extern from "../includes/model.h":
     # Represents a valid trade match ID (assigned by a trading venue).
     #
     # Maximum length is 36 characters.
-    # Can correspond to the `TradeID <1003> field` of the FIX protocol.
     #
     # The unique ID assigned to the trade entity once it is received or matched by
     # the exchange or central counterparty.
+    #
+    # Can correspond to the `TradeID <1003> field` of the FIX protocol.
     cdef struct TradeId_t:
-        # The trade match ID C string value as a fixed-length byte array.
+        # The trade match ID value as a fixed-length C string byte array (includes null terminator).
         uint8_t value[37];
 
     # Represents a single trade tick in a financial market.

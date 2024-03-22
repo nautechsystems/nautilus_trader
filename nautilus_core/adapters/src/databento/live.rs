@@ -15,8 +15,8 @@
 
 use std::{collections::HashMap, ffi::CStr};
 
-use anyhow::{anyhow, Result};
 use databento::{
+    dbn,
     dbn::{PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy},
     live::Subscription,
 };
@@ -103,7 +103,7 @@ impl DatabentoFeedHandler {
     }
 
     /// Run the feed handler to begin listening for commands and processing messages.
-    pub async fn run(&mut self) -> Result<()> {
+    pub async fn run(&mut self) -> anyhow::Result<()> {
         debug!("Running feed handler");
         let clock = get_atomic_clock_realtime();
         let mut symbol_map = PitSymbolMap::new();
@@ -129,7 +129,7 @@ impl DatabentoFeedHandler {
             Err(_) => {
                 self.msg_tx.send(LiveMessage::Close).await?;
                 self.cmd_rx.close();
-                return Err(anyhow!("Timeout connecting to LSG"));
+                return Err(anyhow::anyhow!("Timeout connecting to LSG"));
             }
         };
 
@@ -198,7 +198,7 @@ impl DatabentoFeedHandler {
                 Err(e) => {
                     // Fail the session entirely for now. Consider refining
                     // this strategy to handle specific errors more gracefully.
-                    self.send_msg(LiveMessage::Error(anyhow!(e))).await;
+                    self.send_msg(LiveMessage::Error(anyhow::anyhow!(e))).await;
                     break;
                 }
             };
@@ -374,7 +374,7 @@ fn handle_instrument_def_msg(
     msg: &dbn::InstrumentDefMsg,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     clock: &AtomicTime,
-) -> Result<InstrumentType> {
+) -> anyhow::Result<InstrumentType> {
     let c_str: &CStr = unsafe { CStr::from_ptr(msg.raw_symbol.as_ptr()) };
     let raw_symbol: &str = c_str.to_str().map_err(to_pyvalue_err)?;
 

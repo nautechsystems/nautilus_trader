@@ -493,22 +493,28 @@ class BaseMixin:
     _subscriptions: Subscriptions
     _event_subscriptions: dict[str, Callable]
     _eclient: EClient
-    _is_ib_ready: asyncio.Event
+    _is_ib_connected: asyncio.Event
+    _start: Callable
+    _startup: Callable
+    _reset: Callable
+    _stop: Callable
+    _resume: Callable
     _degrade: Callable
     _end_request: Callable
     _await_request: Callable
     _next_req_id: Callable
-    logAnswer: Callable
-    _reset: Callable
+    _resubscribe_all: Callable
     _create_task: Callable
-    _start_client_tasks_and_tws_api: Callable
+    logAnswer: Callable
 
     # Account
     accounts: Callable
 
     # Connection
-    _connection_attempt_counter: int
-    _contract_for_probe: IBContract
+    _reconnect_attempts: int
+    _reconnect_delay: int
+    _max_reconnect_attempts: int
+    _indefinite_reconnect: bool
 
     # MarketData
     _bar_type_to_last_bar: dict[str, BarData | None]

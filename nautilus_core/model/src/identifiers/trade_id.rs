@@ -19,17 +19,20 @@ use std::{
     hash::Hash,
 };
 
-use anyhow::{bail, Result};
-use nautilus_core::correctness::check_valid_string;
+use nautilus_core::correctness::{check_in_range_inclusive_usize, check_valid_string};
 use serde::{Deserialize, Deserializer, Serialize};
+
+/// The maximum length of ASCII characters for a `TradeId` string value (including null terminator).
+const TRADE_ID_LEN: usize = 37;
 
 /// Represents a valid trade match ID (assigned by a trading venue).
 ///
 /// Maximum length is 36 characters.
-/// Can correspond to the `TradeID <1003> field` of the FIX protocol.
 ///
 /// The unique ID assigned to the trade entity once it is received or matched by
 /// the exchange or central counterparty.
+///
+/// Can correspond to the `TradeID <1003> field` of the FIX protocol.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
@@ -37,27 +40,22 @@ use serde::{Deserialize, Deserializer, Serialize};
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct TradeId {
-    /// The trade match ID C string value as a fixed-length byte array.
-    pub(crate) value: [u8; 37],
+    /// The trade match ID value as a fixed-length C string byte array (includes null terminator).
+    pub(crate) value: [u8; 37], // cbindgen issue using the constant in the array
 }
 
 impl TradeId {
-    pub fn new(s: &str) -> Result<Self> {
-        let cstr = CString::new(s).expect("`CString` conversion failed");
-
+    pub fn new(value: &str) -> anyhow::Result<Self> {
+        let cstr = CString::new(value).expect("`CString` conversion failed");
         Self::from_cstr(cstr)
     }
 
-    pub fn from_cstr(cstr: CString) -> Result<Self> {
-        check_valid_string(cstr.to_str()?, "`TradeId` value")?;
-
-        // TODO: Temporarily make this 65 to accommodate Betfair trade IDs
-        // TODO: Extract this to single function
+    pub fn from_cstr(cstr: CString) -> anyhow::Result<Self> {
         let bytes = cstr.as_bytes_with_nul();
-        if bytes.len() > 37 {
-            bail!("Condition failed: value exceeds maximum trade ID length of 36");
-        }
-        let mut value = [0; 37];
+        check_valid_string(cstr.to_str()?, stringify!(cstr))?;
+        check_in_range_inclusive_usize(bytes.len(), 2, TRADE_ID_LEN, stringify!(cstr))?;
+
+        let mut value = [0; TRADE_ID_LEN];
         value[..bytes.len()].copy_from_slice(bytes);
 
         Ok(Self { value })
