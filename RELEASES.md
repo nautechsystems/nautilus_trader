@@ -1,27 +1,27 @@
 # NautilusTrader 1.190.0 Beta
 
-Released on TBD (UTC).
+Released on 22nd March 2024 (UTC).
 
 ### Enhancements
-- Added Databento adapter continuous symbology support (will infer from symbols)
+- Added Databento adapter `continuous`, `parent` and `instrument_id` symbology support (will infer from symbols)
 - Added `DatabaseConfig.timeout` config option for timeout seconds to wait for a new connection
 - Added CSV tick and bar data loader params, thanks @rterbush
 - Implemented `LogGuard` to ensure global logger is flushed on termination, thanks @ayush-sb and @twitu
+- Improved Interactive Brokers client connectivity resilience and component lifecycle, thanks @benjaminsingleton
 - Improved Binance execution client ping listen key error handling and logging
 - Improved Redis cache adapter and message bus error handling and logging
-- Improved Interactive Brokers client connectivity resilience and component lifecycle, thanks @benjaminsingleton
 - Improved Redis port parsing (`DatabaseConfig.port` can now be either a string or integer)
-- Redact Redis passwords in strings and logs
 - Refactored `InteractiveBrokersEWrapper`, thanks @rsmb7z
-- Upgraded `redis` crate to 0.25.1 which bumps up TLS dependencies
+- Redact Redis passwords in strings and logs
+- Upgraded `redis` crate to 0.25.2 which bumps up TLS dependencies, and turned on `tls-rustls-webpki-roots` feature flag
 
 ### Breaking Changes
 None
 
 ### Fixes
 - Fixed JSON format for log file output (was missing `timestamp` and `trader\_id`)
-- Fixed `DatabaseConfig` port JSON parsing for Redis (was always falling back to the default 6379)
-- Fixed `ChandeMomentumOscillator` indicator divide by zero error
+- Fixed `DatabaseConfig` port JSON parsing for Redis (was always defaulting to 6379)
+- Fixed `ChandeMomentumOscillator` indicator divide by zero error (both Rust and Cython versions)
 
 ---
 
