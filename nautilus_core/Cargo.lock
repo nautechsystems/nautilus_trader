@@ -633,9 +633,9 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "bytes"
-version = "1.5.0"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2bd12c1caf447e69cd4528f47f94d203fd2582878ecb9e9465484c4148a8223"
+checksum = "514de17de45fdb8dc022b1a7975556c53c86f9f0aa5f534b98977b171857c2c9"
 
 [[package]]
 name = "bzip2"
@@ -2414,7 +2414,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-accounting"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2430,7 +2430,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-adapters"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2461,7 +2461,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "cbindgen",
  "nautilus-common",
@@ -2476,7 +2476,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2502,7 +2502,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2521,7 +2521,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -2545,7 +2545,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "anyhow",
  "nautilus-core",
@@ -2557,7 +2557,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "anyhow",
  "nautilus-common",
@@ -2573,7 +2573,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2601,7 +2601,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2626,7 +2626,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -2650,7 +2650,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "nautilus-accounting",
  "nautilus-adapters",
@@ -3819,9 +3819,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-pki-types"
-version = "1.3.1"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ede67b28608b4c60685c7d54122d4400d90f62b40caee7700e700380a390fa8"
+checksum = "868e20fada228fefaf6b652e00cc73623d54f8171e7352c18bb281571f2d92da"
 
 [[package]]
 name = "rustls-webpki"
