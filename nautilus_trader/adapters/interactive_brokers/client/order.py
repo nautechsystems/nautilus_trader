@@ -142,7 +142,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         self._eclient.reqIds(-1)
         return order_id
 
-    def process_next_valid_id(self, *, order_id: int) -> None:
+    async def process_next_valid_id(self, *, order_id: int) -> None:
         """
         Receive the next valid order id.
 
@@ -156,7 +156,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             self._log.debug("`_is_ib_connected` set by `nextValidId`.", LogColor.BLUE)
             self._is_ib_connected.set()
 
-    def process_open_order(
+    async def process_open_order(
         self,
         *,
         order_id: int,
@@ -198,14 +198,14 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                 order_state=order_state,
             )
 
-    def process_open_order_end(self) -> None:
+    async def process_open_order_end(self) -> None:
         """
         Notifies the end of the open orders' reception.
         """
         if request := self._requests.get(name="OpenOrders"):
             self._end_request(request.req_id)
 
-    def process_order_status(
+    async def process_order_status(
         self,
         *,
         order_id: int,
@@ -235,7 +235,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                     order_status=status,
                 )
 
-    def process_exec_details(
+    async def process_exec_details(
         self,
         *,
         req_id: int,
@@ -262,7 +262,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             )
             cache.pop(execution.execId, None)
 
-    def process_commission_report(
+    async def process_commission_report(
         self,
         *,
         commission_report: CommissionReport,
