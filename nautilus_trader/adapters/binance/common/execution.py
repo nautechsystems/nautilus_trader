@@ -291,9 +291,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     self._log.debug(f"Pinging WebSocket listen key {self._listen_key}")
                     try:
                         await self._http_user.keepalive_listen_key(listen_key=self._listen_key)
-                    except BinanceClientError as ex:
+                    except BinanceClientError as e:
                         # We may see this if an old listen key was used for the ping
-                        self._log.error(f"Error pinging listen key: {ex}")
+                        self._log.error(f"Error pinging listen key: {e}")
         except asyncio.CancelledError:
             self._log.debug("Canceled `ping_listen_keys` task")
 
