@@ -104,12 +104,12 @@ compatibility across different environments where color rendering is not support
 It's possible to use `Logger` objects directly, and these can be initialized anywhere (very similar to the Python built-in `logging` API).
 
 If you ***aren't*** using an object which already initializes a `NautilusKernel` (and logging) such as `BacktestEngine` or `TradingNode`, 
-then you can initialize a logging in the following way:
+then you can initialize logging in the following way:
 ```python
 from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.component import Logger
 
-init_logging()
+log_guard = init_logging()
 logger = Logger("MyLogger")
 ```
 
@@ -118,5 +118,5 @@ See the `init_logging` [API Reference](../api_reference/common.md#init_logging) 
 ```
 
 ```{warning}
-Only one logging system can be initialized per process with an `init_logging` call.
+Only one logging system can be initialized per process with an `init_logging` call, and the `LogGuard` which is returned must be kept alive for the lifetime of the program.
 ```
