@@ -21,14 +21,13 @@ use std::{
         atomic::Ordering,
         mpsc::{channel, Receiver, SendError, Sender},
     },
-    thread,
+    thread::{self, JoinHandle},
 };
 
 use indexmap::IndexMap;
 use log::{
-    debug, error, info,
     kv::{ToValue, Value},
-    set_boxed_logger, set_max_level, warn, Level, LevelFilter, Log, STATIC_MAX_LEVEL,
+    set_boxed_logger, set_max_level, Level, LevelFilter, Log, STATIC_MAX_LEVEL,
 };
 use nautilus_core::{
     datetime::unix_nanos_to_iso8601,
@@ -279,7 +278,7 @@ impl Log for Logger {
                 message: format!("{}", record.args()).to_string(),
             };
             if let Err(SendError(LogEvent::Log(line))) = self.tx.send(LogEvent::Log(line)) {
-                eprintln!("Error sending log event: {line}");
+                log::error!("Error sending log event: {line}");
             }
         }
     }
@@ -321,20 +320,23 @@ impl Logger {
             println!("Logger initialized with {:?} {:?}", config, file_config);
         }
 
+        let mut handle: Option<JoinHandle<()>> = None;
         match set_boxed_logger(Box::new(logger)) {
             Ok(_) => {
-                let _join_handle = thread::Builder::new()
-                    .name("logging".to_string())
-                    .spawn(move || {
-                        Self::handle_messages(
-                            trader_id.to_string(),
-                            instance_id.to_string(),
-                            config,
-                            file_config,
-                            rx,
-                        );
-                    })
-                    .expect("Error spawning `logging` thread");
+                handle = Some(
+                    thread::Builder::new()
+                        .name("logging".to_string())
+                        .spawn(move || {
+                            Self::handle_messages(
+                                trader_id.to_string(),
+                                instance_id.to_string(),
+                                config,
+                                file_config,
+                                rx,
+                            );
+                        })
+                        .expect("Error spawning `logging` thread"),
+                );
 
                 let max_level = log::LevelFilter::Debug;
                 set_max_level(max_level);
@@ -343,11 +345,11 @@ impl Logger {
                 }
             }
             Err(e) => {
-                eprintln!("Cannot set logger because of error: {e}")
+                log::error!("Cannot set logger because of error: {e}")
             }
         }
 
-        LogGuard::new()
+        LogGuard::new(handle)
     }
 
     fn handle_messages(
@@ -447,16 +449,16 @@ pub fn log(level: LogLevel, color: LogColor, component: Ustr, message: &str) {
     match level {
         LogLevel::Off => {}
         LogLevel::Debug => {
-            debug!(component = component.to_value(), color = color; "{}", message);
+            log::debug!(component = component.to_value(), color = color; "{}", message);
         }
         LogLevel::Info => {
-            info!(component = component.to_value(), color = color; "{}", message);
+            log::info!(component = component.to_value(), color = color; "{}", message);
         }
         LogLevel::Warning => {
-            warn!(component = component.to_value(), color = color; "{}", message);
+            log::warn!(component = component.to_value(), color = color; "{}", message);
         }
         LogLevel::Error => {
-            error!(component = component.to_value(), color = color; "{}", message);
+            log::error!(component = component.to_value(), color = color; "{}", message);
         }
     }
 }
@@ -466,23 +468,28 @@ pub fn log(level: LogLevel, color: LogColor, component: Ustr, message: &str) {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
 #[derive(Debug)]
-pub struct LogGuard {}
+pub struct LogGuard {
+    handle: Option<JoinHandle<()>>,
+}
 
 impl LogGuard {
-    pub fn new() -> Self {
-        LogGuard {}
+    pub fn new(handle: Option<JoinHandle<()>>) -> Self {
+        LogGuard { handle }
     }
 }
 
 impl Default for LogGuard {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 
 impl Drop for LogGuard {
     fn drop(&mut self) {
         log::logger().flush();
+        if let Some(handle) = self.handle.take() {
+            handle.join().expect("Error joining logger handle")
+        }
     }
 }
 
