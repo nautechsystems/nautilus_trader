@@ -33,9 +33,9 @@ class DatabentoDataLoader:
 
     Supported schemas:
      - MBO -> `OrderBookDelta`
-     - MBP_1 -> `QuoteTick` + `TradeTick`
+     - MBP_1 -> `(QuoteTick, TradeTick | None)`
      - MBP_10 -> `OrderBookDepth10`
-     - TBBO -> `QuoteTick` + `TradeTick`
+     - TBBO -> `(QuoteTick, TradeTick)`
      - TRADES -> `TradeTick`
      - OHLCV_1S -> `Bar`
      - OHLCV_1M -> `Bar`

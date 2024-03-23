@@ -63,21 +63,21 @@ The same Rust implemented Nautilus decoder is used for:
 
 The following Databento schemas are supported by NautilusTrader:
 
-| Databento schema | Nautilus data type           |
-|------------------|------------------------------|
-| MBO              | `OrderBookDelta`             |
-| MBP_1            | `QuoteTick` + `TradeTick`    |
-| MBP_10           | `OrderBookDepth10`           |
-| TBBO             | `QuoteTick` + `TradeTick`    |
-| TRADES           | `TradeTick`                  |
-| OHLCV_1S         | `Bar`                        |
-| OHLCV_1M         | `Bar`                        |
-| OHLCV_1H         | `Bar`                        |
-| OHLCV_1D         | `Bar`                        |
-| DEFINITION       | `Instrument` (various types) |
-| IMBALANCE        | `DatabentoImbalance`         |
-| STATISTICS       | `DatabentoStatistics`        |
-| STATUS           | Not yet available            |
+| Databento schema | Nautilus data type                |
+|------------------|-----------------------------------|
+| MBO              | `OrderBookDelta`                  |
+| MBP_1            | `(QuoteTick, Option<TradeTick>)`  |
+| MBP_10           | `OrderBookDepth10`                |
+| TBBO             | `(QuoteTick, TradeTick)`          |
+| TRADES           | `TradeTick`                       |
+| OHLCV_1S         | `Bar`                             |
+| OHLCV_1M         | `Bar`                             |
+| OHLCV_1H         | `Bar`                             |
+| OHLCV_1D         | `Bar`                             |
+| DEFINITION       | `Instrument` (various types)      |
+| IMBALANCE        | `DatabentoImbalance`              |
+| STATISTICS       | `DatabentoStatistics`             |
+| STATUS           | Not yet available                 |
 
 ## Instrument IDs and symbology
 
