@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Simplified and consolidated Rust `OrderBook` design
+- Interactive Brokers further improvements and fixes, thanks @rsmb7z
 
 ### Breaking Changes
 - Renamed both `OrderBookMbo` and `OrderBookMbp` to `OrderBook` (consolidated)
