@@ -157,18 +157,12 @@ impl OrderBook {
 
     #[must_use]
     pub fn has_bid(&self) -> bool {
-        match self.bids.top() {
-            Some(top) => !top.orders.is_empty(),
-            None => false,
-        }
+        self.bids.top().map_or(false, |top| !top.orders.is_empty())
     }
 
     #[must_use]
     pub fn has_ask(&self) -> bool {
-        match self.asks.top() {
-            Some(top) => !top.orders.is_empty(),
-            None => false,
-        }
+        self.asks.top().map_or(false, |top| !top.orders.is_empty())
     }
 
     #[must_use]
@@ -183,18 +177,16 @@ impl OrderBook {
 
     #[must_use]
     pub fn best_bid_size(&self) -> Option<Quantity> {
-        match self.bids.top() {
-            Some(top) => top.first().map(|order| order.size),
-            None => None,
-        }
+        self.bids
+            .top()
+            .and_then(|top| top.first().map(|order| order.size))
     }
 
     #[must_use]
     pub fn best_ask_size(&self) -> Option<Quantity> {
-        match self.asks.top() {
-            Some(top) => top.first().map(|order| order.size),
-            None => None,
-        }
+        self.asks
+            .top()
+            .and_then(|top| top.first().map(|order| order.size))
     }
 
     #[must_use]
