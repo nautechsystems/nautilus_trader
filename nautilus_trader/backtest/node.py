@@ -24,8 +24,10 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.component import Logger
+from nautilus_trader.common.component import LogGuard
 from nautilus_trader.common.config import ActorFactory
 from nautilus_trader.common.config import InvalidConfiguration
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
@@ -72,9 +74,9 @@ class BacktestNode:
 
         self._validate_configs(configs)
 
-        # Configuration
         self._configs: list[BacktestRunConfig] = configs
         self._engines: dict[str, BacktestEngine] = {}
+        self._log_guard: nautilus_pyo3.LogGuard | LogGuard | None = None
 
     @property
     def configs(self) -> list[BacktestRunConfig]:
@@ -87,6 +89,19 @@ class BacktestNode:
 
         """
         return self._configs
+
+    def get_log_guard(self) -> nautilus_pyo3.LogGuard | LogGuard | None:
+        """
+        Return the global logging systems log guard.
+
+        May return ``None`` if no internal engines are initialized yet.
+
+        Returns
+        -------
+        nautilus_pyo3.LogGuard | LogGuard | None
+
+        """
+        return self._log_guard
 
     def get_engine(self, run_config_id: str) -> BacktestEngine | None:
         """
@@ -184,6 +199,12 @@ class BacktestNode:
         # Build the backtest engine
         engine = BacktestEngine(config=config)
         self._engines[run_config_id] = engine
+
+        # Assign the global logging system guard to keep it alive for
+        # the duration of the nodes runs.
+        log_guard = engine.kernel.get_log_guard()
+        if log_guard:
+            self._log_guard = log_guard
 
         # Add venues (must be added prior to instruments)
         for config in venue_configs:

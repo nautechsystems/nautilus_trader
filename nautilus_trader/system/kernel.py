@@ -33,6 +33,7 @@ from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.component import Clock
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
+from nautilus_trader.common.component import LogGuard
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.component import init_logging
@@ -158,6 +159,7 @@ class NautilusKernel:
         register_component_clock(self._instance_id, self._clock)
 
         # Initialize logging system
+        self._log_guard: nautilus_pyo3.LogGuard | LogGuard | None = None
         logging: LoggingConfig = config.logging or LoggingConfig()
 
         if not is_logging_initialized():
@@ -786,6 +788,19 @@ class NautilusKernel:
 
         """
         return self._catalog
+
+    def get_log_guard(self) -> nautilus_pyo3.LogGuard | LogGuard | None:
+        """
+        Return the global logging systems log guard.
+
+        May return ``None`` if the logging system was already initialized.
+
+        Returns
+        -------
+        nautilus_pyo3.LogGuard | LogGuard | None
+
+        """
+        return self._log_guard
 
     def start(self) -> None:
         """
