@@ -25,6 +25,7 @@ from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.errors import BybitError
+from nautilus_trader.adapters.bybit.provider import BybitInstrumentProvider
 from nautilus_trader.adapters.bybit.schemas.common import BybitWsSubscriptionMsg
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecution
@@ -38,7 +39,6 @@ from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.rust.common import LogColor
@@ -70,6 +70,32 @@ from nautilus_trader.model.position import Position
 
 
 class BybitExecutionClient(LiveExecutionClient):
+    """
+    Provides an execution client for the `Bybit` exchange.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    client : BybitHttpClient
+        The Bybit HTTP client.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : LiveClock
+        The clock for the client.
+    instrument_provider : BybitInstrumentProvider
+        The instrument provider.
+    instrument_types : list[BybitInstrumentType]
+        The instrument types for the client.
+    base_url_ws : str
+        The base URL for the WebSocket client.
+    config : BybitExecClientConfig
+        The configuration for the client.
+
+    """
+
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
@@ -77,7 +103,7 @@ class BybitExecutionClient(LiveExecutionClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        instrument_provider: InstrumentProvider,
+        instrument_provider: BybitInstrumentProvider,
         instrument_types: list[BybitInstrumentType],
         base_url_ws: str,
         config: BybitExecClientConfig,
@@ -131,7 +157,7 @@ class BybitExecutionClient(LiveExecutionClient):
         }
         self._order_retries: dict[ClientOrderId, int] = {}
 
-        # decoders
+        # Decoders
         self._decoder_ws_msg_general = msgspec.json.Decoder(BybitWsMessageGeneral)
         self._decoder_ws_subscription = msgspec.json.Decoder(BybitWsSubscriptionMsg)
         self._decoder_ws_account_order_update = msgspec.json.Decoder(BybitWsAccountOrderMsg)
@@ -150,6 +176,11 @@ class BybitExecutionClient(LiveExecutionClient):
         # subscribe account updates
         await self._ws_client.subscribe_executions_update()
         await self._ws_client.subscribe_orders_update()
+
+    async def _disconnect(self) -> None:
+        await self._ws_client.disconnect()
+
+    # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
     async def generate_order_status_reports(
         self,
@@ -345,19 +376,19 @@ class BybitExecutionClient(LiveExecutionClient):
                 print("BYBIT ERROR")
 
     def _check_order_validity(self, order: Order) -> None:
-        # check order type valid
+        # Check order type valid
         if order.order_type not in self._enum_parser.valid_order_types:
             self._log.error(
                 f"Cannot submit order.Order {order} has invalid order type {order.order_type}.Unsupported on bybit.",
             )
             return
-        # check time in force valid
+        # Check time in force valid
         if order.time_in_force not in self._enum_parser.valid_time_in_force:
             self._log.error(
                 f"Cannot submit order.Order {order} has invalid time in force {order.time_in_force}.Unsupported on bybit.",
             )
             return
-        # check post only
+        # Check post only
         if order.is_post_only and order.order_type != OrderType.LIMIT:
             self._log.error(
                 f"Cannot submit order.Order {order} has invalid post only {order.is_post_only}.Unsupported on bybit.",
@@ -412,7 +443,7 @@ class BybitExecutionClient(LiveExecutionClient):
     #     except Exception as e:
     #         print(e)
 
-    def _handle_account_execution_update(self, raw: bytes):
+    def _handle_account_execution_update(self, raw: bytes) -> None:
         try:
             msg = self._decoder_ws_account_execution_update.decode(raw)
             for trade in msg.data:
@@ -422,7 +453,7 @@ class BybitExecutionClient(LiveExecutionClient):
             print(e)
             self._log.exception(f"Failed to handle account execution update: {e}", e)
 
-    def _process_execution(self, execution: BybitWsAccountExecution):
+    def _process_execution(self, execution: BybitWsAccountExecution) -> None:
         client_order_id = (
             ClientOrderId(execution.orderLinkId) if execution.orderLinkId is not None else None
         )
@@ -434,7 +465,7 @@ class BybitExecutionClient(LiveExecutionClient):
         if instrument_id is None:
             raise ValueError(f"Cannot handle ws trade event: instrument {instrument_id} not found")
         if strategy_id is None:
-            # this is a trade that was not placed by us nautilus
+            # this is a trade that was not placed by Nautilus
             print("NOT OUR TRADE")
             report = OrderStatusReport(
                 account_id=self.account_id,
@@ -491,7 +522,7 @@ class BybitExecutionClient(LiveExecutionClient):
             venue_order_id=execution.orderId,
         )
 
-    def _handle_account_order_update(self, raw: bytes):
+    def _handle_account_order_update(self, raw: bytes) -> None:
         try:
             msg = self._decoder_ws_account_order_update.decode(raw)
             for order in msg.data:
@@ -504,6 +535,3 @@ class BybitExecutionClient(LiveExecutionClient):
                 self._send_order_status_report(report)
         except Exception as e:
             print(e)
-
-    async def _disconnect(self) -> None:
-        await self._ws_client.disconnect()
