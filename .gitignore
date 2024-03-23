@@ -18,8 +18,10 @@
 *.tar.gz*
 *.zip
 
+*.dbz
 *.dbn
 *.dbn.zst
+!/nautilus_core/adapters/src/databento/test_data/*
 
 .benchmarks*
 .coverage*
