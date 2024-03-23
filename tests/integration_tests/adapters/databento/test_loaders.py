@@ -149,7 +149,7 @@ def test_loader_definition_opra_pillar() -> None:
     assert instrument.ts_init == 1690885800419158943
 
 
-def test_loader_with_xnasitch_definition() -> None:
+def test_loader_xnasitch_definition() -> None:
     # Arrange
     loader = DatabentoDataLoader()
     path = DATABENTO_TEST_DATA_DIR / "definition.dbn.zst"
@@ -178,7 +178,7 @@ def test_loader_with_xnasitch_definition() -> None:
     assert instrument.ts_init == 1633331241618029519
 
 
-def test_loader_with_mbo() -> None:
+def test_loader_mbo() -> None:
     # Arrange
     loader = DatabentoDataLoader()
     path = DATABENTO_TEST_DATA_DIR / "mbo.dbn.zst"
@@ -203,7 +203,7 @@ def test_loader_with_mbo() -> None:
     assert delta.ts_init == 1609160400000704060
 
 
-def test_loader_with_mbp_1() -> None:
+def test_loader_mbp_1() -> None:
     # Arrange
     loader = DatabentoDataLoader()
     path = DATABENTO_TEST_DATA_DIR / "mbp-1.dbn.zst"
@@ -225,7 +225,7 @@ def test_loader_with_mbp_1() -> None:
     assert quote.ts_init == 1609160400006136329
 
 
-def test_loader_with_mbp_10() -> None:
+def test_loader_mbp_10() -> None:
     # Arrange
     loader = DatabentoDataLoader()
     path = DATABENTO_TEST_DATA_DIR / "mbp-10.dbn.zst"
@@ -259,7 +259,7 @@ def test_loader_with_mbp_10() -> None:
     assert depth.ask_counts == [8, 24, 25, 17, 19, 33, 40, 38, 35, 26]
 
 
-def test_loader_with_tbbo() -> None:
+def test_loader_tbbo_quotes() -> None:
     # Arrange
     loader = DatabentoDataLoader()
     path = DATABENTO_TEST_DATA_DIR / "tbbo.dbn.zst"
@@ -270,9 +270,6 @@ def test_loader_with_tbbo() -> None:
     # Assert
     assert len(data) == 2
     assert isinstance(data[0], QuoteTick)
-    # assert isinstance(data[1], TradeTick)
-    # assert isinstance(data[2], QuoteTick)
-    # assert isinstance(data[3], TradeTick)
     quote = data[0]
     assert quote.instrument_id == InstrumentId.from_str("ESH1.GLBX")
     assert quote.bid_price == Price.from_str("3720.25")
@@ -281,17 +278,45 @@ def test_loader_with_tbbo() -> None:
     assert quote.ask_size == Quantity.from_int(7)
     assert quote.ts_event == 1609160400099150057
     assert quote.ts_init == 1609160400099150057
-    # trade = data[1]
-    # assert trade.instrument_id == InstrumentId.from_str("ESH1.GLBX")
-    # assert trade.price == Price.from_str("3720.25")
-    # assert trade.size == Quantity.from_int(5)
-    # assert trade.aggressor_side == AggressorSide.SELLER
-    # assert trade.trade_id == TradeId("1170380")
-    # assert trade.ts_event == 1609160400099150057
-    # assert trade.ts_init == 1609160400099150057
 
 
-def test_loader_with_trades() -> None:
+def test_loader_tbbo_quotes_and_trades() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "tbbo.dbn.zst"
+
+    # Act
+    data = loader.from_dbn_file(
+        path,
+        as_legacy_cython=True,
+        include_trades=True,
+    )
+
+    # Assert
+    assert len(data) == 4
+    assert isinstance(data[0], QuoteTick)
+    assert isinstance(data[1], TradeTick)
+    assert isinstance(data[2], QuoteTick)
+    assert isinstance(data[3], TradeTick)
+    quote = data[0]
+    assert quote.instrument_id == InstrumentId.from_str("ESH1.GLBX")
+    assert quote.bid_price == Price.from_str("3720.25")
+    assert quote.ask_price == Price.from_str("3720.50")
+    assert quote.bid_size == Quantity.from_int(26)
+    assert quote.ask_size == Quantity.from_int(7)
+    assert quote.ts_event == 1609160400099150057
+    assert quote.ts_init == 1609160400099150057
+    trade = data[1]
+    assert trade.instrument_id == InstrumentId.from_str("ESH1.GLBX")
+    assert trade.price == Price.from_str("3720.25")
+    assert trade.size == Quantity.from_int(5)
+    assert trade.aggressor_side == AggressorSide.SELLER
+    assert trade.trade_id == TradeId("1170380")
+    assert trade.ts_event == 1609160400099150057
+    assert trade.ts_init == 1609160400099150057
+
+
+def test_loader_trades() -> None:
     # Arrange
     loader = DatabentoDataLoader()
     path = DATABENTO_TEST_DATA_DIR / "trades.dbn.zst"
@@ -327,7 +352,7 @@ def test_loader_with_trades_large() -> None:
     assert len(data) == 6_885_435
 
 
-def test_loader_with_ohlcv_1s() -> None:
+def test_loader_ohlcv_1s() -> None:
     # Arrange
     loader = DatabentoDataLoader()
     path = DATABENTO_TEST_DATA_DIR / "ohlcv-1s.dbn.zst"

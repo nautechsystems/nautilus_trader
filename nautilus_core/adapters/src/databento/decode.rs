@@ -443,6 +443,36 @@ pub fn decode_trade_msg(
     Ok(trade)
 }
 
+pub fn decode_tbbo_msg(
+    msg: &dbn::TbboMsg,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<(QuoteTick, TradeTick)> {
+    let top_level = &msg.levels[0];
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from_raw(top_level.bid_px, price_precision)?,
+        Price::from_raw(top_level.ask_px, price_precision)?,
+        Quantity::from_raw(u64::from(top_level.bid_sz) * FIXED_SCALAR as u64, 0)?,
+        Quantity::from_raw(u64::from(top_level.ask_sz) * FIXED_SCALAR as u64, 0)?,
+        msg.ts_recv,
+        ts_init,
+    )?;
+
+    let trade = TradeTick::new(
+        instrument_id,
+        Price::from_raw(msg.price, price_precision)?,
+        Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0)?,
+        parse_aggressor_side(msg.side),
+        TradeId::new(itoa::Buffer::new().format(msg.sequence))?,
+        msg.ts_recv,
+        ts_init,
+    );
+
+    Ok((quote, trade))
+}
+
 pub fn decode_mbp1_msg(
     msg: &dbn::Mbp1Msg,
     instrument_id: InstrumentId,
@@ -621,6 +651,9 @@ pub fn decode_record(
     ts_init: Option<UnixNanos>,
     include_trades: bool,
 ) -> anyhow::Result<(Option<Data>, Option<Data>)> {
+    // We don't handle `TbboMsg` here as Nautilus separates this schema
+    // into quotes and trades when loading, and the live client will
+    // never subscribe to `tbbo`.
     let result = if let Some(msg) = record.get::<dbn::MboMsg>() {
         let ts_init = determine_timestamp(ts_init, msg.ts_recv);
         let result = decode_mbo_msg(msg, instrument_id, price_precision, ts_init, include_trades)?;
@@ -1002,10 +1035,10 @@ mod tests {
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::MboMsg>();
-        let mbo_msg = dbn_stream.next().unwrap();
+        let msg = dbn_stream.next().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let (delta, _) = decode_mbo_msg(mbo_msg, instrument_id, 2, 0, false).unwrap();
+        let (delta, _) = decode_mbo_msg(msg, instrument_id, 2, 0, false).unwrap();
         let delta = delta.unwrap();
 
         assert_eq!(delta.instrument_id, instrument_id);
@@ -1016,7 +1049,7 @@ mod tests {
         assert_eq!(delta.order.order_id, 647784973705);
         assert_eq!(delta.flags, 128);
         assert_eq!(delta.sequence, 1170352);
-        assert_eq!(delta.ts_event, mbo_msg.ts_recv);
+        assert_eq!(delta.ts_event, msg.ts_recv);
         assert_eq!(delta.ts_event, 1609160400000704060);
         assert_eq!(delta.ts_init, 0);
     }
@@ -1027,20 +1060,196 @@ mod tests {
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::Mbp1Msg>();
-        let mbp1_msg = dbn_stream.next().unwrap();
+        let msg = dbn_stream.next().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let (quote, _) = decode_mbp1_msg(mbp1_msg, instrument_id, 2, 0, false).unwrap();
+        let (quote, _) = decode_mbp1_msg(msg, instrument_id, 2, 0, false).unwrap();
 
         assert_eq!(quote.instrument_id, instrument_id);
         assert_eq!(quote.bid_price, Price::from("3720.25"));
         assert_eq!(quote.ask_price, Price::from("3720.50"));
         assert_eq!(quote.bid_size, Quantity::from("24"));
         assert_eq!(quote.ask_size, Quantity::from("11"));
-        assert_eq!(quote.ts_event, mbp1_msg.ts_recv);
+        assert_eq!(quote.ts_event, msg.ts_recv);
         assert_eq!(quote.ts_event, 1609160400006136329);
         assert_eq!(quote.ts_init, 0);
     }
 
-    // TODO: Complete for the other schemas using the files in the test_data dir
+    #[rstest]
+    fn test_decode_mbp10_msg() {
+        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.mbp-10.dbn.zst"));
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::Mbp10Msg>();
+        let msg = dbn_stream.next().unwrap();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let depth10 = decode_mbp10_msg(msg, instrument_id, 2, 0).unwrap();
+
+        assert_eq!(depth10.instrument_id, instrument_id);
+        assert_eq!(depth10.bids.len(), 10);
+        assert_eq!(depth10.asks.len(), 10);
+        assert_eq!(depth10.bid_counts.len(), 10);
+        assert_eq!(depth10.ask_counts.len(), 10);
+        assert_eq!(depth10.flags, 128);
+        assert_eq!(depth10.sequence, 1170352);
+        assert_eq!(depth10.ts_event, msg.ts_recv);
+        assert_eq!(depth10.ts_event, 1609160400000704060);
+        assert_eq!(depth10.ts_init, 0);
+    }
+
+    #[rstest]
+    fn test_decode_trade_msg() {
+        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.trades.dbn.zst"));
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::TradeMsg>();
+        let msg = dbn_stream.next().unwrap();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let trade = decode_trade_msg(msg, instrument_id, 2, 0).unwrap();
+
+        assert_eq!(trade.instrument_id, instrument_id);
+        assert_eq!(trade.price, Price::from("3720.25"));
+        assert_eq!(trade.size, Quantity::from("5"));
+        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade.trade_id.to_string(), "1170380");
+        assert_eq!(trade.ts_event, msg.ts_recv);
+        assert_eq!(trade.ts_event, 1609160400099150057);
+        assert_eq!(trade.ts_init, 0);
+    }
+
+    #[rstest]
+    fn test_decode_tbbo_msg() {
+        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.tbbo.dbn.zst"));
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::Mbp1Msg>();
+        let msg = dbn_stream.next().unwrap();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let (quote, trade) = decode_tbbo_msg(msg, instrument_id, 2, 0).unwrap();
+
+        assert_eq!(quote.instrument_id, instrument_id);
+        assert_eq!(quote.bid_price, Price::from("3720.25"));
+        assert_eq!(quote.ask_price, Price::from("3720.50"));
+        assert_eq!(quote.bid_size, Quantity::from("26"));
+        assert_eq!(quote.ask_size, Quantity::from("7"));
+        assert_eq!(quote.ts_event, msg.ts_recv);
+        assert_eq!(quote.ts_event, 1609160400099150057);
+        assert_eq!(quote.ts_init, 0);
+
+        assert_eq!(trade.instrument_id, instrument_id);
+        assert_eq!(trade.price, Price::from("3720.25"));
+        assert_eq!(trade.size, Quantity::from("5"));
+        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade.trade_id.to_string(), "1170380");
+        assert_eq!(trade.ts_event, msg.ts_recv);
+        assert_eq!(trade.ts_event, 1609160400099150057);
+        assert_eq!(trade.ts_init, 0);
+    }
+
+    #[rstest]
+    fn test_decode_ohlcv_msg() {
+        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.ohlcv-1s.dbn.zst"));
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::OhlcvMsg>();
+        let msg = dbn_stream.next().unwrap();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let bar = decode_ohlcv_msg(msg, instrument_id, 2, 0).unwrap();
+
+        assert_eq!(
+            bar.bar_type,
+            BarType::from("ESM4.GLBX-1-SECOND-LAST-EXTERNAL")
+        );
+        assert_eq!(bar.open, Price::from("3720.25"));
+        assert_eq!(bar.high, Price::from("3720.50"));
+        assert_eq!(bar.low, Price::from("3720.25"));
+        assert_eq!(bar.close, Price::from("3720.50"));
+        assert_eq!(bar.ts_event, 1609160400000000000);
+        assert_eq!(bar.ts_init, 1609160401000000000); // Adjusted to open + interval
+    }
+
+    #[rstest]
+    fn test_decode_definition_msg() {
+        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.definition.dbn.zst"));
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::InstrumentDefMsg>();
+        let msg = dbn_stream.next().unwrap();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let result = decode_instrument_def_msg(msg, instrument_id, 0);
+
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_decode_definition_v1_msg() {
+        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.definition.v1.dbn.zst"));
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::compat::InstrumentDefMsgV1>();
+        let msg = dbn_stream.next().unwrap();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let result = decode_instrument_def_msg_v1(msg, instrument_id, 0);
+
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_decode_imbalance_msg() {
+        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.imbalance.dbn.zst"));
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::ImbalanceMsg>();
+        let msg = dbn_stream.next().unwrap();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let imbalance = decode_imbalance_msg(msg, instrument_id, 2, 0).unwrap();
+
+        assert_eq!(imbalance.instrument_id, instrument_id);
+        assert_eq!(imbalance.ref_price, Price::from("229.43"));
+        assert_eq!(imbalance.cont_book_clr_price, Price::from("0.00"));
+        assert_eq!(imbalance.auct_interest_clr_price, Price::from("0.00"));
+        assert_eq!(imbalance.paired_qty, Quantity::from("0"));
+        assert_eq!(imbalance.total_imbalance_qty, Quantity::from("2000"));
+        assert_eq!(imbalance.side, OrderSide::Buy);
+        assert_eq!(imbalance.significant_imbalance, 126);
+        assert_eq!(imbalance.ts_event, msg.hd.ts_event);
+        assert_eq!(imbalance.ts_recv, msg.ts_recv);
+        assert_eq!(imbalance.ts_init, 0);
+    }
+
+    #[rstest]
+    fn test_decode_statistics_msg() {
+        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.statistics.dbn.zst"));
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::StatMsg>();
+        let msg = dbn_stream.next().unwrap();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let statistics = decode_statistics_msg(msg, instrument_id, 2, 0).unwrap();
+
+        assert_eq!(statistics.instrument_id, instrument_id);
+        assert_eq!(statistics.stat_type, DatabentoStatisticType::LowestOffer);
+        assert_eq!(
+            statistics.update_action,
+            DatabentoStatisticUpdateAction::Added
+        );
+        assert_eq!(statistics.price, Some(Price::from("100.00")));
+        assert_eq!(statistics.quantity, None);
+        assert_eq!(statistics.channel_id, 13);
+        assert_eq!(statistics.stat_flags, 255);
+        assert_eq!(statistics.sequence, 2);
+        assert_eq!(statistics.ts_ref, 18446744073709551615);
+        assert_eq!(statistics.ts_in_delta, 26961);
+        assert_eq!(statistics.ts_event, msg.hd.ts_event);
+        assert_eq!(statistics.ts_recv, msg.ts_recv);
+        assert_eq!(statistics.ts_init, 0);
+    }
 }
