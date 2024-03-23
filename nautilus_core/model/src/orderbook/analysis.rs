@@ -116,19 +116,13 @@ pub fn book_check_integrity(book: &OrderBook) -> Result<(), BookIntegrityError> 
         BookType::L3_MBO => {}
     };
 
-    let top_bid_level = book.bids.top();
-    let top_ask_level = book.asks.top();
+    if let (Some(top_bid_level), Some(top_ask_level)) = (book.bids.top(), book.asks.top()) {
+        let best_bid = top_bid_level.price;
+        let best_ask = top_ask_level.price;
 
-    if top_bid_level.is_none() || top_ask_level.is_none() {
-        return Ok(());
-    }
-
-    // SAFETY: Levels were already checked for None
-    let best_bid = top_bid_level.unwrap().price;
-    let best_ask = top_ask_level.unwrap().price;
-
-    if best_bid.value >= best_ask.value {
-        return Err(BookIntegrityError::OrdersCrossed(best_bid, best_ask));
+        if best_bid.value >= best_ask.value {
+            return Err(BookIntegrityError::OrdersCrossed(best_bid, best_ask));
+        }
     }
 
     Ok(())
