@@ -21,6 +21,7 @@ from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
 
+import pandas as pd
 import pytest
 from ibapi.common import BarData
 from ibapi.common import HistoricalTickLast
@@ -232,7 +233,7 @@ async def test_get_historical_bars(ib_client):
     bar_type = BarType.from_str("AAPL.SMART-5-SECOND-BID-EXTERNAL")
     contract = IBTestContractStubs.aapl_equity_ib_contract()
     use_rth = True
-    end_date_time = "20240101-010000"
+    end_date_time = pd.Timestamp("20240101-010000+0000")
     duration = "5 S"
     ib_client._eclient.reqHistoricalData = Mock()
 
@@ -250,7 +251,7 @@ async def test_get_historical_bars(ib_client):
     ib_client._eclient.reqHistoricalData.assert_called_once_with(
         reqId=999,
         contract=contract,
-        endDateTime=end_date_time,
+        endDateTime=end_date_time.strftime("%Y%m%d %H:%M:%S %Z"),
         durationStr=duration,
         barSizeSetting="5 secs",
         whatToShow="BID",
