@@ -142,7 +142,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         if config.buffer_interval_ms and config.buffer_interval_ms > 1000:
             self._log.warning(
                 f"High `buffer_interval_ms` at {config.buffer_interval_ms}, "
-                "recommended range is [10, 1000] milliseconds.",
+                "recommended range is [10, 1000] milliseconds",
             )
 
         # Configuration
@@ -161,6 +161,10 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
             instance_id=nautilus_pyo3.UUID4(instance_id.value),
             config_json=msgspec.json.encode(config),
         )
+
+    def __del__(self) -> None:
+        self._log.info("Shutting down cache database")
+        self._backing.shutdown()
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 

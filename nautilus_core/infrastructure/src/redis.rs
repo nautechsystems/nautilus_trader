@@ -16,7 +16,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     sync::mpsc::{channel, Receiver, Sender, TryRecvError},
-    thread,
+    thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
 
@@ -28,7 +28,7 @@ use nautilus_core::{correctness::check_slice_not_empty, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
 use redis::{Commands, Connection, Pipeline};
 use serde_json::{json, Value};
-use tracing::debug;
+use tracing::{debug, error};
 
 // Error constants
 const FAILED_TX_CHANNEL: &str = "Failed to send to channel";
@@ -73,6 +73,7 @@ pub struct RedisCacheDatabase {
     trader_key: String,
     conn: Connection,
     tx: Sender<DatabaseCommand>,
+    handle: Option<JoinHandle<()>>,
 }
 
 impl CacheDatabase for RedisCacheDatabase {
@@ -93,7 +94,7 @@ impl CacheDatabase for RedisCacheDatabase {
         let trader_key = get_trader_key(trader_id, instance_id, &config);
         let trader_key_clone = trader_key.clone();
 
-        let _join_handle = thread::Builder::new()
+        let handle = thread::Builder::new()
             .name("cache".to_string())
             .spawn(move || {
                 Self::handle_messages(rx, trader_key_clone, config);
@@ -105,7 +106,17 @@ impl CacheDatabase for RedisCacheDatabase {
             trader_key,
             conn,
             tx,
+            handle: Some(handle),
         })
+    }
+
+    fn shutdown(&mut self) -> anyhow::Result<()> {
+        debug!("Shutting down");
+        if let Some(handle) = self.handle.take() {
+            handle.join().map_err(|e| anyhow::anyhow!("{:?}", e))
+        } else {
+            Err(anyhow::anyhow!("Cache database already shutdown"))
+        }
     }
 
     fn flushdb(&mut self) -> anyhow::Result<()> {
@@ -212,7 +223,7 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
         let collection = match get_collection_key(&msg.key) {
             Ok(collection) => collection,
             Err(e) => {
-                eprintln!("{e}");
+                error!("{e}");
                 continue; // Continue to next message
             }
         };
@@ -222,7 +233,7 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
         match msg.op_type {
             DatabaseOperation::Insert => {
                 if msg.payload.is_none() {
-                    eprintln!("Null `payload` for `insert`");
+                    error!("Null `payload` for `insert`");
                     continue; // Continue to next message
                 };
 
@@ -235,12 +246,12 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
                     .collect::<Vec<&[u8]>>();
 
                 if let Err(e) = insert(&mut pipe, collection, &key, payload) {
-                    eprintln!("{e}");
+                    error!("{e}");
                 }
             }
             DatabaseOperation::Update => {
                 if msg.payload.is_none() {
-                    eprintln!("Null `payload` for `update`");
+                    error!("Null `payload` for `update`");
                     continue; // Continue to next message
                 };
 
@@ -253,7 +264,7 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
                     .collect::<Vec<&[u8]>>();
 
                 if let Err(e) = update(&mut pipe, collection, &key, payload) {
-                    eprintln!("{e}");
+                    error!("{e}");
                 }
             }
             DatabaseOperation::Delete => {
@@ -264,14 +275,14 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
                     .map(|v| v.iter().map(|v| v.as_slice()).collect::<Vec<&[u8]>>());
 
                 if let Err(e) = delete(&mut pipe, collection, &key, payload) {
-                    eprintln!("{e}");
+                    error!("{e}");
                 }
             }
         }
     }
 
     if let Err(e) = pipe.query::<()>(conn) {
-        eprintln!("{e}");
+        error!("{e}");
     }
 }
 
