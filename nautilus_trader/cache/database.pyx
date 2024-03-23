@@ -162,10 +162,6 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
             config_json=msgspec.json.encode(config),
         )
 
-    def __del__(self) -> None:
-        self._log.info("Shutting down cache database")
-        self._backing.shutdown()
-
 # -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void flush(self):
