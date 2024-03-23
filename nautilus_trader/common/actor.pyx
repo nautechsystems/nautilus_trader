@@ -878,7 +878,7 @@ cdef class Actor(Component):
             )
 
         self._log.info(
-                f"Executor: Queued {task_id}: {func.__name__}({args=}, {kwargs=}).", LogColor.BLUE,
+            f"Executor: Queued {task_id}: {func.__name__}({args=}, {kwargs=}).", LogColor.BLUE,
         )
         return task_id
 
