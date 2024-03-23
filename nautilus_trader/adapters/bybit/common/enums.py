@@ -31,11 +31,11 @@ def raise_error(error):
 
 @unique
 class BybitPositionIdx(Enum):
-    # one-way mode position
+    # One-way mode position
     ONE_WAY = 0
-    # buy side of hedge-mode position
+    # Buy side of hedge-mode position
     BUY_HEDGE = 1
-    # sell side of hedge-mode position
+    # Sell side of hedge-mode position
     SELL_HEDGE = 2
 
 
@@ -49,6 +49,7 @@ class BybitPositionSide(Enum):
             return PositionSide.LONG
         elif self == BybitPositionSide.SELL:
             return PositionSide.SHORT
+        raise RuntimeError(f"invalid position side, was {self}")
 
 
 @unique

@@ -15,10 +15,9 @@
 
 import hashlib
 import hmac
-import urllib
 from typing import Any
+from urllib import parse
 
-import aiohttp
 import msgspec
 
 import nautilus_trader
@@ -48,6 +47,26 @@ class ResponseCode(msgspec.Struct):
 
 
 class BybitHttpClient:
+    """
+    Provides a `Bybit` asynchronous HTTP client.
+
+    Parameters
+    ----------
+    clock : LiveClock
+        The clock for the client.
+    key : str
+        The Bybit API key for requests.
+    secret : str
+        The Bybit API secret for signed requests.
+    base_url : str, optional
+        The base endpoint URL for the client.
+    ratelimiter_quotas : list[tuple[str, Quota]], optional
+        The keyed rate limiter quotas for the client.
+    ratelimiter_quota : Quota, optional
+        The default rate limiter quota for the client.
+
+    """
+
     def __init__(
         self,
         clock: LiveClock,
@@ -93,7 +112,7 @@ class BybitHttpClient:
         ratelimiter_keys: list[str] | None = None,
     ) -> bytes | None:
         if payload and http_method == HttpMethod.GET:
-            url_path += "?" + urllib.parse.urlencode(payload)
+            url_path += "?" + parse.urlencode(payload)
             payload = None
         url = self._base_url + url_path
         if signature is not None:
@@ -154,11 +173,6 @@ class BybitHttpClient:
             ratelimiter_keys=ratelimiter_keys,
         )
 
-    def _handle_exception(self, error: aiohttp.ClientResponseError):
-        self._log.error(
-            f"Some exception in HTTP request status: {error.status} message:{error.message}",
-        )
-
     def _sign_post_request(self, payload: dict[str, Any]) -> list[str]:
         timestamp = str(self._clock.timestamp_ms())
         payload_str = create_string_from_dict(payload)
@@ -172,7 +186,7 @@ class BybitHttpClient:
 
     def _sign_get_request(self, payload: dict[str, Any]) -> list[str]:
         timestamp = str(self._clock.timestamp_ms())
-        payload_str = urllib.parse.urlencode(payload)
+        payload_str = parse.urlencode(payload)
         result = timestamp + self._api_key + str(self._recv_window) + payload_str
         signature = hmac.new(
             self._api_secret.encode("utf-8"),

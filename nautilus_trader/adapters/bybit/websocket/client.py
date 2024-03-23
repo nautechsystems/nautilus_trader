@@ -33,6 +33,12 @@ class BybitWebsocketClient:
     ----------
     clock : LiveClock
         The clock instance.
+    base_url : str
+        The base URL for the WebSocket connection.
+    handler : Callable[[bytes], None]
+        The callback handler for message events.
+    handler_reconnect : Callable[..., Awaitable[None]], optional
+        The callback handler to be called on reconnect.
 
     """
 
@@ -70,7 +76,7 @@ class BybitWebsocketClient:
 
     async def subscribe_trades(self, symbol: str) -> None:
         if self._client is None:
-            self._log.warning("Cannot subscribe: not connected.")
+            self._log.warning("Cannot subscribe: not connected")
             return
 
         subscription = f"publicTrade.{symbol}"
@@ -80,7 +86,7 @@ class BybitWebsocketClient:
 
     async def subscribe_tickers(self, symbol: str) -> None:
         if self._client is None:
-            self._log.warning("Cannot subscribe: not connected.")
+            self._log.warning("Cannot subscribe: not connected")
             return
 
         subscription = f"tickers.{symbol}"
@@ -99,7 +105,7 @@ class BybitWebsocketClient:
 
     async def subscribe_orders_update(self) -> None:
         if self._client is None:
-            self._log.warning("Cannot subscribe: not connected.")
+            self._log.warning("Cannot subscribe: not connected")
             return
 
         subscription = "order"
@@ -109,7 +115,7 @@ class BybitWebsocketClient:
 
     async def subscribe_executions_update(self) -> None:
         if self._client is None:
-            self._log.warning("Cannot subscribe: not connected.")
+            self._log.warning("Cannot subscribe: not connected")
             return
 
         subscription = "execution"
@@ -130,7 +136,7 @@ class BybitWebsocketClient:
             config=config,
         )
         self._client = client
-        self._log.info(f"Connected to {self._url}.", LogColor.BLUE)
+        self._log.info(f"Connected to {self._url}", LogColor.BLUE)
         ## authenticate
         if self._is_private:
             signature = self._get_signature()
@@ -156,4 +162,4 @@ class BybitWebsocketClient:
 
         await self._client.send_text(json.dumps({"op": "unsubscribe", "args": self._subscriptions}))
         await self._client.disconnect()
-        self._log.info(f"Disconnected from {self._url}.", LogColor.BLUE)
+        self._log.info(f"Disconnected from {self._url}", LogColor.BLUE)

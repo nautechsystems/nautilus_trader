@@ -24,6 +24,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
+from nautilus_trader.adapters.bybit.provider import BybitInstrumentProvider
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
@@ -35,7 +36,6 @@ from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.message import Request
 from nautilus_trader.core.nautilus_pyo3 import Symbol
@@ -55,6 +55,32 @@ from nautilus_trader.model.instruments import Instrument
 
 
 class BybitDataClient(LiveMarketDataClient):
+    """
+    Provides a data client for the `Bybit` exchange.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    client : BybitHttpClient
+        The Bybit HTTP client.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : LiveClock
+        The clock for the client.
+    instrument_provider : BybitInstrumentProvider
+        The instrument provider.
+    instrument_types : list[BybitInstrumentType]
+        The instrument types for the client.
+    ws_urls : dict[BybitInstrumentType, str]
+        The base urls for the WebSocket clients.
+    config : BybitDataClientConfig
+        The configuration for the client.
+
+    """
+
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
@@ -62,7 +88,7 @@ class BybitDataClient(LiveMarketDataClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        instrument_provider: InstrumentProvider,
+        instrument_provider: BybitInstrumentProvider,
         instrument_types: list[BybitInstrumentType],
         ws_urls: dict[BybitInstrumentType, str],
         config: BybitDataClientConfig,
@@ -99,7 +125,7 @@ class BybitDataClient(LiveMarketDataClient):
                 api_secret=config.api_secret or get_api_secret(config.testnet),
             )
 
-            # web socket decoders
+            # WebSocket decoders
             self._decoders = {
                 "trade": decoder_ws_trade(),
                 "ticker": decoder_ws_ticker(instrument_type),
@@ -120,7 +146,7 @@ class BybitDataClient(LiveMarketDataClient):
         id: UUID4,
         instrument_type: BybitInstrumentType,
         symbol: str,
-    ):
+    ) -> None:
         tickers = await self._http_market.fetch_tickers(
             instrument_type=instrument_type,
             symbol=symbol,
@@ -136,7 +162,7 @@ class BybitDataClient(LiveMarketDataClient):
         )
         self._msgbus.response(data)
 
-    def complete_fetch_tickers_task(self, request: Request):
+    def complete_fetch_tickers_task(self, request: Request) -> None:
         # extract symbol from metadat
         if "symbol" not in request.metadata:
             raise ValueError("Symbol not in request metadata")
@@ -146,6 +172,7 @@ class BybitDataClient(LiveMarketDataClient):
                 f"Parameter symbol in request metadata object is not of type Symbol, got {type(symbol)}",
             )
         bybit_symbol = BybitSymbol(symbol.value)
+        assert bybit_symbol  # type checking
         self._loop.create_task(
             self.fetch_send_tickers(
                 request.id,
@@ -161,7 +188,7 @@ class BybitDataClient(LiveMarketDataClient):
         self._send_all_instruments_to_data_engine()
         self._update_instruments_task = self.create_task(self._update_instruments())
         self._log.info("Initializing websocket connections.")
-        for instrument_type, ws_client in self._ws_clients.items():
+        for ws_client in self._ws_clients.values():
             await ws_client.connect()
         self._log.info("Data client connected.")
 
@@ -186,9 +213,10 @@ class BybitDataClient(LiveMarketDataClient):
             self._log.debug("Canceled `update_instruments` task.")
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        symbol = BybitSymbol(instrument_id.symbol.value)
-        ws_client = self._ws_clients[symbol.instrument_type]
-        await ws_client.subscribe_trades(symbol.raw_symbol)
+        bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+        assert bybit_symbol  # type checking
+        ws_client = self._ws_clients[bybit_symbol.instrument_type]
+        await ws_client.subscribe_trades(bybit_symbol.raw_symbol)
         self._log.info(f"Subscribed to trade ticks for {instrument_id}.")
 
     # async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
@@ -243,6 +271,7 @@ class BybitDataClient(LiveMarketDataClient):
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
         bybit_symbol = BybitSymbol(symbol)
+        assert bybit_symbol  # type checking
         nautilus_instrument_id: InstrumentId = bybit_symbol.parse_as_nautilus()
         return nautilus_instrument_id
 
@@ -336,7 +365,7 @@ class BybitDataClient(LiveMarketDataClient):
         if bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
                 f"Cannot request {bar_type}: "
-                f"only historical bars for LAST price type available from Binance.",
+                f"only historical bars for LAST price type available from Bybit.",
             )
             return
 
@@ -371,6 +400,7 @@ class BybitDataClient(LiveMarketDataClient):
 
     async def _handle_ticker_data_request(self, symbol: Symbol, correlation_id: UUID4) -> None:
         bybit_symbol = BybitSymbol(symbol.value)
+        assert bybit_symbol  # type checking
         bybit_tickers = await self._http_market.fetch_tickers(
             instrument_type=bybit_symbol.instrument_type,
             symbol=bybit_symbol.raw_symbol,

@@ -13,7 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Final
+
 from nautilus_trader.model.identifiers import Venue
 
 
-BYBIT_VENUE = Venue("BYBIT")
+BYBIT_VENUE: Final[Venue] = Venue("BYBIT")
