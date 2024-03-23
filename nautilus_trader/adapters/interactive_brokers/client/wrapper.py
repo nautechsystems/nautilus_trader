@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from functools import partial
 from typing import TYPE_CHECKING
 
 from ibapi.commission_report import CommissionReport
@@ -87,12 +88,14 @@ class InteractiveBrokersEWrapper(EWrapper):
         send a message to the client.
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_error(
+        task = partial(
+            self._client.process_error,
             req_id=reqId,
             error_code=errorCode,
             error_string=errorString,
             advanced_order_reject_json=advancedOrderRejectJson,
         )
+        self._client.submit_to_msg_handler_queue(task)
 
     def winError(self, text: str, lastError: int) -> None:
         self.logAnswer(current_fn_name(), vars())
@@ -123,7 +126,12 @@ class InteractiveBrokersEWrapper(EWrapper):
 
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_market_data_type(req_id=reqId, market_data_type=marketDataType)
+        task = partial(
+            self._client.process_market_data_type,
+            req_id=reqId,
+            market_data_type=marketDataType,
+        )
+        self._client.submit_to_msg_handler_queue(task)
 
     def tickPrice(
         self,
@@ -268,7 +276,8 @@ class InteractiveBrokersEWrapper(EWrapper):
 
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_order_status(
+        task = partial(
+            self._client.process_order_status,
             order_id=orderId,
             status=status,
             filled=filled,
@@ -281,6 +290,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             why_held=whyHeld,
             mkt_cap_price=mktCapPrice,
         )
+        self._client.submit_to_msg_handler_queue(task)
 
     def openOrder(
         self,
@@ -305,19 +315,23 @@ class InteractiveBrokersEWrapper(EWrapper):
 
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_open_order(
+        task = partial(
+            self._client.process_open_order,
             order_id=orderId,
             contract=contract,
             order=order,
             order_state=orderState,
         )
+        self._client.submit_to_msg_handler_queue(task)
 
     def openOrderEnd(self) -> None:
         """
         Call this at the end of a given request for open orders.
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_open_order_end()
+        self._client.submit_to_msg_handler_queue(
+            self._client.process_open_order_end,
+        )
 
     def connectionClosed(self) -> None:
         """
@@ -371,7 +385,11 @@ class InteractiveBrokersEWrapper(EWrapper):
         Receives next valid order id.
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_next_valid_id(order_id=orderId)
+        task = partial(
+            self._client.process_next_valid_id,
+            order_id=orderId,
+        )
+        self._client.submit_to_msg_handler_queue(task)
 
     def contractDetails(self, reqId: int, contractDetails: ContractDetails) -> None:
         """
@@ -383,7 +401,12 @@ class InteractiveBrokersEWrapper(EWrapper):
 
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_contract_details(req_id=reqId, contract_details=contractDetails)
+        task = partial(
+            self._client.process_contract_details,
+            req_id=reqId,
+            contract_details=contractDetails,
+        )
+        self._client.submit_to_msg_handler_queue(task)
 
     def bondContractDetails(self, reqId: int, contractDetails: ContractDetails) -> None:
         """
@@ -400,7 +423,11 @@ class InteractiveBrokersEWrapper(EWrapper):
 
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_contract_details_end(req_id=reqId)
+        task = partial(
+            self._client.process_contract_details_end,
+            req_id=reqId,
+        )
+        self._client.submit_to_msg_handler_queue(task)
 
     def execDetails(self, reqId: int, contract: Contract, execution: Execution) -> None:
         """
@@ -408,11 +435,13 @@ class InteractiveBrokersEWrapper(EWrapper):
         filled.
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_exec_details(
+        task = partial(
+            self._client.process_exec_details,
             req_id=reqId,
             contract=contract,
             execution=execution,
         )
+        self._client.submit_to_msg_handler_queue(task)
 
     def execDetailsEnd(self, reqId: int) -> None:
         """
@@ -525,7 +554,11 @@ class InteractiveBrokersEWrapper(EWrapper):
         Receives a comma-separated string with the managed account ids.
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_managed_accounts(accounts_list=accountsList)
+        task = partial(
+            self._client.process_managed_accounts,
+            accounts_list=accountsList,
+        )
+        self._client.submit_to_msg_handler_queue(task)
 
     def receiveFA(self, faData: FaDataType, cxml: str) -> None:
         """
@@ -558,13 +591,25 @@ class InteractiveBrokersEWrapper(EWrapper):
 
         """
         self.logAnswer(current_fn_name(), vars())
+        task = partial(
+            self._client.process_historical_data,
+            req_id=reqId,
+            bar=bar,
+        )
+        self._client.submit_to_msg_handler_queue(task)
 
     def historicalDataEnd(self, reqId: int, start: str, end: str) -> None:
         """
         Mark the end of the reception of historical bars.
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_historical_data_end(req_id=reqId, start=start, end=end)
+        task = partial(
+            self._client.process_historical_data_end,
+            req_id=reqId,
+            start=start,
+            end=end,
+        )
+        self._client.submit_to_msg_handler_queue(task)
 
     def scannerParameters(self, xml: str) -> None:
         """
@@ -661,7 +706,8 @@ class InteractiveBrokersEWrapper(EWrapper):
 
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_realtime_bar(
+        task = partial(
+            self._client.process_realtime_bar,
             req_id=reqId,
             time=time,
             open_=open_,
@@ -672,6 +718,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             wap=wap,
             count=count,
         )
+        self._client.submit_to_msg_handler_queue(task)
 
     def currentTime(self, time: int) -> None:
         """
@@ -715,7 +762,11 @@ class InteractiveBrokersEWrapper(EWrapper):
 
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_commission_report(commission_report=commissionReport)
+        task = partial(
+            self._client.process_commission_report,
+            commission_report=commissionReport,
+        )
+        self._client.submit_to_msg_handler_queue(task)
 
     def position(
         self,
@@ -729,12 +780,14 @@ class InteractiveBrokersEWrapper(EWrapper):
         method.
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_position(
+        task = partial(
+            self._client.process_position,
             account_id=account,
             contract=contract,
             position=position,
             avg_cost=avgCost,
         )
+        self._client.submit_to_msg_handler_queue(task)
 
     def positionEnd(self) -> None:
         """
@@ -742,7 +795,9 @@ class InteractiveBrokersEWrapper(EWrapper):
         as an end marker for the position() data.
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_position_end()
+        self._client.submit_to_msg_handler_queue(
+            self._client.process_position_end,
+        )
 
     def accountSummary(
         self,
@@ -757,13 +812,15 @@ class InteractiveBrokersEWrapper(EWrapper):
         reqAccountSummary().
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_account_summary(
+        task = partial(
+            self._client.process_account_summary,
             req_id=reqId,
             account_id=account,
             tag=tag,
             value=value,
             currency=currency,
         )
+        self._client.submit_to_msg_handler_queue(task)
 
     def accountSummaryEnd(self, reqId: int) -> None:
         """
@@ -923,7 +980,8 @@ class InteractiveBrokersEWrapper(EWrapper):
 
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_security_definition_option_parameter(
+        task = partial(
+            self._client.process_security_definition_option_parameter,
             req_id=reqId,
             exchange=exchange,
             underlying_con_id=underlyingConId,
@@ -932,6 +990,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             expirations=expirations,
             strikes=strikes,
         )
+        self._client.submit_to_msg_handler_queue(task)
 
     def securityDefinitionOptionParameterEnd(self, reqId: int) -> None:
         """
@@ -945,7 +1004,11 @@ class InteractiveBrokersEWrapper(EWrapper):
 
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_security_definition_option_parameter_end(req_id=reqId)
+        task = partial(
+            self._client.process_security_definition_option_parameter_end,
+            req_id=reqId,
+        )
+        self._client.submit_to_msg_handler_queue(task)
 
     def softDollarTiers(self, reqId: int, tiers: list) -> None:
         """
@@ -978,10 +1041,12 @@ class InteractiveBrokersEWrapper(EWrapper):
         Return an array of sample contract descriptions.
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_symbol_samples(
+        task = partial(
+            self._client.process_symbol_samples,
             req_id=reqId,
             contract_descriptions=contractDescriptions,
         )
+        self._client.submit_to_msg_handler_queue(task)
 
     def mktDepthExchanges(self, depthMktDataDescriptions: ListOfDepthExchanges) -> None:
         """
@@ -1070,10 +1135,12 @@ class InteractiveBrokersEWrapper(EWrapper):
         Return updates in real time when keepUpToDate is set to True.
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_historical_data_update(
+        task = partial(
+            self._client.process_historical_data_update,
             req_id=reqId,
             bar=bar,
         )
+        self._client.submit_to_msg_handler_queue(task)
 
     def rerouteMktDataReq(self, reqId: int, conId: int, exchange: str) -> None:
         """
@@ -1118,11 +1185,13 @@ class InteractiveBrokersEWrapper(EWrapper):
         Return historical tick data when whatToShow is set to MIDPOINT.
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_historical_ticks(
+        task = partial(
+            self._client.process_historical_ticks,
             req_id=reqId,
             ticks=ticks,
             done=done,
         )
+        self._client.submit_to_msg_handler_queue(task)
 
     def historicalTicksBidAsk(
         self,
@@ -1134,22 +1203,26 @@ class InteractiveBrokersEWrapper(EWrapper):
         Return historical tick data when whatToShow is set to BID_ASK.
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_historical_ticks_bid_ask(
+        task = partial(
+            self._client.process_historical_ticks_bid_ask,
             req_id=reqId,
             ticks=ticks,
             done=done,
         )
+        self._client.submit_to_msg_handler_queue(task)
 
     def historicalTicksLast(self, reqId: int, ticks: ListOfHistoricalTickLast, done: bool) -> None:
         """
         Return historical tick data when whatToShow is set to TRADES.
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_historical_ticks_last(
+        task = partial(
+            self._client.process_historical_ticks_last,
             req_id=reqId,
             ticks=ticks,
             done=done,
         )
+        self._client.submit_to_msg_handler_queue(task)
 
     def tickByTickAllLast(
         self,
@@ -1166,7 +1239,8 @@ class InteractiveBrokersEWrapper(EWrapper):
         Return tick-by-tick data for tickType set to "Last" or "AllLast".
         """
         self.logAnswer(current_fn_name(), vars())
-        self._process_tick_by_tick_all_last(
+        task = partial(
+            self._client.process_tick_by_tick_all_last,
             req_id=reqId,
             tick_type=tickType,
             time=time,
@@ -1176,6 +1250,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             exchange=exchange,
             special_conditions=specialConditions,
         )
+        self._client.submit_to_msg_handler_queue(task)
 
     def tickByTickBidAsk(
         self,
@@ -1191,7 +1266,8 @@ class InteractiveBrokersEWrapper(EWrapper):
         Return tick-by-tick data for tickType set to "BidAsk".
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.process_tick_by_tick_bid_ask(
+        task = partial(
+            self._client.process_tick_by_tick_bid_ask,
             req_id=reqId,
             time=time,
             bid_price=bidPrice,
@@ -1200,6 +1276,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             ask_size=askSize,
             tick_attrib_bid_ask=tickAttribBidAsk,
         )
+        self._client.submit_to_msg_handler_queue(task)
 
     def tickByTickMidPoint(self, reqId: int, time: int, midPoint: float) -> None:
         """

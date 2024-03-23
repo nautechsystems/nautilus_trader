@@ -213,7 +213,7 @@ async def test_run_internal_msg_queue(ib_client_running):
     test_messages = [b"test message 1", b"test message 2"]
     for msg in test_messages:
         ib_client_running._internal_msg_queue.put_nowait(msg)
-    ib_client_running._process_message = Mock()
+    ib_client_running._process_message = AsyncMock()
 
     # Act
 

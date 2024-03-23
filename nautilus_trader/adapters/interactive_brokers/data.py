@@ -430,7 +430,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 bar_type=bar_type,
                 contract=IBContract(**instrument.info["contract"]),
                 use_rth=self._use_regular_trading_hours,
-                end_date_time=end.strftime("%Y%m%d %H:%M:%S %Z"),
+                end_date_time=end,
                 duration=duration_str,
             )
             bars.extend(bars_part)
