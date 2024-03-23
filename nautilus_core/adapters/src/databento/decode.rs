@@ -979,3 +979,68 @@ pub fn decode_statistics_msg(
         ts_init,
     )
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use databento::dbn::decode::{dbn::Decoder, DecodeStream};
+    use rstest::*;
+    use streaming_iterator::StreamingIterator;
+
+    use super::*;
+
+    pub const TEST_DATA_PATH: &str =
+        concat!(env!("CARGO_MANIFEST_DIR"), "/src/databento/test_data");
+
+    #[rstest]
+    fn test_decode_mbo_msg() {
+        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.mbo.dbn.zst"));
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::MboMsg>();
+        let mbo_msg = dbn_stream.next().unwrap();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let (delta, _) = decode_mbo_msg(mbo_msg, instrument_id, 2, 0, false).unwrap();
+        let delta = delta.unwrap();
+
+        assert_eq!(delta.instrument_id, instrument_id);
+        assert_eq!(delta.action, BookAction::Delete);
+        assert_eq!(delta.order.side, OrderSide::Sell);
+        assert_eq!(delta.order.price, Price::from("3722.75"));
+        assert_eq!(delta.order.size, Quantity::from("1"));
+        assert_eq!(delta.order.order_id, 647784973705);
+        assert_eq!(delta.flags, 128);
+        assert_eq!(delta.sequence, 1170352);
+        assert_eq!(delta.ts_event, mbo_msg.ts_recv);
+        assert_eq!(delta.ts_event, 1609160400000704060);
+        assert_eq!(delta.ts_init, 0);
+    }
+
+    #[rstest]
+    fn test_decode_mbp1_msg() {
+        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.mbp-1.dbn.zst"));
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::Mbp1Msg>();
+        let mbp1_msg = dbn_stream.next().unwrap();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let (quote, _) = decode_mbp1_msg(mbp1_msg, instrument_id, 2, 0, false).unwrap();
+
+        assert_eq!(quote.instrument_id, instrument_id);
+        assert_eq!(quote.bid_price, Price::from("3720.25"));
+        assert_eq!(quote.ask_price, Price::from("3720.50"));
+        assert_eq!(quote.bid_size, Quantity::from("24"));
+        assert_eq!(quote.ask_size, Quantity::from("11"));
+        assert_eq!(quote.ts_event, mbp1_msg.ts_recv);
+        assert_eq!(quote.ts_event, 1609160400006136329);
+        assert_eq!(quote.ts_init, 0);
+    }
+
+    // TODO: Complete for the other schemas using the files in the test_data dir
+}
