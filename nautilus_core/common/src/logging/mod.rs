@@ -23,6 +23,7 @@ use std::{
 use log::LevelFilter;
 use nautilus_core::{time::get_atomic_clock_static, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
+use tracing::error;
 use tracing_subscriber::EnvFilter;
 use ustr::Ustr;
 
@@ -95,7 +96,7 @@ pub fn init_tracing() {
         tracing_subscriber::fmt()
             .with_env_filter(EnvFilter::new(v.clone()))
             .try_init()
-            .unwrap_or_else(|e| eprintln!("Cannot set tracing subscriber because of error: {e}"));
+            .unwrap_or_else(|e| error!("Cannot set tracing subscriber because of error: {e}"));
         println!("Initialized tracing logs with RUST_LOG={v}");
     }
 }

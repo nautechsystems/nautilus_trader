@@ -24,7 +24,7 @@ use nautilus_core::{time::duration_since_unix_epoch, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
 use redis::*;
 use serde_json::{json, Value};
-use tracing::debug;
+use tracing::{debug, error};
 
 use crate::msgbus::BusMessage;
 
@@ -132,7 +132,7 @@ fn drain_buffer(
                 .query(conn);
 
             if let Err(e) = result {
-                eprintln!("Error trimming stream '{key}': {e}");
+                error!("Error trimming stream '{key}': {e}");
             } else {
                 last_trim_index.insert(key, unix_duration_now.as_millis() as usize);
             }

@@ -36,6 +36,7 @@ use pyo3::{
     types::{PyDict, PyList},
 };
 use tokio::sync::Mutex;
+use tracing::error;
 
 use super::loader::convert_instrument_to_pyobject;
 use crate::databento::{
@@ -161,7 +162,7 @@ impl DatabentoHistoricalClient {
                 let result = decode_instrument_def_msg(msg, instrument_id, ts_init);
                 match result {
                     Ok(instrument) => instruments.push(instrument),
-                    Err(e) => eprintln!("{e:?}"),
+                    Err(e) => error!("{e:?}"),
                 };
             }
 

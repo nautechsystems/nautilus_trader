@@ -21,6 +21,7 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use log::LevelFilter;
+use tracing::error;
 
 use crate::logging::logger::LogLine;
 
@@ -54,14 +55,14 @@ impl LogWriter for StdoutWriter {
     fn write(&mut self, line: &str) {
         match self.buf.write_all(line.as_bytes()) {
             Ok(()) => {}
-            Err(e) => eprintln!("Error writing to stdout: {e:?}"),
+            Err(e) => error!("Error writing to stdout: {e:?}"),
         }
     }
 
     fn flush(&mut self) {
         match self.buf.flush() {
             Ok(()) => {}
-            Err(e) => eprintln!("Error flushing stdout: {e:?}"),
+            Err(e) => error!("Error flushing stdout: {e:?}"),
         }
     }
 
@@ -90,14 +91,14 @@ impl LogWriter for StderrWriter {
     fn write(&mut self, line: &str) {
         match self.buf.write_all(line.as_bytes()) {
             Ok(()) => {}
-            Err(e) => eprintln!("Error writing to stderr: {e:?}"),
+            Err(e) => error!("Error writing to stderr: {e:?}"),
         }
     }
 
     fn flush(&mut self) {
         match self.buf.flush() {
             Ok(()) => {}
-            Err(e) => eprintln!("Error flushing stderr: {e:?}"),
+            Err(e) => error!("Error flushing stderr: {e:?}"),
         }
     }
 
@@ -154,7 +155,7 @@ impl FileWriter {
             Some(ref format) if format == "json" => true,
             None => false,
             Some(ref unrecognized) => {
-                eprintln!(
+                error!(
                     "Unrecognized log file format: {unrecognized}. Using plain text format as default."
                 );
                 false
@@ -179,7 +180,7 @@ impl FileWriter {
                 level: fileout_level,
             }),
             Err(e) => {
-                eprintln!("Error creating log file: {}", e);
+                error!("Error creating log file: {}", e);
                 None
             }
         }
@@ -250,20 +251,20 @@ impl LogWriter for FileWriter {
                     self.buf = BufWriter::new(file);
                     self.path = file_path;
                 }
-                Err(e) => eprintln!("Error creating log file: {}", e),
+                Err(e) => error!("Error creating log file: {}", e),
             }
         }
 
         match self.buf.write_all(line.as_bytes()) {
             Ok(()) => {}
-            Err(e) => eprintln!("Error writing to file: {e:?}"),
+            Err(e) => error!("Error writing to file: {e:?}"),
         }
     }
 
     fn flush(&mut self) {
         match self.buf.flush() {
             Ok(()) => {}
-            Err(e) => eprintln!("Error flushing file: {e:?}"),
+            Err(e) => error!("Error flushing file: {e:?}"),
         }
     }
 
