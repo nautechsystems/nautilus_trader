@@ -18,6 +18,7 @@ from collections.abc import Callable
 from decimal import Decimal
 from inspect import iscoroutinefunction
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytz
@@ -322,7 +323,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         bar_type: BarType,
         contract: IBContract,
         use_rth: bool,
-        end_date_time: str,
+        end_date_time: pd.Timestamp,
         duration: str,
         timeout: int = 60,
     ) -> list[Bar] | None:
@@ -349,7 +350,13 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         list[Bar] | ``None``
 
         """
-        name = str(bar_type)
+        # Ensure the requested `end_date_time` is in UTC and set formatDate=2 to ensure returned dates are in UTC.
+        if end_date_time.tzinfo is None:
+            end_date_time = end_date_time.replace(tzinfo=ZoneInfo("UTC"))
+        else:
+            end_date_time = end_date_time.astimezone(ZoneInfo("UTC"))
+
+        name = (bar_type, end_date_time)
         if not (request := self._requests.get(name=name)):
             req_id = self._next_req_id()
             bar_size_setting = bar_spec_to_bar_size(bar_type.spec)
@@ -360,7 +367,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
                     self._eclient.reqHistoricalData,
                     reqId=req_id,
                     contract=contract,
-                    endDateTime=end_date_time,
+                    endDateTime=end_date_time.strftime("%Y%m%d %H:%M:%S %Z"),
                     durationStr=duration,
                     barSizeSetting=bar_size_setting,
                     whatToShow=what_to_show(bar_type),
@@ -770,7 +777,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         Return the requested historical data bars.
         """
         if request := self._requests.get(req_id=req_id):
-            bar_type = BarType.from_str(request.name)
+            bar_type = request.name[0]
             bar = await self._ib_bar_to_nautilus_bar(
                 bar_type=bar_type,
                 bar=bar,

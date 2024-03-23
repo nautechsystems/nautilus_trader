@@ -269,7 +269,7 @@ class HistoricInteractiveBrokersClient:
                         bar_type,
                         contract,
                         use_rth,
-                        segment_end_date_time.strftime("%Y%m%d-%H:%M:%S"),
+                        segment_end_date_time,
                         segment_duration,
                         timeout=timeout,
                     )
