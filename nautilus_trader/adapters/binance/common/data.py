@@ -84,9 +84,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
     client : BinanceHttpClient
-        The binance HTTP client.
+        The Binance HTTP client.
     market : BinanceMarketHttpAPI
-        The binance Market HTTP API.
+        The Binance Market HTTP API.
     enum_parser : BinanceEnumParser
         The parser for Binance enums.
     msgbus : MessageBus
@@ -100,7 +100,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     account_type : BinanceAccountType
         The account type for the client.
     base_url_ws : str
-        The base URL for the WebSocket client.
+        The base url for the WebSocket client.
     config : BinanceDataClientConfig
         The configuration for the client.
 
@@ -902,7 +902,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
         binance_symbol = BinanceSymbol(symbol)
-        assert binance_symbol
+        assert binance_symbol  # type checking
         nautilus_symbol: str = binance_symbol.parse_as_nautilus(
             self._binance_account_type,
         )
