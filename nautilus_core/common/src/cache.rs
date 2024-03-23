@@ -83,6 +83,7 @@ pub trait CacheDatabase {
         instance_id: UUID4,
         config: HashMap<String, serde_json::Value>,
     ) -> anyhow::Result<Self::DatabaseType>;
+    fn shutdown(&mut self) -> anyhow::Result<()>;
     fn flushdb(&mut self) -> anyhow::Result<()>;
     fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>>;
     fn read(&mut self, key: &str) -> anyhow::Result<Vec<Vec<u8>>>;
