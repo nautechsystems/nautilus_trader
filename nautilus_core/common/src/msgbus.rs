@@ -18,7 +18,7 @@ use std::{
     fmt,
     hash::{Hash, Hasher},
     sync::mpsc::{channel, Receiver, SendError, Sender},
-    thread,
+    thread::{self},
 };
 
 use indexmap::IndexMap;
@@ -26,6 +26,7 @@ use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tracing::error;
 use ustr::Ustr;
 
 use crate::handlers::MessageHandler;
@@ -180,7 +181,7 @@ impl MessageBus {
             .map_or(false, |v| v != &serde_json::Value::Null);
         let tx = if has_backing {
             let (tx, rx) = channel::<BusMessage>();
-            let _join_handler = thread::Builder::new()
+            let _handle = thread::Builder::new()
                 .name("msgbus".to_string())
                 .spawn(move || Self::handle_messages(rx, trader_id, instance_id, config))
                 .expect("Error spawning `msgbus` thread");
@@ -397,10 +398,10 @@ impl MessageBus {
         if let Some(tx) = &self.tx {
             let msg = BusMessage { topic, payload };
             if let Err(SendError(e)) = tx.send(msg) {
-                eprintln!("Error publishing external message: {e}");
+                error!("Error publishing external message: {e}");
             }
         } else {
-            eprintln!("Error publishing external message: no tx channel");
+            error!("Error publishing external message: no tx channel");
         }
     }
 

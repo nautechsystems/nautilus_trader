@@ -28,6 +28,7 @@ use nautilus_core::{
 #[cfg(feature = "python")]
 use pyo3::{types::PyCapsule, IntoPy, PyObject, Python};
 use tokio::sync::oneshot;
+use tracing::error;
 use ustr::Ustr;
 
 use crate::{handlers::EventHandler, runtime::get_runtime};
@@ -319,7 +320,7 @@ fn call_python_with_time_event(
 
         match handler.callback.call1(py, (capsule,)) {
             Ok(_) => {}
-            Err(e) => eprintln!("Error on callback: {:?}", e),
+            Err(e) => error!("Error on callback: {:?}", e),
         };
     })
 }

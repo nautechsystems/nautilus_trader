@@ -29,6 +29,7 @@ use pyo3::{
     prelude::*,
     types::{PyCapsule, PyList},
 };
+use tracing::error;
 
 use crate::databento::{
     loader::DatabentoDataLoader,
@@ -92,7 +93,7 @@ impl DatabentoDataLoader {
                     data.push(py_object);
                 }
                 Err(e) => {
-                    eprintln!("{e}");
+                    error!("{e}");
                 }
             }
         }
