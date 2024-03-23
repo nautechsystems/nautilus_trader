@@ -278,7 +278,7 @@ impl Log for Logger {
                 message: format!("{}", record.args()).to_string(),
             };
             if let Err(SendError(LogEvent::Log(line))) = self.tx.send(LogEvent::Log(line)) {
-                log::error!("Error sending log event: {line}");
+                eprintln!("Error sending log event: {line}");
             }
         }
     }
@@ -345,7 +345,7 @@ impl Logger {
                 }
             }
             Err(e) => {
-                log::error!("Cannot set logger because of error: {e}")
+                eprintln!("Cannot set logger because of error: {e}")
             }
         }
 
@@ -488,7 +488,7 @@ impl Drop for LogGuard {
     fn drop(&mut self) {
         log::logger().flush();
         if let Some(handle) = self.handle.take() {
-            handle.join().expect("Error joining logger handle")
+            handle.join().expect("Error joining logging handle")
         }
     }
 }

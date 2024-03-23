@@ -55,14 +55,14 @@ impl LogWriter for StdoutWriter {
     fn write(&mut self, line: &str) {
         match self.buf.write_all(line.as_bytes()) {
             Ok(()) => {}
-            Err(e) => error!("Error writing to stdout: {e:?}"),
+            Err(e) => eprintln!("Error writing to stdout: {e:?}"),
         }
     }
 
     fn flush(&mut self) {
         match self.buf.flush() {
             Ok(()) => {}
-            Err(e) => error!("Error flushing stdout: {e:?}"),
+            Err(e) => eprintln!("Error flushing stdout: {e:?}"),
         }
     }
 
@@ -91,14 +91,14 @@ impl LogWriter for StderrWriter {
     fn write(&mut self, line: &str) {
         match self.buf.write_all(line.as_bytes()) {
             Ok(()) => {}
-            Err(e) => error!("Error writing to stderr: {e:?}"),
+            Err(e) => eprintln!("Error writing to stderr: {e:?}"),
         }
     }
 
     fn flush(&mut self) {
         match self.buf.flush() {
             Ok(()) => {}
-            Err(e) => error!("Error flushing stderr: {e:?}"),
+            Err(e) => eprintln!("Error flushing stderr: {e:?}"),
         }
     }
 
