@@ -95,7 +95,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             error_string=errorString,
             advanced_order_reject_json=advancedOrderRejectJson,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def winError(self, text: str, lastError: int) -> None:
         self.logAnswer(current_fn_name(), vars())
@@ -131,7 +131,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             req_id=reqId,
             market_data_type=marketDataType,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def tickPrice(
         self,
@@ -290,7 +290,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             why_held=whyHeld,
             mkt_cap_price=mktCapPrice,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def openOrder(
         self,
@@ -322,14 +322,14 @@ class InteractiveBrokersEWrapper(EWrapper):
             order=order,
             order_state=orderState,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def openOrderEnd(self) -> None:
         """
         Call this at the end of a given request for open orders.
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.msg_handler_task_queue.put_nowait(
+        self._client.submit_to_msg_handler_queue(
             self._client.process_open_order_end,
         )
 
@@ -389,7 +389,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             self._client.process_next_valid_id,
             order_id=orderId,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def contractDetails(self, reqId: int, contractDetails: ContractDetails) -> None:
         """
@@ -406,7 +406,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             req_id=reqId,
             contract_details=contractDetails,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def bondContractDetails(self, reqId: int, contractDetails: ContractDetails) -> None:
         """
@@ -427,7 +427,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             self._client.process_contract_details_end,
             req_id=reqId,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def execDetails(self, reqId: int, contract: Contract, execution: Execution) -> None:
         """
@@ -441,7 +441,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             contract=contract,
             execution=execution,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def execDetailsEnd(self, reqId: int) -> None:
         """
@@ -558,7 +558,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             self._client.process_managed_accounts,
             accounts_list=accountsList,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def receiveFA(self, faData: FaDataType, cxml: str) -> None:
         """
@@ -596,7 +596,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             req_id=reqId,
             bar=bar,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def historicalDataEnd(self, reqId: int, start: str, end: str) -> None:
         """
@@ -609,7 +609,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             start=start,
             end=end,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def scannerParameters(self, xml: str) -> None:
         """
@@ -718,7 +718,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             wap=wap,
             count=count,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def currentTime(self, time: int) -> None:
         """
@@ -766,7 +766,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             self._client.process_commission_report,
             commission_report=commissionReport,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def position(
         self,
@@ -787,7 +787,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             position=position,
             avg_cost=avgCost,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def positionEnd(self) -> None:
         """
@@ -795,7 +795,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         as an end marker for the position() data.
         """
         self.logAnswer(current_fn_name(), vars())
-        self._client.msg_handler_task_queue.put_nowait(
+        self._client.submit_to_msg_handler_queue(
             self._client.process_position_end,
         )
 
@@ -820,7 +820,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             value=value,
             currency=currency,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def accountSummaryEnd(self, reqId: int) -> None:
         """
@@ -990,7 +990,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             expirations=expirations,
             strikes=strikes,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def securityDefinitionOptionParameterEnd(self, reqId: int) -> None:
         """
@@ -1008,7 +1008,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             self._client.process_security_definition_option_parameter_end,
             req_id=reqId,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def softDollarTiers(self, reqId: int, tiers: list) -> None:
         """
@@ -1046,7 +1046,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             req_id=reqId,
             contract_descriptions=contractDescriptions,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def mktDepthExchanges(self, depthMktDataDescriptions: ListOfDepthExchanges) -> None:
         """
@@ -1140,7 +1140,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             req_id=reqId,
             bar=bar,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def rerouteMktDataReq(self, reqId: int, conId: int, exchange: str) -> None:
         """
@@ -1191,7 +1191,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             ticks=ticks,
             done=done,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def historicalTicksBidAsk(
         self,
@@ -1209,7 +1209,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             ticks=ticks,
             done=done,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def historicalTicksLast(self, reqId: int, ticks: ListOfHistoricalTickLast, done: bool) -> None:
         """
@@ -1222,7 +1222,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             ticks=ticks,
             done=done,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def tickByTickAllLast(
         self,
@@ -1250,7 +1250,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             exchange=exchange,
             special_conditions=specialConditions,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def tickByTickBidAsk(
         self,
@@ -1276,7 +1276,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             ask_size=askSize,
             tick_attrib_bid_ask=tickAttribBidAsk,
         )
-        self._client.msg_handler_task_queue.put_nowait(task)
+        self._client.submit_to_msg_handler_queue(task)
 
     def tickByTickMidPoint(self, reqId: int, time: int, midPoint: float) -> None:
         """

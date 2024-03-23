@@ -116,7 +116,7 @@ class InteractiveBrokersClient(
         self._internal_msg_queue_processor_task: asyncio.Task | None = None
         self._internal_msg_queue: asyncio.Queue = asyncio.Queue()
         self._msg_handler_processor_task: asyncio.Task | None = None
-        self.msg_handler_task_queue: asyncio.Queue = asyncio.Queue()
+        self._msg_handler_task_queue: asyncio.Queue = asyncio.Queue()
 
         # Event flags
         self._is_client_ready: asyncio.Event = asyncio.Event()
@@ -543,7 +543,7 @@ class InteractiveBrokersClient(
                 or not self._internal_msg_queue.empty()
             ):
                 msg = await self._internal_msg_queue.get()
-                if not self._process_message(msg):
+                if not await self._process_message(msg):
                     break
                 self._internal_msg_queue.task_done()
         except asyncio.CancelledError:
@@ -558,7 +558,7 @@ class InteractiveBrokersClient(
         finally:
             self._log.debug("Internal message queue processor stopped.")
 
-    def _process_message(self, msg: str) -> bool:
+    async def _process_message(self, msg: str) -> bool:
         """
         Process a single message from TWS/Gateway.
 
@@ -573,10 +573,10 @@ class InteractiveBrokersClient(
 
         """
         if len(msg) > MAX_MSG_LEN:
-            self._eclient.wrapper.error(
-                NO_VALID_ID,
-                BAD_LENGTH.code(),
-                f"{BAD_LENGTH.msg()}:{len(msg)}:{msg}",
+            await self.process_error(
+                req_id=NO_VALID_ID,
+                error_code=BAD_LENGTH.code(),
+                error_string=f"{BAD_LENGTH.msg()}:{len(msg)}:{msg}",
             )
             return False
         fields: tuple[bytes] = comm.read_fields(msg)
@@ -587,7 +587,7 @@ class InteractiveBrokersClient(
         # order, process real-time ticks, etc.) and then calls the corresponding
         # method from the EWrapper. Many of those methods are overridden in the client
         # manager and handler classes to support custom processing required for Nautilus.
-        self._eclient.decoder.interpret(fields)
+        await asyncio.to_thread(self._eclient.decoder.interpret, fields)
         return True
 
     async def _run_msg_handler_processor(self):
@@ -605,12 +605,12 @@ class InteractiveBrokersClient(
         """
         try:
             while True:
-                handler_task = await self.msg_handler_task_queue.get()
+                handler_task = await self._msg_handler_task_queue.get()
                 await handler_task()
-                self.msg_handler_task_queue.task_done()
+                self._msg_handler_task_queue.task_done()
         except asyncio.CancelledError:
             log_msg = (
-                f"Handler task processing stopped. (qsize={self.msg_handler_task_queue.qsize()})."
+                f"Handler task processing stopped. (qsize={self._msg_handler_task_queue.qsize()})."
             )
             (
                 self._log.warning(log_msg)
@@ -621,6 +621,24 @@ class InteractiveBrokersClient(
             )
         finally:
             self._log.debug("Handler task processor stopped.")
+
+    def submit_to_msg_handler_queue(self, task: Callable[..., Any]) -> None:
+        """
+        Submit a task to the message handler's queue for processing.
+
+        This method places a callable task into the message handler task queue,
+        ensuring it's scheduled for asynchronous execution according to the queue's
+        order. The operation is non-blocking and immediately returns after queueing the task.
+
+        Parameters
+        ----------
+        task : Callable[..., Any]
+            The task to be queued. This task should be a callable that matches
+            the expected signature for tasks processed by the message handler.
+
+        """
+        self._log.debug(f"Submitting task to message handler queue: {task}")
+        asyncio.run_coroutine_threadsafe(self._msg_handler_task_queue.put(task), self._loop)
 
     def _next_req_id(self) -> int:
         """
