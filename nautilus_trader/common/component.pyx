@@ -1129,7 +1129,6 @@ cpdef LogGuard init_logging(
     return log_guard
 
 
-
 LOGGING_PYO3 = False
 
 

@@ -208,7 +208,7 @@ impl LogLineWrapper {
                 self.line.level,
                 self.trader_id,
                 &self.line.component,
-                &self.line.message
+                &self.line.message,
             )
         })
     }
@@ -222,7 +222,7 @@ impl LogLineWrapper {
                 self.line.level,
                 self.trader_id,
                 &self.line.component,
-                &self.line.message
+                &self.line.message,
             )
         })
     }
