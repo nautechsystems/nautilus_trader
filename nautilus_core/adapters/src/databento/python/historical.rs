@@ -28,6 +28,7 @@ use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick, Data},
     enums::BarAggregation,
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
+    python::instruments::convert_instrument_to_pyobject,
     types::currency::Currency,
 };
 use pyo3::{
@@ -38,7 +39,6 @@ use pyo3::{
 use tokio::sync::Mutex;
 use tracing::error;
 
-use super::loader::convert_instrument_to_pyobject;
 use crate::databento::{
     common::get_date_time_range,
     decode::{

@@ -23,13 +23,12 @@ use nautilus_model::{
         trade::TradeTick, Data,
     },
     identifiers::{instrument_id::InstrumentId, venue::Venue},
-    instruments::InstrumentType,
+    python::instruments::convert_instrument_to_pyobject,
 };
 use pyo3::{
     prelude::*,
     types::{PyCapsule, PyList},
 };
-use nautilus_model::python::instruments::convert_instrument_to_pyobject;
 
 use crate::databento::{
     loader::DatabentoDataLoader,
@@ -400,7 +399,6 @@ impl DatabentoDataLoader {
         Ok(data)
     }
 }
-
 
 fn exhaust_data_iter_to_pycapsule(
     py: Python,

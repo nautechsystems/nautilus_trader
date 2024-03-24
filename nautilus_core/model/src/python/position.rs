@@ -13,10 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{
-    python::{serialization::from_dict_pyo3, to_pyvalue_err},
-    time::UnixNanos,
-};
+use nautilus_core::{python::serialization::from_dict_pyo3, time::UnixNanos};
 use pyo3::{
     basic::CompareOp,
     prelude::*,
@@ -32,12 +29,9 @@ use crate::{
         strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
         venue::Venue, venue_order_id::VenueOrderId,
     },
-    instruments::{
-        crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
-        currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
-        options_contract::OptionsContract,
-    },
+    instruments::InstrumentType,
     position::Position,
+    python::instruments::convert_pyobject_to_instrument_type,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
@@ -45,30 +39,16 @@ use crate::{
 impl Position {
     #[new]
     fn py_new(py: Python, instrument: PyObject, fill: OrderFilled) -> PyResult<Self> {
-        // Extract instrument from PyObject
-        let instrument_type = instrument
-            .getattr(py, "instrument_type")?
-            .extract::<String>(py)?;
-        if instrument_type == "CryptoFuture" {
-            let instrument_rust = instrument.extract::<CryptoFuture>(py)?;
-            Ok(Self::new(instrument_rust, fill).unwrap())
-        } else if instrument_type == "CryptoPerpetual" {
-            let instrument_rust = instrument.extract::<CryptoPerpetual>(py)?;
-            Ok(Self::new(instrument_rust, fill).unwrap())
-        } else if instrument_type == "CurrencyPair" {
-            let instrument_rust = instrument.extract::<CurrencyPair>(py)?;
-            Ok(Self::new(instrument_rust, fill).unwrap())
-        } else if instrument_type == "Equity" {
-            let instrument_rust = instrument.extract::<Equity>(py)?;
-            Ok(Self::new(instrument_rust, fill).unwrap())
-        } else if instrument_type == "FuturesContract" {
-            let instrument_rust = instrument.extract::<FuturesContract>(py)?;
-            Ok(Self::new(instrument_rust, fill).unwrap())
-        } else if instrument_type == "OptionsContract" {
-            let instrument_rust = instrument.extract::<OptionsContract>(py)?;
-            Ok(Self::new(instrument_rust, fill).unwrap())
-        } else {
-            Err(to_pyvalue_err("Unsupported instrument type"))
+        let instrument_type = convert_pyobject_to_instrument_type(py, instrument)?;
+        match instrument_type {
+            InstrumentType::CryptoFuture(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentType::CryptoPerpetual(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentType::CurrencyPair(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentType::Equity(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentType::FuturesContract(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentType::FuturesSpread(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentType::OptionsContract(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentType::OptionsSpread(inst) => Ok(Self::new(inst, fill).unwrap()),
         }
     }
 

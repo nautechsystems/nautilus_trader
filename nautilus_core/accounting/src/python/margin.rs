@@ -17,11 +17,11 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     events::account::state::AccountState,
     identifiers::{account_id::AccountId, instrument_id::InstrumentId},
+    instruments::InstrumentType,
+    python::instruments::convert_pyobject_to_instrument_type,
     types::{money::Money, price::Price, quantity::Quantity},
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
-use nautilus_model::instruments::InstrumentType;
-use nautilus_model::python::instruments::convert_pyobject_to_instrument_type;
 
 use crate::account::margin::MarginAccount;
 
@@ -171,22 +171,22 @@ impl MarginAccount {
         let instrument_type = convert_pyobject_to_instrument_type(py, instrument)?;
         match instrument_type {
             InstrumentType::CryptoFuture(inst) => {
-                Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse, ).unwrap())
+                Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
             }
             InstrumentType::CryptoPerpetual(inst) => {
-                Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse, ).unwrap())
+                Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
             }
             InstrumentType::CurrencyPair(inst) => {
-                Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse, ).unwrap())
+                Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
             }
             InstrumentType::Equity(inst) => {
-                Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse, ).unwrap())
+                Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
             }
             InstrumentType::FuturesContract(inst) => {
-                Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse, ).unwrap())
+                Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
             }
             InstrumentType::OptionsContract(inst) => {
-                Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse).unwrap())
+                Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
             }
             _ => Err(to_pyvalue_err("Unsupported instrument type")),
         }
@@ -204,22 +204,22 @@ impl MarginAccount {
         let instrument_type = convert_pyobject_to_instrument_type(py, instrument)?;
         match instrument_type {
             InstrumentType::CryptoFuture(inst) => {
-                Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse, ).unwrap())
+                Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
             }
             InstrumentType::CryptoPerpetual(inst) => {
-                Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse, ).unwrap())
+                Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
             }
             InstrumentType::CurrencyPair(inst) => {
-                Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse, ).unwrap())
+                Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
             }
             InstrumentType::Equity(inst) => {
-                Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse, ).unwrap())
+                Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
             }
             InstrumentType::FuturesContract(inst) => {
-                Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse, ).unwrap())
+                Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
             }
             InstrumentType::OptionsContract(inst) => {
-                Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse, ).unwrap())
+                Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
             }
             _ => Err(to_pyvalue_err("Unsupported instrument type")),
         }

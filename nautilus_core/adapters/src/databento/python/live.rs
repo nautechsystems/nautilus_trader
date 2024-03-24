@@ -21,12 +21,14 @@ use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
     time::UnixNanos,
 };
-use nautilus_model::{identifiers::venue::Venue, python::data::data_to_pycapsule};
+use nautilus_model::{
+    identifiers::venue::Venue,
+    python::{data::data_to_pycapsule, instruments::convert_instrument_to_pyobject},
+};
 use pyo3::prelude::*;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use tracing::{debug, error, trace};
-use nautilus_model::python::instruments::convert_instrument_to_pyobject;
 
 use crate::databento::{
     live::{DatabentoFeedHandler, LiveCommand, LiveMessage},
