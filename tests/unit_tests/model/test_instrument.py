@@ -248,6 +248,7 @@ class TestInstrument:
             "taker_fee": "0",
             "ts_event": 0,
             "ts_init": 0,
+            "info": None,
         }
 
     def test_future_instrument_to_dict(self):
