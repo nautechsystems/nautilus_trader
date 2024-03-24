@@ -17,11 +17,8 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     events::account::state::AccountState,
     identifiers::{account_id::AccountId, instrument_id::InstrumentId},
-    instruments::{
-        crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
-        currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
-        options_contract::OptionsContract,
-    },
+    instruments::InstrumentType,
+    python::instruments::convert_pyobject_to_instrument_type,
     types::{money::Money, price::Price, quantity::Quantity},
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
@@ -171,61 +168,27 @@ impl MarginAccount {
         use_quote_for_inverse: Option<bool>,
         py: Python,
     ) -> PyResult<Money> {
-        // extract instrument from PyObject
-        let instrument_type = instrument
-            .getattr(py, "instrument_type")?
-            .extract::<String>(py)?;
-        if instrument_type == "CryptoFuture" {
-            let instrument_rust = instrument.extract::<CryptoFuture>(py)?;
-            Ok(self.calculate_initial_margin(
-                instrument_rust,
-                quantity,
-                price,
-                use_quote_for_inverse,
-            ))
-        } else if instrument_type == "CryptoPerpetual" {
-            let instrument_rust = instrument.extract::<CryptoPerpetual>(py)?;
-            Ok(self.calculate_initial_margin(
-                instrument_rust,
-                quantity,
-                price,
-                use_quote_for_inverse,
-            ))
-        } else if instrument_type == "CurrencyPair" {
-            let instrument_rust = instrument.extract::<CurrencyPair>(py)?;
-            Ok(self.calculate_initial_margin(
-                instrument_rust,
-                quantity,
-                price,
-                use_quote_for_inverse,
-            ))
-        } else if instrument_type == "Equity" {
-            let instrument_rust = instrument.extract::<Equity>(py)?;
-            Ok(self.calculate_initial_margin(
-                instrument_rust,
-                quantity,
-                price,
-                use_quote_for_inverse,
-            ))
-        } else if instrument_type == "FuturesContract" {
-            let instrument_rust = instrument.extract::<FuturesContract>(py)?;
-            Ok(self.calculate_initial_margin(
-                instrument_rust,
-                quantity,
-                price,
-                use_quote_for_inverse,
-            ))
-        } else if instrument_type == "OptionsContract" {
-            let instrument_rust = instrument.extract::<OptionsContract>(py)?;
-            Ok(self.calculate_initial_margin(
-                instrument_rust,
-                quantity,
-                price,
-                use_quote_for_inverse,
-            ))
-        } else {
-            // throw error unsupported instrument
-            Err(to_pyvalue_err("Unsupported instrument type"))
+        let instrument_type = convert_pyobject_to_instrument_type(py, instrument)?;
+        match instrument_type {
+            InstrumentType::CryptoFuture(inst) => {
+                Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
+            }
+            InstrumentType::CryptoPerpetual(inst) => {
+                Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
+            }
+            InstrumentType::CurrencyPair(inst) => {
+                Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
+            }
+            InstrumentType::Equity(inst) => {
+                Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
+            }
+            InstrumentType::FuturesContract(inst) => {
+                Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
+            }
+            InstrumentType::OptionsContract(inst) => {
+                Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
+            }
+            _ => Err(to_pyvalue_err("Unsupported instrument type")),
         }
     }
 
@@ -238,63 +201,30 @@ impl MarginAccount {
         use_quote_for_inverse: Option<bool>,
         py: Python,
     ) -> PyResult<Money> {
-        // extract instrument from PyObject
-        let instrument_type = instrument
-            .getattr(py, "instrument_type")?
-            .extract::<String>(py)?;
-        if instrument_type == "CryptoFuture" {
-            let instrument_rust = instrument.extract::<CryptoFuture>(py)?;
-            Ok(self.calculate_maintenance_margin(
-                instrument_rust,
-                quantity,
-                price,
-                use_quote_for_inverse,
-            ))
-        } else if instrument_type == "CryptoPerpetual" {
-            let instrument_rust = instrument.extract::<CryptoPerpetual>(py)?;
-            Ok(self.calculate_maintenance_margin(
-                instrument_rust,
-                quantity,
-                price,
-                use_quote_for_inverse,
-            ))
-        } else if instrument_type == "CurrencyPair" {
-            let instrument_rust = instrument.extract::<CurrencyPair>(py)?;
-            Ok(self.calculate_maintenance_margin(
-                instrument_rust,
-                quantity,
-                price,
-                use_quote_for_inverse,
-            ))
-        } else if instrument_type == "Equity" {
-            let instrument_rust = instrument.extract::<Equity>(py)?;
-            Ok(self.calculate_maintenance_margin(
-                instrument_rust,
-                quantity,
-                price,
-                use_quote_for_inverse,
-            ))
-        } else if instrument_type == "FuturesContract" {
-            let instrument_rust = instrument.extract::<FuturesContract>(py)?;
-            Ok(self.calculate_maintenance_margin(
-                instrument_rust,
-                quantity,
-                price,
-                use_quote_for_inverse,
-            ))
-        } else if instrument_type == "OptionsContract" {
-            let instrument_rust = instrument.extract::<OptionsContract>(py)?;
-            Ok(self.calculate_maintenance_margin(
-                instrument_rust,
-                quantity,
-                price,
-                use_quote_for_inverse,
-            ))
-        } else {
-            // throw error unsupported instrument
-            Err(to_pyvalue_err("Unsupported instrument type"))
+        let instrument_type = convert_pyobject_to_instrument_type(py, instrument)?;
+        match instrument_type {
+            InstrumentType::CryptoFuture(inst) => {
+                Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
+            }
+            InstrumentType::CryptoPerpetual(inst) => {
+                Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
+            }
+            InstrumentType::CurrencyPair(inst) => {
+                Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
+            }
+            InstrumentType::Equity(inst) => {
+                Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
+            }
+            InstrumentType::FuturesContract(inst) => {
+                Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
+            }
+            InstrumentType::OptionsContract(inst) => {
+                Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
+            }
+            _ => Err(to_pyvalue_err("Unsupported instrument type")),
         }
     }
+
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);

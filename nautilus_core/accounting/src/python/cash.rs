@@ -20,12 +20,9 @@ use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
     identifiers::account_id::AccountId,
-    instruments::{
-        crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
-        currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
-        options_contract::OptionsContract,
-    },
+    instruments::InstrumentType,
     position::Position,
+    python::instruments::convert_pyobject_to_instrument_type,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
@@ -158,79 +155,32 @@ impl CashAccount {
         use_quote_for_inverse: Option<bool>,
         py: Python,
     ) -> PyResult<Money> {
-        // extract instrument from PyObject
-        let instrument_type = instrument
-            .getattr(py, "instrument_type")?
-            .extract::<String>(py)?;
-        if instrument_type == "CryptoFuture" {
-            let instrument_rust = instrument.extract::<CryptoFuture>(py)?;
-            Ok(self
-                .calculate_balance_locked(
-                    instrument_rust,
-                    side,
-                    quantity,
-                    price,
-                    use_quote_for_inverse,
-                )
-                .unwrap())
-        } else if instrument_type == "CryptoPerpetual" {
-            let instrument_rust = instrument.extract::<CryptoPerpetual>(py)?;
-            Ok(self
-                .calculate_balance_locked(
-                    instrument_rust,
-                    side,
-                    quantity,
-                    price,
-                    use_quote_for_inverse,
-                )
-                .unwrap())
-        } else if instrument_type == "CurrencyPair" {
-            let instrument_rust = instrument.extract::<CurrencyPair>(py)?;
-            Ok(self
-                .calculate_balance_locked(
-                    instrument_rust,
-                    side,
-                    quantity,
-                    price,
-                    use_quote_for_inverse,
-                )
-                .unwrap())
-        } else if instrument_type == "Equity" {
-            let instrument_rust = instrument.extract::<Equity>(py)?;
-            Ok(self
-                .calculate_balance_locked(
-                    instrument_rust,
-                    side,
-                    quantity,
-                    price,
-                    use_quote_for_inverse,
-                )
-                .unwrap())
-        } else if instrument_type == "FuturesContract" {
-            let instrument_rust = instrument.extract::<FuturesContract>(py)?;
-            Ok(self
-                .calculate_balance_locked(
-                    instrument_rust,
-                    side,
-                    quantity,
-                    price,
-                    use_quote_for_inverse,
-                )
-                .unwrap())
-        } else if instrument_type == "OptionsContract" {
-            let instrument_rust = instrument.extract::<OptionsContract>(py)?;
-            Ok(self
-                .calculate_balance_locked(
-                    instrument_rust,
-                    side,
-                    quantity,
-                    price,
-                    use_quote_for_inverse,
-                )
-                .unwrap())
-        } else {
-            // throw error unsupported instrument
-            Err(to_pyvalue_err("Unsupported instrument type"))
+        let instrument_type = convert_pyobject_to_instrument_type(py, instrument)?;
+        match instrument_type {
+            InstrumentType::CryptoFuture(inst) => Ok(self
+                .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
+                .unwrap()),
+            InstrumentType::CryptoPerpetual(inst) => Ok(self
+                .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
+                .unwrap()),
+            InstrumentType::CurrencyPair(inst) => Ok(self
+                .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
+                .unwrap()),
+            InstrumentType::Equity(inst) => Ok(self
+                .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
+                .unwrap()),
+            InstrumentType::FuturesContract(inst) => Ok(self
+                .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
+                .unwrap()),
+            InstrumentType::FuturesSpread(inst) => Ok(self
+                .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
+                .unwrap()),
+            InstrumentType::OptionsContract(inst) => Ok(self
+                .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
+                .unwrap()),
+            InstrumentType::OptionsSpread(inst) => Ok(self
+                .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
+                .unwrap()),
         }
     }
 
@@ -247,79 +197,80 @@ impl CashAccount {
         if liquidity_side == LiquiditySide::NoLiquiditySide {
             return Err(to_pyvalue_err("Invalid liquidity side"));
         }
-        // extract instrument from PyObject
-        let instrument_type = instrument
-            .getattr(py, "instrument_type")?
-            .extract::<String>(py)?;
-        if instrument_type == "CryptoFuture" {
-            let instrument_rust = instrument.extract::<CryptoFuture>(py)?;
-            Ok(self
+        let instrument_type = convert_pyobject_to_instrument_type(py, instrument)?;
+        match instrument_type {
+            InstrumentType::CryptoFuture(inst) => Ok(self
                 .calculate_commission(
-                    instrument_rust,
+                    inst,
                     last_qty,
                     last_px,
                     liquidity_side,
                     use_quote_for_inverse,
                 )
-                .unwrap())
-        } else if instrument_type == "CurrencyPair" {
-            let instrument_rust = instrument.extract::<CurrencyPair>(py)?;
-            Ok(self
+                .unwrap()),
+            InstrumentType::CryptoPerpetual(inst) => Ok(self
                 .calculate_commission(
-                    instrument_rust,
+                    inst,
                     last_qty,
                     last_px,
                     liquidity_side,
                     use_quote_for_inverse,
                 )
-                .unwrap())
-        } else if instrument_type == "CryptoPerpetual" {
-            let instrument_rust = instrument.extract::<CryptoPerpetual>(py)?;
-            Ok(self
+                .unwrap()),
+            InstrumentType::CurrencyPair(inst) => Ok(self
                 .calculate_commission(
-                    instrument_rust,
+                    inst,
                     last_qty,
                     last_px,
                     liquidity_side,
                     use_quote_for_inverse,
                 )
-                .unwrap())
-        } else if instrument_type == "Equity" {
-            let instrument_rust = instrument.extract::<Equity>(py)?;
-            Ok(self
+                .unwrap()),
+            InstrumentType::Equity(inst) => Ok(self
                 .calculate_commission(
-                    instrument_rust,
+                    inst,
                     last_qty,
                     last_px,
                     liquidity_side,
                     use_quote_for_inverse,
                 )
-                .unwrap())
-        } else if instrument_type == "FuturesContract" {
-            let instrument_rust = instrument.extract::<FuturesContract>(py)?;
-            Ok(self
+                .unwrap()),
+            InstrumentType::FuturesContract(inst) => Ok(self
                 .calculate_commission(
-                    instrument_rust,
+                    inst,
                     last_qty,
                     last_px,
                     liquidity_side,
                     use_quote_for_inverse,
                 )
-                .unwrap())
-        } else if instrument_type == "OptionsContract" {
-            let instrument_rust = instrument.extract::<OptionsContract>(py)?;
-            Ok(self
+                .unwrap()),
+            InstrumentType::FuturesSpread(inst) => Ok(self
                 .calculate_commission(
-                    instrument_rust,
+                    inst,
                     last_qty,
                     last_px,
                     liquidity_side,
                     use_quote_for_inverse,
                 )
-                .unwrap())
-        } else {
-            // throw error unsupported instrument
-            Err(to_pyvalue_err("Unsupported instrument type"))
+                .unwrap()),
+            InstrumentType::OptionsContract(inst) => Ok(self
+                .calculate_commission(
+                    inst,
+                    last_qty,
+                    last_px,
+                    liquidity_side,
+                    use_quote_for_inverse,
+                )
+                .unwrap()),
+            InstrumentType::OptionsSpread(inst) => Ok(self
+                .calculate_commission(
+                    inst,
+                    last_qty,
+                    last_px,
+                    liquidity_side,
+                    use_quote_for_inverse,
+                )
+                .unwrap()),
         }
     }
 
@@ -331,43 +282,30 @@ impl CashAccount {
         position: Option<Position>,
         py: Python,
     ) -> PyResult<Vec<Money>> {
-        // extract instrument from PyObject
-        let instrument_type = instrument
-            .getattr(py, "instrument_type")?
-            .extract::<String>(py)?;
-        if instrument_type == "CryptoFuture" {
-            let instrument_rust = instrument.extract::<CryptoFuture>(py)?;
-            Ok(self
-                .calculate_pnls(instrument_rust, fill, position)
-                .unwrap())
-        } else if instrument_type == "CurrencyPair" {
-            let instrument_rust = instrument.extract::<CurrencyPair>(py)?;
-            Ok(self
-                .calculate_pnls(instrument_rust, fill, position)
-                .unwrap())
-        } else if instrument_type == "CryptoPerpetual" {
-            let instrument_rust = instrument.extract::<CryptoPerpetual>(py)?;
-            Ok(self
-                .calculate_pnls(instrument_rust, fill, position)
-                .unwrap())
-        } else if instrument_type == "Equity" {
-            let instrument_rust = instrument.extract::<Equity>(py)?;
-            Ok(self
-                .calculate_pnls(instrument_rust, fill, position)
-                .unwrap())
-        } else if instrument_type == "FuturesContract" {
-            let instrument_rust = instrument.extract::<FuturesContract>(py)?;
-            Ok(self
-                .calculate_pnls(instrument_rust, fill, position)
-                .unwrap())
-        } else if instrument_type == "OptionsContract" {
-            let instrument_rust = instrument.extract::<OptionsContract>(py)?;
-            Ok(self
-                .calculate_pnls(instrument_rust, fill, position)
-                .unwrap())
-        } else {
-            // throw error unsupported instrument
-            Err(to_pyvalue_err("Unsupported instrument type"))
+        let instrument_type = convert_pyobject_to_instrument_type(py, instrument)?;
+        match instrument_type {
+            InstrumentType::CryptoFuture(inst) => {
+                Ok(self.calculate_pnls(inst, fill, position).unwrap())
+            }
+            InstrumentType::CryptoPerpetual(inst) => {
+                Ok(self.calculate_pnls(inst, fill, position).unwrap())
+            }
+            InstrumentType::CurrencyPair(inst) => {
+                Ok(self.calculate_pnls(inst, fill, position).unwrap())
+            }
+            InstrumentType::Equity(inst) => Ok(self.calculate_pnls(inst, fill, position).unwrap()),
+            InstrumentType::FuturesContract(inst) => {
+                Ok(self.calculate_pnls(inst, fill, position).unwrap())
+            }
+            InstrumentType::FuturesSpread(inst) => {
+                Ok(self.calculate_pnls(inst, fill, position).unwrap())
+            }
+            InstrumentType::OptionsContract(inst) => {
+                Ok(self.calculate_pnls(inst, fill, position).unwrap())
+            }
+            InstrumentType::OptionsSpread(inst) => {
+                Ok(self.calculate_pnls(inst, fill, position).unwrap())
+            }
         }
     }
 
