@@ -16,6 +16,7 @@
 
 from decimal import Decimal
 
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.factories import BybitLiveDataClientFactory
@@ -71,8 +72,9 @@ config_node = TradingNodeConfig(
             api_key=None,  # 'BYBIT_API_KEY' env var
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             base_url_http=None,  # Override with custom endpoint
-            testnet=False,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
+            instrument_types=[BybitInstrumentType.LINEAR],
+            testnet=False,  # If client uses the testnet
         ),
     },
     exec_clients={
@@ -81,8 +83,9 @@ config_node = TradingNodeConfig(
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
-            testnet=False,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
+            instrument_types=[BybitInstrumentType.LINEAR],
+            testnet=False,  # If client uses the testnet
         ),
     },
     timeout_connection=20.0,

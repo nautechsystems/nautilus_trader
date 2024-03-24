@@ -423,7 +423,7 @@ class BybitExecutionClient(LiveExecutionClient):
         except Exception as e:
             ws_message_sub = self._decoder_ws_subscription.decode(raw)
             if ws_message_sub.success:
-                self._log.info("Success subscribing")
+                self._log.info(f"Subscribed to stream {ws_message.topic}", LogColor.BLUE)
             else:
                 self._log.error(f"Failed to subscribe. {e!s}")
 
