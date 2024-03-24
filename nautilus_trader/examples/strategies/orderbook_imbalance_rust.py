@@ -152,9 +152,10 @@ class OrderBookImbalance(Strategy):
         """
         Actions to be performed when a quote tick is received.
         """
-        nautilus_pyo3.book_update_quote_tick(self.book, quote)
-        self.imbalance.handle_book(self.book)
-        self.check_trigger()
+        if self.config.use_quote_ticks:
+            nautilus_pyo3.update_book_with_quote_tick(self.book, quote)
+            self.imbalance.handle_book(self.book)
+            self.check_trigger()
 
     def on_order_book(self, book: OrderBook) -> None:
         """
