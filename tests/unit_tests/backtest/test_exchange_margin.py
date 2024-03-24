@@ -2953,7 +2953,7 @@ class TestSimulatedExchangeMarginAccount:
         assert entry.quantity == 200_000
 
 
-class TestSimulatedExchangeL2:
+class TestSimulatedExchangeL1:
     def setup(self) -> None:
         # Fixture Setup
         self.clock = TestClock()
@@ -3032,7 +3032,7 @@ class TestSimulatedExchangeL2:
             cache=self.cache,
             clock=self.clock,
             latency_model=LatencyModel(0),
-            book_type=BookType.L2_MBP,
+            book_type=BookType.L1_MBP,
         )
 
         self.exec_client = BacktestExecClient(
