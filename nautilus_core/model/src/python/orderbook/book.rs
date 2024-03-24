@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{python::to_pyruntime_err, time::UnixNanos};
+use nautilus_core::{
+    python::{to_pyruntime_err, to_pyvalue_err},
+    time::UnixNanos,
+};
 use pyo3::prelude::*;
 
 use crate::{
@@ -24,7 +27,7 @@ use crate::{
     enums::{BookType, OrderSide},
     identifiers::instrument_id::InstrumentId,
     orderbook::{
-        aggregation::{book_update_quote_tick, book_update_trade_tick},
+        aggregation::{update_book_with_quote_tick, update_book_with_trade_tick},
         analysis::book_check_integrity,
         book::OrderBook,
         level::Level,
@@ -209,13 +212,13 @@ impl OrderBook {
 }
 
 #[pyfunction()]
-#[pyo3(name = "book_update_quote_tick")]
-pub fn py_book_update_quote_tick(book: &mut OrderBook, quote: &QuoteTick) {
-    book_update_quote_tick(book, quote);
+#[pyo3(name = "update_book_with_quote_tick")]
+pub fn py_update_book_with_quote_tick(book: &mut OrderBook, quote: &QuoteTick) -> PyResult<()> {
+    update_book_with_quote_tick(book, quote).map_err(to_pyvalue_err)
 }
 
 #[pyfunction()]
-#[pyo3(name = "book_update_trade_tick")]
-pub fn py_book_update_trade_tick(book: &mut OrderBook, trade: &TradeTick) {
-    book_update_trade_tick(book, trade);
+#[pyo3(name = "update_book_with_trade_tick")]
+pub fn py_update_book_with_trade_tick(book: &mut OrderBook, trade: &TradeTick) -> PyResult<()> {
+    update_book_with_trade_tick(book, trade).map_err(to_pyvalue_err)
 }

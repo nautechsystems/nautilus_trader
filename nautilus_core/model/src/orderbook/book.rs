@@ -266,7 +266,7 @@ mod tests {
         enums::{AggressorSide, BookType, OrderSide},
         identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
         orderbook::{
-            aggregation::{book_update_quote_tick, book_update_trade_tick},
+            aggregation::{update_book_with_quote_tick, update_book_with_trade_tick},
             analysis::book_check_integrity,
             book::OrderBook,
         },
@@ -562,7 +562,7 @@ mod tests {
         )
         .unwrap();
 
-        book_update_quote_tick(&mut book, &quote);
+        update_book_with_quote_tick(&mut book, &quote).unwrap();
 
         assert_eq!(book.best_bid_price().unwrap(), quote.bid_price);
         assert_eq!(book.best_ask_price().unwrap(), quote.ask_price);
@@ -587,7 +587,7 @@ mod tests {
             0,
         );
 
-        book_update_trade_tick(&mut book, &trade);
+        update_book_with_trade_tick(&mut book, &trade).unwrap();
 
         assert_eq!(book.best_bid_price().unwrap(), price);
         assert_eq!(book.best_ask_price().unwrap(), price);

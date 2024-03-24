@@ -2199,8 +2199,22 @@ double orderbook_get_quantity_for_price(struct OrderBook_API *book,
                                         struct Price_t price,
                                         enum OrderSide order_side);
 
-void orderbook_update_quote_tick(struct OrderBook_API *book, const struct QuoteTick_t *tick);
+/**
+ * Updates the order book with a quote tick.
+ *
+ * # Panics
+ *
+ * If book type is not `L1_MBP`.
+ */
+void orderbook_update_quote_tick(struct OrderBook_API *book, const struct QuoteTick_t *quote);
 
+/**
+ * Updates the order book with a trade tick.
+ *
+ * # Panics
+ *
+ * If book type is not `L1_MBP`.
+ */
 void orderbook_update_trade_tick(struct OrderBook_API *book, const struct TradeTick_t *tick);
 
 CVec orderbook_simulate_fills(const struct OrderBook_API *book, struct BookOrder_t order);
