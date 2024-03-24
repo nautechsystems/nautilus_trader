@@ -164,14 +164,23 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
+    cpdef void close(self):
+        """
+        Close the backing database adapter.
+
+        """
+        self._log.debug("Closing cache database adapter...")
+        self._backing.close()
+        self._log.info("Closed cache database adapter.")
+
     cpdef void flush(self):
         """
         Flush the database which clears all data.
 
         """
-        self._log.debug("Flushing database....")
+        self._log.debug("Flushing cache database....")
         self._backing.flushdb()
-        self._log.info("Flushed database.", LogColor.BLUE)
+        self._log.info("Flushed cache database.", LogColor.BLUE)
 
     cpdef list[str] keys(self, str pattern = "*"):
         """

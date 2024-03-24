@@ -737,6 +737,14 @@ cdef class Cache(CacheFacade):
 
         self._log.debug(f"Reset cache.")
 
+    cpdef void dispose(self):
+        """
+        Dispose of the cache which will close any underlying database adapter.
+
+        """
+        if self._database is not None:
+            self._database.close()
+
     cpdef void flush_db(self):
         """
         Flush the caches database which permanently removes all persisted data.
