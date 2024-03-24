@@ -283,6 +283,7 @@ cdef class MessageBus:
     cpdef bint is_subscribed(self, str topic, handler)
     cpdef bint is_pending_request(self, UUID4 request_id)
 
+    cpdef void dispose(self)
     cpdef void register(self, str endpoint, handler)
     cpdef void deregister(self, str endpoint, handler)
     cpdef void send(self, str endpoint, msg)

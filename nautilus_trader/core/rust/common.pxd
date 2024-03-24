@@ -439,6 +439,8 @@ cdef extern from "../includes/common.h":
 
     void msgbus_drop(MessageBus_API bus);
 
+    void msgbus_close(const MessageBus_API *bus);
+
     TraderId_t msgbus_trader_id(const MessageBus_API *bus);
 
     PyObject *msgbus_endpoints(const MessageBus_API *bus);

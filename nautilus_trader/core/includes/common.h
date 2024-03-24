@@ -615,6 +615,8 @@ struct MessageBus_API msgbus_new(const char *trader_id_ptr,
 
 void msgbus_drop(struct MessageBus_API bus);
 
+void msgbus_close(const struct MessageBus_API *bus);
+
 TraderId_t msgbus_trader_id(const struct MessageBus_API *bus);
 
 PyObject *msgbus_endpoints(const struct MessageBus_API *bus);

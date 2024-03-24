@@ -26,7 +26,7 @@ use redis::*;
 use serde_json::{json, Value};
 use tracing::{debug, error};
 
-use crate::msgbus::BusMessage;
+use crate::msgbus::{BusMessage, CLOSE_TOPIC};
 
 const DELIMITER: char = ':';
 const XTRIM: &str = "XTRIM";
@@ -76,8 +76,15 @@ pub fn handle_messages_with_redis(
             last_drain = Instant::now();
         } else {
             // Continue to receive and handle messages until channel is hung up
+            // or the close topic is received.
             match rx.try_recv() {
-                Ok(msg) => buffer.push_back(msg),
+                Ok(msg) => {
+                    if msg.topic == CLOSE_TOPIC {
+                        drop(rx);
+                        break;
+                    }
+                    buffer.push_back(msg);
+                }
                 Err(TryRecvError::Empty) => thread::sleep(recv_interval),
                 Err(TryRecvError::Disconnected) => break, // Channel hung up
             }

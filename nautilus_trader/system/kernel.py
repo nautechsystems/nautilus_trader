@@ -932,6 +932,7 @@ class NautilusKernel:
             self.exec_engine.dispose()
 
         self._cache.dispose()
+        self._msgbus.dispose()
 
         if not self.trader.is_disposed:
             self.trader.dispose()

@@ -92,6 +92,11 @@ pub extern "C" fn msgbus_drop(bus: MessageBus_API) {
 }
 
 #[no_mangle]
+pub extern "C" fn msgbus_close(bus: &MessageBus_API) {
+    bus.close().expect("Error closing `MessageBus`") // Errors here will panic
+}
+
+#[no_mangle]
 pub extern "C" fn msgbus_trader_id(bus: &MessageBus_API) -> TraderId {
     bus.trader_id
 }

@@ -116,8 +116,8 @@ impl CacheDatabase for RedisCacheDatabase {
             .send(DatabaseCommand::close())
             .map_err(anyhow::Error::new)?;
 
-        debug!("Joining `cache` thread");
         if let Some(handle) = self.handle.take() {
+            debug!("Joining `cache` thread");
             handle.join().map_err(|e| anyhow::anyhow!("{:?}", e))
         } else {
             Err(anyhow::anyhow!("Cache database already shutdown"))

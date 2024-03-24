@@ -94,6 +94,7 @@ from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.common cimport logging_log_header
 from nautilus_trader.core.rust.common cimport logging_log_sysinfo
 from nautilus_trader.core.rust.common cimport logging_shutdown
+from nautilus_trader.core.rust.common cimport msgbus_close
 from nautilus_trader.core.rust.common cimport msgbus_drop
 from nautilus_trader.core.rust.common cimport msgbus_new
 from nautilus_trader.core.rust.common cimport msgbus_publish_external
@@ -2012,7 +2013,7 @@ cdef class MessageBus:
         bint snapshot_orders: bool = False,
         bint snapshot_positions: bool = False,
         config: Any | None = None,
-    ):
+    ) -> None:
         # Temporary fix for import error
         from nautilus_trader.common.config import MessageBusConfig
 
@@ -2190,6 +2191,15 @@ cdef class MessageBus:
         Condition.not_none(request_id, "request_id")
 
         return request_id in self._correlation_index
+
+    cpdef void dispose(self):
+        """
+        Dispose of the message bus which will close the internal channel and thread.
+
+        """
+        self._log.debug("Closing message bus...")
+        msgbus_close(&self._mem)
+        self._log.info("Closed message bus.")
 
     cpdef void register(self, str endpoint, handler: Callable[[Any], None]):
         """
