@@ -143,6 +143,7 @@ cdef class Equity(Instrument):
             taker_fee=Decimal(values.get("taker_fee", 0))  if values.get("taker_fee") is not None else None,
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            info=values["info"],
         )
 
     @staticmethod
@@ -167,6 +168,7 @@ cdef class Equity(Instrument):
             "min_quantity": str(obj.min_quantity) if obj.min_quantity is not None else None,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "info": obj.info,
         }
 
     @staticmethod
@@ -185,6 +187,7 @@ cdef class Equity(Instrument):
             taker_fee=None,  # None for now
             ts_event=pyo3_instrument.ts_event,
             ts_init=pyo3_instrument.ts_init,
+            info=pyo3_instrument.info,
         )
 
     @staticmethod

@@ -177,6 +177,12 @@ impl Equity {
         self.ts_init
     }
 
+    #[getter]
+    #[pyo3(name = "info")]
+    fn py_info(&self, py: Python<'_>) -> PyResult<PyObject> {
+        Ok(PyDict::new(py).into())
+    }
+
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
@@ -194,6 +200,7 @@ impl Equity {
         dict.set_item("price_increment", self.price_increment.to_string())?;
         dict.set_item("ts_event", self.ts_event)?;
         dict.set_item("ts_init", self.ts_init)?;
+        dict.set_item("info", PyDict::new(py))?;
         dict.set_item("maker_fee", self.maker_fee.to_string())?;
         dict.set_item("taker_fee", self.taker_fee.to_string())?;
         dict.set_item("margin_init", self.margin_init.to_string())?;
