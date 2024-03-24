@@ -17,8 +17,11 @@ use std::{
     collections::HashMap,
     fmt,
     hash::{Hash, Hasher},
-    sync::mpsc::{channel, Receiver, SendError, Sender},
-    thread::{self},
+    sync::{
+        mpsc::{channel, Receiver, SendError, Sender},
+        Arc, Mutex,
+    },
+    thread::{self, JoinHandle},
 };
 
 use indexmap::IndexMap;
@@ -26,12 +29,14 @@ use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tracing::error;
+use tracing::{debug, error, info};
 use ustr::Ustr;
 
 use crate::handlers::MessageHandler;
 #[cfg(feature = "redis")]
 use crate::redis::handle_messages_with_redis;
+
+pub const CLOSE_TOPIC: &str = "CLOSE";
 
 // Represents a subscription to a particular topic.
 //
@@ -133,6 +138,7 @@ impl fmt::Display for BusMessage {
 /// `camp` and `comp`. The question mark can also be used more than once.
 /// For example, `c??p` would match both of the above examples and `coop`.
 #[derive(Clone)]
+#[allow(clippy::type_complexity)] // Complexity will reduce when Cython eliminated
 pub struct MessageBus {
     /// The trader ID associated with the message bus.
     pub trader_id: TraderId,
@@ -165,6 +171,7 @@ pub struct MessageBus {
     /// a request maps it's id to a handler so that a response
     /// with the same id can later be handled.
     correlation_index: IndexMap<UUID4, MessageHandler>,
+    handle: Arc<Mutex<Option<JoinHandle<Result<(), anyhow::Error>>>>>,
 }
 
 impl MessageBus {
@@ -179,12 +186,15 @@ impl MessageBus {
         let has_backing = config
             .get("database")
             .map_or(false, |v| v != &serde_json::Value::Null);
+        let mut handle: Option<JoinHandle<Result<(), anyhow::Error>>> = None;
         let tx = if has_backing {
             let (tx, rx) = channel::<BusMessage>();
-            let _handle = thread::Builder::new()
-                .name("msgbus".to_string())
-                .spawn(move || Self::handle_messages(rx, trader_id, instance_id, config))
-                .expect("Error spawning `msgbus` thread");
+            handle = Some(
+                thread::Builder::new()
+                    .name("msgbus".to_string())
+                    .spawn(move || Self::handle_messages(rx, trader_id, instance_id, config))
+                    .expect("Error spawning `msgbus` thread"),
+            );
             Some(tx)
         } else {
             None
@@ -204,6 +214,7 @@ impl MessageBus {
             endpoints: IndexMap::new(),
             correlation_index: IndexMap::new(),
             has_backing,
+            handle: Arc::new(Mutex::new(handle)),
         })
     }
 
@@ -268,6 +279,33 @@ impl MessageBus {
     #[must_use]
     pub fn is_pending_response(&self, request_id: &UUID4) -> bool {
         self.correlation_index.contains_key(request_id)
+    }
+
+    /// Close the message bus which will close the sender channel and join the thread.
+    pub fn close(&self) -> anyhow::Result<()> {
+        if let Some(tx) = &self.tx {
+            debug!("Closing msgbus tx channel");
+            tx.send(BusMessage {
+                topic: CLOSE_TOPIC.to_string(),
+                payload: vec![],
+            })
+            .map_err(anyhow::Error::new)?;
+        };
+
+        let maybe_handle = self
+            .handle
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Lock error: {:?}", e))?
+            .take();
+
+        if let Some(handle) = maybe_handle {
+            debug!("Joining `msgbus` thread");
+            let join_result = handle.join().map_err(|e| anyhow::anyhow!("{:?}", e))?;
+            join_result.map_err(|e| anyhow::anyhow!("{:?}", e))?;
+            info!("Closed msgbus");
+        }
+
+        Ok(())
     }
 
     /// Registers the given `handler` for the `endpoint` address.
