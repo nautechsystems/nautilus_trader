@@ -289,7 +289,7 @@ def decoder_ws_trade():
     return msgspec.json.Decoder(BybitWsTradeMsg)
 
 
-def decoder_ws_ticker(instrument_type: BybitInstrumentType):
+def decoder_ws_ticker(instrument_type: BybitInstrumentType) -> msgspec.json.Decoder:
     if instrument_type == BybitInstrumentType.LINEAR:
         return msgspec.json.Decoder(BybitWsTickerLinearMsg)
     elif instrument_type == BybitInstrumentType.SPOT:

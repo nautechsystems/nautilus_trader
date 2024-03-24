@@ -47,8 +47,8 @@ class BybitWebsocketClient:
         clock: LiveClock,
         base_url: str,
         handler: Callable[[bytes], None],
-        api_key: str | None = None,
-        api_secret: str | None = None,
+        api_key: str,
+        api_secret: str,
         is_private: bool | None = False,
     ) -> None:
         self._clock = clock
