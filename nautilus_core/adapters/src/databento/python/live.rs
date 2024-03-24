@@ -26,8 +26,8 @@ use pyo3::prelude::*;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use tracing::{debug, error, trace};
+use nautilus_model::python::instruments::convert_instrument_to_pyobject;
 
-use super::loader::convert_instrument_to_pyobject;
 use crate::databento::{
     live::{DatabentoFeedHandler, LiveCommand, LiveMessage},
     symbology::{check_consistent_symbology, infer_symbology_type},

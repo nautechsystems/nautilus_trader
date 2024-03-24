@@ -29,7 +29,7 @@ use pyo3::{
     prelude::*,
     types::{PyCapsule, PyList},
 };
-use tracing::error;
+use nautilus_model::python::instruments::convert_instrument_to_pyobject;
 
 use crate::databento::{
     loader::DatabentoDataLoader,
@@ -93,7 +93,7 @@ impl DatabentoDataLoader {
                     data.push(py_object);
                 }
                 Err(e) => {
-                    error!("{e}");
+                    eprintln!("{e}");
                 }
             }
         }
@@ -401,19 +401,6 @@ impl DatabentoDataLoader {
     }
 }
 
-pub fn convert_instrument_to_pyobject(
-    py: Python,
-    instrument: InstrumentType,
-) -> PyResult<PyObject> {
-    match instrument {
-        InstrumentType::Equity(inst) => Ok(inst.into_py(py)),
-        InstrumentType::FuturesContract(inst) => Ok(inst.into_py(py)),
-        InstrumentType::FuturesSpread(inst) => Ok(inst.into_py(py)),
-        InstrumentType::OptionsContract(inst) => Ok(inst.into_py(py)),
-        InstrumentType::OptionsSpread(inst) => Ok(inst.into_py(py)),
-        _ => Err(to_pyvalue_err("Unsupported instrument type")),
-    }
-}
 
 fn exhaust_data_iter_to_pycapsule(
     py: Python,

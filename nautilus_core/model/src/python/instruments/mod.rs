@@ -13,6 +13,36 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use pyo3::{IntoPy, PyObject, PyResult, Python};
+use nautilus_core::python::to_pyvalue_err;
+use crate::instruments::crypto_future::CryptoFuture;
+use crate::instruments::crypto_perpetual::CryptoPerpetual;
+use crate::instruments::currency_pair::CurrencyPair;
+use crate::instruments::equity::Equity;
+use crate::instruments::futures_contract::FuturesContract;
+use crate::instruments::futures_spread::FuturesSpread;
+use crate::instruments::InstrumentType;
+use crate::instruments::options_contract::OptionsContract;
+
+pub fn convert_instrument_to_pyobject(
+    py: Python,
+    instrument: InstrumentType,
+) -> PyResult<PyObject> {
+    match instrument {
+        InstrumentType::CurrencyPair(inst)=> Ok(inst.into_py(py)),
+        InstrumentType::Equity(inst) => Ok(inst.into_py(py)),
+        InstrumentType::FuturesContract(inst) => Ok(inst.into_py(py)),
+        InstrumentType::FuturesSpread(inst) => Ok(inst.into_py(py)),
+        InstrumentType::OptionsContract(inst) => Ok(inst.into_py(py)),
+        InstrumentType::OptionsSpread(inst) => Ok(inst.into_py(py)),
+        _ => Err(to_pyvalue_err("Unsupported instrument type")),
+    }
+}
+
+
+    
+
+
 pub mod crypto_future;
 pub mod crypto_perpetual;
 pub mod currency_pair;
