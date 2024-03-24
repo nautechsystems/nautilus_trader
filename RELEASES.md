@@ -4,6 +4,8 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Simplified and consolidated Rust `OrderBook` design
+- Improved `CacheDatabaseAdapter` graceful close and thread join
+- Improved `MessageBus` graceful close and thread join
 - Interactive Brokers further improvements and fixes, thanks @rsmb7z
 
 ### Breaking Changes
