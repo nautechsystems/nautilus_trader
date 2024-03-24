@@ -67,6 +67,10 @@ cdef class CacheDatabaseFacade:
 
         self._log.info("READY.")
 
+    cpdef void close(self):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `close` must be implemented in the subclass")  # pragma: no cover
+
     cpdef void flush(self):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `flush` must be implemented in the subclass")  # pragma: no cover

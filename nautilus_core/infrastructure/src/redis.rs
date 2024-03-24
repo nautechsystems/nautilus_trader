@@ -110,8 +110,13 @@ impl CacheDatabase for RedisCacheDatabase {
         })
     }
 
-    fn shutdown(&mut self) -> anyhow::Result<()> {
-        debug!("Shutting down");
+    fn close(&mut self) -> anyhow::Result<()> {
+        debug!("Closing cache database adapter");
+        self.tx
+            .send(DatabaseCommand::close())
+            .map_err(anyhow::Error::new)?;
+
+        debug!("Joining `cache` thread");
         if let Some(handle) = self.handle.take() {
             handle.join().map_err(|e| anyhow::anyhow!("{:?}", e))
         } else {
@@ -201,7 +206,14 @@ impl CacheDatabase for RedisCacheDatabase {
             } else {
                 // Continue to receive and handle messages until channel is hung up
                 match rx.try_recv() {
-                    Ok(msg) => buffer.push_back(msg),
+                    Ok(msg) => {
+                        if let DatabaseOperation::Close = msg.op_type {
+                            // Close receiver end of the channel
+                            drop(rx);
+                            break;
+                        }
+                        buffer.push_back(msg)
+                    }
                     Err(TryRecvError::Empty) => thread::sleep(recv_interval),
                     Err(TryRecvError::Disconnected) => break, // Channel hung up
                 }
@@ -220,7 +232,8 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
     pipe.atomic();
 
     for msg in buffer.drain(..) {
-        let collection = match get_collection_key(&msg.key) {
+        let key = msg.key.expect("Null command `key`");
+        let collection = match get_collection_key(&key) {
             Ok(collection) => collection,
             Err(e) => {
                 error!("{e}");
@@ -228,7 +241,7 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
             }
         };
 
-        let key = format!("{trader_key}{DELIMITER}{}", msg.key);
+        let key = format!("{trader_key}{DELIMITER}{}", &key);
 
         match msg.op_type {
             DatabaseOperation::Insert => {
@@ -278,6 +291,7 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
                     error!("{e}");
                 }
             }
+            DatabaseOperation::Close => panic!("Close command should not be drained"),
         }
     }
 

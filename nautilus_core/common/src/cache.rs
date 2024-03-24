@@ -46,6 +46,7 @@ pub enum DatabaseOperation {
     Insert,
     Update,
     Delete,
+    Close,
 }
 
 /// Represents a database command to be performed which may be executed 'remotely' across a thread.
@@ -54,7 +55,7 @@ pub struct DatabaseCommand {
     /// The database operation type.
     pub op_type: DatabaseOperation,
     /// The primary key for the operation.
-    pub key: String,
+    pub key: Option<String>,
     /// The data payload for the operation.
     pub payload: Option<Vec<Vec<u8>>>,
 }
@@ -63,8 +64,17 @@ impl DatabaseCommand {
     pub fn new(op_type: DatabaseOperation, key: String, payload: Option<Vec<Vec<u8>>>) -> Self {
         Self {
             op_type,
-            key,
+            key: Some(key),
             payload,
+        }
+    }
+
+    /// Initialize a `Close` database command, this is meant to close the database cache thread.
+    pub fn close() -> Self {
+        Self {
+            op_type: DatabaseOperation::Close,
+            key: None,
+            payload: None,
         }
     }
 }
@@ -83,7 +93,7 @@ pub trait CacheDatabase {
         instance_id: UUID4,
         config: HashMap<String, serde_json::Value>,
     ) -> anyhow::Result<Self::DatabaseType>;
-    fn shutdown(&mut self) -> anyhow::Result<()>;
+    fn close(&mut self) -> anyhow::Result<()>;
     fn flushdb(&mut self) -> anyhow::Result<()>;
     fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>>;
     fn read(&mut self, key: &str) -> anyhow::Result<Vec<Vec<u8>>>;

@@ -123,6 +123,7 @@ cdef class Cache(CacheFacade):
     cpdef bint check_residuals(self)
     cpdef void clear_index(self)
     cpdef void reset(self)
+    cpdef void dispose(self)
     cpdef void flush_db(self)
 
     cdef tuple _build_quote_table(self, Venue venue)

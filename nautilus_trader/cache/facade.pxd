@@ -55,6 +55,7 @@ from nautilus_trader.trading.strategy cimport Strategy
 cdef class CacheDatabaseFacade:
     cdef Logger _log
 
+    cpdef void close(self)
     cpdef void flush(self)
     cpdef list[str] keys(self, str pattern=*)
     cpdef dict load(self)
