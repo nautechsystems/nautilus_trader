@@ -104,10 +104,10 @@ class VolatilityMarketMaker(Strategy):
         self.trade_size = Decimal(config.trade_size)
         self.emulation_trigger = TriggerType[config.emulation_trigger]
 
+        self.instrument: Instrument | None = None  # Initialized in on_start
+
         # Create the indicators for the strategy
         self.atr = AverageTrueRange(config.atr_period)
-
-        self.instrument: Instrument | None = None  # Initialized in on_start
 
         # Users order management variables
         self.buy_order: LimitOrder | None = None
@@ -234,7 +234,7 @@ class VolatilityMarketMaker(Strategy):
 
         """
         # For debugging (must add a subscription)
-        # self.log.info(repr(tick), LogColor.CYAN)
+        self.log.info(repr(tick), LogColor.CYAN)
 
     def on_bar(self, bar: Bar) -> None:
         """
