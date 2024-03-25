@@ -54,6 +54,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import account_type_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -123,7 +124,7 @@ class BybitExecutionClient(LiveExecutionClient):
         # Configuration
         self._use_position_ids = config.use_position_ids
 
-        self._log.info(f"Account type: ${self.account_type}", LogColor.BLUE)
+        self._log.info(f"Account type: {account_type_to_str(self.account_type)}", LogColor.BLUE)
         self._instrument_types = instrument_types
         self._enum_parser = BybitEnumParser()
 
@@ -423,7 +424,7 @@ class BybitExecutionClient(LiveExecutionClient):
         except Exception as e:
             ws_message_sub = self._decoder_ws_subscription.decode(raw)
             if ws_message_sub.success:
-                self._log.info(f"Subscribed to stream {ws_message.topic}", LogColor.BLUE)
+                self._log.debug("Subscribed to stream")
             else:
                 self._log.error(f"Failed to subscribe. {e!s}")
 
