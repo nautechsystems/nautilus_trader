@@ -630,24 +630,50 @@ cdef class OrderBook(Data):
         """
         Update the order book with the given quote tick.
 
+        This operation is only valid for ``L1_MBP`` books maintaining a top level.
+
         Parameters
         ----------
         tick : QuoteTick
             The quote tick to update with.
 
+        Raises
+        ------
+        RuntimeError
+            If `book_type` is not ``L1_MBP``.
+
         """
+        if self.book_type != BookType.L1_MBP:
+            raise RuntimeError(
+                "Invalid book operation: "
+                f"cannot update with tick for {book_type_to_str(self.book_type)} book",
+            )
+
         orderbook_update_quote_tick(&self._mem, &tick._mem)
 
     cpdef void update_trade_tick(self, TradeTick tick):
         """
         Update the order book with the given trade tick.
 
+        This operation is only valid for ``L1_MBP`` books maintaining a top level.
+
         Parameters
         ----------
         tick : TradeTick
             The trade tick to update with.
 
+        Raises
+        ------
+        RuntimeError
+            If `book_type` is not ``L1_MBP``.
+
         """
+        if self.book_type != BookType.L1_MBP:
+            raise RuntimeError(
+                "Invalid book operation: "
+                f"cannot update with tick for {book_type_to_str(self.book_type)} book",
+            )
+
         orderbook_update_trade_tick(&self._mem, &tick._mem)
 
     cpdef str pprint(self, int num_levels=3):
