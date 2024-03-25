@@ -124,6 +124,8 @@ Nautilus data includes at *least* two timestamps (required by the `Data` contrac
 
 When decoding and normalizing Databento to Nautilus we generally assign the Databento `ts_recv` value to the Nautilus
 `ts_event` field, as this timestamp is much more reliable and consistent, and is guaranteed to be monotonically increasing per instrument.
+The exception to this are the `DatabentoImbalance` and `DatabentoStatistics` data types, which have fields for all timestamps
+- as the types are defined specifically for the adapter.
 
 ```{note}
 See the following Databento docs for further information:
