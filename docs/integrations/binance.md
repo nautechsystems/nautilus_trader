@@ -241,9 +241,9 @@ There is a limitation of one order book per instrument per trader instance.
 As stream subscriptions may vary, the latest order book data (deltas or snapshots)
 subscription will be used by the Binance data client.
 
-Order book snapshot rebuilds will be triggered:
-- On initial subscription of the order book data
-- On data websocket reconnects
+Order book snapshot rebuilds will be triggered on:
+- Initial subscription of the order book data
+- Data websocket reconnects
 
 The sequence of events is as follows:
 - Deltas will start buffered
@@ -253,6 +253,11 @@ The sequence of events is as follows:
 - Buffered deltas are iterated, dropping those where the sequence number is not greater than the last delta in the snapshot
 - Deltas will stop buffering
 - Remaining deltas are sent to the `DataEngine`
+
+## Binance data differences
+
+The `ts_event` field value for `QuoteTick` objects will differ between Spot and Futures exchanges,
+where the former does not provide an event timestamp, so the `ts_init` is used (which means `ts_event` and `ts_init` are identical).
 
 ## Binance specific data
 
