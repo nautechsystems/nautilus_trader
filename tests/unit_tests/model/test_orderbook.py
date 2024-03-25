@@ -763,3 +763,47 @@ class TestOrderBook:
         assert book.best_bid_price() > book.best_ask_price()
         with pytest.raises(RuntimeError):
             book.check_integrity()
+
+    @pytest.mark.parametrize(
+        ("book_type"),
+        [
+            BookType.L2_MBP,
+            BookType.L3_MBO,
+        ],
+    )
+    def test_update_quote_tick_other_than_l1_raises_exception(
+        self,
+        book_type: BookType,
+    ) -> None:
+        # Arrange
+        book = OrderBook(
+            instrument_id=self.instrument.id,
+            book_type=book_type,
+        )
+
+        # Act, Assert
+        quote = TestDataStubs.quote_tick(self.instrument)
+        with pytest.raises(RuntimeError):
+            book.update_quote_tick(quote)
+
+    @pytest.mark.parametrize(
+        ("book_type"),
+        [
+            BookType.L2_MBP,
+            BookType.L3_MBO,
+        ],
+    )
+    def test_update_trade_tick_other_than_l1_raises_exception(
+        self,
+        book_type: BookType,
+    ) -> None:
+        # Arrange
+        book = OrderBook(
+            instrument_id=self.instrument.id,
+            book_type=book_type,
+        )
+
+        # Act, Assert
+        trade = TestDataStubs.trade_tick(self.instrument)
+        with pytest.raises(RuntimeError):
+            book.update_trade_tick(trade)

@@ -22,7 +22,7 @@ pub enum InvalidBookOperation {
     PreProcessOrder(BookType),
     #[error("Invalid book operation: cannot add order for {0} book")]
     Add(BookType),
-    #[error("Invalid book operation: cannot update with tick {0} book")]
+    #[error("Invalid book operation: cannot update with tick for {0} book")]
     Update(BookType),
 }
 
