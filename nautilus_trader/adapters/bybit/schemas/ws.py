@@ -26,6 +26,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import AccountId
@@ -146,7 +147,7 @@ class BybitWsOrderbookSnapshotMsg(msgspec.Struct):
 class BybitWsTickerLinear(msgspec.Struct, omit_defaults=True, kw_only=True):
     symbol: str
     tickDirection: str | None = None
-    price24hPcnt: str
+    price24hPcnt: str | None = None
     lastPrice: str | None = None
     prevPrice24h: str | None = None
     highPrice24h: str | None = None
@@ -159,11 +160,27 @@ class BybitWsTickerLinear(msgspec.Struct, omit_defaults=True, kw_only=True):
     turnover24h: str | None = None
     volume24h: str | None = None
     nextFundingTime: str | None = None
-    fundingRate: str
-    bid1Price: str
-    bid1Size: str
-    ask1Price: str
-    ask1Size: str
+    fundingRate: str | None = None
+    bid1Price: str | None = None
+    bid1Size: str | None = None
+    ask1Price: str | None = None
+    ask1Size: str | None = None
+
+    def parse_to_quote_tick(
+        self,
+        instrument_id: InstrumentId,
+        ts_event: int,
+        ts_init: int,
+    ) -> QuoteTick:
+        return QuoteTick(
+            instrument_id=instrument_id,
+            bid_price=Price.from_str(self.bid1Price),
+            ask_price=Price.from_str(self.ask1Price),
+            bid_size=Quantity.from_str(self.bid1Size),
+            ask_size=Quantity.from_str(self.ask1Size),
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
 
 
 class BybitWsTickerLinearMsg(msgspec.Struct):
@@ -230,6 +247,22 @@ class BybitWsTickerOption(msgspec.Struct):
     theta: str
     predictedDeliveryPrice: str
     change24h: str
+
+    def parse_to_quote_tick(
+        self,
+        instrument_id: InstrumentId,
+        ts_event: int,
+        ts_init: int,
+    ) -> QuoteTick:
+        return QuoteTick(
+            instrument_id=instrument_id,
+            bid_price=Price.from_str(self.bidPrice),
+            ask_price=Price.from_str(self.askPrice),
+            bid_size=Quantity.from_str(self.bidSize),
+            ask_size=Quantity.from_str(self.askSize),
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
 
 
 class BybitWsTickerOptionMsg(msgspec.Struct):

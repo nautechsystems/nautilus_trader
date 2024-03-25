@@ -37,6 +37,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.message import Request
 from nautilus_trader.core.nautilus_pyo3 import Symbol
@@ -47,12 +48,15 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 class BybitDataClient(LiveMarketDataClient):
@@ -108,6 +112,7 @@ class BybitDataClient(LiveMarketDataClient):
 
         # Hot cache
         self._instrument_ids: dict[str, InstrumentId] = {}
+        self._last_quotes: dict[InstrumentId, QuoteTick] = {}
 
         # HTTP API
         self._http_market = BybitMarketHttpAPI(
@@ -235,6 +240,20 @@ class BybitDataClient(LiveMarketDataClient):
         await ws_client.subscribe_trades(bybit_symbol.raw_symbol)
         self._log.info(f"Subscribed {instrument_id} trade ticks.", LogColor.BLUE)
 
+    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+        bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+        assert bybit_symbol  # type checking
+        ws_client = self._ws_clients[bybit_symbol.instrument_type]
+        await ws_client.unsubscribe_tickers(bybit_symbol.raw_symbol)
+        self._log.info(f"Unsubscribed {instrument_id} quote ticks.", LogColor.BLUE)
+
+    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+        bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+        assert bybit_symbol  # type checking
+        ws_client = self._ws_clients[bybit_symbol.instrument_type]
+        await ws_client.unsubscribe_trades(bybit_symbol.raw_symbol)
+        self._log.info(f"Unsubscribed {instrument_id} trade ticks.", LogColor.BLUE)
+
     def _handle_ws_message(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
         try:
             ws_message = self._decoder_ws_msg_general.decode(raw)
@@ -246,36 +265,6 @@ class BybitDataClient(LiveMarketDataClient):
                 self._topic_check(instrument_type, ws_message.topic, raw)
         except Exception as e:
             self._log.error(f"Failed to parse ticker: {raw.decode()} with error {e}")
-
-    def _handle_ticker(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
-        try:
-            msg = self._decoders["ticker"].decode(raw)
-            self._log.warning(f"{msg}")
-
-            for quote_tick in msg.data:
-                symbol = quote_tick.s + f"-{instrument_type.value.upper()}"
-                instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
-                quote_tick = quote_tick.parse_to_quote_tick(
-                    instrument_id,
-                    self._clock.timestamp_ns(),
-                )
-                self._handle_data(quote_tick)
-        except Exception as e:
-            self._log.error(f"Failed to parse ticker: {raw.decode()} with error {e}")
-
-    def _handle_trade(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
-        try:
-            msg = self._decoders["trade"].decode(raw)
-            for trade in msg.data:
-                symbol = trade.s + f"-{instrument_type.value.upper()}"
-                instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
-                trade_tick: TradeTick = trade.parse_to_trade_tick(
-                    instrument_id,
-                    self._clock.timestamp_ns(),
-                )
-                self._handle_data(trade_tick)
-        except Exception as e:
-            self._log.error(f"Failed to parse trade tick: {raw.decode()} with error {e}")
 
     def _topic_check(self, instrument_type: BybitInstrumentType, topic: str, raw: bytes) -> None:
         if "publicTrade" in topic:
@@ -291,6 +280,63 @@ class BybitDataClient(LiveMarketDataClient):
         assert bybit_symbol  # type checking
         nautilus_instrument_id: InstrumentId = bybit_symbol.parse_as_nautilus()
         return nautilus_instrument_id
+
+    def _handle_ticker(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
+        msg = self._decoders["ticker"].decode(raw)
+        try:
+            symbol = msg.data.symbol + f"-{instrument_type.value.upper()}"
+            instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
+            last_quote = self._last_quotes.get(instrument_id)
+
+            quote = QuoteTick(
+                instrument_id=instrument_id,
+                bid_price=(
+                    Price.from_str(msg.data.bid1Price)
+                    if msg.data.bid1Price or last_quote is None
+                    else last_quote.bid_price
+                ),
+                ask_price=(
+                    Price.from_str(msg.data.ask1Price)
+                    if msg.data.ask1Price or last_quote is None
+                    else last_quote.ask_price
+                ),
+                bid_size=(
+                    Quantity.from_str(msg.data.bid1Size)
+                    if msg.data.bid1Size or last_quote is None
+                    else last_quote.bid_size
+                ),
+                ask_size=(
+                    Quantity.from_str(msg.data.ask1Size)
+                    if msg.data.ask1Size or last_quote is None
+                    else last_quote.ask_size
+                ),
+                ts_event=millis_to_nanos(msg.ts),
+                ts_init=self._clock.timestamp_ns(),
+            )
+
+            self._last_quotes[quote.instrument_id] = quote
+            self._handle_data(quote)
+        except Exception as e:
+            self._log.error(f"Failed to parse ticker: {msg} with error {e}")
+
+    def _handle_trade(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
+        msg = self._decoders["trade"].decode(raw)
+        try:
+            for data in msg.data:
+                symbol = data.s + f"-{instrument_type.value.upper()}"
+                instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
+                trade: TradeTick = data.parse_to_trade_tick(
+                    instrument_id,
+                    self._clock.timestamp_ns(),
+                )
+                self._handle_data(trade)
+        except Exception as e:
+            self._log.error(f"Failed to parse trade tick: {msg} with error {e}")
+
+    async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
+        if data_type.type == BybitTickerData:
+            symbol = data_type.metadata["symbol"]
+            await self._handle_ticker_data_request(symbol, correlation_id)
 
     async def _request_instrument(
         self,
@@ -438,8 +484,3 @@ class BybitDataClient(LiveMarketDataClient):
             result,
             correlation_id,
         )
-
-    async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
-        if data_type.type == BybitTickerData:
-            symbol = data_type.metadata["symbol"]
-            await self._handle_ticker_data_request(symbol, correlation_id)
