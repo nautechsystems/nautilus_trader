@@ -600,6 +600,36 @@ class TestBar:
             "ts_init": 0,
         }
 
+    def test_from_raw_returns_expected_bar(self):
+        # Arrange
+        raw_bar = [
+            BarType.from_str("EUR/USD.IDEALPRO-5-MINUTE-MID-EXTERNAL"),
+            1062100000,
+            1063550000,
+            1062050000,
+            1063200000,
+            5,
+            0,
+            0,
+            1672012800000000000,
+            1672013100300000000,
+        ]
+
+        # Act
+        result = Bar.from_raw(*raw_bar)
+
+        # Assert
+        assert result == Bar(
+            BarType.from_str("EUR/USD.IDEALPRO-5-MINUTE-MID-EXTERNAL"),
+            Price.from_str("1.06210"),
+            Price.from_str("1.06355"),
+            Price.from_str("1.06205"),
+            Price.from_str("1.06320"),
+            Quantity.from_str("0"),
+            1672012800000000000,
+            1672013100300000000,
+        )
+
     def test_from_dict_returns_expected_bar(self):
         # Arrange
         bar = TestDataStubs.bar_5decimal()
