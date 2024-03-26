@@ -32,7 +32,7 @@ use crate::{
         sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage, wma::WeightedMovingAverage,
         MovingAverageType,
     },
-    momentum::{cmo::ChandeMomentumOscillator, rsi::RelativeStrengthIndex},
+    momentum::{bias::Bias, cmo::ChandeMomentumOscillator, rsi::RelativeStrengthIndex},
     ratio::efficiency_ratio::EfficiencyRatio,
 };
 
@@ -160,4 +160,9 @@ pub fn rsi_10() -> RelativeStrengthIndex {
 #[fixture]
 pub fn cmo_10() -> ChandeMomentumOscillator {
     ChandeMomentumOscillator::new(10, Some(MovingAverageType::Wilder)).unwrap()
+}
+
+#[fixture]
+pub fn bias_10() -> Bias {
+    Bias::new(10, Some(MovingAverageType::Wilder)).unwrap()
 }
