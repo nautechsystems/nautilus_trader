@@ -35,9 +35,9 @@ pub struct Bias {
     pub value: f64,
     pub count: usize,
     pub initialized: bool,
-    _ma: Box<dyn MovingAverage + Send + 'static>,
-    _has_inputs: bool,
-    _previous_close: f64,
+    ma: Box<dyn MovingAverage + Send + 'static>,
+    has_inputs: bool,
+    previous_close: f64,
 }
 
 impl Display for Bias {
@@ -52,7 +52,7 @@ impl Indicator for Bias {
     }
 
     fn has_inputs(&self) -> bool {
-        self._has_inputs
+        self.has_inputs
     }
 
     fn initialized(&self) -> bool {
@@ -64,10 +64,10 @@ impl Indicator for Bias {
     }
 
     fn reset(&mut self) {
-        self._previous_close = 0.0;
+        self.previous_close = 0.0;
         self.value = 0.0;
         self.count = 0;
-        self._has_inputs = false;
+        self.has_inputs = false;
         self.initialized = false;
     }
 }
@@ -79,23 +79,23 @@ impl Bias {
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
             value: 0.0,
             count: 0,
-            _previous_close: 0.0,
-            _ma: MovingAverageFactory::create(MovingAverageType::Simple, period),
-            _has_inputs: false,
+            previous_close: 0.0,
+            ma: MovingAverageFactory::create(MovingAverageType::Simple, period),
+            has_inputs: false,
             initialized: false,
         })
     }
 
     pub fn update_raw(&mut self, close: f64) {
-        self._ma.update_raw(close);
-        self.value = (close / self._ma.value()) - 1.0;
+        self.ma.update_raw(close);
+        self.value = (close / self.ma.value()) - 1.0;
         self._check_initialized();
     }
 
     pub fn _check_initialized(&mut self) {
         if !self.initialized {
-            self._has_inputs = true;
-            if self._ma.initialized() {
+            self.has_inputs = true;
+            if self.ma.initialized() {
                 self.initialized = true;
             }
         }
