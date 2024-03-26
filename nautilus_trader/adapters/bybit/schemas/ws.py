@@ -26,6 +26,8 @@ from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -62,6 +64,22 @@ class BybitWsKline(msgspec.Struct):
     turnover: str
     confirm: bool
     timestamp: int
+
+    def parse_to_bar(
+        self,
+        bar_type: BarType,
+        ts_init: int,
+    ) -> Bar:
+        return Bar(
+            bar_type=bar_type,
+            open=Price.from_str(self.open),
+            high=Price.from_str(self.high),
+            low=Price.from_str(self.low),
+            close=Price.from_str(self.close),
+            volume=Quantity.from_str(self.volume),
+            ts_event=millis_to_nanos(int(self.end) + 1),
+            ts_init=ts_init,
+        )
 
 
 class BybitWsKlineMsg(msgspec.Struct):
@@ -331,6 +349,10 @@ def decoder_ws_ticker(instrument_type: BybitInstrumentType) -> msgspec.json.Deco
         return msgspec.json.Decoder(BybitWsTickerOptionMsg)
     else:
         raise ValueError(f"Invalid account type: {instrument_type}")
+
+
+def decoder_ws_kline():
+    return msgspec.json.Decoder(BybitWsKlineMsg)
 
 
 ################################################################################

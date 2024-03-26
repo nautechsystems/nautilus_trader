@@ -21,8 +21,13 @@ from typing import Any
 
 import msgspec
 
+from nautilus_trader.adapters.bybit.common.constants import BYBIT_VALID_HOUR_INTERVALS
+from nautilus_trader.adapters.bybit.common.constants import BYBIT_VALID_MINUTE_INTERVALS
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.env import get_env_key
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import bar_aggregation_to_str
 
 
 def msgspec_bybit_item_save(filename: str, obj: Any) -> None:
@@ -50,6 +55,39 @@ def get_category_from_instrument_type(instrument_type: BybitInstrumentType) -> s
         return "option"
     else:
         raise ValueError(f"Unknown account type: {instrument_type}")
+
+
+def get_interval_from_bar_type(bar_type: BarType) -> str:
+    aggregation: BarAggregation = bar_type.spec.aggregation
+    match aggregation:
+        case BarAggregation.MINUTE:
+            if bar_type.spec.step not in BYBIT_VALID_MINUTE_INTERVALS:
+                raise ValueError(
+                    f"Bybit only supports the following bar minute intervals: "
+                    f"{BYBIT_VALID_MINUTE_INTERVALS}",
+                )
+            return str(bar_type.spec.step)
+        case BarAggregation.HOUR:
+            if bar_type.spec.step not in BYBIT_VALID_HOUR_INTERVALS:
+                raise ValueError(
+                    f"Bybit only supports the following bar hour intervals: "
+                    f"{BYBIT_VALID_HOUR_INTERVALS}",
+                )
+            return str(bar_type.spec.step * 60)
+        case BarAggregation.DAY:
+            if bar_type.spec.step != 1:
+                raise ValueError("Bybit only supports 1 DAY interval bars")
+            return "D"
+        case BarAggregation.WEEK:
+            if bar_type.spec.step == 1:
+                return "W"
+            if bar_type.spec.step == 4:
+                return "M"
+            raise ValueError("Bybit only supports 1 WEEK interval bars")
+        case _:
+            raise ValueError(
+                f"Bybit does not support {bar_aggregation_to_str(bar_type.aggregation)} bars",
+            )
 
 
 def tick_size_to_precision(tick_size: float | Decimal) -> int:
