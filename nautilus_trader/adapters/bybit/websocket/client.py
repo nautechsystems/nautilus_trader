@@ -94,6 +94,16 @@ class BybitWebsocketClient:
         await self._client.send_text(json.dumps(sub))
         self._subscriptions.append(subscription)
 
+    async def subscribe_klines(self, symbol: str, interval: str) -> None:
+        if self._client is None:
+            self._log.warning("Cannot subscribe: not connected")
+            return
+
+        subscription = f"kline.{interval}.{symbol}"
+        sub = {"op": "subscribe", "args": [subscription]}
+        await self._client.send_text(json.dumps(sub))
+        self._subscriptions.append(subscription)
+
     async def unsubscribe_trades(self, symbol: str) -> None:
         if self._client is None:
             self._log.warning("Cannot subscribe: not connected")
@@ -113,6 +123,16 @@ class BybitWebsocketClient:
         sub = {"op": "unsubscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
         self._subscriptions.remove(subscription)
+
+    async def unsubscribe_klines(self, symbol: str, interval: str) -> None:
+        if self._client is None:
+            self._log.warning("Cannot subscribe: not connected")
+            return
+
+        subscription = f"kline.{interval}.{symbol}"
+        sub = {"op": "unsubscribe", "args": [subscription]}
+        await self._client.send_text(json.dumps(sub))
+        self._subscriptions.append(subscription)
 
     ################################################################################
     # Private
