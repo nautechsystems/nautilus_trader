@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Improved `CacheDatabaseAdapter` graceful close and thread join
 - Improved `MessageBus` graceful close and thread join
 - Interactive Brokers further improvements and fixes, thanks @rsmb7z
+- Ported Bias indicator to Rust, thanks @Pushkarm029
 
 ### Breaking Changes
 - Renamed both `OrderBookMbo` and `OrderBookMbp` to `OrderBook` (consolidated)
@@ -30,6 +31,8 @@ Released on 22nd March 2024 (UTC).
 - Improved Binance execution client ping listen key error handling and logging
 - Improved Redis cache adapter and message bus error handling and logging
 - Improved Redis port parsing (`DatabaseConfig.port` can now be either a string or integer)
+- Ported ChandeMomentumOscillator indicator to Rust, thanks @Pushkarm029
+- Ported VIDYA indicator to Rust, thanks @Pushkarm029
 - Refactored `InteractiveBrokersEWrapper`, thanks @rsmb7z
 - Redact Redis passwords in strings and logs
 - Upgraded `redis` crate to 0.25.2 which bumps up TLS dependencies, and turned on `tls-rustls-webpki-roots` feature flag
