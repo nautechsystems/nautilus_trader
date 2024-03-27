@@ -1018,6 +1018,34 @@ cdef class Bar(Data):
         return bar_from_mem_c(mem)
 
     @staticmethod
+    cdef Bar from_raw_c(
+        BarType bar_type,
+        int64_t open,
+        int64_t high,
+        int64_t low,
+        int64_t close,
+        uint8_t price_prec,
+        uint64_t volume,
+        uint8_t size_prec,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    ):
+        cdef Bar bar = Bar.__new__(Bar)
+        bar._mem = bar_new_from_raw(
+            bar_type._mem,
+            open,
+            high,
+            low,
+            close,
+            price_prec,
+            volume,
+            size_prec,
+            ts_event,
+            ts_init,
+        )
+        return bar
+
+    @staticmethod
     cdef Bar from_dict_c(dict values):
         Condition.not_none(values, "values")
         return Bar(
@@ -1053,6 +1081,32 @@ cdef class Bar(Data):
         capsule = pyo3_bar.as_pycapsule()
         cdef Data_t* ptr = <Data_t*>PyCapsule_GetPointer(capsule, NULL)
         return bar_from_mem_c(ptr.bar)
+
+    @staticmethod
+    def from_raw(
+        BarType bar_type,
+        int64_t open,
+        int64_t high,
+        int64_t low,
+        int64_t close,
+        uint8_t price_prec,
+        uint64_t volume,
+        uint8_t size_prec,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    ) -> Bar:
+        return Bar.from_raw_c(
+            bar_type,
+            open,
+            high,
+            low,
+            close,
+            price_prec,
+            volume,
+            size_prec,
+            ts_event,
+            ts_init,
+        )
 
     @staticmethod
     def from_dict(dict values) -> Bar:

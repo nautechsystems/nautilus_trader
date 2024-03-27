@@ -154,6 +154,20 @@ cdef class Bar(Data):
     cdef str to_str(self)
 
     @staticmethod
+    cdef Bar from_raw_c(
+        BarType bar_type,
+        int64_t open,
+        int64_t high,
+        int64_t low,
+        int64_t close,
+        uint8_t price_prec,
+        uint64_t volume,
+        uint8_t size_prec,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    )
+
+    @staticmethod
     cdef Bar from_mem_c(Bar_t mem)
 
     @staticmethod
