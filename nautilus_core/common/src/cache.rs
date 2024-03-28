@@ -34,6 +34,7 @@ use nautilus_model::{
         venue::Venue, venue_order_id::VenueOrderId,
     },
     instruments::{synthetic::SyntheticInstrument, Instrument},
+    orderbook::book::OrderBook,
     orders::base::Order,
     position::Position,
     types::currency::Currency,
@@ -148,12 +149,11 @@ pub struct Cache {
     config: CacheConfig,
     index: CacheIndex,
     // database: Option<Box<dyn CacheDatabase>>,  TODO
-    // xrate_calculator: ExchangeRateCalculator TODO
     general: HashMap<Ustr, Vec<u8>>,
     xrate_symbols: HashMap<InstrumentId, Symbol>,
     quote_ticks: HashMap<InstrumentId, VecDeque<QuoteTick>>,
     trade_ticks: HashMap<InstrumentId, VecDeque<TradeTick>>,
-    // order_books: HashMap<InstrumentId, OrderBook>>,  TODO: Needs single book
+    order_books: HashMap<InstrumentId, OrderBook>,
     bars: HashMap<BarType, VecDeque<Bar>>,
     bars_bid: HashMap<BarType, Bar>,
     bars_ask: HashMap<BarType, Bar>,

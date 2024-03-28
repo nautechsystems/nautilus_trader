@@ -24,6 +24,8 @@
 //! An [`anyhow::Result`] is returned with a descriptive message when the
 //! condition check fails.
 
+use std::collections::HashMap;
+
 const FAILED: &str = "Condition failed:";
 
 /// Checks the `predicate` is true.
@@ -88,6 +90,21 @@ pub fn check_equal_u8(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) -> any
     if lhs != rhs {
         anyhow::bail!(
             "{FAILED} '{lhs_param}' u8 of {lhs} was not equal to '{rhs_param}' u8 of {rhs}"
+        )
+    }
+    Ok(())
+}
+
+/// Checks the `usize` values are equal.
+pub fn check_equal_usize(
+    lhs: usize,
+    rhs: usize,
+    lhs_param: &str,
+    rhs_param: &str,
+) -> anyhow::Result<()> {
+    if lhs != rhs {
+        anyhow::bail!(
+            "{FAILED} '{lhs_param}' usize of {lhs} was not equal to '{rhs_param}' usize of {rhs}"
         )
     }
     Ok(())
@@ -190,6 +207,30 @@ pub fn check_slice_not_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> 
     Ok(())
 }
 
+/// Checks the hashmap is empty.
+pub fn check_map_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Result<()> {
+    if !map.is_empty() {
+        anyhow::bail!(
+            "{FAILED} the '{param}' map `&<{}, {}>` was not empty",
+            std::any::type_name::<K>(),
+            std::any::type_name::<V>(),
+        )
+    }
+    Ok(())
+}
+
+/// Checks the map is *not* empty.
+pub fn check_map_not_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Result<()> {
+    if map.is_empty() {
+        anyhow::bail!(
+            "{FAILED} the '{param}' map `&<{}, {}>` was empty",
+            std::any::type_name::<K>(),
+            std::any::type_name::<V>(),
+        )
+    }
+    Ok(())
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -258,27 +299,35 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0, 0, "left", "right")]
-    #[case(1, 1, "left", "right")]
+    #[case(0, 0, "left", "right", true)]
+    #[case(1, 1, "left", "right", true)]
+    #[case(0, 1, "left", "right", false)]
+    #[case(1, 0, "left", "right", false)]
     fn test_check_equal_u8_when_equal(
         #[case] lhs: u8,
         #[case] rhs: u8,
         #[case] lhs_param: &str,
         #[case] rhs_param: &str,
+        #[case] expected: bool,
     ) {
-        assert!(check_equal_u8(lhs, rhs, lhs_param, rhs_param).is_ok());
+        let result = check_equal_u8(lhs, rhs, lhs_param, rhs_param).is_ok();
+        assert_eq!(result, expected);
     }
 
     #[rstest]
-    #[case(0, 1, "left", "right")]
-    #[case(1, 0, "left", "right")]
-    fn test_check_equal_u8_when_not_equal(
-        #[case] lhs: u8,
-        #[case] rhs: u8,
+    #[case(0, 0, "left", "right", true)]
+    #[case(1, 1, "left", "right", true)]
+    #[case(0, 1, "left", "right", false)]
+    #[case(1, 0, "left", "right", false)]
+    fn test_check_equal_usize_when_equal(
+        #[case] lhs: usize,
+        #[case] rhs: usize,
         #[case] lhs_param: &str,
         #[case] rhs_param: &str,
+        #[case] expected: bool,
     ) {
-        assert!(check_equal_u8(lhs, rhs, lhs_param, rhs_param).is_err());
+        let result = check_equal_usize(lhs, rhs, lhs_param, rhs_param).is_ok();
+        assert_eq!(result, expected);
     }
 
     #[rstest]
@@ -435,6 +484,22 @@ mod tests {
     #[case(vec![1_u8], true)]
     fn test_check_slice_not_empty(#[case] collection: Vec<u8>, #[case] expected: bool) {
         let result = check_slice_not_empty(collection.as_slice(), "param").is_ok();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(HashMap::new(), true)]
+    #[case(HashMap::from([("A".to_string(), 1_u8)]), false)]
+    fn test_check_map_empty(#[case] map: HashMap<String, u8>, #[case] expected: bool) {
+        let result = check_map_empty(&map, "param").is_ok();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(HashMap::new(), false)]
+    #[case(HashMap::from([("A".to_string(), 1_u8)]), true)]
+    fn test_check_map_not_empty(#[case] map: HashMap<String, u8>, #[case] expected: bool) {
+        let result = check_map_not_empty(&map, "param").is_ok();
         assert_eq!(result, expected);
     }
 }
