@@ -52,7 +52,7 @@ strum = { version = "0.26.2", features = ["derive"] }
 thiserror = "1.0.58"
 thousands = "0.2.0"
 tracing = "0.1.40"
-tokio = { version = "1.36.0", features = ["full"] }
+tokio = { version = "1.37.0", features = ["full"] }
 ustr = { version = "1.0.0", features = ["serde"] }
 uuid = { version = "1.8.0", features = ["v4"] }
 
