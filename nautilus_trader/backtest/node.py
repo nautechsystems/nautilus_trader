@@ -332,6 +332,7 @@ class BacktestNode:
                 run_config_id=run_config_id,
                 streaming=True,
             )
+            engine.clear_data()
 
         engine.end()
         engine.dispose()

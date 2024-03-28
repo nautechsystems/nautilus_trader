@@ -14,7 +14,7 @@ Released on TBD (UTC).
 - Renamed `Indicator.handle_book_mbo` and `Indicator.handle_book_mbp` to `handle_book` (consolidated)
 
 ### Fixes
-None
+- Fixed `BacktestNode` streaming data management (was not clearing between chunks), thanks for the report @dpmabo
 
 ---
 
