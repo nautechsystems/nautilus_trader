@@ -17,8 +17,7 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::prelude::*;
 
-use crate::average::MovingAverageType;
-use crate::{indicator::Indicator, momentum::bias::Bias};
+use crate::{average::MovingAverageType, indicator::Indicator, momentum::bias::Bias};
 
 #[pymethods]
 impl Bias {
