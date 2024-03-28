@@ -21,7 +21,7 @@ use std::{
 };
 
 use nautilus_common::{
-    cache::{CacheDatabase, DatabaseCommand, DatabaseOperation},
+    cache::database::{CacheDatabase, DatabaseCommand, DatabaseOperation},
     redis::{create_redis_connection, get_buffer_interval},
 };
 use nautilus_core::{correctness::check_slice_not_empty, uuid::UUID4};

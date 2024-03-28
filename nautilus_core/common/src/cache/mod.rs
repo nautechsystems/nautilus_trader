@@ -15,12 +15,10 @@
 
 #![allow(dead_code)] // Under development
 
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    sync::mpsc::Receiver,
-};
+pub mod database;
 
-use nautilus_core::uuid::UUID4;
+use std::collections::{HashMap, HashSet, VecDeque};
+
 use nautilus_model::{
     data::{
         bar::{Bar, BarType},
@@ -30,8 +28,8 @@ use nautilus_model::{
     identifiers::{
         account_id::AccountId, client_id::ClientId, client_order_id::ClientOrderId,
         component_id::ComponentId, exec_algorithm_id::ExecAlgorithmId, instrument_id::InstrumentId,
-        position_id::PositionId, strategy_id::StrategyId, symbol::Symbol, trader_id::TraderId,
-        venue::Venue, venue_order_id::VenueOrderId,
+        position_id::PositionId, strategy_id::StrategyId, symbol::Symbol, venue::Venue,
+        venue_order_id::VenueOrderId,
     },
     instruments::{synthetic::SyntheticInstrument, Instrument},
     orderbook::book::OrderBook,
@@ -39,80 +37,21 @@ use nautilus_model::{
     position::Position,
     types::currency::Currency,
 };
+use tracing::info;
 use ustr::Ustr;
 
-/// A type of database operation.
-#[derive(Clone, Debug)]
-pub enum DatabaseOperation {
-    Insert,
-    Update,
-    Delete,
-    Close,
-}
-
-/// Represents a database command to be performed which may be executed 'remotely' across a thread.
-#[derive(Clone, Debug)]
-pub struct DatabaseCommand {
-    /// The database operation type.
-    pub op_type: DatabaseOperation,
-    /// The primary key for the operation.
-    pub key: Option<String>,
-    /// The data payload for the operation.
-    pub payload: Option<Vec<Vec<u8>>>,
-}
-
-impl DatabaseCommand {
-    pub fn new(op_type: DatabaseOperation, key: String, payload: Option<Vec<Vec<u8>>>) -> Self {
-        Self {
-            op_type,
-            key: Some(key),
-            payload,
-        }
-    }
-
-    /// Initialize a `Close` database command, this is meant to close the database cache thread.
-    pub fn close() -> Self {
-        Self {
-            op_type: DatabaseOperation::Close,
-            key: None,
-            payload: None,
-        }
-    }
-}
-
-/// Provides a generic cache database facade.
-///
-/// The main operations take a consistent `key` and `payload` which should provide enough
-/// information to implement the cache database in many different technologies.
-///
-/// Delete operations may need a `payload` to target specific values.
-pub trait CacheDatabase {
-    type DatabaseType;
-
-    fn new(
-        trader_id: TraderId,
-        instance_id: UUID4,
-        config: HashMap<String, serde_json::Value>,
-    ) -> anyhow::Result<Self::DatabaseType>;
-    fn close(&mut self) -> anyhow::Result<()>;
-    fn flushdb(&mut self) -> anyhow::Result<()>;
-    fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>>;
-    fn read(&mut self, key: &str) -> anyhow::Result<Vec<Vec<u8>>>;
-    fn insert(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()>;
-    fn update(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()>;
-    fn delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()>;
-    fn handle_messages(
-        rx: Receiver<DatabaseCommand>,
-        trader_key: String,
-        config: HashMap<String, serde_json::Value>,
-    );
-}
+use self::database::CacheDatabaseAdapter;
+use crate::enums::SerializationEncoding;
 
 pub struct CacheConfig {
+    pub encoding: SerializationEncoding,
+    pub timestamps_as_iso8601: bool,
+    pub use_trader_prefix: bool,
+    pub use_instance_id: bool,
+    pub flush_on_start: bool,
+    pub drop_instruments_on_reset: bool,
     pub tick_capacity: usize,
     pub bar_capacity: usize,
-    pub snapshot_orders: bool,
-    pub snapshot_positions: bool,
 }
 
 pub struct CacheIndex {
@@ -148,8 +87,8 @@ pub struct CacheIndex {
 pub struct Cache {
     config: CacheConfig,
     index: CacheIndex,
-    // database: Option<Box<dyn CacheDatabase>>,  TODO
-    general: HashMap<Ustr, Vec<u8>>,
+    database: Option<CacheDatabaseAdapter>,
+    general: HashMap<String, Vec<u8>>,
     xrate_symbols: HashMap<InstrumentId, Symbol>,
     quote_ticks: HashMap<InstrumentId, VecDeque<QuoteTick>>,
     trade_ticks: HashMap<InstrumentId, VecDeque<TradeTick>>,
@@ -161,8 +100,96 @@ pub struct Cache {
     instruments: HashMap<InstrumentId, Box<dyn Instrument>>,
     synthetics: HashMap<InstrumentId, SyntheticInstrument>,
     // accounts: HashMap<AccountId, Box<dyn Account>>,  TODO: Decide where trait should go
-    orders: HashMap<ClientOrderId, VecDeque<Box<dyn Order>>>, // TODO: Efficency (use enum)
+    orders: HashMap<ClientOrderId, Box<dyn Order>>, // TODO: Efficency (use enum)
     // order_lists: HashMap<OrderListId, VecDeque<OrderList>>,  TODO: Need `OrderList`
     positions: HashMap<PositionId, Position>,
     position_snapshots: HashMap<PositionId, Vec<u8>>,
+}
+
+impl Cache {
+    pub fn cache_general(&mut self) -> anyhow::Result<()> {
+        self.general = match &self.database {
+            Some(db) => db.load()?,
+            None => HashMap::new(),
+        };
+
+        info!(
+            "Cached {} general object(s) from database",
+            self.general.len()
+        );
+        Ok(())
+    }
+
+    pub fn cache_currencies(&mut self) -> anyhow::Result<()> {
+        self.currencies = match &self.database {
+            Some(db) => db.load_currencies()?,
+            None => HashMap::new(),
+        };
+
+        info!("Cached {} currencies from database", self.general.len());
+        Ok(())
+    }
+
+    pub fn cache_instruments(&mut self) -> anyhow::Result<()> {
+        self.instruments = match &self.database {
+            Some(db) => db.load_instruments()?,
+            None => HashMap::new(),
+        };
+
+        info!("Cached {} instruments from database", self.general.len());
+        Ok(())
+    }
+
+    pub fn cache_synthetics(&mut self) -> anyhow::Result<()> {
+        self.synthetics = match &self.database {
+            Some(db) => db.load_synthetics()?,
+            None => HashMap::new(),
+        };
+
+        info!(
+            "Cached {} synthetic instruments from database",
+            self.general.len()
+        );
+        Ok(())
+    }
+
+    // pub fn cache_accounts(&mut self) -> anyhow::Result<()> {
+    //     self.accounts = match &self.database {
+    //         Some(db) => db.load_accounts()?,
+    //         None => HashMap::new(),
+    //     };
+    //
+    //     info!(
+    //         "Cached {} synthetic instruments from database",
+    //         self.general.len()
+    //     );
+    //     Ok(())
+    // }
+
+    pub fn cache_orders(&mut self) -> anyhow::Result<()> {
+        self.orders = match &self.database {
+            Some(db) => db.load_orders()?,
+            None => HashMap::new(),
+        };
+
+        info!("Cached {} orders from database", self.general.len());
+        Ok(())
+    }
+
+    // pub fn cache_order_lists(&mut self) -> anyhow::Result<()> {
+    //
+    //
+    //     info!("Cached {} order lists from database", self.general.len());
+    //     Ok(())
+    // }
+
+    pub fn cache_positions(&mut self) -> anyhow::Result<()> {
+        self.positions = match &self.database {
+            Some(db) => db.load_positions()?,
+            None => HashMap::new(),
+        };
+
+        info!("Cached {} positions from database", self.general.len());
+        Ok(())
+    }
 }
