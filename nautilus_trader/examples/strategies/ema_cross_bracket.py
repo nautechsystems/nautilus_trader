@@ -178,7 +178,7 @@ class EMACrossBracket(Strategy):
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(
-                f"Waiting for indicators to warm up [{self.cache.bar_count(self.bar_type)}]...",
+                f"Waiting for indicators to warm up [{self.cache.bar_count(self.bar_type)}]",
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
@@ -211,7 +211,7 @@ class EMACrossBracket(Strategy):
         Users bracket buy method (example).
         """
         if not self.instrument:
-            self.log.error("No instrument loaded.")
+            self.log.error("No instrument loaded")
             return
 
         bracket_distance: float = self.bracket_distance_atr * self.atr.value
@@ -236,7 +236,7 @@ class EMACrossBracket(Strategy):
         Users bracket sell method (example).
         """
         if not self.instrument:
-            self.log.error("No instrument loaded.")
+            self.log.error("No instrument loaded")
             return
 
         bracket_distance: float = self.bracket_distance_atr * self.atr.value

@@ -144,10 +144,10 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             await self._futures_http_account.query_futures_account_info(recv_window=str(5000))
         )
         if account_info.canTrade:
-            self._log.info("Binance API key authenticated.", LogColor.GREEN)
-            self._log.info(f"API key {self._http_client.api_key} has trading permissions.")
+            self._log.info("Binance API key authenticated", LogColor.GREEN)
+            self._log.info(f"API key {self._http_client.api_key} has trading permissions")
         else:
-            self._log.error("Binance API key does not have trading permissions.")
+            self._log.error("Binance API key does not have trading permissions")
         self.generate_account_state(
             balances=account_info.parse_to_account_balances(),
             margins=account_info.parse_to_margin_balances(),
@@ -185,7 +185,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
                 enum_parser=self._futures_enum_parser,
                 ts_init=self._clock.timestamp_ns(),
             )
-            self._log.debug(f"Received {report}.")
+            self._log.debug(f"Received {report}")
             reports.append(report)
         return reports
 
@@ -221,14 +221,14 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
                 f"Cannot submit order: "
                 f"{time_in_force_to_str(order.time_in_force)} "
                 f"not supported by the exchange. "
-                f"Use any of {[time_in_force_to_str(t) for t in self._futures_enum_parser.futures_valid_time_in_force]}.",
+                f"Use any of {[time_in_force_to_str(t) for t in self._futures_enum_parser.futures_valid_time_in_force]}",
             )
             return
         # Check post-only
         if order.is_post_only and order.order_type != OrderType.LIMIT:
             self._log.error(
                 f"Cannot submit order: {order_type_to_str(order.order_type)} `post_only` order. "
-                "Only LIMIT `post_only` orders supported by the Binance exchange for FUTURES accounts.",
+                "Only LIMIT `post_only` orders supported by the Binance exchange for FUTURES accounts",
             )
             return
 
@@ -242,7 +242,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         except BinanceError as e:
             error_code = BinanceErrorCode(e.message["code"])
             if error_code == BinanceErrorCode.CANCEL_REJECTED:
-                self._log.warning(f"Cancel rejected: {e.message}.")
+                self._log.warning(f"Cancel rejected: {e.message}")
             else:
                 self._log.exception(
                     f"Cannot cancel multiple orders: {e.message}",
@@ -272,10 +272,10 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         order_update.data.o.handle_order_trade_update(self)
 
     def _handle_margin_call(self, raw: bytes) -> None:
-        self._log.warning("MARGIN CALL received.")  # Implement
+        self._log.warning("MARGIN CALL received")  # Implement
 
     def _handle_account_config_update(self, raw: bytes) -> None:
-        self._log.info("Account config updated.", LogColor.BLUE)  # Implement
+        self._log.info("Account config updated", LogColor.BLUE)  # Implement
 
     def _handle_listen_key_expired(self, raw: bytes) -> None:
-        self._log.warning("Listen key expired.")  # Implement
+        self._log.warning("Listen key expired")  # Implement

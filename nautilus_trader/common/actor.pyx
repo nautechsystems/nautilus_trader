@@ -204,7 +204,7 @@ cdef class Actor(Component):
         self.log.warning(
             "The `Actor.on_start` handler was called when not overridden. "
             "It's expected that any actions required when starting the actor "
-            "occur here, such as subscribing/requesting data.",
+            "occur here, such as subscribing/requesting data",
         )
 
     cpdef void on_stop(self):
@@ -240,7 +240,7 @@ cdef class Actor(Component):
         self.log.warning(
             "The `Actor.on_resume` handler was called when not overridden. "
             "It's expected that any actions required when resuming the actor "
-            "following a stop occur here."
+            "following a stop occur here"
         )
 
     cpdef void on_reset(self):
@@ -258,7 +258,7 @@ cdef class Actor(Component):
         self.log.warning(
             "The `Actor.on_reset` handler was called when not overridden. "
             "It's expected that any actions required when resetting the actor "
-            "occur here, such as resetting indicators and other state."
+            "occur here, such as resetting indicators and other state"
         )
 
     cpdef void on_dispose(self):
@@ -595,7 +595,7 @@ cdef class Actor(Component):
 
         self._executor = ActorExecutor(loop, executor, logger=self._log)
 
-        self._log.debug(f"Registered {executor}.")
+        self._log.debug(f"Registered {executor}")
 
     cpdef void register_warning_event(self, type event):
         """
@@ -625,7 +625,7 @@ cdef class Actor(Component):
 
         self._warning_events.discard(event)
 
-        self._log.debug(f"Deregistered `{event.__name__}` from warning log levels.")
+        self._log.debug(f"Deregistered `{event.__name__}` from warning log levels")
 
     cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator):
         """
@@ -651,9 +651,9 @@ cdef class Actor(Component):
 
         if indicator not in self._indicators_for_quotes[instrument_id]:
             self._indicators_for_quotes[instrument_id].append(indicator)
-            self.log.info(f"Registered Indicator {indicator} for {instrument_id} quote ticks.")
+            self.log.info(f"Registered Indicator {indicator} for {instrument_id} quote ticks")
         else:
-            self.log.error(f"Indicator {indicator} already registered for {instrument_id} quote ticks.")
+            self.log.error(f"Indicator {indicator} already registered for {instrument_id} quote ticks")
 
     cpdef void register_indicator_for_trade_ticks(self, InstrumentId instrument_id, Indicator indicator):
         """
@@ -679,9 +679,9 @@ cdef class Actor(Component):
 
         if indicator not in self._indicators_for_trades[instrument_id]:
             self._indicators_for_trades[instrument_id].append(indicator)
-            self.log.info(f"Registered Indicator {indicator} for {instrument_id} trade ticks.")
+            self.log.info(f"Registered Indicator {indicator} for {instrument_id} trade ticks")
         else:
-            self.log.error(f"Indicator {indicator} already registered for {instrument_id} trade ticks.")
+            self.log.error(f"Indicator {indicator} already registered for {instrument_id} trade ticks")
 
     cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator):
         """
@@ -707,9 +707,9 @@ cdef class Actor(Component):
 
         if indicator not in self._indicators_for_bars[bar_type]:
             self._indicators_for_bars[bar_type].append(indicator)
-            self.log.info(f"Registered Indicator {indicator} for {bar_type} bars.")
+            self.log.info(f"Registered Indicator {indicator} for {bar_type} bars")
         else:
-            self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
+            self.log.error(f"Indicator {indicator} already registered for {bar_type} bars")
 
 # -- ACTOR COMMANDS -------------------------------------------------------------------------------
 
@@ -731,16 +731,16 @@ cdef class Actor(Component):
         """
         if not self.is_initialized:
             self.log.error(
-                "Cannot save: actor/strategy has not been registered with a trader.",
+                "Cannot save: actor/strategy has not been registered with a trader",
             )
             return
         try:
-            self.log.debug("Saving state...")
+            self.log.debug("Saving state")
             user_state = self.on_save()
             if len(user_state) > 0:
-                self.log.info(f"Saved state: {list(user_state.keys())}.", color=LogColor.BLUE)
+                self.log.info(f"Saved state: {list(user_state.keys())}", color=LogColor.BLUE)
             else:
-                self.log.info("No user state to save.", color=LogColor.BLUE)
+                self.log.info("No user state to save", color=LogColor.BLUE)
             return user_state
         except Exception as e:
             self.log.exception("Error on save", e)
@@ -770,13 +770,13 @@ cdef class Actor(Component):
         Condition.not_none(state, "state")
 
         if not state:
-            self.log.info("No user state to load.", color=LogColor.BLUE)
+            self.log.info("No user state to load", color=LogColor.BLUE)
             return
 
         try:
-            self.log.debug(f"Loading state...")
+            self.log.debug(f"Loading state")
             self.on_load(state)
-            self.log.info(f"Loaded state {list(state.keys())}.", color=LogColor.BLUE)
+            self.log.info(f"Loaded state {list(state.keys())}", color=LogColor.BLUE)
         except Exception as e:
             self.log.exception(f"Error on load {repr(state)}", e)
             raise
@@ -878,7 +878,7 @@ cdef class Actor(Component):
             )
 
         self._log.info(
-            f"Executor: Queued {task_id}: {func.__name__}({args=}, {kwargs=}).", LogColor.BLUE,
+            f"Executor: Queued {task_id}: {func.__name__}({args=}, {kwargs=})", LogColor.BLUE,
         )
         return task_id
 
@@ -936,7 +936,7 @@ cdef class Actor(Component):
             )
 
         self._log.info(
-            f"Executor: Submitted {task_id}: {func.__name__}({args=}, {kwargs=}).", LogColor.BLUE,
+            f"Executor: Submitted {task_id}: {func.__name__}({args=}, {kwargs=})", LogColor.BLUE,
         )
         return task_id
 
@@ -1023,7 +1023,7 @@ cdef class Actor(Component):
 
         """
         if self._executor is None:
-            self._log.warning(f"Executor: {task_id} not found.")
+            self._log.warning(f"Executor: {task_id} not found")
             return
 
         self._executor.cancel_task(task_id)
@@ -1051,10 +1051,10 @@ cdef class Actor(Component):
 
         cdef str name
         for name in timer_names:
-            self._log.info(f"Canceled Timer(name={name}).")
+            self._log.info(f"Canceled Timer(name={name})")
 
         if self._executor is not None:
-            self._log.info(f"Canceling executor tasks...")
+            self._log.info(f"Canceling executor tasks")
             self._executor.cancel_all_tasks()
 
     cpdef void _resume(self):
@@ -1497,7 +1497,7 @@ cdef class Actor(Component):
         )
 
         self._send_data_cmd(command)
-        self._log.info(f"Subscribed to {instrument_id} InstrumentStatus.")
+        self._log.info(f"Subscribed to {instrument_id} InstrumentStatus")
 
     cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id = None):
         """
@@ -1803,7 +1803,7 @@ cdef class Actor(Component):
         )
 
         self._send_data_cmd(command)
-        self._log.info(f"Unsubscribed from {bar_type} bar data.")
+        self._log.info(f"Unsubscribed from {bar_type} bar data")
 
     cpdef void unsubscribe_venue_status(self, Venue venue, ClientId client_id = None):
         """
@@ -1865,7 +1865,7 @@ cdef class Actor(Component):
         )
 
         self._send_data_cmd(command)
-        self._log.info(f"Unsubscribed from {instrument_id} InstrumentStatus.")
+        self._log.info(f"Unsubscribed from {instrument_id} InstrumentStatus")
 
 
     cpdef void publish_data(self, DataType data_type, Data data):
@@ -2397,9 +2397,9 @@ cdef class Actor(Component):
         cdef InstrumentId instrument_id = first.id if first is not None else None
 
         if length > 0:
-            self._log.info(f"Received <Instrument[{length}]> data for {instrument_id.venue}.")
+            self._log.info(f"Received <Instrument[{length}]> data for {instrument_id.venue}")
         else:
-            self._log.warning("Received <Instrument[]> data with no instruments.")
+            self._log.warning("Received <Instrument[]> data with no instruments")
 
         cdef int i
         for i in range(length):
@@ -2513,9 +2513,9 @@ cdef class Actor(Component):
         cdef InstrumentId instrument_id = first.instrument_id if first is not None else None
 
         if length > 0:
-            self._log.info(f"Received <QuoteTick[{length}]> data for {instrument_id}.")
+            self._log.info(f"Received <QuoteTick[{length}]> data for {instrument_id}")
         else:
-            self._log.warning("Received <QuoteTick[]> data with no ticks.")
+            self._log.warning("Received <QuoteTick[]> data with no ticks")
             return
 
         # Update indicators
@@ -2583,9 +2583,9 @@ cdef class Actor(Component):
         cdef InstrumentId instrument_id = first.instrument_id if first is not None else None
 
         if length > 0:
-            self._log.info(f"Received <TradeTick[{length}]> data for {instrument_id}.")
+            self._log.info(f"Received <TradeTick[{length}]> data for {instrument_id}")
         else:
-            self._log.warning("Received <TradeTick[]> data with no ticks.")
+            self._log.warning("Received <TradeTick[]> data with no ticks")
             return
 
         # Update indicators
@@ -2653,9 +2653,9 @@ cdef class Actor(Component):
         cdef Bar last = bars[length - 1] if length > 0 else None
 
         if length > 0:
-            self._log.info(f"Received <Bar[{length}]> data for {first.bar_type}.")
+            self._log.info(f"Received <Bar[{length}]> data for {first.bar_type}")
         else:
-            self._log.error(f"Received <Bar[{length}]> data for unknown bar type.")
+            self._log.error(f"Received <Bar[{length}]> data for unknown bar type")
             return
 
         if length > 0 and first.ts_init > last.ts_init:
@@ -2872,10 +2872,10 @@ cdef class Actor(Component):
 
     cdef void _send_data_cmd(self, DataCommand command):
         if logging_is_initialized():
-            self._log.info(f"{CMD}{SENT} {command}.")
+            self._log.info(f"{CMD}{SENT} {command}")
         self._msgbus.send(endpoint="DataEngine.execute", msg=command)
 
     cdef void _send_data_req(self, DataRequest request):
         if logging_is_initialized():
-            self._log.info(f"{REQ}{SENT} {request}.")
+            self._log.info(f"{REQ}{SENT} {request}")
         self._msgbus.request(endpoint="DataEngine.request", request=request)

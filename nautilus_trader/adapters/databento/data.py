@@ -170,20 +170,20 @@ class DatabentoDataClient(LiveMarketDataClient):
             else:
                 await asyncio.gather(*coros)
         except asyncio.TimeoutError:
-            self._log.warning("Timeout waiting for instruments...")
+            self._log.warning("Timeout waiting for instruments")
 
         self._send_all_instruments_to_data_engine()
         self._update_dataset_ranges_task = self.create_task(self._update_dataset_ranges())
 
     async def _disconnect(self) -> None:
         if self._buffer_mbo_subscriptions_task:
-            self._log.debug("Canceling `buffer_mbo_subscriptions` task...")
+            self._log.debug("Canceling `buffer_mbo_subscriptions` task")
             self._buffer_mbo_subscriptions_task.cancel()
             self._buffer_mbo_subscriptions_task = None
 
         # Cancel update dataset ranges task
         if self._update_dataset_ranges_task:
-            self._log.debug("Canceling `update_dataset_ranges` task...")
+            self._log.debug("Canceling `update_dataset_ranges` task")
             self._update_dataset_ranges_task.cancel()
             self._update_dataset_ranges_task = None
 
@@ -191,13 +191,13 @@ class DatabentoDataClient(LiveMarketDataClient):
         for dataset, live_client in self._live_clients.items():
             if not live_client.is_running:
                 continue
-            self._log.info(f"Stopping {dataset} live feed...", LogColor.BLUE)
+            self._log.info(f"Stopping {dataset} live feed", LogColor.BLUE)
             live_client.close()
 
         for dataset, live_client in self._live_clients_mbo.items():
             if not live_client.is_running:
                 continue
-            self._log.info(f"Stopping {dataset} MBO/L3 live feed...", LogColor.BLUE)
+            self._log.info(f"Stopping {dataset} MBO/L3 live feed", LogColor.BLUE)
             live_client.close()
 
         try:
@@ -210,7 +210,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             try:
                 self._log.debug(
                     f"Scheduled `update_instruments` to run in "
-                    f"{self._update_dataset_ranges_interval_seconds}s.",
+                    f"{self._update_dataset_ranges_interval_seconds}s",
                 )
 
                 await asyncio.sleep(self._update_dataset_ranges_interval_seconds)
@@ -223,7 +223,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             except Exception as e:  # Create specific exception type
                 self._log.error(f"Error updating dataset range: {e}")
             except asyncio.CancelledError:
-                self._log.debug("Canceled `update_dataset_ranges` task.")
+                self._log.debug("Canceled `update_dataset_ranges` task")
                 break
 
     async def _buffer_mbo_subscriptions(self) -> None:
@@ -234,13 +234,13 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             coros: list[Coroutine] = []
             for dataset, instrument_ids in self._buffered_mbo_subscriptions.items():
-                self._log.info(f"Starting {dataset} MBO/L3 live feeds...")
+                self._log.info(f"Starting {dataset} MBO/L3 live feeds")
                 coro = self._subscribe_order_book_deltas_batch(instrument_ids)
                 coros.append(coro)
 
             await asyncio.gather(*coros)
         except asyncio.CancelledError:
-            self._log.debug("Canceled `buffer_mbo_subscriptions` task.")
+            self._log.debug("Canceled `buffer_mbo_subscriptions` task")
 
     def _get_live_client(self, dataset: Dataset) -> nautilus_pyo3.DatabentoLiveClient:
         # Retrieve or initialize the 'general' live client for the specified dataset
@@ -276,7 +276,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         live_client: nautilus_pyo3.DatabentoLiveClient,
     ) -> None:
         if not self._has_subscribed.get(dataset):
-            self._log.debug(f"Starting {dataset} live client...", LogColor.MAGENTA)
+            self._log.debug(f"Starting {dataset} live client", LogColor.MAGENTA)
             future = asyncio.ensure_future(
                 live_client.start(
                     callback=self._handle_msg,
@@ -285,7 +285,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             self._live_client_futures.add(future)
             self._has_subscribed[dataset] = True
-            self._log.info(f"Started {dataset} live feed.", LogColor.BLUE)
+            self._log.info(f"Started {dataset} live feed", LogColor.BLUE)
 
     def _send_all_instruments_to_data_engine(self) -> None:
         for instrument in self._instrument_provider.get_all().values():
@@ -303,7 +303,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             await self._subscribe_instrument(instrument_id)
         except asyncio.CancelledError:
             self._log.warning(
-                "`_ensure_subscribed_for_instrument` was canceled while still pending.",
+                "`_ensure_subscribed_for_instrument` was canceled while still pending",
             )
 
     async def _get_dataset_range(
@@ -330,13 +330,13 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._dataset_ranges[dataset] = (available_start, available_end)
 
             self._log.info(
-                f"Dataset {dataset} available end {available_end.date()}.",
+                f"Dataset {dataset} available end {available_end.date()}",
                 LogColor.BLUE,
             )
 
             return available_start, available_end
         except asyncio.CancelledError:
-            self._log.warning("`_get_dataset_range` was canceled while still pending.")
+            self._log.warning("`_get_dataset_range` was canceled while still pending")
             return (None, pd.Timestamp.utcnow())
         except Exception as e:  # More specific exception
             self._log.error(f"Error requesting dataset range: {e}")
@@ -391,7 +391,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_imbalance` was canceled while still pending.")
+            self._log.warning("`_subscribe_imbalance` was canceled while still pending")
 
     async def _subscribe_statistics(self, data_type: DataType) -> None:
         try:
@@ -405,7 +405,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_imbalance` was canceled while still pending.")
+            self._log.warning("`_subscribe_imbalance` was canceled while still pending")
 
     async def _subscribe_instruments(self) -> None:
         # Replace method in child class, for exchange specific data types.
@@ -421,7 +421,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_instrument` was canceled while still pending.")
+            self._log.warning("`_subscribe_instrument` was canceled while still pending")
 
     async def _subscribe_parent_symbols(
         self,
@@ -437,7 +437,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_parent_symbols` was canceled while still pending.")
+            self._log.warning("`_subscribe_parent_symbols` was canceled while still pending")
 
     async def _subscribe_instrument_ids(
         self,
@@ -452,7 +452,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_instrument_ids` was canceled while still pending.")
+            self._log.warning("`_subscribe_instrument_ids` was canceled while still pending")
 
     async def _subscribe_order_book_deltas(
         self,
@@ -468,7 +468,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             if depth:  # Can be None or 0 (full depth)
                 self._log.error(
                     f"Cannot subscribe to order book deltas with specific depth of {depth} "
-                    "(do not specify depth when subscribing, must be full depth).",
+                    "(do not specify depth when subscribing, must be full depth)",
                 )
                 return
 
@@ -476,7 +476,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             if self._is_buffering_mbo_subscriptions:
                 self._log.debug(
-                    f"Buffering MBO/L3 subscription for {instrument_id}.",
+                    f"Buffering MBO/L3 subscription for {instrument_id}",
                     LogColor.MAGENTA,
                 )
                 self._buffered_mbo_subscriptions[dataset].append(instrument_id)
@@ -485,13 +485,13 @@ class DatabentoDataClient(LiveMarketDataClient):
             if self._live_clients_mbo.get(dataset) is not None:
                 self._log.error(
                     f"Cannot subscribe to order book deltas for {instrument_id}, "
-                    "MBO/L3 feed already started.",
+                    "MBO/L3 feed already started",
                 )
                 return
 
             await self._subscribe_order_book_deltas_batch([instrument_id])
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_order_book_deltas` was canceled while still pending.")
+            self._log.warning("`_subscribe_order_book_deltas` was canceled while still pending")
 
     async def _subscribe_order_book_deltas_batch(
         self,
@@ -500,7 +500,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         try:
             if not instrument_ids:
                 self._log.warning(
-                    "No subscriptions for order book deltas (`instrument_ids` was empty).",
+                    "No subscriptions for order book deltas (`instrument_ids` was empty)",
                 )
                 return
 
@@ -509,7 +509,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                     self._log.error(
                         f"Cannot subscribe to order book deltas for {instrument_id}, "
                         "instrument must be pre-loaded via the `DatabentoDataClientConfig` "
-                        "or a specific subscription on start.",
+                        "or a specific subscription on start",
                     )
                     instrument_ids.remove(instrument_id)
                     continue
@@ -518,7 +518,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 return  # No subscribing instrument IDs were loaded in the cache
 
             ids_str = ",".join([i.value for i in instrument_ids])
-            self._log.info(f"Subscribing to MBO/L3 for {ids_str}.", LogColor.BLUE)
+            self._log.info(f"Subscribing to MBO/L3 for {ids_str}", LogColor.BLUE)
 
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_ids[0].venue)
             live_client = self._get_live_client_mbo(dataset)
@@ -526,9 +526,9 @@ class DatabentoDataClient(LiveMarketDataClient):
             # Subscribe from UTC midnight snapshot
             start = self._clock.utc_now().normalize()
 
-            self._log.info(f"Replaying MBO/L3 feeds from {start}.", LogColor.BLUE)
+            self._log.info(f"Replaying MBO/L3 feeds from {start}", LogColor.BLUE)
             self._log.warning(
-                "Replaying MBO/L3 feeds is under development and not considered usable.",
+                "Replaying MBO/L3 feeds is under development and not considered usable",
             )
 
             live_client.subscribe(
@@ -550,7 +550,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._live_client_futures.add(future)
         except asyncio.CancelledError:
             self._log.warning(
-                "`_subscribe_order_book_deltas_batch` was canceled while still pending.",
+                "`_subscribe_order_book_deltas_batch` was canceled while still pending",
             )
 
     async def _subscribe_order_book_snapshots(
@@ -570,7 +570,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                     schema = DatabentoSchema.MBP_10.value
                 case _:
                     self._log.error(
-                        f"Cannot subscribe for order book snapshots of depth {depth}, use either 1 or 10.",
+                        f"Cannot subscribe for order book snapshots of depth {depth}, use either 1 or 10",
                     )
                     return
 
@@ -582,7 +582,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_order_book_snapshots` was canceled while still pending.")
+            self._log.warning("`_subscribe_order_book_snapshots` was canceled while still pending")
 
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         try:
@@ -600,7 +600,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_quote_ticks` was canceled while still pending.")
+            self._log.warning("`_subscribe_quote_ticks` was canceled while still pending")
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         try:
@@ -617,7 +617,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_trade_ticks` was canceled while still pending.")
+            self._log.warning("`_subscribe_trade_ticks` was canceled while still pending")
 
     async def _subscribe_bars(self, bar_type: BarType) -> None:
         try:
@@ -636,7 +636,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
-            self._log.warning("`_subscribe_bars` was canceled while still pending.")
+            self._log.warning("`_subscribe_bars` was canceled while still pending")
 
     async def _unsubscribe(self, data_type: DataType) -> None:
         raise NotImplementedError(
@@ -837,7 +837,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         if limit > 0:
             self._log.warning(
-                f"Ignoring limit {limit} because its applied from the start (instead of the end).",
+                f"Ignoring limit {limit} because its applied from the start (instead of the end)",
             )
 
         self._log.info(
@@ -877,7 +877,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         if limit > 0:
             self._log.warning(
-                f"Ignoring limit {limit} because its applied from the start (instead of the end).",
+                f"Ignoring limit {limit} because its applied from the start (instead of the end)",
             )
 
         self._log.info(
@@ -917,7 +917,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         if limit > 0:
             self._log.warning(
-                f"Ignoring limit {limit} because its applied from the start (instead of the end).",
+                f"Ignoring limit {limit} because its applied from the start (instead of the end)",
             )
 
         self._log.info(

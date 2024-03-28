@@ -255,14 +255,14 @@ class VolatilityMarketMaker(Strategy):
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(
-                f"Waiting for indicators to warm up [{self.cache.bar_count(self.bar_type)}]...",
+                f"Waiting for indicators to warm up [{self.cache.bar_count(self.bar_type)}]",
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
 
         last: QuoteTick = self.cache.quote_tick(self.instrument_id)
         if last is None:
-            self.log.info("No quotes yet...")
+            self.log.info("No quotes yet")
             return
 
         # Maintain buy orders
@@ -290,7 +290,7 @@ class VolatilityMarketMaker(Strategy):
         Market maker simple buy limit method (example).
         """
         if not self.instrument:
-            self.log.error("No instrument loaded.")
+            self.log.error("No instrument loaded")
             return
 
         price: Decimal = last.bid_price - (self.atr.value * self.atr_multiple)
@@ -314,7 +314,7 @@ class VolatilityMarketMaker(Strategy):
         Market maker simple sell limit method (example).
         """
         if not self.instrument:
-            self.log.error("No instrument loaded.")
+            self.log.error("No instrument loaded")
             return
 
         price: Decimal = last.ask_price + (self.atr.value * self.atr_multiple)
@@ -345,7 +345,7 @@ class VolatilityMarketMaker(Strategy):
         """
         last: QuoteTick = self.cache.quote_tick(self.instrument_id)
         if last is None:
-            self.log.info("No quotes yet...")
+            self.log.info("No quotes yet")
             return
 
         # If order filled then replace order at ATR multiple distance from the market

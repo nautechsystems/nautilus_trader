@@ -229,7 +229,7 @@ cdef class OrderMatchingEngine:
         )
 
     cpdef void reset(self):
-        self._log.debug(f"Resetting OrderMatchingEngine {self.instrument.id}...")
+        self._log.debug(f"Resetting OrderMatchingEngine {self.instrument.id}")
 
         self._book.clear(0, 0)
         self._account_ids.clear()
@@ -245,7 +245,7 @@ cdef class OrderMatchingEngine:
         self._order_count = 0
         self._execution_count = 0
 
-        self._log.info(f"Reset OrderMatchingEngine {self.instrument.id}.")
+        self._log.info(f"Reset OrderMatchingEngine {self.instrument.id}")
 
     cpdef void set_fill_model(self, FillModel fill_model):
         """
@@ -261,7 +261,7 @@ cdef class OrderMatchingEngine:
 
         self._fill_model = fill_model
 
-        self._log.debug(f"Changed `FillModel` to {self._fill_model}.")
+        self._log.debug(f"Changed `FillModel` to {self._fill_model}")
 
 # -- QUERIES --------------------------------------------------------------------------------------
 
@@ -349,7 +349,7 @@ cdef class OrderMatchingEngine:
         Condition.not_none(delta, "delta")
 
         if logging_is_initialized():
-            self._log.debug(f"Processing {repr(delta)}...")
+            self._log.debug(f"Processing {repr(delta)}")
 
         self._book.apply_delta(delta)
 
@@ -378,7 +378,7 @@ cdef class OrderMatchingEngine:
         Condition.not_none(deltas, "deltas")
 
         if logging_is_initialized():
-            self._log.debug(f"Processing {repr(deltas)}...")
+            self._log.debug(f"Processing {repr(deltas)}")
 
         self._book.apply_deltas(deltas)
 
@@ -409,7 +409,7 @@ cdef class OrderMatchingEngine:
         Condition.not_none(tick, "tick")
 
         if logging_is_initialized():
-            self._log.debug(f"Processing {repr(tick)}...")
+            self._log.debug(f"Processing {repr(tick)}")
 
         if self.book_type == BookType.L1_MBP:
             self._book.update_quote_tick(tick)
@@ -431,7 +431,7 @@ cdef class OrderMatchingEngine:
         Condition.not_none(tick, "tick")
 
         if logging_is_initialized():
-            self._log.debug(f"Processing {repr(tick)}...")
+            self._log.debug(f"Processing {repr(tick)}")
 
         if self.book_type == BookType.L1_MBP:
             self._book.update_trade_tick(tick)
@@ -458,7 +458,7 @@ cdef class OrderMatchingEngine:
             return
 
         if logging_is_initialized():
-            self._log.debug(f"Processing {repr(bar)}...")
+            self._log.debug(f"Processing {repr(bar)}")
 
         if self.book_type != BookType.L1_MBP:
             return  # Can only process an L1 book with bars
@@ -1447,7 +1447,7 @@ cdef class OrderMatchingEngine:
         if self._use_reduce_only and order.is_reduce_only and position is None:
             self._log.warning(
                 f"Canceling REDUCE_ONLY {order.type_string_c()} "
-                f"as would increase position.",
+                f"as would increase position",
             )
             self.cancel_order(order)
             return  # Order canceled
@@ -1494,7 +1494,7 @@ cdef class OrderMatchingEngine:
         if self._use_reduce_only and order.is_reduce_only and position is None:
             self._log.warning(
                 f"Canceling REDUCE_ONLY {order.type_string_c()} "
-                f"as would increase position.",
+                f"as would increase position",
             )
             self.cancel_order(order)
             return  # Order canceled
@@ -1568,7 +1568,7 @@ cdef class OrderMatchingEngine:
 
         if not fills:
             self._log.error(
-                "Cannot fill order: no fills from book when fills were expected (check sizes in data).",
+                "Cannot fill order: no fills from book when fills were expected (check sizes in data)",
             )
             return  # No fills
 
@@ -1580,7 +1580,7 @@ cdef class OrderMatchingEngine:
                 f"Applying fills to {order}, "
                 f"venue_position_id={venue_position_id}, "
                 f"position={position}, "
-                f"fills={fills}.",
+                f"fills={fills}",
             )
 
         cdef:
@@ -1926,7 +1926,7 @@ cdef class OrderMatchingEngine:
     cpdef void cancel_order(self, Order order, bint cancel_contingencies=True):
         if order.is_active_local_c():
             self._log.error(
-                f"Cannot cancel an order with {order.status_string_c()} from the matching engine.",
+                f"Cannot cancel an order with {order.status_string_c()} from the matching engine",
             )
             return
 

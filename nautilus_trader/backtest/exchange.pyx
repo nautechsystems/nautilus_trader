@@ -207,7 +207,7 @@ cdef class SimulatedExchange:
                 clock=clock,
             )
             self.modules.append(module)
-            self._log.info(f"Loaded {module}.")
+            self._log.info(f"Loaded {module}")
 
         # Markets
         self._matching_engines: dict[InstrumentId, OrderMatchingEngine] = {}
@@ -245,7 +245,7 @@ cdef class SimulatedExchange:
 
         self.exec_client = client
 
-        self._log.info(f"Registered ExecutionClient-{client}.")
+        self._log.info(f"Registered ExecutionClient-{client}")
 
     cpdef void set_fill_model(self, FillModel fill_model):
         """
@@ -266,7 +266,7 @@ cdef class SimulatedExchange:
             matching_engine.set_fill_model(fill_model)
             self._log.info(
                 f"Changed `FillModel` for {matching_engine.venue} "
-                f"to {self.fill_model}.",
+                f"to {self.fill_model}",
             )
 
     cpdef void set_latency_model(self, LatencyModel latency_model):
@@ -283,7 +283,7 @@ cdef class SimulatedExchange:
 
         self.latency_model = latency_model
 
-        self._log.info("Changed latency model.")
+        self._log.info("Changed latency model")
 
     cpdef void initialize_account(self):
         """
@@ -345,7 +345,7 @@ cdef class SimulatedExchange:
 
         self._matching_engines[instrument.id] = matching_engine
 
-        self._log.info(f"Added instrument {instrument.id} and created matching engine.")
+        self._log.info(f"Added instrument {instrument.id} and created matching engine")
 
 # -- QUERIES --------------------------------------------------------------------------------------
 
@@ -850,7 +850,7 @@ cdef class SimulatedExchange:
 
         All stateful fields are reset to their initial value.
         """
-        self._log.debug(f"Resetting...")
+        self._log.debug(f"Resetting")
 
         for module in self.modules:
             module.reset()
@@ -864,7 +864,7 @@ cdef class SimulatedExchange:
         self._inflight_queue.clear()
         self._inflight_counter.clear()
 
-        self._log.info("Reset.")
+        self._log.info("Reset")
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 

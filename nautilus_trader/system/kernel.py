@@ -220,7 +220,7 @@ class NautilusKernel:
                 )
 
         self._log: Logger = Logger(name=name)
-        self._log.info("Building system kernel...")
+        self._log.info("Building system kernel")
 
         # Setup loop (if sandbox live)
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -467,7 +467,7 @@ class NautilusKernel:
             self._trader.add_exec_algorithm(exec_algorithm)
 
         build_time_ms = nanos_to_millis(time.time_ns() - self.ts_created)
-        self._log.info(f"Initialized in {build_time_ms}ms.")
+        self._log.info(f"Initialized in {build_time_ms}ms")
 
     def __del__(self) -> None:
         if hasattr(self, "_writer") and self._writer and not self._writer.is_closed:
@@ -478,14 +478,14 @@ class NautilusKernel:
             raise RuntimeError("No event loop available for the node")
 
         if self._loop.is_closed():
-            self._log.error("Cannot setup signal handling (event loop was closed).")
+            self._log.error("Cannot setup signal handling (event loop was closed)")
             return
 
         signal.signal(signal.SIGINT, signal.SIG_DFL)
         signals = (signal.SIGTERM, signal.SIGINT, signal.SIGABRT)
         for sig in signals:
             self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
-        self._log.debug(f"Event loop signal handling setup for {signals}.")
+        self._log.debug(f"Event loop signal handling setup for {signals}")
 
     def _loop_sig_handler(self, sig: signal.Signals) -> None:
         if self._loop is None:
@@ -806,7 +806,7 @@ class NautilusKernel:
         """
         Start the Nautilus system kernel.
         """
-        self._log.info("STARTING...")
+        self._log.info("STARTING")
 
         self._start_engines()
         self._connect_clients()
@@ -830,7 +830,7 @@ class NautilusKernel:
         if self.loop is None:
             raise RuntimeError("no event loop has been assigned to the kernel")
 
-        self._log.info("STARTING...")
+        self._log.info("STARTING")
 
         self._register_executor()
         self._start_engines()
@@ -857,7 +857,7 @@ class NautilusKernel:
         """
         Stop the Nautilus system kernel.
         """
-        self._log.info("STOPPING...")
+        self._log.info("STOPPING")
 
         if self._controller:
             self._controller.stop()
@@ -874,7 +874,7 @@ class NautilusKernel:
         self._cancel_timers()
         self._flush_writer()
 
-        self._log.info("STOPPED.")
+        self._log.info("STOPPED")
 
     async def stop_async(self) -> None:
         """
@@ -893,7 +893,7 @@ class NautilusKernel:
         if self.loop is None:
             raise RuntimeError("no event loop has been assigned to the kernel")
 
-        self._log.info("STOPPING...")
+        self._log.info("STOPPING")
 
         if self._trader.is_running:
             self._trader.stop()
@@ -910,7 +910,7 @@ class NautilusKernel:
         self._cancel_timers()
         self._flush_writer()
 
-        self._log.info("STOPPED.")
+        self._log.info("STOPPED")
 
     def dispose(self) -> None:
         """
@@ -955,7 +955,7 @@ class NautilusKernel:
 
         to_cancel = asyncio.tasks.all_tasks(self.loop)
         if not to_cancel:
-            self._log.info("All tasks canceled.")
+            self._log.info("All tasks canceled")
             return
 
         for task in to_cancel:
@@ -963,7 +963,7 @@ class NautilusKernel:
             task.cancel()
 
         if self.loop and self.loop.is_running():
-            self._log.warning("Event loop still running during `cancel_all_tasks`.")
+            self._log.warning("Event loop still running during `cancel_all_tasks`")
             return
 
         finish_all_tasks: asyncio.Future = asyncio.tasks.gather(*to_cancel)
@@ -1029,7 +1029,7 @@ class NautilusKernel:
         )
         if not await self._check_engines_connected():
             self._log.warning(
-                f"Timed out ({self._config.timeout_connection}s) waiting for engines to connect and initialize."
+                f"Timed out ({self._config.timeout_connection}s) waiting for engines to connect and initialize"
                 f"\nStatus"
                 f"\n------"
                 f"\nDataEngine.check_connected() == {self._data_engine.check_connected()}"
@@ -1047,7 +1047,7 @@ class NautilusKernel:
         )
         if not await self._check_engines_disconnected():
             self._log.error(
-                f"Timed out ({self._config.timeout_disconnection}s) waiting for engines to disconnect."
+                f"Timed out ({self._config.timeout_disconnection}s) waiting for engines to disconnect"
                 f"\nStatus"
                 f"\n------"
                 f"\nDataEngine.check_disconnected() == {self._data_engine.check_disconnected()}"
@@ -1063,10 +1063,10 @@ class NautilusKernel:
         if not await self._exec_engine.reconcile_state(
             timeout_secs=self._config.timeout_reconciliation,
         ):
-            self._log.error("Execution state could not be reconciled.")
+            self._log.error("Execution state could not be reconciled")
             return False
 
-        self._log.info("Execution state reconciled.", color=LogColor.GREEN)
+        self._log.info("Execution state reconciled", color=LogColor.GREEN)
         return True
 
     async def _await_portfolio_initialization(self) -> bool:
@@ -1076,14 +1076,14 @@ class NautilusKernel:
         )
         if not await self._check_portfolio_initialized():
             self._log.warning(
-                f"Timed out ({self._config.timeout_portfolio}s) waiting for portfolio to initialize."
+                f"Timed out ({self._config.timeout_portfolio}s) waiting for portfolio to initialize"
                 f"\nStatus"
                 f"\n------"
                 f"\nPortfolio.initialized == {self._portfolio.initialized}",
             )
             return False
 
-        self._log.info("Portfolio initialized.", color=LogColor.GREEN)
+        self._log.info("Portfolio initialized", color=LogColor.GREEN)
         return True
 
     async def _await_trader_residuals(self) -> None:
@@ -1151,7 +1151,7 @@ class NautilusKernel:
         self._clock.cancel_timers()
 
         for name in timer_names:
-            self._log.info(f"Canceled Timer(name={name}).")
+            self._log.info(f"Canceled Timer(name={name})")
 
     def _flush_writer(self) -> None:
         if self._writer is not None:

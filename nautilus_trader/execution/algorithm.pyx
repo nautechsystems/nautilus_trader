@@ -253,7 +253,7 @@ cdef class ExecAlgorithm(Actor):
         """
         Condition.not_none(command, "command")
 
-        self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
+        self._log.debug(f"{RECV}{CMD} {command}", LogColor.MAGENTA)
 
         if self._fsm.state != ComponentState.RUNNING:
             return
@@ -265,12 +265,12 @@ cdef class ExecAlgorithm(Actor):
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(command)
         else:
-            self._log.error(f"Cannot handle command: unrecognized {command}.")
+            self._log.error(f"Cannot handle command: unrecognized {command}")
 
         if command.strategy_id in self._subscribed_strategies:
             return  # Already subscribed
 
-        self._log.info(f"Subscribing to {command.strategy_id} order events.", LogColor.BLUE)
+        self._log.info(f"Subscribing to {command.strategy_id} order events", LogColor.BLUE)
         self._msgbus.subscribe(topic=f"events.order.{command.strategy_id.to_str()}", handler=self._handle_event)
         self._msgbus.subscribe(topic=f"events.position.{command.strategy_id.to_str()}", handler=self._handle_event)
         self._subscribed_strategies.add(command.strategy_id)
@@ -299,7 +299,7 @@ cdef class ExecAlgorithm(Actor):
         cdef Order order = self.cache.order(command.client_order_id)
         if order is None:  # pragma: no cover (design-time error)
             self._log.error(
-                f"Cannot cancel order: {repr(command.client_order_id)} not found.",
+                f"Cannot cancel order: {repr(command.client_order_id)} not found",
             )
             return
 
@@ -307,7 +307,7 @@ cdef class ExecAlgorithm(Actor):
             return  # Already pending cancel locally
 
         if order.is_closed_c():
-            self._log.warning(f"Order already canceled for {command}.")
+            self._log.warning(f"Order already canceled for {command}")
             return
 
         # Generate event
@@ -1073,7 +1073,7 @@ cdef class ExecAlgorithm(Actor):
             Condition.equal(order.strategy_id, primary.strategy_id, "order.strategy_id", "primary.strategy_id")
             if primary is None:
                 self._log.error(
-                    f"Cannot submit order: cannot find primary order for {order.exec_spawn_id!r}."
+                    f"Cannot submit order: cannot find primary order for {order.exec_spawn_id!r}"
                 )
                 return
 
@@ -1082,7 +1082,7 @@ cdef class ExecAlgorithm(Actor):
 
             if self.cache.order_exists(order.client_order_id):
                 self._log.error(
-                    f"Cannot submit order: order already exists for {order.client_order_id!r}.",
+                    f"Cannot submit order: order already exists for {order.client_order_id!r}",
                 )
                 return
 

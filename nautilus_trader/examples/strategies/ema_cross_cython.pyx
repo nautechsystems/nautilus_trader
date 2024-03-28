@@ -205,7 +205,7 @@ cdef class EMACross(Strategy):
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(
-                f"Waiting for indicators to warm up [{self.cache.bar_count(self.bar_type)}]...",
+                f"Waiting for indicators to warm up [{self.cache.bar_count(self.bar_type)}]",
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
@@ -230,7 +230,7 @@ cdef class EMACross(Strategy):
         Users simple buy method (example).
         """
         if not self.instrument:
-            self.log.error("No instrument loaded.")
+            self.log.error("No instrument loaded")
             return
 
         cdef MarketOrder order = self.order_factory.market(
@@ -246,7 +246,7 @@ cdef class EMACross(Strategy):
         Users simple sell method (example).
         """
         if not self.instrument:
-            self.log.error("No instrument loaded.")
+            self.log.error("No instrument loaded")
             return
 
         cdef MarketOrder order = self.order_factory.market(

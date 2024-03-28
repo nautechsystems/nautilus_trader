@@ -491,7 +491,7 @@ cdef class BacktestEngine:
         exchange.register_client(exec_client)
         self.kernel.exec_engine.register_client(exec_client)
 
-        self._log.info(f"Added {exchange}.")
+        self._log.info(f"Added {exchange}")
 
     def change_fill_model(self, Venue venue, FillModel model) -> None:
         """
@@ -560,7 +560,7 @@ cdef class BacktestEngine:
         self.kernel.data_engine.process(instrument)  # Adds to cache
         self._venues[instrument.id.venue].add_instrument(instrument)
 
-        self._log.info(f"Added {instrument.id} Instrument.")
+        self._log.info(f"Added {instrument.id} Instrument")
 
     def add_data(
         self,
@@ -657,7 +657,7 @@ cdef class BacktestEngine:
             self._data = sorted(self._data, key=lambda x: x.ts_init)
 
         self._log.info(
-            f"Added {len(data):,} {data_added_str} element{'' if len(data) == 1 else 's'}.",
+            f"Added {len(data):,} {data_added_str} element{'' if len(data) == 1 else 's'}",
         )
 
     def dump_pickled_data(self) -> bytes:
@@ -693,7 +693,7 @@ cdef class BacktestEngine:
 
         self._log.info(
             f"Loaded {len(self._data):,} data "
-            f"element{'' if len(data) == 1 else 's'} from pickle.",
+            f"element{'' if len(data) == 1 else 's'} from pickle",
         )
 
     def add_actor(self, actor: Actor) -> None:
@@ -784,7 +784,7 @@ cdef class BacktestEngine:
         separate call to `.clear_data()` if desired.
 
         """
-        self._log.debug(f"Resetting...")
+        self._log.debug(f"Resetting")
 
         if self.kernel.trader.is_running:
             # End current backtest run
@@ -827,7 +827,7 @@ cdef class BacktestEngine:
         self._backtest_start = None
         self._backtest_end = None
 
-        self._log.info("Reset.")
+        self._log.info("Reset")
 
     def clear_data(self) -> None:
         """
@@ -1037,7 +1037,7 @@ cdef class BacktestEngine:
                     matching_engine = exchange.get_matching_engine(order.instrument_id)
                     if matching_engine is None:
                         self._log.error(
-                            f"No matching engine for {order.instrument_id} to process {order}.",
+                            f"No matching engine for {order.instrument_id} to process {order}",
                         )
                         continue
                     matching_engine.process_order(order, order.account_id)
@@ -1127,7 +1127,7 @@ cdef class BacktestEngine:
                 self._iteration += 1
         except AccountError as e:
             force_stop = True
-            self._log.error(f"Stopping backtest from {e}.")
+            self._log.error(f"Stopping backtest from {e}")
         # ---------------------------------------------------------------------#
 
         if force_stop:
