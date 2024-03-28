@@ -29,6 +29,7 @@ anyhow = "1.0.81"
 chrono = "0.4.37"
 futures = "0.3.30"
 indexmap = { version = "2.2.6", features = ["serde"] }
+itertools = "0.12.1"
 itoa = "1.0.11"
 once_cell = "1.19.0"
 log = { version = "0.4.21", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }

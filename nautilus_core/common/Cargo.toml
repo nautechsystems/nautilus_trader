@@ -16,20 +16,23 @@ nautilus-model = { path = "../model" }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 indexmap = { workspace = true }
+itertools = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-asyncio = { workspace = true, optional = true }
 redis = { workspace = true, optional = true }
+rstest = { workspace = true , optional = true}
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
-ustr = { workspace = true }
-rstest = { workspace = true , optional = true}
-tokio = { workspace = true }
-tracing = { workspace = true }
 sysinfo = "0.30.7"
+tokio = { workspace = true }
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
+tracing = { workspace = true }
+ustr = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
