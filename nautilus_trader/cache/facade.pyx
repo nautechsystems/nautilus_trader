@@ -65,7 +65,7 @@ cdef class CacheDatabaseFacade:
     def __init__(self, config: CacheConfig | None = None) -> None:
         self._log = Logger(name=type(self).__name__)
 
-        self._log.info("READY.")
+        self._log.info("READY")
 
     cpdef void close(self):
         """Abstract method (implement in subclass)."""

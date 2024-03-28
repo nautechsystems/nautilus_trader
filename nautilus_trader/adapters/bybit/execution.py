@@ -214,7 +214,7 @@ class BybitExecutionClient(LiveExecutionClient):
             self._log.error(f"Failed to generate OrderStatusReports: {e}")
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} OrderStatusReport{plural}.")
+        self._log.info(f"Received {len(reports)} OrderStatusReport{plural}")
         return reports
 
     async def generate_order_status_report(
@@ -232,13 +232,13 @@ class BybitExecutionClient(LiveExecutionClient):
             self._log.error(
                 f"Reached maximum retries 3/3 for generating OrderStatusReport for "
                 f"{repr(client_order_id) if client_order_id else ''} "
-                f"{repr(venue_order_id) if venue_order_id else ''}...",
+                f"{repr(venue_order_id) if venue_order_id else ''}",
             )
             return None
         self._log.info(
             f"Generating OrderStatusReport for "
             f"{repr(client_order_id) if client_order_id else ''} "
-            f"{repr(venue_order_id) if venue_order_id else ''}...",
+            f"{repr(venue_order_id) if venue_order_id else ''}",
         )
         try:
             if venue_order_id:
@@ -262,7 +262,7 @@ class BybitExecutionClient(LiveExecutionClient):
                     enum_parser=self._enum_parser,
                     ts_init=self._clock.timestamp_ns(),
                 )
-                self._log.debug(f"Received {order_report}.")
+                self._log.debug(f"Received {order_report}")
                 return order_report
         except BybitError as e:
             self._log.error(f"Failed to generate OrderStatusReport: {e}")
@@ -298,7 +298,7 @@ class BybitExecutionClient(LiveExecutionClient):
                     report_id=UUID4(),
                     ts_init=self._clock.timestamp_ns(),
                 )
-                self._log.debug(f"Received {position_report}.")
+                self._log.debug(f"Received {position_report}")
                 reports.append(position_report)
         return reports
 
@@ -327,8 +327,8 @@ class BybitExecutionClient(LiveExecutionClient):
         # positions = await self._http_account.query_position_info()
         [instrument_type_balances, ts_event] = await self._http_account.query_wallet_balance()
         if instrument_type_balances:
-            self._log.info("Bybit API key authenticated.", LogColor.GREEN)
-            self._log.info(f"API key {self._http_account.client.api_key} has trading permissions.")
+            self._log.info("Bybit API key authenticated", LogColor.GREEN)
+            self._log.info(f"API key {self._http_account.client.api_key} has trading permissions")
         for balance in instrument_type_balances:
             balances = balance.parse_to_account_balance()
             margins = balance.parse_to_margin_balance()
@@ -353,7 +353,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def _submit_order_inner(self, order: Order) -> None:
         if order.is_closed:
-            self._log.warning(f"Order {order} is already closed.")
+            self._log.warning(f"Order {order} is already closed")
             return
         # check validity
         self._check_order_validity(order)
@@ -380,19 +380,19 @@ class BybitExecutionClient(LiveExecutionClient):
         # Check order type valid
         if order.order_type not in self._enum_parser.valid_order_types:
             self._log.error(
-                f"Cannot submit order.Order {order} has invalid order type {order.order_type}.Unsupported on bybit.",
+                f"Cannot submit order.Order {order} has invalid order type {order.order_type}. Unsupported on Bybit",
             )
             return
         # Check time in force valid
         if order.time_in_force not in self._enum_parser.valid_time_in_force:
             self._log.error(
-                f"Cannot submit order.Order {order} has invalid time in force {order.time_in_force}.Unsupported on bybit.",
+                f"Cannot submit order.Order {order} has invalid time in force {order.time_in_force}. Unsupported on Bybit",
             )
             return
         # Check post only
         if order.is_post_only and order.order_type != OrderType.LIMIT:
             self._log.error(
-                f"Cannot submit order.Order {order} has invalid post only {order.is_post_only}.Unsupported on bybit.",
+                f"Cannot submit order.Order {order} has invalid post only {order.is_post_only}. Unsupported on Bybit",
             )
             return
 
@@ -426,7 +426,7 @@ class BybitExecutionClient(LiveExecutionClient):
             if ws_message_sub.success:
                 self._log.debug("Subscribed to stream")
             else:
-                self._log.error(f"Failed to subscribe. {e!s}")
+                self._log.error(f"Failed to subscribe: {e!s}")
 
     def _topic_check(self, topic: str, raw: bytes) -> None:
         if "order" in topic:

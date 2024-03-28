@@ -139,9 +139,9 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         )
         if account_info.canTrade:
             self._log.info("Binance API key authenticated.", LogColor.GREEN)
-            self._log.info(f"API key {self._http_client.api_key} has trading permissions.")
+            self._log.info(f"API key {self._http_client.api_key} has trading permissions")
         else:
-            self._log.error("Binance API key does not have trading permissions.")
+            self._log.error("Binance API key does not have trading permissions")
         self.generate_account_state(
             balances=account_info.parse_to_account_balances(),
             margins=[],
@@ -184,7 +184,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
                 f"Cannot submit order: "
                 f"{time_in_force_to_str(order.time_in_force)} "
                 f"not supported by the Binance Spot/Margin exchange. "
-                f"Use any of {[time_in_force_to_str(t) for t in self._spot_enum_parser.spot_valid_time_in_force]}.",
+                f"Use any of {[time_in_force_to_str(t) for t in self._spot_enum_parser.spot_valid_time_in_force]}",
             )
             return
         # Check post-only
@@ -192,13 +192,13 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
             self._log.error(
                 "Cannot submit order: "
                 "STOP_LIMIT `post_only` orders not supported by the Binance Spot/Margin exchange. "
-                "This order may become a liquidity TAKER.",
+                "This order may become a liquidity TAKER",
             )
             return
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
         self._log.error(
-            "Cannot batch cancel orders: not supported by the Binance Spot/Margin exchange. ",
+            "Cannot batch cancel orders: not supported by the Binance Spot/Margin exchange",
         )
 
     # -- WEBSOCKET EVENT HANDLERS --------------------------------------------------------------------
@@ -221,7 +221,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         order_msg.data.handle_execution_report(self)
 
     def _handle_list_status(self, raw: bytes) -> None:
-        self._log.warning("List status (OCO) received.")  # Implement
+        self._log.warning("List status (OCO) received")  # Implement
 
     def _handle_balance_update(self, raw: bytes) -> None:
         self.create_task(self._update_account_state())

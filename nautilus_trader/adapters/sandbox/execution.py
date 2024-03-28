@@ -139,7 +139,7 @@ class SandboxExecutionClient(LiveExecutionClient):
         self._msgbus.subscribe("data.*", handler=self.on_data)
         self._client._set_connected(True)
         self._set_connected(True)
-        self._log.info("Connected.")
+        self._log.info("Connected")
 
     def disconnect(self) -> None:
         """
@@ -147,7 +147,7 @@ class SandboxExecutionClient(LiveExecutionClient):
         """
         self._log.info("Disconnecting...")
         self._set_connected(False)
-        self._log.info("Disconnected.")
+        self._log.info("Disconnected")
 
     async def generate_order_status_report(
         self,

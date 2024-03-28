@@ -175,7 +175,7 @@ class LiveExecutionClient(ExecutionClient):
 
         """
         log_msg = log_msg or coro.__name__
-        self._log.debug(f"Creating task {log_msg}.")
+        self._log.debug(f"Creating task {log_msg}")
         task = self._loop.create_task(
             coro,
             name=coro.__name__,
@@ -457,7 +457,7 @@ class LiveExecutionClient(ExecutionClient):
         return None
 
     async def _query_order(self, command: QueryOrder) -> None:
-        self._log.debug(f"Synchronizing order status {command}.")
+        self._log.debug(f"Synchronizing order status {command}")
 
         report: OrderStatusReport | None = await self.generate_order_status_report(
             instrument_id=command.instrument_id,
@@ -466,7 +466,7 @@ class LiveExecutionClient(ExecutionClient):
         )
 
         if report is None:
-            self._log.warning("Did not receive `OrderStatusReport` from request.")
+            self._log.warning("Did not receive `OrderStatusReport` from request")
             return
 
         self._send_order_status_report(report)

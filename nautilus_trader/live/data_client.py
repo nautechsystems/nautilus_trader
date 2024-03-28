@@ -143,7 +143,7 @@ class LiveDataClient(DataClient):
 
         """
         log_msg = log_msg or coro.__name__
-        self._log.debug(f"Creating task {log_msg}.")
+        self._log.debug(f"Creating task {log_msg}")
         task = self._loop.create_task(
             coro,
             name=coro.__name__,
@@ -223,7 +223,7 @@ class LiveDataClient(DataClient):
     # -- REQUESTS ---------------------------------------------------------------------------------
 
     def request(self, data_type: DataType, correlation_id: UUID4) -> None:
-        self._log.debug(f"Request {data_type} {correlation_id}.")
+        self._log.debug(f"Request {data_type} {correlation_id}")
         self.create_task(
             self._request(data_type, correlation_id),
             log_msg=f"request_{data_type}",
@@ -359,7 +359,7 @@ class LiveMarketDataClient(MarketDataClient):
 
         """
         log_msg = log_msg or coro.__name__
-        self._log.debug(f"Creating task {log_msg}.")
+        self._log.debug(f"Creating task {log_msg}")
         task = self._loop.create_task(
             coro,
             name=coro.__name__,
@@ -587,7 +587,7 @@ class LiveMarketDataClient(MarketDataClient):
     # -- REQUESTS ---------------------------------------------------------------------------------
 
     def request(self, data_type: DataType, correlation_id: UUID4) -> None:
-        self._log.debug(f"Request data {data_type}.")
+        self._log.debug(f"Request data {data_type}")
         self.create_task(
             self._request(data_type, correlation_id),
             log_msg=f"request: {data_type}",
@@ -600,7 +600,7 @@ class LiveMarketDataClient(MarketDataClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> None:
-        self._log.debug(f"Request instrument {instrument_id}.")
+        self._log.debug(f"Request instrument {instrument_id}")
         self.create_task(
             self._request_instrument(
                 instrument_id=instrument_id,
@@ -618,7 +618,7 @@ class LiveMarketDataClient(MarketDataClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> None:
-        self._log.debug(f"Request instruments for {venue} {correlation_id}.")
+        self._log.debug(f"Request instruments for {venue} {correlation_id}")
         self.create_task(
             self._request_instruments(
                 venue=venue,
@@ -637,7 +637,7 @@ class LiveMarketDataClient(MarketDataClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> None:
-        self._log.debug(f"Request quote ticks {instrument_id}.")
+        self._log.debug(f"Request quote ticks {instrument_id}")
         self.create_task(
             self._request_quote_ticks(
                 instrument_id=instrument_id,
@@ -657,7 +657,7 @@ class LiveMarketDataClient(MarketDataClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> None:
-        self._log.debug(f"Request trade ticks {instrument_id}.")
+        self._log.debug(f"Request trade ticks {instrument_id}")
         self.create_task(
             self._request_trade_ticks(
                 instrument_id=instrument_id,
@@ -677,7 +677,7 @@ class LiveMarketDataClient(MarketDataClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> None:
-        self._log.debug(f"Request bars {bar_type}.")
+        self._log.debug(f"Request bars {bar_type}")
         self.create_task(
             self._request_bars(
                 bar_type=bar_type,

@@ -152,14 +152,14 @@ class TWAPExecAlgorithm(ExecAlgorithm):
 
         if order.order_type != OrderType.MARKET:
             self.log.error(
-                f"Cannot execute order: only implemented for market orders, {order.order_type=}.",
+                f"Cannot execute order: only implemented for market orders, {order.order_type=}",
             )
             return
 
         instrument = self.cache.instrument(order.instrument_id)
         if not instrument:
             self.log.error(
-                f"Cannot execute order: instrument {order.instrument_id} not found.",
+                f"Cannot execute order: instrument {order.instrument_id} not found",
             )
             return
 
@@ -168,7 +168,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
         if not exec_params:
             self.log.error(
                 f"Cannot execute order: "
-                f"`exec_algorithm_params` not found for primary order {order!r}.",
+                f"`exec_algorithm_params` not found for primary order {order!r}",
             )
             return
 
@@ -176,7 +176,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
         if not horizon_secs:
             self.log.error(
                 f"Cannot execute order: "
-                f"`horizon_secs` not found in `exec_algorithm_params` {exec_params}.",
+                f"`horizon_secs` not found in `exec_algorithm_params` {exec_params}",
             )
             return
 
@@ -184,13 +184,13 @@ class TWAPExecAlgorithm(ExecAlgorithm):
         if not interval_secs:
             self.log.error(
                 f"Cannot execute order: "
-                f"`interval_secs` not found in `exec_algorithm_params` {exec_params}.",
+                f"`interval_secs` not found in `exec_algorithm_params` {exec_params}",
             )
             return
 
         if horizon_secs < interval_secs:
             self.log.error(
-                f"Cannot execute order: " f"{horizon_secs=} was less than {interval_secs=}.",
+                f"Cannot execute order: " f"{horizon_secs=} was less than {interval_secs=}",
             )
             return
 
@@ -210,7 +210,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
             or (instrument.min_quantity and qty_per_interval < instrument.min_quantity)
         ):
             # Immediately submit first order for entire size
-            self.log.warning(f"Submitting for entire size {qty_per_interval=}, {order.quantity=}.")
+            self.log.warning(f"Submitting for entire size {qty_per_interval=}, {order.quantity=}")
             self.submit_order(order)
             return  # Done
 
@@ -219,7 +219,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
             scheduled_sizes.append(instrument.make_qty(qty_remainder))
 
         assert sum(scheduled_sizes) == order.quantity
-        self.log.info(f"Order execution size schedule: {scheduled_sizes}.", LogColor.BLUE)
+        self.log.info(f"Order execution size schedule: {scheduled_sizes}", LogColor.BLUE)
 
         self._scheduled_sizes[order.client_order_id] = scheduled_sizes
         first_qty: Quantity = scheduled_sizes.pop(0)
@@ -242,7 +242,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
         )
         self.log.info(
             f"Started TWAP execution for {order.client_order_id}: "
-            f"{horizon_secs=}, {interval_secs=}.",
+            f"{horizon_secs=}, {interval_secs=}",
             LogColor.BLUE,
         )
 
@@ -272,7 +272,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
         instrument: Instrument = self.cache.instrument(primary.instrument_id)
         if not instrument:
             self.log.error(
-                f"Cannot execute order: instrument {primary.instrument_id} not found.",
+                f"Cannot execute order: instrument {primary.instrument_id} not found",
             )
             return
 
@@ -314,4 +314,4 @@ class TWAPExecAlgorithm(ExecAlgorithm):
         if exec_spawn_id.value in self.clock.timer_names:
             self.clock.cancel_timer(exec_spawn_id.value)
         self._scheduled_sizes.pop(exec_spawn_id, None)
-        self.log.info(f"Completed TWAP execution for {exec_spawn_id}.", LogColor.BLUE)
+        self.log.info(f"Completed TWAP execution for {exec_spawn_id}", LogColor.BLUE)

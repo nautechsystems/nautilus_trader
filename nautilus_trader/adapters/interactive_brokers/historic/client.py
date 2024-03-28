@@ -334,7 +334,7 @@ class HistoricInteractiveBrokersClient:
         if (end_date_time - start_date_time) > pd.Timedelta(days=1):
             self.log.warning(
                 "Requesting tick data for more than 1 day may take a long time, particularly for liquid instruments. "
-                "You may want to consider sourcing tick data elsewhere.",
+                "You may want to consider sourcing tick data elsewhere",
             )
 
         contracts = contracts or []

@@ -290,9 +290,9 @@ class TradingNode:
             await self.kernel.start_async()
 
             if self.kernel.loop.is_running():
-                self.kernel.logger.info("RUNNING.")
+                self.kernel.logger.info("RUNNING")
             else:
-                self.kernel.logger.warning("Event loop is not running.")
+                self.kernel.logger.warning("Event loop is not running")
 
             # Continue to run while engines are running...
             tasks: list[asyncio.Task] = [
@@ -330,7 +330,7 @@ class TradingNode:
 
         """
         self.kernel.logger.info(
-            f"Starting heartbeats at {interval}s intervals...",
+            f"Starting heartbeats at {interval}s intervals",
             LogColor.BLUE,
         )
         try:
@@ -358,7 +358,7 @@ class TradingNode:
 
         """
         self.kernel.logger.info(
-            f"Starting open position snapshots at {interval}s intervals...",
+            f"Starting open position snapshots at {interval}s intervals",
             LogColor.BLUE,
         )
         try:
@@ -414,12 +414,12 @@ class TradingNode:
 
         """
         if self._task_heartbeats:
-            self.kernel.logger.info("Cancelling `task_heartbeats` task...")
+            self.kernel.logger.info("Cancelling `task_heartbeats` task")
             self._task_heartbeats.cancel()
             self._task_heartbeats = None
 
         if self._task_position_snapshots:
-            self.kernel.logger.info("Cancelling `task_position_snapshots` task...")
+            self.kernel.logger.info("Cancelling `task_position_snapshots` task")
             self._task_position_snapshots.cancel()
             self._task_position_snapshots = None
 
@@ -442,7 +442,7 @@ class TradingNode:
                 time.sleep(0.1)
                 if self.kernel.clock.utc_now() >= timeout:
                     self.kernel.logger.warning(
-                        f"Timed out ({self._config.timeout_disconnection}s) waiting for node to stop."
+                        f"Timed out ({self._config.timeout_disconnection}s) waiting for node to stop"
                         f"\nStatus"
                         f"\n------"
                         f"\nDataEngine.check_disconnected() == {self.kernel.data_engine.check_disconnected()}"
@@ -450,7 +450,7 @@ class TradingNode:
                     )
                     break
 
-            self.kernel.logger.debug("DISPOSING...")
+            self.kernel.logger.debug("DISPOSING")
 
             self.kernel.logger.debug(str(self.kernel.data_engine.get_cmd_queue_task()))
             self.kernel.logger.debug(str(self.kernel.data_engine.get_req_queue_task()))
@@ -464,19 +464,19 @@ class TradingNode:
             self.kernel.dispose()
 
             if self.kernel.executor:
-                self.kernel.logger.info("Shutting down executor...")
+                self.kernel.logger.info("Shutting down executor")
                 self.kernel.executor.shutdown(wait=True, cancel_futures=True)
 
-            self.kernel.logger.info("Stopping event loop...")
+            self.kernel.logger.info("Stopping event loop")
             self.kernel.cancel_all_tasks()
             self.kernel.loop.stop()
         except (asyncio.CancelledError, RuntimeError) as e:
             self.kernel.logger.exception("Error on dispose", e)
         finally:
             if self.kernel.loop.is_running():
-                self.kernel.logger.warning("Cannot close a running event loop.")
+                self.kernel.logger.warning("Cannot close a running event loop")
             else:
-                self.kernel.logger.info("Closing event loop...")
+                self.kernel.logger.info("Closing event loop")
                 self.kernel.loop.close()
 
             # Check and log if event loop is running
@@ -491,8 +491,8 @@ class TradingNode:
             else:
                 self.kernel.logger.info(f"loop.is_closed={self.kernel.loop.is_closed()}")
 
-            self.kernel.logger.info("DISPOSED.")
+            self.kernel.logger.info("DISPOSED")
 
     def _loop_sig_handler(self, sig: signal.Signals) -> None:
-        self.kernel.logger.warning(f"Received {sig!s}, shutting down...")
+        self.kernel.logger.warning(f"Received {sig!s}, shutting down")
         self.stop()

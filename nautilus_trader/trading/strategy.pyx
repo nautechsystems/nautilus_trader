@@ -204,7 +204,7 @@ cdef class Strategy(Actor):
         self.log.warning(
             "The `Strategy.on_start` handler was called when not overridden. "
             "It's expected that any actions required when starting the strategy "
-            "occur here, such as subscribing/requesting data.",
+            "occur here, such as subscribing/requesting data",
         )
 
     cpdef void on_stop(self):
@@ -212,7 +212,7 @@ cdef class Strategy(Actor):
         self.log.warning(
             "The `Strategy.on_stop` handler was called when not overridden. "
             "It's expected that any actions required when stopping the strategy "
-            "occur here, such as unsubscribing from data.",
+            "occur here, such as unsubscribing from data",
         )
 
     cpdef void on_resume(self):
@@ -220,7 +220,7 @@ cdef class Strategy(Actor):
         self.log.warning(
             "The `Strategy.on_resume` handler was called when not overridden. "
             "It's expected that any actions required when resuming the strategy "
-            "following a stop occur here."
+            "following a stop occur here"
         )
 
     cpdef void on_reset(self):
@@ -228,7 +228,7 @@ cdef class Strategy(Actor):
         self.log.warning(
             "The `Strategy.on_reset` handler was called when not overridden. "
             "It's expected that any actions required when resetting the strategy "
-            "occur here, such as resetting indicators and other state."
+            "occur here, such as resetting indicators and other state"
         )
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
@@ -350,12 +350,12 @@ cdef class Strategy(Actor):
         cdef int order_list_id_count = len(order_list_ids)
         self.order_factory.set_client_order_id_count(order_id_count)
         self.log.info(
-            f"Set ClientOrderIdGenerator client_order_id count to {order_id_count}.",
+            f"Set ClientOrderIdGenerator client_order_id count to {order_id_count}",
             LogColor.BLUE,
         )
         self.order_factory.set_order_list_id_count(order_list_id_count)
         self.log.info(
-            f"Set ClientOrderIdGenerator order_list_id count to {order_list_id_count}.",
+            f"Set ClientOrderIdGenerator order_list_id count to {order_list_id_count}",
             LogColor.BLUE,
         )
 
@@ -1053,12 +1053,12 @@ cdef class Strategy(Actor):
                 if first.instrument_id != order.instrument_id:
                     self._log.error(
                         "Cannot cancel all orders: instrument_id mismatch "
-                        f"{first.instrument_id} vs {order.instrument_id}.",
+                        f"{first.instrument_id} vs {order.instrument_id}",
                     )
                     return
                 if order.is_emulated_c():
                     self._log.error(
-                        "Cannot include emulated orders in a batch cancel."
+                        "Cannot include emulated orders in a batch cancel"
                     )
                     return
 
@@ -1071,7 +1071,7 @@ cdef class Strategy(Actor):
             cancels.append(cancel)
 
         if not cancels:
-            self._log.warning("Cannot send `BatchCancelOrders`, no valid cancel commands.")
+            self._log.warning("Cannot send `BatchCancelOrders`, no valid cancel commands")
             return
 
         cdef command = BatchCancelOrders(
@@ -1130,21 +1130,21 @@ cdef class Strategy(Actor):
         if not open_orders and not emulated_orders:
             self.log.info(
                 f"No {instrument_id.to_str()} open or emulated{order_side_str} "
-                f"orders to cancel.")
+                f"orders to cancel")
             return
 
         cdef int open_count = len(open_orders)
         if open_count:
             self.log.info(
                 f"Canceling {open_count} open{order_side_str} "
-                f"{instrument_id.to_str()} order{'' if open_count == 1 else 's'}...",
+                f"{instrument_id.to_str()} order{'' if open_count == 1 else 's'}",
             )
 
         cdef int emulated_count = len(emulated_orders)
         if emulated_count:
             self.log.info(
                 f"Canceling {emulated_count} emulated{order_side_str} "
-                f"{instrument_id.to_str()} order{'' if emulated_count == 1 else 's'}...",
+                f"{instrument_id.to_str()} order{'' if emulated_count == 1 else 's'}",
             )
 
         cdef:
@@ -1216,7 +1216,7 @@ cdef class Strategy(Actor):
         if position.is_closed_c():
             self.log.warning(
                 f"Cannot close position "
-                f"(the position is already closed), {position}."
+                f"(the position is already closed), {position}"
             )
             return  # Invalid command
 
@@ -1271,13 +1271,13 @@ cdef class Strategy(Actor):
         cdef str position_side_str = " " + position_side_to_str(position_side) if position_side != PositionSide.NO_POSITION_SIDE else ""
         if not positions_open:
             self.log.info(
-                f"No {instrument_id.to_str()} open{position_side_str} positions to close.",
+                f"No {instrument_id.to_str()} open{position_side_str} positions to close",
             )
             return
 
         cdef int count = len(positions_open)
         self.log.info(
-            f"Closing {count} open{position_side_str} position{'' if count == 1 else 's'}...",
+            f"Closing {count} open{position_side_str} position{'' if count == 1 else 's'}",
         )
 
         cdef Position position
@@ -1351,14 +1351,14 @@ cdef class Strategy(Actor):
             self.log.error(
                 "Cannot create command ModifyOrder: "
                 "quantity, price and trigger were either None "
-                "or the same as existing values.",
+                "or the same as existing values",
             )
             return None  # Cannot send command
 
         if order.is_closed_c() or order.is_pending_cancel_c():
             self.log.warning(
                 f"Cannot create command ModifyOrder: "
-                f"state is {order.status_string_c()}, {order}.",
+                f"state is {order.status_string_c()}, {order}",
             )
             return None  # Cannot send command
 
@@ -1396,7 +1396,7 @@ cdef class Strategy(Actor):
     cdef CancelOrder _create_cancel_order(self, Order order, ClientId client_id = None):
         if order.is_closed_c() or order.is_pending_cancel_c():
             self.log.warning(
-                f"Cannot cancel order: state is {order.status_string_c()}, {order}.",
+                f"Cannot cancel order: state is {order.status_string_c()}, {order}",
             )
             return None  # Cannot send command
 
@@ -1452,7 +1452,7 @@ cdef class Strategy(Actor):
             return
 
         self._log.info(
-            f"Canceling managed GTD expiry timer for {order.client_order_id}{expire_time_str}.",
+            f"Canceling managed GTD expiry timer for {order.client_order_id}{expire_time_str}",
             LogColor.BLUE,
         )
         self._clock.cancel_timer(name=timer_name)
@@ -1473,7 +1473,7 @@ cdef class Strategy(Actor):
         )
 
         self._log.info(
-            f"Set managed GTD expiry timer for {order.client_order_id} @ {order.expire_time.isoformat()}.",
+            f"Set managed GTD expiry timer for {order.client_order_id} @ {order.expire_time.isoformat()}",
             LogColor.BLUE,
         )
 
@@ -1482,14 +1482,14 @@ cdef class Strategy(Actor):
         cdef Order order = self.cache.order(client_order_id)
         if order is None:
             self._log.warning(
-                f"Order with {repr(client_order_id)} not found in the cache to apply {event}."
+                f"Order with {repr(client_order_id)} not found in the cache to apply {event}"
             )
 
         if order.is_closed_c():
-            self._log.warning(f"GTD expired order {order.client_order_id} was already closed.")
+            self._log.warning(f"GTD expired order {order.client_order_id} was already closed")
             return  # Already closed
 
-        self._log.info(f"Expiring GTD order {order.client_order_id}.", LogColor.BLUE)
+        self._log.info(f"Expiring GTD order {order.client_order_id}", LogColor.BLUE)
         self.cancel_order(order)
 
     # -- HANDLERS -------------------------------------------------------------------------------------
@@ -1513,9 +1513,9 @@ cdef class Strategy(Actor):
         Condition.not_none(event, "event")
 
         if type(event) in self._warning_events:
-            self.log.warning(f"{RECV}{EVT} {event}.")
+            self.log.warning(f"{RECV}{EVT} {event}")
         else:
-            self.log.info(f"{RECV}{EVT} {event}.")
+            self.log.info(f"{RECV}{EVT} {event}")
 
         cdef Order order
         if self.manage_gtd_expiry and isinstance(event, OrderEvent):
@@ -1638,7 +1638,7 @@ cdef class Strategy(Actor):
         )
 
     cdef void _deny_order(self, Order order, str reason):
-        self._log.error(f"Order denied: {reason}.")
+        self._log.error(f"Order denied: {reason}")
 
         if not self.cache.order_exists(order.client_order_id):
             self.cache.add_order(order)

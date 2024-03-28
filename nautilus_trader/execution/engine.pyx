@@ -342,7 +342,7 @@ cdef class ExecutionEngine(Component):
         else:
             self._routing_map[client.venue] = client
 
-        self._log.info(f"Registered ExecutionClient-{client}{routing_log}.")
+        self._log.info(f"Registered ExecutionClient-{client}{routing_log}")
 
     cpdef void register_default_client(self, ExecutionClient client):
         """
@@ -361,7 +361,7 @@ cdef class ExecutionEngine(Component):
 
         self._default_client = client
 
-        self._log.info(f"Registered {client} for default routing.")
+        self._log.info(f"Registered {client} for default routing")
 
     cpdef void register_venue_routing(self, ExecutionClient client, Venue venue):
         """
@@ -386,7 +386,7 @@ cdef class ExecutionEngine(Component):
 
         self._routing_map[venue] = client
 
-        self._log.info(f"Registered ExecutionClient-{client} for routing to {venue}.")
+        self._log.info(f"Registered ExecutionClient-{client} for routing to {venue}")
 
     cpdef void register_oms_type(self, Strategy strategy):
         """
@@ -404,7 +404,7 @@ cdef class ExecutionEngine(Component):
 
         self._log.info(
             f"Registered OMS.{oms_type_to_str(strategy.oms_type)} "
-            f"for Strategy {strategy}.",
+            f"for Strategy {strategy}",
         )
 
     cpdef void register_external_order_claims(self, Strategy strategy):
@@ -438,7 +438,7 @@ cdef class ExecutionEngine(Component):
 
         if strategy.external_order_claims:
             self._log.info(
-                f"Registered external order claims for {strategy}: {strategy.external_order_claims}.",
+                f"Registered external order claims for {strategy}: {strategy.external_order_claims}",
             )
 
     cpdef void deregister_client(self, ExecutionClient client):
@@ -467,7 +467,7 @@ cdef class ExecutionEngine(Component):
         else:
             del self._routing_map[client.venue]
 
-        self._log.info(f"Deregistered {client}.")
+        self._log.info(f"Deregistered {client}")
 
     # -- RECONCILIATION -------------------------------------------------------------------------------
 
@@ -581,7 +581,7 @@ cdef class ExecutionEngine(Component):
         self._cache.check_integrity()
         self._set_position_id_counts()
 
-        self._log.info(f"Loaded cache in {(int(time.time() * 1000) - ts)}ms.")
+        self._log.info(f"Loaded cache in {(int(time.time() * 1000) - ts)}ms")
 
     cpdef void execute(self, TradingCommand command):
         """
@@ -644,7 +644,7 @@ cdef class ExecutionEngine(Component):
         cdef StrategyId strategy_id
         for strategy_id, count in counts.items():
             self._pos_id_generator.set_count(strategy_id, count)
-            self._log.info(f"Set PositionId count for {strategy_id!r} to {count}.")
+            self._log.info(f"Set PositionId count for {strategy_id!r} to {count}")
 
     cpdef Price _last_px_for_conversion(self, InstrumentId instrument_id, OrderSide order_side):
         cdef Price last_px = None
@@ -660,7 +660,7 @@ cdef class ExecutionEngine(Component):
 
     cpdef void _set_order_base_qty(self, Order order, Quantity base_qty):
         self._log.info(
-            f"Setting {order.instrument_id} order quote quantity {order.quantity} to base quantity {base_qty}.",
+            f"Setting {order.instrument_id} order quote quantity {order.quantity} to base quantity {base_qty}",
         )
         cdef Quantity original_qty = order.quantity
         order.quantity = base_qty
@@ -676,7 +676,7 @@ cdef class ExecutionEngine(Component):
         for client_order_id in order.linked_order_ids or []:
             contingent_order = self._cache.order(client_order_id)
             if contingent_order is None:
-                self._log.error(f"Contingency order {client_order_id!r} not found.")
+                self._log.error(f"Contingency order {client_order_id!r} not found")
                 continue
             if not contingent_order.is_quote_quantity:
                 continue  # Already base quantity
@@ -684,11 +684,11 @@ cdef class ExecutionEngine(Component):
                 self._log.warning(
                     f"Contingent order quantity {contingent_order.quantity} "
                     f"was not equal to the OTO parent original quantity {original_qty} "
-                    f"when setting to base quantity of {base_qty}."
+                    f"when setting to base quantity of {base_qty}"
                 )
             self._log.info(
                 f"Setting {contingent_order.instrument_id} order quote quantity "
-                f"{contingent_order.quantity} to base quantity {base_qty}.",
+                f"{contingent_order.quantity} to base quantity {base_qty}",
             )
             contingent_order.quantity = base_qty
             contingent_order.leaves_qty = base_qty
@@ -719,7 +719,7 @@ cdef class ExecutionEngine(Component):
 
     cpdef void _execute_command(self, TradingCommand command):
         if self.debug:
-            self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
+            self._log.debug(f"{RECV}{CMD} {command}", LogColor.MAGENTA)
         self.command_count += 1
 
         cdef ExecutionClient client = self._clients.get(command.client_id)
@@ -732,7 +732,7 @@ cdef class ExecutionEngine(Component):
                 self._log.error(
                     f"Cannot execute command: "
                     f"no execution client configured for {command.instrument_id.venue} or `client_id` {command.client_id}, "
-                    f"{command}."
+                    f"{command}"
                 )
                 return  # No client to handle command
 
@@ -752,7 +752,7 @@ cdef class ExecutionEngine(Component):
             self._handle_query_order(client, command)
         else:
             self._log.error(  # pragma: no cover (design-time error)
-                f"Cannot handle command: unrecognized {command}.",  # pragma: no cover (design-time error)
+                f"Cannot handle command: unrecognized {command}",  # pragma: no cover (design-time error)
             )
 
     cpdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command):
@@ -767,7 +767,7 @@ cdef class ExecutionEngine(Component):
         if instrument is None:
             self._log.error(
                 f"Cannot handle submit order: "
-                f"no instrument found for {order.instrument_id}, {command}."
+                f"no instrument found for {order.instrument_id}, {command}"
             )
             return
 
@@ -798,7 +798,7 @@ cdef class ExecutionEngine(Component):
         if instrument is None:
             self._log.error(
                 f"Cannot handle submit order list: "
-                f"no instrument found for {command.instrument_id}, {command}."
+                f"no instrument found for {command.instrument_id}, {command}"
             )
             return
 
@@ -842,7 +842,7 @@ cdef class ExecutionEngine(Component):
 
     cpdef void _handle_event(self, OrderEvent event):
         if self.debug:
-            self._log.debug(f"{RECV}{EVT} {event}.", LogColor.MAGENTA)
+            self._log.debug(f"{RECV}{EVT} {event}", LogColor.MAGENTA)
         self.event_count += 1
 
         # Fetch Order from cache
@@ -851,14 +851,14 @@ cdef class ExecutionEngine(Component):
         if order is None:
             self._log.warning(
                 f"Order with {event.client_order_id!r} "
-                f"not found in the cache to apply {event}."
+                f"not found in the cache to apply {event}"
             )
 
             if event.venue_order_id is None:
                 self._log.error(
                     f"Cannot apply event to any order: "
                     f"{event.client_order_id!r} not found in the cache "
-                    f"with no `VenueOrderId`."
+                    f"with no `VenueOrderId`"
                 )
                 return  # Cannot process event further
 
@@ -868,7 +868,7 @@ cdef class ExecutionEngine(Component):
                 self._log.error(
                     f"Cannot apply event to any order: "
                     f"{event.client_order_id!r} and {event.venue_order_id!r} "
-                    f"not found in the cache."
+                    f"not found in the cache"
                 )
                 return  # Cannot process event further
 
@@ -878,14 +878,14 @@ cdef class ExecutionEngine(Component):
                 self._log.error(
                     f"Cannot apply event to any order: "
                     f"{event.client_order_id!r} and {event.venue_order_id!r} "
-                    f"not found in the cache."
+                    f"not found in the cache"
                 )
                 return  # Cannot process event further
 
             # Set the correct ClientOrderId for the event
             event.set_client_order_id(client_order_id)
             self._log.info(
-                f"Order with {client_order_id!r} was found in the cache.",
+                f"Order with {client_order_id!r} was found in the cache",
                 color=LogColor.GREEN,
             )
 
@@ -918,7 +918,7 @@ cdef class ExecutionEngine(Component):
         if self.debug:
             self._log.debug(
                 f"Determining position ID for {fill.client_order_id!r}, "
-                f"position_id={position_id!r}.",
+                f"position_id={position_id!r}",
                 LogColor.MAGENTA,
             )
         if position_id is not None:
@@ -926,12 +926,12 @@ cdef class ExecutionEngine(Component):
                 self._log.error(
                     "Incorrect position ID assigned to fill: "
                     f"cached={position_id!r}, assigned={fill.position_id!r}. "
-                    "re-assigning from cache.",
+                    "re-assigning from cache",
                 )
             # Assign position ID to fill
             fill.position_id = position_id
             if self.debug:
-                self._log.debug(f"Assigned {position_id!r} to {fill}.", LogColor.MAGENTA)
+                self._log.debug(f"Assigned {position_id!r} to {fill}", LogColor.MAGENTA)
             return
 
         if oms_type == OmsType.HEDGING:
@@ -967,7 +967,7 @@ cdef class ExecutionEngine(Component):
                 primary.client_order_id,
                 primary.strategy_id,
             )
-            self._log.debug(f"Assigned primary order {position_id!r}.", LogColor.MAGENTA)
+            self._log.debug(f"Assigned primary order {position_id!r}", LogColor.MAGENTA)
 
     cpdef PositionId _determine_hedging_position_id(self, OrderFilled fill):
         if fill.position_id is not None:
@@ -979,7 +979,7 @@ cdef class ExecutionEngine(Component):
         cdef Order order = self._cache.order(fill.client_order_id)
         if order is None:
             raise RuntimeError(
-                f"Order for {fill.client_order_id!r} not found to determine position ID.",
+                f"Order for {fill.client_order_id!r} not found to determine position ID",
             )
 
         cdef:
@@ -990,14 +990,14 @@ cdef class ExecutionEngine(Component):
             for spawned_order in exec_spawn_orders:
                 if spawned_order.position_id is not None:
                     if self.debug:
-                        self._log.debug(f"Found spawned {spawned_order.position_id!r} for {fill}.", LogColor.MAGENTA)
+                        self._log.debug(f"Found spawned {spawned_order.position_id!r} for {fill}", LogColor.MAGENTA)
                     # Use position ID for execution spawn
                     return spawned_order.position_id
 
         # Assign new position ID
         position_id = self._pos_id_generator.generate(fill.strategy_id)
         if self.debug:
-            self._log.debug(f"Generated {position_id!r} for {fill}.", LogColor.MAGENTA)
+            self._log.debug(f"Generated {position_id!r} for {fill}", LogColor.MAGENTA)
         return position_id
 
     cpdef PositionId _determine_netting_position_id(self, OrderFilled fill):
@@ -1028,7 +1028,7 @@ cdef class ExecutionEngine(Component):
         if instrument is None:
             self._log.error(
                 f"Cannot handle order fill: "
-                f"no instrument found for {fill.instrument_id}, {fill}."
+                f"no instrument found for {fill.instrument_id}, {fill}"
             )
             return
 
@@ -1036,7 +1036,7 @@ cdef class ExecutionEngine(Component):
         if account is None:
             self._log.error(
                 f"Cannot handle order fill: "
-                f"no account found for {fill.instrument_id.venue}, {fill}."
+                f"no account found for {fill.instrument_id.venue}, {fill}"
             )
             return
 
@@ -1184,7 +1184,7 @@ cdef class ExecutionEngine(Component):
         if difference._mem.raw == 0:
             self._log.warning(
                 "Zero fill size during position flip calculation, this could be caused by"
-                "a mismatch between instrument `size_precision` and a quantity `size_precision`."
+                "a mismatch between instrument `size_precision` and a quantity `size_precision`"
             )
             return
 
@@ -1219,8 +1219,8 @@ cdef class ExecutionEngine(Component):
         )
 
         if oms_type == OmsType.HEDGING and fill.position_id.is_virtual_c():
-            self._log.warning(f"Closing position {fill_split1}.")
-            self._log.warning(f"Flipping position {fill_split2}.")
+            self._log.warning(f"Closing position {fill_split1}")
+            self._log.warning(f"Flipping position {fill_split2}")
 
         # Open flipped position
         self._open_position(instrument, None, fill_split2, oms_type)

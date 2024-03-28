@@ -709,7 +709,7 @@ cdef class TimeBarAggregator(BarAggregator):
             callback=self._build_bar,
         )
 
-        self._log.debug(f"Started timer {self._timer_name}.")
+        self._log.debug(f"Started timer {self._timer_name}")
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
         self._builder.update(price, size, ts_event)

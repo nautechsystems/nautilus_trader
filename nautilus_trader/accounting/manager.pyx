@@ -230,7 +230,7 @@ cdef class AccountsManager:
                         self._log.debug(
                             f"Cannot calculate balance locked: "
                             f"insufficient data for "
-                            f"{instrument.get_settlement_currency()}/{account.base_currency}."
+                            f"{instrument.get_settlement_currency()}/{account.base_currency}"
                         )
                         return None  # Cannot calculate
 
@@ -318,7 +318,7 @@ cdef class AccountsManager:
                         self._log.debug(
                             f"Cannot calculate initial (order) margin: "
                             f"insufficient data for "
-                            f"{instrument.get_settlement_currency()}/{account.base_currency}."
+                            f"{instrument.get_settlement_currency()}/{account.base_currency}"
                         )
                         return None  # Cannot calculate
 
@@ -409,7 +409,7 @@ cdef class AccountsManager:
                         self._log.debug(
                             f"Cannot calculate maintenance (position) margin: "
                             f"insufficient data for "
-                            f"{instrument.get_settlement_currency()}/{account.base_currency}."
+                            f"{instrument.get_settlement_currency()}/{account.base_currency}"
                         )
                         return None  # Cannot calculate
 
@@ -452,7 +452,7 @@ cdef class AccountsManager:
                 self._log.error(
                     f"Cannot calculate account state: "
                     f"insufficient data for "
-                    f"{fill.commission.currency}/{account.base_currency}."
+                    f"{fill.commission.currency}/{account.base_currency}"
                 )
                 return  # Cannot calculate
 
@@ -470,7 +470,7 @@ cdef class AccountsManager:
                 self._log.error(
                     f"Cannot calculate account state: "
                     f"insufficient data for "
-                    f"{pnl.currency}/{account.base_currency}."
+                    f"{pnl.currency}/{account.base_currency}"
                 )
                 return  # Cannot calculate
 
@@ -483,7 +483,7 @@ cdef class AccountsManager:
 
         cdef AccountBalance balance = account.balance()
         if balance is None:
-            self._log.error(f"Cannot complete transaction: no balance for {pnl.currency}.")
+            self._log.error(f"Cannot complete transaction: no balance for {pnl.currency}")
             return
 
         # Calculate new balance
@@ -523,7 +523,7 @@ cdef class AccountsManager:
                     if commission._mem.raw > 0:
                         self._log.error(
                             f"Cannot complete transaction: no {commission.currency} "
-                            f"balance to deduct a {commission.to_str()} commission from."
+                            f"balance to deduct a {commission.to_str()} commission from"
                         )
                         return
                     else:
@@ -546,7 +546,7 @@ cdef class AccountsManager:
                 if pnl._mem.raw < 0:
                     self._log.error(
                         "Cannot complete transaction: "
-                        f"no {pnl.currency} to deduct a {pnl.to_str()} realized PnL from."
+                        f"no {pnl.currency} to deduct a {pnl.to_str()} realized PnL from"
                     )
                     return
                 new_balance = AccountBalance(
@@ -587,7 +587,7 @@ cdef class AccountsManager:
             if balance is None:
                 self._log.error(
                     "Cannot calculate account state: "
-                    f"no cached balances for {currency}."
+                    f"no cached balances for {currency}"
                 )
                 return
 

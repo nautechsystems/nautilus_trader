@@ -1920,13 +1920,13 @@ cdef class Component:
         try:
             self._fsm.trigger(trigger)
         except InvalidStateTrigger as e:
-            self._log.error(f"{repr(e)} state {self._fsm.state_string_c()}.")
+            self._log.error(f"{repr(e)} state {self._fsm.state_string_c()}")
             return  # Guards against invalid state
 
         if is_transitory:
-            self._log.debug(f"{self._fsm.state_string_c()}...")
+            self._log.debug(f"{self._fsm.state_string_c()}")
         else:
-            self._log.info(f"{self._fsm.state_string_c()}.")
+            self._log.info(f"{self._fsm.state_string_c()}")
 
         if action is not None:
             action()
@@ -2039,7 +2039,7 @@ cdef class MessageBus:
         if config.buffer_interval_ms and config.buffer_interval_ms > 1000:
             self._log.warning(
                 f"High `buffer_interval_ms` at {config.buffer_interval_ms}, "
-                "recommended range is [10, 1000] milliseconds.",
+                "recommended range is [10, 1000] milliseconds",
             )
 
         # Configuration
@@ -2197,9 +2197,9 @@ cdef class MessageBus:
         Dispose of the message bus which will close the internal channel and thread.
 
         """
-        self._log.debug("Closing message bus...")
+        self._log.debug("Closing message bus")
         msgbus_close(&self._mem)
-        self._log.info("Closed message bus.")
+        self._log.info("Closed message bus")
 
     cpdef void register(self, str endpoint, handler: Callable[[Any], None]):
         """
@@ -2228,7 +2228,7 @@ cdef class MessageBus:
 
         self._endpoints[endpoint] = handler
 
-        self._log.debug(f"Added endpoint '{endpoint}' {handler}.")
+        self._log.debug(f"Added endpoint '{endpoint}' {handler}")
 
     cpdef void deregister(self, str endpoint, handler: Callable[[Any], None]):
         """
@@ -2260,7 +2260,7 @@ cdef class MessageBus:
 
         del self._endpoints[endpoint]
 
-        self._log.debug(f"Removed endpoint '{endpoint}' {handler}.")
+        self._log.debug(f"Removed endpoint '{endpoint}' {handler}")
 
     cpdef void send(self, str endpoint, msg: Any):
         """
@@ -2280,7 +2280,7 @@ cdef class MessageBus:
         handler = self._endpoints.get(endpoint)
         if handler is None:
             self._log.error(
-                f"Cannot send message: no endpoint registered at '{endpoint}'.",
+                f"Cannot send message: no endpoint registered at '{endpoint}'",
             )
             return  # Cannot send
 
@@ -2307,7 +2307,7 @@ cdef class MessageBus:
         if request.id in self._correlation_index:
             self._log.error(
                 f"Cannot handle request: "
-                f"duplicate ID {request.id} found in correlation index.",
+                f"duplicate ID {request.id} found in correlation index",
             )
             return  # Do not handle duplicates
 
@@ -2316,7 +2316,7 @@ cdef class MessageBus:
         handler = self._endpoints.get(endpoint)
         if handler is None:
             self._log.error(
-                f"Cannot handle request: no endpoint registered at '{endpoint}'.",
+                f"Cannot handle request: no endpoint registered at '{endpoint}'",
             )
             return  # Cannot handle
 
@@ -2341,7 +2341,7 @@ cdef class MessageBus:
         if callback is None:
             self._log.error(
                 f"Cannot handle response: "
-                f"callback not found for correlation_id {response.correlation_id}.",
+                f"callback not found for correlation_id {response.correlation_id}",
             )
             return  # Cannot handle
 
@@ -2398,7 +2398,7 @@ cdef class MessageBus:
 
         # Check if already exists
         if sub in self._subscriptions:
-            self._log.debug(f"{sub} already exists.")
+            self._log.debug(f"{sub} already exists")
             return
 
         cdef list matches = []
@@ -2416,7 +2416,7 @@ cdef class MessageBus:
 
         self._subscriptions[sub] = sorted(matches)
 
-        self._log.debug(f"Added {sub}.")
+        self._log.debug(f"Added {sub}")
 
     cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]):
         """
@@ -2447,7 +2447,7 @@ cdef class MessageBus:
 
         # Check if exists
         if patterns is None:
-            self._log.warning(f"{sub} not found.")
+            self._log.warning(f"{sub} not found")
             return
 
         cdef str pattern
@@ -2459,7 +2459,7 @@ cdef class MessageBus:
 
         del self._subscriptions[sub]
 
-        self._log.debug(f"Removed {sub}.")
+        self._log.debug(f"Removed {sub}")
 
     cpdef void publish(self, str topic, msg: Any):
         """
@@ -2724,7 +2724,7 @@ cdef class Throttler:
         self.recv_count = 0
         self.sent_count = 0
 
-        self._log.info("READY.")
+        self._log.info("READY")
 
     @property
     def qsize(self) -> int:
@@ -2811,12 +2811,12 @@ cdef class Throttler:
             # Buffer
             self._buffer.appendleft(msg)
             timer_target = self._process
-            self._log.warning(f"Buffering {msg}.")
+            self._log.warning(f"Buffering {msg}")
         else:
             # Drop
             self._output_drop(msg)
             timer_target = self._resume
-            self._log.warning(f"Dropped {msg}.")
+            self._log.warning(f"Dropped {msg}")
 
         if not self.is_limiting:
             self._set_timer(timer_target)

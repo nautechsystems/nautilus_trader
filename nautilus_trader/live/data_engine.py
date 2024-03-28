@@ -93,7 +93,7 @@ class LiveDataEngine(DataEngine):
         if self._clients:
             self._log.info("Connecting all clients...")
         else:
-            self._log.warning("No clients to connect.")
+            self._log.warning("No clients to connect")
             return
 
         for client in self._clients.values():
@@ -106,7 +106,7 @@ class LiveDataEngine(DataEngine):
         if self._clients:
             self._log.info("Disconnecting all clients...")
         else:
-            self._log.warning("No clients to disconnect.")
+            self._log.warning("No clients to disconnect")
             return
 
         for client in self._clients.values():
@@ -204,23 +204,23 @@ class LiveDataEngine(DataEngine):
         """
         Kill the engine by abruptly canceling the queue tasks and calling stop.
         """
-        self._log.warning("Killing engine...")
+        self._log.warning("Killing engine")
         self._kill = True
         self.stop()
         if self._cmd_queue_task:
-            self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}...")
+            self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}")
             self._cmd_queue_task.cancel()
             self._cmd_queue_task = None
         if self._req_queue_task:
-            self._log.debug(f"Canceling {self._req_queue_task.get_name()}...")
+            self._log.debug(f"Canceling {self._req_queue_task.get_name()}")
             self._req_queue_task.cancel()
             self._req_queue_task = None
         if self._res_queue_task:
-            self._log.debug(f"Canceling {self._res_queue_task.get_name()}...")
+            self._log.debug(f"Canceling {self._res_queue_task.get_name()}")
             self._res_queue_task.cancel()
             self._res_queue_task = None
         if self._data_queue_task:
-            self._log.debug(f"Canceling {self._data_queue_task.get_name()}...")
+            self._log.debug(f"Canceling {self._data_queue_task.get_name()}")
             self._data_queue_task.cancel()
             self._data_queue_task = None
 
@@ -250,7 +250,7 @@ class LiveDataEngine(DataEngine):
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_cmd_queue.put` as queue full at "
-                f"{self._cmd_queue.qsize()} items.",
+                f"{self._cmd_queue.qsize()} items",
             )
             # Schedule the `put` operation to be executed once there is space in the queue
             self._loop.create_task(self._cmd_queue.put(command))
@@ -281,7 +281,7 @@ class LiveDataEngine(DataEngine):
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_req_queue.put` as queue full at "
-                f"{self._req_queue.qsize()} items.",
+                f"{self._req_queue.qsize()} items",
             )
             # Schedule the `put` operation to be executed once there is space in the queue
             self._loop.create_task(self._req_queue.put(request))
@@ -312,7 +312,7 @@ class LiveDataEngine(DataEngine):
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_res_queue.put` as queue full at "
-                f"{self._res_queue.qsize():_} items.",
+                f"{self._res_queue.qsize():_} items",
             )
             # Schedule the `put` operation to be executed once there is space in the queue
             self._loop.create_task(self._res_queue.put(response))
@@ -343,7 +343,7 @@ class LiveDataEngine(DataEngine):
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_data_queue.put` as queue full at "
-                f"{self._data_queue.qsize():_} items.",
+                f"{self._data_queue.qsize():_} items",
             )
             # Schedule the `put` operation to be executed once there is space in the queue
             self._loop.create_task(self._data_queue.put(data))
@@ -355,11 +355,11 @@ class LiveDataEngine(DataEngine):
         self._loop.call_soon_threadsafe(self._req_queue.put_nowait, self._sentinel)
         self._loop.call_soon_threadsafe(self._res_queue.put_nowait, self._sentinel)
         self._loop.call_soon_threadsafe(self._data_queue.put_nowait, self._sentinel)
-        self._log.debug("Sentinel messages placed on queues.")
+        self._log.debug("Sentinel messages placed on queues")
 
     def _on_start(self) -> None:
         if not self._loop.is_running():
-            self._log.warning("Started when loop is not running.")
+            self._log.warning("Started when loop is not running")
 
         self._cmd_queue_task = self._loop.create_task(self._run_cmd_queue(), name="cmd_queue")
         self._req_queue_task = self._loop.create_task(self._run_res_queue(), name="res_queue")
@@ -380,7 +380,7 @@ class LiveDataEngine(DataEngine):
 
     async def _run_cmd_queue(self) -> None:
         self._log.debug(
-            f"DataCommand message queue processing starting (qsize={self.cmd_qsize()})...",
+            f"DataCommand message queue processing starting (qsize={self.cmd_qsize()})",
         )
         try:
             while True:
@@ -389,19 +389,19 @@ class LiveDataEngine(DataEngine):
                     break
                 self._execute_command(command)
         except asyncio.CancelledError:
-            self._log.warning("DataCommand message queue canceled.")
+            self._log.warning("DataCommand message queue canceled")
         except RuntimeError as e:
-            self._log.error(f"RuntimeError: {e}.")
+            self._log.error(f"RuntimeError: {e}")
         finally:
             stopped_msg = "DataCommand message queue stopped"
             if not self._cmd_queue.empty():
-                self._log.warning(f"{stopped_msg} with {self.cmd_qsize()} message(s) on queue.")
+                self._log.warning(f"{stopped_msg} with {self.cmd_qsize()} message(s) on queue")
             else:
-                self._log.debug(stopped_msg + ".")
+                self._log.debug(stopped_msg)
 
     async def _run_req_queue(self) -> None:
         self._log.debug(
-            f"DataRequest message queue processing starting (qsize={self.req_qsize()})...",
+            f"DataRequest message queue processing starting (qsize={self.req_qsize()})",
         )
         try:
             while True:
@@ -410,19 +410,19 @@ class LiveDataEngine(DataEngine):
                     break
                 self._handle_request(request)
         except asyncio.CancelledError:
-            self._log.warning("DataRequest message queue canceled.")
+            self._log.warning("DataRequest message queue canceled")
         except RuntimeError as e:
-            self._log.error(f"RuntimeError: {e}.")
+            self._log.error(f"RuntimeError: {e}")
         finally:
             stopped_msg = "DataRequest message queue stopped"
             if not self._req_queue.empty():
-                self._log.warning(f"{stopped_msg} with {self.req_qsize()} message(s) on queue.")
+                self._log.warning(f"{stopped_msg} with {self.req_qsize()} message(s) on queue")
             else:
-                self._log.debug(stopped_msg + ".")
+                self._log.debug(stopped_msg)
 
     async def _run_res_queue(self) -> None:
         self._log.debug(
-            f"DataResponse message queue processing starting (qsize={self.res_qsize()})...",
+            f"DataResponse message queue processing starting (qsize={self.res_qsize()})",
         )
         try:
             while True:
@@ -431,18 +431,18 @@ class LiveDataEngine(DataEngine):
                     break
                 self._handle_response(response)
         except asyncio.CancelledError:
-            self._log.warning("DataResponse message queue canceled.")
+            self._log.warning("DataResponse message queue canceled")
         except RuntimeError as e:
-            self._log.error(f"RuntimeError: {e}.")
+            self._log.error(f"RuntimeError: {e}")
         finally:
             stopped_msg = "DataResponse message queue stopped"
             if not self._res_queue.empty():
-                self._log.warning(f"{stopped_msg} with {self.res_qsize()} message(s) on queue.")
+                self._log.warning(f"{stopped_msg} with {self.res_qsize()} message(s) on queue")
             else:
-                self._log.debug(stopped_msg + ".")
+                self._log.debug(stopped_msg)
 
     async def _run_data_queue(self) -> None:
-        self._log.debug(f"Data queue processing starting (qsize={self.data_qsize()})...")
+        self._log.debug(f"Data queue processing starting (qsize={self.data_qsize()})")
         try:
             while True:
                 data: Data | None = await self._data_queue.get()
@@ -450,12 +450,12 @@ class LiveDataEngine(DataEngine):
                     break
                 self._handle_data(data)
         except asyncio.CancelledError:
-            self._log.warning("Data message queue canceled.")
+            self._log.warning("Data message queue canceled")
         except RuntimeError as e:
-            self._log.error(f"RuntimeError: {e}.")
+            self._log.error(f"RuntimeError: {e}")
         finally:
             stopped_msg = "Data message queue stopped"
             if not self._data_queue.empty():
-                self._log.warning(f"{stopped_msg} with {self.data_qsize()} message(s) on queue.")
+                self._log.warning(f"{stopped_msg} with {self.data_qsize()} message(s) on queue")
             else:
-                self._log.debug(stopped_msg + ".")
+                self._log.debug(stopped_msg)

@@ -198,14 +198,14 @@ class BybitDataClient(LiveMarketDataClient):
 
         self._send_all_instruments_to_data_engine()
         self._update_instruments_task = self.create_task(self._update_instruments())
-        self._log.info("Initializing websocket connections.")
+        self._log.info("Initializing websocket connections")
         for ws_client in self._ws_clients.values():
             await ws_client.connect()
-        self._log.info("Data client connected.")
+        self._log.info("Data client connected")
 
     async def _disconnect(self) -> None:
         if self._update_instruments_task:
-            self._log.debug("Cancelling `update_instruments` task.")
+            self._log.debug("Cancelling `update_instruments` task")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
         for ws_client in self._ws_clients.values():
@@ -223,27 +223,27 @@ class BybitDataClient(LiveMarketDataClient):
             while True:
                 self._log.debug(
                     f"Scheduled `update_instruments` to run in "
-                    f"{self._update_instrument_interval}s.",
+                    f"{self._update_instrument_interval}s",
                 )
                 await asyncio.sleep(self._update_instrument_interval)
                 await self._instrument_provider.load_all_async()
                 self._send_all_instruments_to_data_engine()
         except asyncio.CancelledError:
-            self._log.debug("Canceled `update_instruments` task.")
+            self._log.debug("Canceled `update_instruments` task")
 
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         assert bybit_symbol  # type checking
         ws_client = self._ws_clients[bybit_symbol.instrument_type]
         await ws_client.subscribe_tickers(bybit_symbol.raw_symbol)
-        self._log.info(f"Subscribed {instrument_id} quote ticks.", LogColor.BLUE)
+        self._log.info(f"Subscribed {instrument_id} quote ticks", LogColor.BLUE)
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         assert bybit_symbol  # type checking
         ws_client = self._ws_clients[bybit_symbol.instrument_type]
         await ws_client.subscribe_trades(bybit_symbol.raw_symbol)
-        self._log.info(f"Subscribed {instrument_id} trade ticks.", LogColor.BLUE)
+        self._log.info(f"Subscribed {instrument_id} trade ticks", LogColor.BLUE)
 
     async def _subscribe_bars(self, bar_type: BarType) -> None:
         bybit_symbol = BybitSymbol(bar_type.instrument_id.symbol.value)
@@ -253,21 +253,21 @@ class BybitDataClient(LiveMarketDataClient):
         self._topic_bar_type[topic] = bar_type
         ws_client = self._ws_clients[bybit_symbol.instrument_type]
         await ws_client.subscribe_klines(bybit_symbol.raw_symbol, interval_str)
-        self._log.info(f"Subscribed {bar_type} bars.", LogColor.BLUE)
+        self._log.info(f"Subscribed {bar_type} bars", LogColor.BLUE)
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         assert bybit_symbol  # type checking
         ws_client = self._ws_clients[bybit_symbol.instrument_type]
         await ws_client.unsubscribe_tickers(bybit_symbol.raw_symbol)
-        self._log.info(f"Unsubscribed {instrument_id} quote ticks.", LogColor.BLUE)
+        self._log.info(f"Unsubscribed {instrument_id} quote ticks", LogColor.BLUE)
 
     async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         assert bybit_symbol  # type checking
         ws_client = self._ws_clients[bybit_symbol.instrument_type]
         await ws_client.unsubscribe_trades(bybit_symbol.raw_symbol)
-        self._log.info(f"Unsubscribed {instrument_id} trade ticks.", LogColor.BLUE)
+        self._log.info(f"Unsubscribed {instrument_id} trade ticks", LogColor.BLUE)
 
     async def _unsubscribe_bars(self, bar_type: BarType) -> None:
         bybit_symbol = BybitSymbol(bar_type.instrument_id.symbol.value)
@@ -277,7 +277,7 @@ class BybitDataClient(LiveMarketDataClient):
         self._topic_bar_type.pop(topic, None)
         ws_client = self._ws_clients[bybit_symbol.instrument_type]
         await ws_client.unsubscribe_klines(bybit_symbol.raw_symbol, interval_str)
-        self._log.info(f"Unsubscribed {bar_type} bars.", LogColor.BLUE)
+        self._log.info(f"Unsubscribed {bar_type} bars", LogColor.BLUE)
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
@@ -300,17 +300,17 @@ class BybitDataClient(LiveMarketDataClient):
     ) -> None:
         if start is not None:
             self._log.warning(
-                f"Requesting instrument {instrument_id} with specified `start` which has no effect.",
+                f"Requesting instrument {instrument_id} with specified `start` which has no effect",
             )
 
         if end is not None:
             self._log.warning(
-                f"Requesting instrument {instrument_id} with specified `end` which has no effect.",
+                f"Requesting instrument {instrument_id} with specified `end` which has no effect",
             )
 
         instrument: Instrument | None = self._instrument_provider.find(instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot find instrument for {instrument_id}.")
+            self._log.error(f"Cannot find instrument for {instrument_id}")
             return
         data_type = DataType(
             type=Instrument,
@@ -331,12 +331,12 @@ class BybitDataClient(LiveMarketDataClient):
     ) -> None:
         if start is not None:
             self._log.warning(
-                f"Requesting instruments for {venue} with specified `start` which has no effect.",
+                f"Requesting instruments for {venue} with specified `start` which has no effect",
             )
 
         if end is not None:
             self._log.warning(
-                f"Requesting instruments for {venue} with specified `end` which has no effect.",
+                f"Requesting instruments for {venue} with specified `end` which has no effect",
             )
 
         all_instruments = self._instrument_provider.get_all()
@@ -368,20 +368,20 @@ class BybitDataClient(LiveMarketDataClient):
         if bar_type.is_internally_aggregated():
             self._log.error(
                 f"Cannot request {bar_type}: "
-                f"only historical bars with EXTERNAL aggregation available from Bybit.",
+                f"only historical bars with EXTERNAL aggregation available from Bybit",
             )
             return
 
         if not bar_type.spec.is_time_aggregated():
             self._log.error(
-                f"Cannot request {bar_type}: only time bars are aggregated by Bybit.",
+                f"Cannot request {bar_type}: only time bars are aggregated by Bybit",
             )
             return
 
         if bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
                 f"Cannot request {bar_type}: "
-                f"only historical bars for LAST price type available from Bybit.",
+                f"only historical bars for LAST price type available from Bybit",
             )
             return
 

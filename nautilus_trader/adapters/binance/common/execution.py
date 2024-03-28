@@ -152,7 +152,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._use_reduce_only = config.use_reduce_only
         self._use_position_ids = config.use_position_ids
         self._treat_expired_as_canceled = config.treat_expired_as_canceled
-        self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
+        self._log.info(f"Account type: {self._binance_account_type.value}", LogColor.BLUE)
         self._log.info(f"{config.use_gtd=}", LogColor.BLUE)
         self._log.info(f"{config.use_reduce_only=}", LogColor.BLUE)
         self._log.info(f"{config.use_position_ids=}", LogColor.BLUE)
@@ -218,8 +218,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         self._order_retries: dict[ClientOrderId, int] = {}
 
-        self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
-        self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
+        self._log.info(f"Base URL HTTP {self._http_client.base_url}", LogColor.BLUE)
+        self._log.info(f"Base URL WebSocket {base_url_ws}", LogColor.BLUE)
 
     @property
     def use_position_ids(self) -> bool:
@@ -262,10 +262,10 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         # Check Binance-Nautilus clock sync
         server_time: int = await self._http_market.request_server_time()
-        self._log.info(f"Binance server time {server_time} UNIX (ms).")
+        self._log.info(f"Binance server time {server_time} UNIX (ms)")
 
         nautilus_time: int = self._clock.timestamp_ms()
-        self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms).")
+        self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms)")
 
         # Setup WebSocket listen key
         self._listen_key = response.listenKey
@@ -324,14 +324,14 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             self._log.error(
                 f"Reached maximum retries 3/3 for generating OrderStatusReport for "
                 f"{repr(client_order_id) if client_order_id else ''} "
-                f"{repr(venue_order_id) if venue_order_id else ''}...",
+                f"{repr(venue_order_id) if venue_order_id else ''}",
             )
             return None
 
         self._log.info(
             f"Generating OrderStatusReport for "
             f"{repr(client_order_id) if client_order_id else ''} "
-            f"{repr(venue_order_id) if venue_order_id else ''}...",
+            f"{repr(venue_order_id) if venue_order_id else ''}",
         )
 
         try:
@@ -354,11 +354,11 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             )
             self._generate_order_status_retries[client_order_id] = retries
             if not client_order_id:
-                self._log.warning("Cannot retry without a client order ID.")
+                self._log.warning("Cannot retry without a client order ID")
             else:
                 order: Order | None = self._cache.order(client_order_id)
                 if order is None:
-                    self._log.warning("Order not found in cache.")
+                    self._log.warning("Order not found in cache")
                     return None
                 elif order.is_closed:
                     return None  # Nothing else to do
@@ -380,7 +380,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             # Cannot proceed to generating report
             self._log.error(
                 f"Cannot generate `OrderStatusReport` for {client_order_id=!r}, {venue_order_id=!r}: "
-                "order not found.",
+                "order not found",
             )
             return None
 
@@ -393,7 +393,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._log.debug(f"Received {report}.")
+        self._log.debug(f"Received {report}")
         return report
 
     def _get_cache_active_symbols(self) -> set[str]:
@@ -470,12 +470,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 treat_expired_as_canceled=self._treat_expired_as_canceled,
                 ts_init=self._clock.timestamp_ns(),
             )
-            self._log.debug(f"Received {reports}.")
+            self._log.debug(f"Received {reports}")
             reports.append(report)
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} OrderStatusReport{plural}.")
+        self._log.info(f"Received {len(reports)} OrderStatusReport{plural}")
 
         return reports
 
@@ -509,7 +509,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         reports: list[FillReport] = []
         for trade in binance_trades:
             if trade.symbol is None:
-                self._log.warning(f"No symbol for trade {trade}.")
+                self._log.warning(f"No symbol for trade {trade}")
                 continue
             report = trade.parse_to_fill_report(
                 account_id=self.account_id,
@@ -518,7 +518,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 ts_init=self._clock.timestamp_ns(),
                 use_position_ids=self._use_position_ids,
             )
-            self._log.debug(f"Received {report}.")
+            self._log.debug(f"Received {report}")
             reports.append(report)
 
         # Confirm sorting in ascending order
@@ -526,7 +526,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} FillReport{plural}.")
+        self._log.info(f"Received {len(reports)} FillReport{plural}")
 
         return reports
 
@@ -547,7 +547,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} PositionStatusReport{plural}.")
+        self._log.info(f"Received {len(reports)} PositionStatusReport{plural}")
 
         return reports
 
@@ -571,7 +571,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         if time_in_force == TimeInForce.GTD and not self._use_gtd:
             time_in_force = TimeInForce.GTC
             self._log.info(
-                f"Converted GTD `time_in_force` to GTC for {order.client_order_id}.",
+                f"Converted GTD `time_in_force` to GTC for {order.client_order_id}",
                 LogColor.BLUE,
             )
         return time_in_force
@@ -587,7 +587,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         good_till_date = nanos_to_millis(order.expire_time_ns) if order.expire_time_ns else None
         if self._binance_account_type.is_spot_or_margin:
             good_till_date = None
-            self._log.warning("Cannot set GTD time in force with `expiry_time` for Binance Spot.")
+            self._log.warning("Cannot set GTD time in force with `expiry_time` for Binance Spot")
         return good_till_date
 
     def _determine_reduce_only(self, order: Order) -> bool:
@@ -603,12 +603,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def _submit_order_inner(self, order: Order) -> None:
         if order.is_closed:
-            self._log.warning(f"Cannot submit already closed order {order}.")
+            self._log.warning(f"Cannot submit already closed order {order}")
             return
 
         # Check validity
         self._check_order_validity(order)
-        self._log.debug(f"Submitting {order}.")
+        self._log.debug(f"Submitting {order}")
 
         # Generate event here to ensure correct ordering of events
         self.generate_order_submitted(
@@ -643,7 +643,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
                 self._log.warning(
                     f"{error_code.name}: retrying {order.client_order_id!r} "
-                    f"{retries}/{self._max_retries} in {self._retry_delay}s ...",
+                    f"{retries}/{self._max_retries} in {self._retry_delay}s",
                 )
                 await asyncio.sleep(self._retry_delay)
 
@@ -721,7 +721,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         for order in command.order_list.orders:
             if order.linked_order_ids:  # TODO(cs): Implement
-                self._log.warning(f"Cannot yet handle OCO conditional orders, {order}.")
+                self._log.warning(f"Cannot yet handle OCO conditional orders, {order}")
             await self._submit_order_inner(order)
 
     async def _submit_stop_market_order(self, order: StopMarketOrder) -> None:
@@ -734,7 +734,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         else:
             self._log.error(
                 f"Cannot submit order: invalid `order.trigger_type`, was "
-                f"{trigger_type_to_str(order.trigger_price)}. {order}",
+                f"{trigger_type_to_str(order.trigger_price)}, {order}",
             )
             return
 
@@ -761,14 +761,14 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         else:
             self._log.error(
                 f"Cannot submit order: invalid `order.trigger_type`, was "
-                f"{trigger_type_to_str(order.trigger_price)}. {order}",
+                f"{trigger_type_to_str(order.trigger_price)}, {order}",
             )
             return
 
         if order.trailing_offset_type != TrailingOffsetType.BASIS_POINTS:
             self._log.error(
                 f"Cannot submit order: invalid `order.trailing_offset_type`, was "
-                f"{trailing_offset_type_to_str(order.trailing_offset_type)} (use `BASIS_POINTS`). "
+                f"{trailing_offset_type_to_str(order.trailing_offset_type)} (use `BASIS_POINTS`), "
                 f"{order}",
             )
             return
@@ -821,19 +821,19 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     async def _modify_order(self, command: ModifyOrder) -> None:
         if self._binance_account_type.is_spot_or_margin:
             self._log.error(
-                "Cannot modify order: only supported for `USDT_FUTURE` and `COIN_FUTURE` account types.",
+                "Cannot modify order: only supported for `USDT_FUTURE` and `COIN_FUTURE` account types",
             )
             return
 
         order: Order | None = self._cache.order(command.client_order_id)
         if order is None:
-            self._log.error(f"{command.client_order_id!r} not found to modify.")
+            self._log.error(f"{command.client_order_id!r} not found to modify")
             return
 
         if order.order_type != OrderType.LIMIT:
             self._log.error(
                 "Cannot modify order: "
-                f"only LIMIT orders supported by the venue (was {order.type_string()}).",
+                f"only LIMIT orders supported by the venue (was {order.type_string()})",
             )
             return
 
@@ -859,7 +859,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
                 self._log.warning(
                     f"{error_code.name}: retrying {command.client_order_id!r} "
-                    f"{retries}/{self._max_retries} in {self._retry_delay}s ...",
+                    f"{retries}/{self._max_retries} in {self._retry_delay}s",
                 )
                 await asyncio.sleep(self._retry_delay)
 
@@ -884,7 +884,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
                 self._log.warning(
                     f"{error_code.name}: retrying {command.client_order_id!r} "
-                    f"{retries}/{self._max_retries} in {self._retry_delay}s ...",
+                    f"{retries}/{self._max_retries} in {self._retry_delay}s",
                 )
                 await asyncio.sleep(self._retry_delay)
 
@@ -917,7 +917,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         except BinanceError as e:
             if "Unknown order sent" in e.message:
                 self._log.info(
-                    "No open orders to cancel according to Binance.",
+                    "No open orders to cancel according to Binance",
                     LogColor.GREEN,
                 )
             else:
@@ -931,13 +931,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     ) -> None:
         order: Order | None = self._cache.order(client_order_id)
         if order is None:
-            self._log.error(f"{client_order_id!r} not found to cancel.")
+            self._log.error(f"{client_order_id!r} not found to cancel")
             return
 
         if order.is_closed:
             self._log.warning(
                 f"CancelOrder command for {client_order_id!r} when order already {order.status_string()} "
-                "(will not send to exchange).",
+                "(will not send to exchange)",
             )
             return
 
@@ -950,7 +950,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         except BinanceError as e:
             error_code = BinanceErrorCode(e.message["code"])
             if error_code == BinanceErrorCode.CANCEL_REJECTED:
-                self._log.warning(f"Cancel rejected: {e.message}.")
+                self._log.warning(f"Cancel rejected: {e.message}")
             else:
                 self._log.exception(
                     f"Cannot cancel order "
