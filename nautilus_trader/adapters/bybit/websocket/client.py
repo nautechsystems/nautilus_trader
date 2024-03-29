@@ -110,6 +110,10 @@ class BybitWebsocketClient:
             return
 
         subscription = f"publicTrade.{symbol}"
+        if subscription not in self._subscriptions:
+            self._log.warning(f"Cannot unsubscribe: not subscribed to {subscription}")
+            return
+
         sub = {"op": "unsubscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
         self._subscriptions.remove(subscription)
@@ -120,6 +124,10 @@ class BybitWebsocketClient:
             return
 
         subscription = f"tickers.{symbol}"
+        if subscription not in self._subscriptions:
+            self._log.warning(f"Cannot unsubscribe: not subscribed to {subscription}")
+            return
+
         sub = {"op": "unsubscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
         self._subscriptions.remove(subscription)
@@ -130,6 +138,10 @@ class BybitWebsocketClient:
             return
 
         subscription = f"kline.{interval}.{symbol}"
+        if subscription not in self._subscriptions:
+            self._log.warning(f"Cannot unsubscribe: not subscribed to {subscription}")
+            return
+
         sub = {"op": "unsubscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
         self._subscriptions.append(subscription)

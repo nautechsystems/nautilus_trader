@@ -26,18 +26,23 @@ from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesGe
 from nautilus_trader.adapters.bybit.endpoints.market.server_time import BybitServerTimeEndpoint
 from nautilus_trader.adapters.bybit.endpoints.market.tickers import BybitTickersEndpoint
 from nautilus_trader.adapters.bybit.endpoints.market.tickers import BybitTickersGetParameters
+from nautilus_trader.adapters.bybit.endpoints.market.trades import BybitTradesEndpoint
+from nautilus_trader.adapters.bybit.endpoints.market.trades import BybitTradesGetParameters
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrument
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentList
 from nautilus_trader.adapters.bybit.schemas.market.kline import BybitKline
 from nautilus_trader.adapters.bybit.schemas.market.server_time import BybitServerTime
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerList
+from nautilus_trader.adapters.bybit.schemas.market.trades import BybitTrade
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.utils import get_category_from_instrument_type
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 class BybitMarketHttpAPI:
@@ -59,6 +64,7 @@ class BybitMarketHttpAPI:
         self._endpoint_server_time = BybitServerTimeEndpoint(client, self.base_endpoint)
         self._endpoint_klines = BybitKlinesEndpoint(client, self.base_endpoint)
         self._endpoint_tickers = BybitTickersEndpoint(client, self.base_endpoint)
+        self._endpoint_trades = BybitTradesEndpoint(client, self.base_endpoint)
 
     def _get_url(self, url: str) -> str:
         return self.base_endpoint + url
@@ -127,22 +133,53 @@ class BybitMarketHttpAPI:
         )
         return response.result.list
 
-    async def request_bybit_bars(
+    async def fetch_public_trades(
         self,
         instrument_type: BybitInstrumentType,
+        symbol: str,
+        limit: int | None = None,
+    ) -> list[BybitTrade]:
+        response = await self._endpoint_trades.get(
+            parameters=BybitTradesGetParameters(
+                category=get_category_from_instrument_type(instrument_type),
+                symbol=symbol,
+                limit=limit,
+            ),
+        )
+        return response.result.list
+
+    async def request_bybit_trades(
+        self,
+        instrument_id: InstrumentId,
+        ts_init: int,
+        limit: int = 1000,
+    ) -> list[Bar]:
+        bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+        assert bybit_symbol is not None  # type checking
+        trades = await self.fetch_public_trades(
+            symbol=bybit_symbol.raw_symbol,
+            instrument_type=bybit_symbol.instrument_type,
+            limit=limit,
+        )
+        trade_ticks: list[TradeTick] = [t.parse_to_trade(instrument_id, ts_init) for t in trades]
+        return trade_ticks
+
+    async def request_bybit_bars(
+        self,
         bar_type: BarType,
         interval: BybitKlineInterval,
         ts_init: int,
-        limit: int = 100,
+        limit: int = 1000,
         start: int | None = None,
         end: int | None = None,
     ) -> list[Bar]:
         all_bars = []
         while True:
-            bybit_symbol: BybitSymbol = BybitSymbol(bar_type.instrument_id.symbol.value)
+            bybit_symbol = BybitSymbol(bar_type.instrument_id.symbol.value)
+            assert bybit_symbol is not None  # type checking
             klines = await self.fetch_klines(
-                symbol=bybit_symbol,
-                instrument_type=instrument_type,
+                symbol=bybit_symbol.raw_symbol,
+                instrument_type=bybit_symbol.instrument_type,
                 interval=interval,
                 limit=limit,
                 start=start,

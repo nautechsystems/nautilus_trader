@@ -347,6 +347,45 @@ class BybitDataClient(LiveMarketDataClient):
             correlation_id=correlation_id,
         )
 
+    async def _request_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        limit: int,
+        correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+    ) -> None:
+        self._log.error(
+            "Cannot request historical quote ticks: not published by Bybit",
+        )
+
+    async def _request_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        limit: int,
+        correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+    ) -> None:
+        if limit == 0 or limit > 1000:
+            limit = 1000
+
+        if start is not None:
+            self._log.error(
+                "Cannot specify `start` for historical trade ticks: Bybit only provides 'recent trades'",
+            )
+        if end is not None:
+            self._log.error(
+                "Cannot specify `end` for historical trade ticks: Bybit only provides 'recent trades'",
+            )
+
+        trades = await self._http_market.request_bybit_trades(
+            instrument_id=instrument_id,
+            limit=limit,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        self._handle_trade_ticks(instrument_id, trades, correlation_id)
+
     async def _request_bars(
         self,
         bar_type: BarType,
@@ -382,13 +421,11 @@ class BybitDataClient(LiveMarketDataClient):
         start_time_ms = None
         if start is not None:
             start_time_ms = secs_to_millis(start.timestamp())
-
         end_time_ms = None
         if end is not None:
             end_time_ms = secs_to_millis(end.timestamp())
+
         bars = await self._http_market.request_bybit_bars(
-            # TODO fixing instrument here so that mypy passes,need to determine how to get instrument type from bar
-            instrument_type=BybitInstrumentType.SPOT,
             bar_type=bar_type,
             interval=bybit_interval,
             start=start_time_ms,
