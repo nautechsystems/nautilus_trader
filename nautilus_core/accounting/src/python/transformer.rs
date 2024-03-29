@@ -13,11 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_common::interface::account::Account;
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::events::account::state::AccountState;
 use pyo3::{prelude::*, types::PyDict};
 
-use crate::account::{cash::CashAccount, margin::MarginAccount, Account};
+use crate::account::{cash::CashAccount, margin::MarginAccount};
 
 #[pyfunction]
 pub fn cash_account_from_account_events(

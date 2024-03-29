@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_common::interface::account::Account;
 use nautilus_model::{
     enums::LiquiditySide,
     events::account::{state::AccountState, stubs::*},
@@ -21,7 +22,7 @@ use nautilus_model::{
 };
 use rstest::fixture;
 
-use crate::account::{cash::CashAccount, margin::MarginAccount, Account};
+use crate::account::{cash::CashAccount, margin::MarginAccount};
 
 #[fixture]
 pub fn margin_account(margin_account_state: AccountState) -> MarginAccount {

@@ -22,6 +22,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use nautilus_common::interface::account::Account;
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
@@ -38,7 +39,7 @@ use nautilus_model::{
 };
 use rust_decimal::prelude::ToPrimitive;
 
-use crate::account::{base::BaseAccount, Account};
+use crate::account::base::BaseAccount;
 
 #[derive(Debug)]
 #[cfg_attr(
@@ -386,6 +387,7 @@ impl Hash for MarginAccount {
 mod tests {
     use std::collections::HashMap;
 
+    use nautilus_common::interface::account::Account;
     use nautilus_model::{
         events::account::{state::AccountState, stubs::*},
         identifiers::{instrument_id::InstrumentId, stubs::*},
@@ -394,7 +396,7 @@ mod tests {
     };
     use rstest::rstest;
 
-    use crate::account::{margin::MarginAccount, stubs::*, Account};
+    use crate::account::{margin::MarginAccount, stubs::*};
 
     #[rstest]
     fn test_display(margin_account: MarginAccount) {

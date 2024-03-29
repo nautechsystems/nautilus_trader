@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 
+use nautilus_common::interface::account::Account;
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide},
@@ -27,7 +28,7 @@ use nautilus_model::{
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
-use crate::account::{cash::CashAccount, Account};
+use crate::account::cash::CashAccount;
 
 #[pymethods]
 impl CashAccount {

@@ -13,9 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod base;
-pub mod cash;
-pub mod margin;
-
-#[cfg(test)]
-pub mod stubs;
+pub mod account;

@@ -136,8 +136,7 @@ impl CacheDatabaseAdapter {
         Ok(HashMap::new()) // TODO
     }
 
-    // Decide where in the dependency hierarchy accounting should sit
-    // pub fn load_accounts() -> anyhow::Result<HashMap<AccountId, Account>> {
+    // pub fn load_accounts() -> anyhow::Result<HashMap<AccountId, Box<dyn Account>>> {
     //     Ok(HashMap::new()) // TODO
     // }
 
@@ -225,9 +224,9 @@ impl CacheDatabaseAdapter {
         todo!() // TODO
     }
 
-    pub fn add_account(&self) -> anyhow::Result<()> {
-        todo!() // TODO
-    }
+    // pub fn add_account(&self) -> anyhow::Result<Box<dyn Account>> {
+    //     todo!() // TODO
+    // }
 
     pub fn add_order(&self, order: Box<dyn Order>) -> anyhow::Result<()> {
         todo!() // TODO
