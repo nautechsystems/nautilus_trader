@@ -31,6 +31,7 @@
 /// let b = 0.3;
 /// assert!(approx_equal(a, b));
 /// ```
-#[must_use] pub fn approx_equal(a: f64, b: f64) -> bool {
+#[must_use]
+pub fn approx_equal(a: f64, b: f64) -> bool {
     (a - b).abs() < f64::EPSILON
 }
