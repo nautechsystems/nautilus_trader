@@ -15,6 +15,8 @@
 
 import asyncio
 
+from nautilus_trader.adapters.bybit.common.credentials import get_api_key
+from nautilus_trader.adapters.bybit.common.credentials import get_api_secret
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
@@ -22,7 +24,6 @@ from nautilus_trader.adapters.bybit.data import BybitDataClient
 from nautilus_trader.adapters.bybit.execution import BybitExecutionClient
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.provider import BybitInstrumentProvider
-from nautilus_trader.adapters.env import get_env_key
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -67,8 +68,8 @@ def get_bybit_http_client(
 
     """
     global HTTP_CLIENTS
-    key = key or _get_api_key(is_testnet)
-    secret = secret or _get_api_secret(is_testnet)
+    key = key or get_api_key(is_testnet)
+    secret = secret or get_api_secret(is_testnet)
     http_base_url = base_url or _get_http_base_url(is_testnet)
     client_key: str = "|".join((key, secret))
 
@@ -261,36 +262,6 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             base_url_ws=config.base_url_ws or default_base_url_ws,
             config=config,
         )
-
-
-def _get_api_key(is_testnet: bool) -> str:
-    if is_testnet:
-        key = get_env_key("BYBIT_TESTNET_API_KEY")
-        if not key:
-            raise ValueError(
-                "BYBIT_TESTNET_API_KEY environment variable not set",
-            )
-        return key
-    else:
-        key = get_env_key("BYBIT_API_KEY")
-        if not key:
-            raise ValueError("BYBIT_API_KEY environment variable not set")
-        return key
-
-
-def _get_api_secret(is_testnet: bool) -> str:
-    if is_testnet:
-        secret = get_env_key("BYBIT_TESTNET_API_SECRET")
-        if not secret:
-            raise ValueError(
-                "BYBIT_TESTNET_API_SECRET environment variable not set",
-            )
-        return secret
-    else:
-        secret = get_env_key("BYBIT_API_SECRET")
-        if not secret:
-            raise ValueError("BYBIT_API_SECRET environment variable not set")
-        return secret
 
 
 def _get_http_base_url(is_testnet: bool):

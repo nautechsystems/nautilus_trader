@@ -34,13 +34,13 @@ from nautilus_trader.adapters.bybit.endpoints.trade.open_orders import BybitOpen
 from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderGetParameters
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
+from nautilus_trader.adapters.bybit.parsing import get_category_from_instrument_type
 from nautilus_trader.adapters.bybit.schemas.account.balance import BybitWalletBalance
 from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
 from nautilus_trader.adapters.bybit.schemas.order import BybitOrder
 from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrder
 from nautilus_trader.adapters.bybit.schemas.position import BybitPositionStruct
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
-from nautilus_trader.adapters.bybit.utils import get_category_from_instrument_type
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.correctness import PyCondition
 

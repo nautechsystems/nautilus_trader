@@ -19,6 +19,7 @@ from decimal import Decimal
 import msgspec
 import pandas as pd
 
+from nautilus_trader.adapters.bybit.parsing import tick_size_to_precision
 from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
 from nautilus_trader.adapters.bybit.schemas.common import LeverageFilter
@@ -27,7 +28,6 @@ from nautilus_trader.adapters.bybit.schemas.common import LotSizeFilter
 from nautilus_trader.adapters.bybit.schemas.common import SpotLotSizeFilter
 from nautilus_trader.adapters.bybit.schemas.common import SpotPriceFilter
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
-from nautilus_trader.adapters.bybit.utils import tick_size_to_precision
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.rust.model import CurrencyType
 from nautilus_trader.core.rust.model import OptionKind
@@ -62,6 +62,7 @@ class BybitInstrumentSpot(msgspec.Struct):
         ts_init: int,
     ) -> CurrencyPair:
         bybit_symbol = BybitSymbol(self.symbol + "-SPOT")
+        assert bybit_symbol  # Type checking
         tick_size = self.priceFilter.tickSize.rstrip("0")
         # TODO unclear about step size
         step_size = self.priceFilter.tickSize.rstrip("0")
@@ -134,6 +135,7 @@ class BybitInstrumentOption(msgspec.Struct):
         self,
     ) -> OptionsContract:
         bybit_symbol = BybitSymbol(self.symbol + "-OPTION")
+        assert bybit_symbol  # Type checking
         instrument_id = bybit_symbol.parse_as_nautilus()
         price_precision = tick_size_to_precision(Decimal(self.priceFilter.tickSize))
         price_increment = Price(float(self.priceFilter.minPrice), price_precision)

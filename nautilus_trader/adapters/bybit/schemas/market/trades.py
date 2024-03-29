@@ -17,9 +17,9 @@ from typing import Any
 
 import msgspec
 
+from nautilus_trader.adapters.bybit.parsing import parse_aggressor_side
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
@@ -70,13 +70,3 @@ class BybitTradesResponse(msgspec.Struct):
     result: BybitTradesList
     retExtInfo: dict[str, Any]
     time: int
-
-
-def parse_aggressor_side(value: str) -> AggressorSide:
-    match value:
-        case "Buy":
-            return AggressorSide.BUYER
-        case "Sell":
-            return AggressorSide.SELLER
-        case _:
-            raise ValueError(f"Invalid aggressor side value, was '{value}'")

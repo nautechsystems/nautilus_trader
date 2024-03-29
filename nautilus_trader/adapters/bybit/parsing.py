@@ -13,35 +13,70 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import json
-import os.path
-import time
 from decimal import Decimal
-from typing import Any
-
-import msgspec
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_HOUR_INTERVALS
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_MINUTE_INTERVALS
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
-from nautilus_trader.adapters.env import get_env_key
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import BookAction
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import bar_aggregation_to_str
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
-def msgspec_bybit_item_save(filename: str, obj: Any) -> None:
-    item = msgspec.to_builtins(obj)
-    timestamp = round(time.time() * 1000)
-    item_json = json.dumps(
-        {"retCode": 0, "retMsg": "success", "time": timestamp, "result": item},
-        indent=4,
+def tick_size_to_precision(tick_size: float | Decimal) -> int:
+    tick_size_str = f"{tick_size:.10f}"
+    return len(tick_size_str.partition(".")[2].rstrip("0"))
+
+
+def parse_aggressor_side(value: str) -> AggressorSide:
+    match value:
+        case "Buy":
+            return AggressorSide.BUYER
+        case "Sell":
+            return AggressorSide.SELLER
+        case _:
+            raise ValueError(f"Invalid aggressor side value, was '{value}'")
+
+
+def parse_bybit_delta(
+    instrument_id: InstrumentId,
+    values: tuple[Price, Quantity],
+    side: OrderSide,
+    update_id: int,
+    sequence: int,
+    ts_event: int,
+    ts_init: int,
+    is_snapshot: bool,
+) -> OrderBookDelta:
+    price = values[0]
+    size = values[1]
+    if is_snapshot:
+        action = BookAction.ADD
+    else:
+        action = BookAction.DELETE if size == 0 else BookAction.UPDATE
+
+    return OrderBookDelta(
+        instrument_id=instrument_id,
+        action=action,
+        order=BookOrder(
+            side=side,
+            price=price,
+            size=size,
+            order_id=update_id,
+        ),
+        flags=0,  # Not applicable
+        sequence=sequence,
+        ts_event=ts_event,
+        ts_init=ts_init,
     )
-    # check if the file already exists, if exists, do not overwrite
-    if os.path.isfile(filename):
-        return
-    with open(filename, "w", encoding="utf-8") as f:
-        f.write(item_json)
 
 
 def get_category_from_instrument_type(instrument_type: BybitInstrumentType) -> str:
@@ -88,22 +123,3 @@ def get_interval_from_bar_type(bar_type: BarType) -> str:
             raise ValueError(
                 f"Bybit does not support {bar_aggregation_to_str(bar_type.aggregation)} bars",
             )
-
-
-def tick_size_to_precision(tick_size: float | Decimal) -> int:
-    tick_size_str = f"{tick_size:.10f}"
-    return len(tick_size_str.partition(".")[2].rstrip("0"))
-
-
-def get_api_key(is_testnet: bool) -> str:
-    if is_testnet:
-        return get_env_key("BYBIT_TESTNET_API_KEY")
-    else:
-        return get_env_key("BYBIT_API_KEY")
-
-
-def get_api_secret(is_testnet: bool) -> str:
-    if is_testnet:
-        return get_env_key("BYBIT_TESTNET_API_SECRET")
-    else:
-        return get_env_key("BYBIT_API_SECRET")
