@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Ported Bias indicator to Rust, thanks @Pushkarm029
 
 ### Breaking Changes
+- Added `info` binary field to instrument Arrow schemas
 - Renamed both `OrderBookMbo` and `OrderBookMbp` to `OrderBook` (consolidated)
 - Renamed `Indicator.handle_book_mbo` and `Indicator.handle_book_mbp` to `handle_book` (consolidated)
 
