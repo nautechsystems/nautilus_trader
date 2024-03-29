@@ -287,6 +287,8 @@ class BybitExecutionClient(LiveExecutionClient):
         self._log.info("Requesting PositionStatusReports...")
         reports: list[PositionStatusReport] = []
         for instrument_type in self._instrument_types:
+            if instrument_type == BybitInstrumentType.SPOT:
+                continue  # No positions on spot
             positions = await self._http_account.query_position_info(instrument_type)
             for position in positions:
                 instr: InstrumentId = BybitSymbol(
