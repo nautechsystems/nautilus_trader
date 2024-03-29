@@ -19,6 +19,7 @@ pub mod database;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use nautilus_core::correctness::{check_slice_not_empty, check_valid_string};
 use nautilus_model::{
     data::{
         bar::{Bar, BarType},
@@ -37,7 +38,7 @@ use nautilus_model::{
     position::Position,
     types::currency::Currency,
 };
-use tracing::info;
+use tracing::{debug, info};
 use ustr::Ustr;
 
 use self::database::CacheDatabaseAdapter;
@@ -52,6 +53,46 @@ pub struct CacheConfig {
     pub drop_instruments_on_reset: bool,
     pub tick_capacity: usize,
     pub bar_capacity: usize,
+}
+
+impl CacheConfig {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        encoding: SerializationEncoding,
+        timestamps_as_iso8601: bool,
+        use_trader_prefix: bool,
+        use_instance_id: bool,
+        flush_on_start: bool,
+        drop_instruments_on_reset: bool,
+        tick_capacity: usize,
+        bar_capacity: usize,
+    ) -> Self {
+        Self {
+            encoding,
+            timestamps_as_iso8601,
+            use_trader_prefix,
+            use_instance_id,
+            flush_on_start,
+            drop_instruments_on_reset,
+            tick_capacity,
+            bar_capacity,
+        }
+    }
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self::new(
+            SerializationEncoding::MsgPack,
+            false,
+            true,
+            false,
+            false,
+            true,
+            10_000,
+            10_000,
+        )
+    }
 }
 
 pub struct CacheIndex {
@@ -84,6 +125,39 @@ pub struct CacheIndex {
     exec_algorithms: HashSet<ExecAlgorithmId>,
 }
 
+impl CacheIndex {
+    /// Clear the index which will clear/reset all internal state.
+    pub fn clear(&mut self) {
+        self.venue_account.clear();
+        self.venue_orders.clear();
+        self.venue_positions.clear();
+        self.order_ids.clear();
+        self.order_position.clear();
+        self.order_strategy.clear();
+        self.order_client.clear();
+        self.position_strategy.clear();
+        self.position_orders.clear();
+        self.instrument_orders.clear();
+        self.instrument_positions.clear();
+        self.strategy_orders.clear();
+        self.strategy_positions.clear();
+        self.exec_algorithm_orders.clear();
+        self.exec_spawn_orders.clear();
+        self.orders.clear();
+        self.orders_open.clear();
+        self.orders_closed.clear();
+        self.orders_emulated.clear();
+        self.orders_inflight.clear();
+        self.orders_pending_cancel.clear();
+        self.positions.clear();
+        self.positions_open.clear();
+        self.positions_closed.clear();
+        self.actors.clear();
+        self.strategies.clear();
+        self.exec_algorithms.clear();
+    }
+}
+
 pub struct Cache {
     config: CacheConfig,
     index: CacheIndex,
@@ -103,6 +177,12 @@ pub struct Cache {
     // order_lists: HashMap<OrderListId, VecDeque<OrderList>>,  TODO: Need `OrderList`
     positions: HashMap<PositionId, Position>,
     position_snapshots: HashMap<PositionId, Vec<u8>>,
+}
+
+impl Default for Cache {
+    fn default() -> Self {
+        Self::new(CacheConfig::default(), None)
+    }
 }
 
 impl Cache {
@@ -243,5 +323,105 @@ impl Cache {
 
         info!("Cached {} positions from database", self.general.len());
         Ok(())
+    }
+
+    pub fn check_residuals(&self) {
+        todo!() // Needs order query methods
+    }
+
+    pub fn clear_index(&mut self) {
+        self.index.clear();
+        debug!("Cleared index");
+    }
+
+    /// Reset the cache.
+    ///
+    /// All stateful fields are reset to their initial value.
+    pub fn reset(&mut self) {
+        debug!("Resetting cache");
+
+        self.general.clear();
+        self.quote_ticks.clear();
+        self.trade_ticks.clear();
+        self.order_books.clear();
+        self.bars.clear();
+        self.bars_bid.clear();
+        self.bars_ask.clear();
+        self.currencies.clear();
+        self.synthetics.clear();
+        // self.accounts.clear();  // TODO
+        self.orders.clear();
+        // self.order_lists.clear();  // TODO
+        self.positions.clear();
+        self.position_snapshots.clear();
+
+        self.clear_index();
+
+        info!("Reset cache");
+    }
+
+    pub fn dispose(&self) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            // TODO: Log operations in database adapter
+            database.close()?
+        }
+        Ok(())
+    }
+
+    pub fn flush_db(&self) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            // TODO: Log operations in database adapter
+            database.flush()?
+        }
+        Ok(())
+    }
+
+    pub fn add(&mut self, key: &str, value: Vec<u8>) -> anyhow::Result<()> {
+        check_valid_string(key, stringify!(key))?;
+        check_slice_not_empty(value.as_slice(), stringify!(value))?;
+
+        self.general.insert(key.to_string(), value.clone());
+        debug!("Added general '{key}'");
+
+        if let Some(database) = &self.database {
+            database.add(key.to_string(), value)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn get(&self, key: &str) -> anyhow::Result<Option<&Vec<u8>>> {
+        check_valid_string(key, stringify!(key))?;
+
+        Ok(self.general.get(key))
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::*;
+
+    use super::Cache;
+
+    #[rstest]
+    fn test_general_when_no_value() {
+        let cache = Cache::default();
+        let result = cache.get("A").unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[rstest]
+    fn test_general_when_value() {
+        let mut cache = Cache::default();
+
+        let key = "A";
+        let value = vec![0_u8];
+        cache.add(key, value.clone()).unwrap();
+
+        let result = cache.get(key).unwrap();
+        assert_eq!(result, Some(&value));
     }
 }
