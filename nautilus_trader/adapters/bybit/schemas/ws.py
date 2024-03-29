@@ -28,9 +28,14 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import BookAction
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -111,32 +116,11 @@ class BybitWsLiquidationMsg(msgspec.Struct):
 
 
 ################################################################################
-# Public - Orderbook Delta
+# Public - Orderbook depth
 ################################################################################
 
 
-class BybitWsOrderbookDeltaData(msgspec.Struct):
-    # symbol
-    s: str
-    # bids
-    b: list[list[str]]
-    # asks
-    a: list[list[str]]
-
-
-class BybitWsOrderbookDeltaMsg(msgspec.Struct):
-    topic: str
-    type: str
-    ts: int
-    data: BybitWsOrderbookDeltaData
-
-
-################################################################################
-# Public - Orderbook Snapshot
-################################################################################
-
-
-class BybitWsOrderbookSnapshot(msgspec.Struct):
+class BybitWsOrderbookDepth(msgspec.Struct):
     # symbol
     s: str
     # bids
@@ -149,12 +133,122 @@ class BybitWsOrderbookSnapshot(msgspec.Struct):
     # Cross sequence
     seq: int
 
+    def parse_to_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        ts_event: int,
+        ts_init: int,
+    ) -> OrderBookDeltas:
+        bids_raw = [(Price.from_str(d[0]), Quantity.from_str(d[1])) for d in self.b]
+        asks_raw = [(Price.from_str(d[0]), Quantity.from_str(d[1])) for d in self.a]
+        deltas: list[OrderBookDelta] = []
 
-class BybitWsOrderbookSnapshotMsg(msgspec.Struct):
+        # Add initial clear
+        clear = OrderBookDelta.clear(
+            instrument_id=instrument_id,
+            sequence=self.seq,
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+        deltas.append(clear)
+
+        for bid in bids_raw:
+            price = bid[0]
+            size = bid[1]
+            delta = OrderBookDelta(
+                instrument_id=instrument_id,
+                action=BookAction.ADD,
+                order=BookOrder(
+                    side=OrderSide.BUY,
+                    price=price,
+                    size=size,
+                    order_id=self.u,
+                ),
+                flags=0,
+                sequence=self.seq,
+                ts_event=ts_event,
+                ts_init=ts_init,
+            )
+            deltas.append(delta)
+        for ask in asks_raw:
+            price = ask[0]
+            size = ask[1]
+            delta = OrderBookDelta(
+                instrument_id=instrument_id,
+                action=BookAction.ADD,
+                order=BookOrder(
+                    side=OrderSide.SELL,
+                    price=price,
+                    size=size,
+                    order_id=self.u,
+                ),
+                flags=0,
+                sequence=self.seq,
+                ts_event=ts_event,
+                ts_init=ts_init,
+            )
+            deltas.append(delta)
+
+        return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
+
+    def parse_to_deltas(
+        self,
+        instrument_id: InstrumentId,
+        ts_event: int,
+        ts_init: int,
+    ) -> OrderBookDeltas:
+        bids_raw = [(Price.from_str(d[0]), Quantity.from_str(d[1])) for d in self.b]
+        asks_raw = [(Price.from_str(d[0]), Quantity.from_str(d[1])) for d in self.a]
+        deltas: list[OrderBookDelta] = []
+        for bid in bids_raw:
+            price = bid[0]
+            size = bid[1]
+            delta = OrderBookDelta(
+                instrument_id=instrument_id,
+                action=BookAction.DELETE if size == 0 else BookAction.UPDATE,
+                order=BookOrder(
+                    side=OrderSide.BUY,
+                    price=price,
+                    size=size,
+                    order_id=self.u,
+                ),
+                flags=0,
+                sequence=self.seq,
+                ts_event=ts_event,
+                ts_init=ts_init,
+            )
+            deltas.append(delta)
+        for ask in asks_raw:
+            price = ask[0]
+            size = ask[1]
+            delta = OrderBookDelta(
+                instrument_id=instrument_id,
+                action=BookAction.DELETE if size == 0 else BookAction.UPDATE,
+                order=BookOrder(
+                    side=OrderSide.SELL,
+                    price=price,
+                    size=size,
+                    order_id=self.u,
+                ),
+                flags=0,
+                sequence=self.seq,
+                ts_event=ts_event,
+                ts_init=ts_init,
+            )
+            deltas.append(delta)
+
+        return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
+
+
+class BybitWsOrderbookDepthMsg(msgspec.Struct):
     topic: str
     type: str
     ts: int
-    data: BybitWsOrderbookSnapshot
+    data: BybitWsOrderbookDepth
+
+
+def decoder_ws_orderbook():
+    return msgspec.json.Decoder(BybitWsOrderbookDepthMsg)
 
 
 ################################################################################
