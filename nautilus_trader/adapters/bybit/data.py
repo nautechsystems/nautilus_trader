@@ -18,6 +18,9 @@ import asyncio
 import msgspec
 import pandas as pd
 
+from nautilus_trader.adapters.bybit.common.constants import BYBIT_LINEAR_DEPTHS
+from nautilus_trader.adapters.bybit.common.constants import BYBIT_OPTION_DEPTHS
+from nautilus_trader.adapters.bybit.common.constants import BYBIT_SPOT_DEPTHS
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
@@ -244,15 +247,41 @@ class BybitDataClient(LiveMarketDataClient):
         if book_type == BookType.L3_MBO:
             self._log.error(
                 "Cannot subscribe to order book deltas: "
-                "L3_MBO data is not published by Binance. "
+                "L3_MBO data is not published by Bybit. "
                 "Valid book types are L1_MBP, L2_MBP",
             )
             return
 
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         assert bybit_symbol  # type checking
+        instrument_type = bybit_symbol.instrument_type
+
+        # Validate depth
+        match instrument_type:
+            case BybitInstrumentType.SPOT:
+                depths_available = BYBIT_SPOT_DEPTHS
+                depth = depth or BYBIT_SPOT_DEPTHS[-1]
+            case BybitInstrumentType.LINEAR:
+                depths_available = BYBIT_LINEAR_DEPTHS
+                depth = depth or BYBIT_LINEAR_DEPTHS[-1]
+            case BybitInstrumentType.OPTION:
+                depths_available = BYBIT_OPTION_DEPTHS
+                depth = depth or BYBIT_OPTION_DEPTHS[-1]
+            case _:
+                raise ValueError(
+                    f"Invalit Bybit instrument type {instrument_type}",
+                )
+
+        if depth not in depths_available:
+            self._log.error(
+                f"Cannot subscribe to order book depth {depth} "
+                f"for Bybit {instrument_type.value} instruments, "
+                f"available depths are {depths_available}",
+            )
+            return
+
         ws_client = self._ws_clients[bybit_symbol.instrument_type]
-        await ws_client.subscribe_order_book(bybit_symbol.raw_symbol, depth or 50)
+        await ws_client.subscribe_order_book(bybit_symbol.raw_symbol, depth)
 
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
