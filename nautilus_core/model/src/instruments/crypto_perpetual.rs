@@ -13,10 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    any::Any,
-    hash::{Hash, Hasher},
-};
+use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     correctness::{check_equal_u8, check_positive_i64, check_positive_u64},
@@ -228,10 +225,6 @@ impl Instrument for CryptoPerpetual {
 
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn taker_fee(&self) -> Decimal {
