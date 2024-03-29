@@ -36,10 +36,8 @@ from nautilus_trader.adapters.bybit.schemas.ws import BybitWsKline
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsKlineMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsLiquidation
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsLiquidationMsg
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderbookDeltaData
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderbookDeltaMsg
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderbookSnapshot
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderbookSnapshotMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderbookDepth
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderbookDepthMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerLinear
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerLinearMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerOption
@@ -103,9 +101,9 @@ class TestBybitWsDecoders:
             "ws_orderbook_delta.json",
         )
         assert item is not None
-        decoder = msgspec.json.Decoder(BybitWsOrderbookDeltaMsg)
+        decoder = msgspec.json.Decoder(BybitWsOrderbookDepthMsg)
         result = decoder.decode(item)
-        target_data = BybitWsOrderbookDeltaData(
+        target_data = BybitWsOrderbookDepth(
             s="BTCUSDT",
             b=[
                 ["30247.20", "30.028"],
@@ -123,6 +121,8 @@ class TestBybitWsDecoders:
                 ["30252.20", "0.659"],
                 ["30252.50", "4.591"],
             ],
+            u=177400507,
+            seq=66544703342,
         )
         assert result.data == target_data
         assert result.topic == "orderbook.50.BTCUSDT"
@@ -135,9 +135,9 @@ class TestBybitWsDecoders:
             "ws_orderbook_snapshot.json",
         )
         assert item is not None
-        decoder = msgspec.json.Decoder(BybitWsOrderbookSnapshotMsg)
+        decoder = msgspec.json.Decoder(BybitWsOrderbookDepthMsg)
         result = decoder.decode(item)
-        target_data = BybitWsOrderbookSnapshot(
+        target_data = BybitWsOrderbookDepth(
             s="BTCUSDT",
             b=[
                 ["16493.50", "0.006"],

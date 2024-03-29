@@ -29,6 +29,7 @@ from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_kline
+from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_orderbook
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_ticker
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_trade
 from nautilus_trader.adapters.bybit.utils import get_api_key
@@ -49,8 +50,10 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -134,6 +137,7 @@ class BybitDataClient(LiveMarketDataClient):
 
             # WebSocket decoders
             self._decoders = {
+                "orderbook": decoder_ws_orderbook(),
                 "trade": decoder_ws_trade(),
                 "ticker": decoder_ws_ticker(instrument_type),
                 "kline": decoder_ws_kline(),
@@ -229,6 +233,26 @@ class BybitDataClient(LiveMarketDataClient):
                 self._send_all_instruments_to_data_engine()
         except asyncio.CancelledError:
             self._log.debug("Canceled `update_instruments` task")
+
+    async def _subscribe_order_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: int | None = None,
+        kwargs: dict | None = None,
+    ) -> None:
+        if book_type == BookType.L3_MBO:
+            self._log.error(
+                "Cannot subscribe to order book deltas: "
+                "L3_MBO data is not published by Binance. "
+                "Valid book types are L1_MBP, L2_MBP",
+            )
+            return
+
+        bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+        assert bybit_symbol  # type checking
+        ws_client = self._ws_clients[bybit_symbol.instrument_type]
+        await ws_client.subscribe_order_book(bybit_symbol.raw_symbol, depth or 50)
 
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
@@ -469,7 +493,9 @@ class BybitDataClient(LiveMarketDataClient):
         )
 
     def _topic_check(self, instrument_type: BybitInstrumentType, topic: str, raw: bytes) -> None:
-        if "publicTrade" in topic:
+        if "orderbook" in topic:
+            self._handle_orderbook(instrument_type, raw)
+        elif "publicTrade" in topic:
             self._handle_trade(instrument_type, raw)
         elif "tickers" in topic:
             self._handle_ticker(instrument_type, raw)
@@ -488,7 +514,25 @@ class BybitDataClient(LiveMarketDataClient):
             if ws_message.topic:
                 self._topic_check(instrument_type, ws_message.topic, raw)
         except Exception as e:
-            self._log.error(f"Failed to parse ticker: {raw.decode()} with error {e}")
+            self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
+
+    def _handle_orderbook(self, instrument_type: InstrumentId, raw: bytes) -> None:
+        msg = self._decoders["orderbook"].decode(raw)
+        symbol = msg.data.s + f"-{instrument_type.value.upper()}"
+        instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
+        if msg.type == "snapshot":
+            deltas: OrderBookDeltas = msg.data.parse_to_snapshot(
+                instrument_id=instrument_id,
+                ts_event=millis_to_nanos(msg.ts),
+                ts_init=self._clock.timestamp_ns(),
+            )
+        else:
+            deltas = msg.data.parse_to_deltas(
+                instrument_id=instrument_id,
+                ts_event=millis_to_nanos(msg.ts),
+                ts_init=self._clock.timestamp_ns(),
+            )
+        self._handle_data(deltas)
 
     def _handle_ticker(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
         msg = self._decoders["ticker"].decode(raw)
