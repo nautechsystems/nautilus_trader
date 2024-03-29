@@ -19,6 +19,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use nautilus_common::interface::account::Account;
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
@@ -29,7 +30,7 @@ use nautilus_model::{
     },
 };
 
-use crate::account::{base::BaseAccount, Account};
+use crate::account::base::BaseAccount;
 
 #[derive(Debug)]
 #[cfg_attr(
@@ -185,7 +186,7 @@ impl Display for CashAccount {
 mod tests {
     use std::collections::{HashMap, HashSet};
 
-    use nautilus_common::{factories::OrderFactory, stubs::*};
+    use nautilus_common::{factories::OrderFactory, interface::account::Account, stubs::*};
     use nautilus_model::{
         enums::{AccountType, LiquiditySide, OrderSide},
         events::account::{state::AccountState, stubs::*},
@@ -200,7 +201,7 @@ mod tests {
     };
     use rstest::rstest;
 
-    use crate::account::{cash::CashAccount, stubs::*, Account};
+    use crate::account::{cash::CashAccount, stubs::*};
 
     #[rstest]
     fn test_display(cash_account: CashAccount) {
