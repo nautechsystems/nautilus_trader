@@ -23,7 +23,7 @@ futures-util = "0.3.30"
 http = "1.1.0"
 hyper = "1.2.0"
 nonzero_ext = "0.3.0"
-reqwest = "0.11.27"
+reqwest = "0.12.2"
 tokio-tungstenite = { path = "./tokio-tungstenite", features = ["rustls-tls-native-roots"] }
 
 [dev-dependencies]
