@@ -92,6 +92,12 @@ impl OrderDenied {
         }
     }
 
+    #[getter]
+    #[pyo3(name = "order_event_type")]
+    fn py_order_event_type(&self) -> &str {
+        stringify!(OrderDenied)
+    }
+
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
