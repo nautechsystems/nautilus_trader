@@ -39,6 +39,8 @@ from nautilus_trader.model.identifiers import TraderId
 # *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
 # *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
+instrument_type = BybitInstrumentType.LINEAR
+
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
@@ -73,7 +75,7 @@ config_node = TradingNodeConfig(
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             base_url_http=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            instrument_types=[BybitInstrumentType.LINEAR],
+            instrument_types=[instrument_type],
             testnet=False,  # If client uses the testnet
         ),
     },
@@ -84,7 +86,7 @@ config_node = TradingNodeConfig(
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            instrument_types=[BybitInstrumentType.LINEAR],
+            instrument_types=[instrument_type],
             testnet=False,  # If client uses the testnet
         ),
     },
@@ -99,7 +101,7 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-symbol = "ETHUSDT-LINEAR"
+symbol = f"ETHUSDT-{instrument_type.value.upper()}"
 strat_config = VolatilityMarketMakerConfig(
     instrument_id=InstrumentId.from_str(f"{symbol}.BYBIT"),
     external_order_claims=[InstrumentId.from_str(f"{symbol}.BYBIT")],

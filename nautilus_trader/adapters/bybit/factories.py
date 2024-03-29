@@ -282,6 +282,8 @@ def _get_ws_base_url_public(
             return "wss://stream.bybit.com/v5/public/linear"
         elif instrument_type == BybitInstrumentType.INVERSE:
             return "wss://stream.bybit.com/v5/public/inverse"
+        elif instrument_type == BybitInstrumentType.OPTION:
+            return "wss://stream.bybit.com/v5/public/option"
         else:
             raise RuntimeError(
                 f"invalid `BybitAccountType`, was {instrument_type}",  # pragma: no cover
@@ -293,6 +295,8 @@ def _get_ws_base_url_public(
             return "wss://stream-testnet.bybit.com/v5/public/linear"
         elif instrument_type == BybitInstrumentType.INVERSE:
             return "wss://stream-testnet.bybit.com/v5/public/inverse"
+        elif instrument_type == BybitInstrumentType.OPTION:
+            return "wss://stream-testnet.bybit.com/v5/public/option"
         else:
             raise RuntimeError(f"invalid `BybitAccountType`, was {instrument_type}")
 

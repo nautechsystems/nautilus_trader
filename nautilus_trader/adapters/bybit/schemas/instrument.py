@@ -76,7 +76,7 @@ class BybitInstrumentSpot(msgspec.Struct):
             base_currency=self.parse_to_base_currency(),
             quote_currency=self.parse_to_quote_currency(),
             price_precision=price_precision,
-            size_precision=size_increment,
+            size_precision=size_increment.precision,
             price_increment=price_increment,
             size_increment=size_increment,
             margin_init=Decimal("0.1"),
