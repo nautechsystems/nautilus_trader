@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::any::Any;
 pub mod crypto_future;
 pub mod crypto_perpetual;
 pub mod currency_pair;
@@ -54,7 +53,7 @@ pub enum InstrumentType {
     OptionsSpread(OptionsSpread),
 }
 
-pub trait Instrument: Any + 'static + Send {
+pub trait Instrument: 'static + Send {
     fn id(&self) -> InstrumentId;
     fn symbol(&self) -> Symbol {
         self.id().symbol
@@ -145,6 +144,4 @@ pub trait Instrument: Any + 'static + Send {
         let value = quantity.as_f64() * (1.0 / last_px.as_f64());
         Quantity::new(value, self.size_precision()).unwrap() // TODO: Handle error properly
     }
-
-    fn as_any(&self) -> &dyn Any;
 }
