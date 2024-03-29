@@ -19,6 +19,8 @@ import msgspec
 import pandas as pd
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
+from nautilus_trader.adapters.bybit.common.credentials import get_api_key
+from nautilus_trader.adapters.bybit.common.credentials import get_api_secret
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
@@ -33,8 +35,6 @@ from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountOrderMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountPositionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
-from nautilus_trader.adapters.bybit.utils import get_api_key
-from nautilus_trader.adapters.bybit.utils import get_api_secret
 from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock

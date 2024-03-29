@@ -29,6 +29,7 @@ from nautilus_trader.adapters.bybit.endpoints.market.tickers import BybitTickers
 from nautilus_trader.adapters.bybit.endpoints.market.trades import BybitTradesEndpoint
 from nautilus_trader.adapters.bybit.endpoints.market.trades import BybitTradesGetParameters
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
+from nautilus_trader.adapters.bybit.parsing import get_category_from_instrument_type
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrument
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentList
 from nautilus_trader.adapters.bybit.schemas.market.kline import BybitKline
@@ -36,7 +37,6 @@ from nautilus_trader.adapters.bybit.schemas.market.server_time import BybitServe
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerList
 from nautilus_trader.adapters.bybit.schemas.market.trades import BybitTrade
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
-from nautilus_trader.adapters.bybit.utils import get_category_from_instrument_type
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import Bar

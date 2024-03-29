@@ -15,10 +15,9 @@
 
 import msgspec
 
-from nautilus_trader.model.data import BookOrder
+from nautilus_trader.adapters.bybit.parsing import parse_bybit_delta
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
@@ -57,39 +56,28 @@ class BybitDeltasList(msgspec.Struct, array_like=True):
         deltas.append(clear)
 
         for bid in bids_raw:
-            price = bid[0]
-            size = bid[1]
-            delta = OrderBookDelta(
+            delta = parse_bybit_delta(
                 instrument_id=instrument_id,
-                action=BookAction.ADD,
-                order=BookOrder(
-                    side=OrderSide.BUY,
-                    price=price,
-                    size=size,
-                    order_id=self.u,
-                ),
-                flags=0,
+                values=bid,
+                side=OrderSide.BUY,
+                update_id=self.u,
                 sequence=self.seq,
                 ts_event=ts_event,
                 ts_init=ts_init,
+                is_snapshot=True,
             )
             deltas.append(delta)
+
         for ask in asks_raw:
-            price = ask[0]
-            size = ask[1]
-            delta = OrderBookDelta(
+            delta = parse_bybit_delta(
                 instrument_id=instrument_id,
-                action=BookAction.ADD,
-                order=BookOrder(
-                    side=OrderSide.SELL,
-                    price=price,
-                    size=size,
-                    order_id=self.u,
-                ),
-                flags=0,
+                values=ask,
+                side=OrderSide.SELL,
+                update_id=self.u,
                 sequence=self.seq,
                 ts_event=ts_event,
                 ts_init=ts_init,
+                is_snapshot=True,
             )
             deltas.append(delta)
 
@@ -104,40 +92,30 @@ class BybitDeltasList(msgspec.Struct, array_like=True):
         bids_raw = [(Price.from_str(d[0]), Quantity.from_str(d[1])) for d in self.b]
         asks_raw = [(Price.from_str(d[0]), Quantity.from_str(d[1])) for d in self.a]
         deltas: list[OrderBookDelta] = []
+
         for bid in bids_raw:
-            price = bid[0]
-            size = bid[1]
-            delta = OrderBookDelta(
+            delta = parse_bybit_delta(
                 instrument_id=instrument_id,
-                action=BookAction.DELETE if size == 0 else BookAction.UPDATE,
-                order=BookOrder(
-                    side=OrderSide.BUY,
-                    price=price,
-                    size=size,
-                    order_id=self.u,
-                ),
-                flags=0,
+                values=bid,
+                side=OrderSide.BUY,
+                update_id=self.u,
                 sequence=self.seq,
                 ts_event=ts_event,
                 ts_init=ts_init,
+                is_snapshot=False,
             )
             deltas.append(delta)
+
         for ask in asks_raw:
-            price = ask[0]
-            size = ask[1]
-            delta = OrderBookDelta(
+            delta = parse_bybit_delta(
                 instrument_id=instrument_id,
-                action=BookAction.DELETE if size == 0 else BookAction.UPDATE,
-                order=BookOrder(
-                    side=OrderSide.SELL,
-                    price=price,
-                    size=size,
-                    order_id=self.u,
-                ),
-                flags=0,
+                values=ask,
+                side=OrderSide.SELL,
+                update_id=self.u,
                 sequence=self.seq,
                 ts_event=ts_event,
                 ts_init=ts_init,
+                is_snapshot=False,
             )
             deltas.append(delta)
 

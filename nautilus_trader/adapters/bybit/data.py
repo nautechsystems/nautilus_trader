@@ -22,11 +22,14 @@ from nautilus_trader.adapters.bybit.common.constants import BYBIT_LINEAR_DEPTHS
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_OPTION_DEPTHS
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_SPOT_DEPTHS
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
+from nautilus_trader.adapters.bybit.common.credentials import get_api_key
+from nautilus_trader.adapters.bybit.common.credentials import get_api_secret
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
+from nautilus_trader.adapters.bybit.parsing import get_interval_from_bar_type
 from nautilus_trader.adapters.bybit.provider import BybitInstrumentProvider
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
@@ -35,9 +38,6 @@ from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_kline
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_orderbook
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_ticker
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_trade
-from nautilus_trader.adapters.bybit.utils import get_api_key
-from nautilus_trader.adapters.bybit.utils import get_api_secret
-from nautilus_trader.adapters.bybit.utils import get_interval_from_bar_type
 from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
