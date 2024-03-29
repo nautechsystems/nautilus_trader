@@ -174,6 +174,12 @@ impl OrderFilled {
     }
 
     #[getter]
+    #[pyo3(name = "order_event_type")]
+    fn py_order_event_type(&self) -> &str {
+        stringify!(OrderFilled)
+    }
+
+    #[getter]
     #[pyo3(name = "is_buy")]
     fn py_is_buy(&self) -> bool {
         self.is_buy()
