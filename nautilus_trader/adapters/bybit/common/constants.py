@@ -20,5 +20,9 @@ from nautilus_trader.model.identifiers import Venue
 
 BYBIT_VENUE: Final[Venue] = Venue("BYBIT")
 
-BYBIT_VALID_MINUTE_INTERVALS: Final[tuple[int, ...]] = (1, 3, 5, 15, 30, 60, 120, 240, 360, 720)
-BYBIT_VALID_HOUR_INTERVALS: Final[tuple[int, ...]] = (1, 2, 4, 6, 12)
+BYBIT_MINUTE_INTERVALS: Final[tuple[int, ...]] = (1, 3, 5, 15, 30, 60, 120, 240, 360, 720)
+BYBIT_HOUR_INTERVALS: Final[tuple[int, ...]] = (1, 2, 4, 6, 12)
+
+BYBIT_SPOT_DEPTHS: Final[tuple[int, ...]] = (1, 50, 200)
+BYBIT_LINEAR_DEPTHS: Final[tuple[int, ...]] = (1, 50, 200, 500)
+BYBIT_OPTION_DEPTHS: Final[tuple[int, ...]] = (25, 100)

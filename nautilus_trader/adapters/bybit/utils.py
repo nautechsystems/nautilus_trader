@@ -21,8 +21,8 @@ from typing import Any
 
 import msgspec
 
-from nautilus_trader.adapters.bybit.common.constants import BYBIT_VALID_HOUR_INTERVALS
-from nautilus_trader.adapters.bybit.common.constants import BYBIT_VALID_MINUTE_INTERVALS
+from nautilus_trader.adapters.bybit.common.constants import BYBIT_HOUR_INTERVALS
+from nautilus_trader.adapters.bybit.common.constants import BYBIT_MINUTE_INTERVALS
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.env import get_env_key
 from nautilus_trader.model.data import BarType
@@ -61,17 +61,17 @@ def get_interval_from_bar_type(bar_type: BarType) -> str:
     aggregation: BarAggregation = bar_type.spec.aggregation
     match aggregation:
         case BarAggregation.MINUTE:
-            if bar_type.spec.step not in BYBIT_VALID_MINUTE_INTERVALS:
+            if bar_type.spec.step not in BYBIT_MINUTE_INTERVALS:
                 raise ValueError(
                     f"Bybit only supports the following bar minute intervals: "
-                    f"{BYBIT_VALID_MINUTE_INTERVALS}",
+                    f"{BYBIT_MINUTE_INTERVALS}",
                 )
             return str(bar_type.spec.step)
         case BarAggregation.HOUR:
-            if bar_type.spec.step not in BYBIT_VALID_HOUR_INTERVALS:
+            if bar_type.spec.step not in BYBIT_HOUR_INTERVALS:
                 raise ValueError(
                     f"Bybit only supports the following bar hour intervals: "
-                    f"{BYBIT_VALID_HOUR_INTERVALS}",
+                    f"{BYBIT_HOUR_INTERVALS}",
                 )
             return str(bar_type.spec.step * 60)
         case BarAggregation.DAY:
