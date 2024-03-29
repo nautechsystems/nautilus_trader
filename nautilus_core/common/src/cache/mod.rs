@@ -28,7 +28,7 @@ use nautilus_model::{
     identifiers::{
         account_id::AccountId, client_id::ClientId, client_order_id::ClientOrderId,
         component_id::ComponentId, exec_algorithm_id::ExecAlgorithmId, instrument_id::InstrumentId,
-        position_id::PositionId, strategy_id::StrategyId, symbol::Symbol, venue::Venue,
+        position_id::PositionId, strategy_id::StrategyId, venue::Venue,
         venue_order_id::VenueOrderId,
     },
     instruments::{synthetic::SyntheticInstrument, Instrument},
@@ -89,7 +89,6 @@ pub struct Cache {
     index: CacheIndex,
     database: Option<CacheDatabaseAdapter>,
     general: HashMap<String, Vec<u8>>,
-    xrate_symbols: HashMap<InstrumentId, Symbol>,
     quote_ticks: HashMap<InstrumentId, VecDeque<QuoteTick>>,
     trade_ticks: HashMap<InstrumentId, VecDeque<TradeTick>>,
     order_books: HashMap<InstrumentId, OrderBook>,
@@ -107,6 +106,59 @@ pub struct Cache {
 }
 
 impl Cache {
+    pub fn new(config: CacheConfig, database: Option<CacheDatabaseAdapter>) -> Self {
+        let index = CacheIndex {
+            venue_account: HashMap::new(),
+            venue_orders: HashMap::new(),
+            venue_positions: HashMap::new(),
+            order_ids: HashMap::new(),
+            order_position: HashMap::new(),
+            order_strategy: HashMap::new(),
+            order_client: HashMap::new(),
+            position_strategy: HashMap::new(),
+            position_orders: HashMap::new(),
+            instrument_orders: HashMap::new(),
+            instrument_positions: HashMap::new(),
+            strategy_orders: HashMap::new(),
+            strategy_positions: HashMap::new(),
+            exec_algorithm_orders: HashMap::new(),
+            exec_spawn_orders: HashMap::new(),
+            orders: HashSet::new(),
+            orders_open: HashSet::new(),
+            orders_closed: HashSet::new(),
+            orders_emulated: HashSet::new(),
+            orders_inflight: HashSet::new(),
+            orders_pending_cancel: HashSet::new(),
+            positions: HashSet::new(),
+            positions_open: HashSet::new(),
+            positions_closed: HashSet::new(),
+            actors: HashSet::new(),
+            strategies: HashSet::new(),
+            exec_algorithms: HashSet::new(),
+        };
+
+        Self {
+            config,
+            index,
+            database,
+            general: HashMap::new(),
+            quote_ticks: HashMap::new(),
+            trade_ticks: HashMap::new(),
+            order_books: HashMap::new(),
+            bars: HashMap::new(),
+            bars_bid: HashMap::new(),
+            bars_ask: HashMap::new(),
+            currencies: HashMap::new(),
+            instruments: HashMap::new(),
+            synthetics: HashMap::new(),
+            // accounts: HashMap<AccountId, Box<dyn Account>>,  TODO: Decide where trait should go
+            orders: HashMap::new(), // TODO: Efficency (use enum)
+            // order_lists: HashMap<OrderListId, VecDeque<OrderList>>,  TODO: Need `OrderList`
+            positions: HashMap::new(),
+            position_snapshots: HashMap::new(),
+        }
+    }
+
     pub fn cache_general(&mut self) -> anyhow::Result<()> {
         self.general = match &self.database {
             Some(db) => db.load()?,
