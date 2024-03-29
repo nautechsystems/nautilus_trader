@@ -330,7 +330,7 @@ class TradingNode:
 
         """
         self.kernel.logger.info(
-            f"Starting heartbeats at {interval}s intervals",
+            f"Starting task: heartbeats at {interval}s intervals",
             LogColor.BLUE,
         )
         try:
@@ -358,7 +358,7 @@ class TradingNode:
 
         """
         self.kernel.logger.info(
-            f"Starting open position snapshots at {interval}s intervals",
+            f"Starting task: snapshot open positions at {interval}s intervals",
             LogColor.BLUE,
         )
         try:
