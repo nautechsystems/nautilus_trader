@@ -37,4 +37,4 @@ def raise_bybit_error(code):
     if code == BybitKeyExpiredError.code:
         raise BybitKeyExpiredError
     else:
-        raise BybitError(code, "Unknown bybit error")
+        raise BybitError(code, f"Unknown Bybit error: code {code}")
