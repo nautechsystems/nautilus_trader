@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Standardized adapter client logging (handle more logging from client base classes)
 - Simplified and consolidated Rust `OrderBook` design
 - Improved `CacheDatabaseAdapter` graceful close and thread join
 - Improved `MessageBus` graceful close and thread join

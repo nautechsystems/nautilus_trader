@@ -38,7 +38,6 @@ from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.message import Request
@@ -236,14 +235,12 @@ class BybitDataClient(LiveMarketDataClient):
         assert bybit_symbol  # type checking
         ws_client = self._ws_clients[bybit_symbol.instrument_type]
         await ws_client.subscribe_tickers(bybit_symbol.raw_symbol)
-        self._log.info(f"Subscribed {instrument_id} quote ticks", LogColor.BLUE)
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         assert bybit_symbol  # type checking
         ws_client = self._ws_clients[bybit_symbol.instrument_type]
         await ws_client.subscribe_trades(bybit_symbol.raw_symbol)
-        self._log.info(f"Subscribed {instrument_id} trade ticks", LogColor.BLUE)
 
     async def _subscribe_bars(self, bar_type: BarType) -> None:
         bybit_symbol = BybitSymbol(bar_type.instrument_id.symbol.value)
@@ -253,21 +250,18 @@ class BybitDataClient(LiveMarketDataClient):
         self._topic_bar_type[topic] = bar_type
         ws_client = self._ws_clients[bybit_symbol.instrument_type]
         await ws_client.subscribe_klines(bybit_symbol.raw_symbol, interval_str)
-        self._log.info(f"Subscribed {bar_type} bars", LogColor.BLUE)
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         assert bybit_symbol  # type checking
         ws_client = self._ws_clients[bybit_symbol.instrument_type]
         await ws_client.unsubscribe_tickers(bybit_symbol.raw_symbol)
-        self._log.info(f"Unsubscribed {instrument_id} quote ticks", LogColor.BLUE)
 
     async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         assert bybit_symbol  # type checking
         ws_client = self._ws_clients[bybit_symbol.instrument_type]
         await ws_client.unsubscribe_trades(bybit_symbol.raw_symbol)
-        self._log.info(f"Unsubscribed {instrument_id} trade ticks", LogColor.BLUE)
 
     async def _unsubscribe_bars(self, bar_type: BarType) -> None:
         bybit_symbol = BybitSymbol(bar_type.instrument_id.symbol.value)
@@ -277,7 +271,6 @@ class BybitDataClient(LiveMarketDataClient):
         self._topic_bar_type.pop(topic, None)
         ws_client = self._ws_clients[bybit_symbol.instrument_type]
         await ws_client.unsubscribe_klines(bybit_symbol.raw_symbol, interval_str)
-        self._log.info(f"Unsubscribed {bar_type} bars", LogColor.BLUE)
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID

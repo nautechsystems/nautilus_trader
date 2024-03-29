@@ -136,7 +136,7 @@ class BinanceWebSocketClient:
         )
         self._is_connecting = False
         self._log.info(f"Connected to {self._base_url}", LogColor.BLUE)
-        self._log.info(f"Subscribed to {initial_stream}", LogColor.BLUE)
+        self._log.debug(f"Subscribed to {initial_stream}")
 
     def _handle_ping(self, raw: bytes) -> None:
         self._loop.create_task(self.send_pong(raw))
@@ -480,7 +480,7 @@ class BinanceWebSocketClient:
         self._log.debug(f"SENDING: {message}")
 
         await self._inner.send_text(json.dumps(message))
-        self._log.info(f"Subscribed to {stream}", LogColor.BLUE)
+        self._log.debug(f"Subscribed to {stream}")
 
     async def _subscribe_all(self) -> None:
         if self._inner is None:
@@ -492,7 +492,7 @@ class BinanceWebSocketClient:
 
         await self._inner.send_text(json.dumps(message))
         for stream in self._streams:
-            self._log.info(f"Subscribed to {stream}", LogColor.BLUE)
+            self._log.debug(f"Subscribed to {stream}")
 
     async def _unsubscribe(self, stream: str) -> None:
         if stream not in self._streams:
@@ -509,7 +509,7 @@ class BinanceWebSocketClient:
         self._log.debug(f"SENDING: {message}")
 
         await self._inner.send_text(json.dumps(message))
-        self._log.info(f"Unsubscribed from {stream}", LogColor.BLUE)
+        self._log.debug(f"Unsubscribed from {stream}")
 
     def _create_subscribe_msg(self, streams: list[str]) -> dict[str, Any]:
         message = {
