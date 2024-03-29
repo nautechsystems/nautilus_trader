@@ -70,7 +70,7 @@ def test_catalog_query_filtered(
     assert len(trades) == 121
 
     trades = catalog_betfair.trade_ticks(start=1576875378384999936)
-    assert len(trades) == 121
+    assert len(trades) == 120
 
     trades = catalog_betfair.trade_ticks(start=datetime.datetime(2019, 12, 20, 20, 56, 18))
     assert len(trades) == 121

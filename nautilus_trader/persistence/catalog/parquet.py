@@ -541,7 +541,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         if start:
             start_ts = dt_to_unix_nanos(start)
-            conditions.append(f"ts_init >= {start_ts}")
+            conditions.append(f"ts_init > {start_ts}")
         if end:
             end_ts = dt_to_unix_nanos(end)
             conditions.append(f"ts_init <= {end_ts}")
