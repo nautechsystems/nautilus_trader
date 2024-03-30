@@ -397,7 +397,7 @@ impl FromU8 for BookType {
 )]
 pub enum ContingencyType {
     /// Not a contingent order.
-    NoContingency = 0, // Will be replaced by `Option`
+    NoContingency = 0,
     /// One-Cancels-the-Other.
     Oco = 1,
     /// One-Triggers-the-Other.
@@ -598,7 +598,7 @@ pub enum HaltReason {
 )]
 pub enum OmsType {
     /// There is no specific type of order management specified (will defer to the venue).
-    Unspecified = 0, // Will be replaced by `Option`
+    Unspecified = 0,
     /// The netting type where there is one position per instrument.
     Netting = 1,
     /// The hedging type where there can be multiple positions per instrument.
@@ -825,7 +825,7 @@ pub enum OrderType {
 )]
 pub enum PositionSide {
     /// No position side is specified (only valid in the context of a filter for actions involving positions).
-    NoPositionSide = 0, // Will be replaced by `Option`
+    NoPositionSide = 0,
     /// A neural/flat position, where no position is currently held in the market.
     Flat = 1,
     /// A long position in the market, typically acquired through one or many BUY orders.
@@ -965,7 +965,7 @@ pub enum TradingState {
 )]
 pub enum TrailingOffsetType {
     /// No trailing offset type is specified (invalid for trailing type orders).
-    NoTrailingOffset = 0, // Will be replaced by `Option`
+    NoTrailingOffset = 0,
     /// The trailing offset is based on a market price.
     Price = 1,
     /// The trailing offset is based on a percentage represented in basis points, of a market price.
@@ -1001,7 +1001,7 @@ pub enum TrailingOffsetType {
 )]
 pub enum TriggerType {
     /// No trigger type is specified (invalid for orders with a trigger).
-    NoTrigger = 0, // Will be replaced by `Option`
+    NoTrigger = 0,
     /// The default trigger type set by the trading venue.
     Default = 1,
     /// Based on the top-of-book quoted prices for the instrument.
