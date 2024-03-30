@@ -448,7 +448,39 @@ class BybitWsTickerOptionMsg(msgspec.Struct):
 ################################################################################
 
 
-class BybitWsTrade(msgspec.Struct):
+class BybitWsTradeSpot(msgspec.Struct):
+    # The timestamp (ms) that the order is filled
+    T: int
+    # Symbol name
+    s: str
+    # Side of taker. Buy,Sell
+    S: str
+    # Trade size
+    v: str
+    # Trade price
+    p: str
+    # Trade id
+    i: str
+    # Whether is a block trade or not
+    BT: bool
+
+    def parse_to_trade_tick(
+        self,
+        instrument_id: InstrumentId,
+        ts_init: int,
+    ) -> TradeTick:
+        return TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str(self.p),
+            size=Quantity.from_str(self.v),
+            aggressor_side=AggressorSide.SELLER if self.S == "Sell" else AggressorSide.BUYER,
+            trade_id=TradeId(str(self.i)),
+            ts_event=millis_to_nanos(self.T),
+            ts_init=ts_init,
+        )
+
+
+class BybitWsTradeLinear(msgspec.Struct):
     # The timestamp (ms) that the order is filled
     T: int
     # Symbol name
@@ -482,15 +514,70 @@ class BybitWsTrade(msgspec.Struct):
         )
 
 
-class BybitWsTradeMsg(msgspec.Struct):
+class BybitWsTradeOption(msgspec.Struct):
+    # Message id unique to options
+    id: str
+    # The timestamp (ms) that the order is filled
+    T: int
+    # Symbol name
+    s: str
+    # Side of taker. Buy,Sell
+    S: str
+    # Trade size
+    v: str
+    # Trade price
+    p: str
+    # Trade id
+    i: str
+    # Whether is a block trade or not
+    BT: bool
+
+    def parse_to_trade_tick(
+        self,
+        instrument_id: InstrumentId,
+        ts_init: int,
+    ) -> TradeTick:
+        return TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str(self.p),
+            size=Quantity.from_str(self.v),
+            aggressor_side=AggressorSide.SELLER if self.S == "Sell" else AggressorSide.BUYER,
+            trade_id=TradeId(str(self.i)),
+            ts_event=millis_to_nanos(self.T),
+            ts_init=ts_init,
+        )
+
+
+class BybitWsTradeSpotMsg(msgspec.Struct):
     topic: str
     type: str
     ts: int
-    data: list[BybitWsTrade]
+    data: list[BybitWsTradeSpot]
 
 
-def decoder_ws_trade():
-    return msgspec.json.Decoder(BybitWsTradeMsg)
+class BybitWsTradeLinearMsg(msgspec.Struct):
+    topic: str
+    type: str
+    ts: int
+    data: list[BybitWsTradeLinear]
+
+
+class BybitWsTradeOptionMsg(msgspec.Struct):
+    topic: str
+    type: str
+    ts: int
+    data: list[BybitWsTradeOption]
+
+
+def decoder_ws_trade(instrument_type: BybitInstrumentType) -> msgspec.json.Decoder:
+    if instrument_type == BybitInstrumentType.LINEAR:
+        return msgspec.json.Decoder(BybitWsTradeLinearMsg)
+    elif instrument_type == BybitInstrumentType.SPOT:
+        return msgspec.json.Decoder(BybitWsTradeSpotMsg)
+    elif instrument_type == BybitInstrumentType.OPTION:
+        return msgspec.json.Decoder(BybitWsTradeOptionMsg)
+    else:
+        raise ValueError(f"Invalid instrument type: {instrument_type}")
 
 
 def decoder_ws_ticker(instrument_type: BybitInstrumentType) -> msgspec.json.Decoder:
@@ -501,7 +588,7 @@ def decoder_ws_ticker(instrument_type: BybitInstrumentType) -> msgspec.json.Deco
     elif instrument_type == BybitInstrumentType.OPTION:
         return msgspec.json.Decoder(BybitWsTickerOptionMsg)
     else:
-        raise ValueError(f"Invalid account type: {instrument_type}")
+        raise ValueError(f"Invalid instrument type: {instrument_type}")
 
 
 def decoder_ws_kline():

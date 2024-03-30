@@ -131,6 +131,10 @@ class BybitDataClient(LiveMarketDataClient):
 
         # WebSocket API
         self._ws_clients: dict[BybitInstrumentType, BybitWebsocketClient] = {}
+        self._decoders = {
+            "trade": {},
+            "ticker": {},
+        }
         for instrument_type in instrument_types:
             self._ws_clients[instrument_type] = BybitWebsocketClient(
                 clock=clock,
@@ -141,12 +145,11 @@ class BybitDataClient(LiveMarketDataClient):
             )
 
             # WebSocket decoders
-            self._decoders = {
-                "orderbook": decoder_ws_orderbook(),
-                "trade": decoder_ws_trade(),
-                "ticker": decoder_ws_ticker(instrument_type),
-                "kline": decoder_ws_kline(),
-            }
+            self._decoders["orderbook"] = decoder_ws_orderbook()
+            self._decoders["trade"][instrument_type] = decoder_ws_trade(instrument_type)
+            self._decoders["ticker"][instrument_type] = decoder_ws_ticker(instrument_type)
+            self._decoders["kline"] = decoder_ws_kline()
+
             self._decoder_ws_msg_general = msgspec.json.Decoder(BybitWsMessageGeneral)
 
         self._tob_quotes: set[InstrumentId] = set()
@@ -639,7 +642,7 @@ class BybitDataClient(LiveMarketDataClient):
         self._handle_data(deltas)
 
     def _handle_ticker(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
-        msg = self._decoders["ticker"].decode(raw)
+        msg = self._decoders["ticker"][instrument_type].decode(raw)
         try:
             symbol = msg.data.symbol + f"-{instrument_type.value.upper()}"
             instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
@@ -677,7 +680,7 @@ class BybitDataClient(LiveMarketDataClient):
             self._log.error(f"Failed to parse ticker: {msg} with error {e}")
 
     def _handle_trade(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
-        msg = self._decoders["trade"].decode(raw)
+        msg = self._decoders["trade"][instrument_type].decode(raw)
         try:
             for data in msg.data:
                 symbol = data.s + f"-{instrument_type.value.upper()}"
