@@ -15,6 +15,7 @@
 
 import asyncio
 from collections import defaultdict
+from functools import partial
 
 import msgspec
 import pandas as pd
@@ -138,7 +139,7 @@ class BybitDataClient(LiveMarketDataClient):
         for instrument_type in instrument_types:
             self._ws_clients[instrument_type] = BybitWebsocketClient(
                 clock=clock,
-                handler=lambda x: self._handle_ws_message(instrument_type, x),
+                handler=partial(self._handle_ws_message, instrument_type),
                 base_url=ws_urls[instrument_type],
                 api_key=config.api_key or get_api_key(config.testnet),
                 api_secret=config.api_secret or get_api_secret(config.testnet),
