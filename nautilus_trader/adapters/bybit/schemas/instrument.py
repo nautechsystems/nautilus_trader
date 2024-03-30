@@ -19,7 +19,6 @@ from decimal import Decimal
 import msgspec
 import pandas as pd
 
-from nautilus_trader.adapters.bybit.common.parsing import tick_size_to_precision
 from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
 from nautilus_trader.adapters.bybit.schemas.common import LeverageFilter
@@ -28,7 +27,6 @@ from nautilus_trader.adapters.bybit.schemas.common import LotSizeFilter
 from nautilus_trader.adapters.bybit.schemas.common import SpotLotSizeFilter
 from nautilus_trader.adapters.bybit.schemas.common import SpotPriceFilter
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
-from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.rust.model import CurrencyType
 from nautilus_trader.core.rust.model import OptionKind
 from nautilus_trader.model.enums import AssetClass
@@ -36,10 +34,6 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import OptionsContract
-from nautilus_trader.model.objects import PRICE_MAX
-from nautilus_trader.model.objects import PRICE_MIN
-from nautilus_trader.model.objects import QUANTITY_MAX
-from nautilus_trader.model.objects import QUANTITY_MIN
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -63,19 +57,19 @@ class BybitInstrumentSpot(msgspec.Struct):
     ) -> CurrencyPair:
         bybit_symbol = BybitSymbol(self.symbol + "-SPOT")
         assert bybit_symbol  # Type checking
-        tick_size = self.priceFilter.tickSize.rstrip("0")
-        # TODO unclear about step size
-        step_size = self.priceFilter.tickSize.rstrip("0")
         instrument_id = bybit_symbol.parse_as_nautilus()
-        price_precision = tick_size_to_precision(Decimal(self.priceFilter.tickSize))
-        price_increment = Price.from_str(tick_size)
-        size_increment = Quantity.from_str(step_size)
+        price_increment = Price.from_str(self.priceFilter.tickSize)
+        size_increment = Quantity.from_str(self.lotSizeFilter.basePrecision)
+        lot_size = Quantity.from_str(self.lotSizeFilter.basePrecision)
+        max_quantity = Quantity.from_str(self.lotSizeFilter.maxOrderQty)
+        min_quantity = Quantity.from_str(self.lotSizeFilter.minOrderQty)
+
         return CurrencyPair(
             instrument_id=instrument_id,
             raw_symbol=Symbol(bybit_symbol.raw_symbol),
             base_currency=self.parse_to_base_currency(),
             quote_currency=self.parse_to_quote_currency(),
-            price_precision=price_precision,
+            price_precision=price_increment.precision,
             size_precision=size_increment.precision,
             price_increment=price_increment,
             size_increment=size_increment,
@@ -85,9 +79,9 @@ class BybitInstrumentSpot(msgspec.Struct):
             taker_fee=Decimal(fee_rate.takerFeeRate),
             ts_event=ts_event,
             ts_init=ts_init,
-            lot_size=Quantity.from_str(self.lotSizeFilter.minOrderQty),
-            max_quantity=Quantity.from_str(self.lotSizeFilter.maxOrderQty),
-            min_quantity=Quantity.from_str(self.lotSizeFilter.minOrderQty),
+            lot_size=lot_size,
+            max_quantity=max_quantity,
+            min_quantity=min_quantity,
             min_price=None,
             max_price=None,
             info=msgspec.json.Decoder().decode(msgspec.json.Encoder().encode(self)),
@@ -137,8 +131,7 @@ class BybitInstrumentOption(msgspec.Struct):
         bybit_symbol = BybitSymbol(self.symbol + "-OPTION")
         assert bybit_symbol  # Type checking
         instrument_id = bybit_symbol.parse_as_nautilus()
-        price_precision = tick_size_to_precision(Decimal(self.priceFilter.tickSize))
-        price_increment = Price(float(self.priceFilter.minPrice), price_precision)
+        price_increment = Price.from_str(self.priceFilter.tickSize)
         if self.optionsType == "Call":
             option_kind = OptionKind.CALL
         elif self.optionsType == "Put":
@@ -149,12 +142,13 @@ class BybitInstrumentOption(msgspec.Struct):
         strike_price = get_strike_price_from_symbol(self.symbol)
         activation_ns = pd.Timedelta(milliseconds=int(self.launchTime)).total_seconds() * 1e9
         expiration_ns = pd.Timedelta(milliseconds=int(self.deliveryTime)).total_seconds() * 1e9
+
         return OptionsContract(
             instrument_id=instrument_id,
             raw_symbol=Symbol(bybit_symbol.raw_symbol),
             asset_class=AssetClass.CRYPTOCURRENCY,
             currency=self.parse_to_quote_currency(),
-            price_precision=price_precision,
+            price_precision=price_increment.precision,
             price_increment=price_increment,
             multiplier=Quantity.from_str("1.0"),
             lot_size=Quantity.from_str(self.lotSizeFilter.qtyStep),
@@ -203,6 +197,7 @@ class BybitInstrumentLinear(msgspec.Struct):
         base_currency = self.parse_to_base_currency()
         quote_currency = self.parse_to_quote_currency()
         bybit_symbol = BybitSymbol(self.symbol + "-LINEAR")
+        assert bybit_symbol is not None  # Type checking
         instrument_id = bybit_symbol.parse_as_nautilus()
         if self.settleCoin == self.baseCoin:
             settlement_currency = base_currency
@@ -211,27 +206,15 @@ class BybitInstrumentLinear(msgspec.Struct):
         else:
             raise ValueError(f"Unrecognized margin asset {self.settleCoin}")
 
-        tick_size = self.priceFilter.tickSize.rstrip("0")
-        step_size = self.lotSizeFilter.qtyStep.rstrip("0")
-        price_precision = abs(int(Decimal(tick_size).as_tuple().exponent))
-        size_precision = abs(int(Decimal(step_size).as_tuple().exponent))
-        price_increment = Price.from_str(tick_size)
-        size_increment = Quantity.from_str(step_size)
-        PyCondition.in_range(float(tick_size), PRICE_MIN, PRICE_MAX, "tick_size")
-        PyCondition.in_range(float(step_size), QUANTITY_MIN, QUANTITY_MAX, "step_size")
-        max_quantity = Quantity(
-            float(self.lotSizeFilter.maxOrderQty),
-            precision=size_precision,
-        )
-        min_quantity = Quantity(
-            float(self.lotSizeFilter.minOrderQty),
-            precision=size_precision,
-        )
-        min_notional = None
-        max_price = Price(float(self.priceFilter.maxPrice), precision=price_precision)
-        min_price = Price(float(self.priceFilter.minPrice), precision=price_precision)
+        price_increment = Price.from_str(self.priceFilter.tickSize)
+        size_increment = Quantity.from_str(self.lotSizeFilter.qtyStep)
+        max_quantity = Quantity.from_str(self.lotSizeFilter.maxOrderQty)
+        min_quantity = Quantity.from_str(self.lotSizeFilter.minOrderQty)
+        max_price = Price.from_str(self.priceFilter.maxPrice)
+        min_price = Price.from_str(self.priceFilter.minPrice)
         maker_fee = fee_rate.makerFeeRate
         taker_fee = fee_rate.takerFeeRate
+
         instrument = CryptoPerpetual(
             instrument_id=instrument_id,
             raw_symbol=Symbol(str(bybit_symbol)),
@@ -239,14 +222,14 @@ class BybitInstrumentLinear(msgspec.Struct):
             quote_currency=quote_currency,
             settlement_currency=settlement_currency,
             is_inverse=False,  # No inverse instruments trade on Bybit
-            price_precision=price_precision,
-            size_precision=size_precision,
+            price_precision=price_increment.precision,
+            size_precision=size_increment.precision,
             price_increment=price_increment,
             size_increment=size_increment,
             max_quantity=max_quantity,
             min_quantity=min_quantity,
             max_notional=None,
-            min_notional=min_notional,
+            min_notional=None,
             max_price=max_price,
             min_price=min_price,
             margin_init=Decimal("0.1"),

@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_HOUR_INTERVALS
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_MINUTE_INTERVALS
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
@@ -29,11 +27,6 @@ from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-
-
-def tick_size_to_precision(tick_size: float | Decimal) -> int:
-    tick_size_str = f"{tick_size:.10f}"
-    return len(tick_size_str.partition(".")[2].rstrip("0"))
 
 
 def parse_aggressor_side(value: str) -> AggressorSide:

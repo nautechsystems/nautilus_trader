@@ -22,7 +22,7 @@ from nautilus_trader.model.identifiers import Symbol
 class BybitSymbol(str):
     def __new__(cls, symbol: str | None):
         if symbol is not None:
-            # check if it contains one dot BTCUSDT-LINEAR for example is the correct
+            # Check if it contains one dot BTCUSDT-LINEAR for example is the correct
             # bybit symbol format
             if (
                 symbol.find("-SPOT") == -1
@@ -51,6 +51,18 @@ class BybitSymbol(str):
             return BybitInstrumentType.OPTION
         else:
             raise ValueError(f"Unknown instrument type for symbol {self}")
+
+    @property
+    def is_spot(self) -> bool:
+        return self.instrument_type == BybitInstrumentType.SPOT
+
+    @property
+    def is_derivative(self) -> bool:
+        return self.instrument_type == BybitInstrumentType.LINEAR
+
+    @property
+    def is_option(self) -> bool:
+        return self.instrument_type == BybitInstrumentType.OPTION
 
     def parse_as_nautilus(self) -> InstrumentId:
         instrument = InstrumentId(Symbol(str(self)), BYBIT_VENUE)
