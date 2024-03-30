@@ -46,6 +46,8 @@ from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerSpot
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerSpotMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTradeLinear
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTradeLinearMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTradeSpot
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTradeSpotMsg
 
 
 class TestBybitWsDecoders:
@@ -271,6 +273,28 @@ class TestBybitWsDecoders:
             v="0.001",
             p="16578.50",
             L="PlusTick",
+            i="20f43950-d8dd-5b31-9112-a178eb6023af",
+            BT=False,
+        )
+        assert result.data == [target_trade]
+        assert result.topic == "publicTrade.BTCUSDT"
+        assert result.type == "snapshot"
+        assert result.ts == 1672304486868
+
+    def test_ws_public_trade_spot(self):
+        item = pkgutil.get_data(
+            "tests.integration_tests.adapters.bybit.resources.ws_messages.public",
+            "ws_trade.json",
+        )
+        assert item is not None
+        decoder = msgspec.json.Decoder(BybitWsTradeSpotMsg)
+        result = decoder.decode(item)
+        target_trade = BybitWsTradeSpot(
+            T=1672304486865,
+            s="BTCUSDT",
+            S="Buy",
+            v="0.001",
+            p="16578.50",
             i="20f43950-d8dd-5b31-9112-a178eb6023af",
             BT=False,
         )
