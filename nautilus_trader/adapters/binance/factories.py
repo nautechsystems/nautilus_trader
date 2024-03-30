@@ -16,7 +16,11 @@
 import asyncio
 from functools import lru_cache
 
+from nautilus_trader.adapters.binance.common.credentials import get_api_key
+from nautilus_trader.adapters.binance.common.credentials import get_api_secret
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.urls import get_http_base_url
+from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.futures.data import BinanceFuturesDataClient
@@ -26,7 +30,6 @@ from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.data import BinanceSpotDataClient
 from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecutionClient
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
-from nautilus_trader.adapters.env import get_env_key
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -79,9 +82,9 @@ def get_cached_binance_http_client(
     """
     global BINANCE_HTTP_CLIENTS
 
-    key = key or _get_api_key(account_type, is_testnet)
-    secret = secret or _get_api_secret(account_type, is_testnet)
-    default_http_base_url = _get_http_base_url(account_type, is_testnet, is_us)
+    key = key or get_api_key(account_type, is_testnet)
+    secret = secret or get_api_secret(account_type, is_testnet)
+    default_http_base_url = get_http_base_url(account_type, is_testnet, is_us)
 
     # Setup rate limit quotas
     if account_type.is_spot:
@@ -242,7 +245,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             is_us=config.us,
         )
 
-        default_base_url_ws: str = _get_ws_base_url(
+        default_base_url_ws: str = get_ws_base_url(
             account_type=config.account_type,
             is_testnet=config.testnet,
             is_us=config.us,
@@ -345,7 +348,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             is_us=config.us,
         )
 
-        default_base_url_ws: str = _get_ws_base_url(
+        default_base_url_ws: str = get_ws_base_url(
             account_type=config.account_type,
             is_testnet=config.testnet,
             is_us=config.us,
@@ -393,87 +396,3 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 account_type=config.account_type,
                 config=config,
             )
-
-
-def _get_api_key(account_type: BinanceAccountType, is_testnet: bool) -> str:
-    if is_testnet:
-        if account_type.is_spot_or_margin:
-            return get_env_key("BINANCE_TESTNET_API_KEY")
-        else:
-            return get_env_key("BINANCE_FUTURES_TESTNET_API_KEY")
-
-    if account_type.is_spot_or_margin:
-        return get_env_key("BINANCE_API_KEY")
-    else:
-        return get_env_key("BINANCE_FUTURES_API_KEY")
-
-
-def _get_api_secret(account_type: BinanceAccountType, is_testnet: bool) -> str:
-    if is_testnet:
-        if account_type.is_spot_or_margin:
-            return get_env_key("BINANCE_TESTNET_API_SECRET")
-        else:
-            return get_env_key("BINANCE_FUTURES_TESTNET_API_SECRET")
-
-    if account_type.is_spot_or_margin:
-        return get_env_key("BINANCE_API_SECRET")
-    else:
-        return get_env_key("BINANCE_FUTURES_API_SECRET")
-
-
-def _get_http_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: bool) -> str:
-    # Testnet base URLs
-    if is_testnet:
-        if account_type.is_spot_or_margin:
-            return "https://testnet.binance.vision"
-        elif account_type == BinanceAccountType.USDT_FUTURE:
-            return "https://testnet.binancefuture.com"
-        elif account_type == BinanceAccountType.COIN_FUTURE:
-            return "https://testnet.binancefuture.com"
-        else:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover
-            )
-
-    # Live base URLs
-    top_level_domain: str = "us" if is_us else "com"
-    if account_type.is_spot:
-        return f"https://api.binance.{top_level_domain}"
-    elif account_type.is_margin:
-        return f"https://sapi.binance.{top_level_domain}"
-    elif account_type == BinanceAccountType.USDT_FUTURE:
-        return f"https://fapi.binance.{top_level_domain}"
-    elif account_type == BinanceAccountType.COIN_FUTURE:
-        return f"https://dapi.binance.{top_level_domain}"
-    else:
-        raise RuntimeError(  # pragma: no cover (design-time error)
-            f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover
-        )
-
-
-def _get_ws_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: bool) -> str:
-    # Testnet base URLs
-    if is_testnet:
-        if account_type.is_spot_or_margin:
-            return "wss://testnet.binance.vision"
-        elif account_type == BinanceAccountType.USDT_FUTURE:
-            return "wss://stream.binancefuture.com"
-        elif account_type == BinanceAccountType.COIN_FUTURE:
-            raise ValueError("no testnet for COIN-M futures")
-        else:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover
-            )
-
-    # Live base URLs
-    top_level_domain: str = "us" if is_us else "com"
-    if account_type.is_spot_or_margin:
-        return f"wss://stream.binance.{top_level_domain}:9443"
-    elif account_type == BinanceAccountType.USDT_FUTURE:
-        return f"wss://fstream.binance.{top_level_domain}"
-    elif account_type == BinanceAccountType.COIN_FUTURE:
-        return f"wss://dstream.binance.{top_level_domain}"
-    else:
-        raise RuntimeError(
-            f"invalid `BinanceAccountType`, was {account_type}",
-        )  # pragma: no cover (design-time error)
