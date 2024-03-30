@@ -15,6 +15,7 @@
 
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
+from nautilus_trader.adapters.bybit.common.parsing import get_category_from_instrument_type
 
 # fmt: off
 from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoEndpoint
@@ -29,7 +30,6 @@ from nautilus_trader.adapters.bybit.endpoints.market.tickers import BybitTickers
 from nautilus_trader.adapters.bybit.endpoints.market.trades import BybitTradesEndpoint
 from nautilus_trader.adapters.bybit.endpoints.market.trades import BybitTradesGetParameters
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
-from nautilus_trader.adapters.bybit.parsing import get_category_from_instrument_type
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrument
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentList
 from nautilus_trader.adapters.bybit.schemas.market.kline import BybitKline
