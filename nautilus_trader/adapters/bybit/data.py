@@ -33,6 +33,7 @@ from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
 from nautilus_trader.adapters.bybit.provider import BybitInstrumentProvider
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
+from nautilus_trader.adapters.bybit.schemas.ws import BYBIT_PONG
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_kline
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_orderbook
@@ -42,6 +43,7 @@ from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.message import Request
@@ -68,7 +70,7 @@ from nautilus_trader.model.objects import Quantity
 
 class BybitDataClient(LiveMarketDataClient):
     """
-    Provides a data client for the `Bybit` exchange.
+    Provides a data client for the `Bybit` centralized cypto exchange.
 
     Parameters
     ----------
@@ -147,6 +149,8 @@ class BybitDataClient(LiveMarketDataClient):
             }
             self._decoder_ws_msg_general = msgspec.json.Decoder(BybitWsMessageGeneral)
 
+        self._tob_quotes: set[InstrumentId] = set()
+        self._depths: dict[InstrumentId, int] = {}
         self._topic_bar_type: dict[str, BarType] = {}
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
@@ -281,13 +285,42 @@ class BybitDataClient(LiveMarketDataClient):
             return
 
         ws_client = self._ws_clients[bybit_symbol.instrument_type]
-        await ws_client.subscribe_order_book(bybit_symbol.raw_symbol, depth)
+
+        if instrument_id in self._tob_quotes:
+            if depth == 1:
+                self._log.info(
+                    f"Already subscribed to {instrument_id} top-of-book",
+                    LogColor.MAGENTA,
+                )
+                return  # Already subscribed
+            raise RuntimeError(
+                "Cannot subscribe to both top-of-book quotes and order book",
+            )
+
+        self._depths[instrument_id] = depth
+        await ws_client.subscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
+
+    def _is_subscribed_to_order_book(self, instrument_id: InstrumentId) -> bool:
+        return (
+            instrument_id
+            in self.subscribed_order_book_snapshots() + self.subscribed_order_book_deltas()
+        )
 
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         assert bybit_symbol  # type checking
         ws_client = self._ws_clients[bybit_symbol.instrument_type]
-        await ws_client.subscribe_tickers(bybit_symbol.raw_symbol)
+
+        if bybit_symbol.is_spot or instrument_id not in self._depths:
+            # Subscribe top level (faster 10ms updates)
+            self._log.info(
+                f"Subscribing quotes {instrument_id} (faster top-of-book @10ms)",
+                LogColor.MAGENTA,
+            )
+            self._tob_quotes.add(instrument_id)
+            await ws_client.subscribe_order_book(bybit_symbol.raw_symbol, depth=1)
+        else:
+            await ws_client.subscribe_tickers(bybit_symbol.raw_symbol)
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
@@ -304,11 +337,29 @@ class BybitDataClient(LiveMarketDataClient):
         ws_client = self._ws_clients[bybit_symbol.instrument_type]
         await ws_client.subscribe_klines(bybit_symbol.raw_symbol, interval_str)
 
+    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+        bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+        assert bybit_symbol  # type checking
+        ws_client = self._ws_clients[bybit_symbol.instrument_type]
+        depth = self._depths.get(instrument_id, 1)
+        await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
+
+    async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
+        bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+        assert bybit_symbol  # type checking
+        ws_client = self._ws_clients[bybit_symbol.instrument_type]
+        depth = self._depths.get(instrument_id, 1)
+        await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
+
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         assert bybit_symbol  # type checking
         ws_client = self._ws_clients[bybit_symbol.instrument_type]
-        await ws_client.unsubscribe_tickers(bybit_symbol.raw_symbol)
+
+        if instrument_id in self._tob_quotes:
+            await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=1)
+        else:
+            await ws_client.unsubscribe_tickers(bybit_symbol.raw_symbol)
 
     async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
@@ -521,7 +572,20 @@ class BybitDataClient(LiveMarketDataClient):
             correlation_id,
         )
 
-    def _topic_check(self, instrument_type: BybitInstrumentType, topic: str, raw: bytes) -> None:
+    def _handle_ws_message(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
+        try:
+            ws_message = self._decoder_ws_msg_general.decode(raw)
+            if ws_message.op == BYBIT_PONG:
+                return
+            if ws_message.success is False:
+                self._log.error(f"Error in ws_message: {ws_message.ret_msg}")
+                return
+            if ws_message.topic:
+                self._handle_ws_data(instrument_type, ws_message.topic, raw)
+        except Exception as e:
+            self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
+
+    def _handle_ws_data(self, instrument_type: BybitInstrumentType, topic: str, raw: bytes) -> None:
         if "orderbook" in topic:
             self._handle_orderbook(instrument_type, raw)
         elif "publicTrade" in topic:
@@ -533,31 +597,39 @@ class BybitDataClient(LiveMarketDataClient):
         else:
             self._log.error(f"Unknown websocket message topic: {topic} in Bybit")
 
-    def _handle_ws_message(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
-        try:
-            ws_message = self._decoder_ws_msg_general.decode(raw)
-            if ws_message.success is False:
-                self._log.error(f"Error in ws_message: {ws_message.ret_msg}")
-                return
-            ## Check if there is topic, if not discard the message
-            if ws_message.topic:
-                self._topic_check(instrument_type, ws_message.topic, raw)
-        except Exception as e:
-            self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
-
-    def _handle_orderbook(self, instrument_type: InstrumentId, raw: bytes) -> None:
+    def _handle_orderbook(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
         msg = self._decoders["orderbook"].decode(raw)
         symbol = msg.data.s + f"-{instrument_type.value.upper()}"
         instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
+
+        instrument = self._cache.instrument(instrument_id)
+
+        if instrument_id in self._tob_quotes:
+            quote = msg.data.parse_to_quote_tick(
+                instrument_id=instrument_id,
+                last_quote=self._last_quotes.get(instrument_id),
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
+                ts_event=millis_to_nanos(msg.ts),
+                ts_init=self._clock.timestamp_ns(),
+            )
+            self._last_quotes[quote.instrument_id] = quote
+            self._handle_data(quote)
+            return
+
         if msg.type == "snapshot":
             deltas: OrderBookDeltas = msg.data.parse_to_snapshot(
                 instrument_id=instrument_id,
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
                 ts_event=millis_to_nanos(msg.ts),
                 ts_init=self._clock.timestamp_ns(),
             )
         else:
             deltas = msg.data.parse_to_deltas(
                 instrument_id=instrument_id,
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
                 ts_event=millis_to_nanos(msg.ts),
                 ts_init=self._clock.timestamp_ns(),
             )

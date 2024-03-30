@@ -30,6 +30,7 @@ from nautilus_trader.adapters.bybit.http.errors import BybitError
 from nautilus_trader.adapters.bybit.provider import BybitInstrumentProvider
 from nautilus_trader.adapters.bybit.schemas.common import BybitWsSubscriptionMsg
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
+from nautilus_trader.adapters.bybit.schemas.ws import BYBIT_PONG
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecution
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountOrderMsg
@@ -72,7 +73,7 @@ from nautilus_trader.model.position import Position
 
 class BybitExecutionClient(LiveExecutionClient):
     """
-    Provides an execution client for the `Bybit` exchange.
+    Provides an execution client for the `Bybit` centralized crypto exchange.
 
     Parameters
     ----------
@@ -422,7 +423,10 @@ class BybitExecutionClient(LiveExecutionClient):
     def _handle_ws_message(self, raw: bytes) -> None:
         try:
             ws_message = self._decoder_ws_msg_general.decode(raw)
-            self._topic_check(ws_message.topic, raw)
+            if ws_message.op == BYBIT_PONG:
+                return
+            if ws_message.topic:
+                self._topic_check(ws_message.topic, raw)
         except Exception as e:
             ws_message_sub = self._decoder_ws_subscription.decode(raw)
             if ws_message_sub.success:
