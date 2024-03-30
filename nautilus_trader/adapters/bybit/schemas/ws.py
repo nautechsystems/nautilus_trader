@@ -255,8 +255,8 @@ class BybitWsOrderbookDepth(msgspec.Struct):
         self,
         instrument_id: InstrumentId,
         last_quote: QuoteTick,
-        price_precision: int | None,
-        size_precision: int | None,
+        price_precision: int,
+        size_precision: int,
         ts_event: int,
         ts_init: int,
     ) -> QuoteTick:
@@ -268,29 +268,32 @@ class BybitWsOrderbookDepth(msgspec.Struct):
         top_ask_size = top_ask[1] if top_ask else None
 
         if top_bid_size == "0":
-            top_bid = None
+            top_bid_size = None
         if top_ask_size == "0":
-            top_ask = None
-
-        # Ensure correct precision:
-        # (Spot price and size strings are not accurate to precision digits)
-        if price_precision:
-            if top_bid_price is not None:
-                top_bid_price = f"{float(top_bid_price):.{price_precision}f}"
-            if top_ask_price is not None:
-                top_ask_price = f"{float(top_ask_price):.{price_precision}f}"
-        if size_precision:
-            if top_bid_size is not None:
-                top_bid_size = f"{float(top_bid_size):.{size_precision}f}"
-            if top_ask_size is not None:
-                top_ask_size = f"{float(top_ask_size):.{size_precision}f}"
+            top_ask_size = None
 
         return QuoteTick(
             instrument_id=instrument_id,
-            bid_price=Price.from_str(top_bid_price) if top_bid else last_quote.bid_price,
-            ask_price=Price.from_str(top_ask_price) if top_ask else last_quote.ask_price,
-            bid_size=Quantity.from_str(top_bid_size) if top_bid else last_quote.bid_size,
-            ask_size=Quantity.from_str(top_ask_size) if top_ask else last_quote.ask_size,
+            bid_price=(
+                Price(float(top_bid_price), price_precision)
+                if top_bid_price
+                else last_quote.bid_price
+            ),
+            ask_price=(
+                Price(float(top_ask_price), price_precision)
+                if top_ask_price
+                else last_quote.ask_price
+            ),
+            bid_size=(
+                Quantity(float(top_bid_size), size_precision)
+                if top_bid_size
+                else last_quote.bid_size
+            ),
+            ask_size=(
+                Quantity(float(top_ask_size), size_precision)
+                if top_ask_size
+                else last_quote.ask_size
+            ),
             ts_event=ts_event,
             ts_init=ts_init,
         )
