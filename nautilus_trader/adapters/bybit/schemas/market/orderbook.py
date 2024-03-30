@@ -15,7 +15,7 @@
 
 import msgspec
 
-from nautilus_trader.adapters.bybit.parsing import parse_bybit_delta
+from nautilus_trader.adapters.bybit.common.parsing import parse_bybit_delta
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.enums import OrderSide

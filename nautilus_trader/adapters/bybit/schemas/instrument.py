@@ -19,7 +19,7 @@ from decimal import Decimal
 import msgspec
 import pandas as pd
 
-from nautilus_trader.adapters.bybit.parsing import tick_size_to_precision
+from nautilus_trader.adapters.bybit.common.parsing import tick_size_to_precision
 from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
 from nautilus_trader.adapters.bybit.schemas.common import LeverageFilter

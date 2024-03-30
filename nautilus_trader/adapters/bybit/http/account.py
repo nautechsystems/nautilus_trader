@@ -17,6 +17,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
+from nautilus_trader.adapters.bybit.common.parsing import get_category_from_instrument_type
 from nautilus_trader.adapters.bybit.endpoints.account.fee_rate import BybitFeeRateEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.fee_rate import BybitFeeRateGetParameters
 from nautilus_trader.adapters.bybit.endpoints.account.position_info import BybitPositionInfoEndpoint
@@ -34,7 +35,6 @@ from nautilus_trader.adapters.bybit.endpoints.trade.open_orders import BybitOpen
 from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderGetParameters
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
-from nautilus_trader.adapters.bybit.parsing import get_category_from_instrument_type
 from nautilus_trader.adapters.bybit.schemas.account.balance import BybitWalletBalance
 from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
 from nautilus_trader.adapters.bybit.schemas.order import BybitOrder

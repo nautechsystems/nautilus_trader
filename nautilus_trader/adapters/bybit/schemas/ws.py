@@ -23,7 +23,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitOrderStatus
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitPositionIdx
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
-from nautilus_trader.adapters.bybit.parsing import parse_bybit_delta
+from nautilus_trader.adapters.bybit.common.parsing import parse_bybit_delta
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport

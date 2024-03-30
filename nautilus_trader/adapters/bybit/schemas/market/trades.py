@@ -17,7 +17,7 @@ from typing import Any
 
 import msgspec
 
-from nautilus_trader.adapters.bybit.parsing import parse_aggressor_side
+from nautilus_trader.adapters.bybit.common.parsing import parse_aggressor_side
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId

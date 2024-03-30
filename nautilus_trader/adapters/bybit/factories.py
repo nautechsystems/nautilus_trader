@@ -18,6 +18,9 @@ import asyncio
 from nautilus_trader.adapters.bybit.common.credentials import get_api_key
 from nautilus_trader.adapters.bybit.common.credentials import get_api_secret
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.urls import get_http_base_url
+from nautilus_trader.adapters.bybit.common.urls import get_ws_base_url_private
+from nautilus_trader.adapters.bybit.common.urls import get_ws_base_url_public
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.data import BybitDataClient
@@ -70,7 +73,7 @@ def get_bybit_http_client(
     global HTTP_CLIENTS
     key = key or get_api_key(is_testnet)
     secret = secret or get_api_secret(is_testnet)
-    http_base_url = base_url or _get_http_base_url(is_testnet)
+    http_base_url = base_url or get_http_base_url(is_testnet)
     client_key: str = "|".join((key, secret))
 
     # Setup rate limit quotas
@@ -183,7 +186,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
         )
         ws_base_urls: dict[BybitInstrumentType, str] = {}
         for instrument_type in config.instrument_types:
-            ws_base_urls[instrument_type] = _get_ws_base_url_public(
+            ws_base_urls[instrument_type] = get_ws_base_url_public(
                 instrument_type=instrument_type,
                 is_testnet=config.testnet,
             )
@@ -250,7 +253,7 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             instrument_types=config.instrument_types,
             config=config.instrument_provider,
         )
-        default_base_url_ws: str = _get_ws_base_url_private(config.testnet)
+        default_base_url_ws: str = get_ws_base_url_private(config.testnet)
         return BybitExecutionClient(
             loop=loop,
             client=client,
@@ -262,47 +265,3 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             base_url_ws=config.base_url_ws or default_base_url_ws,
             config=config,
         )
-
-
-def _get_http_base_url(is_testnet: bool):
-    if is_testnet:
-        return "https://api-testnet.bybit.com"
-    else:
-        return "https://api.bytick.com"
-
-
-def _get_ws_base_url_public(
-    instrument_type: BybitInstrumentType,
-    is_testnet: bool,
-) -> str:
-    if not is_testnet:
-        if instrument_type == BybitInstrumentType.SPOT:
-            return "wss://stream.bybit.com/v5/public/spot"
-        elif instrument_type == BybitInstrumentType.LINEAR:
-            return "wss://stream.bybit.com/v5/public/linear"
-        elif instrument_type == BybitInstrumentType.INVERSE:
-            return "wss://stream.bybit.com/v5/public/inverse"
-        elif instrument_type == BybitInstrumentType.OPTION:
-            return "wss://stream.bybit.com/v5/public/option"
-        else:
-            raise RuntimeError(
-                f"invalid `BybitAccountType`, was {instrument_type}",  # pragma: no cover
-            )
-    else:
-        if instrument_type == BybitInstrumentType.SPOT:
-            return "wss://stream-testnet.bybit.com/v5/public/spot"
-        elif instrument_type == BybitInstrumentType.LINEAR:
-            return "wss://stream-testnet.bybit.com/v5/public/linear"
-        elif instrument_type == BybitInstrumentType.INVERSE:
-            return "wss://stream-testnet.bybit.com/v5/public/inverse"
-        elif instrument_type == BybitInstrumentType.OPTION:
-            return "wss://stream-testnet.bybit.com/v5/public/option"
-        else:
-            raise RuntimeError(f"invalid `BybitAccountType`, was {instrument_type}")
-
-
-def _get_ws_base_url_private(is_testnet: bool) -> str:
-    if is_testnet:
-        return "wss://stream-testnet.bybit.com/v5/private"
-    else:
-        return "wss://stream.bybit.com/v5/private"
