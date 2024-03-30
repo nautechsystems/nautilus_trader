@@ -26,6 +26,7 @@ use nautilus_model::{
         quote::QuoteTick,
         trade::TradeTick,
     },
+    enums::{OrderSide, PositionSide},
     identifiers::{
         account_id::AccountId, client_id::ClientId, client_order_id::ClientOrderId,
         component_id::ComponentId, exec_algorithm_id::ExecAlgorithmId, instrument_id::InstrumentId,
@@ -376,12 +377,485 @@ impl Cache {
         Ok(())
     }
 
+    // -- IDENTIFIER QUERIES --------------------------------------------------
+
+    fn build_order_query_filter_set(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+    ) -> Option<HashSet<ClientOrderId>> {
+        let mut query: Option<HashSet<ClientOrderId>> = None;
+
+        if let Some(venue) = venue {
+            query = Some(
+                self.index
+                    .venue_orders
+                    .get(&venue)
+                    .map_or(HashSet::new(), |o| o.iter().cloned().collect()),
+            );
+        };
+
+        if let Some(instrument_id) = instrument_id {
+            let instrument_orders = self
+                .index
+                .instrument_orders
+                .get(&instrument_id)
+                .map_or(HashSet::new(), |o| o.iter().cloned().collect());
+
+            if let Some(existing_query) = &mut query {
+                *existing_query = existing_query
+                    .intersection(&instrument_orders)
+                    .cloned()
+                    .collect();
+            } else {
+                query = Some(instrument_orders);
+            };
+        };
+
+        if let Some(strategy_id) = strategy_id {
+            let strategy_orders = self
+                .index
+                .strategy_orders
+                .get(&strategy_id)
+                .map_or(HashSet::new(), |o| o.iter().cloned().collect());
+
+            if let Some(existing_query) = &mut query {
+                *existing_query = existing_query
+                    .intersection(&strategy_orders)
+                    .cloned()
+                    .collect();
+            } else {
+                query = Some(strategy_orders);
+            };
+        };
+
+        query
+    }
+
+    fn build_position_query_filter_set(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+    ) -> Option<HashSet<PositionId>> {
+        let mut query: Option<HashSet<PositionId>> = None;
+
+        if let Some(venue) = venue {
+            query = Some(
+                self.index
+                    .venue_positions
+                    .get(&venue)
+                    .map_or(HashSet::new(), |p| p.iter().cloned().collect()),
+            );
+        };
+
+        if let Some(instrument_id) = instrument_id {
+            let instrument_positions = self
+                .index
+                .instrument_positions
+                .get(&instrument_id)
+                .map_or(HashSet::new(), |p| p.iter().cloned().collect());
+
+            if let Some(existing_query) = query {
+                query = Some(
+                    existing_query
+                        .intersection(&instrument_positions)
+                        .cloned()
+                        .collect(),
+                );
+            } else {
+                query = Some(instrument_positions);
+            };
+        };
+
+        if let Some(strategy_id) = strategy_id {
+            let strategy_positions = self
+                .index
+                .strategy_positions
+                .get(&strategy_id)
+                .map_or(HashSet::new(), |p| p.iter().cloned().collect());
+
+            if let Some(existing_query) = query {
+                query = Some(
+                    existing_query
+                        .intersection(&strategy_positions)
+                        .cloned()
+                        .collect(),
+                );
+            } else {
+                query = Some(strategy_positions);
+            };
+        };
+
+        query
+    }
+
+    #[allow(clippy::borrowed_box)] // Temporary to appease clippy (will change)
+    fn get_orders_for_ids(
+        &self,
+        client_order_ids: HashSet<ClientOrderId>,
+        side: Option<OrderSide>,
+    ) -> Vec<&Box<dyn Order>> {
+        let side = side.unwrap_or(OrderSide::NoOrderSide);
+        let mut orders = Vec::new();
+
+        for client_order_id in client_order_ids {
+            let order = self
+                .orders
+                .get(&client_order_id)
+                .unwrap_or_else(|| panic!("Order {client_order_id} not found"));
+            if side == OrderSide::NoOrderSide || side == order.side() {
+                orders.push(order);
+            };
+        }
+
+        orders
+    }
+
+    fn get_positions_for_ids(
+        &self,
+        position_ids: HashSet<&PositionId>,
+        side: Option<PositionSide>,
+    ) -> Vec<&Position> {
+        let side = side.unwrap_or(PositionSide::NoPositionSide);
+        let mut positions = Vec::new();
+
+        for position_id in position_ids {
+            let position = self
+                .positions
+                .get(position_id)
+                .unwrap_or_else(|| panic!("Position {position_id} not found"));
+            if side == PositionSide::NoPositionSide || side == position.side {
+                positions.push(position);
+            };
+        }
+
+        positions
+    }
+
+    pub fn client_order_ids(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+    ) -> HashSet<ClientOrderId> {
+        let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
+        match query {
+            Some(query) => self.index.orders.intersection(&query).cloned().collect(),
+            None => self.index.orders.clone(),
+        }
+    }
+
+    pub fn client_order_ids_open(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+    ) -> HashSet<ClientOrderId> {
+        let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
+        match query {
+            Some(query) => self
+                .index
+                .orders_open
+                .intersection(&query)
+                .cloned()
+                .collect(),
+            None => self.index.orders_open.clone(),
+        }
+    }
+
+    pub fn client_order_ids_closed(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+    ) -> HashSet<ClientOrderId> {
+        let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
+        match query {
+            Some(query) => self
+                .index
+                .orders_closed
+                .intersection(&query)
+                .cloned()
+                .collect(),
+            None => self.index.orders_closed.clone(),
+        }
+    }
+
+    pub fn client_order_ids_emulated(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+    ) -> HashSet<ClientOrderId> {
+        let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
+        match query {
+            Some(query) => self
+                .index
+                .orders_emulated
+                .intersection(&query)
+                .cloned()
+                .collect(),
+            None => self.index.orders_emulated.clone(),
+        }
+    }
+
+    pub fn client_order_ids_inflight(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+    ) -> HashSet<ClientOrderId> {
+        let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
+        match query {
+            Some(query) => self
+                .index
+                .orders_inflight
+                .intersection(&query)
+                .cloned()
+                .collect(),
+            None => self.index.orders_inflight.clone(),
+        }
+    }
+
+    pub fn position_ids(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+    ) -> HashSet<PositionId> {
+        let query = self.build_position_query_filter_set(venue, instrument_id, strategy_id);
+        match query {
+            Some(query) => self.index.positions.intersection(&query).cloned().collect(),
+            None => self.index.positions.clone(),
+        }
+    }
+
+    pub fn position_open_ids(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+    ) -> HashSet<PositionId> {
+        let query = self.build_position_query_filter_set(venue, instrument_id, strategy_id);
+        match query {
+            Some(query) => self
+                .index
+                .positions_open
+                .intersection(&query)
+                .cloned()
+                .collect(),
+            None => self.index.positions_open.clone(),
+        }
+    }
+
+    pub fn position_closed_ids(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+    ) -> HashSet<PositionId> {
+        let query = self.build_position_query_filter_set(venue, instrument_id, strategy_id);
+        match query {
+            Some(query) => self
+                .index
+                .positions_closed
+                .intersection(&query)
+                .cloned()
+                .collect(),
+            None => self.index.positions_closed.clone(),
+        }
+    }
+
+    pub fn actor_ids(&self) -> HashSet<ComponentId> {
+        self.index.actors.clone()
+    }
+
+    pub fn strategy_ids(&self) -> HashSet<StrategyId> {
+        self.index.strategies.clone()
+    }
+
+    pub fn exec_algorithm_ids(&self) -> HashSet<ExecAlgorithmId> {
+        self.index.exec_algorithms.clone()
+    }
+
+    // -- ORDER QUERIES -------------------------------------------------------
+
+    #[allow(clippy::borrowed_box)] // Temporary to appease clippy (will change)
+    pub fn order(&self, client_order_id: ClientOrderId) -> Option<&Box<dyn Order>> {
+        self.orders.get(&client_order_id)
+    }
+
+    pub fn client_order_id(&self, venue_order_id: VenueOrderId) -> Option<&ClientOrderId> {
+        self.index.order_ids.get(&venue_order_id)
+    }
+
+    pub fn venue_order_id(&self, client_order_id: ClientOrderId) -> Option<VenueOrderId> {
+        self.orders
+            .get(&client_order_id)
+            .and_then(|o| o.venue_order_id())
+    }
+
+    pub fn client_id(&self, client_order_id: ClientOrderId) -> Option<&ClientId> {
+        self.index.order_client.get(&client_order_id)
+    }
+
+    #[allow(clippy::borrowed_box)] // Temporary to appease clippy (will change)
+    pub fn orders(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+        side: Option<OrderSide>,
+    ) -> Vec<&Box<dyn Order>> {
+        let client_order_ids = self.client_order_ids(venue, instrument_id, strategy_id);
+        self.get_orders_for_ids(client_order_ids, side)
+    }
+
+    #[allow(clippy::borrowed_box)] // Temporary to appease clippy (will change)
+    pub fn orders_open(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+        side: Option<OrderSide>,
+    ) -> Vec<&Box<dyn Order>> {
+        let client_order_ids = self.client_order_ids_open(venue, instrument_id, strategy_id);
+        self.get_orders_for_ids(client_order_ids, side)
+    }
+
+    #[allow(clippy::borrowed_box)] // Temporary to appease clippy (will change)
+    pub fn orders_closed(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+        side: Option<OrderSide>,
+    ) -> Vec<&Box<dyn Order>> {
+        let client_order_ids = self.client_order_ids_closed(venue, instrument_id, strategy_id);
+        self.get_orders_for_ids(client_order_ids, side)
+    }
+
+    #[allow(clippy::borrowed_box)] // Temporary to appease clippy (will change)
+    pub fn orders_emulated(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+        side: Option<OrderSide>,
+    ) -> Vec<&Box<dyn Order>> {
+        let client_order_ids = self.client_order_ids_emulated(venue, instrument_id, strategy_id);
+        self.get_orders_for_ids(client_order_ids, side)
+    }
+
+    #[allow(clippy::borrowed_box)] // Temporary to appease clippy (will change)
+    pub fn orders_inflight(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+        side: Option<OrderSide>,
+    ) -> Vec<&Box<dyn Order>> {
+        let client_order_ids = self.client_order_ids_inflight(venue, instrument_id, strategy_id);
+        self.get_orders_for_ids(client_order_ids, side)
+    }
+
+    #[allow(clippy::borrowed_box)] // Temporary to appease clippy (will change)
+    pub fn orders_for_position(&self, position_id: PositionId) -> Vec<&Box<dyn Order>> {
+        let client_order_ids = self.index.position_orders.get(&position_id);
+        match client_order_ids {
+            Some(client_order_ids) => {
+                self.get_orders_for_ids(client_order_ids.iter().cloned().collect(), None)
+            }
+            None => Vec::new(),
+        }
+    }
+
+    pub fn order_exists(&self, client_order_id: ClientOrderId) -> bool {
+        self.index.orders.contains(&client_order_id)
+    }
+
+    pub fn is_order_open(&self, client_order_id: ClientOrderId) -> bool {
+        self.index.orders_open.contains(&client_order_id)
+    }
+
+    pub fn is_order_closed(&self, client_order_id: ClientOrderId) -> bool {
+        self.index.orders_closed.contains(&client_order_id)
+    }
+
+    pub fn is_order_emulated(&self, client_order_id: ClientOrderId) -> bool {
+        self.index.orders_emulated.contains(&client_order_id)
+    }
+
+    pub fn is_order_inflight(&self, client_order_id: ClientOrderId) -> bool {
+        self.index.orders_inflight.contains(&client_order_id)
+    }
+
+    pub fn is_order_pending_cancel_local(&self, client_order_id: ClientOrderId) -> bool {
+        self.index.orders_pending_cancel.contains(&client_order_id)
+    }
+
+    pub fn orders_open_count(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+        side: Option<OrderSide>,
+    ) -> usize {
+        self.orders_open(venue, instrument_id, strategy_id, side)
+            .len()
+    }
+
+    pub fn orders_closed_count(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+        side: Option<OrderSide>,
+    ) -> usize {
+        self.orders_closed(venue, instrument_id, strategy_id, side)
+            .len()
+    }
+
+    pub fn orders_emulated_count(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+        side: Option<OrderSide>,
+    ) -> usize {
+        self.orders_emulated(venue, instrument_id, strategy_id, side)
+            .len()
+    }
+
+    pub fn orders_inflight_count(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+        side: Option<OrderSide>,
+    ) -> usize {
+        self.orders_inflight(venue, instrument_id, strategy_id, side)
+            .len()
+    }
+
+    pub fn orders_total_count(
+        &self,
+        venue: Option<Venue>,
+        instrument_id: Option<InstrumentId>,
+        strategy_id: Option<StrategyId>,
+        side: Option<OrderSide>,
+    ) -> usize {
+        self.orders(venue, instrument_id, strategy_id, side).len()
+    }
+
     pub fn add(&mut self, key: &str, value: Vec<u8>) -> anyhow::Result<()> {
         check_valid_string(key, stringify!(key))?;
         check_slice_not_empty(value.as_slice(), stringify!(value))?;
 
         self.general.insert(key.to_string(), value.clone());
-        debug!("Added general '{key}'");
+        debug!("Added '{key}'");
 
         if let Some(database) = &self.database {
             database.add(key.to_string(), value)?;
