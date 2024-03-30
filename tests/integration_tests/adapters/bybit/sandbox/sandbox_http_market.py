@@ -51,14 +51,14 @@ def client() -> BybitHttpClient:
 
 
 @pytest.mark.asyncio()
-async def test_sandbox_get_server_time(client: BybitHttpClient):
+async def test_sandbox_get_server_time(client: BybitHttpClient) -> None:
     time_endpoint = BybitServerTimeEndpoint(client=client, base_endpoint=base_endpoint)
     server_time = await time_endpoint.get()
     save_struct_to_file(base_path + "server_time.json", server_time, force_create)
 
 
 @pytest.mark.asyncio()
-async def test_sandbox_get_instruments(client: BybitHttpClient):
+async def test_sandbox_get_instruments(client: BybitHttpClient) -> None:
     # --- Spot ---
     instruments_spot_endpoint = BybitInstrumentsInfoEndpoint(
         client,
@@ -107,7 +107,7 @@ async def test_sandbox_get_instruments(client: BybitHttpClient):
 
 
 @pytest.mark.asyncio()
-async def test_sandbox_get_klines(client: BybitHttpClient):
+async def test_sandbox_get_klines(client: BybitHttpClient) -> None:
     klines_endpoint = BybitKlinesEndpoint(client, base_endpoint)
     btc_spot_klines = await klines_endpoint.get(
         BybitKlinesGetParameters(
