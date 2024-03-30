@@ -713,7 +713,7 @@ cdef class Cache(CacheFacade):
 
         All stateful fields are reset to their initial value.
         """
-        self._log.info("Resetting cache")
+        self._log.debug("Resetting cache")
 
         self._general.clear()
         self._xrate_symbols.clear()
@@ -735,7 +735,7 @@ cdef class Cache(CacheFacade):
         if self._drop_instruments_on_reset:
             self._instruments.clear()
 
-        self._log.debug(f"Reset cache")
+        self._log.info(f"Reset")
 
     cpdef void dispose(self):
         """
@@ -754,12 +754,12 @@ cdef class Cache(CacheFacade):
         Permanent data loss.
 
         """
-        self._log.debug("Flushing execution database")
+        self._log.debug("Flushing cache database")
 
         if self._database is not None:
             self._database.flush()
 
-        self._log.info("Execution database flushed")
+        self._log.info("Cache database flushed")
 
     cdef void _build_index_venue_account(self):
         cdef AccountId account_id
