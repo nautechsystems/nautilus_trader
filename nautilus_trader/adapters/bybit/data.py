@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from collections import defaultdict
 
 import msgspec
 import pandas as pd
@@ -131,10 +132,9 @@ class BybitDataClient(LiveMarketDataClient):
 
         # WebSocket API
         self._ws_clients: dict[BybitInstrumentType, BybitWebsocketClient] = {}
-        self._decoders = {
-            "trade": {},
-            "ticker": {},
-        }
+        self._decoders: dict[str, dict[BybitInstrumentType, msgspec.json.Decoder]] = defaultdict(
+            dict,
+        )
         for instrument_type in instrument_types:
             self._ws_clients[instrument_type] = BybitWebsocketClient(
                 clock=clock,
@@ -145,10 +145,10 @@ class BybitDataClient(LiveMarketDataClient):
             )
 
             # WebSocket decoders
-            self._decoders["orderbook"] = decoder_ws_orderbook()
+            self._decoders["orderbook"][instrument_type] = decoder_ws_orderbook()
             self._decoders["trade"][instrument_type] = decoder_ws_trade(instrument_type)
             self._decoders["ticker"][instrument_type] = decoder_ws_ticker(instrument_type)
-            self._decoders["kline"] = decoder_ws_kline()
+            self._decoders["kline"][instrument_type] = decoder_ws_kline()
 
             self._decoder_ws_msg_general = msgspec.json.Decoder(BybitWsMessageGeneral)
 
@@ -596,12 +596,12 @@ class BybitDataClient(LiveMarketDataClient):
         elif "tickers" in topic:
             self._handle_ticker(instrument_type, raw)
         elif "kline" in topic:
-            self._handle_kline(raw)
+            self._handle_kline(instrument_type, raw)
         else:
             self._log.error(f"Unknown websocket message topic: {topic} in Bybit")
 
     def _handle_orderbook(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
-        msg = self._decoders["orderbook"].decode(raw)
+        msg = self._decoders["orderbook"][instrument_type].decode(raw)
         symbol = msg.data.s + f"-{instrument_type.value.upper()}"
         instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
 
@@ -693,8 +693,8 @@ class BybitDataClient(LiveMarketDataClient):
         except Exception as e:
             self._log.error(f"Failed to parse trade tick: {msg} with error {e}")
 
-    def _handle_kline(self, raw: bytes) -> None:
-        msg = self._decoders["kline"].decode(raw)
+    def _handle_kline(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
+        msg = self._decoders["kline"][instrument_type].decode(raw)
         try:
             bar_type = self._topic_bar_type.get(msg.topic)
             for data in msg.data:

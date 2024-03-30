@@ -44,8 +44,8 @@ from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerOption
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerOptionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerSpot
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerSpotMsg
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTrade
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTradeMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTradeLinear
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTradeLinearMsg
 
 
 class TestBybitWsDecoders:
@@ -262,9 +262,9 @@ class TestBybitWsDecoders:
             "ws_trade.json",
         )
         assert item is not None
-        decoder = msgspec.json.Decoder(BybitWsTradeMsg)
+        decoder = msgspec.json.Decoder(BybitWsTradeLinearMsg)
         result = decoder.decode(item)
-        target_trade = BybitWsTrade(
+        target_trade = BybitWsTradeLinear(
             T=1672304486865,
             s="BTCUSDT",
             S="Buy",
