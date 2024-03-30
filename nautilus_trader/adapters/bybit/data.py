@@ -603,6 +603,9 @@ class BybitDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
 
         instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot parse order book data: no instrument for {instrument_id}")
+            return
 
         if instrument_id in self._tob_quotes:
             quote = msg.data.parse_to_quote_tick(
