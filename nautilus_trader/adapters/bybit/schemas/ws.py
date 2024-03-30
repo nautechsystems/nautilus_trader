@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Final
+
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
@@ -44,11 +46,14 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
 
+BYBIT_PONG: Final[str] = "pong"
+
+
 class BybitWsMessageGeneral(msgspec.Struct):
+    op: str | None = None
     topic: str | None = None
     success: bool | None = None
     ret_msg: str | None = None
-    op: str | None = None
 
 
 ################################################################################
@@ -135,11 +140,25 @@ class BybitWsOrderbookDepth(msgspec.Struct):
     def parse_to_snapshot(
         self,
         instrument_id: InstrumentId,
+        price_precision: int | None,
+        size_precision: int | None,
         ts_event: int,
         ts_init: int,
     ) -> OrderBookDeltas:
-        bids_raw = [(Price.from_str(d[0]), Quantity.from_str(d[1])) for d in self.b]
-        asks_raw = [(Price.from_str(d[0]), Quantity.from_str(d[1])) for d in self.a]
+        bids_raw = [
+            (
+                Price(float(d[0]), price_precision),
+                Quantity(float(d[1]), size_precision),
+            )
+            for d in self.b
+        ]
+        asks_raw = [
+            (
+                Price(float(d[0]), price_precision),
+                Quantity(float(d[1]), size_precision),
+            )
+            for d in self.a
+        ]
         deltas: list[OrderBookDelta] = []
 
         # Add initial clear
@@ -182,11 +201,25 @@ class BybitWsOrderbookDepth(msgspec.Struct):
     def parse_to_deltas(
         self,
         instrument_id: InstrumentId,
+        price_precision: int | None,
+        size_precision: int | None,
         ts_event: int,
         ts_init: int,
     ) -> OrderBookDeltas:
-        bids_raw = [(Price.from_str(d[0]), Quantity.from_str(d[1])) for d in self.b]
-        asks_raw = [(Price.from_str(d[0]), Quantity.from_str(d[1])) for d in self.a]
+        bids_raw = [
+            (
+                Price(float(d[0]), price_precision),
+                Quantity(float(d[1]), size_precision),
+            )
+            for d in self.b
+        ]
+        asks_raw = [
+            (
+                Price(float(d[0]), price_precision),
+                Quantity(float(d[1]), size_precision),
+            )
+            for d in self.a
+        ]
         deltas: list[OrderBookDelta] = []
 
         for bid in bids_raw:
@@ -217,6 +250,50 @@ class BybitWsOrderbookDepth(msgspec.Struct):
             deltas.append(delta)
 
         return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
+
+    def parse_to_quote_tick(
+        self,
+        instrument_id: InstrumentId,
+        last_quote: QuoteTick,
+        price_precision: int | None,
+        size_precision: int | None,
+        ts_event: int,
+        ts_init: int,
+    ) -> QuoteTick:
+        top_bid = self.b[0] if self.b else None
+        top_ask = self.a[0] if self.a else None
+        top_bid_price = top_bid[0] if top_bid else None
+        top_ask_price = top_ask[0] if top_ask else None
+        top_bid_size = top_bid[1] if top_bid else None
+        top_ask_size = top_ask[1] if top_ask else None
+
+        if top_bid_size == "0":
+            top_bid = None
+        if top_ask_size == "0":
+            top_ask = None
+
+        # Ensure correct precision:
+        # (Spot price and size strings are not accurate to precision digits)
+        if price_precision:
+            if top_bid_price is not None:
+                top_bid_price = f"{float(top_bid_price):.{price_precision}f}"
+            if top_ask_price is not None:
+                top_ask_price = f"{float(top_ask_price):.{price_precision}f}"
+        if size_precision:
+            if top_bid_size is not None:
+                top_bid_size = f"{float(top_bid_size):.{size_precision}f}"
+            if top_ask_size is not None:
+                top_ask_size = f"{float(top_ask_size):.{size_precision}f}"
+
+        return QuoteTick(
+            instrument_id=instrument_id,
+            bid_price=Price.from_str(top_bid_price) if top_bid else last_quote.bid_price,
+            ask_price=Price.from_str(top_ask_price) if top_ask else last_quote.ask_price,
+            bid_size=Quantity.from_str(top_bid_size) if top_bid else last_quote.bid_size,
+            ask_size=Quantity.from_str(top_ask_size) if top_ask else last_quote.ask_size,
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
 
 
 class BybitWsOrderbookDepthMsg(msgspec.Struct):
