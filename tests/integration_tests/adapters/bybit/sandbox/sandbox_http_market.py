@@ -17,8 +17,8 @@ import os
 
 import pytest
 
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 
 # fmt: off
 from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoEndpoint
@@ -65,7 +65,7 @@ async def test_sandbox_get_instruments(client: BybitHttpClient) -> None:
         base_endpoint,
     )
     instruments_spot = await instruments_spot_endpoint.get(
-        BybitInstrumentsInfoGetParameters(category=BybitInstrumentType.SPOT),
+        BybitInstrumentsInfoGetParameters(category=BybitProductType.SPOT),
     )
     result_list_spot = [
         item for item in instruments_spot.result.list if item.symbol in ["BTCUSDT", "ETHUSDT"]
@@ -78,7 +78,7 @@ async def test_sandbox_get_instruments(client: BybitHttpClient) -> None:
         base_endpoint,
     )
     instruments_linear = await instruments_linear_endpoint.get(
-        BybitInstrumentsInfoGetParameters(category=BybitInstrumentType.LINEAR),
+        BybitInstrumentsInfoGetParameters(category=BybitProductType.LINEAR),
     )
     result_list_linear = [
         item for item in instruments_linear.result.list if item.symbol in ["BTCUSDT", "ETHUSDT"]
@@ -95,7 +95,7 @@ async def test_sandbox_get_instruments(client: BybitHttpClient) -> None:
         base_endpoint,
     )
     instruments_options = await instruments_option_endpoint.get(
-        BybitInstrumentsInfoGetParameters(category=BybitInstrumentType.OPTION),
+        BybitInstrumentsInfoGetParameters(category=BybitProductType.OPTION),
     )
     # take first few items
     instruments_options.result.list = instruments_options.result.list[:2]

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config import PositiveFloat
@@ -28,7 +28,7 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
 
     api_key: str | None = None
     api_secret: str | None = None
-    instrument_types: list[BybitInstrumentType] = []
+    product_types: list[BybitProductType] = []
     base_url_http: str | None = None
     testnet: bool = False
 
@@ -40,7 +40,7 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
 
     api_key: str | None = None
     api_secret: str | None = None
-    instrument_types: list[BybitInstrumentType] = []
+    product_types: list[BybitProductType] = []
     base_url_http: str | None = None
     base_url_ws: str | None = None
     testnet: bool = False

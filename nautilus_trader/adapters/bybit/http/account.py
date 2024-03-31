@@ -13,11 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from typing import Any
+
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
-from nautilus_trader.adapters.bybit.common.parsing import get_category_from_instrument_type
+from nautilus_trader.adapters.bybit.common.parsing import get_category_from_product_type
 from nautilus_trader.adapters.bybit.endpoints.account.fee_rate import BybitFeeRateEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.fee_rate import BybitFeeRateGetParameters
 from nautilus_trader.adapters.bybit.endpoints.account.position_info import BybitPositionInfoEndpoint
@@ -67,13 +69,13 @@ class BybitAccountHttpAPI:
 
     async def fetch_fee_rate(
         self,
-        instrument_type: BybitInstrumentType,
+        product_type: BybitProductType,
         symbol: str | None = None,
         base_coin: str | None = None,
     ) -> list[BybitFeeRate]:
         response = await self._endpoint_fee_rate.get(
             BybitFeeRateGetParameters(
-                category=instrument_type,
+                category=product_type,
                 symbol=symbol,
                 baseCoin=base_coin,
             ),
@@ -82,7 +84,7 @@ class BybitAccountHttpAPI:
 
     async def query_position_info(
         self,
-        instrument_type: BybitInstrumentType,
+        product_type: BybitProductType,
         symbol: str | None = None,
     ) -> list[BybitPositionStruct]:
         # symbol = 'USD'
@@ -90,7 +92,7 @@ class BybitAccountHttpAPI:
             PositionInfoGetParameters(
                 symbol=BybitSymbol(symbol) if symbol else None,
                 settleCoin=self.default_settle_coin if symbol is None else None,
-                category=get_category_from_instrument_type(instrument_type),
+                category=get_category_from_product_type(product_type),
             ),
         )
         return response.result.list
@@ -102,12 +104,12 @@ class BybitAccountHttpAPI:
 
     async def query_open_orders(
         self,
-        instrument_type: BybitInstrumentType,
+        product_type: BybitProductType,
         symbol: str | None = None,
     ) -> list[BybitOrder]:
         response = await self._endpoint_open_orders.get(
             BybitOpenOrdersGetParameters(
-                category=instrument_type,
+                category=product_type,
                 symbol=BybitSymbol(symbol) if symbol else None,
                 settleCoin=self.default_settle_coin if symbol is None else None,
             ),
@@ -116,13 +118,13 @@ class BybitAccountHttpAPI:
 
     async def query_order(
         self,
-        instrument_type: BybitInstrumentType,
+        product_type: BybitProductType,
         symbol: str,
         order_id: str,
     ) -> list[BybitOrder]:
         response = await self._endpoint_open_orders.get(
             BybitOpenOrdersGetParameters(
-                category=instrument_type,
+                category=product_type,
                 symbol=BybitSymbol(symbol) if symbol else None,
                 orderId=order_id,
             ),
@@ -131,12 +133,12 @@ class BybitAccountHttpAPI:
 
     async def cancel_all_orders(
         self,
-        instrument_type: BybitInstrumentType,
+        product_type: BybitProductType,
         symbol: str,
-    ):
+    ) -> list[Any]:
         response = await self._endpoint_cancel_all_orders.post(
             BybitCancelAllOrdersPostParameters(
-                category=get_category_from_instrument_type(instrument_type),
+                category=get_category_from_product_type(product_type),
                 symbol=BybitSymbol(symbol),
             ),
         )
@@ -155,18 +157,18 @@ class BybitAccountHttpAPI:
 
     async def place_order(
         self,
-        instrument_type: BybitInstrumentType,
+        product_type: BybitProductType,
         symbol: str,
         side: BybitOrderSide,
+        quantity: str,
         order_type: BybitOrderType,
         time_in_force: BybitTimeInForce | None = None,
-        quantity: str | None = None,
         price: str | None = None,
         order_id: str | None = None,
     ) -> BybitPlaceOrder:
         result = await self._endpoint_order.post(
             parameters=BybitPlaceOrderGetParameters(
-                category=get_category_from_instrument_type(instrument_type),
+                category=get_category_from_product_type(product_type),
                 symbol=BybitSymbol(symbol),
                 side=side,
                 orderType=order_type,

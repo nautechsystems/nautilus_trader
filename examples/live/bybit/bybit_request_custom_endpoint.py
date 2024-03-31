@@ -17,7 +17,7 @@
 import os
 from datetime import timedelta
 
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.factories import BybitLiveDataClientFactory
@@ -101,7 +101,7 @@ config_node = TradingNodeConfig(
         "BYBIT": BybitDataClientConfig(
             api_key=api_key,
             api_secret=api_secret,
-            instrument_types=[BybitInstrumentType.LINEAR],
+            product_types=[BybitProductType.LINEAR],
             instrument_provider=InstrumentProviderConfig(load_all=True),
             testnet=True,
         ),
@@ -110,7 +110,7 @@ config_node = TradingNodeConfig(
         "BYBIT": BybitExecClientConfig(
             api_key=api_key,
             api_secret=api_secret,
-            instrument_types=[BybitInstrumentType.LINEAR],
+            product_types=[BybitProductType.LINEAR],
             instrument_provider=InstrumentProviderConfig(load_all=True),
             testnet=True,
         ),

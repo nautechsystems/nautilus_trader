@@ -16,7 +16,7 @@
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsLinearResponse
@@ -26,7 +26,7 @@ from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BybitInstrumentsInfoGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
-    category: BybitInstrumentType | None = None
+    category: BybitProductType | None = None
     symbol: str | None = None
     status: str | None = None
 
@@ -54,16 +54,18 @@ class BybitInstrumentsInfoEndpoint(BybitHttpEndpoint):
     async def get(
         self,
         parameters: BybitInstrumentsInfoGetParameters,
-    ) -> BybitInstrumentsLinearResponse | (
-        BybitInstrumentsSpotResponse | BybitInstrumentsOptionResponse
+    ) -> (
+        BybitInstrumentsSpotResponse
+        | BybitInstrumentsLinearResponse
+        | BybitInstrumentsOptionResponse
     ):
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
-        if parameters.category == BybitInstrumentType.LINEAR:
+        if parameters.category == BybitProductType.LINEAR:
             return self._response_decoder_instrument_linear.decode(raw)
-        elif parameters.category == BybitInstrumentType.SPOT:
+        elif parameters.category == BybitProductType.SPOT:
             return self._response_decoder_instrument_spot.decode(raw)
-        elif parameters.category == BybitInstrumentType.OPTION:
+        elif parameters.category == BybitProductType.OPTION:
             return self._response_decoder_instrument_option.decode(raw)
         else:
             raise ValueError("Invalid account type")

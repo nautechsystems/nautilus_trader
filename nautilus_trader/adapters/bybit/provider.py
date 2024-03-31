@@ -16,7 +16,7 @@
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
@@ -43,8 +43,8 @@ class BybitInstrumentProvider(InstrumentProvider):
         The Bybit HTTP client.
     clock : LiveClock
         The clock instance.
-    instrument_types : list[BybitInstrumentType]
-        The instrument types to load.
+    product_types : list[BybitProductType]
+        The product types to load.
     config : InstrumentProviderConfig, optional
         The instrument provider configuration, by default None.
 
@@ -54,13 +54,13 @@ class BybitInstrumentProvider(InstrumentProvider):
         self,
         client: BybitHttpClient,
         clock: LiveClock,
-        instrument_types: list[BybitInstrumentType],
+        product_types: list[BybitProductType],
         config: InstrumentProviderConfig | None = None,
     ) -> None:
         super().__init__(config=config)
         self._clock = clock
         self._client = client
-        self._instrument_types = instrument_types
+        self._product_types = product_types
 
         self._http_market = BybitMarketHttpAPI(
             client=client,
@@ -79,25 +79,25 @@ class BybitInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
-        instrument_infos: dict[BybitInstrumentType, BybitInstrumentList] = {}
-        fee_rates_infos: dict[BybitInstrumentType, list[BybitFeeRate]] = {}
+        instrument_infos: dict[BybitProductType, BybitInstrumentList] = {}
+        fee_rates_infos: dict[BybitProductType, list[BybitFeeRate]] = {}
 
-        for instrument_type in self._instrument_types:
-            instrument_infos[instrument_type] = await self._http_market.fetch_instruments(
-                instrument_type,
+        for product_type in self._product_types:
+            instrument_infos[product_type] = await self._http_market.fetch_instruments(
+                product_type,
             )
-            fee_rates_infos[instrument_type] = await self._http_account.fetch_fee_rate(
-                instrument_type,
+            fee_rates_infos[product_type] = await self._http_account.fetch_fee_rate(
+                product_type,
             )
 
         # risk_limits = await self._http_market.get_risk_limits()
-        for instrument_type in instrument_infos:
-            for instrument in instrument_infos[instrument_type]:
+        for product_type in instrument_infos:
+            for instrument in instrument_infos[product_type]:
                 ## find target fee rate in list by symbol
                 target_fee_rate = next(
                     (
                         item
-                        for item in fee_rates_infos[instrument_type]
+                        for item in fee_rates_infos[product_type]
                         if item.symbol == instrument.symbol
                     ),
                     None,
@@ -126,11 +126,11 @@ class BybitInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
 
-        # extract symbol strings and instrument types
+        # extract symbol strings and product types
         # for instrument_id in instrument_ids:
         #     bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         #     instrument = await self._http_market.fetch_instrument(
-        #         bybit_symbol.instrument_type,
+        #         bybit_symbol.product_type,
         #         bybit_symbol.raw_symbol,
         #     )
         #     self._parse_instrument(instrument)
