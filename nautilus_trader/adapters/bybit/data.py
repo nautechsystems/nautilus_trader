@@ -136,7 +136,7 @@ class BybitDataClient(LiveMarketDataClient):
         self._decoders: dict[str, dict[BybitProductType, msgspec.json.Decoder]] = defaultdict(
             dict,
         )
-        for product_type in product_types:
+        for product_type in set(product_types):
             self._ws_clients[product_type] = BybitWebsocketClient(
                 clock=clock,
                 handler=partial(self._handle_ws_message, product_type),
