@@ -54,7 +54,7 @@ class TestBinanceSpotAccountHttpAPI:
 
         # Act
         await endpoint.post(
-            parameters=endpoint.PostParameters(
+            params=endpoint.PostParameters(
                 symbol=BinanceSymbol("ETHUSDT"),
                 side=BinanceOrderSide.SELL,
                 type=BinanceOrderType.LIMIT,
