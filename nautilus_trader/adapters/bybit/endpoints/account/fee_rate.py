@@ -44,8 +44,8 @@ class BybitFeeRateEndpoint(BybitHttpEndpoint):
         )
         self._get_resp_decoder = msgspec.json.Decoder(BybitFeeRateResponse)
 
-    async def get(self, parameters: BybitFeeRateGetParameters) -> BybitFeeRateResponse:
-        raw = await self._method(self.http_method, parameters)
+    async def get(self, params: BybitFeeRateGetParameters) -> BybitFeeRateResponse:
+        raw = await self._method(self.http_method, params)
         try:
             return self._get_resp_decoder.decode(raw)
         except Exception as e:

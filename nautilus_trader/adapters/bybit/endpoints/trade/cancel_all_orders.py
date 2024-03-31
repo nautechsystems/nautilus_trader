@@ -45,10 +45,10 @@ class BybitCancelAllOrdersEndpoint(BybitHttpEndpoint):
 
     async def post(
         self,
-        parameters: BybitCancelAllOrdersPostParameters,
+        params: BybitCancelAllOrdersPostParameters,
     ) -> BybitCancelAllOrdersResponse:
         method_type = HttpMethod.POST
-        raw = await self._method(method_type, parameters)
+        raw = await self._method(method_type, params)
         try:
             return self._resp_decoder.decode(raw)
         except Exception as e:

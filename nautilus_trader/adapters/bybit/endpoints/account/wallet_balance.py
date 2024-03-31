@@ -42,8 +42,8 @@ class BybitWalletBalanceEndpoint(BybitHttpEndpoint):
         )
         self._get_resp_decoder = msgspec.json.Decoder(BybitWalletBalanceResponse)
 
-    async def get(self, parameters: BybitWalletBalanceGetParameters) -> BybitWalletBalanceResponse:
-        raw = await self._method(self.http_method, parameters)
+    async def get(self, params: BybitWalletBalanceGetParameters) -> BybitWalletBalanceResponse:
+        raw = await self._method(self.http_method, params)
         try:
             return self._get_resp_decoder.decode(raw)
         except Exception as e:

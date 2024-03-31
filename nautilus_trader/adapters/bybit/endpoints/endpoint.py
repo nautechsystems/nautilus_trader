@@ -53,10 +53,10 @@ class BybitHttpEndpoint:
     async def _method(
         self,
         method_type: Any,
-        parameters: Any | None = None,
+        params: Any | None = None,
         ratelimiter_keys: Any | None = None,
     ) -> bytes:
-        payload: dict = self.decoder.decode(self.encoder.encode(parameters))
+        payload: dict = self.decoder.decode(self.encoder.encode(params))
         method_call = self._method_request[self.endpoint_type]
         raw: bytes = await method_call(
             http_method=method_type,

@@ -90,7 +90,9 @@ class BybitAccountHttpAPI:
         response = await self._endpoint_position_info.get(
             PositionInfoGetParameters(
                 symbol=symbol,
-                settleCoin=self.default_settle_coin if symbol is None else None,
+                settleCoin=(
+                    self.default_settle_coin if symbol is None and not product_type.LINEAR else None
+                ),
                 category=get_category_from_product_type(product_type),
             ),
         )
@@ -110,7 +112,11 @@ class BybitAccountHttpAPI:
             BybitOpenOrdersGetParameters(
                 category=product_type,
                 symbol=symbol,
-                settleCoin=self.default_settle_coin if symbol is None else None,
+                settleCoin=(
+                    self.default_settle_coin
+                    if symbol is None and not product_type.INVERSE
+                    else None
+                ),
             ),
         )
         return response.result.list
@@ -166,7 +172,7 @@ class BybitAccountHttpAPI:
         order_id: str | None = None,
     ) -> BybitPlaceOrder:
         result = await self._endpoint_order.post(
-            parameters=BybitPlaceOrderGetParameters(
+            params=BybitPlaceOrderGetParameters(
                 category=get_category_from_product_type(product_type),
                 symbol=symbol,
                 side=side,

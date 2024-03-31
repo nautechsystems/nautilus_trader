@@ -42,9 +42,9 @@ class BybitPositionInfoEndpoint(BybitHttpEndpoint):
         )
         self._get_resp_decoder = msgspec.json.Decoder(BybitPositionResponseStruct)
 
-    async def get(self, parameters: PositionInfoGetParameters) -> BybitPositionResponseStruct:
+    async def get(self, params: PositionInfoGetParameters) -> BybitPositionResponseStruct:
         method_type = HttpMethod.GET
-        raw = await self._method(method_type, parameters)
+        raw = await self._method(method_type, params)
         try:
             return self._get_resp_decoder.decode(raw)
         except Exception as e:

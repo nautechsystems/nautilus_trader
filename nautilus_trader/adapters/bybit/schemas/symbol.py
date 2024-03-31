@@ -27,6 +27,7 @@ class BybitSymbol(str):
             if (
                 symbol.find("-SPOT") == -1
                 and symbol.find("-LINEAR") == -1
+                and symbol.find("-INVERSE") == -1
                 and symbol.find("-OPTION") == -1
             ):
                 raise ValueError(
