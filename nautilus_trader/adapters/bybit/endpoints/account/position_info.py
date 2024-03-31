@@ -19,13 +19,12 @@ from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.position import BybitPositionResponseStruct
-from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class PositionInfoGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
     category: str | None = None
-    symbol: BybitSymbol | None = None
+    symbol: str | None = None
     settleCoin: str | None = None
 
 

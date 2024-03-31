@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import json
 
 import msgspec
 import pandas as pd
@@ -23,6 +24,7 @@ from nautilus_trader.adapters.bybit.common.credentials import get_api_key
 from nautilus_trader.adapters.bybit.common.credentials import get_api_secret
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
+from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
@@ -122,11 +124,22 @@ class BybitExecutionClient(LiveExecutionClient):
             cache=cache,
             clock=clock,
         )
-        # Configuration
-        self._use_position_ids = config.use_position_ids
 
-        self._log.info(f"Account type: {account_type_to_str(self.account_type)}", LogColor.BLUE)
+        # Configuration
         self._product_types = product_types
+        self._use_gtd = config.use_gtd
+        self._use_reduce_only = config.use_reduce_only
+        self._use_position_ids = config.use_position_ids
+        self._max_retries = config.max_retries
+        self._retry_delay = config.retry_delay
+        self._log.info(f"Account type: {account_type_to_str(self.account_type)}", LogColor.BLUE)
+        self._log.info(f"Product types: {[p.value for p in product_types]}", LogColor.BLUE)
+        self._log.info(f"{config.use_gtd=}", LogColor.BLUE)
+        self._log.info(f"{config.use_reduce_only=}", LogColor.BLUE)
+        self._log.info(f"{config.use_position_ids=}", LogColor.BLUE)
+        self._log.info(f"{config.max_retries=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay=}", LogColor.BLUE)
+
         self._enum_parser = BybitEnumParser()
 
         account_id = AccountId(f"{BYBIT_VENUE.value}-UNIFIED")
@@ -173,9 +186,11 @@ class BybitExecutionClient(LiveExecutionClient):
     async def _connect(self) -> None:
         # Update account state
         await self._update_account_state()
+
         # Connect to websocket
         await self._ws_client.connect()
-        # subscribe account updates
+
+        # Subscribe account updates
         await self._ws_client.subscribe_executions_update()
         await self._ws_client.subscribe_orders_update()
 
@@ -201,10 +216,13 @@ class BybitExecutionClient(LiveExecutionClient):
             for instr in self._product_types:
                 open_orders = await self._http_account.query_open_orders(instr, symbol)
                 for order in open_orders:
-                    symbol = BybitSymbol(order.symbol + f"-{instr.value.upper()}")
+                    # Uncomment for development
+                    self._log.info(f"Generating report {order}", LogColor.MAGENTA)
+                    bybit_symbol = BybitSymbol(order.symbol + f"-{instr.value.upper()}")
+                    assert bybit_symbol is not None  # Type checking
                     report = order.parse_to_order_status_report(
                         account_id=self.account_id,
-                        instrument_id=symbol.parse_as_nautilus(),
+                        instrument_id=bybit_symbol.parse_as_nautilus(),
                         report_id=UUID4(),
                         enum_parser=self._enum_parser,
                         ts_init=self._clock.timestamp_ns(),
@@ -292,6 +310,8 @@ class BybitExecutionClient(LiveExecutionClient):
                 continue  # No positions on spot
             positions = await self._http_account.query_position_info(product_type)
             for position in positions:
+                # Uncomment for development
+                self._log.info(f"Generating report {position}", LogColor.MAGENTA)
                 instr: InstrumentId = BybitSymbol(
                     position.symbol + "-" + product_type.value.upper(),
                 ).parse_as_nautilus()
@@ -305,8 +325,15 @@ class BybitExecutionClient(LiveExecutionClient):
                 reports.append(position_report)
         return reports
 
+    def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
+        # Parse instrument ID
+        bybit_symbol = BybitSymbol(symbol + "-LINEAR")  # TODO: Determine how to handle products
+        assert bybit_symbol  # type checking
+        nautilus_instrument_id: InstrumentId = bybit_symbol.parse_as_nautilus()
+        return nautilus_instrument_id
+
     def _get_cache_active_symbols(self) -> set[str]:
-        # check in cache for all active orders
+        # Check cache for all active orders
         open_orders: list[Order] = self._cache.orders_open(venue=self.venue)
         open_positions: list[Position] = self._cache.positions_open(venue=self.venue)
         active_symbols: set[str] = set()
@@ -315,6 +342,22 @@ class BybitExecutionClient(LiveExecutionClient):
         for position in open_positions:
             active_symbols.add(BybitSymbol(position.instrument_id.symbol.value))
         return active_symbols
+
+    def _determine_time_in_force(self, order: Order) -> BybitTimeInForce:
+        time_in_force: TimeInForce = order.time_in_force
+        if order.time_in_force == TimeInForce.GTD:
+            if not self._use_gtd:
+                time_in_force = TimeInForce.GTC
+                self._log.info(
+                    f"Converted GTD `time_in_force` to GTC for {order.client_order_id}",
+                    LogColor.BLUE,
+                )
+            else:
+                raise RuntimeError("invalid time in force GTD unsupported by Bybit")
+
+        if order.is_post_only:
+            return BybitTimeInForce.POST_ONLY
+        return self._enum_parser.parse_bybit_time_in_force(time_in_force)
 
     async def _get_active_position_symbols(self, symbol: str | None) -> set[str]:
         active_symbols: set[str] = set()
@@ -346,9 +389,11 @@ class BybitExecutionClient(LiveExecutionClient):
                 self._log.error(f"Failed to generate AccountState: {e}")
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
+        assert bybit_symbol is not None  # Type checking
         await self._http_account.cancel_all_orders(
             BybitProductType.LINEAR,
-            command.instrument_id.symbol.value,
+            bybit_symbol.raw_symbol,
         )
 
     async def _submit_order(self, command: SubmitOrder) -> None:
@@ -358,8 +403,10 @@ class BybitExecutionClient(LiveExecutionClient):
         if order.is_closed:
             self._log.warning(f"Order {order} is already closed")
             return
-        # check validity
-        self._check_order_validity(order)
+
+        if not self._check_order_validity(order):
+            return
+
         self._log.debug(f"Submitting order {order}")
 
         # Generate order submitted event, to ensure correct ordering of event
@@ -375,40 +422,37 @@ class BybitExecutionClient(LiveExecutionClient):
                 self._order_retries.pop(order.client_order_id, None)
                 break
             except KeyError:
-                raise RuntimeError(f"unsupported order type, was {order.order_type}")
-            except BybitError:
-                print("BYBIT ERROR")
+                self._log.error(f"Unsupported order type, was {order.order_type}")
+            except BybitError as e:
+                self._log.error(repr(e))
 
-    def _check_order_validity(self, order: Order) -> None:
+    def _check_order_validity(self, order: Order) -> bool:
         # Check order type valid
         if order.order_type not in self._enum_parser.valid_order_types:
             self._log.error(
-                f"Cannot submit order.Order {order} has invalid order type {order.order_type}. Unsupported on Bybit",
+                f"Cannot submit {order} has invalid order type {order.order_type}, unsupported on Bybit",
             )
-            return
-        # Check time in force valid
-        if order.time_in_force not in self._enum_parser.valid_time_in_force:
-            self._log.error(
-                f"Cannot submit order.Order {order} has invalid time in force {order.time_in_force}. Unsupported on Bybit",
-            )
-            return
+            return False
         # Check post only
         if order.is_post_only and order.order_type != OrderType.LIMIT:
             self._log.error(
-                f"Cannot submit order.Order {order} has invalid post only {order.is_post_only}. Unsupported on Bybit",
+                f"Cannot submit {order} has invalid post only {order.is_post_only}, unsupported on Bybit",
             )
-            return
+            return False
+        return True
 
     async def _submit_market_order(self, order: MarketOrder) -> None:
         pass
 
     async def _submit_limit_order(self, order: LimitOrder) -> None:
-        time_in_force = self._enum_parser.parse_nautilus_time_in_force(order.time_in_force)
+        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
+        assert bybit_symbol  # type checking
+        time_in_force = self._determine_time_in_force(order)
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
         order_type = self._enum_parser.parse_nautilus_order_type(order.order_type)
         order = await self._http_account.place_order(
-            product_type=BybitProductType.LINEAR,
-            symbol=order.instrument_id.symbol.value,
+            product_type=bybit_symbol.product_type,
+            symbol=bybit_symbol.raw_symbol,
             side=order_side,
             order_type=order_type,
             time_in_force=time_in_force,
@@ -417,24 +461,18 @@ class BybitExecutionClient(LiveExecutionClient):
             order_id=str(order.client_order_id),
         )
 
-    ################################################################################
-    #   WS user handlers
-    ################################################################################
     def _handle_ws_message(self, raw: bytes) -> None:
+        self._log.info(str(json.dumps(msgspec.json.decode(raw), indent=4)), color=LogColor.MAGENTA)
         try:
             ws_message = self._decoder_ws_msg_general.decode(raw)
             if ws_message.op == BYBIT_PONG:
                 return
             if ws_message.topic:
-                self._topic_check(ws_message.topic, raw)
+                self._handle_ws_message_by_topic(ws_message.topic, raw)
         except Exception as e:
-            ws_message_sub = self._decoder_ws_subscription.decode(raw)
-            if ws_message_sub.success:
-                self._log.debug("Subscribed to stream")
-            else:
-                self._log.error(f"Failed to subscribe: {e!s}")
+            self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
 
-    def _topic_check(self, topic: str, raw: bytes) -> None:
+    def _handle_ws_message_by_topic(self, topic: str, raw: bytes) -> None:
         if "order" in topic:
             self._handle_account_order_update(raw)
         elif "execution" in topic:
@@ -454,10 +492,8 @@ class BybitExecutionClient(LiveExecutionClient):
         try:
             msg = self._decoder_ws_account_execution_update.decode(raw)
             for trade in msg.data:
-                print(trade)
                 self._process_execution(trade)
         except Exception as e:
-            print(e)
             self._log.exception(f"Failed to handle account execution update: {e}", e)
 
     def _process_execution(self, execution: BybitWsAccountExecution) -> None:
@@ -467,8 +503,8 @@ class BybitExecutionClient(LiveExecutionClient):
         ts_event = millis_to_nanos(float(execution.execTime))
         venue_order_id = VenueOrderId(execution.orderId)
         instrument_id = self._get_cached_instrument_id(execution.symbol)
-        strategy_id = self._cache.strategy_id_for_order(execution.symbol)
-        # check if we can find the instrument
+        strategy_id = self._cache.strategy_id_for_order(client_order_id)
+
         if instrument_id is None:
             raise ValueError(f"Cannot handle ws trade event: instrument {instrument_id} not found")
         if strategy_id is None:
@@ -493,6 +529,7 @@ class BybitExecutionClient(LiveExecutionClient):
             )
             self._send_order_status_report(report)
             return
+
         instrument = self._instrument_provider.find(instrument_id=instrument_id)
         if instrument is None:
             raise ValueError(f"Cannot handle ws trade event: instrument {instrument_id} not found")
@@ -533,7 +570,6 @@ class BybitExecutionClient(LiveExecutionClient):
         try:
             msg = self._decoder_ws_account_order_update.decode(raw)
             for order in msg.data:
-                print(order)
                 report = order.parse_to_order_status_report(
                     account_id=self.account_id,
                     instrument_id=self._get_cached_instrument_id(order.symbol),
@@ -541,4 +577,4 @@ class BybitExecutionClient(LiveExecutionClient):
                 )
                 self._send_order_status_report(report)
         except Exception as e:
-            print(e)
+            self._log.error(repr(e))

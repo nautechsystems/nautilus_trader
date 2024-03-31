@@ -36,6 +36,19 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
 class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     """
     Configuration for ``BybitExecutionClient`` instances.
+
+    api_key : str, optional
+        The Bybit API public key.
+        If ``None`` then will source the `BYBIT_API_KEY` or
+        `BYBIT_TESTNET_API_KEY` environment variables.
+    api_secret : str, optional
+        The Bybit API public key.
+        If ``None`` then will source the `BYBIT_API_KEY` or
+        `BYBIT_TESTNET_API_KEY` environment variables.
+    use_gtd : bool, default False
+        If False then GTD time in force will be remapped to GTC
+        (this is useful if managing GTD orders locally).
+
     """
 
     api_key: str | None = None
@@ -44,7 +57,7 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     testnet: bool = False
-    clock_sync_interval_secs: int = 0
+    use_gtd: bool = False  # Not supported on Bybit
     use_reduce_only: bool = True
     use_position_ids: bool = True
     treat_expired_as_canceled: bool = False

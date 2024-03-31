@@ -23,6 +23,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import time_in_force_to_str
 
 
 def raise_error(error):
@@ -245,6 +246,9 @@ class BybitEnumParser:
     def parse_bybit_time_in_force(self, time_in_force: BybitTimeInForce) -> TimeInForce:
         return check_dict_keys(time_in_force, self.bybit_to_nautilus_time_in_force)
 
+    def parse_nautuilus_time_in_force(self, time_in_force: TimeInForce) -> BybitTimeInForce:
+        return check_dict_keys(time_in_force, self.nautilus_to_bybit_time_in_force)
+
     def parse_bybit_order_side(self, order_side: BybitOrderSide) -> OrderSide:
         return check_dict_keys(order_side, self.bybit_to_nautilus_order_side)
 
@@ -262,7 +266,7 @@ class BybitEnumParser:
             return self.nautilus_to_bybit_time_in_force[time_in_force]
         except KeyError:
             raise RuntimeError(
-                f"unrecognized Bybit time in force, was {time_in_force}",  # pragma: no cover
+                f"unrecognized Bybit time in force, was {time_in_force_to_str(time_in_force)}",  # pragma: no cover
             )
 
     def parse_bybit_kline(self, bar_type: BarType) -> BybitKlineInterval:
