@@ -37,7 +37,6 @@ pub trait Account {
     fn balances_total(&self) -> HashMap<Currency, Money>;
     fn balance_free(&self, currency: Option<Currency>) -> Option<Money>;
     fn balances_free(&self) -> HashMap<Currency, Money>;
-
     fn balance_locked(&self, currency: Option<Currency>) -> Option<Money>;
     fn balances_locked(&self) -> HashMap<Currency, Money>;
     fn last_event(&self) -> Option<AccountState>;
@@ -55,14 +54,12 @@ pub trait Account {
         price: Price,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money>;
-
     fn calculate_pnls<T: Instrument>(
         &self,
         instrument: T,
         fill: OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>>;
-
     fn calculate_commission<T: Instrument>(
         &self,
         instrument: T,
