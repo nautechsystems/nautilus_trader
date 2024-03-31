@@ -143,6 +143,7 @@ class BybitDataClient(LiveMarketDataClient):
                 base_url=ws_urls[product_type],
                 api_key=config.api_key or get_api_key(config.testnet),
                 api_secret=config.api_secret or get_api_secret(config.testnet),
+                loop=loop,
             )
 
             # WebSocket decoders
