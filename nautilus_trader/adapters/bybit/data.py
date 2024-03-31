@@ -143,11 +143,12 @@ class BybitDataClient(LiveMarketDataClient):
                 base_url=ws_urls[product_type],
                 api_key=config.api_key or get_api_key(config.testnet),
                 api_secret=config.api_secret or get_api_secret(config.testnet),
+                loop=loop,
             )
 
             # WebSocket decoders
             self._decoders["orderbook"][product_type] = decoder_ws_orderbook()
-            self._decoders["trade"][product_type] = decoder_ws_trade(product_type)
+            self._decoders["trade"][product_type] = decoder_ws_trade()
             self._decoders["ticker"][product_type] = decoder_ws_ticker(product_type)
             self._decoders["kline"][product_type] = decoder_ws_kline()
 
@@ -215,6 +216,7 @@ class BybitDataClient(LiveMarketDataClient):
         self._log.info("Initializing websocket connections")
         for ws_client in self._ws_clients.values():
             await ws_client.connect()
+
         self._log.info("Data client connected")
 
     async def _disconnect(self) -> None:

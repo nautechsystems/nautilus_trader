@@ -13,9 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import hashlib
 import hmac
 import json
+from collections.abc import Awaitable
 from collections.abc import Callable
 
 from nautilus_trader.common.component import LiveClock
@@ -49,16 +51,20 @@ class BybitWebsocketClient:
         handler: Callable[[bytes], None],
         api_key: str,
         api_secret: str,
+        loop: asyncio.AbstractEventLoop,
         is_private: bool | None = False,
+        handler_reconnect: Callable[..., Awaitable[None]] | None = None,
     ) -> None:
         self._clock = clock
         self._log: Logger = Logger(name=type(self).__name__)
         self._url: str = base_url
         self._handler: Callable[[bytes], None] = handler
+        self._handler_reconnect: Callable[..., Awaitable[None]] | None = handler_reconnect
         self._client: WebSocketClient | None = None
         self._is_private = is_private
         self._api_key = api_key
         self._api_secret = api_secret
+        self._loop = loop
 
         self._streams_connecting: set[str] = set()
         self._subscriptions: list[str] = []
@@ -221,6 +227,7 @@ class BybitWebsocketClient:
         )
         client = await WebSocketClient.connect(
             config=config,
+            post_reconnection=self.reconnect,
         )
         self._client = client
         self._log.info(f"Connected to {self._url}", LogColor.BLUE)
@@ -242,6 +249,27 @@ class BybitWebsocketClient:
             "op": "auth",
             "args": [self._api_key, timestamp, signature],
         }
+
+    async def _subscribe_all(self) -> None:
+        if self._client is None:
+            self._log.error("Cannot subscribe all: not connected")
+            return
+
+        sub = {"op": "subscribe", "args": self._subscriptions}
+        await self._client.send_text(json.dumps(sub))
+
+    # TODO: Temporarily sync
+    def reconnect(self) -> None:
+        """
+        Reconnect the client to the server and resubscribe to all streams.
+        """
+        self._log.warning(f"Reconnected to {self._url}")
+
+        # Re-subscribe to all streams
+        self._loop.create_task(self._subscribe_all())
+
+        if self._handler_reconnect is not None:
+            self._loop.create_task(self._handler_reconnect())  # type: ignore
 
     async def disconnect(self) -> None:
         if self._client is None:

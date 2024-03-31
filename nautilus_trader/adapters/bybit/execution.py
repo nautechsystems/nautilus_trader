@@ -157,6 +157,7 @@ class BybitExecutionClient(LiveExecutionClient):
             is_private=True,
             api_key=config.api_key or get_api_key(config.testnet),
             api_secret=config.api_secret or get_api_secret(config.testnet),
+            loop=loop,
         )
 
         # Http API
