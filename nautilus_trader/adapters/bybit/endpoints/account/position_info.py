@@ -22,7 +22,7 @@ from nautilus_trader.adapters.bybit.schemas.position import BybitPositionRespons
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class PositionInfoGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
+class PositionInfoGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
     category: str | None = None
     symbol: str | None = None
     settleCoin: str | None = None
@@ -42,9 +42,9 @@ class BybitPositionInfoEndpoint(BybitHttpEndpoint):
         )
         self._get_resp_decoder = msgspec.json.Decoder(BybitPositionResponseStruct)
 
-    async def get(self, parameters: PositionInfoGetParameters) -> BybitPositionResponseStruct:
+    async def get(self, params: PositionInfoGetParams) -> BybitPositionResponseStruct:
         method_type = HttpMethod.GET
-        raw = await self._method(method_type, parameters)
+        raw = await self._method(method_type, params)
         try:
             return self._get_resp_decoder.decode(raw)
         except Exception as e:

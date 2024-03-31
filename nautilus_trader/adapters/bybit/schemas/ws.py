@@ -538,7 +538,7 @@ def decoder_ws_trade() -> msgspec.json.Decoder:
 def decoder_ws_ticker(product_type: BybitProductType) -> msgspec.json.Decoder:
     if product_type == BybitProductType.SPOT:
         return msgspec.json.Decoder(BybitWsTickerSpotMsg)
-    elif product_type == BybitProductType.LINEAR:
+    elif product_type in (BybitProductType.LINEAR, BybitProductType.INVERSE):
         return msgspec.json.Decoder(BybitWsTickerLinearMsg)
     elif product_type == BybitProductType.OPTION:
         return msgspec.json.Decoder(BybitWsTickerOptionMsg)

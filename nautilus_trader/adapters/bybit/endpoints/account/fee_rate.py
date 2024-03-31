@@ -23,7 +23,7 @@ from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitFeeRateGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitFeeRateGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
     category: BybitProductType | None = None
     symbol: str | None = None
     baseCoin: str | None = None
@@ -44,8 +44,8 @@ class BybitFeeRateEndpoint(BybitHttpEndpoint):
         )
         self._get_resp_decoder = msgspec.json.Decoder(BybitFeeRateResponse)
 
-    async def get(self, parameters: BybitFeeRateGetParameters) -> BybitFeeRateResponse:
-        raw = await self._method(self.http_method, parameters)
+    async def get(self, params: BybitFeeRateGetParams) -> BybitFeeRateResponse:
+        raw = await self._method(self.http_method, params)
         try:
             return self._get_resp_decoder.decode(raw)
         except Exception as e:

@@ -25,7 +25,7 @@ from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsSp
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitInstrumentsInfoGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitInstrumentsInfoGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
     category: BybitProductType | None = None
     symbol: str | None = None
     status: str | None = None
@@ -53,19 +53,19 @@ class BybitInstrumentsInfoEndpoint(BybitHttpEndpoint):
 
     async def get(
         self,
-        parameters: BybitInstrumentsInfoGetParameters,
+        params: BybitInstrumentsInfoGetParams,
     ) -> (
         BybitInstrumentsSpotResponse
         | BybitInstrumentsLinearResponse
         | BybitInstrumentsOptionResponse
     ):
         method_type = HttpMethod.GET
-        raw = await self._method(method_type, parameters)
-        if parameters.category == BybitProductType.LINEAR:
-            return self._response_decoder_instrument_linear.decode(raw)
-        elif parameters.category == BybitProductType.SPOT:
+        raw = await self._method(method_type, params)
+        if params.category == BybitProductType.SPOT:
             return self._response_decoder_instrument_spot.decode(raw)
-        elif parameters.category == BybitProductType.OPTION:
+        elif params.category in (BybitProductType.LINEAR, BybitProductType.INVERSE):
+            return self._response_decoder_instrument_linear.decode(raw)
+        elif params.category == BybitProductType.OPTION:
             return self._response_decoder_instrument_option.decode(raw)
         else:
             raise ValueError("Invalid account type")

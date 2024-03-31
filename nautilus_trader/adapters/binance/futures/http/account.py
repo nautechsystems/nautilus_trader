@@ -103,14 +103,14 @@ class BinanceFuturesPositionModeHttp(BinanceHttpEndpoint):
         dualSidePosition: str
         recvWindow: str | None = None
 
-    async def get(self, parameters: GetParameters) -> BinanceFuturesDualSidePosition:
+    async def get(self, params: GetParameters) -> BinanceFuturesDualSidePosition:
         method_type = HttpMethod.GET
-        raw = await self._method(method_type, parameters)
+        raw = await self._method(method_type, params)
         return self._get_resp_decoder.decode(raw)
 
-    async def post(self, parameters: PostParameters) -> BinanceStatusCode:
+    async def post(self, params: PostParameters) -> BinanceStatusCode:
         method_type = HttpMethod.GET
-        raw = await self._method(method_type, parameters)
+        raw = await self._method(method_type, params)
         return self._post_resp_decoder.decode(raw)
 
 
@@ -163,9 +163,9 @@ class BinanceFuturesAllOpenOrdersHttp(BinanceHttpEndpoint):
         symbol: BinanceSymbol
         recvWindow: str | None = None
 
-    async def delete(self, parameters: DeleteParameters) -> BinanceStatusCode:
+    async def delete(self, params: DeleteParameters) -> BinanceStatusCode:
         method_type = HttpMethod.DELETE
-        raw = await self._method(method_type, parameters)
+        raw = await self._method(method_type, params)
         return self._delete_resp_decoder.decode(raw)
 
 
@@ -223,9 +223,9 @@ class BinanceFuturesCancelMultipleOrdersHttp(BinanceHttpEndpoint):
         origClientOrderIdList: str | None = None
         recvWindow: str | None = None
 
-    async def delete(self, parameters: DeleteParameters) -> list[BinanceOrder]:
+    async def delete(self, params: DeleteParameters) -> list[BinanceOrder]:
         method_type = HttpMethod.DELETE
-        raw = await self._method(method_type, parameters)
+        raw = await self._method(method_type, params)
         return self._delete_resp_decoder.decode(raw)
 
 
@@ -275,9 +275,9 @@ class BinanceFuturesAccountHttp(BinanceHttpEndpoint):
         timestamp: str
         recvWindow: str | None = None
 
-    async def get(self, parameters: GetParameters) -> BinanceFuturesAccountInfo:
+    async def get(self, params: GetParameters) -> BinanceFuturesAccountInfo:
         method_type = HttpMethod.GET
-        raw = await self._method(method_type, parameters)
+        raw = await self._method(method_type, params)
         return self._resp_decoder.decode(raw)
 
 
@@ -330,9 +330,9 @@ class BinanceFuturesPositionRiskHttp(BinanceHttpEndpoint):
         symbol: BinanceSymbol | None = None
         recvWindow: str | None = None
 
-    async def get(self, parameters: GetParameters) -> list[BinanceFuturesPositionRisk]:
+    async def get(self, params: GetParameters) -> list[BinanceFuturesPositionRisk]:
         method_type = HttpMethod.GET
-        raw = await self._method(method_type, parameters)
+        raw = await self._method(method_type, params)
         return self._get_resp_decoder.decode(raw)
 
 
@@ -395,7 +395,7 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         Check Binance Futures hedge mode (dualSidePosition).
         """
         return await self._endpoint_futures_position_mode.get(
-            parameters=self._endpoint_futures_position_mode.GetParameters(
+            params=self._endpoint_futures_position_mode.GetParameters(
                 timestamp=self._timestamp(),
                 recvWindow=recv_window,
             ),
@@ -410,7 +410,7 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         Set Binance Futures hedge mode (dualSidePosition).
         """
         return await self._endpoint_futures_position_mode.post(
-            parameters=self._endpoint_futures_position_mode.PostParameters(
+            params=self._endpoint_futures_position_mode.PostParameters(
                 timestamp=self._timestamp(),
                 dualSidePosition=str(dual_side_position).lower(),
                 recvWindow=recv_window,
@@ -429,7 +429,7 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
 
         """
         response = await self._endpoint_futures_all_open_orders.delete(
-            parameters=self._endpoint_futures_all_open_orders.DeleteParameters(
+            params=self._endpoint_futures_all_open_orders.DeleteParameters(
                 timestamp=self._timestamp(),
                 symbol=BinanceSymbol(symbol),
                 recvWindow=recv_window,
@@ -451,7 +451,7 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         """
         stringified_client_order_ids = str(client_order_ids).replace(" ", "").replace("'", '"')
         await self._endpoint_futures_cancel_multiple_orders.delete(
-            parameters=self._endpoint_futures_cancel_multiple_orders.DeleteParameters(
+            params=self._endpoint_futures_cancel_multiple_orders.DeleteParameters(
                 timestamp=self._timestamp(),
                 symbol=BinanceSymbol(symbol),
                 origClientOrderIdList=stringified_client_order_ids,
@@ -468,7 +468,7 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         Check Binance Futures account information.
         """
         return await self._endpoint_futures_account.get(
-            parameters=self._endpoint_futures_account.GetParameters(
+            params=self._endpoint_futures_account.GetParameters(
                 timestamp=self._timestamp(),
                 recvWindow=recv_window,
             ),
@@ -483,7 +483,7 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         Check all Futures position's info for a symbol.
         """
         return await self._endpoint_futures_position_risk.get(
-            parameters=self._endpoint_futures_position_risk.GetParameters(
+            params=self._endpoint_futures_position_risk.GetParameters(
                 timestamp=self._timestamp(),
                 symbol=BinanceSymbol(symbol),
                 recvWindow=recv_window,
