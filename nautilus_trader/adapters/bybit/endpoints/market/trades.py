@@ -46,8 +46,8 @@ class BybitTradesEndpoint(BybitHttpEndpoint):
 
     async def get(
         self,
-        parameters: BybitTradesGetParameters,
+        params: BybitTradesGetParameters,
     ) -> BybitTradesResponse:
         method_type = HttpMethod.GET
-        raw = await self._method(method_type, parameters)
+        raw = await self._method(method_type, params)
         return self._response_decoder.decode(raw)

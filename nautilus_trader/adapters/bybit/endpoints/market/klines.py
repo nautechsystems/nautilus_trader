@@ -48,8 +48,8 @@ class BybitKlinesEndpoint(BybitHttpEndpoint):
 
     async def get(
         self,
-        parameters: BybitKlinesGetParameters,
+        params: BybitKlinesGetParameters,
     ) -> BybitKlinesResponse:
         method_type = HttpMethod.GET
-        raw = await self._method(method_type, parameters)
+        raw = await self._method(method_type, params)
         return self._response_decoder.decode(raw)

@@ -122,7 +122,7 @@ class BybitMarketHttpAPI:
         end: int | None = None,
     ) -> list[BybitKline]:
         response = await self._endpoint_klines.get(
-            parameters=BybitKlinesGetParameters(
+            params=BybitKlinesGetParameters(
                 category=get_category_from_product_type(product_type),
                 symbol=symbol,
                 interval=interval,
@@ -140,7 +140,7 @@ class BybitMarketHttpAPI:
         limit: int | None = None,
     ) -> list[BybitTrade]:
         response = await self._endpoint_trades.get(
-            parameters=BybitTradesGetParameters(
+            params=BybitTradesGetParameters(
                 category=get_category_from_product_type(product_type),
                 symbol=symbol,
                 limit=limit,

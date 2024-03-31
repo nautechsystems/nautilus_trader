@@ -52,12 +52,12 @@ class BybitTickersEndpoint(BybitHttpEndpoint):
         method_type = HttpMethod.GET
         raw = await self._method(method_type, params)
         try:
-            if params.category == BybitProductType.LINEAR:
+            if params.category == BybitProductType.SPOT:
+                return self._response_decoder_spot.decode(raw)
+            elif params.category in (BybitProductType.LINEAR, BybitProductType.INVERSE):
                 return self._response_decoder_linear.decode(raw)
             elif params.category == BybitProductType.OPTION:
                 return self._response_decoder_option.decode(raw)
-            elif params.category == BybitProductType.SPOT:
-                return self._response_decoder_spot.decode(raw)
             else:
                 raise RuntimeError(
                     f"Unsupported product type: {params.category}",
