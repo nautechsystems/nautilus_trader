@@ -19,8 +19,8 @@ use nautilus_model::{
     identifiers::instrument_id::InstrumentId,
     orders::{
         base::{
-            GetClientOrderId, GetLimitPrice, GetOrderSide, GetStopPrice, LimitOrderType,
-            OrderError, OrderSideFixed, PassiveOrderType, StopOrderType,
+            GetClientOrderId, GetLimitPrice, GetOrderSideSpecified, GetStopPrice, LimitOrderType,
+            OrderError, OrderSideSpecified, PassiveOrderType, StopOrderType,
         },
         market::MarketOrder,
     },
@@ -97,12 +97,12 @@ impl OrderMatchingCore {
     }
 
     pub fn add_order(&mut self, order: PassiveOrderType) -> Result<(), OrderError> {
-        match order.get_order_side() {
-            OrderSideFixed::Buy => {
+        match order.get_order_side_specified() {
+            OrderSideSpecified::Buy => {
                 self.orders_bid.push(order);
                 Ok(())
             }
-            OrderSideFixed::Sell => {
+            OrderSideSpecified::Sell => {
                 self.orders_ask.push(order);
                 Ok(())
             }
@@ -110,8 +110,8 @@ impl OrderMatchingCore {
     }
 
     pub fn delete_order(&mut self, order: &PassiveOrderType) -> Result<(), OrderError> {
-        match order.get_order_side() {
-            OrderSideFixed::Buy => {
+        match order.get_order_side_specified() {
+            OrderSideSpecified::Buy => {
                 let index = self
                     .orders_bid
                     .iter()
@@ -120,7 +120,7 @@ impl OrderMatchingCore {
                 self.orders_bid.remove(index);
                 Ok(())
             }
-            OrderSideFixed::Sell => {
+            OrderSideSpecified::Sell => {
                 let index = self
                     .orders_ask
                     .iter()
@@ -178,17 +178,17 @@ impl OrderMatchingCore {
 
     #[must_use]
     pub fn is_limit_matched(&self, order: &LimitOrderType) -> bool {
-        match order.get_order_side() {
-            OrderSideFixed::Buy => self.ask.map_or(false, |a| a <= order.get_limit_px()),
-            OrderSideFixed::Sell => self.bid.map_or(false, |b| b >= order.get_limit_px()),
+        match order.get_order_side_specified() {
+            OrderSideSpecified::Buy => self.ask.map_or(false, |a| a <= order.get_limit_px()),
+            OrderSideSpecified::Sell => self.bid.map_or(false, |b| b >= order.get_limit_px()),
         }
     }
 
     #[must_use]
     pub fn is_stop_matched(&self, order: &StopOrderType) -> bool {
-        match order.get_order_side() {
-            OrderSideFixed::Buy => self.ask.map_or(false, |a| a >= order.get_stop_px()),
-            OrderSideFixed::Sell => self.bid.map_or(false, |b| b <= order.get_stop_px()),
+        match order.get_order_side_specified() {
+            OrderSideSpecified::Buy => self.ask.map_or(false, |a| a >= order.get_stop_px()),
+            OrderSideSpecified::Sell => self.bid.map_or(false, |b| b <= order.get_stop_px()),
         }
     }
 }

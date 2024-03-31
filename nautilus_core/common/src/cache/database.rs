@@ -27,7 +27,7 @@ use nautilus_model::{
         strategy_id::StrategyId, trader_id::TraderId, venue_order_id::VenueOrderId,
     },
     instruments::{synthetic::SyntheticInstrument, Instrument},
-    orders::base::Order,
+    orders::base::{Order, OrderAny},
     position::Position,
     types::currency::Currency,
 };
@@ -140,7 +140,7 @@ impl CacheDatabaseAdapter {
     //     Ok(HashMap::new()) // TODO
     // }
 
-    pub fn load_orders(&self) -> anyhow::Result<HashMap<ClientOrderId, Box<dyn Order>>> {
+    pub fn load_orders(&self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
         Ok(HashMap::new()) // TODO
     }
 

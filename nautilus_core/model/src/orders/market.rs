@@ -23,7 +23,7 @@ use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::base::{Order, OrderCore};
+use super::base::{Order, OrderAny, OrderCore};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
@@ -129,6 +129,10 @@ impl PartialEq for MarketOrder {
 }
 
 impl Order for MarketOrder {
+    fn into_any(self) -> OrderAny {
+        OrderAny::Market(self)
+    }
+
     fn status(&self) -> OrderStatus {
         self.status
     }
