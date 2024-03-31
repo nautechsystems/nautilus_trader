@@ -21,7 +21,7 @@ use std::{
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use ustr::Ustr;
 
-use super::base::{Order, OrderCore, OrderError};
+use super::base::{Order, OrderAny, OrderCore, OrderError};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
@@ -138,6 +138,10 @@ impl DerefMut for StopLimitOrder {
 }
 
 impl Order for StopLimitOrder {
+    fn into_any(self) -> OrderAny {
+        OrderAny::StopLimit(self)
+    }
+
     fn status(&self) -> OrderStatus {
         self.status
     }

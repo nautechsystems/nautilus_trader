@@ -23,7 +23,7 @@ use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::base::{Order, OrderCore};
+use super::base::{Order, OrderAny, OrderCore};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
@@ -152,6 +152,10 @@ impl PartialEq for LimitOrder {
 }
 
 impl Order for LimitOrder {
+    fn into_any(self) -> OrderAny {
+        OrderAny::Limit(self)
+    }
+
     fn status(&self) -> OrderStatus {
         self.status
     }

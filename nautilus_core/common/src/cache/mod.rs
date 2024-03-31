@@ -35,7 +35,7 @@ use nautilus_model::{
     },
     instruments::{synthetic::SyntheticInstrument, Instrument},
     orderbook::book::OrderBook,
-    orders::base::Order,
+    orders::base::{GetOrderSide, GetVenueOrderId, OrderAny},
     position::Position,
     types::currency::Currency,
 };
@@ -172,7 +172,7 @@ pub struct Cache {
     instruments: HashMap<InstrumentId, Box<dyn Instrument>>,
     synthetics: HashMap<InstrumentId, SyntheticInstrument>,
     // accounts: HashMap<AccountId, Box<dyn Account>>,  // TODO: Account not object safe
-    orders: HashMap<ClientOrderId, Box<dyn Order>>, // TODO: Efficency (use enum)
+    orders: HashMap<ClientOrderId, OrderAny>, // TODO: Efficency (use enum)
     // order_lists: HashMap<OrderListId, VecDeque<OrderList>>,  TODO: Need `OrderList`
     positions: HashMap<PositionId, Position>,
     position_snapshots: HashMap<PositionId, Vec<u8>>,
@@ -645,7 +645,7 @@ impl Cache {
         &self,
         client_order_ids: HashSet<ClientOrderId>,
         side: Option<OrderSide>,
-    ) -> Vec<&Box<dyn Order>> {
+    ) -> Vec<&OrderAny> {
         let side = side.unwrap_or(OrderSide::NoOrderSide);
         let mut orders = Vec::new();
 
@@ -654,7 +654,7 @@ impl Cache {
                 .orders
                 .get(&client_order_id)
                 .unwrap_or_else(|| panic!("Order {client_order_id} not found"));
-            if side == OrderSide::NoOrderSide || side == order.side() {
+            if side == OrderSide::NoOrderSide || side == order.get_order_side() {
                 orders.push(order);
             };
         }
@@ -832,7 +832,7 @@ impl Cache {
     // -- ORDER QUERIES -------------------------------------------------------
 
     #[allow(clippy::borrowed_box)] // Temporary to appease clippy (will change)
-    pub fn order(&self, client_order_id: ClientOrderId) -> Option<&Box<dyn Order>> {
+    pub fn order(&self, client_order_id: ClientOrderId) -> Option<&OrderAny> {
         self.orders.get(&client_order_id)
     }
 
@@ -843,7 +843,7 @@ impl Cache {
     pub fn venue_order_id(&self, client_order_id: ClientOrderId) -> Option<VenueOrderId> {
         self.orders
             .get(&client_order_id)
-            .and_then(|o| o.venue_order_id())
+            .and_then(|o| o.get_venue_order_id())
     }
 
     pub fn client_id(&self, client_order_id: ClientOrderId) -> Option<&ClientId> {
@@ -857,7 +857,7 @@ impl Cache {
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
         side: Option<OrderSide>,
-    ) -> Vec<&Box<dyn Order>> {
+    ) -> Vec<&OrderAny> {
         let client_order_ids = self.client_order_ids(venue, instrument_id, strategy_id);
         self.get_orders_for_ids(client_order_ids, side)
     }
@@ -869,7 +869,7 @@ impl Cache {
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
         side: Option<OrderSide>,
-    ) -> Vec<&Box<dyn Order>> {
+    ) -> Vec<&OrderAny> {
         let client_order_ids = self.client_order_ids_open(venue, instrument_id, strategy_id);
         self.get_orders_for_ids(client_order_ids, side)
     }
@@ -881,7 +881,7 @@ impl Cache {
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
         side: Option<OrderSide>,
-    ) -> Vec<&Box<dyn Order>> {
+    ) -> Vec<&OrderAny> {
         let client_order_ids = self.client_order_ids_closed(venue, instrument_id, strategy_id);
         self.get_orders_for_ids(client_order_ids, side)
     }
@@ -893,7 +893,7 @@ impl Cache {
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
         side: Option<OrderSide>,
-    ) -> Vec<&Box<dyn Order>> {
+    ) -> Vec<&OrderAny> {
         let client_order_ids = self.client_order_ids_emulated(venue, instrument_id, strategy_id);
         self.get_orders_for_ids(client_order_ids, side)
     }
@@ -905,13 +905,13 @@ impl Cache {
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
         side: Option<OrderSide>,
-    ) -> Vec<&Box<dyn Order>> {
+    ) -> Vec<&OrderAny> {
         let client_order_ids = self.client_order_ids_inflight(venue, instrument_id, strategy_id);
         self.get_orders_for_ids(client_order_ids, side)
     }
 
     #[allow(clippy::borrowed_box)] // Temporary to appease clippy (will change)
-    pub fn orders_for_position(&self, position_id: PositionId) -> Vec<&Box<dyn Order>> {
+    pub fn orders_for_position(&self, position_id: PositionId) -> Vec<&OrderAny> {
         let client_order_ids = self.index.position_orders.get(&position_id);
         match client_order_ids {
             Some(client_order_ids) => {
