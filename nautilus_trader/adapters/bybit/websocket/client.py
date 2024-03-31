@@ -90,9 +90,12 @@ class BybitWebsocketClient:
             return
 
         subscription = f"publicTrade.{symbol}"
+        if subscription in self._subscriptions:
+            return
+
+        self._subscriptions.append(subscription)
         sub = {"op": "subscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
-        self._subscriptions.append(subscription)
 
     async def subscribe_tickers(self, symbol: str) -> None:
         if self._client is None:
@@ -100,9 +103,12 @@ class BybitWebsocketClient:
             return
 
         subscription = f"tickers.{symbol}"
+        if subscription in self._subscriptions:
+            return
+
+        self._subscriptions.append(subscription)
         sub = {"op": "subscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
-        self._subscriptions.append(subscription)
 
     async def subscribe_klines(self, symbol: str, interval: str) -> None:
         if self._client is None:
@@ -110,9 +116,12 @@ class BybitWebsocketClient:
             return
 
         subscription = f"kline.{interval}.{symbol}"
+        if subscription in self._subscriptions:
+            return
+
+        self._subscriptions.append(subscription)
         sub = {"op": "subscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
-        self._subscriptions.append(subscription)
 
     async def unsubscribe_order_book(self, symbol: str, depth: int) -> None:
         if self._client is None:
@@ -120,9 +129,12 @@ class BybitWebsocketClient:
             return
 
         subscription = f"orderbook.{depth}.{symbol}"
+        if subscription not in self._subscriptions:
+            return
+
+        self._subscriptions.remove(subscription)
         sub = {"op": "unsubscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
-        self._subscriptions.remove(subscription)
 
     async def unsubscribe_trades(self, symbol: str) -> None:
         if self._client is None:
@@ -131,12 +143,11 @@ class BybitWebsocketClient:
 
         subscription = f"publicTrade.{symbol}"
         if subscription not in self._subscriptions:
-            self._log.warning(f"Cannot unsubscribe: not subscribed to {subscription}")
             return
 
+        self._subscriptions.remove(subscription)
         sub = {"op": "unsubscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
-        self._subscriptions.remove(subscription)
 
     async def unsubscribe_tickers(self, symbol: str) -> None:
         if self._client is None:
@@ -145,12 +156,11 @@ class BybitWebsocketClient:
 
         subscription = f"tickers.{symbol}"
         if subscription not in self._subscriptions:
-            self._log.warning(f"Cannot unsubscribe: not subscribed to {subscription}")
             return
 
+        self._subscriptions.remove(subscription)
         sub = {"op": "unsubscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
-        self._subscriptions.remove(subscription)
 
     async def unsubscribe_klines(self, symbol: str, interval: str) -> None:
         if self._client is None:
@@ -159,12 +169,11 @@ class BybitWebsocketClient:
 
         subscription = f"kline.{interval}.{symbol}"
         if subscription not in self._subscriptions:
-            self._log.warning(f"Cannot unsubscribe: not subscribed to {subscription}")
             return
 
+        self._subscriptions.remove(subscription)
         sub = {"op": "unsubscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
-        self._subscriptions.remove(subscription)
 
     ################################################################################
     # Private
@@ -181,9 +190,12 @@ class BybitWebsocketClient:
             return
 
         subscription = "order"
+        if subscription in self._subscriptions:
+            return
+
+        self._subscriptions.append(subscription)
         sub = {"op": "subscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
-        self._subscriptions.append(subscription)
 
     async def subscribe_executions_update(self) -> None:
         if self._client is None:
@@ -191,9 +203,12 @@ class BybitWebsocketClient:
             return
 
         subscription = "execution"
+        if subscription in self._subscriptions:
+            return
+
+        self._subscriptions.append(subscription)
         sub = {"op": "subscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
-        self._subscriptions.append(subscription)
 
     async def connect(self) -> None:
         self._log.debug(f"Connecting to {self._url} websocket stream")
@@ -209,7 +224,8 @@ class BybitWebsocketClient:
         )
         self._client = client
         self._log.info(f"Connected to {self._url}", LogColor.BLUE)
-        ## authenticate
+
+        ## Authenticate
         if self._is_private:
             signature = self._get_signature()
             self._client.send_text(json.dumps(signature))
@@ -232,6 +248,5 @@ class BybitWebsocketClient:
             self._log.warning("Cannot disconnect: not connected.")
             return
 
-        await self._client.send_text(json.dumps({"op": "unsubscribe", "args": self._subscriptions}))
         await self._client.disconnect()
         self._log.info(f"Disconnected from {self._url}", LogColor.BLUE)
