@@ -147,7 +147,7 @@ class BybitDataClient(LiveMarketDataClient):
 
             # WebSocket decoders
             self._decoders["orderbook"][product_type] = decoder_ws_orderbook()
-            self._decoders["trade"][product_type] = decoder_ws_trade(product_type)
+            self._decoders["trade"][product_type] = decoder_ws_trade()
             self._decoders["ticker"][product_type] = decoder_ws_ticker(product_type)
             self._decoders["kline"][product_type] = decoder_ws_kline()
 
@@ -158,7 +158,9 @@ class BybitDataClient(LiveMarketDataClient):
         self._topic_bar_type: dict[str, BarType] = {}
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
+        self._ping_interval: int = 20  # Once every 20 seconds (hardcode)
         self._update_instruments_task: asyncio.Task | None = None
+        self._ping_task: asyncio.Task | None = None
 
         # Register custom endpoint for fetching tickers
         self._msgbus.register(
@@ -215,6 +217,9 @@ class BybitDataClient(LiveMarketDataClient):
         self._log.info("Initializing websocket connections")
         for ws_client in self._ws_clients.values():
             await ws_client.connect()
+
+        self._ping_task = self.create_task(self._send_ping())
+
         self._log.info("Data client connected")
 
     async def _disconnect(self) -> None:
@@ -222,6 +227,10 @@ class BybitDataClient(LiveMarketDataClient):
             self._log.debug("Cancelling `update_instruments` task")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
+
+            self._log.debug("Cancelling `ping` task")
+            self._ping_task.cancel()
+            self._ping_task = None
         for ws_client in self._ws_clients.values():
             await ws_client.disconnect()
 
@@ -244,6 +253,19 @@ class BybitDataClient(LiveMarketDataClient):
                 self._send_all_instruments_to_data_engine()
         except asyncio.CancelledError:
             self._log.debug("Canceled `update_instruments` task")
+
+    async def _send_ping(self) -> None:
+        try:
+            while True:
+                self._log.debug(
+                    f"Scheduled `ping` to run in {self._ping_interval}s",
+                )
+                await asyncio.sleep(self._ping_interval)
+
+                for ws_client in self._ws_clients.values():
+                    await ws_client.ping()
+        except asyncio.CancelledError:
+            self._log.debug("Canceled `ping` task")
 
     async def _subscribe_order_book_deltas(
         self,

@@ -184,6 +184,13 @@ class BybitWebsocketClient:
     #     await self._client.send_text(json.dumps(sub))
     #     self._subscriptions.append(subsscription)
 
+    async def ping(self) -> None:
+        if self._client is None:
+            self._log.warning("Cannot ping: not connected")
+            return
+
+        await self._client.send_text(json.dumps({"op": "ping"}))
+
     async def subscribe_orders_update(self) -> None:
         if self._client is None:
             self._log.warning("Cannot subscribe: not connected")
