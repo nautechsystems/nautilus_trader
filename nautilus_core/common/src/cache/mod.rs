@@ -164,16 +164,14 @@ pub struct Cache {
     index: CacheIndex,
     database: Option<CacheDatabaseAdapter>,
     general: HashMap<String, Vec<u8>>,
-    quote_ticks: HashMap<InstrumentId, VecDeque<QuoteTick>>,
-    trade_ticks: HashMap<InstrumentId, VecDeque<TradeTick>>,
-    order_books: HashMap<InstrumentId, OrderBook>,
+    quotes: HashMap<InstrumentId, VecDeque<QuoteTick>>,
+    trades: HashMap<InstrumentId, VecDeque<TradeTick>>,
+    books: HashMap<InstrumentId, OrderBook>,
     bars: HashMap<BarType, VecDeque<Bar>>,
-    bars_bid: HashMap<BarType, Bar>,
-    bars_ask: HashMap<BarType, Bar>,
     currencies: HashMap<Ustr, Currency>,
     instruments: HashMap<InstrumentId, Box<dyn Instrument>>,
     synthetics: HashMap<InstrumentId, SyntheticInstrument>,
-    // accounts: HashMap<AccountId, Box<dyn Account>>,  TODO: Decide where trait should go
+    // accounts: HashMap<AccountId, Box<dyn Account>>,  // TODO: Account not object safe
     orders: HashMap<ClientOrderId, Box<dyn Order>>, // TODO: Efficency (use enum)
     // order_lists: HashMap<OrderListId, VecDeque<OrderList>>,  TODO: Need `OrderList`
     positions: HashMap<PositionId, Position>,
@@ -223,12 +221,10 @@ impl Cache {
             index,
             database,
             general: HashMap::new(),
-            quote_ticks: HashMap::new(),
-            trade_ticks: HashMap::new(),
-            order_books: HashMap::new(),
+            quotes: HashMap::new(),
+            trades: HashMap::new(),
+            books: HashMap::new(),
             bars: HashMap::new(),
-            bars_bid: HashMap::new(),
-            bars_ask: HashMap::new(),
             currencies: HashMap::new(),
             instruments: HashMap::new(),
             synthetics: HashMap::new(),
@@ -239,6 +235,8 @@ impl Cache {
             position_snapshots: HashMap::new(),
         }
     }
+
+    // -- COMMANDS ------------------------------------------------------------
 
     pub fn cache_general(&mut self) -> anyhow::Result<()> {
         self.general = match &self.database {
@@ -326,6 +324,14 @@ impl Cache {
         Ok(())
     }
 
+    pub fn build_index(&self) {
+        todo!() // Needs order query methods
+    }
+
+    pub fn check_integrity(&self) -> bool {
+        true // TODO
+    }
+
     pub fn check_residuals(&self) {
         todo!() // Needs order query methods
     }
@@ -342,13 +348,11 @@ impl Cache {
         debug!("Resetting cache");
 
         self.general.clear();
-        self.quote_ticks.clear();
-        self.trade_ticks.clear();
-        self.order_books.clear();
+        self.quotes.clear();
+        self.trades.clear();
+        self.books.clear();
         self.bars.clear();
-        self.bars_bid.clear();
-        self.bars_ask.clear();
-        self.currencies.clear();
+        self.instruments.clear();
         self.synthetics.clear();
         // self.accounts.clear();  // TODO
         self.orders.clear();
@@ -376,6 +380,151 @@ impl Cache {
         }
         Ok(())
     }
+
+    pub fn add(&mut self, key: &str, value: Vec<u8>) -> anyhow::Result<()> {
+        check_valid_string(key, stringify!(key))?;
+        check_slice_not_empty(value.as_slice(), stringify!(value))?;
+
+        debug!("Add general {key}");
+        self.general.insert(key.to_string(), value.clone());
+
+        if let Some(database) = &self.database {
+            database.add(key.to_string(), value)?;
+        }
+        Ok(())
+    }
+
+    pub fn add_order_book(&mut self, book: OrderBook) -> anyhow::Result<()> {
+        debug!("Add `OrderBook` {}", book.instrument_id);
+        self.books.insert(book.instrument_id, book);
+        Ok(())
+    }
+
+    pub fn add_quote(&mut self, quote: QuoteTick) -> anyhow::Result<()> {
+        debug!("Add `QuoteTick` {}", quote.instrument_id);
+        let quotes_deque = self
+            .quotes
+            .entry(quote.instrument_id)
+            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+        quotes_deque.push_front(quote);
+        Ok(())
+    }
+
+    pub fn add_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
+        check_slice_not_empty(quotes, stringify!(quotes))?;
+
+        let instrument_id = quotes[0].instrument_id;
+        debug!("Add `QuoteTick`[{}] {}", quotes.len(), instrument_id);
+        let quotes_deque = self
+            .quotes
+            .entry(instrument_id)
+            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+
+        for quote in quotes.iter() {
+            quotes_deque.push_front(*quote);
+        }
+        Ok(())
+    }
+
+    pub fn add_trade(&mut self, trade: TradeTick) -> anyhow::Result<()> {
+        debug!("Add `TradeTick` {}", trade.instrument_id);
+        let trades_deque = self
+            .trades
+            .entry(trade.instrument_id)
+            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+        trades_deque.push_front(trade);
+        Ok(())
+    }
+
+    pub fn add_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
+        check_slice_not_empty(trades, stringify!(trades))?;
+
+        let instrument_id = trades[0].instrument_id;
+        debug!("Add `TradeTick`[{}] {}", trades.len(), instrument_id);
+        let trades_deque = self
+            .trades
+            .entry(instrument_id)
+            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+
+        for trade in trades.iter() {
+            trades_deque.push_front(*trade);
+        }
+        Ok(())
+    }
+
+    pub fn add_bar(&mut self, bar: Bar) -> anyhow::Result<()> {
+        debug!("Add `Bar` {}", bar.bar_type);
+        let bars = self
+            .bars
+            .entry(bar.bar_type)
+            .or_insert_with(|| VecDeque::with_capacity(self.config.bar_capacity));
+        bars.push_front(bar);
+        Ok(())
+    }
+
+    pub fn add_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
+        check_slice_not_empty(bars, stringify!(bars))?;
+
+        let bar_type = bars[0].bar_type;
+        debug!("Add `Bar`[{}] {}", bars.len(), bar_type);
+        let bars_deque = self
+            .bars
+            .entry(bar_type)
+            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+
+        for bar in bars.iter() {
+            bars_deque.push_front(*bar);
+        }
+        Ok(())
+    }
+
+    pub fn add_currency(&mut self, currency: Currency) -> anyhow::Result<()> {
+        debug!("Add `Currency` {}", currency.code);
+        self.currencies.insert(currency.code, currency);
+
+        if let Some(database) = &self.database {
+            database.add_currency(currency)?;
+        }
+        Ok(())
+    }
+
+    pub fn add_instrument<T>(&mut self, instrument: T) -> anyhow::Result<()>
+    where
+        T: Instrument + Clone,
+    {
+        debug!("Add `Instrument` {}", instrument.id());
+        self.instruments
+            .insert(instrument.id(), Box::new(instrument.clone()));
+
+        // TODO: Revisit boxing
+        if let Some(database) = &self.database {
+            database.add_instrument(Box::new(instrument))?;
+        }
+        Ok(())
+    }
+
+    pub fn add_synthetic(&mut self, synthetic: SyntheticInstrument) -> anyhow::Result<()> {
+        debug!("Add `SyntheticInstrument` {}", synthetic.id);
+        self.synthetics.insert(synthetic.id, synthetic.clone());
+
+        if let Some(database) = &self.database {
+            database.add_synthetic(synthetic)?;
+        }
+        Ok(())
+    }
+
+    // pub fn add_account<T>(&mut self, account: T) -> anyhow::Result<()>
+    // where
+    //     T: Account,
+    // {
+    //     debug!("Add `Account` {}", account.id());
+    //     self.accounts.insert(account.id(), account);
+    //
+    //     if let Some(database) = &self.database {
+    //         database.add_synthetic(synthetic)?;
+    //     }
+    //     Ok(())
+    // }
 
     // -- IDENTIFIER QUERIES --------------------------------------------------
 
@@ -850,19 +999,7 @@ impl Cache {
         self.orders(venue, instrument_id, strategy_id, side).len()
     }
 
-    pub fn add(&mut self, key: &str, value: Vec<u8>) -> anyhow::Result<()> {
-        check_valid_string(key, stringify!(key))?;
-        check_slice_not_empty(value.as_slice(), stringify!(value))?;
-
-        self.general.insert(key.to_string(), value.clone());
-        debug!("Added '{key}'");
-
-        if let Some(database) = &self.database {
-            database.add(key.to_string(), value)?;
-        }
-
-        Ok(())
-    }
+    // -- DATA QUERIES --------------------------------------------------------
 
     pub fn get(&self, key: &str) -> anyhow::Result<Option<&Vec<u8>>> {
         check_valid_string(key, stringify!(key))?;
@@ -879,6 +1016,32 @@ mod tests {
     use rstest::*;
 
     use super::Cache;
+
+    #[rstest]
+    fn test_reset_index() {
+        let mut cache = Cache::default();
+        cache.clear_index();
+    }
+
+    #[rstest]
+    fn test_reset() {
+        let mut cache = Cache::default();
+        cache.reset();
+    }
+
+    #[rstest]
+    fn test_dispose() {
+        let cache = Cache::default();
+        let result = cache.dispose();
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_flushdb() {
+        let cache = Cache::default();
+        let result = cache.flush_db();
+        assert!(result.is_ok());
+    }
 
     #[rstest]
     fn test_general_when_no_value() {
