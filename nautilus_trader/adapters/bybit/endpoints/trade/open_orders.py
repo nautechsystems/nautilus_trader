@@ -23,7 +23,7 @@ from nautilus_trader.adapters.bybit.schemas.order import BybitOpenOrdersResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitOpenOrdersGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitOpenOrdersGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
     category: BybitProductType | None = None
     symbol: str | None = None
     baseCoin: str | None = None
@@ -46,7 +46,7 @@ class BybitOpenOrdersHttp(BybitHttpEndpoint):
         )
         self._get_resp_decoder = msgspec.json.Decoder(BybitOpenOrdersResponseStruct)
 
-    async def get(self, params: BybitOpenOrdersGetParameters) -> BybitOpenOrdersResponseStruct:
+    async def get(self, params: BybitOpenOrdersGetParams) -> BybitOpenOrdersResponseStruct:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, params)
         try:

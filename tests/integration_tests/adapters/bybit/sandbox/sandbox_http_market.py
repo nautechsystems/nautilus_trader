@@ -22,11 +22,11 @@ from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 
 # fmt: off
 from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoEndpoint
-from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoGetParameters
+from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoGetParams
 
 # fmt: on
 from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesEndpoint
-from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesGetParameters
+from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesGetParams
 from nautilus_trader.adapters.bybit.endpoints.market.server_time import BybitServerTimeEndpoint
 from nautilus_trader.adapters.bybit.factories import get_bybit_http_client
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
@@ -65,7 +65,7 @@ async def test_sandbox_get_instruments(client: BybitHttpClient) -> None:
         base_endpoint,
     )
     instruments_spot = await instruments_spot_endpoint.get(
-        BybitInstrumentsInfoGetParameters(category=BybitProductType.SPOT),
+        BybitInstrumentsInfoGetParams(category=BybitProductType.SPOT),
     )
     result_list_spot = [
         item for item in instruments_spot.result.list if item.symbol in ["BTCUSDT", "ETHUSDT"]
@@ -78,7 +78,7 @@ async def test_sandbox_get_instruments(client: BybitHttpClient) -> None:
         base_endpoint,
     )
     instruments_linear = await instruments_linear_endpoint.get(
-        BybitInstrumentsInfoGetParameters(category=BybitProductType.LINEAR),
+        BybitInstrumentsInfoGetParams(category=BybitProductType.LINEAR),
     )
     result_list_linear = [
         item for item in instruments_linear.result.list if item.symbol in ["BTCUSDT", "ETHUSDT"]
@@ -95,7 +95,7 @@ async def test_sandbox_get_instruments(client: BybitHttpClient) -> None:
         base_endpoint,
     )
     instruments_options = await instruments_option_endpoint.get(
-        BybitInstrumentsInfoGetParameters(category=BybitProductType.OPTION),
+        BybitInstrumentsInfoGetParams(category=BybitProductType.OPTION),
     )
     # take first few items
     instruments_options.result.list = instruments_options.result.list[:2]
@@ -110,7 +110,7 @@ async def test_sandbox_get_instruments(client: BybitHttpClient) -> None:
 async def test_sandbox_get_klines(client: BybitHttpClient) -> None:
     klines_endpoint = BybitKlinesEndpoint(client, base_endpoint)
     btc_spot_klines = await klines_endpoint.get(
-        BybitKlinesGetParameters(
+        BybitKlinesGetParams(
             category="spot",
             symbol="BTCUSDT",
             interval=BybitKlineInterval.DAY_1,
@@ -118,7 +118,7 @@ async def test_sandbox_get_klines(client: BybitHttpClient) -> None:
         ),
     )
     btc_futures_klines = await klines_endpoint.get(
-        BybitKlinesGetParameters(
+        BybitKlinesGetParams(
             category="linear",
             symbol="BTCUSDT",
             interval=BybitKlineInterval.DAY_1,

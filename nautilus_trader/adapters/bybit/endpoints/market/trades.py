@@ -22,7 +22,7 @@ from nautilus_trader.adapters.bybit.schemas.market.trades import BybitTradesResp
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitTradesGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitTradesGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
     category: str
     symbol: str
     baseCoin: str | None = None
@@ -46,7 +46,7 @@ class BybitTradesEndpoint(BybitHttpEndpoint):
 
     async def get(
         self,
-        params: BybitTradesGetParameters,
+        params: BybitTradesGetParams,
     ) -> BybitTradesResponse:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, params)

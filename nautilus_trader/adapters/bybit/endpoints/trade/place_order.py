@@ -26,7 +26,7 @@ from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrderResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitPlaceOrderGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitPlaceOrderGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
     category: str
     symbol: str
     side: BybitOrderSide
@@ -54,7 +54,7 @@ class BybitPlaceOrderEndpoint(BybitHttpEndpoint):
         )
         self._resp_decoder = msgspec.json.Decoder(BybitPlaceOrderResponse)
 
-    async def post(self, params: BybitPlaceOrderGetParameters) -> BybitPlaceOrderResponse:
+    async def post(self, params: BybitPlaceOrderGetParams) -> BybitPlaceOrderResponse:
         method_type = HttpMethod.POST
         raw = await self._method(method_type, params)
         try:

@@ -21,21 +21,21 @@ from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.common.parsing import get_category_from_product_type
 from nautilus_trader.adapters.bybit.endpoints.account.fee_rate import BybitFeeRateEndpoint
-from nautilus_trader.adapters.bybit.endpoints.account.fee_rate import BybitFeeRateGetParameters
+from nautilus_trader.adapters.bybit.endpoints.account.fee_rate import BybitFeeRateGetParams
 from nautilus_trader.adapters.bybit.endpoints.account.position_info import BybitPositionInfoEndpoint
-from nautilus_trader.adapters.bybit.endpoints.account.position_info import PositionInfoGetParameters
+from nautilus_trader.adapters.bybit.endpoints.account.position_info import PositionInfoGetParams
 
 # fmt: off
 from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import BybitWalletBalanceEndpoint
-from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import BybitWalletBalanceGetParameters
+from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import BybitWalletBalanceGetParams
 from nautilus_trader.adapters.bybit.endpoints.trade.cancel_all_orders import BybitCancelAllOrdersEndpoint
-from nautilus_trader.adapters.bybit.endpoints.trade.cancel_all_orders import BybitCancelAllOrdersPostParameters
+from nautilus_trader.adapters.bybit.endpoints.trade.cancel_all_orders import BybitCancelAllOrdersPostParams
 
 # fmt: on
-from nautilus_trader.adapters.bybit.endpoints.trade.open_orders import BybitOpenOrdersGetParameters
+from nautilus_trader.adapters.bybit.endpoints.trade.open_orders import BybitOpenOrdersGetParams
 from nautilus_trader.adapters.bybit.endpoints.trade.open_orders import BybitOpenOrdersHttp
 from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderEndpoint
-from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderGetParameters
+from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderGetParams
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.account.balance import BybitWalletBalance
 from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
@@ -73,7 +73,7 @@ class BybitAccountHttpAPI:
         base_coin: str | None = None,
     ) -> list[BybitFeeRate]:
         response = await self._endpoint_fee_rate.get(
-            BybitFeeRateGetParameters(
+            BybitFeeRateGetParams(
                 category=product_type,
                 symbol=symbol,
                 baseCoin=base_coin,
@@ -88,11 +88,9 @@ class BybitAccountHttpAPI:
     ) -> list[BybitPositionStruct]:
         # symbol = 'USD'
         response = await self._endpoint_position_info.get(
-            PositionInfoGetParameters(
+            PositionInfoGetParams(
                 symbol=symbol,
-                settleCoin=(
-                    self.default_settle_coin if symbol is None and not product_type.LINEAR else None
-                ),
+                settleCoin=(self.default_settle_coin if symbol is None else None),
                 category=get_category_from_product_type(product_type),
             ),
         )
@@ -109,14 +107,10 @@ class BybitAccountHttpAPI:
         symbol: str | None = None,
     ) -> list[BybitOrder]:
         response = await self._endpoint_open_orders.get(
-            BybitOpenOrdersGetParameters(
+            BybitOpenOrdersGetParams(
                 category=product_type,
                 symbol=symbol,
-                settleCoin=(
-                    self.default_settle_coin
-                    if symbol is None and not product_type.INVERSE
-                    else None
-                ),
+                settleCoin=(self.default_settle_coin if symbol is None else None),
             ),
         )
         return response.result.list
@@ -128,7 +122,7 @@ class BybitAccountHttpAPI:
         order_id: str,
     ) -> list[BybitOrder]:
         response = await self._endpoint_open_orders.get(
-            BybitOpenOrdersGetParameters(
+            BybitOpenOrdersGetParams(
                 category=product_type,
                 symbol=symbol,
                 orderId=order_id,
@@ -142,7 +136,7 @@ class BybitAccountHttpAPI:
         symbol: str,
     ) -> list[Any]:
         response = await self._endpoint_cancel_all_orders.post(
-            BybitCancelAllOrdersPostParameters(
+            BybitCancelAllOrdersPostParams(
                 category=get_category_from_product_type(product_type),
                 symbol=symbol,
             ),
@@ -154,7 +148,7 @@ class BybitAccountHttpAPI:
         coin: str | None = None,
     ) -> tuple[list[BybitWalletBalance], int]:
         response = await self._endpoint_wallet_balance.get(
-            BybitWalletBalanceGetParameters(
+            BybitWalletBalanceGetParams(
                 accountType="UNIFIED",
             ),
         )
@@ -172,7 +166,7 @@ class BybitAccountHttpAPI:
         order_id: str | None = None,
     ) -> BybitPlaceOrder:
         result = await self._endpoint_order.post(
-            params=BybitPlaceOrderGetParameters(
+            params=BybitPlaceOrderGetParams(
                 category=get_category_from_product_type(product_type),
                 symbol=symbol,
                 side=side,

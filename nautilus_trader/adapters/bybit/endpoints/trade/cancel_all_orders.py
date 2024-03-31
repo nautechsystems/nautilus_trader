@@ -22,7 +22,7 @@ from nautilus_trader.adapters.bybit.schemas.order import BybitCancelAllOrdersRes
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitCancelAllOrdersPostParameters(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitCancelAllOrdersPostParams(msgspec.Struct, omit_defaults=True, frozen=False):
     category: str
     symbol: str | None = None
     baseCoin: str | None = None
@@ -45,7 +45,7 @@ class BybitCancelAllOrdersEndpoint(BybitHttpEndpoint):
 
     async def post(
         self,
-        params: BybitCancelAllOrdersPostParameters,
+        params: BybitCancelAllOrdersPostParams,
     ) -> BybitCancelAllOrdersResponse:
         method_type = HttpMethod.POST
         raw = await self._method(method_type, params)
