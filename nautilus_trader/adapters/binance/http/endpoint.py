@@ -68,10 +68,10 @@ class BinanceHttpEndpoint:
     async def _method(
         self,
         method_type: HttpMethod,
-        parameters: Any,
+        params: Any,
         ratelimiter_keys: list[str] | None = None,
     ) -> bytes:
-        payload: dict = self.decoder.decode(self.encoder.encode(parameters))
+        payload: dict = self.decoder.decode(self.encoder.encode(params))
         if self.methods_desc[method_type] is None:
             raise RuntimeError(
                 f"{method_type.name} not available for {self.url_path}",
