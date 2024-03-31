@@ -26,7 +26,7 @@ from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickersSpo
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitTickersGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitTickersGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
     category: BybitProductType | None = None
     symbol: str | None = None
     baseCoin: str | None = None
@@ -48,7 +48,7 @@ class BybitTickersEndpoint(BybitHttpEndpoint):
         self._response_decoder_option = msgspec.json.Decoder(BybitTickersOptionResponse)
         self._response_decoder_spot = msgspec.json.Decoder(BybitTickersSpotResponse)
 
-    async def get(self, params: BybitTickersGetParameters) -> BybitTickersResponse:
+    async def get(self, params: BybitTickersGetParams) -> BybitTickersResponse:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, params)
         try:

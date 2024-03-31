@@ -23,7 +23,7 @@ from nautilus_trader.adapters.bybit.schemas.market.kline import BybitKlinesRespo
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitKlinesGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitKlinesGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
     category: str
     symbol: str
     interval: BybitKlineInterval
@@ -48,7 +48,7 @@ class BybitKlinesEndpoint(BybitHttpEndpoint):
 
     async def get(
         self,
-        params: BybitKlinesGetParameters,
+        params: BybitKlinesGetParams,
     ) -> BybitKlinesResponse:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, params)

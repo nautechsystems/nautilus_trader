@@ -19,16 +19,16 @@ from nautilus_trader.adapters.bybit.common.parsing import get_category_from_prod
 
 # fmt: off
 from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoEndpoint
-from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoGetParameters
+from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoGetParams
 
 # fmt: on
 from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesEndpoint
-from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesGetParameters
+from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesGetParams
 from nautilus_trader.adapters.bybit.endpoints.market.server_time import BybitServerTimeEndpoint
 from nautilus_trader.adapters.bybit.endpoints.market.tickers import BybitTickersEndpoint
-from nautilus_trader.adapters.bybit.endpoints.market.tickers import BybitTickersGetParameters
+from nautilus_trader.adapters.bybit.endpoints.market.tickers import BybitTickersGetParams
 from nautilus_trader.adapters.bybit.endpoints.market.trades import BybitTradesEndpoint
-from nautilus_trader.adapters.bybit.endpoints.market.trades import BybitTradesGetParameters
+from nautilus_trader.adapters.bybit.endpoints.market.trades import BybitTradesGetParams
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrument
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentList
@@ -76,7 +76,7 @@ class BybitMarketHttpAPI:
         base_coin: str | None = None,
     ) -> BybitTickerList:
         response = await self._endpoint_tickers.get(
-            BybitTickersGetParameters(
+            BybitTickersGetParams(
                 category=product_type,
                 symbol=symbol,
                 baseCoin=base_coin,
@@ -93,7 +93,7 @@ class BybitMarketHttpAPI:
         product_type: BybitProductType,
     ) -> BybitInstrumentList:
         response = await self._endpoint_instruments.get(
-            BybitInstrumentsInfoGetParameters(
+            BybitInstrumentsInfoGetParams(
                 category=product_type,
             ),
         )
@@ -105,7 +105,7 @@ class BybitMarketHttpAPI:
         symbol: str,
     ) -> BybitInstrument:
         response = await self._endpoint_instruments.get(
-            BybitInstrumentsInfoGetParameters(
+            BybitInstrumentsInfoGetParams(
                 category=product_type,
                 symbol=symbol,
             ),
@@ -122,7 +122,7 @@ class BybitMarketHttpAPI:
         end: int | None = None,
     ) -> list[BybitKline]:
         response = await self._endpoint_klines.get(
-            params=BybitKlinesGetParameters(
+            params=BybitKlinesGetParams(
                 category=get_category_from_product_type(product_type),
                 symbol=symbol,
                 interval=interval,
@@ -140,7 +140,7 @@ class BybitMarketHttpAPI:
         limit: int | None = None,
     ) -> list[BybitTrade]:
         response = await self._endpoint_trades.get(
-            params=BybitTradesGetParameters(
+            params=BybitTradesGetParams(
                 category=get_category_from_product_type(product_type),
                 symbol=symbol,
                 limit=limit,
