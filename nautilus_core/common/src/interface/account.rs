@@ -16,8 +16,9 @@
 use std::collections::HashMap;
 
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide},
+    enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
+    identifiers::account_id::AccountId,
     instruments::Instrument,
     position::Position,
     types::{
@@ -26,6 +27,12 @@ use nautilus_model::{
 };
 
 pub trait Account {
+    fn id(&self) -> AccountId;
+    fn account_type(&self) -> AccountType;
+    fn base_currency(&self) -> Option<Currency>;
+    fn is_cash_account(&self) -> bool;
+    fn is_margin_account(&self) -> bool;
+    fn calculated_account_state(&self) -> bool;
     fn balance_total(&self, currency: Option<Currency>) -> Option<Money>;
     fn balances_total(&self) -> HashMap<Currency, Money>;
     fn balance_free(&self, currency: Option<Currency>) -> Option<Money>;
