@@ -35,7 +35,7 @@ class BybitCancelAllOrdersEndpoint(BybitHttpEndpoint):
         client: BybitHttpClient,
         base_endpoint: str,
     ) -> None:
-        url_path = base_endpoint + "order/cancel-all"
+        url_path = base_endpoint + "/order/cancel-all"
         super().__init__(
             client=client,
             endpoint_type=BybitEndpointType.TRADE,
@@ -52,7 +52,6 @@ class BybitCancelAllOrdersEndpoint(BybitHttpEndpoint):
         try:
             return self._resp_decoder.decode(raw)
         except Exception as e:
-            decoded_raw = raw.decode("utf-8")  # Decoding the bytes object
             raise RuntimeError(
-                f"Failed to decode response cancel all orders response: {decoded_raw}",
+                f"Failed to decode response from {self.url_path}: {raw.decode()}",
             ) from e

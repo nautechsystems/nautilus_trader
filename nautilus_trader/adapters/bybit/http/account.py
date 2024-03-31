@@ -42,7 +42,6 @@ from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
 from nautilus_trader.adapters.bybit.schemas.order import BybitOrder
 from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrder
 from nautilus_trader.adapters.bybit.schemas.position import BybitPositionStruct
-from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.correctness import PyCondition
 
@@ -90,7 +89,7 @@ class BybitAccountHttpAPI:
         # symbol = 'USD'
         response = await self._endpoint_position_info.get(
             PositionInfoGetParameters(
-                symbol=BybitSymbol(symbol) if symbol else None,
+                symbol=symbol,
                 settleCoin=self.default_settle_coin if symbol is None else None,
                 category=get_category_from_product_type(product_type),
             ),
@@ -110,7 +109,7 @@ class BybitAccountHttpAPI:
         response = await self._endpoint_open_orders.get(
             BybitOpenOrdersGetParameters(
                 category=product_type,
-                symbol=BybitSymbol(symbol) if symbol else None,
+                symbol=symbol,
                 settleCoin=self.default_settle_coin if symbol is None else None,
             ),
         )
@@ -119,13 +118,13 @@ class BybitAccountHttpAPI:
     async def query_order(
         self,
         product_type: BybitProductType,
-        symbol: str,
+        symbol: str | None,
         order_id: str,
     ) -> list[BybitOrder]:
         response = await self._endpoint_open_orders.get(
             BybitOpenOrdersGetParameters(
                 category=product_type,
-                symbol=BybitSymbol(symbol) if symbol else None,
+                symbol=symbol,
                 orderId=order_id,
             ),
         )
@@ -139,7 +138,7 @@ class BybitAccountHttpAPI:
         response = await self._endpoint_cancel_all_orders.post(
             BybitCancelAllOrdersPostParameters(
                 category=get_category_from_product_type(product_type),
-                symbol=BybitSymbol(symbol),
+                symbol=symbol,
             ),
         )
         return response.result.list
@@ -169,7 +168,7 @@ class BybitAccountHttpAPI:
         result = await self._endpoint_order.post(
             parameters=BybitPlaceOrderGetParameters(
                 category=get_category_from_product_type(product_type),
-                symbol=BybitSymbol(symbol),
+                symbol=symbol,
                 side=side,
                 orderType=order_type,
                 qty=quantity,

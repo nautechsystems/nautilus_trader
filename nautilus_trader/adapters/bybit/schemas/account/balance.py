@@ -52,11 +52,7 @@ class BybitCoinBalance(msgspec.Struct):
     def parse_to_account_balance(self) -> AccountBalance:
         currency = Currency.from_str(self.coin)
         total = Decimal(self.walletBalance)
-        locked = (
-            Decimal(self.totalPositionIM)
-            + Decimal(self.totalPositionMM)
-            + Decimal(self.totalOrderIM)
-        )
+        locked = Decimal(self.locked)  # TODO: Locked only valid for Spot
         free = total - locked
         return AccountBalance(
             total=Money(total, currency),

@@ -51,5 +51,7 @@ class BybitOpenOrdersHttp(BybitHttpEndpoint):
         raw = await self._method(method_type, parameters)
         try:
             return self._get_resp_decoder.decode(raw)
-        except Exception:
-            raise RuntimeError(f"Failed to decode response open orders response: {raw!s}")
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to decode response from {self.url_path}: {raw.decode()}",
+            ) from e

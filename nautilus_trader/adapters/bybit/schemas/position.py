@@ -61,7 +61,7 @@ class BybitPositionStruct(msgspec.Struct):
         ts_init: int,
     ) -> PositionStatusReport:
         position_side = self.side.parse_to_position_side()
-        size = Quantity.from_str(self.positionValue)
+        size = Quantity.from_str(self.size)
         return PositionStatusReport(
             account_id=account_id,
             instrument_id=instrument_id,

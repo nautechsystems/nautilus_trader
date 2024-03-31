@@ -46,7 +46,7 @@ class BybitPlaceOrderEndpoint(BybitHttpEndpoint):
         client: BybitHttpClient,
         base_endpoint: str,
     ) -> None:
-        url_path = base_endpoint + "order/create"
+        url_path = base_endpoint + "/order/create"
         super().__init__(
             client=client,
             endpoint_type=BybitEndpointType.TRADE,
@@ -59,5 +59,7 @@ class BybitPlaceOrderEndpoint(BybitHttpEndpoint):
         raw = await self._method(method_type, parameters)
         try:
             return self._resp_decoder.decode(raw)
-        except Exception:
-            raise RuntimeError("Failed to decode response place order response.")
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to decode response from {self.url_path}: {raw.decode()}",
+            ) from e

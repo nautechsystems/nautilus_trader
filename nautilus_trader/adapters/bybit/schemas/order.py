@@ -88,8 +88,7 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
         enum_parser: BybitEnumParser,
         ts_init: int,
     ) -> OrderStatusReport:
-        client_order_id = ClientOrderId(self.orderId)
-        # TODO check what is order list id
+        client_order_id = ClientOrderId(self.orderLinkId)
         order_list_id = None
         contingency_type = ContingencyType.NO_CONTINGENCY
         trigger_price = (
@@ -121,7 +120,7 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
             trailing_offset_type=trailing_offset_type,
             quantity=Quantity.from_str(self.qty),
             filled_qty=Quantity.from_str(self.cumExecQty),
-            avg_px=Decimal(self.avgPrice),
+            avg_px=Decimal(self.avgPrice) if self.avgPrice else None,
             post_only=post_only,
             reduce_only=reduce_only,
             ts_accepted=millis_to_nanos(Decimal(self.createdTime)),

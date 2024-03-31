@@ -585,11 +585,16 @@ class BybitDataClient(LiveMarketDataClient):
                 self._log.error(f"Error in ws_message: {ws_message.ret_msg}")
                 return
             if ws_message.topic:
-                self._handle_ws_data(product_type, ws_message.topic, raw)
+                self._handle_ws_message_by_topic(product_type, ws_message.topic, raw)
         except Exception as e:
             self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
 
-    def _handle_ws_data(self, product_type: BybitProductType, topic: str, raw: bytes) -> None:
+    def _handle_ws_message_by_topic(
+        self,
+        product_type: BybitProductType,
+        topic: str,
+        raw: bytes,
+    ) -> None:
         if "orderbook" in topic:
             self._handle_orderbook(product_type, raw)
         elif "publicTrade" in topic:
