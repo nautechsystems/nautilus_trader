@@ -23,6 +23,7 @@ use nautilus_common::interface::account::Account;
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
+    identifiers::account_id::AccountId,
     instruments::Instrument,
     position::Position,
     types::{
@@ -64,9 +65,34 @@ impl CashAccount {
 }
 
 impl Account for CashAccount {
+    fn id(&self) -> AccountId {
+        self.id
+    }
+
+    fn account_type(&self) -> AccountType {
+        self.account_type
+    }
+
+    fn base_currency(&self) -> Option<Currency> {
+        self.base_currency
+    }
+
+    fn is_cash_account(&self) -> bool {
+        self.account_type == AccountType::Cash
+    }
+
+    fn is_margin_account(&self) -> bool {
+        self.account_type == AccountType::Margin
+    }
+
+    fn calculated_account_state(&self) -> bool {
+        false // TODO (implement this logic)
+    }
+
     fn balance_total(&self, currency: Option<Currency>) -> Option<Money> {
         self.base_balance_total(currency)
     }
+
     fn balances_total(&self) -> HashMap<Currency, Money> {
         self.base_balances_total()
     }
@@ -78,30 +104,39 @@ impl Account for CashAccount {
     fn balances_free(&self) -> HashMap<Currency, Money> {
         self.base_balances_free()
     }
+
     fn balance_locked(&self, currency: Option<Currency>) -> Option<Money> {
         self.base_balance_locked(currency)
     }
+
     fn balances_locked(&self) -> HashMap<Currency, Money> {
         self.base_balances_locked()
     }
+
     fn last_event(&self) -> Option<AccountState> {
         self.base_last_event()
     }
+
     fn events(&self) -> Vec<AccountState> {
         self.events.clone()
     }
+
     fn event_count(&self) -> usize {
         self.events.len()
     }
+
     fn currencies(&self) -> Vec<Currency> {
         self.balances.keys().copied().collect()
     }
+
     fn starting_balances(&self) -> HashMap<Currency, Money> {
         self.balances_starting.clone()
     }
+
     fn balances(&self) -> HashMap<Currency, AccountBalance> {
         self.balances.clone()
     }
+
     fn apply(&mut self, event: AccountState) {
         self.base_apply(event);
     }
@@ -116,6 +151,7 @@ impl Account for CashAccount {
     ) -> anyhow::Result<Money> {
         self.base_calculate_balance_locked(instrument, side, quantity, price, use_quote_for_inverse)
     }
+
     fn calculate_pnls<T: Instrument>(
         &self,
         instrument: T,
@@ -124,6 +160,7 @@ impl Account for CashAccount {
     ) -> anyhow::Result<Vec<Money>> {
         self.base_calculate_pnls(instrument, fill, position)
     }
+
     fn calculate_commission<T: Instrument>(
         &self,
         instrument: T,

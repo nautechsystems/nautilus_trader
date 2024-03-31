@@ -26,7 +26,7 @@ use nautilus_common::interface::account::Account;
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
-    identifiers::instrument_id::InstrumentId,
+    identifiers::{account_id::AccountId, instrument_id::InstrumentId},
     instruments::Instrument,
     position::Position,
     types::{
@@ -274,6 +274,30 @@ impl DerefMut for MarginAccount {
 }
 
 impl Account for MarginAccount {
+    fn id(&self) -> AccountId {
+        self.id
+    }
+
+    fn account_type(&self) -> AccountType {
+        self.account_type
+    }
+
+    fn base_currency(&self) -> Option<Currency> {
+        self.base_currency
+    }
+
+    fn is_cash_account(&self) -> bool {
+        self.account_type == AccountType::Cash
+    }
+
+    fn is_margin_account(&self) -> bool {
+        self.account_type == AccountType::Margin
+    }
+
+    fn calculated_account_state(&self) -> bool {
+        false // TODO (implement this logic)
+    }
+
     fn balance_total(&self, currency: Option<Currency>) -> Option<Money> {
         self.base_balance_total(currency)
     }
