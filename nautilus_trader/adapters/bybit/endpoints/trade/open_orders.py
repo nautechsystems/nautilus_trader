@@ -16,7 +16,7 @@
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.order import BybitOpenOrdersResponseStruct
@@ -24,7 +24,7 @@ from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BybitOpenOrdersGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
-    category: BybitInstrumentType | None = None
+    category: BybitProductType | None = None
     symbol: str | None = None
     baseCoin: str | None = None
     settleCoin: str | None = None

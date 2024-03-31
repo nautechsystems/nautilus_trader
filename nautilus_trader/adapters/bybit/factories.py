@@ -17,7 +17,7 @@ import asyncio
 
 from nautilus_trader.adapters.bybit.common.credentials import get_api_key
 from nautilus_trader.adapters.bybit.common.credentials import get_api_secret
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.urls import get_http_base_url
 from nautilus_trader.adapters.bybit.common.urls import get_ws_base_url_private
 from nautilus_trader.adapters.bybit.common.urls import get_ws_base_url_public
@@ -99,7 +99,7 @@ def get_bybit_http_client(
 def get_bybit_instrument_provider(
     client: BybitHttpClient,
     clock: LiveClock,
-    instrument_types: list[BybitInstrumentType],
+    product_types: list[BybitProductType],
     config: InstrumentProviderConfig,
 ) -> BybitInstrumentProvider:
     """
@@ -114,8 +114,8 @@ def get_bybit_instrument_provider(
         The client for the instrument provider.
     clock : LiveClock
         The clock for the instrument provider.
-    instrument_types : list[BybitInstrumentType]
-        List of instruments to load and sync with.
+    product_types : list[BybitProductType]
+        The product types to load.
     is_testnet : bool
         If the provider is for the Spot testnet.
     config : InstrumentProviderConfig
@@ -130,7 +130,7 @@ def get_bybit_instrument_provider(
         client=client,
         config=config,
         clock=clock,
-        instrument_types=instrument_types,
+        product_types=product_types,
     )
 
 
@@ -181,13 +181,13 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
         provider = get_bybit_instrument_provider(
             client=client,
             clock=clock,
-            instrument_types=config.instrument_types,
+            product_types=config.product_types,
             config=config.instrument_provider,
         )
-        ws_base_urls: dict[BybitInstrumentType, str] = {}
-        for instrument_type in config.instrument_types:
-            ws_base_urls[instrument_type] = get_ws_base_url_public(
-                instrument_type=instrument_type,
+        ws_base_urls: dict[BybitProductType, str] = {}
+        for product_type in config.product_types:
+            ws_base_urls[product_type] = get_ws_base_url_public(
+                product_type=product_type,
                 is_testnet=config.testnet,
             )
         return BybitDataClient(
@@ -197,7 +197,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             cache=cache,
             clock=clock,
             instrument_provider=provider,
-            instrument_types=config.instrument_types,
+            product_types=config.product_types,
             ws_urls=ws_base_urls,
             config=config,
         )
@@ -250,7 +250,7 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
         provider = get_bybit_instrument_provider(
             client=client,
             clock=clock,
-            instrument_types=config.instrument_types,
+            product_types=config.product_types,
             config=config.instrument_provider,
         )
         default_base_url_ws: str = get_ws_base_url_private(config.testnet)
@@ -261,7 +261,7 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             cache=cache,
             clock=clock,
             instrument_provider=provider,
-            instrument_types=config.instrument_types,
+            product_types=config.product_types,
             base_url_ws=config.base_url_ws or default_base_url_ws,
             config=config,
         )

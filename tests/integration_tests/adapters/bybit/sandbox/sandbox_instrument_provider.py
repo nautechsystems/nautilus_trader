@@ -17,7 +17,7 @@ import os
 
 import pytest
 
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.factories import get_bybit_http_client
 from nautilus_trader.adapters.bybit.provider import BybitInstrumentProvider
 from nautilus_trader.common.component import LiveClock
@@ -37,11 +37,10 @@ async def test_bybit_instrument_provider():
     provider = BybitInstrumentProvider(
         client=client,
         clock=clock,
-        instrument_types=[
-            BybitInstrumentType.SPOT,
-            BybitInstrumentType.LINEAR,
-            BybitInstrumentType.OPTION,
-            # BybitInstrumentType.INVERSE,  # Supported?
+        product_types=[
+            BybitProductType.SPOT,
+            BybitProductType.LINEAR,
+            BybitProductType.OPTION,
         ],
     )
 

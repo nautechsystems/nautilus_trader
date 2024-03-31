@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
-from nautilus_trader.adapters.bybit.common.parsing import get_category_from_instrument_type
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
+from nautilus_trader.adapters.bybit.common.parsing import get_category_from_product_type
 
 # fmt: off
 from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoEndpoint
@@ -71,13 +71,13 @@ class BybitMarketHttpAPI:
 
     async def fetch_tickers(
         self,
-        instrument_type: BybitInstrumentType,
+        product_type: BybitProductType,
         symbol: str | None = None,
         base_coin: str | None = None,
     ) -> BybitTickerList:
         response = await self._endpoint_tickers.get(
             BybitTickersGetParameters(
-                category=instrument_type,
+                category=product_type,
                 symbol=symbol,
                 baseCoin=base_coin,
             ),
@@ -90,23 +90,23 @@ class BybitMarketHttpAPI:
 
     async def fetch_instruments(
         self,
-        instrument_type: BybitInstrumentType,
+        product_type: BybitProductType,
     ) -> BybitInstrumentList:
         response = await self._endpoint_instruments.get(
             BybitInstrumentsInfoGetParameters(
-                category=instrument_type,
+                category=product_type,
             ),
         )
         return response.result.list
 
     async def fetch_instrument(
         self,
-        instrument_type: BybitInstrumentType,
+        product_type: BybitProductType,
         symbol: str,
     ) -> BybitInstrument:
         response = await self._endpoint_instruments.get(
             BybitInstrumentsInfoGetParameters(
-                category=instrument_type,
+                category=product_type,
                 symbol=symbol,
             ),
         )
@@ -114,7 +114,7 @@ class BybitMarketHttpAPI:
 
     async def fetch_klines(
         self,
-        instrument_type: BybitInstrumentType,
+        product_type: BybitProductType,
         symbol: str,
         interval: BybitKlineInterval,
         limit: int | None = None,
@@ -123,7 +123,7 @@ class BybitMarketHttpAPI:
     ) -> list[BybitKline]:
         response = await self._endpoint_klines.get(
             parameters=BybitKlinesGetParameters(
-                category=get_category_from_instrument_type(instrument_type),
+                category=get_category_from_product_type(product_type),
                 symbol=symbol,
                 interval=interval,
                 limit=limit,
@@ -135,13 +135,13 @@ class BybitMarketHttpAPI:
 
     async def fetch_public_trades(
         self,
-        instrument_type: BybitInstrumentType,
+        product_type: BybitProductType,
         symbol: str,
         limit: int | None = None,
     ) -> list[BybitTrade]:
         response = await self._endpoint_trades.get(
             parameters=BybitTradesGetParameters(
-                category=get_category_from_instrument_type(instrument_type),
+                category=get_category_from_product_type(product_type),
                 symbol=symbol,
                 limit=limit,
             ),
@@ -158,7 +158,7 @@ class BybitMarketHttpAPI:
         assert bybit_symbol is not None  # type checking
         trades = await self.fetch_public_trades(
             symbol=bybit_symbol.raw_symbol,
-            instrument_type=bybit_symbol.instrument_type,
+            product_type=bybit_symbol.product_type,
             limit=limit,
         )
         trade_ticks: list[TradeTick] = [t.parse_to_trade(instrument_id, ts_init) for t in trades]
@@ -179,7 +179,7 @@ class BybitMarketHttpAPI:
             assert bybit_symbol is not None  # type checking
             klines = await self.fetch_klines(
                 symbol=bybit_symbol.raw_symbol,
-                instrument_type=bybit_symbol.instrument_type,
+                product_type=bybit_symbol.product_type,
                 interval=interval,
                 limit=limit,
                 start=start,

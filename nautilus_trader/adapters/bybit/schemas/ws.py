@@ -18,12 +18,12 @@ from typing import Final
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderStatus
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitPositionIdx
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.common.parsing import parse_bybit_delta
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -569,26 +569,26 @@ class BybitWsTradeOptionMsg(msgspec.Struct):
     data: list[BybitWsTradeOption]
 
 
-def decoder_ws_trade(instrument_type: BybitInstrumentType) -> msgspec.json.Decoder:
-    if instrument_type == BybitInstrumentType.LINEAR:
-        return msgspec.json.Decoder(BybitWsTradeLinearMsg)
-    elif instrument_type == BybitInstrumentType.SPOT:
+def decoder_ws_trade(product_type: BybitProductType) -> msgspec.json.Decoder:
+    if product_type == BybitProductType.SPOT:
         return msgspec.json.Decoder(BybitWsTradeSpotMsg)
-    elif instrument_type == BybitInstrumentType.OPTION:
+    elif product_type == BybitProductType.LINEAR:
+        return msgspec.json.Decoder(BybitWsTradeLinearMsg)
+    elif product_type == BybitProductType.OPTION:
         return msgspec.json.Decoder(BybitWsTradeOptionMsg)
     else:
-        raise ValueError(f"Invalid instrument type: {instrument_type}")
+        raise ValueError(f"Invalid product type: {product_type}")
 
 
-def decoder_ws_ticker(instrument_type: BybitInstrumentType) -> msgspec.json.Decoder:
-    if instrument_type == BybitInstrumentType.LINEAR:
-        return msgspec.json.Decoder(BybitWsTickerLinearMsg)
-    elif instrument_type == BybitInstrumentType.SPOT:
+def decoder_ws_ticker(product_type: BybitProductType) -> msgspec.json.Decoder:
+    if product_type == BybitProductType.SPOT:
         return msgspec.json.Decoder(BybitWsTickerSpotMsg)
-    elif instrument_type == BybitInstrumentType.OPTION:
+    elif product_type == BybitProductType.LINEAR:
+        return msgspec.json.Decoder(BybitWsTickerLinearMsg)
+    elif product_type == BybitProductType.OPTION:
         return msgspec.json.Decoder(BybitWsTickerOptionMsg)
     else:
-        raise ValueError(f"Invalid instrument type: {instrument_type}")
+        raise ValueError(f"Invalid product type: {product_type}")
 
 
 def decoder_ws_kline():

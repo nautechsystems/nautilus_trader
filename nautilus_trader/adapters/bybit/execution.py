@@ -22,7 +22,7 @@ from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.credentials import get_api_key
 from nautilus_trader.adapters.bybit.common.credentials import get_api_secret
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
@@ -89,8 +89,8 @@ class BybitExecutionClient(LiveExecutionClient):
         The clock for the client.
     instrument_provider : BybitInstrumentProvider
         The instrument provider.
-    instrument_types : list[BybitInstrumentType]
-        The instrument types for the client.
+    product_types : list[BybitProductType]
+        The product types for the client.
     base_url_ws : str
         The base URL for the WebSocket client.
     config : BybitExecClientConfig
@@ -106,7 +106,7 @@ class BybitExecutionClient(LiveExecutionClient):
         cache: Cache,
         clock: LiveClock,
         instrument_provider: BybitInstrumentProvider,
-        instrument_types: list[BybitInstrumentType],
+        product_types: list[BybitProductType],
         base_url_ws: str,
         config: BybitExecClientConfig,
     ) -> None:
@@ -126,7 +126,7 @@ class BybitExecutionClient(LiveExecutionClient):
         self._use_position_ids = config.use_position_ids
 
         self._log.info(f"Account type: {account_type_to_str(self.account_type)}", LogColor.BLUE)
-        self._instrument_types = instrument_types
+        self._product_types = product_types
         self._enum_parser = BybitEnumParser()
 
         account_id = AccountId(f"{BYBIT_VENUE.value}-UNIFIED")
@@ -197,8 +197,8 @@ class BybitExecutionClient(LiveExecutionClient):
             symbol = instrument_id.symbol.value if instrument_id is not None else None
             # active_symbols = self._get_cache_active_symbols()
             # active_symbols.update(await self._get_active_position_symbols(symbol))
-            # open_orders: dict[BybitInstrumentType,list[BybitOrder]] = dict()
-            for instr in self._instrument_types:
+            # open_orders: dict[BybitProductType, list[BybitOrder]] = dict()
+            for instr in self._product_types:
                 open_orders = await self._http_account.query_open_orders(instr, symbol)
                 for order in open_orders:
                     symbol = BybitSymbol(order.symbol + f"-{instr.value.upper()}")
@@ -244,7 +244,7 @@ class BybitExecutionClient(LiveExecutionClient):
         try:
             if venue_order_id:
                 bybit_orders = await self._http_account.query_order(
-                    instrument_type=BybitInstrumentType.LINEAR,
+                    product_type=BybitProductType.LINEAR,
                     symbol=instrument_id.symbol.value,
                     order_id=venue_order_id.value,
                 )
@@ -287,13 +287,13 @@ class BybitExecutionClient(LiveExecutionClient):
     ) -> list[PositionStatusReport]:
         self._log.info("Requesting PositionStatusReports...")
         reports: list[PositionStatusReport] = []
-        for instrument_type in self._instrument_types:
-            if instrument_type == BybitInstrumentType.SPOT:
+        for product_type in self._product_types:
+            if product_type == BybitProductType.SPOT:
                 continue  # No positions on spot
-            positions = await self._http_account.query_position_info(instrument_type)
+            positions = await self._http_account.query_position_info(product_type)
             for position in positions:
                 instr: InstrumentId = BybitSymbol(
-                    position.symbol + "-" + instrument_type.value.upper(),
+                    position.symbol + "-" + product_type.value.upper(),
                 ).parse_as_nautilus()
                 position_report = position.parse_to_position_status_report(
                     account_id=self.account_id,
@@ -319,7 +319,7 @@ class BybitExecutionClient(LiveExecutionClient):
     async def _get_active_position_symbols(self, symbol: str | None) -> set[str]:
         active_symbols: set[str] = set()
         bybit_positions = await self._http_account.query_position_info(
-            BybitInstrumentType.LINEAR,
+            BybitProductType.LINEAR,
             symbol,
         )
         for position in bybit_positions:
@@ -328,11 +328,11 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def _update_account_state(self) -> None:
         # positions = await self._http_account.query_position_info()
-        [instrument_type_balances, ts_event] = await self._http_account.query_wallet_balance()
-        if instrument_type_balances:
+        [product_type_balances, ts_event] = await self._http_account.query_wallet_balance()
+        if product_type_balances:
             self._log.info("Bybit API key authenticated", LogColor.GREEN)
             self._log.info(f"API key {self._http_account.client.api_key} has trading permissions")
-        for balance in instrument_type_balances:
+        for balance in product_type_balances:
             balances = balance.parse_to_account_balance()
             margins = balance.parse_to_margin_balance()
             try:
@@ -347,7 +347,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         await self._http_account.cancel_all_orders(
-            BybitInstrumentType.LINEAR,
+            BybitProductType.LINEAR,
             command.instrument_id.symbol.value,
         )
 
@@ -407,7 +407,7 @@ class BybitExecutionClient(LiveExecutionClient):
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
         order_type = self._enum_parser.parse_nautilus_order_type(order.order_type)
         order = await self._http_account.place_order(
-            instrument_type=BybitInstrumentType.LINEAR,
+            product_type=BybitProductType.LINEAR,
             symbol=order.instrument_id.symbol.value,
             side=order_side,
             order_type=order_type,

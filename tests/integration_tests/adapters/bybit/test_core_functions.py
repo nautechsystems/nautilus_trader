@@ -15,12 +15,12 @@
 
 import pytest
 
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 
 
 class TestBybitSymbol:
-    def test_symbol_missing_instrument_type(self):
+    def test_symbol_missing_product_type(self):
         with pytest.raises(ValueError):
             BybitSymbol("BTCUSD")
 
@@ -34,5 +34,5 @@ class TestBybitSymbol:
         symbol = BybitSymbol(symbol_str)
 
         assert symbol == "ETHUSDT-LINEAR"
-        assert symbol.instrument_type == BybitInstrumentType.LINEAR
+        assert symbol.product_type == BybitProductType.LINEAR
         assert symbol.raw_symbol == "ETHUSDT"

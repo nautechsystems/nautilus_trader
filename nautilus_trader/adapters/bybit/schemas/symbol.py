@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 
@@ -42,27 +42,27 @@ class BybitSymbol(str):
         return str(self).split("-")[0]
 
     @property
-    def instrument_type(self) -> BybitInstrumentType:
+    def product_type(self) -> BybitProductType:
         if "-LINEAR" in self:
-            return BybitInstrumentType.LINEAR
+            return BybitProductType.LINEAR
         elif "-SPOT" in self:
-            return BybitInstrumentType.SPOT
+            return BybitProductType.SPOT
         elif "-OPTION" in self:
-            return BybitInstrumentType.OPTION
+            return BybitProductType.OPTION
         else:
-            raise ValueError(f"Unknown instrument type for symbol {self}")
+            raise ValueError(f"Unknown product type for symbol {self}")
 
     @property
     def is_spot(self) -> bool:
-        return self.instrument_type == BybitInstrumentType.SPOT
+        return self.product_type == BybitProductType.SPOT
 
     @property
-    def is_derivative(self) -> bool:
-        return self.instrument_type == BybitInstrumentType.LINEAR
+    def is_linear(self) -> bool:
+        return self.product_type == BybitProductType.LINEAR
 
     @property
     def is_option(self) -> bool:
-        return self.instrument_type == BybitInstrumentType.OPTION
+        return self.product_type == BybitProductType.OPTION
 
     def parse_as_nautilus(self) -> InstrumentId:
         instrument = InstrumentId(Symbol(str(self)), BYBIT_VENUE)

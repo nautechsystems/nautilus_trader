@@ -118,26 +118,26 @@ class BybitAccountType(Enum):
 
 
 @unique
-class BybitInstrumentType(Enum):
+class BybitProductType(Enum):
     SPOT = "spot"
     LINEAR = "linear"
     INVERSE = "inverse"
     OPTION = "option"
 
     @property
-    def is_spot_or_margin(self) -> bool:
-        return self in [BybitInstrumentType.SPOT]
+    def is_spot(self) -> bool:
+        return self in [BybitProductType.SPOT]
 
     @property
-    def is_spot(self) -> bool:
-        return self in [BybitInstrumentType.SPOT]
+    def is_spot_or_margin(self) -> bool:
+        return self in [BybitProductType.SPOT]
 
 
 @unique
 class BybitContractType(Enum):
-    INVERSE_PERPETUAL = "InversePerpetual"
     LINEAR_PERPETUAL = "LinearPerpetual"
     LINEAR_FUTURE = "LinearFutures"
+    INVERSE_PERPETUAL = "InversePerpetual"
     INVERSE_FUTURE = "InverseFutures"
 
 

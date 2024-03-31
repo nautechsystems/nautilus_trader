@@ -27,7 +27,7 @@ from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.credentials import get_api_key
 from nautilus_trader.adapters.bybit.common.credentials import get_api_secret
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.parsing import get_interval_from_bar_type
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
@@ -88,10 +88,10 @@ class BybitDataClient(LiveMarketDataClient):
         The clock for the client.
     instrument_provider : BybitInstrumentProvider
         The instrument provider.
-    instrument_types : list[BybitInstrumentType]
-        The instrument types for the client.
-    ws_urls : dict[BybitInstrumentType, str]
-        The base urls for the WebSocket clients.
+    product_types : list[BybitProductType]
+        The product types for the client.
+    ws_urls : dict[BybitProductType, str]
+        The product base urls for the WebSocket clients.
     config : BybitDataClientConfig
         The configuration for the client.
 
@@ -105,11 +105,11 @@ class BybitDataClient(LiveMarketDataClient):
         cache: Cache,
         clock: LiveClock,
         instrument_provider: BybitInstrumentProvider,
-        instrument_types: list[BybitInstrumentType],
-        ws_urls: dict[BybitInstrumentType, str],
+        product_types: list[BybitProductType],
+        ws_urls: dict[BybitProductType, str],
         config: BybitDataClientConfig,
     ) -> None:
-        self._instrument_types = instrument_types
+        self._product_types = product_types
         self._enum_parser = BybitEnumParser()
         super().__init__(
             loop=loop,
@@ -132,24 +132,24 @@ class BybitDataClient(LiveMarketDataClient):
         )
 
         # WebSocket API
-        self._ws_clients: dict[BybitInstrumentType, BybitWebsocketClient] = {}
-        self._decoders: dict[str, dict[BybitInstrumentType, msgspec.json.Decoder]] = defaultdict(
+        self._ws_clients: dict[BybitProductType, BybitWebsocketClient] = {}
+        self._decoders: dict[str, dict[BybitProductType, msgspec.json.Decoder]] = defaultdict(
             dict,
         )
-        for instrument_type in instrument_types:
-            self._ws_clients[instrument_type] = BybitWebsocketClient(
+        for product_type in product_types:
+            self._ws_clients[product_type] = BybitWebsocketClient(
                 clock=clock,
-                handler=partial(self._handle_ws_message, instrument_type),
-                base_url=ws_urls[instrument_type],
+                handler=partial(self._handle_ws_message, product_type),
+                base_url=ws_urls[product_type],
                 api_key=config.api_key or get_api_key(config.testnet),
                 api_secret=config.api_secret or get_api_secret(config.testnet),
             )
 
             # WebSocket decoders
-            self._decoders["orderbook"][instrument_type] = decoder_ws_orderbook()
-            self._decoders["trade"][instrument_type] = decoder_ws_trade(instrument_type)
-            self._decoders["ticker"][instrument_type] = decoder_ws_ticker(instrument_type)
-            self._decoders["kline"][instrument_type] = decoder_ws_kline()
+            self._decoders["orderbook"][product_type] = decoder_ws_orderbook()
+            self._decoders["trade"][product_type] = decoder_ws_trade(product_type)
+            self._decoders["ticker"][product_type] = decoder_ws_ticker(product_type)
+            self._decoders["kline"][product_type] = decoder_ws_kline()
 
             self._decoder_ws_msg_general = msgspec.json.Decoder(BybitWsMessageGeneral)
 
@@ -169,11 +169,11 @@ class BybitDataClient(LiveMarketDataClient):
     async def fetch_send_tickers(
         self,
         id: UUID4,
-        instrument_type: BybitInstrumentType,
+        product_type: BybitProductType,
         symbol: str,
     ) -> None:
         tickers = await self._http_market.fetch_tickers(
-            instrument_type=instrument_type,
+            product_type=product_type,
             symbol=symbol,
         )
         data = DataResponse(
@@ -201,7 +201,7 @@ class BybitDataClient(LiveMarketDataClient):
         self._loop.create_task(
             self.fetch_send_tickers(
                 request.id,
-                bybit_symbol.instrument_type,
+                bybit_symbol.product_type,
                 bybit_symbol.raw_symbol,
             ),
         )
@@ -262,33 +262,33 @@ class BybitDataClient(LiveMarketDataClient):
 
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         assert bybit_symbol  # type checking
-        instrument_type = bybit_symbol.instrument_type
+        product_type = bybit_symbol.product_type
 
         # Validate depth
-        match instrument_type:
-            case BybitInstrumentType.SPOT:
+        match product_type:
+            case BybitProductType.SPOT:
                 depths_available = BYBIT_SPOT_DEPTHS
                 depth = depth or BYBIT_SPOT_DEPTHS[-1]
-            case BybitInstrumentType.LINEAR:
+            case BybitProductType.LINEAR:
                 depths_available = BYBIT_LINEAR_DEPTHS
                 depth = depth or BYBIT_LINEAR_DEPTHS[-1]
-            case BybitInstrumentType.OPTION:
+            case BybitProductType.OPTION:
                 depths_available = BYBIT_OPTION_DEPTHS
                 depth = depth or BYBIT_OPTION_DEPTHS[-1]
             case _:
                 raise ValueError(
-                    f"Invalit Bybit instrument type {instrument_type}",
+                    f"Invalit Bybit product type {product_type}",
                 )
 
         if depth not in depths_available:
             self._log.error(
                 f"Cannot subscribe to order book depth {depth} "
-                f"for Bybit {instrument_type.value} instruments, "
+                f"for Bybit {product_type.value} products, "
                 f"available depths are {depths_available}",
             )
             return
 
-        ws_client = self._ws_clients[bybit_symbol.instrument_type]
+        ws_client = self._ws_clients[bybit_symbol.product_type]
 
         if instrument_id in self._tob_quotes:
             if depth == 1:
@@ -313,7 +313,7 @@ class BybitDataClient(LiveMarketDataClient):
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         assert bybit_symbol  # type checking
-        ws_client = self._ws_clients[bybit_symbol.instrument_type]
+        ws_client = self._ws_clients[bybit_symbol.product_type]
 
         if bybit_symbol.is_spot or instrument_id not in self._depths:
             # Subscribe top level (faster 10ms updates)
@@ -329,7 +329,7 @@ class BybitDataClient(LiveMarketDataClient):
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         assert bybit_symbol  # type checking
-        ws_client = self._ws_clients[bybit_symbol.instrument_type]
+        ws_client = self._ws_clients[bybit_symbol.product_type]
         await ws_client.subscribe_trades(bybit_symbol.raw_symbol)
 
     async def _subscribe_bars(self, bar_type: BarType) -> None:
@@ -338,27 +338,27 @@ class BybitDataClient(LiveMarketDataClient):
         interval_str = get_interval_from_bar_type(bar_type)
         topic = f"kline.{interval_str}.{bybit_symbol.raw_symbol}"
         self._topic_bar_type[topic] = bar_type
-        ws_client = self._ws_clients[bybit_symbol.instrument_type]
+        ws_client = self._ws_clients[bybit_symbol.product_type]
         await ws_client.subscribe_klines(bybit_symbol.raw_symbol, interval_str)
 
     async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         assert bybit_symbol  # type checking
-        ws_client = self._ws_clients[bybit_symbol.instrument_type]
+        ws_client = self._ws_clients[bybit_symbol.product_type]
         depth = self._depths.get(instrument_id, 1)
         await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
 
     async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         assert bybit_symbol  # type checking
-        ws_client = self._ws_clients[bybit_symbol.instrument_type]
+        ws_client = self._ws_clients[bybit_symbol.product_type]
         depth = self._depths.get(instrument_id, 1)
         await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         assert bybit_symbol  # type checking
-        ws_client = self._ws_clients[bybit_symbol.instrument_type]
+        ws_client = self._ws_clients[bybit_symbol.product_type]
 
         if instrument_id in self._tob_quotes:
             await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=1)
@@ -368,7 +368,7 @@ class BybitDataClient(LiveMarketDataClient):
     async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         assert bybit_symbol  # type checking
-        ws_client = self._ws_clients[bybit_symbol.instrument_type]
+        ws_client = self._ws_clients[bybit_symbol.product_type]
         await ws_client.unsubscribe_trades(bybit_symbol.raw_symbol)
 
     async def _unsubscribe_bars(self, bar_type: BarType) -> None:
@@ -377,7 +377,7 @@ class BybitDataClient(LiveMarketDataClient):
         interval_str = get_interval_from_bar_type(bar_type)
         topic = f"kline.{interval_str}.{bybit_symbol.raw_symbol}"
         self._topic_bar_type.pop(topic, None)
-        ws_client = self._ws_clients[bybit_symbol.instrument_type]
+        ws_client = self._ws_clients[bybit_symbol.product_type]
         await ws_client.unsubscribe_klines(bybit_symbol.raw_symbol, interval_str)
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
@@ -548,7 +548,7 @@ class BybitDataClient(LiveMarketDataClient):
         bybit_symbol = BybitSymbol(symbol.value)
         assert bybit_symbol  # type checking
         bybit_tickers = await self._http_market.fetch_tickers(
-            instrument_type=bybit_symbol.instrument_type,
+            product_type=bybit_symbol.product_type,
             symbol=bybit_symbol.raw_symbol,
         )
         data_type = DataType(
@@ -576,7 +576,7 @@ class BybitDataClient(LiveMarketDataClient):
             correlation_id,
         )
 
-    def _handle_ws_message(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
+    def _handle_ws_message(self, product_type: BybitProductType, raw: bytes) -> None:
         try:
             ws_message = self._decoder_ws_msg_general.decode(raw)
             if ws_message.op == BYBIT_PONG:
@@ -585,25 +585,25 @@ class BybitDataClient(LiveMarketDataClient):
                 self._log.error(f"Error in ws_message: {ws_message.ret_msg}")
                 return
             if ws_message.topic:
-                self._handle_ws_data(instrument_type, ws_message.topic, raw)
+                self._handle_ws_data(product_type, ws_message.topic, raw)
         except Exception as e:
             self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
 
-    def _handle_ws_data(self, instrument_type: BybitInstrumentType, topic: str, raw: bytes) -> None:
+    def _handle_ws_data(self, product_type: BybitProductType, topic: str, raw: bytes) -> None:
         if "orderbook" in topic:
-            self._handle_orderbook(instrument_type, raw)
+            self._handle_orderbook(product_type, raw)
         elif "publicTrade" in topic:
-            self._handle_trade(instrument_type, raw)
+            self._handle_trade(product_type, raw)
         elif "tickers" in topic:
-            self._handle_ticker(instrument_type, raw)
+            self._handle_ticker(product_type, raw)
         elif "kline" in topic:
-            self._handle_kline(instrument_type, raw)
+            self._handle_kline(product_type, raw)
         else:
             self._log.error(f"Unknown websocket message topic: {topic} in Bybit")
 
-    def _handle_orderbook(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
-        msg = self._decoders["orderbook"][instrument_type].decode(raw)
-        symbol = msg.data.s + f"-{instrument_type.value.upper()}"
+    def _handle_orderbook(self, product_type: BybitProductType, raw: bytes) -> None:
+        msg = self._decoders["orderbook"][product_type].decode(raw)
+        symbol = msg.data.s + f"-{product_type.value.upper()}"
         instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
 
         instrument = self._cache.instrument(instrument_id)
@@ -642,10 +642,10 @@ class BybitDataClient(LiveMarketDataClient):
             )
         self._handle_data(deltas)
 
-    def _handle_ticker(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
-        msg = self._decoders["ticker"][instrument_type].decode(raw)
+    def _handle_ticker(self, product_type: BybitProductType, raw: bytes) -> None:
+        msg = self._decoders["ticker"][product_type].decode(raw)
         try:
-            symbol = msg.data.symbol + f"-{instrument_type.value.upper()}"
+            symbol = msg.data.symbol + f"-{product_type.value.upper()}"
             instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
             last_quote = self._last_quotes.get(instrument_id)
 
@@ -680,11 +680,11 @@ class BybitDataClient(LiveMarketDataClient):
         except Exception as e:
             self._log.error(f"Failed to parse ticker: {msg} with error {e}")
 
-    def _handle_trade(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
-        msg = self._decoders["trade"][instrument_type].decode(raw)
+    def _handle_trade(self, product_type: BybitProductType, raw: bytes) -> None:
+        msg = self._decoders["trade"][product_type].decode(raw)
         try:
             for data in msg.data:
-                symbol = data.s + f"-{instrument_type.value.upper()}"
+                symbol = data.s + f"-{product_type.value.upper()}"
                 instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
                 trade: TradeTick = data.parse_to_trade_tick(
                     instrument_id,
@@ -694,8 +694,8 @@ class BybitDataClient(LiveMarketDataClient):
         except Exception as e:
             self._log.error(f"Failed to parse trade tick: {msg} with error {e}")
 
-    def _handle_kline(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
-        msg = self._decoders["kline"][instrument_type].decode(raw)
+    def _handle_kline(self, product_type: BybitProductType, raw: bytes) -> None:
+        msg = self._decoders["kline"][product_type].decode(raw)
         try:
             bar_type = self._topic_bar_type.get(msg.topic)
             for data in msg.data:
