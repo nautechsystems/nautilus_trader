@@ -480,7 +480,7 @@ class BybitWsTradeSpot(msgspec.Struct):
         )
 
 
-class BybitWsTradeLinear(msgspec.Struct):
+class BybitWsTrade(msgspec.Struct):
     # The timestamp (ms) that the order is filled
     T: int
     # Symbol name
@@ -491,46 +491,22 @@ class BybitWsTradeLinear(msgspec.Struct):
     v: str
     # Trade price
     p: str
+    # Trade id
+    i: str
+    # Whether is a block trade or not
+    BT: bool
     # Direction of price change
-    L: str
-    # Trade id
-    i: str
-    # Whether is a block trade or not
-    BT: bool
-
-    def parse_to_trade_tick(
-        self,
-        instrument_id: InstrumentId,
-        ts_init: int,
-    ) -> TradeTick:
-        return TradeTick(
-            instrument_id=instrument_id,
-            price=Price.from_str(self.p),
-            size=Quantity.from_str(self.v),
-            aggressor_side=AggressorSide.SELLER if self.S == "Sell" else AggressorSide.BUYER,
-            trade_id=TradeId(str(self.i)),
-            ts_event=millis_to_nanos(self.T),
-            ts_init=ts_init,
-        )
-
-
-class BybitWsTradeOption(msgspec.Struct):
+    L: str | None = None
     # Message id unique to options
-    id: str
-    # The timestamp (ms) that the order is filled
-    T: int
-    # Symbol name
-    s: str
-    # Side of taker. Buy,Sell
-    S: str
-    # Trade size
-    v: str
-    # Trade price
-    p: str
-    # Trade id
-    i: str
-    # Whether is a block trade or not
-    BT: bool
+    id: str | None = None
+    # Mark price, unique field for option
+    mP: str | None = None
+    # Index price, unique field for option
+    iP: str | None = None
+    # Mark iv, unique field for option
+    mIv: str | None = None
+    # iv, unique field for option
+    iv: str | None = None
 
     def parse_to_trade_tick(
         self,
@@ -548,36 +524,15 @@ class BybitWsTradeOption(msgspec.Struct):
         )
 
 
-class BybitWsTradeSpotMsg(msgspec.Struct):
+class BybitWsTradeMsg(msgspec.Struct):
     topic: str
     type: str
     ts: int
-    data: list[BybitWsTradeSpot]
+    data: list[BybitWsTrade]
 
 
-class BybitWsTradeLinearMsg(msgspec.Struct):
-    topic: str
-    type: str
-    ts: int
-    data: list[BybitWsTradeLinear]
-
-
-class BybitWsTradeOptionMsg(msgspec.Struct):
-    topic: str
-    type: str
-    ts: int
-    data: list[BybitWsTradeOption]
-
-
-def decoder_ws_trade(product_type: BybitProductType) -> msgspec.json.Decoder:
-    if product_type == BybitProductType.SPOT:
-        return msgspec.json.Decoder(BybitWsTradeSpotMsg)
-    elif product_type in (BybitProductType.LINEAR, BybitProductType.INVERSE):
-        return msgspec.json.Decoder(BybitWsTradeLinearMsg)
-    elif product_type == BybitProductType.OPTION:
-        return msgspec.json.Decoder(BybitWsTradeOptionMsg)
-    else:
-        raise ValueError(f"Invalid product type: {product_type}")
+def decoder_ws_trade() -> msgspec.json.Decoder:
+    return msgspec.json.Decoder(BybitWsTradeMsg)
 
 
 def decoder_ws_ticker(product_type: BybitProductType) -> msgspec.json.Decoder:
