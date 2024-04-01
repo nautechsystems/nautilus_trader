@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 """
 The `LiveExecutionClient` class is responsible for interfacing with a particular API
-which may be presented directly by an exchange, or broker intermediary.
+which may be presented directly by a venue, or through a broker intermediary.
 """
 
 import asyncio
