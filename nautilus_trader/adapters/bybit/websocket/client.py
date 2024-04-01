@@ -49,32 +49,75 @@ class BybitWebsocketClient:
         clock: LiveClock,
         base_url: str,
         handler: Callable[[bytes], None],
+        handler_reconnect: Callable[..., Awaitable[None]] | None,
         api_key: str,
         api_secret: str,
         loop: asyncio.AbstractEventLoop,
         is_private: bool | None = False,
-        handler_reconnect: Callable[..., Awaitable[None]] | None = None,
     ) -> None:
         self._clock = clock
         self._log: Logger = Logger(name=type(self).__name__)
-        self._url: str = base_url
+
+        self._base_url: str = base_url
         self._handler: Callable[[bytes], None] = handler
         self._handler_reconnect: Callable[..., Awaitable[None]] | None = handler_reconnect
+        self._loop = loop
+
         self._client: WebSocketClient | None = None
         self._is_private = is_private
         self._api_key = api_key
         self._api_secret = api_secret
-        self._loop = loop
 
-        self._streams_connecting: set[str] = set()
         self._subscriptions: list[str] = []
 
     @property
     def subscriptions(self) -> list[str]:
         return self._subscriptions
 
-    def has_subscriptions(self, item: str) -> bool:
+    def has_subscription(self, item: str) -> bool:
         return item in self._subscriptions
+
+    async def connect(self) -> None:
+        self._log.debug(f"Connecting to {self._base_url} websocket stream")
+        config = WebSocketConfig(
+            url=self._base_url,
+            handler=self._handler,
+            heartbeat=20,
+            heartbeat_msg=json.dumps({"op": "ping"}),
+            headers=[],
+        )
+        client = await WebSocketClient.connect(
+            config=config,
+            post_reconnection=self.reconnect,
+        )
+        self._client = client
+        self._log.info(f"Connected to {self._base_url}", LogColor.BLUE)
+
+        ## Authenticate
+        if self._is_private:
+            signature = self._get_signature()
+            self._client.send_text(json.dumps(signature))
+
+    # TODO: Temporarily sync
+    def reconnect(self) -> None:
+        """
+        Reconnect the client to the server and resubscribe to all streams.
+        """
+        self._log.warning(f"Reconnected to {self._base_url}")
+
+        # Re-subscribe to all streams
+        self._loop.create_task(self._subscribe_all())
+
+        if self._handler_reconnect:
+            self._loop.create_task(self._handler_reconnect())  # type: ignore
+
+    async def disconnect(self) -> None:
+        if self._client is None:
+            self._log.warning("Cannot disconnect: not connected.")
+            return
+
+        await self._client.disconnect()
+        self._log.info(f"Disconnected from {self._base_url}", LogColor.BLUE)
 
     ################################################################################
     # Public
@@ -86,9 +129,13 @@ class BybitWebsocketClient:
             return
 
         subscription = f"orderbook.{depth}.{symbol}"
+        if subscription in self._subscriptions:
+            self._log.warning(f"Cannot subscribe '{subscription}': already subscribed")
+            return
+
+        self._subscriptions.append(subscription)
         sub = {"op": "subscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
-        self._subscriptions.append(subscription)
 
     async def subscribe_trades(self, symbol: str) -> None:
         if self._client is None:
@@ -97,6 +144,7 @@ class BybitWebsocketClient:
 
         subscription = f"publicTrade.{symbol}"
         if subscription in self._subscriptions:
+            self._log.warning(f"Cannot subscribe '{subscription}': already subscribed")
             return
 
         self._subscriptions.append(subscription)
@@ -110,6 +158,7 @@ class BybitWebsocketClient:
 
         subscription = f"tickers.{symbol}"
         if subscription in self._subscriptions:
+            self._log.warning(f"Cannot subscribe '{subscription}': already subscribed")
             return
 
         self._subscriptions.append(subscription)
@@ -123,6 +172,7 @@ class BybitWebsocketClient:
 
         subscription = f"kline.{interval}.{symbol}"
         if subscription in self._subscriptions:
+            self._log.warning(f"Cannot subscribe '{subscription}': already subscribed")
             return
 
         self._subscriptions.append(subscription)
@@ -136,6 +186,7 @@ class BybitWebsocketClient:
 
         subscription = f"orderbook.{depth}.{symbol}"
         if subscription not in self._subscriptions:
+            self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
             return
 
         self._subscriptions.remove(subscription)
@@ -149,6 +200,7 @@ class BybitWebsocketClient:
 
         subscription = f"publicTrade.{symbol}"
         if subscription not in self._subscriptions:
+            self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
             return
 
         self._subscriptions.remove(subscription)
@@ -162,6 +214,7 @@ class BybitWebsocketClient:
 
         subscription = f"tickers.{symbol}"
         if subscription not in self._subscriptions:
+            self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
             return
 
         self._subscriptions.remove(subscription)
@@ -175,6 +228,7 @@ class BybitWebsocketClient:
 
         subscription = f"kline.{interval}.{symbol}"
         if subscription not in self._subscriptions:
+            self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
             return
 
         self._subscriptions.remove(subscription)
@@ -216,27 +270,6 @@ class BybitWebsocketClient:
         sub = {"op": "subscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
 
-    async def connect(self) -> None:
-        self._log.debug(f"Connecting to {self._url} websocket stream")
-        config = WebSocketConfig(
-            url=self._url,
-            handler=self._handler,
-            heartbeat=20,
-            heartbeat_msg=json.dumps({"op": "ping"}),
-            headers=[],
-        )
-        client = await WebSocketClient.connect(
-            config=config,
-            post_reconnection=self.reconnect,
-        )
-        self._client = client
-        self._log.info(f"Connected to {self._url}", LogColor.BLUE)
-
-        ## Authenticate
-        if self._is_private:
-            signature = self._get_signature()
-            self._client.send_text(json.dumps(signature))
-
     def _get_signature(self):
         timestamp = self._clock.timestamp_ms() + 1000
         sign = f"GET/realtime{timestamp}"
@@ -257,24 +290,3 @@ class BybitWebsocketClient:
 
         sub = {"op": "subscribe", "args": self._subscriptions}
         await self._client.send_text(json.dumps(sub))
-
-    # TODO: Temporarily sync
-    def reconnect(self) -> None:
-        """
-        Reconnect the client to the server and resubscribe to all streams.
-        """
-        self._log.warning(f"Reconnected to {self._url}")
-
-        # Re-subscribe to all streams
-        self._loop.create_task(self._subscribe_all())
-
-        if self._handler_reconnect is not None:
-            self._loop.create_task(self._handler_reconnect())  # type: ignore
-
-    async def disconnect(self) -> None:
-        if self._client is None:
-            self._log.warning("Cannot disconnect: not connected.")
-            return
-
-        await self._client.disconnect()
-        self._log.info(f"Disconnected from {self._url}", LogColor.BLUE)
