@@ -296,7 +296,7 @@ class BybitDataClient(LiveMarketDataClient):
 
         if instrument_id in self._tob_quotes:
             if depth == 1:
-                self._log.info(
+                self._log.debug(
                     f"Already subscribed to {instrument_id} top-of-book",
                     LogColor.MAGENTA,
                 )
@@ -321,7 +321,7 @@ class BybitDataClient(LiveMarketDataClient):
 
         if bybit_symbol.is_spot or instrument_id not in self._depths:
             # Subscribe top level (faster 10ms updates)
-            self._log.info(
+            self._log.debug(
                 f"Subscribing quotes {instrument_id} (faster top-of-book @10ms)",
                 LogColor.MAGENTA,
             )

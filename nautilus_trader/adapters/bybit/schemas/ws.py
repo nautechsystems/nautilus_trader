@@ -13,17 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from typing import Final
 
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
+from nautilus_trader.adapters.bybit.common.enums import BybitExecType
 from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderStatus
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitPositionIdx
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
+from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.common.parsing import parse_bybit_delta
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -599,6 +602,7 @@ class BybitWsAccountPositionMsg(msgspec.Struct):
 
 
 class BybitWsAccountOrder(msgspec.Struct):
+    category: str
     symbol: str
     orderId: str
     side: BybitOrderSide
@@ -623,7 +627,6 @@ class BybitWsAccountOrder(msgspec.Struct):
     createdTime: str
     updatedTime: str
     rejectReason: str
-    stopOrderType: str
     triggerPrice: str
     takeProfit: str
     stopLoss: str
@@ -634,42 +637,41 @@ class BybitWsAccountOrder(msgspec.Struct):
     triggerDirection: int
     triggerBy: str
     closeOnTrigger: bool
-    category: str
     placeType: str
     smpType: str
     smpGroup: int
     smpOrderId: str
     feeCurrency: str
+    stopOrderType: BybitStopOrderType | None = None
     tpslMode: str | None = None
+    createType: str | None = None
 
     def parse_to_order_status_report(
         self,
         account_id: AccountId,
         instrument_id: InstrumentId,
         enum_parser: BybitEnumParser,
+        ts_init: int,
     ) -> OrderStatusReport:
-        client_order_id = ClientOrderId(str(self.orderLinkId))
-        price = Price.from_str(self.price) if self.price else None
-        ts_event = millis_to_nanos(int(self.updatedTime))
-        venue_order_id = VenueOrderId(str(self.orderId))
-        ts_init = millis_to_nanos(int(self.createdTime))
-
         return OrderStatusReport(
             account_id=account_id,
             instrument_id=instrument_id,
-            client_order_id=client_order_id,
-            venue_order_id=venue_order_id,
+            client_order_id=ClientOrderId(str(self.orderLinkId)),
+            venue_order_id=VenueOrderId(str(self.orderId)),
             order_side=enum_parser.parse_bybit_order_side(self.side),
             order_type=enum_parser.parse_bybit_order_type(self.orderType),
             time_in_force=enum_parser.parse_bybit_time_in_force(self.timeInForce),
             order_status=enum_parser.parse_bybit_order_status(self.orderStatus),
-            price=price,
+            price=Price.from_str(self.price) if self.price else None,
             quantity=Quantity.from_str(self.qty),
             filled_qty=Quantity.from_str(self.cumExecQty),
             report_id=UUID4(),
-            ts_accepted=ts_event,
-            ts_last=ts_event,
+            ts_accepted=millis_to_nanos(int(self.createdTime)),
+            ts_last=millis_to_nanos(int(self.updatedTime)),
             ts_init=ts_init,
+            avg_px=Decimal(self.avgPrice) if self.avgPrice else None,
+            reduce_only=self.reduceOnly,
+            post_only=self.timeInForce == BybitTimeInForce.POST_ONLY.value,
         )
 
 
@@ -692,7 +694,7 @@ class BybitWsAccountExecution(msgspec.Struct):
     execId: str
     execPrice: str
     execQty: str
-    execType: str
+    execType: BybitExecType
     execValue: str
     isMaker: bool
     feeRate: str
@@ -708,12 +710,12 @@ class BybitWsAccountExecution(msgspec.Struct):
     orderPrice: str
     orderQty: str
     orderType: BybitOrderType
-    stopOrderType: str
     side: BybitOrderSide
     execTime: str
     isLeverage: str
     closedSize: str
     seq: int
+    stopOrderType: BybitStopOrderType | None = None
 
 
 class BybitWsAccountExecutionMsg(msgspec.Struct):

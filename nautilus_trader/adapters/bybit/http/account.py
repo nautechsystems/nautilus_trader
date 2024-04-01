@@ -39,7 +39,7 @@ from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.account.balance import BybitWalletBalance
 from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
 from nautilus_trader.adapters.bybit.schemas.order import BybitOrder
-from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrder
+from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrderResponse
 from nautilus_trader.adapters.bybit.schemas.position import BybitPositionStruct
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.correctness import PyCondition
@@ -129,12 +129,14 @@ class BybitAccountHttpAPI:
         self,
         product_type: BybitProductType,
         symbol: str | None,
-        order_id: str,
+        client_order_id: str | None,
+        order_id: str | None,
     ) -> list[BybitOrder]:
         response = await self._endpoint_open_orders.get(
             BybitOpenOrdersGetParams(
                 category=product_type,
                 symbol=symbol,
+                orderLinkId=client_order_id,
                 orderId=order_id,
             ),
         )
@@ -175,7 +177,7 @@ class BybitAccountHttpAPI:
         price: str | None = None,
         time_in_force: BybitTimeInForce | None = None,
         client_order_id: str | None = None,
-    ) -> BybitPlaceOrder:
+    ) -> BybitPlaceOrderResponse:
         market_unit = "baseCoin" if not quote_quantity else "quoteCoin"
         result = await self._endpoint_order.post(
             params=BybitPlaceOrderGetParams(
@@ -190,4 +192,4 @@ class BybitAccountHttpAPI:
                 orderLinkId=client_order_id,
             ),
         )
-        return result.result
+        return result
