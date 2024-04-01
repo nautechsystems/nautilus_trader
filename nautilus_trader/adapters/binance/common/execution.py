@@ -218,8 +218,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         self._order_retries: dict[ClientOrderId, int] = {}
 
-        self._log.info(f"Base URL HTTP {self._http_client.base_url}", LogColor.BLUE)
-        self._log.info(f"Base URL WebSocket {base_url_ws}", LogColor.BLUE)
+        self._log.info(f"Base url HTTP {self._http_client.base_url}", LogColor.BLUE)
+        self._log.info(f"Base url WebSocket {base_url_ws}", LogColor.BLUE)
 
     @property
     def use_position_ids(self) -> bool:

@@ -170,8 +170,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             list[OrderBookDelta | OrderBookDeltas],
         ] = {}
 
-        self._log.info(f"Base URL HTTP {self._http_client.base_url}", LogColor.BLUE)
-        self._log.info(f"Base URL WebSocket {base_url_ws}", LogColor.BLUE)
+        self._log.info(f"Base url HTTP {self._http_client.base_url}", LogColor.BLUE)
+        self._log.info(f"Base url WebSocket {base_url_ws}", LogColor.BLUE)
 
         # Register common WebSocket message handlers
         self._ws_handlers = {
