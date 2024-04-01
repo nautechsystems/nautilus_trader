@@ -30,7 +30,7 @@ from nautilus_trader.model.identifiers import Venue
 
 
 class TestBybitInstrumentProvider:
-    def setup(self):
+    def setup(self) -> None:
         self.clock = LiveClock()
         self.http_client: BybitHttpClient = BybitHttpClient(
             clock=self.clock,

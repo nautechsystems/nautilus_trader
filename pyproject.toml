@@ -259,9 +259,20 @@ disallow_incomplete_defs = true
 explicit_package_bases = true
 ignore_missing_imports = true
 namespace_packages = true
+no_strict_optional = false
 warn_no_return = true
 warn_unused_configs = true
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+no_strict_optional = true
+module = [
+    "examples/*",
+    "nautilus_trader/adapters/betfair/*",
+    "nautilus_trader/adapters/binance/*",
+    "nautilus_trader/adapters/interactive_brokers/*",
+    "nautilus_trader/indicators/ta_lib/*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

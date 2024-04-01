@@ -1126,7 +1126,7 @@ class AccountState:
         self,
         account_id: AccountId,
         account_type: AccountType,
-        base_currency: Currency,
+        base_currency: Currency | None,
         balances: list[AccountBalance],
         margins: list[MarginBalance],
         is_reported: bool,

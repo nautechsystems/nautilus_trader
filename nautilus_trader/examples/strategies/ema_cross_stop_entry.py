@@ -36,6 +36,7 @@ from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orders import MarketIfTouchedOrder
 from nautilus_trader.model.orders import TrailingStopMarketOrder
 from nautilus_trader.trading.strategy import Strategy
@@ -145,7 +146,7 @@ class EMACrossStopEntry(Strategy):
         self.atr = AverageTrueRange(config.atr_period)
 
         self.instrument: Instrument | None = None  # Initialized in `on_start()`
-        self.tick_size = None  # Initialized in `on_start()`
+        self.tick_size: Price | None = None  # Initialized in `on_start()`
 
         # Users order management variables
         self.entry = None
@@ -266,6 +267,10 @@ class EMACrossStopEntry(Strategy):
             self.log.error("No instrument loaded")
             return
 
+        if not self.tick_size:
+            self.log.error("No tick size loaded")
+            return
+
         order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
@@ -299,6 +304,10 @@ class EMACrossStopEntry(Strategy):
         """
         if not self.instrument:
             self.log.error("No instrument loaded")
+            return
+
+        if not self.tick_size:
+            self.log.error("No tick size loaded")
             return
 
         order: MarketIfTouchedOrder = self.order_factory.market_if_touched(

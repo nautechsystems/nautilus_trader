@@ -36,6 +36,7 @@ def main(
         with fsspec.open(fsspec_url, "rb") as f:
             data = f.read().decode()
     else:
+        assert raw is not None  # Type checking
         data = raw.encode()
 
     configs = msgspec.json.decode(

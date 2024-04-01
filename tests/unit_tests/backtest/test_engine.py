@@ -221,7 +221,7 @@ class TestBacktestEngine:
             path=tmp_path,
             fs_protocol="file",
         )
-        config = TestConfigStubs.backtest_engine_config(persist=True, catalog=catalog)
+        config = TestConfigStubs.backtest_engine_config(catalog=catalog, persist=True)
         engine = TestComponentStubs.backtest_engine(
             config=config,
             instrument=self.usdjpy,

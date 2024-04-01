@@ -75,7 +75,7 @@ class BetfairHttpClient:
         username: str,
         password: str,
         app_key: str,
-    ):
+    ) -> None:
         # Config
         self.username = username
         self.password = password
@@ -124,7 +124,7 @@ class BetfairHttpClient:
             },
         )
 
-    def reset_headers(self):
+    def reset_headers(self) -> None:
         self._headers = {
             "Accept": "application/json",
             "Content-Type": "application/x-www-form-urlencoded",
@@ -132,7 +132,7 @@ class BetfairHttpClient:
             "X-Application": self.app_key,
         }
 
-    async def connect(self):
+    async def connect(self) -> None:
         if self.session_token is not None:
             self._log.warning("Session token exists (already connected), skipping")
             return
@@ -145,12 +145,12 @@ class BetfairHttpClient:
         self._log.info("Login success", color=LogColor.GREEN)
         self.update_headers(login_resp=resp)
 
-    async def disconnect(self):
+    async def disconnect(self) -> None:
         self._log.info("Disconnecting...")
         self.reset_headers()
         self._log.info("Disconnected", color=LogColor.GREEN)
 
-    async def keep_alive(self):
+    async def keep_alive(self) -> None:
         """
         Renew authentication.
         """
