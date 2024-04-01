@@ -32,7 +32,7 @@ from nautilus_trader.adapters.bybit.common.parsing import get_interval_from_bar_
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
-from nautilus_trader.adapters.bybit.provider import BybitInstrumentProvider
+from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.schemas.ws import BYBIT_PONG
