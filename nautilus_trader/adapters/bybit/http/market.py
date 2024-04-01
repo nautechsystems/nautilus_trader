@@ -15,7 +15,6 @@
 
 from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
-from nautilus_trader.adapters.bybit.common.parsing import get_category_from_product_type
 
 # fmt: off
 from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoEndpoint
@@ -123,7 +122,7 @@ class BybitMarketHttpAPI:
     ) -> list[BybitKline]:
         response = await self._endpoint_klines.get(
             params=BybitKlinesGetParams(
-                category=get_category_from_product_type(product_type),
+                category=product_type.value,
                 symbol=symbol,
                 interval=interval,
                 limit=limit,
@@ -141,7 +140,7 @@ class BybitMarketHttpAPI:
     ) -> list[BybitTrade]:
         response = await self._endpoint_trades.get(
             params=BybitTradesGetParams(
-                category=get_category_from_product_type(product_type),
+                category=product_type.value,
                 symbol=symbol,
                 limit=limit,
             ),
@@ -155,7 +154,7 @@ class BybitMarketHttpAPI:
         limit: int = 1000,
     ) -> list[Bar]:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
-        assert bybit_symbol is not None  # type checking
+        assert bybit_symbol  # Type checking
         trades = await self.fetch_public_trades(
             symbol=bybit_symbol.raw_symbol,
             product_type=bybit_symbol.product_type,
@@ -176,7 +175,7 @@ class BybitMarketHttpAPI:
         all_bars = []
         while True:
             bybit_symbol = BybitSymbol(bar_type.instrument_id.symbol.value)
-            assert bybit_symbol is not None  # type checking
+            assert bybit_symbol  # Type checking
             klines = await self.fetch_klines(
                 symbol=bybit_symbol.raw_symbol,
                 product_type=bybit_symbol.product_type,

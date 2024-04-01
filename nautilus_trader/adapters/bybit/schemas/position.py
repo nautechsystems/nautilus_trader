@@ -44,7 +44,6 @@ class BybitPositionStruct(msgspec.Struct):
     bustPrice: str
     positionMM: str
     positionIM: str
-    tpslMode: str
     takeProfit: str
     stopLoss: str
     trailingStop: str
@@ -52,6 +51,7 @@ class BybitPositionStruct(msgspec.Struct):
     cumRealisedPnl: str
     createdTime: str
     updatedTime: str
+    tpslMode: str | None = None
 
     def parse_to_position_status_report(
         self,

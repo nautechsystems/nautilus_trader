@@ -15,7 +15,6 @@
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_HOUR_INTERVALS
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_MINUTE_INTERVALS
-from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
@@ -70,19 +69,6 @@ def parse_bybit_delta(
         ts_event=ts_event,
         ts_init=ts_init,
     )
-
-
-def get_category_from_product_type(product_type: BybitProductType) -> str:
-    if product_type == BybitProductType.SPOT:
-        return "spot"
-    elif product_type == BybitProductType.LINEAR:
-        return "linear"
-    elif product_type == BybitProductType.INVERSE:
-        return "inverse"
-    elif product_type == BybitProductType.OPTION:
-        return "option"
-    else:
-        raise ValueError(f"Unknown product type: {product_type}")
 
 
 def get_interval_from_bar_type(bar_type: BarType) -> str:

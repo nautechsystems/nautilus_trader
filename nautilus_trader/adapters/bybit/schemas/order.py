@@ -73,7 +73,7 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
     smpType: str
     smpGroup: int
     smpOrderId: str
-    tpslMode: str
+    tpslMode: str | None = None
     tpLimitPrice: str
     slLimitPrice: str
     placeType: str
