@@ -164,7 +164,7 @@ class BinanceWebSocketClient:
         # Re-subscribe to all streams
         self._loop.create_task(self._subscribe_all())
 
-        if self._handler_reconnect is not None:
+        if self._handler_reconnect:
             self._loop.create_task(self._handler_reconnect())  # type: ignore
 
     async def disconnect(self) -> None:

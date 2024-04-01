@@ -140,6 +140,7 @@ class BybitDataClient(LiveMarketDataClient):
             self._ws_clients[product_type] = BybitWebsocketClient(
                 clock=clock,
                 handler=partial(self._handle_ws_message, product_type),
+                handler_reconnect=None,
                 base_url=ws_urls[product_type],
                 api_key=config.api_key or get_api_key(config.testnet),
                 api_secret=config.api_secret or get_api_secret(config.testnet),

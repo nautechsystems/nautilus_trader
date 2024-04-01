@@ -153,6 +153,7 @@ class BybitExecutionClient(LiveExecutionClient):
         self._ws_client = BybitWebsocketClient(
             clock=clock,
             handler=self._handle_ws_message,
+            handler_reconnect=None,
             base_url=base_url_ws,
             is_private=True,
             api_key=config.api_key or get_api_key(config.testnet),
