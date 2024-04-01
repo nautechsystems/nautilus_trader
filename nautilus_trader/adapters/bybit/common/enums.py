@@ -41,6 +41,35 @@ class BybitPositionIdx(Enum):
 
 
 @unique
+class BybitAccountType(Enum):
+    UNIFIED = "UNIFIED"
+
+
+@unique
+class BybitProductType(Enum):
+    SPOT = "spot"
+    LINEAR = "linear"
+    INVERSE = "inverse"
+    OPTION = "option"
+
+    @property
+    def is_spot(self) -> bool:
+        return self == BybitProductType.SPOT
+
+    @property
+    def is_linear(self) -> bool:
+        return self == BybitProductType.LINEAR
+
+    @property
+    def is_inverse(self) -> bool:
+        return self == BybitProductType.INVERSE
+
+    @property
+    def is_option(self) -> bool:
+        return self == BybitProductType.OPTION
+
+
+@unique
 class BybitPositionSide(Enum):
     BUY = "Buy"
     SELL = "Sell"
@@ -95,7 +124,23 @@ class BybitOrderSide(Enum):
 class BybitOrderType(Enum):
     MARKET = "Market"
     LIMIT = "Limit"
-    UNKNOWN = "Unknown"
+    UNKNOWN = "Unknown"  # Used when execution type is Funding
+
+
+@unique
+class BybitStopOrderType(Enum):
+    NONE = ""  # Default
+    UNKNOWN = "UNKNOWN"  # Classic account value
+    TAKE_PROFIT = "TakeProfit"
+    STOP_LOSS = "StopLoss"
+    TRAILING_STOP = "TrailingStop"
+    STOP = "Stop"
+    PARTIAL_TAKE_PROFIT = "PartialTakeProfit"
+    PARTIAL_STOP_LOSS = "PartialStopLoss"
+    TPSL_ORDER = "tpslOrder"
+    OCO_ORDER = "OcoOrder"  # Spot only
+    MM_RATE_CLOSE = "MmRateClose"
+    BIDIRECTIONAL_TPSL_ORDER = "BidirectionalTpslOrder"
 
 
 @unique
@@ -114,24 +159,16 @@ class BybitTimeInForce(Enum):
 
 
 @unique
-class BybitAccountType(Enum):
-    UNIFIED = "UNIFIED"
-
-
-@unique
-class BybitProductType(Enum):
-    SPOT = "spot"
-    LINEAR = "linear"
-    INVERSE = "inverse"
-    OPTION = "option"
-
-    @property
-    def is_spot(self) -> bool:
-        return self in [BybitProductType.SPOT]
-
-    @property
-    def is_spot_or_margin(self) -> bool:
-        return self in [BybitProductType.SPOT]
+class BybitExecType(Enum):
+    TRADE = "Trade"
+    ADL_TRADE = "AdlTrade"  # Auto-Deleveraging
+    FUNDING = "Funding"  # Funding fee
+    BUST_TRADE = "BustTrade"  # Liquidation
+    DELIVERY = "Delivery"  # Delivery
+    SETTLE = "Settle"  # Settle Inverse futures settlement
+    BLOCK_TRADE = "BlockTrade"
+    MOVE_POSITION = "MovePosition"
+    UNKNOWN = "UNKNOWN"  # Classic account value (cannot be used to query)
 
 
 @unique
@@ -153,6 +190,14 @@ class BybitTransactionType(Enum):
     DELIVERY = "DELIVERY"
     LIQUIDATION = "LIQUIDATION"
     AIRDROP = "AIRDRP"
+
+
+@unique
+class BybitEndpointType(Enum):
+    NONE = "NONE"
+    MARKET = "MARKET"
+    ACCOUNT = "ACCOUNT"
+    TRADE = "TRADE"
 
 
 def check_dict_keys(key, data):
@@ -284,11 +329,3 @@ class BybitEnumParser:
             raise RuntimeError(
                 f"unrecognized Bybit bar type, was {bar_type}",  # pragma: no cover
             )
-
-
-@unique
-class BybitEndpointType(Enum):
-    NONE = "NONE"
-    MARKET = "MARKET"
-    ACCOUNT = "ACCOUNT"
-    TRADE = "TRADE"

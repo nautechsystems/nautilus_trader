@@ -276,8 +276,8 @@ class BybitWebsocketClient:
         timestamp = self._clock.timestamp_ms() + 1000
         sign = f"GET/realtime{timestamp}"
         signature = hmac.new(
-            self._api_secret.encode("utf-8"),
-            sign.encode("utf-8"),
+            self._api_secret.encode(),
+            sign.encode(),
             hashlib.sha256,
         ).hexdigest()
         return {

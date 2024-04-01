@@ -21,6 +21,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderStatus
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
+from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -58,7 +59,7 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
     cumExecFee: str
     timeInForce: BybitTimeInForce
     orderType: BybitOrderType
-    stopOrderType: str
+    stopOrderType: BybitStopOrderType | None = None
     orderIv: str
     triggerPrice: str
     takeProfit: str

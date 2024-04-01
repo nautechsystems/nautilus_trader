@@ -36,7 +36,7 @@ from nautilus_trader.model.identifiers import TraderId
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
-# LINEAR
+# SPOT/LINEAR
 product_type = BybitProductType.SPOT
 symbol = f"ETHUSDT-{product_type.value.upper()}"
 trade_size = Decimal("0.010")
@@ -44,7 +44,7 @@ trade_size = Decimal("0.010")
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(log_level="INFO"),
+    logging=LoggingConfig(log_level="INFO", use_pyo3=True),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
@@ -55,7 +55,6 @@ config_node = TradingNodeConfig(
     # ),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),
-    #     encoding="json",
     #     streams_prefix="quoters",
     #     use_instance_id=False,
     #     timestamps_as_iso8601=True,

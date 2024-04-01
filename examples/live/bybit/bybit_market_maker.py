@@ -39,7 +39,7 @@ from nautilus_trader.model.identifiers import TraderId
 # *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
 # *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
-# LINEAR
+# SPOT/LINEAR
 product_type = BybitProductType.LINEAR
 symbol = f"ETHUSDT-{product_type.value.upper()}"
 trade_size = Decimal("0.010")
@@ -59,13 +59,11 @@ config_node = TradingNodeConfig(
     ),
     # cache=CacheConfig(
     #     database=DatabaseConfig(),
-    #     encoding="json",
     #     timestamps_as_iso8601=True,
     #     buffer_interval_ms=100,
     # ),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),
-    #     encoding="json",
     #     timestamps_as_iso8601=True,
     #     buffer_interval_ms=100,
     #     streams_prefix="quoters",
