@@ -155,7 +155,7 @@ using the `BinanceAccountType` enum. The account type options are:
 - `USDT_FUTURE` (USDT or BUSD stablecoins as collateral)
 - `COIN_FUTURE` (other cryptocurrency as collateral)
 
-### Base URL overrides
+### Base url overrides
 
 It's possible to override the default base URLs for both HTTP Rest and
 WebSocket APIs. This is useful for configuring API clusters for performance reasons,
