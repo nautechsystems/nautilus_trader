@@ -13,25 +13,49 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Final
+
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 
 
+VALID_SUFFIXES: Final[list[str]] = ["-SPOT", "-LINEAR", "-INVERSE", "-OPTION"]
+
+
+def has_valid_bybit_suffix(symbol: str) -> bool:
+    """
+    Return whether the given `symbol` string contains a valid Bybit suffix.
+
+    Parameters
+    ----------
+    symbol : str
+        The symbol string value to check.
+
+    Returns
+    -------
+    bool
+        True if contains a valid suffix, else False.
+
+    """
+    for suffix in VALID_SUFFIXES:
+        if suffix in symbol:
+            return True
+    return False
+
+
 class BybitSymbol(str):
+    """
+    Represents a Bybit specific symbol containing a product type suffix.
+    """
+
     def __new__(cls, symbol: str | None):
         if symbol is not None:
-            # Check if it contains one dot BTCUSDT-LINEAR for example is the correct
-            # bybit symbol format
-            if (
-                symbol.find("-SPOT") == -1
-                and symbol.find("-LINEAR") == -1
-                and symbol.find("-INVERSE") == -1
-                and symbol.find("-OPTION") == -1
-            ):
+            if not has_valid_bybit_suffix(symbol):
                 raise ValueError(
-                    f"Invalid symbol {symbol}. Does not contain -LINEAR, -SPOT or -OPTION suffix",
+                    f"Invalid symbol '{symbol}': "
+                    f"does not contain a valid suffix from {VALID_SUFFIXES}",
                 )
             return super().__new__(
                 cls,
@@ -40,14 +64,32 @@ class BybitSymbol(str):
 
     @property
     def raw_symbol(self) -> str:
+        """
+        Return the raw Bybit symbol (without the product type suffix).
+
+        Returns
+        -------
+        str
+
+        """
         return str(self).split("-")[0]
 
     @property
     def product_type(self) -> BybitProductType:
-        if "-LINEAR" in self:
-            return BybitProductType.LINEAR
-        elif "-SPOT" in self:
+        """
+        Return the Bybit product type for the symbol.
+
+        Returns
+        -------
+        BybitProductType
+
+        """
+        if "-SPOT" in self:
             return BybitProductType.SPOT
+        elif "-LINEAR" in self:
+            return BybitProductType.LINEAR
+        elif "-INVERSE" in self:
+            return BybitProductType.INVERSE
         elif "-OPTION" in self:
             return BybitProductType.OPTION
         else:
@@ -55,16 +97,59 @@ class BybitSymbol(str):
 
     @property
     def is_spot(self) -> bool:
+        """
+        Return whether a SPOT product type.
+
+        Returns
+        -------
+        bool
+
+        """
         return self.product_type == BybitProductType.SPOT
 
     @property
     def is_linear(self) -> bool:
+        """
+        Return whether a LINEAR product type.
+
+        Returns
+        -------
+        bool
+
+        """
         return self.product_type == BybitProductType.LINEAR
 
     @property
+    def is_inverse(self) -> bool:
+        """
+        Return whether an INVERSE product type.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.product_type == BybitProductType.INVERSE
+
+    @property
     def is_option(self) -> bool:
+        """
+        Return whether an OPTION product type.
+
+        Returns
+        -------
+        bool
+
+        """
         return self.product_type == BybitProductType.OPTION
 
     def parse_as_nautilus(self) -> InstrumentId:
-        instrument = InstrumentId(Symbol(str(self)), BYBIT_VENUE)
-        return instrument
+        """
+        Parse the Bybit symbol into a Nautilus instrument ID.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return InstrumentId(Symbol(str(self)), BYBIT_VENUE)

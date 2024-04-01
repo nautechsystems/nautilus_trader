@@ -86,11 +86,16 @@ class BybitAccountHttpAPI:
         product_type: BybitProductType,
         symbol: str | None = None,
     ) -> list[BybitPositionStruct]:
-        # symbol = 'USD'
+        match product_type:
+            case BybitProductType.INVERSE:
+                settle_coin = None
+            case _:
+                settle_coin = self.default_settle_coin if symbol is None else None
+
         response = await self._endpoint_position_info.get(
             PositionInfoGetParams(
                 symbol=symbol,
-                settleCoin=(self.default_settle_coin if symbol is None else None),
+                settleCoin=settle_coin,
                 category=get_category_from_product_type(product_type),
             ),
         )
@@ -106,11 +111,17 @@ class BybitAccountHttpAPI:
         product_type: BybitProductType,
         symbol: str | None = None,
     ) -> list[BybitOrder]:
+        match product_type:
+            case BybitProductType.INVERSE:
+                settle_coin = None
+            case _:
+                settle_coin = self.default_settle_coin if symbol is None else None
+
         response = await self._endpoint_open_orders.get(
             BybitOpenOrdersGetParams(
                 category=product_type,
                 symbol=symbol,
-                settleCoin=(self.default_settle_coin if symbol is None else None),
+                settleCoin=settle_coin,
             ),
         )
         return response.result.list
