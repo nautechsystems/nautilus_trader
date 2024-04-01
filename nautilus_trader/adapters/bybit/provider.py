@@ -106,9 +106,9 @@ class BybitInstrumentProvider(InstrumentProvider):
                     self._parse_instrument(instrument, target_fee_rate)
                 else:
                     self._log.warning(
-                        f"Unable to find fee rate for instrument {instrument}.",
+                        f"Unable to find fee rate for instrument {instrument}",
                     )
-        self._log.info(f"Loaded {len(self._instruments)} instruments.")
+        self._log.info(f"Loaded {len(self._instruments)} instruments")
 
     async def load_ids_async(
         self,
@@ -116,7 +116,7 @@ class BybitInstrumentProvider(InstrumentProvider):
         filters: dict | None = None,
     ) -> None:
         if not instrument_ids:
-            self._log.info("No instrument IDs given for loading.")
+            self._log.info("No instrument IDs given for loading")
             return
 
         # Check all instrument IDs
@@ -124,7 +124,7 @@ class BybitInstrumentProvider(InstrumentProvider):
             PyCondition.equal(instrument_id.venue, BYBIT_VENUE, "instrument_id.venue", "BYBIT")
 
         filters_str = "..." if not filters else f" with filters {filters}..."
-        self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
+        self._log.info(f"Loading instruments {instrument_ids}{filters_str}")
 
         # extract symbol strings and product types
         # for instrument_id in instrument_ids:
@@ -172,7 +172,7 @@ class BybitInstrumentProvider(InstrumentProvider):
             self.add(instrument=instrument)
         except ValueError as e:
             if self._log_warnings:
-                self._log.warning(f"Unable to parse option instrument {data.symbol}, {e}.")
+                self._log.warning(f"Unable to parse option instrument {data.symbol}, {e}")
 
     def _parse_option_instrument(
         self,
@@ -182,7 +182,7 @@ class BybitInstrumentProvider(InstrumentProvider):
             pass
         except ValueError as e:
             if self._log_warnings:
-                self._log.warning(f"Unable to parse option instrument {instrument.symbol}, {e}.")
+                self._log.warning(f"Unable to parse option instrument {instrument.symbol}, {e}")
 
     def _parse_linear_instrument(
         self,
@@ -204,4 +204,4 @@ class BybitInstrumentProvider(InstrumentProvider):
             self.add(instrument=instrument)
         except ValueError as e:
             if self._log_warnings:
-                self._log.warning(f"Unable to parse instrument {data.symbol}, {e}.")
+                self._log.warning(f"Unable to parse instrument {data.symbol}, {e}")
