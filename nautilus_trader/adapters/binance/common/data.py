@@ -902,7 +902,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
         binance_symbol = BinanceSymbol(symbol)
-        assert binance_symbol  # type checking
+        assert binance_symbol  # Type checking
         nautilus_symbol: str = binance_symbol.parse_as_nautilus(
             self._binance_account_type,
         )

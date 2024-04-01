@@ -138,7 +138,7 @@ class BybitInstrumentLinear(msgspec.Struct):
         base_currency = self.parse_to_base_currency()
         quote_currency = self.parse_to_quote_currency()
         bybit_symbol = BybitSymbol(self.symbol + "-LINEAR")
-        assert bybit_symbol is not None  # Type checking
+        assert bybit_symbol  # Type checking
         instrument_id = bybit_symbol.parse_as_nautilus()
         if self.settleCoin == self.baseCoin:
             settlement_currency = base_currency
@@ -228,7 +228,7 @@ class BybitInstrumentInverse(msgspec.Struct):
         base_currency = self.parse_to_base_currency()
         quote_currency = self.parse_to_quote_currency()
         bybit_symbol = BybitSymbol(self.symbol + "-INVERSE")
-        assert bybit_symbol is not None  # Type checking
+        assert bybit_symbol  # Type checking
         instrument_id = bybit_symbol.parse_as_nautilus()
         if self.settleCoin == self.baseCoin:
             settlement_currency = base_currency

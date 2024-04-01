@@ -34,7 +34,7 @@ def main(
     if fsspec_url and raw is None:
         with fsspec.open(fsspec_url, "rb") as f:
             raw = f.read().decode()
-    assert raw is not None  # type checking
+    assert raw is not None  # Type checking
     config: TradingNodeConfig = msgspec.json.decode(raw, type=TradingNodeConfig)
     node = TradingNode(config=config)
     node.build()

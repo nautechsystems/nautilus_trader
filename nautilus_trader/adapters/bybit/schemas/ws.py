@@ -577,13 +577,13 @@ class BybitWsAccountPosition(msgspec.Struct):
     cumRealisedPnl: str
     createdTime: str
     updatedTime: str
-    tpslMode: str
     liqPrice: str
     bustPrice: str
     category: str
     positionStatus: str
     adlRankIndicator: int
     seq: int
+    tpslMode: str | None = None
 
 
 class BybitWsAccountPositionMsg(msgspec.Struct):
@@ -624,7 +624,6 @@ class BybitWsAccountOrder(msgspec.Struct):
     updatedTime: str
     rejectReason: str
     stopOrderType: str
-    tpslMode: str
     triggerPrice: str
     takeProfit: str
     stopLoss: str
@@ -641,6 +640,7 @@ class BybitWsAccountOrder(msgspec.Struct):
     smpGroup: int
     smpOrderId: str
     feeCurrency: str
+    tpslMode: str | None = None
 
     def parse_to_order_status_report(
         self,

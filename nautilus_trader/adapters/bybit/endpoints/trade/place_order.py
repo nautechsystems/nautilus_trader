@@ -31,6 +31,7 @@ class BybitPlaceOrderGetParams(msgspec.Struct, omit_defaults=True, frozen=False)
     symbol: str
     side: BybitOrderSide
     qty: str
+    marketUnit: str | None = None
     orderType: BybitOrderType | None = None
     price: str | None = None
     trigger_direction: int | None = None  # TODO type this

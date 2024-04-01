@@ -19,7 +19,6 @@ from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
-from nautilus_trader.adapters.bybit.common.parsing import get_category_from_product_type
 from nautilus_trader.adapters.bybit.endpoints.account.fee_rate import BybitFeeRateEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.fee_rate import BybitFeeRateGetParams
 from nautilus_trader.adapters.bybit.endpoints.account.position_info import BybitPositionInfoEndpoint
@@ -96,7 +95,7 @@ class BybitAccountHttpAPI:
             PositionInfoGetParams(
                 symbol=symbol,
                 settleCoin=settle_coin,
-                category=get_category_from_product_type(product_type),
+                category=product_type.value,
             ),
         )
         return response.result.list
@@ -148,7 +147,7 @@ class BybitAccountHttpAPI:
     ) -> list[Any]:
         response = await self._endpoint_cancel_all_orders.post(
             BybitCancelAllOrdersPostParams(
-                category=get_category_from_product_type(product_type),
+                category=product_type.value,
                 symbol=symbol,
             ),
         )
@@ -171,20 +170,24 @@ class BybitAccountHttpAPI:
         symbol: str,
         side: BybitOrderSide,
         quantity: str,
+        quote_quantity: bool,
         order_type: BybitOrderType,
-        time_in_force: BybitTimeInForce | None = None,
         price: str | None = None,
-        order_id: str | None = None,
+        time_in_force: BybitTimeInForce | None = None,
+        client_order_id: str | None = None,
     ) -> BybitPlaceOrder:
+        market_unit = "baseCoin" if not quote_quantity else "quoteCoin"
         result = await self._endpoint_order.post(
             params=BybitPlaceOrderGetParams(
-                category=get_category_from_product_type(product_type),
+                category=product_type.value,
                 symbol=symbol,
                 side=side,
                 orderType=order_type,
                 qty=quantity,
+                marketUnit=market_unit,
                 price=price,
-                orderLinkId=order_id,
+                timeInForce=time_in_force,
+                orderLinkId=client_order_id,
             ),
         )
         return result.result

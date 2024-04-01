@@ -330,7 +330,7 @@ class BybitExecutionClient(LiveExecutionClient):
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
         bybit_symbol = BybitSymbol(symbol + "-LINEAR")  # TODO: Determine how to handle products
-        assert bybit_symbol  # type checking
+        assert bybit_symbol  # Type checking
         nautilus_instrument_id: InstrumentId = bybit_symbol.parse_as_nautilus()
         return nautilus_instrument_id
 
@@ -359,7 +359,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         if order.is_post_only:
             return BybitTimeInForce.POST_ONLY
-        return self._enum_parser.parse_bybit_time_in_force(time_in_force)
+        return self._enum_parser.parse_nautilus_time_in_force(time_in_force)
 
     async def _get_active_position_symbols(self, symbol: str | None) -> set[str]:
         active_symbols: set[str] = set()
@@ -392,7 +392,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
-        assert bybit_symbol is not None  # Type checking
+        assert bybit_symbol  # Type checking
         await self._http_account.cancel_all_orders(
             BybitProductType.LINEAR,
             bybit_symbol.raw_symbol,
@@ -441,14 +441,12 @@ class BybitExecutionClient(LiveExecutionClient):
                 f"Cannot submit {order} has invalid post only {order.is_post_only}, unsupported on Bybit",
             )
             return False
+
         return True
 
     async def _submit_market_order(self, order: MarketOrder) -> None:
-        pass
-
-    async def _submit_limit_order(self, order: LimitOrder) -> None:
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
-        assert bybit_symbol  # type checking
+        assert bybit_symbol  # Type checking
         time_in_force = self._determine_time_in_force(order)
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
         order_type = self._enum_parser.parse_nautilus_order_type(order.order_type)
@@ -457,10 +455,28 @@ class BybitExecutionClient(LiveExecutionClient):
             symbol=bybit_symbol.raw_symbol,
             side=order_side,
             order_type=order_type,
-            time_in_force=time_in_force,
             quantity=str(order.quantity),
+            quote_quantity=order.is_quote_quantity,
+            time_in_force=time_in_force,
+            client_order_id=str(order.client_order_id),
+        )
+
+    async def _submit_limit_order(self, order: LimitOrder) -> None:
+        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
+        assert bybit_symbol  # Type checking
+        time_in_force = self._determine_time_in_force(order)
+        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
+        order_type = self._enum_parser.parse_nautilus_order_type(order.order_type)
+        order = await self._http_account.place_order(
+            product_type=bybit_symbol.product_type,
+            symbol=bybit_symbol.raw_symbol,
+            side=order_side,
+            order_type=order_type,
+            quantity=str(order.quantity),
+            quote_quantity=order.is_quote_quantity,
             price=str(order.price),
-            order_id=str(order.client_order_id),
+            time_in_force=time_in_force,
+            client_order_id=str(order.client_order_id),
         )
 
     def _handle_ws_message(self, raw: bytes) -> None:
