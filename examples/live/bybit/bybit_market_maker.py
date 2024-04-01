@@ -39,7 +39,15 @@ from nautilus_trader.model.identifiers import TraderId
 # *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
 # *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
+# LINEAR
 product_type = BybitProductType.LINEAR
+symbol = f"ETHUSDT-{product_type.value.upper()}"
+trade_size = Decimal("0.010")
+
+# INVERSE
+# product_type = BybitProductType.INVERSE
+# symbol = f"XRPUSD-{product_type.value.upper()}"  # Use for inverse
+# trade_size = Decimal("100")  # Use for inverse
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -101,14 +109,13 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-symbol = f"ETHUSDT-{product_type.value.upper()}"
 strat_config = VolatilityMarketMakerConfig(
     instrument_id=InstrumentId.from_str(f"{symbol}.BYBIT"),
     external_order_claims=[InstrumentId.from_str(f"{symbol}.BYBIT")],
     bar_type=BarType.from_str(f"{symbol}.BYBIT-1-MINUTE-LAST-EXTERNAL"),
     atr_period=20,
-    atr_multiple=6.0,
-    trade_size=Decimal("0.010"),
+    atr_multiple=3.0,
+    trade_size=trade_size,
 )
 # Instantiate your strategy
 strategy = VolatilityMarketMaker(config=strat_config)

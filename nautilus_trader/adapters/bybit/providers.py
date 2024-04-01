@@ -22,6 +22,7 @@ from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
 from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrument
+from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentInverse
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentLinear
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentList
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentOption
@@ -144,10 +145,12 @@ class BybitInstrumentProvider(InstrumentProvider):
             self._parse_spot_instrument(instrument, fee_rate)
         elif isinstance(instrument, BybitInstrumentLinear):
             self._parse_linear_instrument(instrument, fee_rate)
+        elif isinstance(instrument, BybitInstrumentInverse):
+            self._parse_inverse_instrument(instrument, fee_rate)
         elif isinstance(instrument, BybitInstrumentOption):
             self._parse_option_instrument(instrument)
         else:
-            raise TypeError("Unsupported instrument type in BybitInstrumentProvider")
+            raise TypeError(f"Unsupported Bybit instrument, was {instrument}")
 
     async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
@@ -174,16 +177,6 @@ class BybitInstrumentProvider(InstrumentProvider):
             if self._log_warnings:
                 self._log.warning(f"Unable to parse option instrument {data.symbol}, {e}")
 
-    def _parse_option_instrument(
-        self,
-        instrument: BybitInstrumentOption,
-    ) -> None:
-        try:
-            pass
-        except ValueError as e:
-            if self._log_warnings:
-                self._log.warning(f"Unable to parse option instrument {instrument.symbol}, {e}")
-
     def _parse_linear_instrument(
         self,
         data: BybitInstrumentLinear,
@@ -204,4 +197,36 @@ class BybitInstrumentProvider(InstrumentProvider):
             self.add(instrument=instrument)
         except ValueError as e:
             if self._log_warnings:
-                self._log.warning(f"Unable to parse instrument {data.symbol}, {e}")
+                self._log.warning(f"Unable to parse linear instrument {data.symbol}, {e}")
+
+    def _parse_inverse_instrument(
+        self,
+        data: BybitInstrumentInverse,
+        fee_rate: BybitFeeRate,
+    ) -> None:
+        try:
+            base_currency = data.parse_to_base_currency()
+            quote_currency = data.parse_to_quote_currency()
+            ts_event = self._clock.timestamp_ns()
+            ts_init = self._clock.timestamp_ns()
+            instrument = data.parse_to_instrument(
+                fee_rate=fee_rate,
+                ts_event=ts_event,
+                ts_init=ts_init,
+            )
+            self.add_currency(base_currency)
+            self.add_currency(quote_currency)
+            self.add(instrument=instrument)
+        except ValueError as e:
+            if self._log_warnings:
+                self._log.warning(f"Unable to parse inverse instrument {data.symbol}, {e}")
+
+    def _parse_option_instrument(
+        self,
+        instrument: BybitInstrumentOption,
+    ) -> None:
+        try:
+            pass
+        except ValueError as e:
+            if self._log_warnings:
+                self._log.warning(f"Unable to parse option instrument {instrument.symbol}, {e}")

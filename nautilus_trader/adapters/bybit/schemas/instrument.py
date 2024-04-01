@@ -93,7 +93,7 @@ class BybitInstrumentSpot(msgspec.Struct):
             name=self.baseCoin,
             currency_type=CurrencyType.CRYPTO,
             precision=abs(int(Decimal(self.lotSizeFilter.basePrecision).as_tuple().exponent)),
-            iso4217=0,  # Currently undetermined for crypto assets
+            iso4217=0,  # Currently unspecified for crypto assets
         )
 
     def parse_to_quote_currency(self) -> Currency:
@@ -102,7 +102,7 @@ class BybitInstrumentSpot(msgspec.Struct):
             name=self.quoteCoin,
             currency_type=CurrencyType.CRYPTO,
             precision=abs(int(Decimal(self.lotSizeFilter.quotePrecision).as_tuple().exponent)),
-            iso4217=0,  # Currently undetermined for crypto assets
+            iso4217=0,  # Currently unspecified for crypto assets
         )
 
 
@@ -110,6 +110,186 @@ def get_strike_price_from_symbol(symbol: str) -> int:
     ## symbols are in the format of ETH-3JAN23-1250-P
     ## where the strike price is 1250
     return int(symbol.split("-")[2])
+
+
+class BybitInstrumentLinear(msgspec.Struct):
+    symbol: str
+    contractType: str
+    status: str
+    baseCoin: str
+    quoteCoin: str
+    launchTime: str
+    deliveryTime: str
+    deliveryFeeRate: str
+    priceScale: str
+    leverageFilter: LeverageFilter
+    priceFilter: LinearPriceFilter
+    lotSizeFilter: LotSizeFilter
+    unifiedMarginTrade: bool
+    fundingInterval: int
+    settleCoin: str
+
+    def parse_to_instrument(
+        self,
+        fee_rate: BybitFeeRate,
+        ts_event: int,
+        ts_init: int,
+    ) -> CryptoPerpetual:
+        base_currency = self.parse_to_base_currency()
+        quote_currency = self.parse_to_quote_currency()
+        bybit_symbol = BybitSymbol(self.symbol + "-LINEAR")
+        assert bybit_symbol is not None  # Type checking
+        instrument_id = bybit_symbol.parse_as_nautilus()
+        if self.settleCoin == self.baseCoin:
+            settlement_currency = base_currency
+        elif self.settleCoin == self.quoteCoin:
+            settlement_currency = quote_currency
+        else:
+            raise ValueError(f"Unrecognized margin asset {self.settleCoin}")
+
+        price_increment = Price.from_str(self.priceFilter.tickSize)
+        size_increment = Quantity.from_str(self.lotSizeFilter.qtyStep)
+        max_quantity = Quantity.from_str(self.lotSizeFilter.maxOrderQty)
+        min_quantity = Quantity.from_str(self.lotSizeFilter.minOrderQty)
+        max_price = Price.from_str(self.priceFilter.maxPrice)
+        min_price = Price.from_str(self.priceFilter.minPrice)
+        maker_fee = fee_rate.makerFeeRate
+        taker_fee = fee_rate.takerFeeRate
+
+        instrument = CryptoPerpetual(
+            instrument_id=instrument_id,
+            raw_symbol=Symbol(str(bybit_symbol)),
+            base_currency=base_currency,
+            quote_currency=quote_currency,
+            settlement_currency=settlement_currency,
+            is_inverse=False,
+            price_precision=price_increment.precision,
+            size_precision=size_increment.precision,
+            price_increment=price_increment,
+            size_increment=size_increment,
+            max_quantity=max_quantity,
+            min_quantity=min_quantity,
+            max_notional=None,
+            min_notional=None,
+            max_price=max_price,
+            min_price=min_price,
+            margin_init=Decimal("0.1"),
+            margin_maint=Decimal("0.1"),
+            maker_fee=Decimal(maker_fee),
+            taker_fee=Decimal(taker_fee),
+            ts_event=ts_event,
+            ts_init=ts_init,
+            info=msgspec.json.Decoder().decode(msgspec.json.Encoder().encode(self)),
+        )
+        return instrument
+
+    def parse_to_base_currency(self) -> Currency:
+        return Currency(
+            code=self.baseCoin,
+            name=self.baseCoin,
+            currency_type=CurrencyType.CRYPTO,
+            precision=int(self.priceScale),
+            iso4217=0,  # Currently unspecified for crypto assets
+        )
+
+    def parse_to_quote_currency(self) -> Currency:
+        return Currency(
+            code=self.quoteCoin,
+            name=self.quoteCoin,
+            currency_type=CurrencyType.CRYPTO,
+            precision=int(self.priceScale),
+            iso4217=0,  # Currently unspecified for crypto assets
+        )
+
+
+class BybitInstrumentInverse(msgspec.Struct):
+    symbol: str
+    contractType: str
+    status: str
+    baseCoin: str
+    quoteCoin: str
+    launchTime: str
+    deliveryTime: str
+    deliveryFeeRate: str
+    priceScale: str
+    leverageFilter: LeverageFilter
+    priceFilter: LinearPriceFilter
+    lotSizeFilter: LotSizeFilter
+    unifiedMarginTrade: bool
+    fundingInterval: int
+    settleCoin: str
+
+    def parse_to_instrument(
+        self,
+        fee_rate: BybitFeeRate,
+        ts_event: int,
+        ts_init: int,
+    ) -> CryptoPerpetual:
+        base_currency = self.parse_to_base_currency()
+        quote_currency = self.parse_to_quote_currency()
+        bybit_symbol = BybitSymbol(self.symbol + "-INVERSE")
+        assert bybit_symbol is not None  # Type checking
+        instrument_id = bybit_symbol.parse_as_nautilus()
+        if self.settleCoin == self.baseCoin:
+            settlement_currency = base_currency
+        elif self.settleCoin == self.quoteCoin:
+            settlement_currency = quote_currency
+        else:
+            raise ValueError(f"Unrecognized margin asset {self.settleCoin}")
+
+        price_increment = Price.from_str(self.priceFilter.tickSize)
+        size_increment = Quantity.from_str(self.lotSizeFilter.qtyStep)
+        max_quantity = Quantity.from_str(self.lotSizeFilter.maxOrderQty)
+        min_quantity = Quantity.from_str(self.lotSizeFilter.minOrderQty)
+        max_price = Price.from_str(self.priceFilter.maxPrice)
+        min_price = Price.from_str(self.priceFilter.minPrice)
+        maker_fee = fee_rate.makerFeeRate
+        taker_fee = fee_rate.takerFeeRate
+
+        instrument = CryptoPerpetual(
+            instrument_id=instrument_id,
+            raw_symbol=Symbol(str(bybit_symbol)),
+            base_currency=base_currency,
+            quote_currency=quote_currency,
+            settlement_currency=settlement_currency,
+            is_inverse=True,
+            price_precision=price_increment.precision,
+            size_precision=size_increment.precision,
+            price_increment=price_increment,
+            size_increment=size_increment,
+            max_quantity=max_quantity,
+            min_quantity=min_quantity,
+            max_notional=None,
+            min_notional=None,
+            max_price=max_price,
+            min_price=min_price,
+            margin_init=Decimal("0.1"),
+            margin_maint=Decimal("0.1"),
+            maker_fee=Decimal(maker_fee),
+            taker_fee=Decimal(taker_fee),
+            ts_event=ts_event,
+            ts_init=ts_init,
+            info=msgspec.json.Decoder().decode(msgspec.json.Encoder().encode(self)),
+        )
+        return instrument
+
+    def parse_to_base_currency(self) -> Currency:
+        return Currency(
+            code=self.baseCoin,
+            name=self.baseCoin,
+            currency_type=CurrencyType.CRYPTO,
+            precision=int(self.priceScale),
+            iso4217=0,  # Currently unspecified for crypto assets
+        )
+
+    def parse_to_quote_currency(self) -> Currency:
+        return Currency(
+            code=self.quoteCoin,
+            name=self.quoteCoin,
+            currency_type=CurrencyType.CRYPTO,
+            precision=int(self.priceScale),
+            iso4217=0,  # Currently unspecified for crypto assets
+        )
 
 
 class BybitInstrumentOption(msgspec.Struct):
@@ -167,105 +347,27 @@ class BybitInstrumentOption(msgspec.Struct):
             name=self.quoteCoin,
             currency_type=CurrencyType.CRYPTO,
             precision=1,
-            iso4217=0,  # Currently undetermined for crypto assets
+            iso4217=0,  # Currently unspecified for crypto assets
         )
 
 
-class BybitInstrumentLinear(msgspec.Struct):
-    symbol: str
-    contractType: str
-    status: str
-    baseCoin: str
-    quoteCoin: str
-    launchTime: str
-    deliveryTime: str
-    deliveryFeeRate: str
-    priceScale: str
-    leverageFilter: LeverageFilter
-    priceFilter: LinearPriceFilter
-    lotSizeFilter: LotSizeFilter
-    unifiedMarginTrade: bool
-    fundingInterval: int
-    settleCoin: str
-
-    def parse_to_instrument(
-        self,
-        fee_rate: BybitFeeRate,
-        ts_event: int,
-        ts_init: int,
-    ) -> CryptoPerpetual:
-        base_currency = self.parse_to_base_currency()
-        quote_currency = self.parse_to_quote_currency()
-        bybit_symbol = BybitSymbol(self.symbol + "-LINEAR")
-        assert bybit_symbol is not None  # Type checking
-        instrument_id = bybit_symbol.parse_as_nautilus()
-        if self.settleCoin == self.baseCoin:
-            settlement_currency = base_currency
-        elif self.settleCoin == self.quoteCoin:
-            settlement_currency = quote_currency
-        else:
-            raise ValueError(f"Unrecognized margin asset {self.settleCoin}")
-
-        price_increment = Price.from_str(self.priceFilter.tickSize)
-        size_increment = Quantity.from_str(self.lotSizeFilter.qtyStep)
-        max_quantity = Quantity.from_str(self.lotSizeFilter.maxOrderQty)
-        min_quantity = Quantity.from_str(self.lotSizeFilter.minOrderQty)
-        max_price = Price.from_str(self.priceFilter.maxPrice)
-        min_price = Price.from_str(self.priceFilter.minPrice)
-        maker_fee = fee_rate.makerFeeRate
-        taker_fee = fee_rate.takerFeeRate
-
-        instrument = CryptoPerpetual(
-            instrument_id=instrument_id,
-            raw_symbol=Symbol(str(bybit_symbol)),
-            base_currency=base_currency,
-            quote_currency=quote_currency,
-            settlement_currency=settlement_currency,
-            is_inverse=False,  # No inverse instruments trade on Bybit
-            price_precision=price_increment.precision,
-            size_precision=size_increment.precision,
-            price_increment=price_increment,
-            size_increment=size_increment,
-            max_quantity=max_quantity,
-            min_quantity=min_quantity,
-            max_notional=None,
-            min_notional=None,
-            max_price=max_price,
-            min_price=min_price,
-            margin_init=Decimal("0.1"),
-            margin_maint=Decimal("0.1"),
-            maker_fee=Decimal(maker_fee),
-            taker_fee=Decimal(taker_fee),
-            ts_event=ts_event,
-            ts_init=ts_init,
-            info=msgspec.json.Decoder().decode(msgspec.json.Encoder().encode(self)),
-        )
-        return instrument
-
-    def parse_to_base_currency(self) -> Currency:
-        return Currency(
-            code=self.baseCoin,
-            name=self.baseCoin,
-            currency_type=CurrencyType.CRYPTO,
-            precision=int(self.priceScale),
-            iso4217=0,  # Currently undetermined for crypto assets
-        )
-
-    def parse_to_quote_currency(self) -> Currency:
-        return Currency(
-            code=self.quoteCoin,
-            name=self.quoteCoin,
-            currency_type=CurrencyType.CRYPTO,
-            precision=int(self.priceScale),
-            iso4217=0,  # Currently undetermined for crypto assets
-        )
-
-
-BybitInstrument = BybitInstrumentLinear | BybitInstrumentSpot | BybitInstrumentOption
+BybitInstrument = (
+    BybitInstrumentSpot | BybitInstrumentLinear | BybitInstrumentInverse | BybitInstrumentOption
+)
 
 BybitInstrumentList = (
-    list[BybitInstrumentLinear] | list[BybitInstrumentSpot] | list[BybitInstrumentOption]
+    list[BybitInstrumentSpot]
+    | list[BybitInstrumentLinear]
+    | list[BybitInstrumentInverse]
+    | list[BybitInstrumentOption]
 )
+
+
+class BybitInstrumentsSpotResponse(msgspec.Struct):
+    retCode: int
+    retMsg: str
+    result: BybitListResult[BybitInstrumentSpot]
+    time: int
 
 
 class BybitInstrumentsLinearResponse(msgspec.Struct):
@@ -275,10 +377,10 @@ class BybitInstrumentsLinearResponse(msgspec.Struct):
     time: int
 
 
-class BybitInstrumentsSpotResponse(msgspec.Struct):
+class BybitInstrumentsInverseResponse(msgspec.Struct):
     retCode: int
     retMsg: str
-    result: BybitListResult[BybitInstrumentSpot]
+    result: BybitListResult[BybitInstrumentInverse]
     time: int
 
 

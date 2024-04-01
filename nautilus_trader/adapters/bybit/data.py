@@ -152,8 +152,9 @@ class BybitDataClient(LiveMarketDataClient):
             self._decoders["trade"][product_type] = decoder_ws_trade()
             self._decoders["ticker"][product_type] = decoder_ws_ticker(product_type)
             self._decoders["kline"][product_type] = decoder_ws_kline()
-
             self._decoder_ws_msg_general = msgspec.json.Decoder(BybitWsMessageGeneral)
+
+            self._log.info(f"Initialized WebSocket handlers for {product_type.value} products")
 
         self._tob_quotes: set[InstrumentId] = set()
         self._depths: dict[InstrumentId, int] = {}

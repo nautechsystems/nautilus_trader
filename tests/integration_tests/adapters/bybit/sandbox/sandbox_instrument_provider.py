@@ -40,6 +40,7 @@ async def test_bybit_instrument_provider():
         product_types=[
             BybitProductType.SPOT,
             BybitProductType.LINEAR,
+            BybitProductType.INVERSE,
             BybitProductType.OPTION,
         ],
     )

@@ -19,6 +19,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
+from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsInverseResponse
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsLinearResponse
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsOptionResponse
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsSpotResponse
@@ -43,10 +44,13 @@ class BybitInstrumentsInfoEndpoint(BybitHttpEndpoint):
             endpoint_type=BybitEndpointType.MARKET,
             url_path=url_path,
         )
+        self._response_decoder_instrument_spot = msgspec.json.Decoder(BybitInstrumentsSpotResponse)
         self._response_decoder_instrument_linear = msgspec.json.Decoder(
             BybitInstrumentsLinearResponse,
         )
-        self._response_decoder_instrument_spot = msgspec.json.Decoder(BybitInstrumentsSpotResponse)
+        self._response_decoder_instrument_inverse = msgspec.json.Decoder(
+            BybitInstrumentsInverseResponse,
+        )
         self._response_decoder_instrument_option = msgspec.json.Decoder(
             BybitInstrumentsOptionResponse,
         )
@@ -57,15 +61,18 @@ class BybitInstrumentsInfoEndpoint(BybitHttpEndpoint):
     ) -> (
         BybitInstrumentsSpotResponse
         | BybitInstrumentsLinearResponse
+        | BybitInstrumentsInverseResponse
         | BybitInstrumentsOptionResponse
     ):
         method_type = HttpMethod.GET
         raw = await self._method(method_type, params)
         if params.category == BybitProductType.SPOT:
             return self._response_decoder_instrument_spot.decode(raw)
-        elif params.category in (BybitProductType.LINEAR, BybitProductType.INVERSE):
+        elif params.category == BybitProductType.LINEAR:
             return self._response_decoder_instrument_linear.decode(raw)
+        elif params.category == BybitProductType.INVERSE:
+            return self._response_decoder_instrument_inverse.decode(raw)
         elif params.category == BybitProductType.OPTION:
             return self._response_decoder_instrument_option.decode(raw)
         else:
-            raise ValueError("Invalid account type")
+            raise ValueError(f"Invalid product type, was {params.category}")
