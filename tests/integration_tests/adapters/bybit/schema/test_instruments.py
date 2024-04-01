@@ -34,12 +34,12 @@ fee_rate: BybitFeeRate = BybitFeeRate(
 
 
 class TestBybitInstruments:
-    def setup(self):
+    def setup(self) -> None:
         # linear
         linear_data: BybitInstrumentsLinearResponse = msgspec.json.Decoder(
             BybitInstrumentsLinearResponse,
         ).decode(
-            pkgutil.get_data(
+            pkgutil.get_data(  # type: ignore [arg-type]
                 "tests.integration_tests.adapters.bybit.resources.http_responses.linear",
                 "instruments.json",
             ),
@@ -49,7 +49,7 @@ class TestBybitInstruments:
         spot_data: BybitInstrumentsSpotResponse = msgspec.json.Decoder(
             BybitInstrumentsSpotResponse,
         ).decode(
-            pkgutil.get_data(
+            pkgutil.get_data(  # type: ignore [arg-type]
                 "tests.integration_tests.adapters.bybit.resources.http_responses.spot",
                 "instruments.json",
             ),
@@ -59,7 +59,7 @@ class TestBybitInstruments:
         option_data: BybitInstrumentsOptionResponse = msgspec.json.Decoder(
             BybitInstrumentsOptionResponse,
         ).decode(
-            pkgutil.get_data(
+            pkgutil.get_data(  # type: ignore [arg-type]
                 "tests.integration_tests.adapters.bybit.resources.http_responses.option",
                 "instruments.json",
             ),

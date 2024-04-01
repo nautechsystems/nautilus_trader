@@ -115,10 +115,8 @@ repos:
     hooks:
       - id: mypy
         args: [
-          "--ignore-missing-imports",
+          "--config", "pyproject.toml",
           "--allow-incomplete-defs",
-          "--no-strict-optional",  # Fixing in progress
-          "--warn-no-return",
         ]
         additional_dependencies: [
           msgspec,
