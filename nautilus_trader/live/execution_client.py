@@ -245,66 +245,62 @@ class LiveExecutionClient(ExecutionClient):
         )
 
     def submit_order(self, command: SubmitOrder) -> None:
+        self._log.info(f"Submit {command.order}", LogColor.BLUE)
         self.create_task(
             self._submit_order(command),
             log_msg=f"submit_order: {command}",
-            success_msg=f"Submit {command.order}",
-            success_color=LogColor.BLUE,
         )
 
     def submit_order_list(self, command: SubmitOrderList) -> None:
+        self._log.info(f"Submit {command.order_list}", LogColor.BLUE)
         self.create_task(
             self._submit_order_list(command),
             log_msg=f"submit_order_list: {command}",
-            success_msg=f"Submit {command.order_list}",
-            success_color=LogColor.BLUE,
         )
 
     def modify_order(self, command: ModifyOrder) -> None:
         venue_order_id_str = (
             " " + repr(command.venue_order_id) if command.venue_order_id is not None else ""
         )
+        self._log.info(f"Modify {command.client_order_id!r}{venue_order_id_str}", LogColor.BLUE)
         self.create_task(
             self._modify_order(command),
             log_msg=f"modify_order: {command}",
-            success_msg=f"Modify {command.client_order_id!r}{venue_order_id_str}",
-            success_color=LogColor.BLUE,
         )
 
     def cancel_order(self, command: CancelOrder) -> None:
         venue_order_id_str = (
             " " + repr(command.venue_order_id) if command.venue_order_id is not None else ""
         )
+        self._log.info(f"Cancel {command.client_order_id!r}{venue_order_id_str}", LogColor.BLUE)
         self.create_task(
             self._cancel_order(command),
             log_msg=f"cancel_order: {command}",
-            success_msg=f"Cancel {command.client_order_id!r}{venue_order_id_str}",
-            success_color=LogColor.BLUE,
         )
 
     def cancel_all_orders(self, command: CancelAllOrders) -> None:
         side_str = f" {order_side_to_str(command.order_side)} " if command.order_side else " "
+        self._log.info(f"Cancel all{side_str}orders", LogColor.BLUE)
         self.create_task(
             self._cancel_all_orders(command),
             log_msg=f"cancel_all_orders: {command}",
-            success_msg=f"Cancel all{side_str}orders",
-            success_color=LogColor.BLUE,
         )
 
     def batch_cancel_orders(self, command: BatchCancelOrders) -> None:
+        self._log.info(
+            f"Batch cancel orders {[repr(c.client_order_id) for c in command.cancels]}",
+            LogColor.BLUE,
+        )
         self.create_task(
             self._batch_cancel_orders(command),
             log_msg=f"batch_cancel_orders: {command}",
-            success_msg=f"Batch cancel orders {[repr(c.client_order_id) for c in command.cancels]}",
-            success_color=LogColor.BLUE,
         )
 
     def query_order(self, command: QueryOrder) -> None:
+        self._log.info(f"Query {command.client_order_id!r}", LogColor.BLUE)
         self.create_task(
             self._query_order(command),
             log_msg=f"query_order: {command}",
-            success_msg=f"Query {command.client_order_id!r}",
-            success_color=LogColor.BLUE,
         )
 
     async def generate_order_status_report(
