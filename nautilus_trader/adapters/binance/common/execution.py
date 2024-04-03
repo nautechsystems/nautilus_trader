@@ -147,11 +147,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         )
 
         # Configuration
-        self._binance_account_type = account_type
-        self._use_gtd = config.use_gtd
-        self._use_reduce_only = config.use_reduce_only
-        self._use_position_ids = config.use_position_ids
-        self._treat_expired_as_canceled = config.treat_expired_as_canceled
+        self._binance_account_type: BinanceAccountType = account_type
+        self._use_gtd: bool = config.use_gtd
+        self._use_reduce_only: bool = config.use_reduce_only
+        self._use_position_ids: bool = config.use_position_ids
+        self._treat_expired_as_canceled: bool = config.treat_expired_as_canceled
+        self._max_retries: int = config.max_retries or 0
+        self._retry_delay: float = config.retry_delay or 1.0
         self._log.info(f"Account type: {self._binance_account_type.value}", LogColor.BLUE)
         self._log.info(f"{config.use_gtd=}", LogColor.BLUE)
         self._log.info(f"{config.use_reduce_only=}", LogColor.BLUE)
@@ -197,8 +199,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         }
 
         # Retry logic (hard coded for now)
-        self._max_retries: int = config.max_retries or 0
-        self._retry_delay: float = config.retry_delay or 1.0
         self._retry_errors: set[BinanceErrorCode] = {
             BinanceErrorCode.DISCONNECTED,
             BinanceErrorCode.TOO_MANY_REQUESTS,  # Short retry delays may result in bans
@@ -215,7 +215,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._instrument_ids: dict[str, InstrumentId] = {}
         self._generate_order_status_retries: dict[ClientOrderId, int] = {}
         self._modifying_orders: dict[ClientOrderId, VenueOrderId] = {}
-
         self._order_retries: dict[ClientOrderId, int] = {}
 
         self._log.info(f"Base url HTTP {self._http_client.base_url}", LogColor.BLUE)
