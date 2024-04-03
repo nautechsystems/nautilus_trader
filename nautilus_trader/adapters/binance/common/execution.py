@@ -185,11 +185,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             loop=self._loop,
         )
 
-        # Hot caches
-        self._instrument_ids: dict[str, InstrumentId] = {}
-        self._generate_order_status_retries: dict[ClientOrderId, int] = {}
-        self._modifying_orders: dict[ClientOrderId, VenueOrderId] = {}
-
         # Order submission method hashmap
         self._submit_order_method = {
             OrderType.MARKET: self._submit_market_order,
@@ -200,8 +195,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             OrderType.MARKET_IF_TOUCHED: self._submit_stop_market_order,
             OrderType.TRAILING_STOP_MARKET: self._submit_trailing_stop_market_order,
         }
-
-        self._recv_window = 5_000
 
         # Retry logic (hard coded for now)
         self._max_retries: int = config.max_retries or 0
@@ -215,6 +208,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             BinanceErrorCode.CANCEL_REJECTED,
             BinanceErrorCode.ME_RECVWINDOW_REJECT,
         }
+
+        self._recv_window = 5_000
+
+        # Hot caches
+        self._instrument_ids: dict[str, InstrumentId] = {}
+        self._generate_order_status_retries: dict[ClientOrderId, int] = {}
+        self._modifying_orders: dict[ClientOrderId, VenueOrderId] = {}
 
         self._order_retries: dict[ClientOrderId, int] = {}
 
