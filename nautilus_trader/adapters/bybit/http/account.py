@@ -27,10 +27,12 @@ from nautilus_trader.adapters.bybit.endpoints.account.position_info import Posit
 # fmt: off
 from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import BybitWalletBalanceEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import BybitWalletBalanceGetParams
+from nautilus_trader.adapters.bybit.endpoints.trade.amend_order import BybitAmendOrderEndpoint
+from nautilus_trader.adapters.bybit.endpoints.trade.amend_order import BybitAmendOrderPostParams
 from nautilus_trader.adapters.bybit.endpoints.trade.cancel_all_orders import BybitCancelAllOrdersEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.cancel_all_orders import BybitCancelAllOrdersPostParams
-
-# fmt: on
+from nautilus_trader.adapters.bybit.endpoints.trade.cancel_order import BybitCancelOrderEndpoint
+from nautilus_trader.adapters.bybit.endpoints.trade.cancel_order import BybitCancelOrderPostParams
 from nautilus_trader.adapters.bybit.endpoints.trade.open_orders import BybitOpenOrdersGetParams
 from nautilus_trader.adapters.bybit.endpoints.trade.open_orders import BybitOpenOrdersHttp
 from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderEndpoint
@@ -38,11 +40,16 @@ from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlac
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.account.balance import BybitWalletBalance
 from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
+from nautilus_trader.adapters.bybit.schemas.order import BybitAmendOrder
+from nautilus_trader.adapters.bybit.schemas.order import BybitCancelOrder
 from nautilus_trader.adapters.bybit.schemas.order import BybitOrder
 from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrderResponse
 from nautilus_trader.adapters.bybit.schemas.position import BybitPositionStruct
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.correctness import PyCondition
+
+
+# fmt: on
 
 
 class BybitAccountHttpAPI:
@@ -57,13 +64,14 @@ class BybitAccountHttpAPI:
         self.base_endpoint = "/v5"
         self.default_settle_coin = "USDT"
 
-        # endpoints
         self._endpoint_fee_rate = BybitFeeRateEndpoint(client, self.base_endpoint)
         self._endpoint_position_info = BybitPositionInfoEndpoint(client, self.base_endpoint)
         self._endpoint_open_orders = BybitOpenOrdersHttp(client, self.base_endpoint)
         self._endpoint_wallet_balance = BybitWalletBalanceEndpoint(client, self.base_endpoint)
-        self._endpoint_order = BybitPlaceOrderEndpoint(client, self.base_endpoint)
+        self._endpoint_place_order = BybitPlaceOrderEndpoint(client, self.base_endpoint)
+        self._endpoint_cancel_order = BybitCancelOrderEndpoint(client, self.base_endpoint)
         self._endpoint_cancel_all_orders = BybitCancelAllOrdersEndpoint(client, self.base_endpoint)
+        self._endpoint_amend_order = BybitAmendOrderEndpoint(client, self.base_endpoint)
 
     async def fetch_fee_rate(
         self,
@@ -142,6 +150,25 @@ class BybitAccountHttpAPI:
         )
         return response.result.list
 
+    async def cancel_order(
+        self,
+        product_type: BybitProductType,
+        symbol: str,
+        client_order_id: str | None = None,
+        venue_order_id: str | None = None,
+        order_filter: str | None = None,
+    ) -> BybitCancelOrder:
+        response = await self._endpoint_cancel_order.post(
+            BybitCancelOrderPostParams(
+                category=product_type.value,
+                symbol=symbol,
+                orderId=venue_order_id,
+                orderLinkId=client_order_id,
+                orderFilter=order_filter,
+            ),
+        )
+        return response.result
+
     async def cancel_all_orders(
         self,
         product_type: BybitProductType,
@@ -154,6 +181,29 @@ class BybitAccountHttpAPI:
             ),
         )
         return response.result.list
+
+    async def amend_order(
+        self,
+        product_type: BybitProductType,
+        symbol: str,
+        client_order_id: str | None = None,
+        venue_order_id: str | None = None,
+        trigger_price: str | None = None,
+        quantity: str | None = None,
+        price: str | None = None,
+    ) -> BybitAmendOrder:
+        response = await self._endpoint_amend_order.post(
+            BybitAmendOrderPostParams(
+                category=product_type.value,
+                symbol=symbol,
+                orderId=venue_order_id,
+                orderLinkId=client_order_id,
+                triggerPrice=trigger_price,
+                qty=quantity,
+                price=price,
+            ),
+        )
+        return response.result
 
     async def query_wallet_balance(
         self,
@@ -179,7 +229,7 @@ class BybitAccountHttpAPI:
         client_order_id: str | None = None,
     ) -> BybitPlaceOrderResponse:
         market_unit = "baseCoin" if not quote_quantity else "quoteCoin"
-        result = await self._endpoint_order.post(
+        result = await self._endpoint_place_order.post(
             params=BybitPlaceOrderGetParams(
                 category=product_type.value,
                 symbol=symbol,

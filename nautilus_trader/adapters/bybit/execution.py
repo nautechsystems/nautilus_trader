@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import json
 from decimal import Decimal
 
 import msgspec
@@ -49,6 +50,8 @@ from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.core.rust.model import TimeInForce
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -131,8 +134,8 @@ class BybitExecutionClient(LiveExecutionClient):
         self._use_gtd = config.use_gtd
         self._use_reduce_only = config.use_reduce_only
         self._use_position_ids = config.use_position_ids
-        self._max_retries = config.max_retries
-        self._retry_delay = config.retry_delay
+        self._max_retries = config.max_retries or 0
+        self._retry_delay = config.retry_delay or 1.0
         self._log.info(f"Account type: {account_type_to_str(self.account_type)}", LogColor.BLUE)
         self._log.info(f"Product types: {[p.value for p in product_types]}", LogColor.BLUE)
         self._log.info(f"{config.use_gtd=}", LogColor.BLUE)
@@ -145,10 +148,6 @@ class BybitExecutionClient(LiveExecutionClient):
 
         account_id = AccountId(f"{BYBIT_VENUE.value}-UNIFIED")
         self._set_account_id(account_id)
-
-        # Hot caches
-        self._instrument_ids: dict[str, InstrumentId] = {}
-        self._generate_order_status_retries: dict[ClientOrderId, int] = {}
 
         # WebSocket API
         self._ws_client = BybitWebsocketClient(
@@ -173,7 +172,6 @@ class BybitExecutionClient(LiveExecutionClient):
             OrderType.MARKET: self._submit_market_order,
             OrderType.LIMIT: self._submit_limit_order,
         }
-        self._order_retries: dict[ClientOrderId, int] = {}
 
         # Decoders
         self._decoder_ws_msg_general = msgspec.json.Decoder(BybitWsMessageGeneral)
@@ -185,6 +183,11 @@ class BybitExecutionClient(LiveExecutionClient):
         self._decoder_ws_account_position_update = msgspec.json.Decoder(
             BybitWsAccountPositionMsg,
         )
+
+        # Hot caches
+        self._instrument_ids: dict[str, InstrumentId] = {}
+        self._generate_order_status_retries: dict[ClientOrderId, int] = {}
+        self._order_retries: dict[ClientOrderId, int] = {}
 
     async def _connect(self) -> None:
         # Update account state
@@ -220,7 +223,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 open_orders = await self._http_account.query_open_orders(instr, symbol)
                 for order in open_orders:
                     # Uncomment for development
-                    # self._log.info(f"Generating report {order}", LogColor.MAGENTA)
+                    self._log.info(f"Generating report {order}", LogColor.MAGENTA)
                     bybit_symbol = BybitSymbol(order.symbol + f"-{instr.value.upper()}")
                     assert bybit_symbol is not None  # Type checking
                     report = order.parse_to_order_status_report(
@@ -317,7 +320,7 @@ class BybitExecutionClient(LiveExecutionClient):
             positions = await self._http_account.query_position_info(product_type)
             for position in positions:
                 # Uncomment for development
-                # self._log.info(f"Generating report {position}", LogColor.MAGENTA)
+                self._log.info(f"Generating report {position}", LogColor.MAGENTA)
                 instr: InstrumentId = BybitSymbol(
                     position.symbol + "-" + product_type.value.upper(),
                 ).parse_as_nautilus()
@@ -368,7 +371,7 @@ class BybitExecutionClient(LiveExecutionClient):
     async def _get_active_position_symbols(self, symbol: str | None) -> set[str]:
         active_symbols: set[str] = set()
         bybit_positions = await self._http_account.query_position_info(
-            BybitProductType.LINEAR,
+            BybitProductType.LINEAR,  # <-- TODO: Replace this with `product_type`
             symbol,
         )
         for position in bybit_positions:
@@ -394,18 +397,111 @@ class BybitExecutionClient(LiveExecutionClient):
             except Exception as e:
                 self._log.error(f"Failed to generate AccountState: {e}")
 
+    async def _modify_order(self, command: ModifyOrder) -> None:
+        order: Order | None = self._cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(f"{command.client_order_id!r} not found to cancel")
+            return
+
+        if order.is_closed:
+            self._log.warning(
+                f"ModifyOrder command for {command.client_order_id!r} when order already {order.status_string()} "
+                "(will not send to exchange)",
+            )
+            return
+
+        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
+        assert bybit_symbol  # Type checking
+
+        client_order_id = command.client_order_id.value
+        venue_order_id = str(command.venue_order_id) if command.venue_order_id else None
+        price = str(command.price) if command.price else None
+        trigger_price = str(command.trigger_price) if command.trigger_price else None
+        quantity = str(command.quantity) if command.quantity else None
+
+        while True:
+            try:
+                await self._http_account.amend_order(
+                    bybit_symbol.product_type,
+                    bybit_symbol.raw_symbol,
+                    client_order_id=client_order_id,
+                    venue_order_id=venue_order_id,
+                    trigger_price=trigger_price,
+                    quantity=quantity,
+                    price=price,
+                )
+                self._order_retries.pop(command.client_order_id, None)
+                break  # Successful request
+            except BybitError as e:
+                self._log.error(repr(e))
+                # error_code = BybitError(e.message["code"])
+
+                retries = self._order_retries.get(command.client_order_id, 0) + 1
+                self._order_retries[command.client_order_id] = retries
+                # if not self._should_retry(error_code, retries):
+                #     break
+
+                self._log.warning(
+                    f"Retrying modify {command.client_order_id!r} "
+                    f"{retries}/{self._max_retries} in {self._retry_delay}s",
+                )
+                await asyncio.sleep(self._retry_delay)
+
+    async def _cancel_order(self, command: CancelOrder) -> None:
+        order: Order | None = self._cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(f"{command.client_order_id!r} not found to cancel")
+            return
+
+        if order.is_closed:
+            self._log.warning(
+                f"CancelOrder command for {command.client_order_id!r} when order already {order.status_string()} "
+                "(will not send to exchange)",
+            )
+            return
+
+        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
+        assert bybit_symbol  # Type checking
+
+        client_order_id = command.client_order_id.value
+        venue_order_id = str(command.venue_order_id) if command.venue_order_id else None
+
+        while True:
+            try:
+                await self._http_account.cancel_order(
+                    bybit_symbol.product_type,
+                    bybit_symbol.raw_symbol,
+                    client_order_id=client_order_id,
+                    venue_order_id=venue_order_id,
+                )
+                self._order_retries.pop(command.client_order_id, None)
+                break  # Successful request
+            except BybitError as e:
+                self._log.error(repr(e))
+                # error_code = BybitError(e.message["code"])
+
+                retries = self._order_retries.get(command.client_order_id, 0) + 1
+                self._order_retries[command.client_order_id] = retries
+
+                # if not self._should_retry(error_code, retries):
+                #     break
+
+                self._log.warning(
+                    f"Retrying cancel {command.client_order_id!r} "
+                    f"{retries}/{self._max_retries} in {self._retry_delay}s",
+                )
+                await asyncio.sleep(self._retry_delay)
+
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
         assert bybit_symbol  # Type checking
         await self._http_account.cancel_all_orders(
-            BybitProductType.LINEAR,
+            bybit_symbol.product_type,
             bybit_symbol.raw_symbol,
         )
 
     async def _submit_order(self, command: SubmitOrder) -> None:
-        await self._submit_order_inner(command.order)
-
-    async def _submit_order_inner(self, order: Order) -> None:
+        order = command.order
         if order.is_closed:
             self._log.warning(f"Order {order} is already closed")
             return
@@ -485,7 +581,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
     def _handle_ws_message(self, raw: bytes) -> None:
         # Uncomment for development
-        # self._log.info(str(json.dumps(msgspec.json.decode(raw), indent=4)), color=LogColor.MAGENTA)
+        self._log.info(str(json.dumps(msgspec.json.decode(raw), indent=4)), color=LogColor.MAGENTA)
         try:
             ws_message = self._decoder_ws_msg_general.decode(raw)
             if ws_message.op == BYBIT_PONG:
