@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Any
 
 import msgspec
 
@@ -156,6 +157,21 @@ class BybitPlaceOrderResponse(msgspec.Struct):
 
 
 ################################################################################
+# Cancel order
+################################################################################
+class BybitCancelOrder(msgspec.Struct):
+    orderId: str
+    orderLinkId: str
+
+
+class BybitCancelOrderResponse(msgspec.Struct):
+    retCode: int
+    retMsg: str
+    result: BybitCancelOrder
+    time: int
+
+
+################################################################################
 # Cancel All Orders
 ################################################################################
 class BybitCancelAllOrders(msgspec.Struct):
@@ -167,4 +183,20 @@ class BybitCancelAllOrdersResponse(msgspec.Struct):
     retCode: int
     retMsg: str
     result: BybitListResult[BybitCancelAllOrders]
+    time: int
+
+
+################################################################################
+# Amend order
+################################################################################
+class BybitAmendOrder(msgspec.Struct):
+    orderId: str
+    orderLinkId: str
+
+
+class BybitAmendOrderResponse(msgspec.Struct):
+    retCode: int
+    retMsg: str
+    result: BybitAmendOrder
+    retExtInfo: dict[str, Any]
     time: int

@@ -55,11 +55,7 @@ class BybitMarketHttpAPI:
         self._clock = clock
         self.base_endpoint = "/v5/market/"
 
-        # endpoints
-        self._endpoint_instruments = BybitInstrumentsInfoEndpoint(
-            client,
-            self.base_endpoint,
-        )
+        self._endpoint_instruments = BybitInstrumentsInfoEndpoint(client, self.base_endpoint)
         self._endpoint_server_time = BybitServerTimeEndpoint(client, self.base_endpoint)
         self._endpoint_klines = BybitKlinesEndpoint(client, self.base_endpoint)
         self._endpoint_tickers = BybitTickersEndpoint(client, self.base_endpoint)
