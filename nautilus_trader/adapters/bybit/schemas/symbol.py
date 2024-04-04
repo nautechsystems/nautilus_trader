@@ -13,10 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from typing import Final
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 
@@ -50,17 +53,18 @@ class BybitSymbol(str):
     Represents a Bybit specific symbol containing a product type suffix.
     """
 
-    def __new__(cls, symbol: str | None):
-        if symbol is not None:
-            if not has_valid_bybit_suffix(symbol):
-                raise ValueError(
-                    f"Invalid symbol '{symbol}': "
-                    f"does not contain a valid suffix from {VALID_SUFFIXES}",
-                )
-            return super().__new__(
-                cls,
-                symbol.upper(),
+    def __new__(cls, symbol: str) -> BybitSymbol:  # noqa: PYI034
+        PyCondition.valid_string(symbol, "symbol")
+        if not has_valid_bybit_suffix(symbol):
+            raise ValueError(
+                f"Invalid symbol '{symbol}': "
+                f"does not contain a valid suffix from {VALID_SUFFIXES}",
             )
+
+        return super().__new__(
+            cls,
+            symbol.upper(),
+        )
 
     @property
     def raw_symbol(self) -> str:

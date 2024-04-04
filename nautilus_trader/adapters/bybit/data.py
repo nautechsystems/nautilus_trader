@@ -200,7 +200,6 @@ class BybitDataClient(LiveMarketDataClient):
                 f"Parameter symbol in request metadata object is not of type Symbol, got {type(symbol)}",
             )
         bybit_symbol = BybitSymbol(symbol.value)
-        assert bybit_symbol  # Type checking
         self._loop.create_task(
             self.fetch_send_tickers(
                 request.id,
@@ -265,7 +264,6 @@ class BybitDataClient(LiveMarketDataClient):
             return
 
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
-        assert bybit_symbol  # Type checking
         product_type = bybit_symbol.product_type
 
         # Validate depth
@@ -316,7 +314,6 @@ class BybitDataClient(LiveMarketDataClient):
 
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
-        assert bybit_symbol  # Type checking
         ws_client = self._ws_clients[bybit_symbol.product_type]
 
         if bybit_symbol.is_spot or instrument_id not in self._depths:
@@ -332,13 +329,11 @@ class BybitDataClient(LiveMarketDataClient):
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
-        assert bybit_symbol  # Type checking
         ws_client = self._ws_clients[bybit_symbol.product_type]
         await ws_client.subscribe_trades(bybit_symbol.raw_symbol)
 
     async def _subscribe_bars(self, bar_type: BarType) -> None:
         bybit_symbol = BybitSymbol(bar_type.instrument_id.symbol.value)
-        assert bybit_symbol  # Type checking
         interval_str = get_interval_from_bar_type(bar_type)
         topic = f"kline.{interval_str}.{bybit_symbol.raw_symbol}"
         self._topic_bar_type[topic] = bar_type
@@ -347,21 +342,18 @@ class BybitDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
-        assert bybit_symbol  # Type checking
         ws_client = self._ws_clients[bybit_symbol.product_type]
         depth = self._depths.get(instrument_id, 1)
         await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
 
     async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
-        assert bybit_symbol  # Type checking
         ws_client = self._ws_clients[bybit_symbol.product_type]
         depth = self._depths.get(instrument_id, 1)
         await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
-        assert bybit_symbol  # Type checking
         ws_client = self._ws_clients[bybit_symbol.product_type]
 
         if instrument_id in self._tob_quotes:
@@ -371,13 +363,11 @@ class BybitDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
-        assert bybit_symbol  # Type checking
         ws_client = self._ws_clients[bybit_symbol.product_type]
         await ws_client.unsubscribe_trades(bybit_symbol.raw_symbol)
 
     async def _unsubscribe_bars(self, bar_type: BarType) -> None:
         bybit_symbol = BybitSymbol(bar_type.instrument_id.symbol.value)
-        assert bybit_symbol  # Type checking
         interval_str = get_interval_from_bar_type(bar_type)
         topic = f"kline.{interval_str}.{bybit_symbol.raw_symbol}"
         self._topic_bar_type.pop(topic, None)
@@ -387,7 +377,6 @@ class BybitDataClient(LiveMarketDataClient):
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
         bybit_symbol = BybitSymbol(symbol)
-        assert bybit_symbol  # Type checking
         nautilus_instrument_id: InstrumentId = bybit_symbol.parse_as_nautilus()
         return nautilus_instrument_id
 
@@ -550,7 +539,6 @@ class BybitDataClient(LiveMarketDataClient):
 
     async def _handle_ticker_data_request(self, symbol: Symbol, correlation_id: UUID4) -> None:
         bybit_symbol = BybitSymbol(symbol.value)
-        assert bybit_symbol  # Type checking
         bybit_tickers = await self._http_market.fetch_tickers(
             product_type=bybit_symbol.product_type,
             symbol=bybit_symbol.raw_symbol,

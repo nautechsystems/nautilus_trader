@@ -56,7 +56,6 @@ class BybitInstrumentSpot(msgspec.Struct):
         ts_init: int,
     ) -> CurrencyPair:
         bybit_symbol = BybitSymbol(self.symbol + "-SPOT")
-        assert bybit_symbol  # Type checking
         instrument_id = bybit_symbol.parse_as_nautilus()
         price_increment = Price.from_str(self.priceFilter.tickSize)
         size_increment = Quantity.from_str(self.lotSizeFilter.basePrecision)
@@ -138,7 +137,6 @@ class BybitInstrumentLinear(msgspec.Struct):
         base_currency = self.parse_to_base_currency()
         quote_currency = self.parse_to_quote_currency()
         bybit_symbol = BybitSymbol(self.symbol + "-LINEAR")
-        assert bybit_symbol  # Type checking
         instrument_id = bybit_symbol.parse_as_nautilus()
         if self.settleCoin == self.baseCoin:
             settlement_currency = base_currency
@@ -228,7 +226,6 @@ class BybitInstrumentInverse(msgspec.Struct):
         base_currency = self.parse_to_base_currency()
         quote_currency = self.parse_to_quote_currency()
         bybit_symbol = BybitSymbol(self.symbol + "-INVERSE")
-        assert bybit_symbol  # Type checking
         instrument_id = bybit_symbol.parse_as_nautilus()
         if self.settleCoin == self.baseCoin:
             settlement_currency = base_currency
@@ -309,7 +306,6 @@ class BybitInstrumentOption(msgspec.Struct):
         self,
     ) -> OptionsContract:
         bybit_symbol = BybitSymbol(self.symbol + "-OPTION")
-        assert bybit_symbol  # Type checking
         instrument_id = bybit_symbol.parse_as_nautilus()
         price_increment = Price.from_str(self.priceFilter.tickSize)
         if self.optionsType == "Call":
