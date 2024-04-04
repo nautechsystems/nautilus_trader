@@ -178,7 +178,7 @@ class BinanceUserDataHttpAPI:
         """
         key = await self._endpoint_listenkey._post(
             params=self._endpoint_listenkey.PostParameters(
-                symbol=BinanceSymbol(symbol),
+                symbol=BinanceSymbol(symbol) if symbol else None,
             ),
         )
         return key
@@ -193,7 +193,7 @@ class BinanceUserDataHttpAPI:
         """
         await self._endpoint_listenkey._put(
             params=self._endpoint_listenkey.PutDeleteParameters(
-                symbol=BinanceSymbol(symbol),
+                symbol=BinanceSymbol(symbol) if symbol else None,
                 listenKey=listen_key,
             ),
         )
@@ -208,7 +208,7 @@ class BinanceUserDataHttpAPI:
         """
         await self._endpoint_listenkey._delete(
             params=self._endpoint_listenkey.PutDeleteParameters(
-                symbol=BinanceSymbol(symbol),
+                symbol=BinanceSymbol(symbol) if symbol else None,
                 listenKey=listen_key,
             ),
         )

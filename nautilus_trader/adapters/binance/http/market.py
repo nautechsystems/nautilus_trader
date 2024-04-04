@@ -949,8 +949,8 @@ class BinanceMarketHttpAPI:
             )
         return await self._endpoint_ticker_24hr._get(
             params=self._endpoint_ticker_24hr.GetParameters(
-                symbol=BinanceSymbol(symbol),
-                symbols=BinanceSymbols(symbols),
+                symbol=BinanceSymbol(symbol) if symbol else None,
+                symbols=BinanceSymbols(symbols) if symbols else None,
                 type=response_type,
             ),
         )
@@ -969,8 +969,8 @@ class BinanceMarketHttpAPI:
             )
         return await self._endpoint_ticker_price._get(
             params=self._endpoint_ticker_price.GetParameters(
-                symbol=BinanceSymbol(symbol),
-                symbols=BinanceSymbols(symbols),
+                symbol=BinanceSymbol(symbol) if symbol else None,
+                symbols=BinanceSymbols(symbols) if symbols else None,
             ),
         )
 
@@ -988,7 +988,7 @@ class BinanceMarketHttpAPI:
             )
         return await self._endpoint_ticker_book._get(
             params=self._endpoint_ticker_book.GetParameters(
-                symbol=BinanceSymbol(symbol),
-                symbols=BinanceSymbols(symbols),
+                symbol=BinanceSymbol(symbol) if symbol else None,
+                symbols=BinanceSymbols(symbols) if symbols else None,
             ),
         )
