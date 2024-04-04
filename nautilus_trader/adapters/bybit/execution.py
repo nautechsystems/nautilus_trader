@@ -60,6 +60,7 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import account_type_to_str
 from nautilus_trader.model.identifiers import AccountId
@@ -638,10 +639,13 @@ class BybitExecutionClient(LiveExecutionClient):
     def _handle_account_order_update(self, raw: bytes) -> None:
         try:
             msg = self._decoder_ws_account_order_update.decode(raw)
-            for order in msg.data:
-                report = order.parse_to_order_status_report(
+            for bybit_order in msg.data:
+                report = bybit_order.parse_to_order_status_report(
                     account_id=self.account_id,
-                    instrument_id=self._get_cached_instrument_id(order.symbol, order.category),
+                    instrument_id=self._get_cached_instrument_id(
+                        bybit_order.symbol,
+                        bybit_order.category,
+                    ),
                     enum_parser=self._enum_parser,
                     ts_init=self._clock.timestamp_ns(),
                 )
@@ -649,23 +653,42 @@ class BybitExecutionClient(LiveExecutionClient):
                 if strategy_id is None:
                     # External order
                     self._send_order_status_report(report)
-                elif order.orderStatus == BybitOrderStatus.REJECTED:
+                    return
+
+                order = self._cache.order(report.client_order_id)
+                if order is None:
+                    self._log.error(f"Cannot find {report.client_order_id!r}")
+                    return
+
+                if bybit_order.orderStatus == BybitOrderStatus.REJECTED:
                     self.generate_order_rejected(
                         strategy_id=strategy_id,
                         instrument_id=report.instrument_id,
                         client_order_id=report.client_order_id,
-                        reason=order.rejectReason,
+                        reason=bybit_order.rejectReason,
                         ts_event=report.ts_last,
                     )
-                elif order.orderStatus == BybitOrderStatus.NEW:
-                    self.generate_order_accepted(
-                        strategy_id=strategy_id,
-                        instrument_id=report.instrument_id,
-                        client_order_id=report.client_order_id,
-                        venue_order_id=report.venue_order_id,
-                        ts_event=report.ts_last,
-                    )
-                elif order.orderStatus == BybitOrderStatus.CANCELED:
+                elif bybit_order.orderStatus == BybitOrderStatus.NEW:
+                    if order.status == OrderStatus.PENDING_UPDATE:
+                        self.generate_order_updated(
+                            strategy_id=strategy_id,
+                            instrument_id=report.instrument_id,
+                            client_order_id=report.client_order_id,
+                            venue_order_id=report.venue_order_id,
+                            quantity=report.quantity,
+                            price=report.price,
+                            trigger_price=report.trigger_price,
+                            ts_event=report.ts_last,
+                        )
+                    else:
+                        self.generate_order_accepted(
+                            strategy_id=strategy_id,
+                            instrument_id=report.instrument_id,
+                            client_order_id=report.client_order_id,
+                            venue_order_id=report.venue_order_id,
+                            ts_event=report.ts_last,
+                        )
+                elif bybit_order.orderStatus == BybitOrderStatus.CANCELED:
                     self.generate_order_canceled(
                         strategy_id=strategy_id,
                         instrument_id=report.instrument_id,
@@ -673,7 +696,7 @@ class BybitExecutionClient(LiveExecutionClient):
                         venue_order_id=report.venue_order_id,
                         ts_event=report.ts_last,
                     )
-                elif order.orderStatus == BybitOrderStatus.TRIGGERED:
+                elif bybit_order.orderStatus == BybitOrderStatus.TRIGGERED:
                     self.generate_order_triggered(
                         strategy_id=strategy_id,
                         instrument_id=report.instrument_id,

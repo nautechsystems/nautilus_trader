@@ -272,6 +272,7 @@ class VolatilityMarketMaker(Strategy):
             #     order=self.buy_order,
             #     price=self.instrument.make_price(price),
             # )
+            # return
             self.cancel_order(self.buy_order)
         self.create_buy_order(last)
 
@@ -282,6 +283,7 @@ class VolatilityMarketMaker(Strategy):
             #     order=self.sell_order,
             #     price=self.instrument.make_price(price),
             # )
+            # return
             self.cancel_order(self.sell_order)
         self.create_sell_order(last)
 
