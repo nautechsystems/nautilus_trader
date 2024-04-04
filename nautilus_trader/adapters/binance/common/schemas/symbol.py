@@ -13,9 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import json
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.core.correctness import PyCondition
 
 
 ################################################################################
@@ -28,13 +31,14 @@ class BinanceSymbol(str):
     Binance compatible symbol.
     """
 
-    def __new__(cls, symbol: str | None):
-        if symbol is not None:
-            # Format the string on construction to be Binance compatible
-            return super().__new__(
-                cls,
-                symbol.upper().replace(" ", "").replace("/", "").replace("-PERP", ""),
-            )
+    def __new__(cls, symbol: str) -> BinanceSymbol:  # noqa: PYI034
+        PyCondition.valid_string(symbol, "symbol")
+
+        # Format the string on construction to be Binance compatible
+        return super().__new__(
+            cls,
+            symbol.upper().replace(" ", "").replace("/", "").replace("-PERP", ""),
+        )
 
     def parse_as_nautilus(self, account_type: BinanceAccountType) -> str:
         if account_type.is_spot_or_margin:
@@ -54,10 +58,11 @@ class BinanceSymbols(str):
     Binance compatible list of symbols.
     """
 
-    def __new__(cls, symbols: list[str] | None):
-        if symbols is not None:
-            binance_symbols: list[BinanceSymbol] = [BinanceSymbol(symbol) for symbol in symbols]
-            return super().__new__(cls, json.dumps(binance_symbols).replace(" ", ""))
+    def __new__(cls, symbols: list[str]) -> BinanceSymbols:  # noqa: PYI034
+        PyCondition.not_empty(symbols, "symbols")
+
+        binance_symbols: list[BinanceSymbol] = [BinanceSymbol(symbol) for symbol in symbols]
+        return super().__new__(cls, json.dumps(binance_symbols).replace(" ", ""))
 
     def parse_str_to_list(self) -> list[BinanceSymbol]:
         binance_symbols: list[BinanceSymbol] = json.loads(self)

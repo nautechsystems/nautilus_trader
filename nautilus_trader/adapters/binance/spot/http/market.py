@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -173,8 +172,8 @@ class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
             raise ValueError("`symbol` and `symbols` cannot be sent together")
         return await self._endpoint_spot_exchange_info.get(
             params=self._endpoint_spot_exchange_info.GetParameters(
-                symbol=BinanceSymbol(symbol),
-                symbols=BinanceSymbols(symbols),
+                symbol=BinanceSymbol(symbol) if symbol else None,
+                symbols=BinanceSymbols(symbols) if symbols else None,
                 permissions=permissions,
             ),
         )

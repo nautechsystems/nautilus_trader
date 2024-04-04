@@ -727,7 +727,7 @@ class BinanceAccountHttpAPI:
         """
         return await self._endpoint_open_orders.get(
             params=self._endpoint_open_orders.GetParameters(
-                symbol=BinanceSymbol(symbol),
+                symbol=BinanceSymbol(symbol) if symbol else None,
                 timestamp=self._timestamp(),
                 recvWindow=recv_window,
             ),

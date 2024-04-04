@@ -485,7 +485,7 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         return await self._endpoint_futures_position_risk.get(
             params=self._endpoint_futures_position_risk.GetParameters(
                 timestamp=self._timestamp(),
-                symbol=BinanceSymbol(symbol),
+                symbol=BinanceSymbol(symbol) if symbol else None,
                 recvWindow=recv_window,
             ),
         )
