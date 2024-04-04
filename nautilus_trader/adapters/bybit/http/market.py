@@ -150,7 +150,6 @@ class BybitMarketHttpAPI:
         limit: int = 1000,
     ) -> list[Bar]:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
-        assert bybit_symbol  # Type checking
         trades = await self.fetch_public_trades(
             symbol=bybit_symbol.raw_symbol,
             product_type=bybit_symbol.product_type,
@@ -171,7 +170,6 @@ class BybitMarketHttpAPI:
         all_bars = []
         while True:
             bybit_symbol = BybitSymbol(bar_type.instrument_id.symbol.value)
-            assert bybit_symbol  # Type checking
             klines = await self.fetch_klines(
                 symbol=bybit_symbol.raw_symbol,
                 product_type=bybit_symbol.product_type,

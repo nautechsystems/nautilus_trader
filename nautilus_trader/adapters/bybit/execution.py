@@ -225,7 +225,6 @@ class BybitExecutionClient(LiveExecutionClient):
                     # Uncomment for development
                     self._log.info(f"Generating report {order}", LogColor.MAGENTA)
                     bybit_symbol = BybitSymbol(order.symbol + f"-{instr.value.upper()}")
-                    assert bybit_symbol is not None  # Type checking
                     report = order.parse_to_order_status_report(
                         account_id=self.account_id,
                         instrument_id=bybit_symbol.parse_as_nautilus(),
@@ -267,7 +266,6 @@ class BybitExecutionClient(LiveExecutionClient):
         )
         try:
             bybit_symbol = BybitSymbol(instrument_id.symbol.value)
-            assert bybit_symbol  # Type checking
             product_type = bybit_symbol.product_type
             bybit_orders = await self._http_account.query_order(
                 product_type=product_type,
@@ -337,7 +335,6 @@ class BybitExecutionClient(LiveExecutionClient):
     def _get_cached_instrument_id(self, symbol: str, category: str) -> InstrumentId:
         # Parse instrument ID
         bybit_symbol = BybitSymbol(symbol + f"-{category.upper()}")
-        assert bybit_symbol  # Type checking
         nautilus_instrument_id: InstrumentId = bybit_symbol.parse_as_nautilus()
         return nautilus_instrument_id
 
@@ -411,8 +408,6 @@ class BybitExecutionClient(LiveExecutionClient):
             return
 
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
-        assert bybit_symbol  # Type checking
-
         client_order_id = command.client_order_id.value
         venue_order_id = str(command.venue_order_id) if command.venue_order_id else None
         price = str(command.price) if command.price else None
@@ -461,8 +456,6 @@ class BybitExecutionClient(LiveExecutionClient):
             return
 
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
-        assert bybit_symbol  # Type checking
-
         client_order_id = command.client_order_id.value
         venue_order_id = str(command.venue_order_id) if command.venue_order_id else None
 
@@ -494,7 +487,6 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
-        assert bybit_symbol  # Type checking
         await self._http_account.cancel_all_orders(
             bybit_symbol.product_type,
             bybit_symbol.raw_symbol,
@@ -546,7 +538,6 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def _submit_market_order(self, order: MarketOrder) -> None:
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
-        assert bybit_symbol  # Type checking
         time_in_force = self._determine_time_in_force(order)
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
         order_type = self._enum_parser.parse_nautilus_order_type(order.order_type)
@@ -563,7 +554,6 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def _submit_limit_order(self, order: LimitOrder) -> None:
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
-        assert bybit_symbol  # Type checking
         time_in_force = self._determine_time_in_force(order)
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
         order_type = self._enum_parser.parse_nautilus_order_type(order.order_type)
