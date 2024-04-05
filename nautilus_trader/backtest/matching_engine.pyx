@@ -706,14 +706,12 @@ cdef class OrderMatchingEngine:
                 )
                 return  # Invalid order
 
-        cdef:
-            Position position
-            PositionId position_id
-        if self.oms_type == OmsType.NETTING:
+        cdef Position position = self.cache.position_for_order(order.client_order_id)
+
+        cdef PositionId position_id
+        if position is None and self.oms_type == OmsType.NETTING:
             position_id = PositionId(f"{order.instrument_id}-{order.strategy_id}")
             position = self.cache.position(position_id)
-        else:
-            position = self.cache.position_for_order(order.client_order_id)
 
         # Check not shorting an equity without a MARGIN account
         if (
@@ -724,7 +722,7 @@ cdef class OrderMatchingEngine:
         ):
             self._generate_order_rejected(
                 order,
-                f"SHORT SELLING not permitted on a CASH account with order {repr(order)}."
+                f"SHORT SELLING not permitted on a CASH account with position {position} and order {repr(order)}"
             )
             return  # Cannot short sell
 
@@ -739,7 +737,7 @@ cdef class OrderMatchingEngine:
                 self._generate_order_rejected(
                     order,
                     f"REDUCE_ONLY {order.type_string_c()} {order.side_string_c()} order "
-                    f"would have increased position.",
+                    f"would have increased position",
                 )
                 return  # Reduce only
 
@@ -1599,14 +1597,14 @@ cdef class OrderMatchingEngine:
                 raise RuntimeError(
                     f"Invalid price precision for fill {fill_px.precision} "
                     f"when instrument price precision is {self.instrument.price_precision}. "
-                    f"Check that the data price precision matches the {self.instrument.id} instrument."
+                    f"Check that the data price precision matches the {self.instrument.id} instrument"
                 )
             # Validate size precision
             if fill_qty.precision != self.instrument.size_precision:
                 raise RuntimeError(
                     f"Invalid size precision for fill {fill_qty.precision} "
                     f"when instrument size precision is {self.instrument.size_precision}. "
-                    f"Check that the data size precision matches the {self.instrument.id} instrument."
+                    f"Check that the data size precision matches the {self.instrument.id} instrument"
                 )
 
             if order.filled_qty._mem.raw == 0:
