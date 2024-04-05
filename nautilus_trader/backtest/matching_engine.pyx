@@ -18,6 +18,7 @@ import uuid
 
 # from nautilus_trader.backtest.auction import default_auction_match
 
+from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.backtest.models cimport FillModel
@@ -56,6 +57,7 @@ from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
 from nautilus_trader.model.book cimport OrderBook
+from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport BookOrder
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
@@ -199,6 +201,8 @@ cdef class OrderMatchingEngine:
         )
 
         self._account_ids: dict[TraderId, AccountId]  = {}
+        self._execution_bar_types: dict[Instrument, BarType]  =  {}
+        self._execution_bar_deltas: dict[BarType, timedelta]  =  {}
 
         # Market
         self._core = MatchingCore(
@@ -233,6 +237,8 @@ cdef class OrderMatchingEngine:
 
         self._book.clear(0, 0)
         self._account_ids.clear()
+        self._execution_bar_types.clear()
+        self._execution_bar_deltas.clear()
         self._core.reset()
         self._target_bid = 0
         self._target_ask = 0
@@ -457,13 +463,32 @@ cdef class OrderMatchingEngine:
         if not self._bar_execution:
             return
 
-        if logging_is_initialized():
-            self._log.debug(f"Processing {repr(bar)}")
-
         if self.book_type != BookType.L1_MBP:
             return  # Can only process an L1 book with bars
 
-        cdef PriceType price_type = bar.bar_type.spec.price_type
+        cdef BarType bar_type = bar.bar_type
+        cdef InstrumentId instrument_id = bar_type.instrument_id
+        cdef BarType execution_bar_type = self._execution_bar_types.get(instrument_id)
+
+        if execution_bar_type is None:
+            execution_bar_type = bar_type
+            self._execution_bar_types[instrument_id] = bar_type
+            self._execution_bar_deltas[bar_type] = bar_type.spec.timedelta
+
+        if execution_bar_type != bar_type:
+            bar_type_timedelta = self._execution_bar_deltas.get(bar_type)
+            if bar_type_timedelta is None:
+                bar_type_timedelta = bar_type.spec.timedelta
+                self._execution_bar_deltas[bar_type] = bar_type_timedelta
+            if self._execution_bar_deltas[bar_type] >= bar_type_timedelta:
+                self._execution_bar_types[instrument_id] = bar_type
+            else:
+                return
+
+        if logging_is_initialized():
+            self._log.debug(f"Processing {repr(bar)}")
+
+        cdef PriceType price_type = bar_type.spec.price_type
         if price_type == PriceType.LAST or price_type == PriceType.MID:
             self._process_trade_ticks_from_bar(bar)
         elif price_type == PriceType.BID:

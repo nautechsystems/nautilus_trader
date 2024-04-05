@@ -85,6 +85,8 @@ cdef class OrderMatchingEngine:
     cdef bint _use_random_ids
     cdef bint _use_reduce_only
     cdef dict _account_ids
+    cdef dict _execution_bar_types
+    cdef dict _execution_bar_deltas
 
     cdef readonly Venue venue
     """The venue for the matching engine.\n\n:returns: `Venue`"""
