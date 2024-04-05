@@ -706,7 +706,14 @@ cdef class OrderMatchingEngine:
                 )
                 return  # Invalid order
 
-        cdef Position position = self.cache.position_for_order(order.client_order_id)
+        cdef:
+            Position position
+            PositionId position_id
+        if self.oms_type == OmsType.NETTING:
+            position_id = PositionId(f"{order.instrument_id}-{order.strategy_id}")
+            position = self.cache.position(position_id)
+        else:
+            position = self.cache.position_for_order(order.client_order_id)
 
         # Check not shorting an equity without a MARGIN account
         if (
