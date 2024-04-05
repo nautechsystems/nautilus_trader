@@ -192,6 +192,47 @@ class TestSimulatedExchangeCashAccount:
         assert order4.status == OrderStatus.REJECTED
         assert self.exchange.get_account().balance_total(USD) == Money(999_900, USD)
 
+    def test_equity_selling_will_not_reject_with_cash_netting(self) -> None:
+        # Arrange: Prepare market
+        quote1 = TestDataStubs.quote_tick(
+            instrument=_AAPL_XNAS,
+            bid_price=100.00,
+            ask_price=101.00,
+        )
+        self.data_engine.process(quote1)
+        self.exchange.process_quote_tick(quote1)
+
+        # Act
+        order1 = self.strategy.order_factory.market(
+            _AAPL_XNAS.id,
+            OrderSide.BUY,
+            Quantity.from_int(200),
+        )
+        self.strategy.submit_order(order1)
+        self.exchange.process(0)
+
+        order2 = self.strategy.order_factory.market(
+            _AAPL_XNAS.id,
+            OrderSide.SELL,
+            Quantity.from_int(100),
+        )
+        self.strategy.submit_order(order2)
+        self.exchange.process(0)
+
+        order3 = self.strategy.order_factory.market(
+            _AAPL_XNAS.id,
+            OrderSide.SELL,
+            Quantity.from_int(100),
+        )
+        self.strategy.submit_order(order3)
+        self.exchange.process(0)
+
+        # Assert
+        assert order1.status == OrderStatus.FILLED
+        assert order2.status == OrderStatus.FILLED
+        assert order3.status == OrderStatus.FILLED
+        assert self.exchange.get_account().balance_total(USD) == Money(999_800, USD)
+
     @pytest.mark.parametrize(
         ("entry_side", "expected_usd"),
         [
