@@ -480,7 +480,7 @@ cdef class OrderMatchingEngine:
             if bar_type_timedelta is None:
                 bar_type_timedelta = bar_type.spec.timedelta
                 self._execution_bar_deltas[bar_type] = bar_type_timedelta
-            if self._execution_bar_deltas[bar_type] >= bar_type_timedelta:
+            if self._execution_bar_deltas[execution_bar_type] >= bar_type_timedelta:
                 self._execution_bar_types[instrument_id] = bar_type
             else:
                 return
