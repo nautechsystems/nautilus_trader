@@ -22,6 +22,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderStatus
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
@@ -206,4 +207,74 @@ class BybitAmendOrderResponse(msgspec.Struct):
     retMsg: str
     result: BybitAmendOrder
     retExtInfo: dict[str, Any]
+    time: int
+
+
+################################################################################
+# Batch place order
+################################################################################
+
+
+class BybitBatchPlaceOrder(msgspec.Struct):
+    category: BybitProductType
+    symbol: str
+    orderId: str
+    orderLinkId: str
+    createAt: str
+
+
+class BybitBatchPlaceOrderResponse(msgspec.Struct):
+    retCode: int
+    retMsg: str
+    result: list[BybitBatchPlaceOrder]
+    time: int
+
+
+################################################################################
+# Batch cancel order
+################################################################################
+
+
+class BybitCancelResult(msgspec.Struct):
+    code: int  # Success/error code
+    msg: str  # Success/error message
+
+
+class BybitBatchCancelOrder(msgspec.Struct):
+    category: BybitProductType
+    symbol: str
+    orderId: str
+    orderLinkId: str
+
+
+class BybitBatchCancelOrderResponse(msgspec.Struct):
+    retCode: int
+    retMsg: str
+    result: list[BybitBatchCancelOrder]
+    retExtInfo: list[BybitCancelResult]
+    time: int
+
+
+################################################################################
+# Batch amend order
+################################################################################
+
+
+class BybitAmendResult(msgspec.Struct):
+    code: int  # Success/error code
+    msg: str  # Success/error message
+
+
+class BybitBatchAmend(msgspec.Struct):
+    category: BybitProductType
+    symbol: str
+    orderId: str
+    orderLinkId: str
+
+
+class BybitBatchAmendOrderResponse(msgspec.Struct):
+    retCode: int
+    retMsg: str
+    result: list[BybitBatchAmend]
+    retExtInfo: list[BybitAmendResult]
     time: int

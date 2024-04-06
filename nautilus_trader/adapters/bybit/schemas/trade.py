@@ -47,7 +47,7 @@ class BybitExecution(msgspec.Struct, omit_defaults=True, kw_only=True):
     orderPrice: str
     orderQty: str
     leavesQty: str
-    createType: str
+    createType: str | None = None
     orderType: BybitOrderType
     stopOrderType: BybitStopOrderType | None = None
     execFee: str

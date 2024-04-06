@@ -23,11 +23,11 @@ from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
-from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrderResponse
+from nautilus_trader.adapters.bybit.schemas.order import BybitBatchCancelOrderResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitPlaceOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitBatchCancelOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=False):
     category: BybitProductType
     symbol: str
     side: BybitOrderSide
@@ -35,28 +35,28 @@ class BybitPlaceOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=False
     marketUnit: str | None = None
     orderType: BybitOrderType | None = None
     price: str | None = None
-    triggerDirection: int | None = None  # TODO type this
-    triggerPrice: str | None = None
-    triggerBy: BybitTriggerType | None = None
+    trigger_direction: int | None = None  # TODO type this
+    trigger_price: str | None = None
+    trigger_by: BybitTriggerType | None = None
     timeInForce: BybitTimeInForce | None = None
     orderLinkId: str | None = None
 
 
-class BybitPlaceOrderEndpoint(BybitHttpEndpoint):
+class BybitBatchCancelOrderEndpoint(BybitHttpEndpoint):
     def __init__(
         self,
         client: BybitHttpClient,
         base_endpoint: str,
     ) -> None:
-        url_path = base_endpoint + "/order/create"
+        url_path = base_endpoint + "/order/create-batch"
         super().__init__(
             client=client,
             endpoint_type=BybitEndpointType.TRADE,
             url_path=url_path,
         )
-        self._resp_decoder = msgspec.json.Decoder(BybitPlaceOrderResponse)
+        self._resp_decoder = msgspec.json.Decoder(BybitBatchCancelOrderResponse)
 
-    async def post(self, params: BybitPlaceOrderPostParams) -> BybitPlaceOrderResponse:
+    async def post(self, params: BybitBatchCancelOrderPostParams) -> BybitBatchCancelOrderResponse:
         method_type = HttpMethod.POST
         raw = await self._method(method_type, params)
         try:
