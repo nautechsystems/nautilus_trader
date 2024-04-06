@@ -567,7 +567,7 @@ class BybitDataClient(LiveMarketDataClient):
             if ws_message.op == BYBIT_PONG:
                 return
             if ws_message.success is False:
-                self._log.error(f"Error ws_message: {ws_message}")
+                self._log.error(f"WebSocket error: {ws_message}")
                 return
             if not ws_message.topic:
                 return

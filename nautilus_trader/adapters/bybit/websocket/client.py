@@ -16,9 +16,10 @@
 import asyncio
 import hashlib
 import hmac
-import json
 from collections.abc import Awaitable
 from collections.abc import Callable
+
+import msgspec
 
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
@@ -64,9 +65,10 @@ class BybitWebsocketClient:
         self._loop = loop
 
         self._client: WebSocketClient | None = None
-        self._is_private = is_private
         self._api_key = api_key
         self._api_secret = api_secret
+        self._is_private = is_private
+        self._is_running = False
 
         self._subscriptions: list[str] = []
 
@@ -78,12 +80,13 @@ class BybitWebsocketClient:
         return item in self._subscriptions
 
     async def connect(self) -> None:
+        self._is_running = True
         self._log.debug(f"Connecting to {self._base_url} websocket stream")
         config = WebSocketConfig(
             url=self._base_url,
             handler=self._handler,
             heartbeat=20,
-            heartbeat_msg=json.dumps({"op": "ping"}),
+            heartbeat_msg=msgspec.json.encode({"op": "ping"}).decode(),
             headers=[],
         )
         client = await WebSocketClient.connect(
@@ -96,13 +99,16 @@ class BybitWebsocketClient:
         ## Authenticate
         if self._is_private:
             signature = self._get_signature()
-            self._client.send_text(json.dumps(signature))
+            self._client.send(msgspec.json.encode(signature))
 
     # TODO: Temporarily sync
     def reconnect(self) -> None:
         """
         Reconnect the client to the server and resubscribe to all streams.
         """
+        if not self._is_running:
+            return
+
         self._log.warning(f"Reconnected to {self._base_url}")
 
         # Re-subscribe to all streams
@@ -112,6 +118,8 @@ class BybitWebsocketClient:
             self._loop.create_task(self._handler_reconnect())  # type: ignore
 
     async def disconnect(self) -> None:
+        self._is_running = False
+
         if self._client is None:
             self._log.warning("Cannot disconnect: not connected.")
             return
@@ -137,7 +145,7 @@ class BybitWebsocketClient:
 
         self._subscriptions.append(subscription)
         sub = {"op": "subscribe", "args": [subscription]}
-        await self._client.send_text(json.dumps(sub))
+        await self._client.send(msgspec.json.encode(sub))
 
     async def subscribe_trades(self, symbol: str) -> None:
         if self._client is None:
@@ -151,7 +159,7 @@ class BybitWebsocketClient:
 
         self._subscriptions.append(subscription)
         sub = {"op": "subscribe", "args": [subscription]}
-        await self._client.send_text(json.dumps(sub))
+        await self._client.send(msgspec.json.encode(sub))
 
     async def subscribe_tickers(self, symbol: str) -> None:
         if self._client is None:
@@ -165,7 +173,7 @@ class BybitWebsocketClient:
 
         self._subscriptions.append(subscription)
         sub = {"op": "subscribe", "args": [subscription]}
-        await self._client.send_text(json.dumps(sub))
+        await self._client.send(msgspec.json.encode(sub))
 
     async def subscribe_klines(self, symbol: str, interval: str) -> None:
         if self._client is None:
@@ -179,7 +187,7 @@ class BybitWebsocketClient:
 
         self._subscriptions.append(subscription)
         sub = {"op": "subscribe", "args": [subscription]}
-        await self._client.send_text(json.dumps(sub))
+        await self._client.send(msgspec.json.encode(sub))
 
     async def unsubscribe_order_book(self, symbol: str, depth: int) -> None:
         if self._client is None:
@@ -193,7 +201,7 @@ class BybitWebsocketClient:
 
         self._subscriptions.remove(subscription)
         sub = {"op": "unsubscribe", "args": [subscription]}
-        await self._client.send_text(json.dumps(sub))
+        await self._client.send(msgspec.json.encode(sub))
 
     async def unsubscribe_trades(self, symbol: str) -> None:
         if self._client is None:
@@ -207,7 +215,7 @@ class BybitWebsocketClient:
 
         self._subscriptions.remove(subscription)
         sub = {"op": "unsubscribe", "args": [subscription]}
-        await self._client.send_text(json.dumps(sub))
+        await self._client.send(msgspec.json.encode(sub))
 
     async def unsubscribe_tickers(self, symbol: str) -> None:
         if self._client is None:
@@ -221,7 +229,7 @@ class BybitWebsocketClient:
 
         self._subscriptions.remove(subscription)
         sub = {"op": "unsubscribe", "args": [subscription]}
-        await self._client.send_text(json.dumps(sub))
+        await self._client.send(msgspec.json.encode(sub))
 
     async def unsubscribe_klines(self, symbol: str, interval: str) -> None:
         if self._client is None:
@@ -235,7 +243,7 @@ class BybitWebsocketClient:
 
         self._subscriptions.remove(subscription)
         sub = {"op": "unsubscribe", "args": [subscription]}
-        await self._client.send_text(json.dumps(sub))
+        await self._client.send(msgspec.json.encode(sub))
 
     ################################################################################
     # Private
@@ -257,7 +265,7 @@ class BybitWebsocketClient:
 
         self._subscriptions.append(subscription)
         sub = {"op": "subscribe", "args": [subscription]}
-        await self._client.send_text(json.dumps(sub))
+        await self._client.send(msgspec.json.encode(sub))
 
     async def subscribe_executions_update(self) -> None:
         if self._client is None:
@@ -270,11 +278,11 @@ class BybitWebsocketClient:
 
         self._subscriptions.append(subscription)
         sub = {"op": "subscribe", "args": [subscription]}
-        await self._client.send_text(json.dumps(sub))
+        await self._client.send(msgspec.json.encode(sub))
 
     def _get_signature(self):
-        timestamp = self._clock.timestamp_ms() + 1000
-        sign = f"GET/realtime{timestamp}"
+        expires = self._clock.timestamp_ms() + 1_000
+        sign = f"GET/realtime{expires}"
         signature = hmac.new(
             self._api_secret.encode(),
             sign.encode(),
@@ -282,7 +290,7 @@ class BybitWebsocketClient:
         ).hexdigest()
         return {
             "op": "auth",
-            "args": [self._api_key, timestamp, signature],
+            "args": [self._api_key, expires, signature],
         }
 
     async def _subscribe_all(self) -> None:
@@ -291,4 +299,4 @@ class BybitWebsocketClient:
             return
 
         sub = {"op": "subscribe", "args": self._subscriptions}
-        await self._client.send_text(json.dumps(sub))
+        await self._client.send(msgspec.json.encode(sub))
