@@ -35,7 +35,7 @@ cdef class AccountState(Event):
     ----------
     account_id : AccountId
         The account ID (with the venue).
-    account_type : AccountId
+    account_type : AccountType
         The account type for the event.
     base_currency : Currency, optional
         The account base currency. Use None for multi-currency accounts.
