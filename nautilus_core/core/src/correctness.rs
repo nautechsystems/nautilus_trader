@@ -24,7 +24,7 @@
 //! An [`anyhow::Result`] is returned with a descriptive message when the
 //! condition check fails.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, hash::Hash};
 
 const FAILED: &str = "Condition failed:";
 
@@ -224,6 +224,50 @@ pub fn check_map_not_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Re
     if map.is_empty() {
         anyhow::bail!(
             "{FAILED} the '{param}' map `&<{}, {}>` was empty",
+            std::any::type_name::<K>(),
+            std::any::type_name::<V>(),
+        )
+    }
+    Ok(())
+}
+
+/// Checks the `key` is **not** in the `map`.
+pub fn check_key_not_in_map<K, V>(
+    map: &HashMap<K, V>,
+    key: &K,
+    key_name: &str,
+    map_name: &str,
+) -> anyhow::Result<()>
+where
+    K: Hash,
+    K: std::cmp::Eq,
+    K: std::fmt::Display,
+{
+    if map.contains_key(key) {
+        anyhow::bail!(
+            "{FAILED} the '{key_name}' key {key} was already in the '{map_name}' map `&<{}, {}>`",
+            std::any::type_name::<K>(),
+            std::any::type_name::<V>(),
+        )
+    }
+    Ok(())
+}
+
+/// Checks the `key` is in the `map`.
+pub fn check_key_in_map<K, V>(
+    map: &HashMap<K, V>,
+    key: &K,
+    key_name: &str,
+    map_name: &str,
+) -> anyhow::Result<()>
+where
+    K: Hash,
+    K: std::cmp::Eq,
+    K: std::fmt::Display,
+{
+    if !map.contains_key(key) {
+        anyhow::bail!(
+            "{FAILED} the '{key_name}' key {key} was not in the '{map_name}' map `&<{}, {}>`",
             std::any::type_name::<K>(),
             std::any::type_name::<V>(),
         )
@@ -500,6 +544,36 @@ mod tests {
     #[case(HashMap::from([("A".to_string(), 1_u8)]), true)]
     fn test_check_map_not_empty(#[case] map: HashMap<String, u8>, #[case] expected: bool) {
         let result = check_map_not_empty(&map, "param").is_ok();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(&HashMap::<u32, u32>::new(), 5, "key", "map", true)] // Empty map
+    #[case(&HashMap::from([(1, 10), (2, 20)]), 1, "key", "map", false)] // Key exists
+    #[case(&HashMap::from([(1, 10), (2, 20)]), 5, "key", "map", true)] // Key doesn't exist
+    fn test_check_key_not_in_map(
+        #[case] map: &HashMap<u32, u32>,
+        #[case] key: u32,
+        #[case] key_name: &str,
+        #[case] map_name: &str,
+        #[case] expected: bool,
+    ) {
+        let result = check_key_not_in_map(map, &key, key_name, map_name).is_ok();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(&HashMap::<u32, u32>::new(), 5, "key", "map", false)] // Empty map
+    #[case(&HashMap::from([(1, 10), (2, 20)]), 1, "key", "map", true)] // Key exists
+    #[case(&HashMap::from([(1, 10), (2, 20)]), 5, "key", "map", false)] // Key doesn't exist
+    fn test_check_key_in_map(
+        #[case] map: &HashMap<u32, u32>,
+        #[case] key: u32,
+        #[case] key_name: &str,
+        #[case] map_name: &str,
+        #[case] expected: bool,
+    ) {
+        let result = check_key_in_map(map, &key, key_name, map_name).is_ok();
         assert_eq!(result, expected);
     }
 }
