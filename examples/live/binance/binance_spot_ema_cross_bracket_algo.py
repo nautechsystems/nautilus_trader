@@ -29,6 +29,7 @@ from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
 from nautilus_trader.examples.strategies.ema_cross_bracket_algo import EMACrossBracketAlgo
 from nautilus_trader.examples.strategies.ema_cross_bracket_algo import EMACrossBracketAlgoConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import TraderId
 
 
@@ -93,7 +94,7 @@ strat_config = EMACrossBracketAlgoConfig(
     bracket_distance_atr=1.0,
     trade_size=Decimal("0.05"),
     emulation_trigger="BID_ASK",
-    entry_exec_algorithm_id="TWAP",
+    entry_exec_algorithm_id=ExecAlgorithmId("TWAP"),
     entry_exec_algorithm_params={
         "horizon_secs": 10.0,
         "interval_secs": 2.5,
