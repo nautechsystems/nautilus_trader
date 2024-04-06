@@ -24,7 +24,7 @@ from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BybitOpenOrdersGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
-    category: BybitProductType | None = None
+    category: BybitProductType
     symbol: str | None = None
     baseCoin: str | None = None
     settleCoin: str | None = None
@@ -32,7 +32,7 @@ class BybitOpenOrdersGetParams(msgspec.Struct, omit_defaults=True, frozen=False)
     orderLinkId: str | None = None
 
 
-class BybitOpenOrdersHttp(BybitHttpEndpoint):
+class BybitOpenOrdersEndpoint(BybitHttpEndpoint):
     def __init__(
         self,
         client: BybitHttpClient,

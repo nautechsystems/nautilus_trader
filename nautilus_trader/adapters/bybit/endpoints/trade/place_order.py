@@ -18,6 +18,7 @@ import msgspec
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
@@ -27,7 +28,7 @@ from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BybitPlaceOrderGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
-    category: str
+    category: BybitProductType
     symbol: str
     side: BybitOrderSide
     qty: str

@@ -90,7 +90,7 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
         enum_parser: BybitEnumParser,
         ts_init: int,
     ) -> OrderStatusReport:
-        client_order_id = ClientOrderId(self.orderLinkId)
+        client_order_id = ClientOrderId(self.orderLinkId) if self.orderLinkId else None
         order_list_id = None
         contingency_type = ContingencyType.NO_CONTINGENCY
         trigger_price = (
@@ -133,6 +133,13 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
 
 
 class BybitOpenOrdersResponseStruct(msgspec.Struct):
+    retCode: int
+    retMsg: str
+    result: BybitListResult[BybitOrder]
+    time: int
+
+
+class BybitOrderHistoryResponseStruct(msgspec.Struct):
     retCode: int
     retMsg: str
     result: BybitListResult[BybitOrder]

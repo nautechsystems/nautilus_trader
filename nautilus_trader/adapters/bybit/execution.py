@@ -44,10 +44,9 @@ from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.core.rust.common import LogColor
-from nautilus_trader.core.rust.model import TimeInForce
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
@@ -62,6 +61,7 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import account_type_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
@@ -96,8 +96,8 @@ class BybitExecutionClient(LiveExecutionClient):
         The clock for the client.
     instrument_provider : BybitInstrumentProvider
         The instrument provider.
-    product_types : list[BybitProductType]
-        The product types for the client.
+    product_type : BybitProductType
+        The product type for the client.
     base_url_ws : str
         The base URL for the WebSocket client.
     config : BybitExecClientConfig
@@ -113,17 +113,22 @@ class BybitExecutionClient(LiveExecutionClient):
         cache: Cache,
         clock: LiveClock,
         instrument_provider: BybitInstrumentProvider,
-        product_types: list[BybitProductType],
+        product_type: BybitProductType,
         base_url_ws: str,
         config: BybitExecClientConfig,
     ) -> None:
+        if product_type == BybitProductType.SPOT:
+            account_type = AccountType.CASH
+        else:
+            account_type = AccountType.MARGIN
+
         super().__init__(
             loop=loop,
             client_id=ClientId(BYBIT_VENUE.value),
             venue=BYBIT_VENUE,
             oms_type=OmsType.NETTING,
             instrument_provider=instrument_provider,
-            account_type=AccountType.CASH,
+            account_type=account_type,
             base_currency=None,
             msgbus=msgbus,
             cache=cache,
@@ -131,14 +136,14 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
         # Configuration
-        self._product_types = product_types
+        self._product_type = product_type
         self._use_gtd = config.use_gtd
         self._use_reduce_only = config.use_reduce_only
         self._use_position_ids = config.use_position_ids
         self._max_retries = config.max_retries or 0
         self._retry_delay = config.retry_delay or 1.0
-        self._log.info(f"Account type: {account_type_to_str(self.account_type)}", LogColor.BLUE)
-        self._log.info(f"Product types: {[p.value for p in product_types]}", LogColor.BLUE)
+        self._log.info(f"Account type: {account_type_to_str(account_type)}", LogColor.BLUE)
+        self._log.info(f"Product type: {product_type.value}", LogColor.BLUE)
         self._log.info(f"{config.use_gtd=}", LogColor.BLUE)
         self._log.info(f"{config.use_reduce_only=}", LogColor.BLUE)
         self._log.info(f"{config.use_position_ids=}", LogColor.BLUE)
@@ -216,25 +221,27 @@ class BybitExecutionClient(LiveExecutionClient):
         self._log.info("Requesting OrderStatusReports...")
         reports: list[OrderStatusReport] = []
         try:
-            symbol = instrument_id.symbol.value if instrument_id is not None else None
+            _symbol = instrument_id.symbol.value if instrument_id is not None else None
+            symbol = BybitSymbol(_symbol) if _symbol is not None else None
             # active_symbols = self._get_cache_active_symbols()
             # active_symbols.update(await self._get_active_position_symbols(symbol))
             # open_orders: dict[BybitProductType, list[BybitOrder]] = dict()
-            for instr in self._product_types:
-                open_orders = await self._http_account.query_open_orders(instr, symbol)
-                for order in open_orders:
-                    # Uncomment for development
-                    self._log.info(f"Generating report {order}", LogColor.MAGENTA)
-                    bybit_symbol = BybitSymbol(order.symbol + f"-{instr.value.upper()}")
-                    report = order.parse_to_order_status_report(
-                        account_id=self.account_id,
-                        instrument_id=bybit_symbol.parse_as_nautilus(),
-                        report_id=UUID4(),
-                        enum_parser=self._enum_parser,
-                        ts_init=self._clock.timestamp_ns(),
-                    )
-                    reports.append(report)
-                    self._log.debug(f"Received {report}")
+            bybit_orders = await self._http_account.query_order_history(self._product_type, symbol)
+            for bybit_order in bybit_orders:
+                # Uncomment for development
+                self._log.info(f"Generating report {bybit_order}", LogColor.MAGENTA)
+                bybit_symbol = BybitSymbol(
+                    bybit_order.symbol + f"-{self._product_type.value.upper()}",
+                )
+                report = bybit_order.parse_to_order_status_report(
+                    account_id=self.account_id,
+                    instrument_id=bybit_symbol.parse_as_nautilus(),
+                    report_id=UUID4(),
+                    enum_parser=self._enum_parser,
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                reports.append(report)
+                self._log.debug(f"Received {report}")
         except BybitError as e:
             self._log.error(f"Failed to generate OrderStatusReports: {e}")
         len_reports = len(reports)
@@ -313,24 +320,25 @@ class BybitExecutionClient(LiveExecutionClient):
     ) -> list[PositionStatusReport]:
         self._log.info("Requesting PositionStatusReports...")
         reports: list[PositionStatusReport] = []
-        for product_type in self._product_types:
-            if product_type == BybitProductType.SPOT:
-                continue  # No positions on spot
-            positions = await self._http_account.query_position_info(product_type)
-            for position in positions:
-                # Uncomment for development
-                self._log.info(f"Generating report {position}", LogColor.MAGENTA)
-                instr: InstrumentId = BybitSymbol(
-                    position.symbol + "-" + product_type.value.upper(),
-                ).parse_as_nautilus()
-                position_report = position.parse_to_position_status_report(
-                    account_id=self.account_id,
-                    instrument_id=instr,
-                    report_id=UUID4(),
-                    ts_init=self._clock.timestamp_ns(),
-                )
-                self._log.debug(f"Received {position_report}")
-                reports.append(position_report)
+
+        if self._product_type == BybitProductType.SPOT:
+            return []  # No positions on spot
+
+        positions = await self._http_account.query_position_info(self._product_type)
+        for position in positions:
+            # Uncomment for development
+            self._log.info(f"Generating report {position}", LogColor.MAGENTA)
+            instr: InstrumentId = BybitSymbol(
+                position.symbol + "-" + self._product_type.value.upper(),
+            ).parse_as_nautilus()
+            position_report = position.parse_to_position_status_report(
+                account_id=self.account_id,
+                instrument_id=instr,
+                report_id=UUID4(),
+                ts_init=self._clock.timestamp_ns(),
+            )
+            self._log.debug(f"Received {position_report}")
+            reports.append(position_report)
         return reports
 
     def _get_cached_instrument_id(self, symbol: str, category: str) -> InstrumentId:
@@ -369,7 +377,7 @@ class BybitExecutionClient(LiveExecutionClient):
     async def _get_active_position_symbols(self, symbol: str | None) -> set[str]:
         active_symbols: set[str] = set()
         bybit_positions = await self._http_account.query_position_info(
-            BybitProductType.LINEAR,  # <-- TODO: Replace this with `product_type`
+            self._product_type,
             symbol,
         )
         for position in bybit_positions:
@@ -378,11 +386,11 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def _update_account_state(self) -> None:
         # positions = await self._http_account.query_position_info()
-        [product_type_balances, ts_event] = await self._http_account.query_wallet_balance()
-        if product_type_balances:
+        (balances, ts_event) = await self._http_account.query_wallet_balance()
+        if balances:
             self._log.info("Bybit API key authenticated", LogColor.GREEN)
             self._log.info(f"API key {self._http_account.client.api_key} has trading permissions")
-        for balance in product_type_balances:
+        for balance in balances:
             balances = balance.parse_to_account_balance()
             margins = balance.parse_to_margin_balance()
             try:

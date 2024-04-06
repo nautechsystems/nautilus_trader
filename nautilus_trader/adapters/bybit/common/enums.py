@@ -124,7 +124,7 @@ class BybitOrderSide(Enum):
 class BybitOrderType(Enum):
     MARKET = "Market"
     LIMIT = "Limit"
-    UNKNOWN = "Unknown"  # Used when execution type is Funding
+    UNKNOWN = "UNKNOWN"  # Used when execution type is Funding
 
 
 @unique
