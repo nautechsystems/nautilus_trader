@@ -35,9 +35,9 @@ class BybitBatchCancelOrderPostParams(msgspec.Struct, omit_defaults=True, frozen
     marketUnit: str | None = None
     orderType: BybitOrderType | None = None
     price: str | None = None
-    trigger_direction: int | None = None  # TODO type this
-    trigger_price: str | None = None
-    trigger_by: BybitTriggerType | None = None
+    triggerDirection: int | None = None  # TODO type this
+    triggerPrice: str | None = None
+    triggerBy: BybitTriggerType | None = None
     timeInForce: BybitTimeInForce | None = None
     orderLinkId: str | None = None
 
