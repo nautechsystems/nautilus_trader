@@ -40,3 +40,6 @@ cdef class StopLimitOrder(Order):
 
     @staticmethod
     cdef StopLimitOrder create(OrderInitialized init)
+
+    @staticmethod
+    cdef StopLimitOrder from_pyo3_c(pyo3_order)

@@ -968,8 +968,8 @@ impl OrderCore {
     }
 
     #[must_use]
-    pub fn init_event(&self) -> Option<&OrderEvent> {
-        self.events.first()
+    pub fn init_event(&self) -> Option<OrderEvent> {
+        self.events.first().cloned()
     }
 }
 
