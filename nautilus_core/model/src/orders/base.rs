@@ -45,6 +45,11 @@ use crate::{
         strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
         venue::Venue, venue_order_id::VenueOrderId,
     },
+    polymorphism::{
+        GetClientOrderId, GetEmulationTrigger, GetExecAlgorithmId, GetExecSpawnId, GetInstrumentId,
+        GetLimitPrice, GetOrderSide, GetOrderSideSpecified, GetStopPrice, GetStrategyId,
+        GetVenueOrderId,
+    },
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
@@ -82,50 +87,6 @@ pub enum OrderError {
     AlreadyInitialized,
     #[error("Order had no previous state")]
     NoPreviousState,
-}
-
-pub trait HasInstrumentId {
-    fn instrument_id(&self) -> InstrumentId;
-}
-
-pub trait GetClientOrderId {
-    fn get_client_order_id(&self) -> ClientOrderId;
-}
-
-pub trait GetVenueOrderId {
-    fn get_venue_order_id(&self) -> Option<VenueOrderId>;
-}
-
-pub trait GetStrategyId {
-    fn get_strategy_id(&self) -> StrategyId;
-}
-
-pub trait HasExecAlgorithmId {
-    fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId>;
-}
-
-pub trait HasExecSpawnId {
-    fn exec_spawn_id(&self) -> Option<ClientOrderId>;
-}
-
-pub trait GetOrderSide {
-    fn get_order_side(&self) -> OrderSide;
-}
-
-pub trait GetOrderSideSpecified {
-    fn get_order_side_specified(&self) -> OrderSideSpecified;
-}
-
-pub trait GetLimitPrice {
-    fn get_limit_px(&self) -> Price;
-}
-
-pub trait GetStopPrice {
-    fn get_stop_px(&self) -> Price;
-}
-
-pub trait HasEmulationTrigger {
-    fn emulation_trigger(&self) -> Option<TriggerType>;
 }
 
 #[derive(Debug)]
@@ -188,7 +149,7 @@ impl OrderAny {
     }
 }
 
-impl HasInstrumentId for OrderAny {
+impl GetInstrumentId for OrderAny {
     fn instrument_id(&self) -> InstrumentId {
         match self {
             Self::Limit(order) => order.instrument_id,
@@ -205,7 +166,7 @@ impl HasInstrumentId for OrderAny {
 }
 
 impl GetClientOrderId for OrderAny {
-    fn get_client_order_id(&self) -> ClientOrderId {
+    fn client_order_id(&self) -> ClientOrderId {
         match self {
             Self::Limit(order) => order.client_order_id,
             Self::LimitIfTouched(order) => order.client_order_id,
@@ -221,7 +182,7 @@ impl GetClientOrderId for OrderAny {
 }
 
 impl GetVenueOrderId for OrderAny {
-    fn get_venue_order_id(&self) -> Option<VenueOrderId> {
+    fn venue_order_id(&self) -> Option<VenueOrderId> {
         match self {
             Self::Limit(order) => order.venue_order_id,
             Self::LimitIfTouched(order) => order.venue_order_id,
@@ -237,7 +198,7 @@ impl GetVenueOrderId for OrderAny {
 }
 
 impl GetStrategyId for OrderAny {
-    fn get_strategy_id(&self) -> StrategyId {
+    fn strategy_id(&self) -> StrategyId {
         match self {
             Self::Limit(order) => order.strategy_id,
             Self::LimitIfTouched(order) => order.strategy_id,
@@ -252,7 +213,7 @@ impl GetStrategyId for OrderAny {
     }
 }
 
-impl HasExecAlgorithmId for OrderAny {
+impl GetExecAlgorithmId for OrderAny {
     fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId> {
         match self {
             Self::Limit(order) => order.exec_algorithm_id,
@@ -268,7 +229,7 @@ impl HasExecAlgorithmId for OrderAny {
     }
 }
 
-impl HasExecSpawnId for OrderAny {
+impl GetExecSpawnId for OrderAny {
     fn exec_spawn_id(&self) -> Option<ClientOrderId> {
         match self {
             Self::Limit(order) => order.exec_spawn_id,
@@ -285,7 +246,7 @@ impl HasExecSpawnId for OrderAny {
 }
 
 impl GetOrderSide for OrderAny {
-    fn get_order_side(&self) -> OrderSide {
+    fn order_side(&self) -> OrderSide {
         match self {
             Self::Limit(order) => order.side,
             Self::LimitIfTouched(order) => order.side,
@@ -301,7 +262,7 @@ impl GetOrderSide for OrderAny {
 }
 
 impl GetOrderSideSpecified for OrderAny {
-    fn get_order_side_specified(&self) -> OrderSideSpecified {
+    fn order_side_specified(&self) -> OrderSideSpecified {
         match self {
             Self::Limit(order) => order.side.as_specified(),
             Self::LimitIfTouched(order) => order.side.as_specified(),
@@ -316,7 +277,7 @@ impl GetOrderSideSpecified for OrderAny {
     }
 }
 
-impl HasEmulationTrigger for OrderAny {
+impl GetEmulationTrigger for OrderAny {
     fn emulation_trigger(&self) -> Option<TriggerType> {
         match self {
             Self::Limit(order) => order.emulation_trigger,
@@ -341,8 +302,8 @@ pub enum PassiveOrderType {
 impl PartialEq for PassiveOrderType {
     fn eq(&self, rhs: &Self) -> bool {
         match self {
-            Self::Limit(order) => order.get_client_order_id() == rhs.get_client_order_id(),
-            Self::Stop(order) => order.get_client_order_id() == rhs.get_client_order_id(),
+            Self::Limit(order) => order.client_order_id() == rhs.client_order_id(),
+            Self::Stop(order) => order.client_order_id() == rhs.client_order_id(),
         }
     }
 }
@@ -358,10 +319,10 @@ pub enum LimitOrderType {
 impl PartialEq for LimitOrderType {
     fn eq(&self, rhs: &Self) -> bool {
         match self {
-            Self::Limit(order) => order.client_order_id == rhs.get_client_order_id(),
-            Self::MarketToLimit(order) => order.client_order_id == rhs.get_client_order_id(),
-            Self::StopLimit(order) => order.client_order_id == rhs.get_client_order_id(),
-            Self::TrailingStopLimit(order) => order.client_order_id == rhs.get_client_order_id(),
+            Self::Limit(order) => order.client_order_id == rhs.client_order_id(),
+            Self::MarketToLimit(order) => order.client_order_id == rhs.client_order_id(),
+            Self::StopLimit(order) => order.client_order_id == rhs.client_order_id(),
+            Self::TrailingStopLimit(order) => order.client_order_id == rhs.client_order_id(),
         }
     }
 }
@@ -379,36 +340,36 @@ pub enum StopOrderType {
 impl PartialEq for StopOrderType {
     fn eq(&self, rhs: &Self) -> bool {
         match self {
-            Self::LimitIfTouched(order) => order.client_order_id == rhs.get_client_order_id(),
-            Self::StopLimit(order) => order.client_order_id == rhs.get_client_order_id(),
-            Self::StopMarket(order) => order.client_order_id == rhs.get_client_order_id(),
-            Self::MarketIfTouched(order) => order.client_order_id == rhs.get_client_order_id(),
-            Self::TrailingStopLimit(order) => order.client_order_id == rhs.get_client_order_id(),
-            Self::TrailingStopMarket(order) => order.client_order_id == rhs.get_client_order_id(),
+            Self::LimitIfTouched(order) => order.client_order_id == rhs.client_order_id(),
+            Self::StopLimit(order) => order.client_order_id == rhs.client_order_id(),
+            Self::StopMarket(order) => order.client_order_id == rhs.client_order_id(),
+            Self::MarketIfTouched(order) => order.client_order_id == rhs.client_order_id(),
+            Self::TrailingStopLimit(order) => order.client_order_id == rhs.client_order_id(),
+            Self::TrailingStopMarket(order) => order.client_order_id == rhs.client_order_id(),
         }
     }
 }
 
 impl GetClientOrderId for PassiveOrderType {
-    fn get_client_order_id(&self) -> ClientOrderId {
+    fn client_order_id(&self) -> ClientOrderId {
         match self {
-            Self::Limit(order) => order.get_client_order_id(),
-            Self::Stop(order) => order.get_client_order_id(),
+            Self::Limit(order) => order.client_order_id(),
+            Self::Stop(order) => order.client_order_id(),
         }
     }
 }
 
 impl GetOrderSideSpecified for PassiveOrderType {
-    fn get_order_side_specified(&self) -> OrderSideSpecified {
+    fn order_side_specified(&self) -> OrderSideSpecified {
         match self {
-            Self::Limit(order) => order.get_order_side_specified(),
-            Self::Stop(order) => order.get_order_side_specified(),
+            Self::Limit(order) => order.order_side_specified(),
+            Self::Stop(order) => order.order_side_specified(),
         }
     }
 }
 
 impl GetClientOrderId for LimitOrderType {
-    fn get_client_order_id(&self) -> ClientOrderId {
+    fn client_order_id(&self) -> ClientOrderId {
         match self {
             Self::Limit(order) => order.client_order_id,
             Self::MarketToLimit(order) => order.client_order_id,
@@ -419,7 +380,7 @@ impl GetClientOrderId for LimitOrderType {
 }
 
 impl GetOrderSideSpecified for LimitOrderType {
-    fn get_order_side_specified(&self) -> OrderSideSpecified {
+    fn order_side_specified(&self) -> OrderSideSpecified {
         match self {
             Self::Limit(order) => order.side.as_specified(),
             Self::MarketToLimit(order) => order.side.as_specified(),
@@ -430,7 +391,7 @@ impl GetOrderSideSpecified for LimitOrderType {
 }
 
 impl GetLimitPrice for LimitOrderType {
-    fn get_limit_px(&self) -> Price {
+    fn limit_px(&self) -> Price {
         match self {
             Self::Limit(order) => order.price,
             Self::MarketToLimit(order) => order.price.expect("No price for order"), // TBD
@@ -441,7 +402,7 @@ impl GetLimitPrice for LimitOrderType {
 }
 
 impl GetClientOrderId for StopOrderType {
-    fn get_client_order_id(&self) -> ClientOrderId {
+    fn client_order_id(&self) -> ClientOrderId {
         match self {
             Self::LimitIfTouched(order) => order.client_order_id,
             Self::MarketIfTouched(order) => order.client_order_id,
@@ -454,7 +415,7 @@ impl GetClientOrderId for StopOrderType {
 }
 
 impl GetOrderSideSpecified for StopOrderType {
-    fn get_order_side_specified(&self) -> OrderSideSpecified {
+    fn order_side_specified(&self) -> OrderSideSpecified {
         match self {
             Self::LimitIfTouched(order) => order.side.as_specified(),
             Self::MarketIfTouched(order) => order.side.as_specified(),
@@ -467,7 +428,7 @@ impl GetOrderSideSpecified for StopOrderType {
 }
 
 impl GetStopPrice for StopOrderType {
-    fn get_stop_px(&self) -> Price {
+    fn stop_px(&self) -> Price {
         match self {
             Self::LimitIfTouched(o) => o.trigger_price,
             Self::MarketIfTouched(o) => o.trigger_price,
