@@ -16,11 +16,12 @@
 #![allow(dead_code)] // Under development
 
 use nautilus_model::{
+    enums::OrderSideSpecified,
     identifiers::instrument_id::InstrumentId,
     orders::{
         base::{
             GetClientOrderId, GetLimitPrice, GetOrderSideSpecified, GetStopPrice, LimitOrderType,
-            OrderError, OrderSideSpecified, PassiveOrderType, StopOrderType,
+            OrderError, PassiveOrderType, StopOrderType,
         },
         market::MarketOrder,
     },

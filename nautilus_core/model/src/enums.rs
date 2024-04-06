@@ -670,6 +670,16 @@ pub enum OrderSide {
     Sell = 2,
 }
 
+impl OrderSide {
+    pub fn as_specified(&self) -> OrderSideSpecified {
+        match &self {
+            OrderSide::Buy => OrderSideSpecified::Buy,
+            OrderSide::Sell => OrderSideSpecified::Sell,
+            _ => panic!("Order invariant failed: side must be 'Buy' or 'Sell'"),
+        }
+    }
+}
+
 /// Convert the given `value` to an [`OrderSide`].
 impl FromU8 for OrderSide {
     fn from_u8(value: u8) -> Option<Self> {
@@ -678,6 +688,23 @@ impl FromU8 for OrderSide {
             1 => Some(Self::Buy),
             2 => Some(Self::Sell),
             _ => None,
+        }
+    }
+}
+
+/// The specified order side (BUY or SELL).
+pub enum OrderSideSpecified {
+    /// The order is a BUY.
+    Buy = 1,
+    /// The order is a SELL.
+    Sell = 2,
+}
+
+impl OrderSideSpecified {
+    pub fn as_order_side(&self) -> OrderSide {
+        match &self {
+            OrderSideSpecified::Buy => OrderSide::Buy,
+            OrderSideSpecified::Sell => OrderSide::Sell,
         }
     }
 }
