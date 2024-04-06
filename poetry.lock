@@ -188,13 +188,13 @@ lxml = ["lxml"]
 
 [[package]]
 name = "betfair-parser"
-version = "0.10.0"
+version = "0.11.1"
 description = "A betfair parser"
 optional = true
-python-versions = ">=3.9,<4.0"
+python-versions = "<4.0,>=3.9"
 files = [
-    {file = "betfair_parser-0.10.0-py3-none-any.whl", hash = "sha256:bb8693a7d657a341c10d181886e1abaf2088e2ee8e76bceb9a5ded636a8cd4e4"},
-    {file = "betfair_parser-0.10.0.tar.gz", hash = "sha256:7d35abbd826cdb41b54ec5f869a02500033b06b1f3798184d51eb40374a2a8ff"},
+    {file = "betfair_parser-0.11.1-py3-none-any.whl", hash = "sha256:df2be01ab95840878e5ac472153062f9b6debfbd76022512f75e578d74bad05c"},
+    {file = "betfair_parser-0.11.1.tar.gz", hash = "sha256:9c3246dee0a82bdd90e3eb9ee4df5bc38a8cd65f763333e1e5018b59a1c49bfb"},
 ]
 
 [package.dependencies]
@@ -2402,13 +2402,13 @@ files = [
 
 [[package]]
 name = "types-requests"
-version = "2.31.0.20240403"
+version = "2.31.0.20240406"
 description = "Typing stubs for requests"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "types-requests-2.31.0.20240403.tar.gz", hash = "sha256:e1e0cd0b655334f39d9f872b68a1310f0e343647688bf2cee932ec4c2b04de59"},
-    {file = "types_requests-2.31.0.20240403-py3-none-any.whl", hash = "sha256:06abf6a68f5c4f2a62f6bb006672dfb26ed50ccbfddb281e1ee6f09a65707d5d"},
+    {file = "types-requests-2.31.0.20240406.tar.gz", hash = "sha256:4428df33c5503945c74b3f42e82b181e86ec7b724620419a2966e2de604ce1a1"},
+    {file = "types_requests-2.31.0.20240406-py3-none-any.whl", hash = "sha256:6216cdac377c6b9a040ac1c0404f7284bd13199c0e1bb235f4324627e8898cf5"},
 ]
 
 [package.dependencies]
@@ -2688,4 +2688,4 @@ ib = ["async-timeout", "defusedxml", "nautilus_ibapi"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.13"
-content-hash = "bbf0863f6e5968a2441b49fc92da911daac306ec4ac320913a182a85736fc949"
+content-hash = "824503d112fd1f81b79f512647586379bf51ff5c3890f7c308b9f1553fd38292"
