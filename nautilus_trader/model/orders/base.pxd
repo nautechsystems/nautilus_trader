@@ -50,8 +50,8 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef set VALID_STOP_ORDER_TYPES
-cdef set VALID_LIMIT_ORDER_TYPES
+cdef set STOP_ORDER_TYPES
+cdef set LIMIT_ORDER_TYPES
 cdef set LOCAL_ACTIVE_ORDER_STATUS
 
 
