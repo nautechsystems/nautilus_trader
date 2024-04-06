@@ -15,10 +15,18 @@
 
 from typing import Final
 
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.model.identifiers import Venue
 
 
 BYBIT_VENUE: Final[Venue] = Venue("BYBIT")
+
+BYBIT_ALL_PRODUCTS: Final[list[BybitProductType]] = [
+    BybitProductType.SPOT,
+    BybitProductType.LINEAR,
+    BybitProductType.INVERSE,
+    BybitProductType.OPTION,
+]
 
 BYBIT_MINUTE_INTERVALS: Final[tuple[int, ...]] = (1, 3, 5, 15, 30, 60, 120, 240, 360, 720)
 BYBIT_HOUR_INTERVALS: Final[tuple[int, ...]] = (1, 2, 4, 6, 12)

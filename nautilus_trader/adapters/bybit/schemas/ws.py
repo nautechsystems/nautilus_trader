@@ -25,7 +25,6 @@ from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderStatus
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitPositionIdx
-from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.common.parsing import parse_bybit_delta
@@ -536,17 +535,6 @@ class BybitWsTradeMsg(msgspec.Struct):
 
 def decoder_ws_trade() -> msgspec.json.Decoder:
     return msgspec.json.Decoder(BybitWsTradeMsg)
-
-
-def decoder_ws_ticker(product_type: BybitProductType) -> msgspec.json.Decoder:
-    if product_type == BybitProductType.SPOT:
-        return msgspec.json.Decoder(BybitWsTickerSpotMsg)
-    elif product_type in (BybitProductType.LINEAR, BybitProductType.INVERSE):
-        return msgspec.json.Decoder(BybitWsTickerLinearMsg)
-    elif product_type == BybitProductType.OPTION:
-        return msgspec.json.Decoder(BybitWsTickerOptionMsg)
-    else:
-        raise ValueError(f"Invalid product type: {product_type}")
 
 
 def decoder_ws_kline():
