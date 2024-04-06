@@ -632,11 +632,11 @@ pub fn decode_ohlcv_msg(
 
     let bar = Bar::new(
         bar_type,
-        Price::from_raw(msg.open / 100, price_precision)?, // TODO(adjust for display factor)
-        Price::from_raw(msg.high / 100, price_precision)?, // TODO(adjust for display factor)
-        Price::from_raw(msg.low / 100, price_precision)?,  // TODO(adjust for display factor)
-        Price::from_raw(msg.close / 100, price_precision)?, // TODO(adjust for display factor)
-        Quantity::from_raw(msg.volume * FIXED_SCALAR as u64, 0)?, // TODO(adjust for display factor)
+        Price::from_raw(msg.open / 100, price_precision)?, // TODO: adjust for display factor
+        Price::from_raw(msg.high / 100, price_precision)?, // TODO: adjust for display factor
+        Price::from_raw(msg.low / 100, price_precision)?,  // TODO: adjust for display factor
+        Price::from_raw(msg.close / 100, price_precision)?, // TODO: adjust for display factor
+        Quantity::from_raw(msg.volume * FIXED_SCALAR as u64, 0)?, // TODO: adjust for display factor
         ts_event,
         ts_init,
     );

@@ -279,7 +279,7 @@ class EMACrossStopEntry(Strategy):
             trigger_price=self.instrument.make_price(last_bar.high + (self.tick_size * 2)),
             emulation_trigger=self.emulation_trigger,
         )
-        # TODO(cs): Uncomment below order for development
+        # TODO: Uncomment below order for development
         # order: LimitIfTouchedOrder = self.order_factory.limit_if_touched(
         #     instrument_id=self.instrument_id,
         #     order_side=OrderSide.BUY,
@@ -318,7 +318,7 @@ class EMACrossStopEntry(Strategy):
             trigger_price=self.instrument.make_price(last_bar.low - (self.tick_size * 2)),
             emulation_trigger=self.emulation_trigger,
         )
-        # TODO(cs): Uncomment below order for development
+        # TODO: Uncomment below order for development
         # order: LimitIfTouchedOrder = self.order_factory.limit_if_touched(
         #     instrument_id=self.instrument_id,
         #     order_side=OrderSide.SELL,

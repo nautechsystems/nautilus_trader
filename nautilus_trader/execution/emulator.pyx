@@ -837,7 +837,7 @@ cdef class OrderEmulator(Actor):
                 self._update_trailing_stop_order(matching_core, order)
 
     cdef void _update_trailing_stop_order(self, MatchingCore matching_core, Order order):
-        # TODO(cs): Improve efficiency of this ---------------------------------
+        # TODO: Improve efficiency of this ---------------------------------
         cdef Price bid = None
         cdef Price ask = None
         cdef Price last = None
@@ -856,7 +856,7 @@ cdef class OrderEmulator(Actor):
             ask = quote_tick.ask_price
         if last is None and trade_tick is not None:
             last = trade_tick.price
-        # TODO(cs): ------------------------------------------------------------
+        # TODO: ------------------------------------------------------------
 
         cdef tuple output
         try:

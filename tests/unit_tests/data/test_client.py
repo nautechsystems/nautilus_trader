@@ -82,7 +82,7 @@ class TestDataClient:
         self.client.subscribe(data_type)
 
         # Assert
-        # TODO(cs): Determine better way of asserting this than parsing logs
+        # TODO: Determine better way of asserting this than parsing logs
 
     def test_unsubscribe_when_not_implemented_logs_error(self):
         # Arrange
@@ -92,7 +92,7 @@ class TestDataClient:
         self.client.subscribe(data_type)
 
         # Assert
-        # TODO(cs): Determine better way of asserting this than parsing logs
+        # TODO: Determine better way of asserting this than parsing logs
 
     def test_request_when_not_implemented_logs_error(self):
         # Arrange
@@ -102,7 +102,7 @@ class TestDataClient:
         self.client.request(data_type, UUID4())
 
         # Assert
-        # TODO(cs): Determine better way of asserting this than parsing logs
+        # TODO: Determine better way of asserting this than parsing logs
 
     def test_handle_data_sends_to_data_engine(self):
         # Arrange

@@ -655,7 +655,7 @@ cdef class RiskEngine(Component):
                 if order.trigger_price is None:
                     self._log.warning(
                         f"Cannot check {order_type_to_str(order.order_type)} order risk: "
-                        f"no trigger price was set",  # TODO(cs): Use last_trade += offset
+                        f"no trigger price was set",  # TODO: Use last_trade += offset
                     )
                     continue  # Cannot assess risk
                 else:
