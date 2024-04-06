@@ -640,7 +640,6 @@ impl Cache {
         query
     }
 
-    #[allow(clippy::borrowed_box)] // Temporary to appease clippy (will change)
     fn get_orders_for_ids(
         &self,
         client_order_ids: HashSet<ClientOrderId>,
@@ -831,7 +830,6 @@ impl Cache {
 
     // -- ORDER QUERIES -------------------------------------------------------
 
-    #[allow(clippy::borrowed_box)] // Temporary to appease clippy (will change)
     pub fn order(&self, client_order_id: ClientOrderId) -> Option<&OrderAny> {
         self.orders.get(&client_order_id)
     }
@@ -850,7 +848,6 @@ impl Cache {
         self.index.order_client.get(&client_order_id)
     }
 
-    #[allow(clippy::borrowed_box)] // Temporary to appease clippy (will change)
     pub fn orders(
         &self,
         venue: Option<Venue>,
@@ -862,7 +859,6 @@ impl Cache {
         self.get_orders_for_ids(client_order_ids, side)
     }
 
-    #[allow(clippy::borrowed_box)] // Temporary to appease clippy (will change)
     pub fn orders_open(
         &self,
         venue: Option<Venue>,
@@ -874,7 +870,6 @@ impl Cache {
         self.get_orders_for_ids(client_order_ids, side)
     }
 
-    #[allow(clippy::borrowed_box)] // Temporary to appease clippy (will change)
     pub fn orders_closed(
         &self,
         venue: Option<Venue>,
@@ -886,7 +881,6 @@ impl Cache {
         self.get_orders_for_ids(client_order_ids, side)
     }
 
-    #[allow(clippy::borrowed_box)] // Temporary to appease clippy (will change)
     pub fn orders_emulated(
         &self,
         venue: Option<Venue>,
@@ -898,7 +892,6 @@ impl Cache {
         self.get_orders_for_ids(client_order_ids, side)
     }
 
-    #[allow(clippy::borrowed_box)] // Temporary to appease clippy (will change)
     pub fn orders_inflight(
         &self,
         venue: Option<Venue>,
@@ -910,7 +903,6 @@ impl Cache {
         self.get_orders_for_ids(client_order_ids, side)
     }
 
-    #[allow(clippy::borrowed_box)] // Temporary to appease clippy (will change)
     pub fn orders_for_position(&self, position_id: PositionId) -> Vec<&OrderAny> {
         let client_order_ids = self.index.position_orders.get(&position_id);
         match client_order_ids {
