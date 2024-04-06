@@ -39,6 +39,8 @@ from nautilus_trader.adapters.bybit.endpoints.trade.order_history import BybitOr
 from nautilus_trader.adapters.bybit.endpoints.trade.order_history import BybitOrderHistoryGetParams
 from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderGetParams
+from nautilus_trader.adapters.bybit.endpoints.trade.trade_history import BybitTradeHistoryEndpoint
+from nautilus_trader.adapters.bybit.endpoints.trade.trade_history import BybitTradeHistoryGetParams
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.account.balance import BybitWalletBalance
 from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
@@ -47,6 +49,7 @@ from nautilus_trader.adapters.bybit.schemas.order import BybitCancelOrder
 from nautilus_trader.adapters.bybit.schemas.order import BybitOrder
 from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrderResponse
 from nautilus_trader.adapters.bybit.schemas.position import BybitPositionStruct
+from nautilus_trader.adapters.bybit.schemas.trade import BybitExecution
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.correctness import PyCondition
 
@@ -71,6 +74,7 @@ class BybitAccountHttpAPI:
         self._endpoint_position_info = BybitPositionInfoEndpoint(client, self.base_endpoint)
         self._endpoint_open_orders = BybitOpenOrdersEndpoint(client, self.base_endpoint)
         self._endpoint_order_history = BybitOrderHistoryEndpoint(client, self.base_endpoint)
+        self._endpoint_trade_history = BybitTradeHistoryEndpoint(client, self.base_endpoint)
         self._endpoint_place_order = BybitPlaceOrderEndpoint(client, self.base_endpoint)
         self._endpoint_cancel_order = BybitCancelOrderEndpoint(client, self.base_endpoint)
         self._endpoint_cancel_all_orders = BybitCancelAllOrdersEndpoint(client, self.base_endpoint)
@@ -152,6 +156,19 @@ class BybitAccountHttpAPI:
                 category=product_type,
                 symbol=symbol,
                 settleCoin=settle_coin,
+            ),
+        )
+        return response.result.list
+
+    async def query_trade_history(
+        self,
+        product_type: BybitProductType,
+        symbol: str | None = None,
+    ) -> list[BybitExecution]:
+        response = await self._endpoint_trade_history.get(
+            BybitTradeHistoryGetParams(
+                category=product_type,
+                symbol=symbol,
             ),
         )
         return response.result.list

@@ -21,8 +21,6 @@ from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.factories import BybitLiveDataClientFactory
 from nautilus_trader.adapters.bybit.factories import BybitLiveExecClientFactory
-from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.common.config import DatabaseConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -51,10 +49,10 @@ config_node = TradingNodeConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
     ),
-    cache=CacheConfig(
-        database=DatabaseConfig(),
-        buffer_interval_ms=100,
-    ),
+    # cache=CacheConfig(
+    #     database=DatabaseConfig(),
+    #     buffer_interval_ms=100,
+    # ),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),
     #     streams_prefix="quoters",

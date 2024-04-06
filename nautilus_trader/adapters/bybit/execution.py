@@ -232,7 +232,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 bybit_orders = await self._http_account.query_order_history(product_type, symbol)
                 for bybit_order in bybit_orders:
                     # Uncomment for development
-                    self._log.info(f"Generating report {bybit_order}", LogColor.MAGENTA)
+                    # self._log.info(f"Generating report {bybit_order}", LogColor.MAGENTA)
                     bybit_symbol = BybitSymbol(
                         bybit_order.symbol + f"-{product_type.value.upper()}",
                     )
@@ -272,7 +272,7 @@ class BybitExecutionClient(LiveExecutionClient):
             return None
         self._log.info(
             f"Generating OrderStatusReport for "
-            f"{repr(client_order_id) if client_order_id else ''} "
+            f"{repr(client_order_id) if client_order_id else ''}, "
             f"{repr(venue_order_id) if venue_order_id else ''}",
         )
         try:
@@ -313,7 +313,36 @@ class BybitExecutionClient(LiveExecutionClient):
         end: pd.Timestamp | None = None,
     ) -> list[FillReport]:
         self._log.info("Requesting FillReports...")
-        return []
+        reports: list[FillReport] = []
+        try:
+            _symbol = instrument_id.symbol.value if instrument_id is not None else None
+            symbol = BybitSymbol(_symbol) if _symbol is not None else None
+            # active_symbols = self._get_cache_active_symbols()
+            # active_symbols.update(await self._get_active_position_symbols(symbol))
+            # open_orders: dict[BybitProductType, list[BybitOrder]] = dict()
+            for product_type in self._product_types:
+                bybit_fills = await self._http_account.query_trade_history(product_type, symbol)
+                for bybit_fill in bybit_fills:
+                    # Uncomment for development
+                    # self._log.info(f"Generating fill {bybit_fill}", LogColor.MAGENTA)
+                    bybit_symbol = BybitSymbol(
+                        bybit_fill.symbol + f"-{product_type.value.upper()}",
+                    )
+                    report = bybit_fill.parse_to_fill_report(
+                        account_id=self.account_id,
+                        instrument_id=bybit_symbol.parse_as_nautilus(),
+                        report_id=UUID4(),
+                        enum_parser=self._enum_parser,
+                        ts_init=self._clock.timestamp_ns(),
+                    )
+                    reports.append(report)
+                    self._log.debug(f"Received {report}")
+        except BybitError as e:
+            self._log.error(f"Failed to generate FillReports: {e}")
+        len_reports = len(reports)
+        plural = "" if len_reports == 1 else "s"
+        self._log.info(f"Received {len(reports)} FillReport{plural}")
+        return reports
 
     async def generate_position_status_reports(
         self,
@@ -342,6 +371,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 )
                 self._log.debug(f"Received {position_report}")
                 reports.append(position_report)
+
         return reports
 
     def _get_cached_instrument_id(self, symbol: str, category: str) -> InstrumentId:
