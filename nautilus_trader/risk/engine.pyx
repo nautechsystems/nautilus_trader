@@ -35,6 +35,7 @@ from nautilus_trader.common.messages cimport TradingStateChanged
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderStatus
@@ -602,7 +603,7 @@ cdef class RiskEngine(Component):
         cdef Money max_notional = None
         max_notional_setting: Decimal | None = self._max_notional_per_order.get(instrument.id)
         if max_notional_setting:
-            # TODO(cs): Improve efficiency of this
+            # TODO: Improve efficiency of this
             max_notional = Money(float(max_notional_setting), instrument.quote_currency)
 
         # Get account for risk checks
@@ -615,6 +616,8 @@ cdef class RiskEngine(Component):
             return True  # TODO: Determine risk controls for margin
 
         free = account.balance_free(instrument.quote_currency)
+        if self.debug:
+            self._log.debug(f"Free: {free!r}", LogColor.MAGENTA)
 
         cdef:
             Order order
@@ -661,6 +664,8 @@ cdef class RiskEngine(Component):
                 last_px = order.price
 
             notional = instrument.notional_value(order.quantity, last_px, use_quote_for_inverse=True)
+            if self.debug:
+                self._log.debug(f"Notional: {order_balance_impact!r}", LogColor.MAGENTA)
 
             if max_notional and notional._mem.raw > max_notional._mem.raw:
                 self._deny_order(
@@ -694,6 +699,8 @@ cdef class RiskEngine(Component):
                 return False  # Denied
 
             order_balance_impact = account.balance_impact(instrument, order.quantity, last_px, order.side)
+            if self.debug:
+                self._log.debug(f"Balance impact: {order_balance_impact!r}", LogColor.MAGENTA)
 
             if free is not None and (free._mem.raw + order_balance_impact._mem.raw) < 0:
                 self._deny_order(
@@ -710,6 +717,9 @@ cdef class RiskEngine(Component):
                     cum_notional_buy = Money(-order_balance_impact, order_balance_impact.currency)
                 else:
                     cum_notional_buy._mem.raw += -order_balance_impact._mem.raw
+
+                if self.debug:
+                    self._log.debug(f"Cumulative notional BUY: {cum_notional_buy!r}")
                 if free is not None and cum_notional_buy._mem.raw > free._mem.raw:
                     self._deny_order(
                         order=order,
@@ -722,19 +732,27 @@ cdef class RiskEngine(Component):
                         cum_notional_sell = Money(order_balance_impact, order_balance_impact.currency)
                     else:
                         cum_notional_sell._mem.raw += order_balance_impact._mem.raw
+
+                    if self.debug:
+                        self._log.debug(f"Cumulative notional SELL: {cum_notional_sell!r}")
                     if free is not None and cum_notional_sell._mem.raw > free._mem.raw:
                         self._deny_order(
                             order=order,
                             reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free.to_str()}, cum_notional={cum_notional_sell.to_str()}",
                         )
                         return False  # Denied
-                elif base_currency is not None:
+                elif base_currency is not None and account.type == AccountType.CASH:
                     cash_value = Money(order.quantity.as_f64_c(), base_currency)
+                    self._log.debug(f"Cash value: {cash_value!r}", LogColor.MAGENTA)
                     free = account.balance_free(base_currency)
+                    self._log.debug(f"Free: {free!r}", LogColor.MAGENTA)
                     if cum_notional_sell is None:
                         cum_notional_sell = cash_value
                     else:
                         cum_notional_sell._mem.raw += cash_value._mem.raw
+
+                    if self.debug:
+                        self._log.debug(f"Cumulative notional SELL: {cum_notional_sell!r}")
                     if free is not None and cum_notional_sell._mem.raw > free._mem.raw:
                         self._deny_order(
                             order=order,
@@ -797,7 +815,7 @@ cdef class RiskEngine(Component):
         self._reject_modify_order(order, reason="Exceeded MAX_ORDER_MODIFY_RATE")
 
     cpdef void _deny_order(self, Order order, str reason):
-        self._log.error(f"SubmitOrder for {order.client_order_id.to_str()} DENIED: {reason}")
+        self._log.warning(f"SubmitOrder for {order.client_order_id.to_str()} DENIED: {reason}")
 
         if order is None:
             # Nothing to deny
