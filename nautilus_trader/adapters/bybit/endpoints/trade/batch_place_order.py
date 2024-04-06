@@ -23,40 +23,48 @@ from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
-from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrderResponse
+from nautilus_trader.adapters.bybit.schemas.order import BybitBatchPlaceOrderResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitPlaceOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=False):
-    category: BybitProductType
+class BybitPlaceOrder(msgspec.Struct, omit_defaults=True, frozen=True):
     symbol: str
     side: BybitOrderSide
+    orderType: BybitOrderType
     qty: str
+    isLeverage: str | None = None
     marketUnit: str | None = None
-    orderType: BybitOrderType | None = None
     price: str | None = None
+    orderFilter: str | None = None
     triggerDirection: int | None = None  # TODO type this
     triggerPrice: str | None = None
     triggerBy: BybitTriggerType | None = None
+    orderIv: str | None = None
     timeInForce: BybitTimeInForce | None = None
+    positionIdx: int | None = None
     orderLinkId: str | None = None
 
 
-class BybitPlaceOrderEndpoint(BybitHttpEndpoint):
+class BybitBatchPlaceOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=True):
+    category: BybitProductType
+    request: list[BybitPlaceOrder]
+
+
+class BybitBatchPlaceOrderEndpoint(BybitHttpEndpoint):
     def __init__(
         self,
         client: BybitHttpClient,
         base_endpoint: str,
     ) -> None:
-        url_path = base_endpoint + "/order/create"
+        url_path = base_endpoint + "/order/create-batch"
         super().__init__(
             client=client,
             endpoint_type=BybitEndpointType.TRADE,
             url_path=url_path,
         )
-        self._resp_decoder = msgspec.json.Decoder(BybitPlaceOrderResponse)
+        self._resp_decoder = msgspec.json.Decoder(BybitBatchPlaceOrderResponse)
 
-    async def post(self, params: BybitPlaceOrderPostParams) -> BybitPlaceOrderResponse:
+    async def post(self, params: BybitBatchPlaceOrderPostParams) -> BybitBatchPlaceOrderResponse:
         method_type = HttpMethod.POST
         raw = await self._method(method_type, params)
         try:

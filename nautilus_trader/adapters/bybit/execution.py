@@ -619,26 +619,20 @@ class BybitExecutionClient(LiveExecutionClient):
             ws_message = self._decoder_ws_msg_general.decode(raw)
             if ws_message.op == BYBIT_PONG:
                 return
-            if ws_message.topic:
-                self._handle_ws_message_by_topic(ws_message.topic, raw)
+            if ws_message.success is False:
+                self._log.error(f"Error ws_message: {ws_message}")
+                return
+            if not ws_message.topic:
+                return
+
+            if "order" in ws_message.topic:
+                self._handle_account_order_update(raw)
+            elif "execution" in ws_message.topic:
+                self._handle_account_execution_update(raw)
+            else:
+                self._log.error(f"Unknown websocket message topic: {ws_message.topic}")
         except Exception as e:
             self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
-
-    def _handle_ws_message_by_topic(self, topic: str, raw: bytes) -> None:
-        if "order" in topic:
-            self._handle_account_order_update(raw)
-        elif "execution" in topic:
-            self._handle_account_execution_update(raw)
-        else:
-            self._log.error(f"Unknown websocket message topic: {topic} in Bybit")
-
-    # def _handle_account_position_update(self,raw: bytes):
-    #     try:
-    #         msg = self._decoder_ws_account_position_update.decode(raw)
-    #         for position in msg.data:
-    #             print(position)
-    #     except Exception as e:
-    #         print(e)
 
     def _handle_account_execution_update(self, raw: bytes) -> None:
         try:

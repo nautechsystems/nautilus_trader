@@ -567,29 +567,23 @@ class BybitDataClient(LiveMarketDataClient):
             if ws_message.op == BYBIT_PONG:
                 return
             if ws_message.success is False:
-                self._log.error(f"Error in ws_message: {ws_message.ret_msg}")
+                self._log.error(f"Error ws_message: {ws_message}")
                 return
-            if ws_message.topic:
-                self._handle_ws_message_by_topic(product_type, ws_message.topic, raw)
+            if not ws_message.topic:
+                return
+
+            if "orderbook" in ws_message.topic:
+                self._handle_orderbook(product_type, raw)
+            elif "publicTrade" in ws_message.topic:
+                self._handle_trade(product_type, raw)
+            elif "tickers" in ws_message.topic:
+                self._handle_ticker(product_type, raw)
+            elif "kline" in ws_message.topic:
+                self._handle_kline(raw)
+            else:
+                self._log.error(f"Unknown websocket message topic: {ws_message.topic}")
         except Exception as e:
             self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
-
-    def _handle_ws_message_by_topic(
-        self,
-        product_type: BybitProductType,
-        topic: str,
-        raw: bytes,
-    ) -> None:
-        if "orderbook" in topic:
-            self._handle_orderbook(product_type, raw)
-        elif "publicTrade" in topic:
-            self._handle_trade(product_type, raw)
-        elif "tickers" in topic:
-            self._handle_ticker(product_type, raw)
-        elif "kline" in topic:
-            self._handle_kline(raw)
-        else:
-            self._log.error(f"Unknown websocket message topic: {topic} in Bybit")
 
     def _handle_orderbook(self, product_type: BybitProductType, raw: bytes) -> None:
         msg = self._decoder_ws_orderbook.decode(raw)

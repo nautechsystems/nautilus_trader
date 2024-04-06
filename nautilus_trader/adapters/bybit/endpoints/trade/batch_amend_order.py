@@ -16,47 +16,50 @@
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
-from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
-from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
-from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
-from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
-from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrderResponse
+from nautilus_trader.adapters.bybit.schemas.order import BybitBatchAmendOrderResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitPlaceOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=False):
-    category: BybitProductType
+class BybitAmendOrder(msgspec.Struct, omit_defaults=True, frozen=True):
     symbol: str
-    side: BybitOrderSide
-    qty: str
-    marketUnit: str | None = None
-    orderType: BybitOrderType | None = None
-    price: str | None = None
-    triggerDirection: int | None = None  # TODO type this
-    triggerPrice: str | None = None
-    triggerBy: BybitTriggerType | None = None
-    timeInForce: BybitTimeInForce | None = None
+    orderId: str | None = None
     orderLinkId: str | None = None
+    orderIv: str | None = None
+    triggerPrice: str | None = None
+    qty: str | None = None
+    price: str | None = None
+    tpslMode: str | None = None
+    takeProfit: str | None = None
+    stopLoss: str | None = None
+    tpTriggerBy: str | None = None
+    slTriggerBy: str | None = None
+    tpLimitPrice: str | None = None
+    slLimitPrice: str | None = None
 
 
-class BybitPlaceOrderEndpoint(BybitHttpEndpoint):
+class BybitBatchAmendOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=False):
+    category: BybitProductType
+    request: list[BybitAmendOrder]
+
+
+class BybitBatchAmendOrderEndpoint(BybitHttpEndpoint):
     def __init__(
         self,
         client: BybitHttpClient,
         base_endpoint: str,
     ) -> None:
-        url_path = base_endpoint + "/order/create"
+        url_path = base_endpoint + "/order/create-batch"
         super().__init__(
             client=client,
             endpoint_type=BybitEndpointType.TRADE,
             url_path=url_path,
         )
-        self._resp_decoder = msgspec.json.Decoder(BybitPlaceOrderResponse)
+        self._resp_decoder = msgspec.json.Decoder(BybitBatchAmendOrderResponse)
 
-    async def post(self, params: BybitPlaceOrderPostParams) -> BybitPlaceOrderResponse:
+    async def post(self, params: BybitBatchAmendOrderPostParams) -> BybitBatchAmendOrderResponse:
         method_type = HttpMethod.POST
         raw = await self._method(method_type, params)
         try:
