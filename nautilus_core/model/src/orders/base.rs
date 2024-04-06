@@ -84,6 +84,51 @@ pub enum OrderError {
     NoPreviousState,
 }
 
+pub trait HasInstrumentId {
+    fn instrument_id(&self) -> InstrumentId;
+}
+
+pub trait GetClientOrderId {
+    fn get_client_order_id(&self) -> ClientOrderId;
+}
+
+pub trait GetVenueOrderId {
+    fn get_venue_order_id(&self) -> Option<VenueOrderId>;
+}
+
+pub trait GetStrategyId {
+    fn get_strategy_id(&self) -> StrategyId;
+}
+
+pub trait HasExecAlgorithmId {
+    fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId>;
+}
+
+pub trait HasExecSpawnId {
+    fn exec_spawn_id(&self) -> Option<ClientOrderId>;
+}
+
+pub trait GetOrderSide {
+    fn get_order_side(&self) -> OrderSide;
+}
+
+pub trait GetOrderSideSpecified {
+    fn get_order_side_specified(&self) -> OrderSideSpecified;
+}
+
+pub trait GetLimitPrice {
+    fn get_limit_px(&self) -> Price;
+}
+
+pub trait GetStopPrice {
+    fn get_stop_px(&self) -> Price;
+}
+
+pub trait HasEmulationTrigger {
+    fn emulation_trigger(&self) -> Option<TriggerType>;
+}
+
+#[derive(Debug)]
 pub enum OrderAny {
     Limit(LimitOrder),
     LimitIfTouched(LimitIfTouchedOrder),
@@ -143,6 +188,22 @@ impl OrderAny {
     }
 }
 
+impl HasInstrumentId for OrderAny {
+    fn instrument_id(&self) -> InstrumentId {
+        match self {
+            Self::Limit(order) => order.instrument_id,
+            Self::LimitIfTouched(order) => order.instrument_id,
+            Self::Market(order) => order.instrument_id,
+            Self::MarketIfTouched(order) => order.instrument_id,
+            Self::MarketToLimit(order) => order.instrument_id,
+            Self::StopLimit(order) => order.instrument_id,
+            Self::StopMarket(order) => order.instrument_id,
+            Self::TrailingStopLimit(order) => order.instrument_id,
+            Self::TrailingStopMarket(order) => order.instrument_id,
+        }
+    }
+}
+
 impl GetClientOrderId for OrderAny {
     fn get_client_order_id(&self) -> ClientOrderId {
         match self {
@@ -175,6 +236,54 @@ impl GetVenueOrderId for OrderAny {
     }
 }
 
+impl GetStrategyId for OrderAny {
+    fn get_strategy_id(&self) -> StrategyId {
+        match self {
+            Self::Limit(order) => order.strategy_id,
+            Self::LimitIfTouched(order) => order.strategy_id,
+            Self::Market(order) => order.strategy_id,
+            Self::MarketIfTouched(order) => order.strategy_id,
+            Self::MarketToLimit(order) => order.strategy_id,
+            Self::StopLimit(order) => order.strategy_id,
+            Self::StopMarket(order) => order.strategy_id,
+            Self::TrailingStopLimit(order) => order.strategy_id,
+            Self::TrailingStopMarket(order) => order.strategy_id,
+        }
+    }
+}
+
+impl HasExecAlgorithmId for OrderAny {
+    fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId> {
+        match self {
+            Self::Limit(order) => order.exec_algorithm_id,
+            Self::LimitIfTouched(order) => order.exec_algorithm_id,
+            Self::Market(order) => order.exec_algorithm_id,
+            Self::MarketIfTouched(order) => order.exec_algorithm_id,
+            Self::MarketToLimit(order) => order.exec_algorithm_id,
+            Self::StopLimit(order) => order.exec_algorithm_id,
+            Self::StopMarket(order) => order.exec_algorithm_id,
+            Self::TrailingStopLimit(order) => order.exec_algorithm_id,
+            Self::TrailingStopMarket(order) => order.exec_algorithm_id,
+        }
+    }
+}
+
+impl HasExecSpawnId for OrderAny {
+    fn exec_spawn_id(&self) -> Option<ClientOrderId> {
+        match self {
+            Self::Limit(order) => order.exec_spawn_id,
+            Self::LimitIfTouched(order) => order.exec_spawn_id,
+            Self::Market(order) => order.exec_spawn_id,
+            Self::MarketIfTouched(order) => order.exec_spawn_id,
+            Self::MarketToLimit(order) => order.exec_spawn_id,
+            Self::StopLimit(order) => order.exec_spawn_id,
+            Self::StopMarket(order) => order.exec_spawn_id,
+            Self::TrailingStopLimit(order) => order.exec_spawn_id,
+            Self::TrailingStopMarket(order) => order.exec_spawn_id,
+        }
+    }
+}
+
 impl GetOrderSide for OrderAny {
     fn get_order_side(&self) -> OrderSide {
         match self {
@@ -203,6 +312,22 @@ impl GetOrderSideSpecified for OrderAny {
             Self::StopMarket(order) => order.side.as_specified(),
             Self::TrailingStopLimit(order) => order.side.as_specified(),
             Self::TrailingStopMarket(order) => order.side.as_specified(),
+        }
+    }
+}
+
+impl HasEmulationTrigger for OrderAny {
+    fn emulation_trigger(&self) -> Option<TriggerType> {
+        match self {
+            Self::Limit(order) => order.emulation_trigger,
+            Self::LimitIfTouched(order) => order.emulation_trigger,
+            Self::Market(order) => order.emulation_trigger,
+            Self::MarketIfTouched(order) => order.emulation_trigger,
+            Self::MarketToLimit(order) => order.emulation_trigger,
+            Self::StopLimit(order) => order.emulation_trigger,
+            Self::StopMarket(order) => order.emulation_trigger,
+            Self::TrailingStopLimit(order) => order.emulation_trigger,
+            Self::TrailingStopMarket(order) => order.emulation_trigger,
         }
     }
 }
@@ -262,30 +387,6 @@ impl PartialEq for StopOrderType {
             Self::TrailingStopMarket(order) => order.client_order_id == rhs.get_client_order_id(),
         }
     }
-}
-
-pub trait GetClientOrderId {
-    fn get_client_order_id(&self) -> ClientOrderId;
-}
-
-pub trait GetVenueOrderId {
-    fn get_venue_order_id(&self) -> Option<VenueOrderId>;
-}
-
-pub trait GetOrderSide {
-    fn get_order_side(&self) -> OrderSide;
-}
-
-pub trait GetOrderSideSpecified {
-    fn get_order_side_specified(&self) -> OrderSideSpecified;
-}
-
-pub trait GetLimitPrice {
-    fn get_limit_px(&self) -> Price;
-}
-
-pub trait GetStopPrice {
-    fn get_stop_px(&self) -> Price;
 }
 
 impl GetClientOrderId for PassiveOrderType {

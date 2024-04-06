@@ -228,7 +228,7 @@ impl CacheDatabaseAdapter {
     //     todo!() // TODO
     // }
 
-    pub fn add_order(&self, order: Box<dyn Order>) -> anyhow::Result<()> {
+    pub fn add_order(&self, order: &OrderAny) -> anyhow::Result<()> {
         todo!() // TODO
     }
 
@@ -272,7 +272,7 @@ impl CacheDatabaseAdapter {
         todo!() // TODO
     }
 
-    pub fn snapshot_order_state(&self, order: Box<dyn Order>) -> anyhow::Result<()> {
+    pub fn snapshot_order_state(&self, order: OrderAny) -> anyhow::Result<()> {
         todo!() // TODO
     }
 
