@@ -233,8 +233,8 @@ pub fn check_map_not_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Re
 
 /// Checks the `key` is **not** in the `map`.
 pub fn check_key_not_in_map<K, V>(
-    map: &HashMap<K, V>,
     key: &K,
+    map: &HashMap<K, V>,
     key_name: &str,
     map_name: &str,
 ) -> anyhow::Result<()>
@@ -255,8 +255,8 @@ where
 
 /// Checks the `key` is in the `map`.
 pub fn check_key_in_map<K, V>(
-    map: &HashMap<K, V>,
     key: &K,
+    map: &HashMap<K, V>,
     key_name: &str,
     map_name: &str,
 ) -> anyhow::Result<()>
@@ -558,7 +558,7 @@ mod tests {
         #[case] map_name: &str,
         #[case] expected: bool,
     ) {
-        let result = check_key_not_in_map(map, &key, key_name, map_name).is_ok();
+        let result = check_key_not_in_map(&key, map, key_name, map_name).is_ok();
         assert_eq!(result, expected);
     }
 
@@ -573,7 +573,7 @@ mod tests {
         #[case] map_name: &str,
         #[case] expected: bool,
     ) {
-        let result = check_key_in_map(map, &key, key_name, map_name).is_ok();
+        let result = check_key_in_map(&key, map, key_name, map_name).is_ok();
         assert_eq!(result, expected);
     }
 }

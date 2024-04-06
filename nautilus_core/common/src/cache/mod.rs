@@ -19,7 +19,7 @@ pub mod database;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use nautilus_core::correctness::{check_slice_not_empty, check_valid_string};
+use nautilus_core::correctness::{check_key_not_in_map, check_slice_not_empty, check_valid_string};
 use nautilus_model::{
     data::{
         bar::{Bar, BarType},
@@ -35,7 +35,10 @@ use nautilus_model::{
     },
     instruments::{synthetic::SyntheticInstrument, Instrument},
     orderbook::book::OrderBook,
-    orders::base::{GetOrderSide, GetVenueOrderId, OrderAny},
+    orders::base::{
+        GetClientOrderId, GetOrderSide, GetStrategyId, GetVenueOrderId, HasExecAlgorithmId,
+        HasExecSpawnId, HasInstrumentId, OrderAny,
+    },
     position::Position,
     types::currency::Currency,
 };
@@ -525,6 +528,161 @@ impl Cache {
     //     }
     //     Ok(())
     // }
+
+    /// Add the order to the cache indexed with any given identifiers.
+    ///
+    /// # Parameters
+    ///
+    /// `override_existing`: If the added order should 'override' any existing order and replace
+    /// it in the cache. This is currently used for emulated orders which are
+    /// being released and transformed into another type.
+    ///
+    /// # Errors
+    ///
+    /// If not `replace_existing` and the `order.client_order_id` is already contained in the cache.
+    pub fn add_order(
+        &mut self,
+        order: OrderAny,
+        _position_id: Option<PositionId>,
+        client_id: Option<ClientId>,
+        replace_existing: bool,
+    ) -> anyhow::Result<()> {
+        let instrument_id = order.instrument_id();
+        let venue = instrument_id.venue;
+        let client_order_id = order.get_client_order_id();
+        let strategy_id = order.get_strategy_id();
+        let exec_algorithm_id = order.exec_algorithm_id();
+        let _exec_spawn_id = order.exec_spawn_id();
+
+        if !replace_existing {
+            check_key_not_in_map(
+                &client_order_id,
+                &self.orders,
+                stringify!(client_order_id),
+                stringify!(orders),
+            )?;
+            check_key_not_in_map(
+                &client_order_id,
+                &self.orders,
+                stringify!(client_order_id),
+                stringify!(orders),
+            )?;
+            check_key_not_in_map(
+                &client_order_id,
+                &self.orders,
+                stringify!(client_order_id),
+                stringify!(orders),
+            )?;
+            check_key_not_in_map(
+                &client_order_id,
+                &self.orders,
+                stringify!(client_order_id),
+                stringify!(orders),
+            )?;
+        };
+
+        debug!("Added {:?}", order);
+
+        self.index.orders.insert(client_order_id);
+        self.index
+            .order_strategy
+            .insert(client_order_id, strategy_id);
+        self.index.strategies.insert(strategy_id);
+
+        // Update venue -> orders index
+        if let Some(venue_orders) = self.index.venue_orders.get_mut(&venue) {
+            venue_orders.insert(client_order_id);
+        } else {
+            let mut new_set = HashSet::new();
+            new_set.insert(client_order_id);
+            self.index.venue_orders.insert(venue, new_set);
+        }
+
+        // Update instrument -> orders index
+        if let Some(instrument_orders) = self.index.instrument_orders.get_mut(&instrument_id) {
+            instrument_orders.insert(client_order_id);
+        } else {
+            let mut new_set = HashSet::new();
+            new_set.insert(client_order_id);
+            self.index.instrument_orders.insert(instrument_id, new_set);
+        }
+
+        // Update strategy -> orders index
+        if let Some(strategy_orders) = self.index.strategy_orders.get_mut(&strategy_id) {
+            strategy_orders.insert(client_order_id);
+        } else {
+            let mut new_set = HashSet::new();
+            new_set.insert(client_order_id);
+            self.index.strategy_orders.insert(strategy_id, new_set);
+        }
+
+        // Update exec_algorithm -> orders index
+        if let Some(exec_algorithm_id) = exec_algorithm_id {
+            self.index.exec_algorithms.insert(exec_algorithm_id);
+
+            if let Some(exec_algorithm_orders) =
+                self.index.exec_algorithm_orders.get_mut(&exec_algorithm_id)
+            {
+                exec_algorithm_orders.insert(client_order_id);
+            } else {
+                let mut new_set = HashSet::new();
+                new_set.insert(client_order_id);
+                self.index
+                    .exec_algorithm_orders
+                    .insert(exec_algorithm_id, new_set);
+            }
+
+            // TODO: Implement
+            // if let Some(exec_spawn_orders) = self.index.exec_spawn_orders.get_mut(&exec_spawn_id) {
+            //     exec_spawn_orders.insert(client_order_id.clone());
+            // } else {
+            //     let mut new_set = HashSet::new();
+            //     new_set.insert(client_order_id.clone());
+            //     self.index.exec_spawn_orders.insert(exec_spawn_id, new_set);
+            // }
+        }
+
+        // TODO: Change emulation trigger setup
+        // Update emulation index
+        // match order.emulation_trigger() {
+        //     TriggerType::NoTrigger => {
+        //         self.index.orders_emulated.remove(&client_order_id);
+        //     }
+        //     _ => {
+        //         self.index.orders_emulated.insert(client_order_id.clone());
+        //     }
+        // }
+
+        // TODO: Implement
+        // Index position ID if provided
+        // if let Some(position_id) = position_id {
+        //     self.add_position_id(
+        //         position_id,
+        //         order.instrument_id().venue,
+        //         client_order_id.clone(),
+        //         strategy_id,
+        //     );
+        // }
+
+        // Index client ID if provided
+        if let Some(client_id) = client_id {
+            self.index.order_client.insert(client_order_id, client_id);
+            log::debug!("Indexed {:?}", client_id);
+        }
+
+        // Update database if available
+        if let Some(database) = &mut self.database {
+            database.add_order(&order)?;
+            // TODO: Implement
+            // if self.config.snapshot_orders {
+            //     database.snapshot_order_state(order)?;
+            // }
+        }
+
+        self.orders.insert(client_order_id, order);
+
+        Ok(())
+    }
 
     // -- IDENTIFIER QUERIES --------------------------------------------------
 
