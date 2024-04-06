@@ -671,10 +671,11 @@ pub enum OrderSide {
 }
 
 impl OrderSide {
+    #[must_use]
     pub fn as_specified(&self) -> OrderSideSpecified {
         match &self {
-            OrderSide::Buy => OrderSideSpecified::Buy,
-            OrderSide::Sell => OrderSideSpecified::Sell,
+            Self::Buy => OrderSideSpecified::Buy,
+            Self::Sell => OrderSideSpecified::Sell,
             _ => panic!("Order invariant failed: side must be 'Buy' or 'Sell'"),
         }
     }
@@ -701,10 +702,11 @@ pub enum OrderSideSpecified {
 }
 
 impl OrderSideSpecified {
+    #[must_use]
     pub fn as_order_side(&self) -> OrderSide {
         match &self {
-            OrderSideSpecified::Buy => OrderSide::Buy,
-            OrderSideSpecified::Sell => OrderSide::Sell,
+            Self::Buy => OrderSide::Buy,
+            Self::Sell => OrderSide::Sell,
         }
     }
 }
