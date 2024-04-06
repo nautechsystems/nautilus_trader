@@ -33,6 +33,7 @@ use self::{
     quote::QuoteTick,
     trade::TradeTick,
 };
+use crate::polymorphism::GetTsInit;
 
 #[repr(C)]
 #[derive(Clone, Debug)]
@@ -46,12 +47,8 @@ pub enum Data {
     Bar(Bar),
 }
 
-pub trait HasTsInit {
-    fn get_ts_init(&self) -> UnixNanos;
-}
-
-impl HasTsInit for Data {
-    fn get_ts_init(&self) -> UnixNanos {
+impl GetTsInit for Data {
+    fn ts_init(&self) -> UnixNanos {
         match self {
             Self::Delta(d) => d.ts_init,
             Self::Deltas(d) => d.ts_init,
@@ -63,45 +60,45 @@ impl HasTsInit for Data {
     }
 }
 
-impl HasTsInit for OrderBookDelta {
-    fn get_ts_init(&self) -> UnixNanos {
+impl GetTsInit for OrderBookDelta {
+    fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
 }
 
-impl HasTsInit for OrderBookDeltas {
-    fn get_ts_init(&self) -> UnixNanos {
+impl GetTsInit for OrderBookDeltas {
+    fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
 }
 
-impl HasTsInit for OrderBookDepth10 {
-    fn get_ts_init(&self) -> UnixNanos {
+impl GetTsInit for OrderBookDepth10 {
+    fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
 }
 
-impl HasTsInit for QuoteTick {
-    fn get_ts_init(&self) -> UnixNanos {
+impl GetTsInit for QuoteTick {
+    fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
 }
 
-impl HasTsInit for TradeTick {
-    fn get_ts_init(&self) -> UnixNanos {
+impl GetTsInit for TradeTick {
+    fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
 }
 
-impl HasTsInit for Bar {
-    fn get_ts_init(&self) -> UnixNanos {
+impl GetTsInit for Bar {
+    fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
 }
 
-pub fn is_monotonically_increasing_by_init<T: HasTsInit>(data: &[T]) -> bool {
+pub fn is_monotonically_increasing_by_init<T: GetTsInit>(data: &[T]) -> bool {
     data.windows(2)
-        .all(|window| window[0].get_ts_init() <= window[1].get_ts_init())
+        .all(|window| window[0].ts_init() <= window[1].ts_init())
 }
 
 impl From<OrderBookDelta> for Data {

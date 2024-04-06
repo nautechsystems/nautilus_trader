@@ -35,9 +35,10 @@ use nautilus_model::{
     },
     instruments::{synthetic::SyntheticInstrument, Instrument},
     orderbook::book::OrderBook,
-    orders::base::{
-        GetClientOrderId, GetOrderSide, GetStrategyId, GetVenueOrderId, HasExecAlgorithmId,
-        HasExecSpawnId, HasInstrumentId, OrderAny,
+    orders::base::OrderAny,
+    polymorphism::{
+        GetClientOrderId, GetExecAlgorithmId, GetExecSpawnId, GetInstrumentId, GetOrderSide,
+        GetStrategyId, GetVenueOrderId,
     },
     position::Position,
     types::currency::Currency,
@@ -549,8 +550,8 @@ impl Cache {
     ) -> anyhow::Result<()> {
         let instrument_id = order.instrument_id();
         let venue = instrument_id.venue;
-        let client_order_id = order.get_client_order_id();
-        let strategy_id = order.get_strategy_id();
+        let client_order_id = order.client_order_id();
+        let strategy_id = order.strategy_id();
         let exec_algorithm_id = order.exec_algorithm_id();
         let _exec_spawn_id = order.exec_spawn_id();
 
@@ -811,7 +812,7 @@ impl Cache {
                 .orders
                 .get(&client_order_id)
                 .unwrap_or_else(|| panic!("Order {client_order_id} not found"));
-            if side == OrderSide::NoOrderSide || side == order.get_order_side() {
+            if side == OrderSide::NoOrderSide || side == order.order_side() {
                 orders.push(order);
             };
         }
@@ -999,7 +1000,7 @@ impl Cache {
     pub fn venue_order_id(&self, client_order_id: ClientOrderId) -> Option<VenueOrderId> {
         self.orders
             .get(&client_order_id)
-            .and_then(|o| o.get_venue_order_id())
+            .and_then(|o| o.venue_order_id())
     }
 
     pub fn client_id(&self, client_order_id: ClientOrderId) -> Option<&ClientId> {

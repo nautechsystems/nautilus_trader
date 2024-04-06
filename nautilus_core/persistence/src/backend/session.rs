@@ -21,7 +21,7 @@ use datafusion::{
 };
 use futures::StreamExt;
 use nautilus_core::ffi::cvec::CVec;
-use nautilus_model::data::{Data, HasTsInit};
+use nautilus_model::{data::Data, polymorphism::GetTsInit};
 
 use super::kmerge_batch::{EagerStream, ElementBatchIter, KMerge};
 use crate::arrow::{
@@ -41,7 +41,7 @@ where
         r: &ElementBatchIter<I, Data>,
     ) -> std::cmp::Ordering {
         // Max heap ordering must be reversed
-        l.item.get_ts_init().cmp(&r.item.get_ts_init()).reverse()
+        l.item.ts_init().cmp(&r.item.ts_init()).reverse()
     }
 }
 
