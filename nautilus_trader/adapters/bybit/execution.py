@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import json
 from decimal import Decimal
 
 import msgspec
@@ -359,7 +358,7 @@ class BybitExecutionClient(LiveExecutionClient):
             positions = await self._http_account.query_position_info(product_type)
             for position in positions:
                 # Uncomment for development
-                self._log.info(f"Generating report {position}", LogColor.MAGENTA)
+                # self._log.info(f"Generating report {position}", LogColor.MAGENTA)
                 instr: InstrumentId = BybitSymbol(
                     position.symbol + "-" + product_type.value.upper(),
                 ).parse_as_nautilus()
@@ -614,13 +613,13 @@ class BybitExecutionClient(LiveExecutionClient):
 
     def _handle_ws_message(self, raw: bytes) -> None:
         # Uncomment for development
-        self._log.info(str(json.dumps(msgspec.json.decode(raw), indent=4)), color=LogColor.MAGENTA)
+        # self._log.info(str(json.dumps(msgspec.json.decode(raw), indent=4)), color=LogColor.MAGENTA)
         try:
             ws_message = self._decoder_ws_msg_general.decode(raw)
             if ws_message.op == BYBIT_PONG:
                 return
             if ws_message.success is False:
-                self._log.error(f"Error ws_message: {ws_message}")
+                self._log.error(f"WebSocket error: {ws_message}")
                 return
             if not ws_message.topic:
                 return
