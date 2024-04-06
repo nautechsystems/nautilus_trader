@@ -21,16 +21,17 @@ from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.factories import BybitLiveDataClientFactory
 from nautilus_trader.adapters.bybit.factories import BybitLiveExecClientFactory
-from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.common.config import DatabaseConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
+from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
+from nautilus_trader.examples.strategies.ema_cross_bracket_algo import EMACrossBracketAlgo
+from nautilus_trader.examples.strategies.ema_cross_bracket_algo import EMACrossBracketAlgoConfig
+from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 
@@ -38,40 +39,31 @@ from nautilus_trader.model.identifiers import TraderId
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
-# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
-# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
-
 # SPOT/LINEAR
-product_type = BybitProductType.LINEAR
+product_type = BybitProductType.SPOT
 symbol = f"ETHUSDT-{product_type.value.upper()}"
 trade_size = Decimal("0.010")
-
-# INVERSE
-# product_type = BybitProductType.INVERSE
-# symbol = f"XRPUSD-{product_type.value.upper()}"  # Use for inverse
-# trade_size = Decimal("100")  # Use for inverse
 
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(log_level="INFO", use_pyo3=True),
+    logging=LoggingConfig(log_level="INFO"),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
     ),
-    cache=CacheConfig(
-        database=DatabaseConfig(),
-        timestamps_as_iso8601=True,
-        buffer_interval_ms=100,
-    ),
+    risk_engine=LiveRiskEngineConfig(debug=True),
+    # cache=CacheConfig(
+    #     database=DatabaseConfig(),
+    #     buffer_interval_ms=100,
+    # ),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),
-    #     timestamps_as_iso8601=True,
-    #     buffer_interval_ms=100,
     #     streams_prefix="quoters",
     #     use_instance_id=False,
+    #     timestamps_as_iso8601=True,
     #     # types_filter=[QuoteTick],
-    #     autotrim_mins=30,
+    #     autotrim_mins=1,
     # ),
     # heartbeat_interval=1.0,
     # snapshot_orders=True,
@@ -102,26 +94,34 @@ config_node = TradingNodeConfig(
     timeout_reconciliation=10.0,
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,
-    timeout_post_stop=5.0,
+    timeout_post_stop=3.0,
 )
 
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-strat_config = VolatilityMarketMakerConfig(
+strat_config = EMACrossBracketAlgoConfig(
+    order_id_tag="001",
     instrument_id=InstrumentId.from_str(f"{symbol}.BYBIT"),
     external_order_claims=[InstrumentId.from_str(f"{symbol}.BYBIT")],
     bar_type=BarType.from_str(f"{symbol}.BYBIT-1-MINUTE-LAST-EXTERNAL"),
-    atr_period=20,
-    atr_multiple=3.0,
+    fast_ema_period=10,
+    slow_ema_period=20,
+    bracket_distance_atr=1.0,
     trade_size=trade_size,
+    emulation_trigger="BID_ASK",
+    entry_exec_algorithm_id=ExecAlgorithmId("TWAP"),
+    entry_exec_algorithm_params={"horizon_secs": 5.0, "interval_secs": 0.5},
 )
-# Instantiate your strategy
-strategy = VolatilityMarketMaker(config=strat_config)
 
-# Add your strategies and modules
+# Instantiate your strategy and execution algorithm
+strategy = EMACrossBracketAlgo(config=strat_config)
+exec_algorithm = TWAPExecAlgorithm()
+
+# Add your strategy and execution algorithm and modules
 node.trader.add_strategy(strategy)
+node.trader.add_exec_algorithm(exec_algorithm)
 
 # Register your client factories with the node (can take user defined factories)
 node.add_data_client_factory("BYBIT", BybitLiveDataClientFactory)

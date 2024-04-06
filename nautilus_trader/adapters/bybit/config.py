@@ -24,12 +24,24 @@ from nautilus_trader.config import PositiveInt
 class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     """
     Configuration for ``BybitDataClient`` instances.
+
+    api_key : str, optional
+        The Bybit API public key.
+        If ``None`` then will source the `BYBIT_API_KEY` or
+        `BYBIT_TESTNET_API_KEY` environment variables.
+    api_secret : str, optional
+        The Bybit API public key.
+        If ``None`` then will source the `BYBIT_API_KEY` or
+        `BYBIT_TESTNET_API_KEY` environment variables.
+    product_type : BybitProductType, default 'SPOT'
+        The Bybit product type for the client.
+
     """
 
     api_key: str | None = None
     api_secret: str | None = None
-    product_types: list[BybitProductType] = []
-    base_url_http: str | None = None
+    product_type: BybitProductType = BybitProductType.SPOT
+    http_base_url: str | None = None
     testnet: bool = False
 
 
@@ -45,6 +57,8 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         The Bybit API public key.
         If ``None`` then will source the `BYBIT_API_KEY` or
         `BYBIT_TESTNET_API_KEY` environment variables.
+    product_type : BybitProductType, default 'SPOT'
+        The Bybit product type for the client.
     use_gtd : bool, default False
         If False then GTD time in force will be remapped to GTC
         (this is useful if managing GTD orders locally).
@@ -53,7 +67,7 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
 
     api_key: str | None = None
     api_secret: str | None = None
-    product_types: list[BybitProductType] = []
+    product_type: BybitProductType = BybitProductType.SPOT
     base_url_http: str | None = None
     base_url_ws: str | None = None
     testnet: bool = False

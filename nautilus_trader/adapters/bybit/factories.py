@@ -175,21 +175,19 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             clock=clock,
             key=config.api_key,
             secret=config.api_secret,
-            base_url=config.base_url_http,
+            base_url=config.http_base_url,
             is_testnet=config.testnet,
         )
         provider = get_bybit_instrument_provider(
             client=client,
             clock=clock,
-            product_types=config.product_types,
+            product_types=[config.product_type],
             config=config.instrument_provider,
         )
-        ws_base_urls: dict[BybitProductType, str] = {}
-        for product_type in config.product_types:
-            ws_base_urls[product_type] = get_ws_base_url_public(
-                product_type=product_type,
-                is_testnet=config.testnet,
-            )
+        base_url_ws = get_ws_base_url_public(
+            product_type=config.product_type,
+            is_testnet=config.testnet,
+        )
         return BybitDataClient(
             loop=loop,
             client=client,
@@ -197,8 +195,8 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             cache=cache,
             clock=clock,
             instrument_provider=provider,
-            product_types=config.product_types,
-            ws_urls=ws_base_urls,
+            product_type=config.product_type,
+            base_url_ws=base_url_ws,
             config=config,
         )
 
@@ -250,10 +248,10 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
         provider = get_bybit_instrument_provider(
             client=client,
             clock=clock,
-            product_types=config.product_types,
+            product_types=[config.product_type],
             config=config.instrument_provider,
         )
-        default_base_url_ws: str = get_ws_base_url_private(config.testnet)
+        base_url_ws: str = get_ws_base_url_private(config.testnet)
         return BybitExecutionClient(
             loop=loop,
             client=client,
@@ -261,7 +259,7 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             cache=cache,
             clock=clock,
             instrument_provider=provider,
-            product_types=config.product_types,
-            base_url_ws=config.base_url_ws or default_base_url_ws,
+            product_type=config.product_type,
+            base_url_ws=config.base_url_ws or base_url_ws,
             config=config,
         )

@@ -16,43 +16,48 @@
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
+from nautilus_trader.adapters.bybit.common.enums import BybitOrderStatus
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
-from nautilus_trader.adapters.bybit.schemas.order import BybitCancelOrderResponse
+from nautilus_trader.adapters.bybit.schemas.order import BybitOrderHistoryResponseStruct
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitCancelOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitOrderHistoryGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
     category: BybitProductType
-    symbol: str
+    symbol: str | None = None
+    baseCoin: str | None = None
+    settleCoin: str | None = None
     orderId: str | None = None
     orderLinkId: str | None = None
-    orderFilter: str | None = None  # Spot only
+    orderFilter: str | None = None
+    orderStatus: BybitOrderStatus | None = None
+    startTime: int | None = None
+    endtime: int | None = None
+    limit: int | None = None
+    cursor: str | None = None
 
 
-class BybitCancelOrderEndpoint(BybitHttpEndpoint):
+class BybitOrderHistoryEndpoint(BybitHttpEndpoint):
     def __init__(
         self,
         client: BybitHttpClient,
         base_endpoint: str,
     ) -> None:
-        url_path = base_endpoint + "/order/cancel"
+        url_path = base_endpoint + "/order/history"
         super().__init__(
             client=client,
             endpoint_type=BybitEndpointType.TRADE,
             url_path=url_path,
         )
-        self._resp_decoder = msgspec.json.Decoder(BybitCancelOrderResponse)
+        self._get_resp_decoder = msgspec.json.Decoder(BybitOrderHistoryResponseStruct)
 
-    async def post(
-        self,
-        params: BybitCancelOrderPostParams,
-    ) -> BybitCancelOrderResponse:
-        method_type = HttpMethod.POST
+    async def get(self, params: BybitOrderHistoryGetParams) -> BybitOrderHistoryResponseStruct:
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, params)
         try:
-            return self._resp_decoder.decode(raw)
+            return self._get_resp_decoder.decode(raw)
         except Exception as e:
             raise RuntimeError(
                 f"Failed to decode response from {self.url_path}: {raw.decode()}",

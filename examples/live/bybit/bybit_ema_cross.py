@@ -21,6 +21,8 @@ from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.factories import BybitLiveDataClientFactory
 from nautilus_trader.adapters.bybit.factories import BybitLiveExecClientFactory
+from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.common.config import DatabaseConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -49,10 +51,10 @@ config_node = TradingNodeConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
     ),
-    # cache=CacheConfig(
-    #     database=DatabaseConfig(),
-    #     buffer_interval_ms=100,
-    # ),
+    cache=CacheConfig(
+        database=DatabaseConfig(),
+        buffer_interval_ms=100,
+    ),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),
     #     streams_prefix="quoters",
@@ -69,9 +71,9 @@ config_node = TradingNodeConfig(
         "BYBIT": BybitDataClientConfig(
             api_key=None,  # 'BYBIT_API_KEY' env var
             api_secret=None,  # 'BYBIT_API_SECRET' env var
-            base_url_http=None,  # Override with custom endpoint
+            http_base_url=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            product_types=[product_type],
+            product_type=product_type,
             testnet=False,  # If client uses the testnet
         ),
     },
@@ -82,7 +84,7 @@ config_node = TradingNodeConfig(
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            product_types=[product_type],
+            product_type=product_type,
             testnet=False,  # If client uses the testnet
         ),
     },

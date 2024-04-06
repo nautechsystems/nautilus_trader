@@ -33,8 +33,10 @@ from nautilus_trader.adapters.bybit.endpoints.trade.cancel_all_orders import Byb
 from nautilus_trader.adapters.bybit.endpoints.trade.cancel_all_orders import BybitCancelAllOrdersPostParams
 from nautilus_trader.adapters.bybit.endpoints.trade.cancel_order import BybitCancelOrderEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.cancel_order import BybitCancelOrderPostParams
+from nautilus_trader.adapters.bybit.endpoints.trade.open_orders import BybitOpenOrdersEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.open_orders import BybitOpenOrdersGetParams
-from nautilus_trader.adapters.bybit.endpoints.trade.open_orders import BybitOpenOrdersHttp
+from nautilus_trader.adapters.bybit.endpoints.trade.order_history import BybitOrderHistoryEndpoint
+from nautilus_trader.adapters.bybit.endpoints.trade.order_history import BybitOrderHistoryGetParams
 from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderGetParams
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
@@ -65,9 +67,10 @@ class BybitAccountHttpAPI:
         self.default_settle_coin = "USDT"
 
         self._endpoint_fee_rate = BybitFeeRateEndpoint(client, self.base_endpoint)
-        self._endpoint_position_info = BybitPositionInfoEndpoint(client, self.base_endpoint)
-        self._endpoint_open_orders = BybitOpenOrdersHttp(client, self.base_endpoint)
         self._endpoint_wallet_balance = BybitWalletBalanceEndpoint(client, self.base_endpoint)
+        self._endpoint_position_info = BybitPositionInfoEndpoint(client, self.base_endpoint)
+        self._endpoint_open_orders = BybitOpenOrdersEndpoint(client, self.base_endpoint)
+        self._endpoint_order_history = BybitOrderHistoryEndpoint(client, self.base_endpoint)
         self._endpoint_place_order = BybitPlaceOrderEndpoint(client, self.base_endpoint)
         self._endpoint_cancel_order = BybitCancelOrderEndpoint(client, self.base_endpoint)
         self._endpoint_cancel_all_orders = BybitCancelAllOrdersEndpoint(client, self.base_endpoint)
@@ -133,6 +136,26 @@ class BybitAccountHttpAPI:
         )
         return response.result.list
 
+    async def query_order_history(
+        self,
+        product_type: BybitProductType,
+        symbol: str | None = None,
+    ) -> list[BybitOrder]:
+        match product_type:
+            case BybitProductType.INVERSE:
+                settle_coin = None
+            case _:
+                settle_coin = self.default_settle_coin if symbol is None else None
+
+        response = await self._endpoint_order_history.get(
+            BybitOrderHistoryGetParams(
+                category=product_type,
+                symbol=symbol,
+                settleCoin=settle_coin,
+            ),
+        )
+        return response.result.list
+
     async def query_order(
         self,
         product_type: BybitProductType,
@@ -160,7 +183,7 @@ class BybitAccountHttpAPI:
     ) -> BybitCancelOrder:
         response = await self._endpoint_cancel_order.post(
             BybitCancelOrderPostParams(
-                category=product_type.value,
+                category=product_type,
                 symbol=symbol,
                 orderId=venue_order_id,
                 orderLinkId=client_order_id,
@@ -176,7 +199,7 @@ class BybitAccountHttpAPI:
     ) -> list[Any]:
         response = await self._endpoint_cancel_all_orders.post(
             BybitCancelAllOrdersPostParams(
-                category=product_type.value,
+                category=product_type,
                 symbol=symbol,
             ),
         )
@@ -194,7 +217,7 @@ class BybitAccountHttpAPI:
     ) -> BybitAmendOrder:
         response = await self._endpoint_amend_order.post(
             BybitAmendOrderPostParams(
-                category=product_type.value,
+                category=product_type,
                 symbol=symbol,
                 orderId=venue_order_id,
                 orderLinkId=client_order_id,
@@ -231,7 +254,7 @@ class BybitAccountHttpAPI:
         market_unit = "baseCoin" if not quote_quantity else "quoteCoin"
         result = await self._endpoint_place_order.post(
             params=BybitPlaceOrderGetParams(
-                category=product_type.value,
+                category=product_type,
                 symbol=symbol,
                 side=side,
                 orderType=order_type,
