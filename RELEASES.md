@@ -19,6 +19,7 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed `BacktestNode` streaming data management (was not clearing between chunks), thanks for the report @dpmabo
 - Fixed selling `Equity` instruments with `CASH` account and `NETTING` OMS incorrectly rejecting (should be able to reduce position)
+- Fixed `RiskEngine` cumulative notional calculations for margin accounts (was incorrectly using base currency when selling)
 
 ---
 
