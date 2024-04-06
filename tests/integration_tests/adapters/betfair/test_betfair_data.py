@@ -349,7 +349,7 @@ def test_instrument_update(data_client, cache, parser):
 
     # Assert
     result = new_instrument[2].info
-    assert len(result) == 41
+    assert len(result) == 29
 
 
 def test_instrument_closing_events(data_client, parser):
