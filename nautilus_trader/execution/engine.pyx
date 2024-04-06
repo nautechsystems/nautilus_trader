@@ -946,7 +946,7 @@ cdef class ExecutionEngine(Component):
 
         fill.position_id = position_id
 
-        # TODO(cs): Optimize away the need to fetch order from cache
+        # TODO: Optimize away the need to fetch order from cache
         cdef Order order = self._cache.order(fill.client_order_id)
         if order is None:
             raise RuntimeError(

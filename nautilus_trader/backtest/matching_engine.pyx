@@ -359,7 +359,7 @@ cdef class OrderMatchingEngine:
 
         self._book.apply_delta(delta)
 
-        # TODO(cs): WIP to introduce flags
+        # TODO: WIP to introduce flags
         # if data.flags == TimeInForce.GTC:
         #     self._book.apply(data)
         # elif data.flags == TimeInForce.AT_THE_OPEN:
@@ -388,7 +388,7 @@ cdef class OrderMatchingEngine:
 
         self._book.apply_deltas(deltas)
 
-        # TODO(cs): WIP to introduce flags
+        # TODO: WIP to introduce flags
         # if data.flags == TimeInForce.GTC:
         #     self._book.apply(data)
         # elif data.flags == TimeInForce.AT_THE_OPEN:

@@ -39,7 +39,7 @@ class TestBacktestNode:
             account_type="MARGIN",
             base_currency="USD",
             starting_balances=["1000000 USD"],
-            # fill_model=fill_model,  # TODO(cs): Implement next iteration
+            # fill_model=fill_model,  # TODO: Implement next iteration
         )
         self.data_config = BacktestDataConfig(
             catalog_path=self.catalog.path,

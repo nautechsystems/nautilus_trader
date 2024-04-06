@@ -233,7 +233,7 @@ cdef class Instrument(Data):
     def __hash__(self) -> int:
         return hash(self.id)
 
-    def __repr__(self) -> str:  # TODO(cs): tick_scheme_name pending
+    def __repr__(self) -> str:  # TODO: tick_scheme_name pending
         return (
             f"{type(self).__name__}"
             f"(id={self.id.to_str()}, "

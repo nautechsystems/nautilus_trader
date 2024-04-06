@@ -392,7 +392,7 @@ cdef class AccountsManager:
                 instrument,
                 position.side,
                 position.quantity,
-                instrument.make_price(position.avg_px_open),  # TODO(cs): Temporary pending refactor
+                instrument.make_price(position.avg_px_open),  # TODO: Temporary pending refactor
             ).as_f64_c()
 
             if account.base_currency is not None:
@@ -580,7 +580,7 @@ cdef class AccountsManager:
 
             balances.append(new_balance)
 
-        # TODO(cs): Refactor and consolidate
+        # TODO: Refactor and consolidate
         if not pnls and commission._mem.raw != 0:
             currency = commission.currency
             balance = account.balance(currency)

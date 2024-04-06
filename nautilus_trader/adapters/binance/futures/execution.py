@@ -252,7 +252,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
     # -- WEBSOCKET EVENT HANDLERS --------------------------------------------------------------------
 
     def _handle_user_ws_message(self, raw: bytes) -> None:
-        # TODO(cs): Uncomment for development
+        # TODO: Uncomment for development
         # self._log.info(str(json.dumps(msgspec.json.decode(raw), indent=4)), color=LogColor.MAGENTA)
         wrapper = self._decoder_futures_user_msg_wrapper.decode(raw)
         if not wrapper.stream or not wrapper.data:
