@@ -40,7 +40,7 @@ from nautilus_trader.model.identifiers import TraderId
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 # SPOT/LINEAR
-product_type = BybitProductType.SPOT
+product_type = BybitProductType.LINEAR
 symbol = f"ETHUSDT-{product_type.value.upper()}"
 trade_size = Decimal("0.010")
 
@@ -75,7 +75,7 @@ config_node = TradingNodeConfig(
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             http_base_url=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            product_type=product_type,
+            product_types=[product_type],
             testnet=False,  # If client uses the testnet
         ),
     },
@@ -86,7 +86,7 @@ config_node = TradingNodeConfig(
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            product_type=product_type,
+            product_types=[product_type],
             testnet=False,  # If client uses the testnet
         ),
     },

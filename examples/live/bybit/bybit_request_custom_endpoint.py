@@ -101,7 +101,7 @@ config_node = TradingNodeConfig(
         "BYBIT": BybitDataClientConfig(
             api_key=api_key,
             api_secret=api_secret,
-            product_type=BybitProductType.LINEAR,
+            product_types=[BybitProductType.LINEAR],
             instrument_provider=InstrumentProviderConfig(load_all=True),
             testnet=True,
         ),
@@ -110,7 +110,7 @@ config_node = TradingNodeConfig(
         "BYBIT": BybitExecClientConfig(
             api_key=api_key,
             api_secret=api_secret,
-            product_type=BybitProductType.LINEAR,
+            product_types=[BybitProductType.LINEAR],
             instrument_provider=InstrumentProviderConfig(load_all=True),
             testnet=True,
         ),

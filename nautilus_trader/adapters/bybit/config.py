@@ -33,14 +33,15 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
         The Bybit API public key.
         If ``None`` then will source the `BYBIT_API_KEY` or
         `BYBIT_TESTNET_API_KEY` environment variables.
-    product_type : BybitProductType, default 'SPOT'
+    product_types : list[BybitProductType], optional
         The Bybit product type for the client.
+        If not specified then will use all products.
 
     """
 
     api_key: str | None = None
     api_secret: str | None = None
-    product_type: BybitProductType = BybitProductType.SPOT
+    product_types: list[BybitProductType] | None = None
     http_base_url: str | None = None
     testnet: bool = False
 
@@ -57,8 +58,11 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         The Bybit API public key.
         If ``None`` then will source the `BYBIT_API_KEY` or
         `BYBIT_TESTNET_API_KEY` environment variables.
-    product_type : BybitProductType, default 'SPOT'
+    product_type : list[BybitProductType], optional
         The Bybit product type for the client.
+        If None then will default to 'SPOT', you also cannot mix 'SPOT' with
+        any other product type for execution, and it will use a `CASH` account
+        type, vs `MARGIN` for the other derivative products.
     use_gtd : bool, default False
         If False then GTD time in force will be remapped to GTC
         (this is useful if managing GTD orders locally).
@@ -67,7 +71,7 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
 
     api_key: str | None = None
     api_secret: str | None = None
-    product_type: BybitProductType = BybitProductType.SPOT
+    product_types: list[BybitProductType] | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
     testnet: bool = False

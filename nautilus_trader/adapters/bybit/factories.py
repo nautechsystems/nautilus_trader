@@ -15,6 +15,7 @@
 
 import asyncio
 
+from nautilus_trader.adapters.bybit.common.constants import BYBIT_ALL_PRODUCTS
 from nautilus_trader.adapters.bybit.common.credentials import get_api_key
 from nautilus_trader.adapters.bybit.common.credentials import get_api_secret
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
@@ -171,6 +172,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
         BybitDataClient
 
         """
+        product_types = config.product_types or BYBIT_ALL_PRODUCTS
         client: BybitHttpClient = get_bybit_http_client(
             clock=clock,
             key=config.api_key,
@@ -181,13 +183,15 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
         provider = get_bybit_instrument_provider(
             client=client,
             clock=clock,
-            product_types=[config.product_type],
+            product_types=product_types,
             config=config.instrument_provider,
         )
-        base_url_ws = get_ws_base_url_public(
-            product_type=config.product_type,
-            is_testnet=config.testnet,
-        )
+        ws_base_urls: dict[BybitProductType, str] = {}
+        for product_type in product_types:
+            ws_base_urls[product_type] = get_ws_base_url_public(
+                product_type=product_type,
+                is_testnet=config.testnet,
+            )
         return BybitDataClient(
             loop=loop,
             client=client,
@@ -195,8 +199,8 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             cache=cache,
             clock=clock,
             instrument_provider=provider,
-            product_type=config.product_type,
-            base_url_ws=base_url_ws,
+            product_types=product_types,
+            ws_base_urls=ws_base_urls,
             config=config,
         )
 
@@ -248,7 +252,7 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
         provider = get_bybit_instrument_provider(
             client=client,
             clock=clock,
-            product_types=[config.product_type],
+            product_types=config.product_types or BYBIT_ALL_PRODUCTS,
             config=config.instrument_provider,
         )
         base_url_ws: str = get_ws_base_url_private(config.testnet)
@@ -259,7 +263,7 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             cache=cache,
             clock=clock,
             instrument_provider=provider,
-            product_type=config.product_type,
+            product_types=config.product_types or [BybitProductType.SPOT],
             base_url_ws=config.base_url_ws or base_url_ws,
             config=config,
         )
