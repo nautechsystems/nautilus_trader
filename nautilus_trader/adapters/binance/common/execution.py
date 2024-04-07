@@ -892,9 +892,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             instrument_id=command.instrument_id,
             strategy_id=command.strategy_id,
         )
-        for order in open_orders_strategy:
-            if order.is_pending_cancel:
-                continue  # Already pending cancel
 
         # Check total orders for instrument
         open_orders_total_count = self._cache.orders_open_count(
