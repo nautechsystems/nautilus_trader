@@ -177,7 +177,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             clock=clock,
             key=config.api_key,
             secret=config.api_secret,
-            base_url=config.http_base_url,
+            base_url=config.base_url_http,
             is_testnet=config.testnet,
         )
         provider = get_bybit_instrument_provider(
