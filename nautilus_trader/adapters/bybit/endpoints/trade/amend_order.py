@@ -17,6 +17,7 @@ import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
+from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.order import BybitAmendOrderResponse
@@ -37,7 +38,7 @@ class BybitAmendOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=False
     stopLoss: str | None = None
     tpTriggerBy: str | None = None
     slTriggerBy: str | None = None
-    triggerBy: str | None = None
+    triggerBy: BybitTriggerType | None = None
     tpLimitPrice: str | None = None
     slLimitPrice: str | None = None
 

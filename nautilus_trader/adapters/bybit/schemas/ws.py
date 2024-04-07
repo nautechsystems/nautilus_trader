@@ -27,6 +27,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitPositionIdx
 from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
+from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.common.parsing import parse_bybit_delta
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
@@ -623,13 +624,13 @@ class BybitWsAccountOrder(msgspec.Struct):
     tpLimitPrice: str
     slLimitPrice: str
     triggerDirection: int
-    triggerBy: str
     closeOnTrigger: bool
     placeType: str
     smpType: str
     smpGroup: int
     smpOrderId: str
     feeCurrency: str
+    triggerBy: BybitTriggerType | None = None
     stopOrderType: BybitStopOrderType | None = None
     tpslMode: str | None = None
     createType: str | None = None

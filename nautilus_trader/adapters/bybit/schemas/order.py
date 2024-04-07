@@ -25,6 +25,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
+from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
@@ -69,7 +70,7 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
     tpTriggerBy: str
     slTriggerBy: str
     triggerDirection: int
-    triggerBy: str
+    triggerBy: BybitTriggerType | None = None
     lastPriceOnCreated: str
     reduceOnly: bool
     closeOnTrigger: bool
