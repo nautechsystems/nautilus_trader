@@ -43,6 +43,7 @@ pair, and the `BTCUSDT` perpetual futures contract (this symbol is used for _bot
 E.g. for Binance Futures, the said instruments symbol is `BTCUSDT-PERP` within the Nautilus system boundary.
 
 ## Order types
+
 |                        | Spot                            | Margin                          | Futures           |
 |------------------------|---------------------------------|---------------------------------|-------------------|
 | `MARKET`               | ✓                               | ✓                               | ✓                 |
