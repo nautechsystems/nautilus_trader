@@ -23,7 +23,7 @@ from nautilus_trader.adapters.bybit.schemas.order import BybitBatchAmendOrderRes
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitAmendOrder(msgspec.Struct, omit_defaults=True, frozen=True):
+class BybitBatchAmendOrder(msgspec.Struct, omit_defaults=True, frozen=True):
     symbol: str
     orderId: str | None = None
     orderLinkId: str | None = None
@@ -42,7 +42,7 @@ class BybitAmendOrder(msgspec.Struct, omit_defaults=True, frozen=True):
 
 class BybitBatchAmendOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=True):
     category: BybitProductType
-    request: list[BybitAmendOrder]
+    request: list[BybitBatchAmendOrder]
 
 
 class BybitBatchAmendOrderEndpoint(BybitHttpEndpoint):
@@ -51,7 +51,7 @@ class BybitBatchAmendOrderEndpoint(BybitHttpEndpoint):
         client: BybitHttpClient,
         base_endpoint: str,
     ) -> None:
-        url_path = base_endpoint + "/order/create-batch"
+        url_path = base_endpoint + "/order/amend-batch"
         super().__init__(
             client=client,
             endpoint_type=BybitEndpointType.TRADE,

@@ -27,7 +27,7 @@ from nautilus_trader.adapters.bybit.schemas.order import BybitBatchPlaceOrderRes
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitPlaceOrder(msgspec.Struct, omit_defaults=True, frozen=True):
+class BybitBatchPlaceOrder(msgspec.Struct, omit_defaults=True, frozen=True):
     symbol: str
     side: BybitOrderSide
     orderType: BybitOrderType
@@ -47,7 +47,7 @@ class BybitPlaceOrder(msgspec.Struct, omit_defaults=True, frozen=True):
 
 class BybitBatchPlaceOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=True):
     category: BybitProductType
-    request: list[BybitPlaceOrder]
+    request: list[BybitBatchPlaceOrder]
 
 
 class BybitBatchPlaceOrderEndpoint(BybitHttpEndpoint):

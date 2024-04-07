@@ -181,8 +181,8 @@ class BybitHttpClient:
         payload_str = create_string_from_dict(payload)
         result = timestamp + self._api_key + str(self._recv_window) + payload_str
         signature = hmac.new(
-            self._api_secret.encode("utf-8"),
-            result.encode("utf-8"),
+            self._api_secret.encode(),
+            result.encode(),
             hashlib.sha256,
         ).hexdigest()
         return [timestamp, signature]
@@ -192,8 +192,8 @@ class BybitHttpClient:
         payload_str = parse.urlencode(payload)
         result = timestamp + self._api_key + str(self._recv_window) + payload_str
         signature = hmac.new(
-            self._api_secret.encode("utf-8"),
-            result.encode("utf-8"),
+            self._api_secret.encode(),
+            result.encode(),
             hashlib.sha256,
         ).hexdigest()
         return [timestamp, signature]

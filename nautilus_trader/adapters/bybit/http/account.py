@@ -30,7 +30,9 @@ from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import Bybi
 from nautilus_trader.adapters.bybit.endpoints.trade.amend_order import BybitAmendOrderEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.amend_order import BybitAmendOrderPostParams
 from nautilus_trader.adapters.bybit.endpoints.trade.batch_amend_order import BybitBatchAmendOrderEndpoint
+from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrder
 from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrderEndpoint
+from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrderPostParams
 from nautilus_trader.adapters.bybit.endpoints.trade.batch_place_order import BybitBatchPlaceOrderEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.cancel_all_orders import BybitCancelAllOrdersEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.cancel_all_orders import BybitCancelAllOrdersPostParams
@@ -55,6 +57,7 @@ from nautilus_trader.adapters.bybit.schemas.position import BybitPositionStruct
 from nautilus_trader.adapters.bybit.schemas.trade import BybitExecution
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.model.orders import Order
 
 
 # fmt: on
@@ -287,3 +290,27 @@ class BybitAccountHttpAPI:
             ),
         )
         return response.result.list
+
+    async def batch_cancel_orders(
+        self,
+        product_type: BybitProductType,
+        symbol: str,
+        orders: list[Order],
+    ) -> list[Any]:
+        request: list[BybitBatchCancelOrder] = []
+
+        for order in orders:
+            request.append(
+                BybitBatchCancelOrder(
+                    symbol=symbol,
+                    orderId=order.venue_order_id.value if order.venue_order_id else None,
+                    orderLinkId=order.client_order_id.value,
+                ),
+            )
+        response = await self._endpoint_batch_cancel_order.post(
+            BybitBatchCancelOrderPostParams(
+                category=product_type,
+                request=request,
+            ),
+        )
+        return response.result
