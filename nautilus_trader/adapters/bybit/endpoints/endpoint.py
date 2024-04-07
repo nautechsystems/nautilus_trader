@@ -46,6 +46,7 @@ class BybitHttpEndpoint:
         self._method_request: dict[BybitEndpointType, Any] = {
             BybitEndpointType.NONE: self.client.send_request,
             BybitEndpointType.MARKET: self.client.send_request,
+            BybitEndpointType.ASSET: self.client.sign_request,
             BybitEndpointType.ACCOUNT: self.client.sign_request,
             BybitEndpointType.TRADE: self.client.sign_request,
         }

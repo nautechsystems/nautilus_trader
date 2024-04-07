@@ -33,8 +33,8 @@ class BybitKeyExpiredError(BybitError):
         super().__init__(self.code, self.message)
 
 
-def raise_bybit_error(code):
+def raise_bybit_error(code: int, message: str | None) -> None:
     if code == BybitKeyExpiredError.code:
         raise BybitKeyExpiredError
     else:
-        raise BybitError(code, f"Unknown Bybit error: code {code}")
+        raise BybitError(code, f"Unknown Bybit error: {code=}, {message=}")

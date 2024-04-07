@@ -40,7 +40,7 @@ class BybitAmendOrder(msgspec.Struct, omit_defaults=True, frozen=True):
     slLimitPrice: str | None = None
 
 
-class BybitBatchAmendOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitBatchAmendOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=True):
     category: BybitProductType
     request: list[BybitAmendOrder]
 

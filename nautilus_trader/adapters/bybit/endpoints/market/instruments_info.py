@@ -26,7 +26,7 @@ from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsSp
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitInstrumentsInfoGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitInstrumentsInfoGetParams(msgspec.Struct, omit_defaults=True, frozen=True):
     category: BybitProductType | None = None
     symbol: str | None = None
     status: str | None = None

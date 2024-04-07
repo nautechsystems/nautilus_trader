@@ -22,7 +22,7 @@ from nautilus_trader.adapters.bybit.schemas.market.trades import BybitTradesResp
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitTradesGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitTradesGetParams(msgspec.Struct, omit_defaults=True, frozen=True):
     category: str
     symbol: str
     baseCoin: str | None = None

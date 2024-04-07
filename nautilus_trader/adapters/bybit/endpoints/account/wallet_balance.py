@@ -22,7 +22,7 @@ from nautilus_trader.adapters.bybit.schemas.account.balance import BybitWalletBa
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitWalletBalanceGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitWalletBalanceGetParams(msgspec.Struct, omit_defaults=True, frozen=True):
     accountType: str | None = None
     coin: str | None = None
 

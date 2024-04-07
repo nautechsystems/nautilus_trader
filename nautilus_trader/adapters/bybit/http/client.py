@@ -25,6 +25,7 @@ from nautilus_trader.adapters.bybit.common.error import raise_bybit_error
 from nautilus_trader.adapters.bybit.http.errors import BybitError
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
@@ -124,6 +125,10 @@ class BybitHttpClient:
             }
         else:
             headers = self._headers
+
+        # Uncomment for development
+        self._log.info(f"{url_path=}, {payload=}", LogColor.MAGENTA)
+
         response: HttpResponse = await self._client.request(
             http_method,
             url,
@@ -134,18 +139,18 @@ class BybitHttpClient:
         # First check for server error
         if 400 <= response.status < 500:
             message = msgspec.json.decode(response.body) if response.body else None
-            print(str(response.body))
             raise BybitError(
                 status=response.status,
                 message=message,
                 headers=response.headers,
             )
-        # Then check for error inside spot response
+        # Then check for error inside response
         response_status = self._decoder_response_code.decode(response.body)
         if response_status.retCode == 0:
             return response.body
         else:
-            raise_bybit_error(response_status.retCode)
+            message = msgspec.json.decode(response.body) if response.body else None
+            raise_bybit_error(response_status.retCode, message)
         return None
 
     async def sign_request(
@@ -157,9 +162,6 @@ class BybitHttpClient:
     ) -> Any:
         if payload is None:
             payload = {}
-
-        # Uncomment for development
-        # self._log.info(f"{url_path=}, {payload=}", LogColor.MAGENTA)
 
         [timestamp, authed_signature] = (
             self._sign_get_request(payload)

@@ -26,7 +26,7 @@ from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickersSpo
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitTickersGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitTickersGetParams(msgspec.Struct, omit_defaults=True, frozen=True):
     category: BybitProductType | None = None
     symbol: str | None = None
     baseCoin: str | None = None

@@ -19,6 +19,7 @@ from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
+from nautilus_trader.adapters.bybit.http.asset import BybitAssetHttpAPI
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
 from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
@@ -64,6 +65,11 @@ class BybitInstrumentProvider(InstrumentProvider):
         self._client = client
         self._product_types = product_types
 
+        self._http_asset = BybitAssetHttpAPI(
+            client=client,
+            clock=clock,
+        )
+
         self._http_market = BybitMarketHttpAPI(
             client=client,
             clock=clock,
@@ -81,6 +87,8 @@ class BybitInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
+        await self._load_coins()
+
         instrument_infos: dict[BybitProductType, BybitInstrumentList] = {}
         fee_rates: dict[BybitProductType, list[BybitFeeRate]] = {}
 
@@ -92,10 +100,8 @@ class BybitInstrumentProvider(InstrumentProvider):
                 product_type,
             )
 
-        # risk_limits = await self._http_market.get_risk_limits()
         for product_type in instrument_infos:
             for instrument in instrument_infos[product_type]:
-                ## find target fee rate in list by symbol
                 target_fee_rate = next(
                     (item for item in fee_rates[product_type] if item.symbol == instrument.symbol),
                     None,
@@ -116,6 +122,8 @@ class BybitInstrumentProvider(InstrumentProvider):
         if not instrument_ids:
             self._log.info("No instrument IDs given for loading")
             return
+
+        await self._load_coins()
 
         # Check all instrument IDs
         for instrument_id in instrument_ids:
@@ -153,6 +161,22 @@ class BybitInstrumentProvider(InstrumentProvider):
                         f"Unable to find fee rate for instrument {instrument}",
                     )
 
+    async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
+        PyCondition.not_none(instrument_id, "instrument_id")
+        await self.load_ids_async([instrument_id], filters)
+
+    async def _load_coins(self) -> None:
+        coin_infos = await self._http_asset.fetch_coin_info()
+
+        for coin_info in coin_infos:
+            try:
+                currency = coin_info.parse_to_currency()
+            except ValueError as e:
+                self._log.warning(f"Unable to parse currency {coin_info}: {e}")
+                continue
+
+            self.add_currency(currency)
+
     def _parse_instrument(
         self,
         instrument: BybitInstrument,
@@ -161,16 +185,15 @@ class BybitInstrumentProvider(InstrumentProvider):
         if isinstance(instrument, BybitInstrumentSpot):
             self._parse_spot_instrument(instrument, fee_rate)
         elif isinstance(instrument, BybitInstrumentLinear):
+            # Perpetual and futures
             self._parse_linear_instrument(instrument, fee_rate)
         elif isinstance(instrument, BybitInstrumentInverse):
+            # Perpetual and futures (inverse)
             self._parse_inverse_instrument(instrument, fee_rate)
         elif isinstance(instrument, BybitInstrumentOption):
             self._parse_option_instrument(instrument, fee_rate)
         else:
             raise TypeError(f"Unsupported Bybit instrument, was {instrument}")
-
-    async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
-        PyCondition.not_none(instrument_id, "instrument_id")
 
     def _parse_spot_instrument(
         self,
@@ -178,17 +201,17 @@ class BybitInstrumentProvider(InstrumentProvider):
         fee_rate: BybitFeeRate,
     ) -> None:
         try:
-            base_currency = data.parse_to_base_currency()
-            quote_currency = data.parse_to_quote_currency()
+            base_currency = self.currency(data.baseCoin)
+            quote_currency = self.currency(data.quoteCoin)
             ts_event = self._clock.timestamp_ns()
             ts_init = self._clock.timestamp_ns()
             instrument = data.parse_to_instrument(
+                base_currency=base_currency,
+                quote_currency=quote_currency,
                 fee_rate=fee_rate,
                 ts_event=ts_event,
                 ts_init=ts_init,
             )
-            self.add_currency(base_currency)
-            self.add_currency(quote_currency)
             self.add(instrument=instrument)
         except ValueError as e:
             if self._log_warnings:
@@ -200,17 +223,17 @@ class BybitInstrumentProvider(InstrumentProvider):
         fee_rate: BybitFeeRate,
     ) -> None:
         try:
-            base_currency = data.parse_to_base_currency()
-            quote_currency = data.parse_to_quote_currency()
+            base_currency = self.currency(data.baseCoin)
+            quote_currency = self.currency(data.quoteCoin)
             ts_event = self._clock.timestamp_ns()
             ts_init = self._clock.timestamp_ns()
             instrument = data.parse_to_instrument(
+                base_currency=base_currency,
+                quote_currency=quote_currency,
                 fee_rate=fee_rate,
                 ts_event=ts_event,
                 ts_init=ts_init,
             )
-            self.add_currency(base_currency)
-            self.add_currency(quote_currency)
             self.add(instrument=instrument)
         except ValueError as e:
             if self._log_warnings:
@@ -222,17 +245,17 @@ class BybitInstrumentProvider(InstrumentProvider):
         fee_rate: BybitFeeRate,
     ) -> None:
         try:
-            base_currency = data.parse_to_base_currency()
-            quote_currency = data.parse_to_quote_currency()
+            base_currency = self.currency(data.baseCoin)
+            quote_currency = self.currency(data.quoteCoin)
             ts_event = self._clock.timestamp_ns()
             ts_init = self._clock.timestamp_ns()
             instrument = data.parse_to_instrument(
+                base_currency=base_currency,
+                quote_currency=quote_currency,
                 fee_rate=fee_rate,
                 ts_event=ts_event,
                 ts_init=ts_init,
             )
-            self.add_currency(base_currency)
-            self.add_currency(quote_currency)
             self.add(instrument=instrument)
         except ValueError as e:
             if self._log_warnings:

@@ -27,7 +27,7 @@ from nautilus_trader.adapters.bybit.schemas.order import BybitBatchCancelOrderRe
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitBatchCancelOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitBatchCancelOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=True):
     category: BybitProductType
     symbol: str
     side: BybitOrderSide

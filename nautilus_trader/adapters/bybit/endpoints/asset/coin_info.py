@@ -22,7 +22,7 @@ from nautilus_trader.adapters.bybit.schemas.asset.coin_info import BybitCoinInfo
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitCoinInfoGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitCoinInfoGetParams(msgspec.Struct, omit_defaults=True, frozen=True):
     coin: str | None = None
 
 

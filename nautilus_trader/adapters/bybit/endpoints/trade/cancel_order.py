@@ -23,7 +23,7 @@ from nautilus_trader.adapters.bybit.schemas.order import BybitCancelOrderRespons
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitCancelOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitCancelOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=True):
     category: BybitProductType
     symbol: str
     orderId: str | None = None
