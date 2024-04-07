@@ -31,7 +31,7 @@ from nautilus_trader.adapters.binance.common.schemas.market import BinanceDataMs
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceOrderBookMsg
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceQuoteMsg
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceTickerMsg
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
