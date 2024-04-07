@@ -18,36 +18,31 @@ import msgspec
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
-from nautilus_trader.adapters.bybit.schemas.position import BybitPositionResponseStruct
+from nautilus_trader.adapters.bybit.schemas.asset.coin_info import BybitCoinInfoResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class PositionInfoGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
-    category: str | None = None
-    symbol: str | None = None
-    baseCoin: str | None = None
-    settleCoin: str | None = None
-    limit: int | None = None
-    cursor: str | None = None
+class BybitCoinInfoGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
+    coin: str | None = None
 
 
-class BybitPositionInfoEndpoint(BybitHttpEndpoint):
+class BybitCoinInfoEndpoint(BybitHttpEndpoint):
     def __init__(
         self,
         client: BybitHttpClient,
         base_endpoint: str,
     ) -> None:
-        url_path = base_endpoint + "/position/list"
+        self.http_method = HttpMethod.GET
+        url_path = base_endpoint + "/asset/coin/query-info"
         super().__init__(
             client=client,
-            endpoint_type=BybitEndpointType.ACCOUNT,
+            endpoint_type=BybitEndpointType.ASSET,
             url_path=url_path,
         )
-        self._get_resp_decoder = msgspec.json.Decoder(BybitPositionResponseStruct)
+        self._get_resp_decoder = msgspec.json.Decoder(BybitCoinInfoResponse)
 
-    async def get(self, params: PositionInfoGetParams) -> BybitPositionResponseStruct:
-        method_type = HttpMethod.GET
-        raw = await self._method(method_type, params)
+    async def get(self, params: BybitCoinInfoGetParams) -> BybitCoinInfoResponse:
+        raw = await self._method(self.http_method, params)
         try:
             return self._get_resp_decoder.decode(raw)
         except Exception as e:

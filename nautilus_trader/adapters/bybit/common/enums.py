@@ -202,6 +202,7 @@ class BybitTransactionType(Enum):
 @unique
 class BybitEndpointType(Enum):
     NONE = "NONE"
+    ASSET = "ASSET"
     MARKET = "MARKET"
     ACCOUNT = "ACCOUNT"
     TRADE = "TRADE"
