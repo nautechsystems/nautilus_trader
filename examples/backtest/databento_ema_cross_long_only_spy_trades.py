@@ -50,9 +50,9 @@ if __name__ == "__main__":
     engine = BacktestEngine(config=config)
 
     # Add a trading venue (multiple venues possible)
-    NYSE = Venue("NYSE")
+    NASDAQ = Venue("XNAS")
     engine.add_venue(
-        venue=NYSE,
+        venue=NASDAQ,
         oms_type=OmsType.NETTING,
         account_type=AccountType.CASH,
         base_currency=USD,
@@ -60,32 +60,33 @@ if __name__ == "__main__":
     )
 
     # Add instruments
-    TSLA_NYSE = TestInstrumentProvider.equity(symbol="TSLA", venue="NYSE")
-    engine.add_instrument(TSLA_NYSE)
+    SPY_XNAS = TestInstrumentProvider.equity(symbol="SPY", venue="XNAS")
+    engine.add_instrument(SPY_XNAS)
 
     # Add data
     loader = DatabentoDataLoader()
 
     filenames = [
-        "tsla-dbeq-basic-trades-2024-01.dbn.zst",
-        "tsla-dbeq-basic-trades-2024-02.dbn.zst",
-        "tsla-dbeq-basic-trades-2024-03.dbn.zst",
+        "spy-xnas-trades-2024-01.dbn.zst",
+        "spy-xnas-trades-2024-02.dbn.zst",
+        "spy-xnas-trades-2024-03.dbn.zst",
     ]
 
     for filename in filenames:
         trades = loader.from_dbn_file(
             path=TEST_DATA_DIR / "databento" / "temp" / filename,
-            instrument_id=TSLA_NYSE.id,
+            instrument_id=SPY_XNAS.id,
         )
         engine.add_data(trades)
 
     # Configure your strategy
     config = EMACrossLongOnlyConfig(
-        instrument_id=TSLA_NYSE.id,
-        bar_type=BarType.from_str(f"{TSLA_NYSE.id}-1-MINUTE-LAST-INTERNAL"),
-        trade_size=Decimal(500),
+        instrument_id=SPY_XNAS.id,
+        bar_type=BarType.from_str(f"{SPY_XNAS.id}-1000-TICK-LAST-INTERNAL"),
+        trade_size=Decimal(100),
         fast_ema_period=10,
         slow_ema_period=20,
+        request_historical_bars=False,  # Using internally aggregated tick bars
     )
 
     # Instantiate and add your strategy
@@ -107,7 +108,7 @@ if __name__ == "__main__":
         "display.width",
         300,
     ):
-        print(engine.trader.generate_account_report(NYSE))
+        print(engine.trader.generate_account_report(NASDAQ))
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())
 
