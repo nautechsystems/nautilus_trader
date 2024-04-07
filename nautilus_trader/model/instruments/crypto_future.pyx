@@ -47,6 +47,10 @@ cdef class CryptoFuture(Instrument):
         The underlying asset.
     quote_currency : Currency
         The contract quote currency.
+    settlement_currency : Currency
+        The settlement currency.
+    is_inverse : bool
+        If the instrument costing is inverse (quantity expressed in quote currency units).
     activation_ns : uint64_t
         The UNIX timestamp (nanoseconds) for contract activation.
     expiration_ns : uint64_t
@@ -123,6 +127,7 @@ cdef class CryptoFuture(Instrument):
         Currency underlying not None,
         Currency quote_currency not None,
         Currency settlement_currency not None,
+        bint is_inverse,
         uint64_t activation_ns,
         uint64_t expiration_ns,
         int price_precision,
@@ -151,7 +156,7 @@ cdef class CryptoFuture(Instrument):
             asset_class=AssetClass.CRYPTOCURRENCY,
             instrument_class=InstrumentClass.FUTURE,
             quote_currency=quote_currency,
-            is_inverse=False,
+            is_inverse=is_inverse,
             price_precision=price_precision,
             size_precision=size_precision,
             price_increment=price_increment,
@@ -223,6 +228,7 @@ cdef class CryptoFuture(Instrument):
             underlying=Currency.from_str_c(pyo3_instrument.underlying.code),
             quote_currency=Currency.from_str_c(pyo3_instrument.quote_currency.code),
             settlement_currency=Currency.from_str_c(pyo3_instrument.settlement_currency.code),
+            is_inverse=pyo3_instrument.is_inverse,
             activation_ns=pyo3_instrument.activation_ns,
             expiration_ns=pyo3_instrument.expiration_ns,
             price_precision=pyo3_instrument.price_precision,
@@ -263,6 +269,7 @@ cdef class CryptoFuture(Instrument):
             underlying=Currency.from_str_c(values["underlying"]),
             quote_currency=Currency.from_str_c(values["quote_currency"]),
             settlement_currency=Currency.from_str_c(values["settlement_currency"]),
+            is_inverse=values["is_inverse"],
             activation_ns=values["activation_ns"],
             expiration_ns=values["expiration_ns"],
             price_precision=values["price_precision"],
@@ -294,6 +301,7 @@ cdef class CryptoFuture(Instrument):
             "underlying": obj.underlying.code,
             "quote_currency": obj.quote_currency.code,
             "settlement_currency": obj.settlement_currency.code,
+            "is_inverse": obj.is_inverse,
             "activation_ns": obj.activation_ns,
             "expiration_ns": obj.expiration_ns,
             "price_precision": obj.price_precision,

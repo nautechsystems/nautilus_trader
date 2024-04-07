@@ -324,6 +324,7 @@ class TestInstrumentProvider:
             underlying=BTC,
             quote_currency=USDT,
             settlement_currency=USDT,
+            is_inverse=False,
             activation_ns=activation.value,
             expiration_ns=expiration.value,
             price_precision=2,

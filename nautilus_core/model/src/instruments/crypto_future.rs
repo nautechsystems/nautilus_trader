@@ -42,6 +42,7 @@ pub struct CryptoFuture {
     pub underlying: Currency,
     pub quote_currency: Currency,
     pub settlement_currency: Currency,
+    pub is_inverse: bool,
     pub activation_ns: UnixNanos,
     pub expiration_ns: UnixNanos,
     pub price_precision: u8,
@@ -71,6 +72,7 @@ impl CryptoFuture {
         underlying: Currency,
         quote_currency: Currency,
         settlement_currency: Currency,
+        is_inverse: bool,
         activation_ns: UnixNanos,
         expiration_ns: UnixNanos,
         price_precision: u8,
@@ -112,6 +114,7 @@ impl CryptoFuture {
             underlying,
             quote_currency,
             settlement_currency,
+            is_inverse,
             activation_ns,
             expiration_ns,
             price_precision,
@@ -179,7 +182,7 @@ impl Instrument for CryptoFuture {
     }
 
     fn is_inverse(&self) -> bool {
-        false
+        self.is_inverse
     }
 
     fn price_precision(&self) -> u8 {
