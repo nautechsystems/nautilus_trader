@@ -42,7 +42,7 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     api_key: str | None = None
     api_secret: str | None = None
     product_types: list[BybitProductType] | None = None
-    http_base_url: str | None = None
+    base_url_http: str | None = None
     testnet: bool = False
 
 
