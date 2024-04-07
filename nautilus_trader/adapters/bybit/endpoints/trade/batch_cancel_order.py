@@ -16,30 +16,22 @@
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
-from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
-from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
-from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
-from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.order import BybitBatchCancelOrderResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
+class BybitBatchCancelOrder(msgspec.Struct, omit_defaults=True, frozen=True):
+    symbol: str
+    orderId: str | None = None
+    orderLinkId: str | None = None
+
+
 class BybitBatchCancelOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=True):
     category: BybitProductType
-    symbol: str
-    side: BybitOrderSide
-    qty: str
-    marketUnit: str | None = None
-    orderType: BybitOrderType | None = None
-    price: str | None = None
-    triggerDirection: int | None = None  # TODO type this
-    triggerPrice: str | None = None
-    triggerBy: BybitTriggerType | None = None
-    timeInForce: BybitTimeInForce | None = None
-    orderLinkId: str | None = None
+    request: list[BybitBatchCancelOrder]
 
 
 class BybitBatchCancelOrderEndpoint(BybitHttpEndpoint):
@@ -48,7 +40,7 @@ class BybitBatchCancelOrderEndpoint(BybitHttpEndpoint):
         client: BybitHttpClient,
         base_endpoint: str,
     ) -> None:
-        url_path = base_endpoint + "/order/create-batch"
+        url_path = base_endpoint + "/order/cancel-batch"
         super().__init__(
             client=client,
             endpoint_type=BybitEndpointType.TRADE,

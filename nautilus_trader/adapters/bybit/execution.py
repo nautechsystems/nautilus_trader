@@ -534,6 +534,41 @@ class BybitExecutionClient(LiveExecutionClient):
             bybit_symbol.raw_symbol,
         )
 
+    # TODO: Determine signing issue for batch requests
+    # async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+    #     open_orders_strategy: list[Order] = self._cache.orders_open(
+    #         instrument_id=command.instrument_id,
+    #         strategy_id=command.strategy_id,
+    #     )
+    #
+    #     bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
+    #
+    #     # Check total orders for instrument
+    #     open_orders_total_count = self._cache.orders_open_count(
+    #         instrument_id=command.instrument_id,
+    #     )
+    #     if open_orders_total_count > 10:
+    #         # This could be reimplemented later to group requests into batches of 10
+    #         self._log.warning(
+    #             f"Total {command.instrument_id.symbol.value} orders open exceeds 10, "
+    #             f"is {open_orders_total_count}: canceling all for symbol",
+    #         )
+    #         await self._http_account.cancel_all_orders(
+    #             bybit_symbol.product_type,
+    #             bybit_symbol.raw_symbol,
+    #         )
+    #         return
+    #
+    #     cancel_batch: list[Order] = []
+    #     for order in open_orders_strategy:
+    #         cancel_batch.append(order)
+    #
+    #     await self._http_account.batch_cancel_orders(
+    #         product_type=bybit_symbol.product_type,
+    #         symbol=bybit_symbol.raw_symbol,
+    #         orders=cancel_batch,
+    #     )
+
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
         if order.is_closed:
