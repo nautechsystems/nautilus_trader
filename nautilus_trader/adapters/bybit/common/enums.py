@@ -70,6 +70,20 @@ class BybitProductType(Enum):
 
 
 @unique
+class BybitContractType(Enum):
+    LINEAR_PERPETUAL = "LinearPerpetual"
+    LINEAR_FUTURE = "LinearFutures"
+    INVERSE_PERPETUAL = "InversePerpetual"
+    INVERSE_FUTURE = "InverseFutures"
+
+
+@unique
+class BybitOptionType(Enum):
+    CALL = "Call"
+    PUT = "Put"
+
+
+@unique
 class BybitPositionSide(Enum):
     BUY = "Buy"
     SELL = "Sell"
@@ -145,6 +159,7 @@ class BybitStopOrderType(Enum):
 
 @unique
 class BybitTriggerType(Enum):
+    NONE = ""  # Default
     LAST_PRICE = "LastPrice"
     INDEX_PRICE = "IndexPrice"
     MARK_PRICE = "MarkPrice"
@@ -169,14 +184,6 @@ class BybitExecType(Enum):
     BLOCK_TRADE = "BlockTrade"
     MOVE_POSITION = "MovePosition"
     UNKNOWN = "UNKNOWN"  # Classic account value (cannot be used to query)
-
-
-@unique
-class BybitContractType(Enum):
-    LINEAR_PERPETUAL = "LinearPerpetual"
-    LINEAR_FUTURE = "LinearFutures"
-    INVERSE_PERPETUAL = "InversePerpetual"
-    INVERSE_FUTURE = "InverseFutures"
 
 
 @unique

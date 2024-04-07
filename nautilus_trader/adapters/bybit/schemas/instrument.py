@@ -20,6 +20,7 @@ import msgspec
 import pandas as pd
 
 from nautilus_trader.adapters.bybit.common.enums import BybitContractType
+from nautilus_trader.adapters.bybit.common.enums import BybitOptionType
 from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
@@ -361,7 +362,7 @@ class BybitInstrumentOption(msgspec.Struct):
     baseCoin: str
     quoteCoin: str
     settleCoin: str
-    optionsType: str
+    optionsType: BybitOptionType
     launchTime: str
     deliveryTime: str
     deliveryFeeRate: str
@@ -374,12 +375,13 @@ class BybitInstrumentOption(msgspec.Struct):
         bybit_symbol = BybitSymbol(self.symbol + "-OPTION")
         instrument_id = bybit_symbol.parse_as_nautilus()
         price_increment = Price.from_str(self.priceFilter.tickSize)
-        if self.optionsType == "Call":
+        if self.optionsType == BybitOptionType.CALL:
             option_kind = OptionKind.CALL
-        elif self.optionsType == "Put":
+        elif self.optionsType == BybitOptionType.PUT:
             option_kind = OptionKind.PUT
         else:
             raise ValueError(f"Unknown Bybit option type {self.optionsType}")
+
         timestamp = time.time_ns()
         strike_price = get_strike_price_from_symbol(self.symbol)
         activation_ns = pd.Timedelta(milliseconds=int(self.launchTime)).total_seconds() * 1e9
