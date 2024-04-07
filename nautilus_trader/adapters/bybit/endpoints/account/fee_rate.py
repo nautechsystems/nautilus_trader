@@ -49,4 +49,6 @@ class BybitFeeRateEndpoint(BybitHttpEndpoint):
         try:
             return self._get_resp_decoder.decode(raw)
         except Exception as e:
-            raise RuntimeError(f"Failed to decode response fee rate response: {raw!s}") from e
+            raise RuntimeError(
+                f"Failed to decode response from {self.url_path}: {raw.decode()}",
+            ) from e

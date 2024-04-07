@@ -42,7 +42,6 @@ class BybitServerTimeEndpoint(BybitHttpEndpoint):
         try:
             return self._get_resp_decoder.decode(raw)
         except Exception as e:
-            decoder_raw = raw.decode("utf-8")
             raise RuntimeError(
-                f"Failed to decode response server time response: {decoder_raw}",
+                f"Failed to decode response from {self.url_path}: {raw.decode()}",
             ) from e
