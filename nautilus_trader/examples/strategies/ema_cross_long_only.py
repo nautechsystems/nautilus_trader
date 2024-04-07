@@ -58,6 +58,8 @@ class EMACrossLongOnlyConfig(StrategyConfig, frozen=True):
         The fast EMA period.
     slow_ema_period : int, default 20
         The slow EMA period.
+    request_historical_bars : bool, default True
+        If historical bars should be requested on start.
     close_positions_on_stop : bool, default True
         If all open positions should be closed on strategy stop.
     order_id_tag : str
@@ -74,6 +76,7 @@ class EMACrossLongOnlyConfig(StrategyConfig, frozen=True):
     trade_size: Decimal
     fast_ema_period: PositiveInt = 10
     slow_ema_period: PositiveInt = 20
+    request_historical_bars: bool = True
     close_positions_on_stop: bool = True
 
 
@@ -114,6 +117,7 @@ class EMACrossLongOnly(Strategy):
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
 
+        self.request_historical_bars = config.request_historical_bars
         self.close_positions_on_stop = config.close_positions_on_stop
         self.instrument: Instrument = None
 
@@ -132,7 +136,8 @@ class EMACrossLongOnly(Strategy):
         self.register_indicator_for_bars(self.bar_type, self.slow_ema)
 
         # Get historical data
-        self.request_bars(self.bar_type, start=self._clock.utc_now() - pd.Timedelta(days=1))
+        if self.request_historical_bars:
+            self.request_bars(self.bar_type, start=self._clock.utc_now() - pd.Timedelta(days=1))
         # self.request_quote_ticks(self.instrument_id)
         # self.request_trade_ticks(self.instrument_id)
 
