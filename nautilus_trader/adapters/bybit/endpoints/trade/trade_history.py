@@ -24,7 +24,7 @@ from nautilus_trader.adapters.bybit.schemas.trade import BybitTradeHistoryRespon
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitTradeHistoryGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitTradeHistoryGetParams(msgspec.Struct, omit_defaults=True, frozen=True):
     category: BybitProductType
     symbol: str | None = None
     baseCoin: str | None = None

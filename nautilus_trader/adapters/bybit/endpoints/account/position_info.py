@@ -22,7 +22,7 @@ from nautilus_trader.adapters.bybit.schemas.position import BybitPositionRespons
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class PositionInfoGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
+class PositionInfoGetParams(msgspec.Struct, omit_defaults=True, frozen=True):
     category: str | None = None
     symbol: str | None = None
     baseCoin: str | None = None

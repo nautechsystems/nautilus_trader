@@ -23,7 +23,7 @@ from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitFeeRateGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitFeeRateGetParams(msgspec.Struct, omit_defaults=True, frozen=True):
     category: BybitProductType | None = None
     symbol: str | None = None
     baseCoin: str | None = None

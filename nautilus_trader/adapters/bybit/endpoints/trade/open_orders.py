@@ -23,7 +23,7 @@ from nautilus_trader.adapters.bybit.schemas.order import BybitOpenOrdersResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitOpenOrdersGetParams(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitOpenOrdersGetParams(msgspec.Struct, omit_defaults=True, frozen=True):
     category: BybitProductType
     symbol: str | None = None
     baseCoin: str | None = None

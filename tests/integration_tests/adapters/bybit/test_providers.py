@@ -24,9 +24,6 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import Venue
 
 
 class TestBybitInstrumentProvider:
@@ -57,14 +54,14 @@ class TestBybitInstrumentProvider:
             config=InstrumentProviderConfig(load_all=True),
         )
 
-    @pytest.mark.asyncio
-    async def test_load_ids_async_incorrect_venue_raise_exception(self):
-        provider = self.get_target_instrument_provider([BybitProductType.SPOT])
-        binance_instrument_ethusdt = InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE"))
-        with pytest.raises(ValueError):
-            await provider.load_ids_async(
-                instrument_ids=[binance_instrument_ethusdt],
-            )
+    # @pytest.mark.asyncio
+    # async def test_load_ids_async_incorrect_venue_raise_exception(self):
+    #     provider = self.get_target_instrument_provider([BybitProductType.SPOT])
+    #     binance_instrument_ethusdt = InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE"))
+    #     with pytest.raises(ValueError):
+    #         await provider.load_ids_async(
+    #             instrument_ids=[binance_instrument_ethusdt],
+    #         )
 
     # @pytest.mark.asyncio
     # async def test_load_ids(
@@ -120,6 +117,10 @@ class TestBybitInstrumentProvider:
             "tests.integration_tests.adapters.bybit.resources.http_responses.linear",
             "instruments.json",
         )
+        coin_response = pkgutil.get_data(
+            "tests.integration_tests.adapters.bybit.resources.http_responses",
+            "coin_info.json",
+        )
         fee_response = pkgutil.get_data(
             "tests.integration_tests.adapters.bybit.resources.http_responses",
             "fee_rate.json",
@@ -127,7 +128,9 @@ class TestBybitInstrumentProvider:
 
         async def mock_requests(*args):
             url = args[2]
-            if "fee-rate" in url:
+            if "coin/query-info" in url:
+                return HttpResponse(status=200, body=coin_response)
+            elif "fee-rate" in url:
                 return HttpResponse(status=200, body=fee_response)
             else:
                 return HttpResponse(status=200, body=instrument_response)

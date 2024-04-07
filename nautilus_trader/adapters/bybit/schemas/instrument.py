@@ -30,7 +30,6 @@ from nautilus_trader.adapters.bybit.schemas.common import LotSizeFilter
 from nautilus_trader.adapters.bybit.schemas.common import SpotLotSizeFilter
 from nautilus_trader.adapters.bybit.schemas.common import SpotPriceFilter
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.core.rust.model import CurrencyType
 from nautilus_trader.core.rust.model import OptionKind
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.identifiers import Symbol
@@ -55,10 +54,14 @@ class BybitInstrumentSpot(msgspec.Struct):
 
     def parse_to_instrument(
         self,
+        base_currency: Currency,
+        quote_currency: Currency,
         fee_rate: BybitFeeRate,
         ts_event: int,
         ts_init: int,
     ) -> CurrencyPair:
+        assert base_currency.code == self.baseCoin
+        assert quote_currency.code == self.quoteCoin
         bybit_symbol = BybitSymbol(self.symbol + "-SPOT")
         instrument_id = bybit_symbol.parse_as_nautilus()
         price_increment = Price.from_str(self.priceFilter.tickSize)
@@ -70,8 +73,8 @@ class BybitInstrumentSpot(msgspec.Struct):
         return CurrencyPair(
             instrument_id=instrument_id,
             raw_symbol=Symbol(bybit_symbol.raw_symbol),
-            base_currency=self.parse_to_base_currency(),
-            quote_currency=self.parse_to_quote_currency(),
+            base_currency=base_currency,
+            quote_currency=quote_currency,
             price_precision=price_increment.precision,
             size_precision=size_increment.precision,
             price_increment=price_increment,
@@ -88,24 +91,6 @@ class BybitInstrumentSpot(msgspec.Struct):
             min_price=None,
             max_price=None,
             info=msgspec.json.Decoder().decode(msgspec.json.Encoder().encode(self)),
-        )
-
-    def parse_to_base_currency(self) -> Currency:
-        return Currency(
-            code=self.baseCoin,
-            name=self.baseCoin,
-            currency_type=CurrencyType.CRYPTO,
-            precision=abs(int(Decimal(self.lotSizeFilter.basePrecision).as_tuple().exponent)),
-            iso4217=0,  # Currently unspecified for crypto assets
-        )
-
-    def parse_to_quote_currency(self) -> Currency:
-        return Currency(
-            code=self.quoteCoin,
-            name=self.quoteCoin,
-            currency_type=CurrencyType.CRYPTO,
-            precision=abs(int(Decimal(self.lotSizeFilter.quotePrecision).as_tuple().exponent)),
-            iso4217=0,  # Currently unspecified for crypto assets
         )
 
 
@@ -134,12 +119,14 @@ class BybitInstrumentLinear(msgspec.Struct):
 
     def parse_to_instrument(
         self,
+        base_currency: Currency,
+        quote_currency: Currency,
         fee_rate: BybitFeeRate,
         ts_event: int,
         ts_init: int,
     ) -> CryptoPerpetual:
-        base_currency = self.parse_to_base_currency()
-        quote_currency = self.parse_to_quote_currency()
+        assert base_currency.code == self.baseCoin
+        assert quote_currency.code == self.quoteCoin
         bybit_symbol = BybitSymbol(self.symbol + "-LINEAR")
         instrument_id = bybit_symbol.parse_as_nautilus()
         if self.settleCoin == self.baseCoin:
@@ -217,24 +204,6 @@ class BybitInstrumentLinear(msgspec.Struct):
 
         return instrument
 
-    def parse_to_base_currency(self) -> Currency:
-        return Currency(
-            code=self.baseCoin,
-            name=self.baseCoin,
-            currency_type=CurrencyType.CRYPTO,
-            precision=int(self.priceScale),  # TODO: Should be coin info minAccuracy
-            iso4217=0,  # Currently unspecified for crypto assets
-        )
-
-    def parse_to_quote_currency(self) -> Currency:
-        return Currency(
-            code=self.quoteCoin,
-            name=self.quoteCoin,
-            currency_type=CurrencyType.CRYPTO,
-            precision=int(self.priceScale),  # TODO: Should be coin info minAccuracy
-            iso4217=0,  # Currently unspecified for crypto assets
-        )
-
 
 class BybitInstrumentInverse(msgspec.Struct):
     symbol: str
@@ -255,12 +224,14 @@ class BybitInstrumentInverse(msgspec.Struct):
 
     def parse_to_instrument(
         self,
+        base_currency: Currency,
+        quote_currency: Currency,
         fee_rate: BybitFeeRate,
         ts_event: int,
         ts_init: int,
     ) -> CryptoPerpetual:
-        base_currency = self.parse_to_base_currency()
-        quote_currency = self.parse_to_quote_currency()
+        assert base_currency.code == self.baseCoin
+        assert quote_currency.code == self.quoteCoin
         bybit_symbol = BybitSymbol(self.symbol + "-INVERSE")
         instrument_id = bybit_symbol.parse_as_nautilus()
         if self.settleCoin == self.baseCoin:
@@ -337,24 +308,6 @@ class BybitInstrumentInverse(msgspec.Struct):
             raise ValueError(f"Unrecognized inverse contract type '{self.contractType}'")
         return instrument
 
-    def parse_to_base_currency(self) -> Currency:
-        return Currency(
-            code=self.baseCoin,
-            name=self.baseCoin,
-            currency_type=CurrencyType.CRYPTO,
-            precision=int(self.priceScale),
-            iso4217=0,  # Currently unspecified for crypto assets
-        )
-
-    def parse_to_quote_currency(self) -> Currency:
-        return Currency(
-            code=self.quoteCoin,
-            name=self.quoteCoin,
-            currency_type=CurrencyType.CRYPTO,
-            precision=int(self.priceScale),
-            iso4217=0,  # Currently unspecified for crypto assets
-        )
-
 
 class BybitInstrumentOption(msgspec.Struct):
     symbol: str
@@ -371,7 +324,9 @@ class BybitInstrumentOption(msgspec.Struct):
 
     def parse_to_instrument(
         self,
+        quote_currency: Currency,
     ) -> OptionsContract:
+        assert quote_currency.code == self.quoteCoin
         bybit_symbol = BybitSymbol(self.symbol + "-OPTION")
         instrument_id = bybit_symbol.parse_as_nautilus()
         price_increment = Price.from_str(self.priceFilter.tickSize)
@@ -391,7 +346,7 @@ class BybitInstrumentOption(msgspec.Struct):
             instrument_id=instrument_id,
             raw_symbol=Symbol(bybit_symbol.raw_symbol),
             asset_class=AssetClass.CRYPTOCURRENCY,
-            currency=self.parse_to_quote_currency(),
+            currency=quote_currency,
             price_precision=price_increment.precision,
             price_increment=price_increment,
             multiplier=Quantity.from_str("1.0"),
@@ -403,15 +358,6 @@ class BybitInstrumentOption(msgspec.Struct):
             strike_price=Price.from_int(strike_price),
             ts_init=timestamp,
             ts_event=timestamp,
-        )
-
-    def parse_to_quote_currency(self) -> Currency:
-        return Currency(
-            code=self.quoteCoin,
-            name=self.quoteCoin,
-            currency_type=CurrencyType.CRYPTO,
-            precision=2,  # TODO: Fix precision
-            iso4217=0,  # Currently unspecified for crypto assets
         )
 
 

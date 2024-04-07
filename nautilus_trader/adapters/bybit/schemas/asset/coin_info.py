@@ -17,6 +17,9 @@ from typing import Any
 
 import msgspec as msgspec
 
+from nautilus_trader.model.enums import CurrencyType
+from nautilus_trader.model.objects import Currency
+
 
 class BybitCoinChainInfo(msgspec.Struct):
     confirmation: str
@@ -36,6 +39,15 @@ class BybitCoinInfo(msgspec.Struct):
     coin: str
     remainAmount: str
     chains: list[BybitCoinChainInfo]
+
+    def parse_to_currency(self) -> Currency:
+        return Currency(
+            code=self.coin,
+            name=self.coin,
+            currency_type=CurrencyType.CRYPTO,
+            precision=int(self.chains[0].minAccuracy),
+            iso4217=0,  # Currently unspecified for crypto assets
+        )
 
 
 class BybitCoinInfoResult(msgspec.Struct):

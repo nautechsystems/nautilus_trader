@@ -24,7 +24,7 @@ from nautilus_trader.adapters.bybit.schemas.order import BybitAmendOrderResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitAmendOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitAmendOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=True):
     category: BybitProductType
     symbol: str
     orderId: str | None = None
