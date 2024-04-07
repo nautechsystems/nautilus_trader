@@ -16,7 +16,7 @@
 import pytest
 
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
-from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
+from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 
 
 class TestBybitSymbol:

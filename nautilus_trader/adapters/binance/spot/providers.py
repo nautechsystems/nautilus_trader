@@ -311,4 +311,4 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             self._log.debug(f"Added instrument {instrument.id}.")
         except ValueError as e:
             if self._log_warnings:
-                self._log.warning(f"Unable to parse instrument {symbol_info.symbol}, {e}.")
+                self._log.warning(f"Unable to parse instrument {symbol_info.symbol}: {e}.")

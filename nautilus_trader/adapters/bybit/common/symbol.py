@@ -76,7 +76,7 @@ class BybitSymbol(str):
         str
 
         """
-        return str(self).split("-")[0]
+        return str(self).rpartition("-")[0]
 
     @property
     def product_type(self) -> BybitProductType:

@@ -15,6 +15,7 @@
 
 from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
+from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 
 # fmt: off
 from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoEndpoint
@@ -35,7 +36,6 @@ from nautilus_trader.adapters.bybit.schemas.market.kline import BybitKline
 from nautilus_trader.adapters.bybit.schemas.market.server_time import BybitServerTime
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerList
 from nautilus_trader.adapters.bybit.schemas.market.trades import BybitTrade
-from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import Bar

@@ -19,6 +19,7 @@ from decimal import Decimal
 import msgspec
 import pandas as pd
 
+from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
 from nautilus_trader.adapters.bybit.schemas.common import LeverageFilter
@@ -26,7 +27,6 @@ from nautilus_trader.adapters.bybit.schemas.common import LinearPriceFilter
 from nautilus_trader.adapters.bybit.schemas.common import LotSizeFilter
 from nautilus_trader.adapters.bybit.schemas.common import SpotLotSizeFilter
 from nautilus_trader.adapters.bybit.schemas.common import SpotPriceFilter
-from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.core.rust.model import CurrencyType
 from nautilus_trader.core.rust.model import OptionKind
 from nautilus_trader.model.enums import AssetClass
@@ -156,7 +156,7 @@ class BybitInstrumentLinear(msgspec.Struct):
 
         instrument = CryptoPerpetual(
             instrument_id=instrument_id,
-            raw_symbol=Symbol(str(bybit_symbol)),
+            raw_symbol=Symbol(bybit_symbol.raw_symbol),
             base_currency=base_currency,
             quote_currency=quote_currency,
             settlement_currency=settlement_currency,
@@ -245,7 +245,7 @@ class BybitInstrumentInverse(msgspec.Struct):
 
         instrument = CryptoPerpetual(
             instrument_id=instrument_id,
-            raw_symbol=Symbol(str(bybit_symbol)),
+            raw_symbol=Symbol(bybit_symbol.raw_symbol),
             base_currency=base_currency,
             quote_currency=quote_currency,
             settlement_currency=settlement_currency,
@@ -342,7 +342,7 @@ class BybitInstrumentOption(msgspec.Struct):
             code=self.quoteCoin,
             name=self.quoteCoin,
             currency_type=CurrencyType.CRYPTO,
-            precision=1,
+            precision=2,  # TODO: Fix precision
             iso4217=0,  # Currently unspecified for crypto assets
         )
 
