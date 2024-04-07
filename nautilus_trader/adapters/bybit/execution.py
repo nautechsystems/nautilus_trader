@@ -26,13 +26,13 @@ from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderStatus
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
+from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.errors import BybitError
 from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
 from nautilus_trader.adapters.bybit.schemas.common import BybitWsSubscriptionMsg
-from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.schemas.ws import BYBIT_PONG
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecution
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionMsg

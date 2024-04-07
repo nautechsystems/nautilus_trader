@@ -17,6 +17,7 @@ import msgspec
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
+from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
@@ -81,13 +82,13 @@ class BybitInstrumentProvider(InstrumentProvider):
         self._log.info(f"Loading all instruments{filters_str}")
 
         instrument_infos: dict[BybitProductType, BybitInstrumentList] = {}
-        fee_rates_infos: dict[BybitProductType, list[BybitFeeRate]] = {}
+        fee_rates: dict[BybitProductType, list[BybitFeeRate]] = {}
 
         for product_type in self._product_types:
             instrument_infos[product_type] = await self._http_market.fetch_instruments(
                 product_type,
             )
-            fee_rates_infos[product_type] = await self._http_account.fetch_fee_rate(
+            fee_rates[product_type] = await self._http_account.fetch_fee_rate(
                 product_type,
             )
 
@@ -96,11 +97,7 @@ class BybitInstrumentProvider(InstrumentProvider):
             for instrument in instrument_infos[product_type]:
                 ## find target fee rate in list by symbol
                 target_fee_rate = next(
-                    (
-                        item
-                        for item in fee_rates_infos[product_type]
-                        if item.symbol == instrument.symbol
-                    ),
+                    (item for item in fee_rates[product_type] if item.symbol == instrument.symbol),
                     None,
                 )
                 if target_fee_rate:
@@ -124,17 +121,37 @@ class BybitInstrumentProvider(InstrumentProvider):
         for instrument_id in instrument_ids:
             PyCondition.equal(instrument_id.venue, BYBIT_VENUE, "instrument_id.venue", "BYBIT")
 
-        filters_str = "..." if not filters else f" with filters {filters}..."
-        self._log.info(f"Loading instruments {instrument_ids}{filters_str}")
+        instrument_infos: dict[BybitProductType, BybitInstrumentList] = {}
+        fee_rates: dict[BybitProductType, list[BybitFeeRate]] = {}
 
-        # extract symbol strings and product types
-        # for instrument_id in instrument_ids:
-        #     bybit_symbol = BybitSymbol(instrument_id.symbol.value)
-        #     instrument = await self._http_market.fetch_instrument(
-        #         bybit_symbol.product_type,
-        #         bybit_symbol.raw_symbol,
-        #     )
-        #     self._parse_instrument(instrument)
+        for product_type in self._product_types:
+            instrument_infos[product_type] = await self._http_market.fetch_instruments(
+                product_type,
+            )
+            fee_rates[product_type] = await self._http_account.fetch_fee_rate(
+                product_type,
+            )
+
+            filters_str = "..." if not filters else f" with filters {filters}..."
+            self._log.info(f"Loading instruments {instrument_ids}{filters_str}")
+
+            # extract symbol strings and product types
+            for instrument_id in instrument_ids:
+                bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+                instrument = await self._http_market.fetch_instrument(
+                    bybit_symbol.product_type,
+                    bybit_symbol.raw_symbol,
+                )
+                target_fee_rate = next(
+                    (item for item in fee_rates[product_type] if item.symbol == instrument.symbol),
+                    None,
+                )
+                if target_fee_rate:
+                    self._parse_instrument(instrument, target_fee_rate)
+                else:
+                    self._log.warning(
+                        f"Unable to find fee rate for instrument {instrument}",
+                    )
 
     def _parse_instrument(
         self,
@@ -148,7 +165,7 @@ class BybitInstrumentProvider(InstrumentProvider):
         elif isinstance(instrument, BybitInstrumentInverse):
             self._parse_inverse_instrument(instrument, fee_rate)
         elif isinstance(instrument, BybitInstrumentOption):
-            self._parse_option_instrument(instrument)
+            self._parse_option_instrument(instrument, fee_rate)
         else:
             raise TypeError(f"Unsupported Bybit instrument, was {instrument}")
 
@@ -175,7 +192,7 @@ class BybitInstrumentProvider(InstrumentProvider):
             self.add(instrument=instrument)
         except ValueError as e:
             if self._log_warnings:
-                self._log.warning(f"Unable to parse option instrument {data.symbol}, {e}")
+                self._log.warning(f"Unable to parse option instrument {data.symbol}: {e}")
 
     def _parse_linear_instrument(
         self,
@@ -197,7 +214,7 @@ class BybitInstrumentProvider(InstrumentProvider):
             self.add(instrument=instrument)
         except ValueError as e:
             if self._log_warnings:
-                self._log.warning(f"Unable to parse linear instrument {data.symbol}, {e}")
+                self._log.warning(f"Unable to parse linear instrument {data.symbol}: {e}")
 
     def _parse_inverse_instrument(
         self,
@@ -219,14 +236,15 @@ class BybitInstrumentProvider(InstrumentProvider):
             self.add(instrument=instrument)
         except ValueError as e:
             if self._log_warnings:
-                self._log.warning(f"Unable to parse inverse instrument {data.symbol}, {e}")
+                self._log.warning(f"Unable to parse inverse instrument {data.symbol}: {e}")
 
     def _parse_option_instrument(
         self,
         instrument: BybitInstrumentOption,
+        fee_rate: BybitFeeRate,
     ) -> None:
         try:
             pass
         except ValueError as e:
             if self._log_warnings:
-                self._log.warning(f"Unable to parse option instrument {instrument.symbol}, {e}")
+                self._log.warning(f"Unable to parse option instrument {instrument.symbol}: {e}")

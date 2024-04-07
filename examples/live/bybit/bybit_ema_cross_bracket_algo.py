@@ -75,7 +75,7 @@ config_node = TradingNodeConfig(
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             http_base_url=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            product_types=[product_type],
+            # product_types=[product_type],  # Will load all instruments
             testnet=False,  # If client uses the testnet
         ),
     },

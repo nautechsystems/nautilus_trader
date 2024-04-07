@@ -18,8 +18,8 @@ from typing import Any
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
+from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
-from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 
 
 def enc_hook(obj: Any) -> Any:

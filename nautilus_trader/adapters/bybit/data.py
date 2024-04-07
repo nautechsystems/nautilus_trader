@@ -29,12 +29,12 @@ from nautilus_trader.adapters.bybit.common.credentials import get_api_secret
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.parsing import get_interval_from_bar_type
+from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
 from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
-from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.schemas.ws import BYBIT_PONG
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerLinearMsg
