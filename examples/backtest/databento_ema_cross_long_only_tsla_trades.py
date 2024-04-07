@@ -23,9 +23,8 @@ from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
-from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
-from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP
-from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAPConfig
+from nautilus_trader.examples.strategies.ema_cross_long_only import EMACrossLongOnly
+from nautilus_trader.examples.strategies.ema_cross_long_only import EMACrossLongOnlyConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
@@ -51,45 +50,47 @@ if __name__ == "__main__":
     engine = BacktestEngine(config=config)
 
     # Add a trading venue (multiple venues possible)
-    NASDAQ = Venue("XNAS")
+    NYSE = Venue("NYSE")
     engine.add_venue(
-        venue=NASDAQ,
+        venue=NYSE,
         oms_type=OmsType.NETTING,
         account_type=AccountType.CASH,
         base_currency=USD,
-        starting_balances=[Money(10_000_000.0, USD)],
+        starting_balances=[Money(1_000_000.0, USD)],
     )
 
     # Add instruments
-    TSLA_NASDAQ = TestInstrumentProvider.equity(symbol="TSLA")
-    engine.add_instrument(TSLA_NASDAQ)
+    TSLA_NYSE = TestInstrumentProvider.equity(symbol="TSLA", venue="NYSE")
+    engine.add_instrument(TSLA_NYSE)
 
     # Add data
     loader = DatabentoDataLoader()
-    trades = loader.from_dbn_file(
-        path=TEST_DATA_DIR / "databento" / "temp" / "tsla-xnas-20240107-20240206.trades.dbn.zst",
-        instrument_id=TSLA_NASDAQ.id,
-    )
-    engine.add_data(trades)
+
+    filenames = [
+        "tsla-dbeq-basic-trades-2024-01.dbn.zst",
+        "tsla-dbeq-basic-trades-2024-02.dbn.zst",
+        "tsla-dbeq-basic-trades-2024-03.dbn.zst",
+    ]
+
+    for filename in filenames:
+        trades = loader.from_dbn_file(
+            path=TEST_DATA_DIR / "databento" / "temp" / filename,
+            instrument_id=TSLA_NYSE.id,
+        )
+        engine.add_data(trades)
 
     # Configure your strategy
-    config = EMACrossTWAPConfig(
-        instrument_id=TSLA_NASDAQ.id,
-        bar_type=BarType.from_str("TSLA.XNAS-5-MINUTE-LAST-INTERNAL"),
-        trade_size=Decimal(100),
+    config = EMACrossLongOnlyConfig(
+        instrument_id=TSLA_NYSE.id,
+        bar_type=BarType.from_str("TSLA.NYSE-1-MINUTE-LAST-INTERNAL"),
+        trade_size=Decimal(500),
         fast_ema_period=10,
         slow_ema_period=20,
-        twap_horizon_secs=10.0,
-        twap_interval_secs=2.5,
     )
 
     # Instantiate and add your strategy
-    strategy = EMACrossTWAP(config=config)
+    strategy = EMACrossLongOnly(config=config)
     engine.add_strategy(strategy=strategy)
-
-    # Instantiate and add your execution algorithm
-    exec_algorithm = TWAPExecAlgorithm()
-    engine.add_exec_algorithm(exec_algorithm)
 
     time.sleep(0.1)
     input("Press Enter to continue...")
@@ -106,7 +107,7 @@ if __name__ == "__main__":
         "display.width",
         300,
     ):
-        print(engine.trader.generate_account_report(NASDAQ))
+        print(engine.trader.generate_account_report(NYSE))
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())
 
