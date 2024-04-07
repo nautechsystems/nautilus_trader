@@ -83,8 +83,6 @@ class EMACross(Strategy):
     When the fast EMA crosses the slow EMA then enter a position at the market
     in that direction.
 
-    Cancels all orders and closes all positions on stop.
-
     Parameters
     ----------
     config : EMACrossConfig
