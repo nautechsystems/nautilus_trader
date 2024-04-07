@@ -101,6 +101,10 @@ class BybitInstrumentProvider(InstrumentProvider):
             )
 
         for product_type in instrument_infos:
+            if product_type == BybitProductType.OPTION:
+                self._log.warning("Options not currently supported")
+                continue
+
             for instrument in instrument_infos[product_type]:
                 target_fee_rate = next(
                     (item for item in fee_rates[product_type] if item.symbol == instrument.symbol),
@@ -169,6 +173,9 @@ class BybitInstrumentProvider(InstrumentProvider):
         coin_infos = await self._http_asset.fetch_coin_info()
 
         for coin_info in coin_infos:
+            if coin_info.coin == "EVERY":
+                # Has precision 18 (exceeds max 9) and not used for any instrument?
+                continue
             try:
                 currency = coin_info.parse_to_currency()
             except ValueError as e:
