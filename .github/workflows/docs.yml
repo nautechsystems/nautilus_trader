@@ -76,10 +76,10 @@ jobs:
       - name: Build Python docs
         run: make docs-python
 
-      - name: Build Rust docs
-        run: |
-          make docs-rust
-          cp -r nautilus_core/target/doc docs/build/html/core
+      # - name: Build Rust docs
+      #   run: |
+      #     make docs-rust
+      #     cp -r nautilus_core/target/doc docs/build/html/core
 
       - name: Add nojeckyll
         run: touch docs/build/html/.nojekyll
