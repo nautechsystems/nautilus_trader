@@ -45,7 +45,7 @@ and won't need to necessarily work with these lower level components directly.
 ## Databento documentation
 
 Databento provides extensive documentation for users which can be found in the [Databento knowledge base](https://databento.com/docs/knowledge-base/new-users).
-It's recommended you also refer to this Databento documentation in conjunction with this NautilusTrader integration guide.
+It's recommended you also refer to the Databento documentation in conjunction with this NautilusTrader integration guide.
 
 ## Databento Binary Encoding (DBN)
 
