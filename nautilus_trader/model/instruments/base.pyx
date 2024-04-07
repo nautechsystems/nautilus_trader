@@ -56,7 +56,7 @@ cdef class Instrument(Data):
         The instrument class.
     quote_currency : Currency
         The quote currency.
-    is_inverse : Currency
+    is_inverse : bool
         If the instrument costing is inverse (quantity expressed in quote currency units).
     price_precision : int
         The price decimal precision.

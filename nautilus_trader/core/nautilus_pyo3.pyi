@@ -1229,6 +1229,7 @@ class CryptoFuture:
         underlying: Currency,
         quote_currency: Currency,
         settlement_currency: Currency,
+        is_inverse: bool,
         activation_ns: int,
         expiration_ns: int,
         price_precision: int,

@@ -45,6 +45,7 @@ pub fn crypto_future_btcusdt() -> CryptoFuture {
         Currency::from("BTC"),
         Currency::from("USDT"),
         Currency::from("USDT"),
+        false,
         activation.timestamp_nanos_opt().unwrap() as UnixNanos,
         expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
         2,

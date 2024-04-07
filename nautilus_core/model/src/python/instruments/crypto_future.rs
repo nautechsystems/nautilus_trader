@@ -41,6 +41,7 @@ impl CryptoFuture {
         underlying: Currency,
         quote_currency: Currency,
         settlement_currency: Currency,
+        is_inverse: bool,
         activation_ns: UnixNanos,
         expiration_ns: UnixNanos,
         price_precision: u8,
@@ -67,6 +68,7 @@ impl CryptoFuture {
             underlying,
             quote_currency,
             settlement_currency,
+            is_inverse,
             activation_ns,
             expiration_ns,
             price_precision,
@@ -137,6 +139,12 @@ impl CryptoFuture {
     #[pyo3(name = "settlement_currency")]
     fn py_settlement_currency(&self) -> Currency {
         self.settlement_currency
+    }
+
+    #[getter]
+    #[pyo3(name = "is_inverse")]
+    fn py_is_inverse(&self) -> bool {
+        self.is_inverse
     }
 
     #[getter]
@@ -277,6 +285,7 @@ impl CryptoFuture {
             "settlement_currency",
             self.settlement_currency.code.to_string(),
         )?;
+        dict.set_item("is_inverse", self.is_inverse)?;
         dict.set_item("activation_ns", self.activation_ns.to_u64())?;
         dict.set_item("expiration_ns", self.expiration_ns.to_u64())?;
         dict.set_item("price_precision", self.price_precision)?;
