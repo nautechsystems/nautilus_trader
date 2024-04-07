@@ -12,14 +12,15 @@ Released on TBD (UTC).
 - Ported Bias indicator to Rust, thanks @Pushkarm029
 
 ### Breaking Changes
-- Added `info` binary field to instrument Arrow schemas
+- Changed Arrow schema for all instruments: added `info` binary field
+- Changed Arrow schema for `CryptoFuture`: added `is_inverse` boolean field
 - Renamed both `OrderBookMbo` and `OrderBookMbp` to `OrderBook` (consolidated)
 - Renamed `Indicator.handle_book_mbo` and `Indicator.handle_book_mbp` to `handle_book` (consolidated)
 
 ### Fixes
 - Fixed `BacktestNode` streaming data management (was not clearing between chunks), thanks for the report @dpmabo
-- Fixed selling `Equity` instruments with `CASH` account and `NETTING` OMS incorrectly rejecting (should be able to reduce position)
 - Fixed `RiskEngine` cumulative notional calculations for margin accounts (was incorrectly using base currency when selling)
+- Fixed selling `Equity` instruments with `CASH` account and `NETTING` OMS incorrectly rejecting (should be able to reduce position)
 
 ---
 

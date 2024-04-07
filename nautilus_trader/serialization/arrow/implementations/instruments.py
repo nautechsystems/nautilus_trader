@@ -117,6 +117,7 @@ SCHEMAS = {
             "underlying": pa.dictionary(pa.int16(), pa.string()),
             "quote_currency": pa.dictionary(pa.int16(), pa.string()),
             "settlement_currency": pa.dictionary(pa.int16(), pa.string()),
+            "is_inverse": pa.bool_(),
             "activation_ns": pa.uint64(),
             "expiration_ns": pa.uint64(),
             "price_precision": pa.uint8(),
