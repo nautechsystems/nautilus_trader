@@ -40,10 +40,7 @@ if __name__ == "__main__":
     # Configure backtest engine
     config = BacktestEngineConfig(
         trader_id=TraderId("BACKTESTER-001"),
-        logging=LoggingConfig(
-            log_level="INFO",
-            log_colors=True,
-        ),
+        logging=LoggingConfig(log_level="INFO"),
     )
 
     # Build the backtest engine
@@ -83,7 +80,7 @@ if __name__ == "__main__":
     config = EMACrossLongOnlyConfig(
         instrument_id=TSLA_NYSE.id,
         bar_type=BarType.from_str(f"{TSLA_NYSE.id}-1-MINUTE-LAST-INTERNAL"),
-        trade_size=Decimal(500),
+        trade_size=Decimal(1000),
         fast_ema_period=10,
         slow_ema_period=20,
     )

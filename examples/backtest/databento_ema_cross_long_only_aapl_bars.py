@@ -23,6 +23,7 @@ from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.examples.strategies.ema_cross_long_only import EMACrossLongOnly
 from nautilus_trader.examples.strategies.ema_cross_long_only import EMACrossLongOnlyConfig
 from nautilus_trader.model.currencies import USD
@@ -41,13 +42,14 @@ if __name__ == "__main__":
     config = BacktestEngineConfig(
         trader_id=TraderId("BACKTESTER-001"),
         logging=LoggingConfig(log_level="INFO"),
+        risk_engine=RiskEngineConfig(bypass=True),
     )
 
     # Build the backtest engine
     engine = BacktestEngine(config=config)
 
     # Add a trading venue (multiple venues possible)
-    NASDAQ = Venue("XNAS")
+    NASDAQ = Venue("XNAS")  # <-- ISO 10383 MIC
     engine.add_venue(
         venue=NASDAQ,
         oms_type=OmsType.NETTING,
@@ -57,33 +59,31 @@ if __name__ == "__main__":
     )
 
     # Add instruments
-    SPY_XNAS = TestInstrumentProvider.equity(symbol="SPY", venue="XNAS")
-    engine.add_instrument(SPY_XNAS)
+    AAPL_XNAS = TestInstrumentProvider.equity(symbol="AAPL", venue="XNAS")
+    engine.add_instrument(AAPL_XNAS)
 
     # Add data
     loader = DatabentoDataLoader()
 
     filenames = [
-        "spy-xnas-trades-2024-01.dbn.zst",
-        "spy-xnas-trades-2024-02.dbn.zst",
-        "spy-xnas-trades-2024-03.dbn.zst",
+        "aapl-xnas-ohlcv-1s-2023.dbn.zst",  # <-- Longer load and run time / more accurate execution
+        "aapl-xnas-ohlcv-1m-2023.dbn.zst",
     ]
 
     for filename in filenames:
-        trades = loader.from_dbn_file(
+        bars = loader.from_dbn_file(
             path=TEST_DATA_DIR / "databento" / "temp" / filename,
-            instrument_id=SPY_XNAS.id,
+            instrument_id=AAPL_XNAS.id,
         )
-        engine.add_data(trades)
+        engine.add_data(bars)
 
     # Configure your strategy
     config = EMACrossLongOnlyConfig(
-        instrument_id=SPY_XNAS.id,
-        bar_type=BarType.from_str(f"{SPY_XNAS.id}-1000-TICK-LAST-INTERNAL"),
+        instrument_id=AAPL_XNAS.id,
+        bar_type=BarType.from_str(f"{AAPL_XNAS.id}-1-MINUTE-LAST-EXTERNAL"),
         trade_size=Decimal(100),
         fast_ema_period=10,
         slow_ema_period=20,
-        request_historical_bars=False,  # Using internally aggregated tick bars
     )
 
     # Instantiate and add your strategy
