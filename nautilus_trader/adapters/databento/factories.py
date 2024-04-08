@@ -177,4 +177,5 @@ class DatabentoLiveDataClientFactory(LiveDataClientFactory):
             instrument_provider=provider,
             loader=loader,
             config=config,
+            name=name,
         )

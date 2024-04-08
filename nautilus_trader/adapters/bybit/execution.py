@@ -101,6 +101,8 @@ class BybitExecutionClient(LiveExecutionClient):
         The base URL for the WebSocket client.
     config : BybitExecClientConfig
         The configuration for the client.
+    name : str, optional
+        The custom client ID.
 
     """
 
@@ -115,6 +117,7 @@ class BybitExecutionClient(LiveExecutionClient):
         product_types: list[BybitProductType],
         base_url_ws: str,
         config: BybitExecClientConfig,
+        name: str | None,
     ) -> None:
         if BybitProductType.SPOT in product_types:
             if len(set(product_types)) > 1:
@@ -125,7 +128,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         super().__init__(
             loop=loop,
-            client_id=ClientId(BYBIT_VENUE.value),
+            client_id=ClientId(name or BYBIT_VENUE.value),
             venue=BYBIT_VENUE,
             oms_type=OmsType.NETTING,
             instrument_provider=instrument_provider,
@@ -153,7 +156,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         self._enum_parser = BybitEnumParser()
 
-        account_id = AccountId(f"{BYBIT_VENUE.value}-UNIFIED")
+        account_id = AccountId(f"{name or BYBIT_VENUE.value}-UNIFIED")
         self._set_account_id(account_id)
 
         # WebSocket API

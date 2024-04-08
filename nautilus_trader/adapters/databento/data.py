@@ -24,7 +24,7 @@ import pytz
 from nautilus_trader.adapters.databento.common import databento_schema_from_nautilus_bar_type
 from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
-from nautilus_trader.adapters.databento.constants import DATABENTO_CLIENT_ID
+from nautilus_trader.adapters.databento.constants import DATABENTO
 from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
 from nautilus_trader.adapters.databento.enums import DatabentoSchema
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
@@ -48,6 +48,7 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import bar_aggregation_to_str
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import instruments_from_pyo3
@@ -78,6 +79,8 @@ class DatabentoDataClient(LiveMarketDataClient):
         The loader for the client.
     config : DatabentoDataClientConfig, optional
         The configuration for the client.
+    name : str, optional
+        The custom client ID.
 
     """
 
@@ -91,6 +94,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         instrument_provider: DatabentoInstrumentProvider,
         loader: DatabentoDataLoader | None = None,
         config: DatabentoDataClientConfig | None = None,
+        name: str | None = None,
     ) -> None:
         if config is None:
             config = DatabentoDataClientConfig()
@@ -98,7 +102,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         super().__init__(
             loop=loop,
-            client_id=DATABENTO_CLIENT_ID,
+            client_id=ClientId(name or DATABENTO),
             venue=None,  # Not applicable
             msgbus=msgbus,
             cache=cache,

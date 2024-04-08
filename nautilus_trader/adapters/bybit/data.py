@@ -94,6 +94,8 @@ class BybitDataClient(LiveMarketDataClient):
         The product base urls for the WebSocket clients.
     config : BybitDataClientConfig
         The configuration for the client.
+    name : str, optional
+        The custom client ID.
 
     """
 
@@ -108,11 +110,12 @@ class BybitDataClient(LiveMarketDataClient):
         product_types: list[BybitProductType],
         ws_base_urls: dict[BybitProductType, str],
         config: BybitDataClientConfig,
+        name: str | None,
     ) -> None:
         self._enum_parser = BybitEnumParser()
         super().__init__(
             loop=loop,
-            client_id=ClientId(BYBIT_VENUE.value),
+            client_id=ClientId(name or BYBIT_VENUE.value),
             venue=BYBIT_VENUE,
             msgbus=msgbus,
             cache=cache,
