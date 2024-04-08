@@ -20,7 +20,7 @@ use std::{
     str::FromStr,
 };
 
-use databento::dbn;
+use databento::dbn::{self};
 use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, time::UnixNanos};
 use nautilus_model::{
     data::{
@@ -630,13 +630,19 @@ pub fn decode_ohlcv_msg(
     let ts_event = msg.hd.ts_event;
     let ts_init = cmp::max(ts_init, ts_event) + ts_event_adjustment;
 
+    // Adjust raw prices by a display factor
+    let mut display_factor = 1;
+    if instrument_id.venue.value == "GLBX" {
+        display_factor = 100;
+    };
+
     let bar = Bar::new(
         bar_type,
-        Price::from_raw(msg.open / 100, price_precision)?, // TODO: adjust for display factor
-        Price::from_raw(msg.high / 100, price_precision)?, // TODO: adjust for display factor
-        Price::from_raw(msg.low / 100, price_precision)?,  // TODO: adjust for display factor
-        Price::from_raw(msg.close / 100, price_precision)?, // TODO: adjust for display factor
-        Quantity::from_raw(msg.volume * FIXED_SCALAR as u64, 0)?, // TODO: adjust for display factor
+        Price::from_raw(msg.open / display_factor, price_precision)?,
+        Price::from_raw(msg.high / display_factor, price_precision)?,
+        Price::from_raw(msg.low / display_factor, price_precision)?,
+        Price::from_raw(msg.close / display_factor, price_precision)?,
+        Quantity::from_raw(msg.volume * FIXED_SCALAR as u64, 0)?,
         ts_event,
         ts_init,
     );
