@@ -101,6 +101,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         The account type for the client.
     base_url_ws : str
         The base url for the WebSocket client.
+    name : str, optional
+        The custom client ID.
     config : BinanceDataClientConfig
         The configuration for the client.
 
@@ -122,11 +124,12 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType,
         base_url_ws: str,
+        name: str | None,
         config: BinanceDataClientConfig,
     ) -> None:
         super().__init__(
             loop=loop,
-            client_id=ClientId(BINANCE_VENUE.value),
+            client_id=ClientId(name or BINANCE_VENUE.value),
             venue=BINANCE_VENUE,
             msgbus=msgbus,
             cache=cache,

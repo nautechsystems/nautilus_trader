@@ -102,7 +102,7 @@ def get_cached_binance_http_client(
             ("allOrders", Quota.rate_per_minute(int(1200 / 20))),
         ]
 
-    client_key: str = "|".join((key, secret))
+    client_key: str = "|".join((account_type.value, key, secret))
     if client_key not in BINANCE_HTTP_CLIENTS:
         client = BinanceHttpClient(
             clock=clock,
@@ -214,7 +214,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
         name : str
-            The client name.
+            The custom client ID.
         config : BinanceDataClientConfig
             The client configuration.
         msgbus : MessageBus
@@ -271,6 +271,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 instrument_provider=provider,
                 account_type=config.account_type,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
+                name=name,
                 config=config,
             )
         else:
@@ -291,6 +292,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 instrument_provider=provider,
                 account_type=config.account_type,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
+                name=name,
                 config=config,
             )
 
@@ -317,7 +319,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
         name : str
-            The client name.
+            The custom client ID.
         config : BinanceExecClientConfig
             The configuration for the client.
         msgbus : MessageBus
@@ -374,6 +376,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 instrument_provider=provider,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
                 account_type=config.account_type,
+                name=name,
                 config=config,
             )
         else:
@@ -394,5 +397,6 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 instrument_provider=provider,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
                 account_type=config.account_type,
+                name=name,
                 config=config,
             )

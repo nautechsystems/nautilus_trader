@@ -155,7 +155,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
         name : str
-            The client name.
+            The custom client ID.
         config : dict
             The configuration dictionary.
         msgbus : MessageBus
@@ -197,6 +197,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             instrument_provider=provider,
             ibg_client_id=config.ibg_client_id,
             config=config,
+            name=name,
         )
         return data_client
 
@@ -223,7 +224,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
         name : str
-            The client name.
+            The custom client ID.
         config : dict[str, object]
             The configuration for the client.
         msgbus : MessageBus
@@ -274,5 +275,6 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             instrument_provider=provider,
             ibg_client_id=config.ibg_client_id,
             config=config,
+            name=name,
         )
         return exec_client

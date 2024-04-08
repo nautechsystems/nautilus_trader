@@ -157,7 +157,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
         name : str
-            The client name.
+            The custom client ID.
         config : BybitDataClientConfig
             The client configuration.
         msgbus : MessageBus
@@ -202,6 +202,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             product_types=product_types,
             ws_base_urls=ws_base_urls,
             config=config,
+            name=name,
         )
 
 
@@ -227,7 +228,7 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
         name : str
-            The client name.
+            The custom client ID.
         config : BybitExecClientConfig
             The client configuration.
         msgbus : MessageBus
@@ -266,4 +267,5 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             product_types=config.product_types or [BybitProductType.SPOT],
             base_url_ws=config.base_url_ws or base_url_ws,
             config=config,
+            name=name,
         )

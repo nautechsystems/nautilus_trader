@@ -108,6 +108,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         The account type for the client.
     base_url_ws : str
         The base URL for the WebSocket client.
+    name : str, optional
+        The custom client ID.
     config : BinanceExecClientConfig
         The configuration for the client.
 
@@ -131,11 +133,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType,
         base_url_ws: str,
+        name: str | None,
         config: BinanceExecClientConfig,
     ) -> None:
         super().__init__(
             loop=loop,
-            client_id=ClientId(BINANCE_VENUE.value),
+            client_id=ClientId(name or BINANCE_VENUE.value),
             venue=BINANCE_VENUE,
             oms_type=OmsType.HEDGING if account_type.is_futures else OmsType.NETTING,
             instrument_provider=instrument_provider,
@@ -162,7 +165,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay=}", LogColor.BLUE)
 
-        self._set_account_id(AccountId(f"{BINANCE_VENUE.value}-spot-master"))
+        self._set_account_id(AccountId(f"{name or BINANCE_VENUE.value}-spot-master"))
 
         # Enum parser
         self._enum_parser = enum_parser

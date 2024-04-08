@@ -50,6 +50,28 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     """
     Provides a data client for the InteractiveBrokers exchange by using the `Gateway` to
     stream market data.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    client : InteractiveBrokersClient
+        The nautilus InteractiveBrokersClient using ibapi.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : LiveClock
+        The clock for the client.
+    instrument_provider : InteractiveBrokersInstrumentProvider
+        The instrument provider.
+    ibg_client_id : int
+        Client ID used to connect TWS/Gateway.
+    config : InteractiveBrokersDataClientConfig
+        Configuration for the client.
+    name : str, optional
+        The custom client ID.
+
     """
 
     def __init__(
@@ -62,33 +84,11 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_provider: InteractiveBrokersInstrumentProvider,
         ibg_client_id: int,
         config: InteractiveBrokersDataClientConfig,
+        name: str | None = None,
     ) -> None:
-        """
-        Initialize a new instance of the ``InteractiveBrokersDataClient`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
-        client : InteractiveBrokersClient
-            The nautilus InteractiveBrokersClient using ibapi.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : LiveClock
-            The clock for the client.
-        instrument_provider : InteractiveBrokersInstrumentProvider
-            The instrument provider.
-        ibg_client_id : int
-            Client ID used to connect TWS/Gateway.
-        config : InteractiveBrokersDataClientConfig
-            Configuration for the client.
-
-        """
         super().__init__(
             loop=loop,
-            client_id=ClientId(f"{IB_VENUE.value}-{ibg_client_id:03d}"),
+            client_id=ClientId(name or f"{IB_VENUE.value}-{ibg_client_id:03d}"),
             venue=None,
             msgbus=msgbus,
             cache=cache,

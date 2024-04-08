@@ -334,6 +334,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                     underlying=base_currency,
                     quote_currency=quote_currency,
                     settlement_currency=settlement_currency,
+                    is_inverse=False,  # No inverse instruments trade on Binance
                     activation_ns=activation.value,
                     expiration_ns=expiration.value,
                     price_precision=price_precision,

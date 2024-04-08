@@ -140,7 +140,7 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
         name : str
-            The client name.
+            The custom client ID.
         config : dict[str, Any]
             The configuration dictionary.
         msgbus : MessageBus
@@ -201,7 +201,7 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
         name : str
-            The client name.
+            The custom client ID.
         config : dict[str, Any]
             The configuration for the client.
         msgbus : MessageBus
