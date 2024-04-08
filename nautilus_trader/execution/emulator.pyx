@@ -27,9 +27,9 @@ from nautilus_trader.common.component cimport SENT
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport LogColor
 from nautilus_trader.common.component cimport MessageBus
+from nautilus_trader.common.component cimport is_logging_initialized
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderStatus
@@ -794,7 +794,7 @@ cdef class OrderEmulator(Actor):
             self._manager.send_exec_command(command)
 
     cpdef void on_quote_tick(self, QuoteTick tick):
-        if logging_is_initialized():
+        if is_logging_initialized():
             self._log.debug(f"Processing {repr(tick)}", LogColor.CYAN)
 
         cdef MatchingCore matching_core = self._matching_cores.get(tick.instrument_id)
@@ -808,7 +808,7 @@ cdef class OrderEmulator(Actor):
         self._iterate_orders(matching_core)
 
     cpdef void on_trade_tick(self, TradeTick tick):
-        if logging_is_initialized():
+        if is_logging_initialized():
             self._log.debug(f"Processing {repr(tick)}...", LogColor.CYAN)
 
         cdef MatchingCore matching_core = self._matching_cores.get(tick.instrument_id)

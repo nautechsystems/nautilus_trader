@@ -31,11 +31,11 @@ from nautilus_trader.common.component cimport SENT
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport LogColor
 from nautilus_trader.common.component cimport MessageBus
+from nautilus_trader.common.component cimport is_logging_initialized
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.rust.common cimport ComponentState
-from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport TimeInForce
@@ -1463,16 +1463,16 @@ cdef class ExecAlgorithm(Actor):
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_emulator_command(self, TradingCommand command):
-        if logging_is_initialized():
+        if is_logging_initialized():
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
 
     cdef void _send_risk_command(self, TradingCommand command):
-        if logging_is_initialized():
+        if is_logging_initialized():
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
 
     cdef void _send_exec_command(self, TradingCommand command):
-        if logging_is_initialized():
+        if is_logging_initialized():
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)

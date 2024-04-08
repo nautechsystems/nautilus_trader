@@ -47,12 +47,12 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport LiveClock
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
+from nautilus_trader.common.component cimport is_logging_initialized
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.common cimport ComponentState
 from nautilus_trader.core.rust.common cimport LogColor
-from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataRequest
@@ -2871,11 +2871,11 @@ cdef class Actor(Component):
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_data_cmd(self, DataCommand command):
-        if logging_is_initialized():
+        if is_logging_initialized():
             self._log.info(f"{CMD}{SENT} {command}")
         self._msgbus.send(endpoint="DataEngine.execute", msg=command)
 
     cdef void _send_data_req(self, DataRequest request):
-        if logging_is_initialized():
+        if is_logging_initialized():
             self._log.info(f"{REQ}{SENT} {request}")
         self._msgbus.request(endpoint="DataEngine.request", request=request)
