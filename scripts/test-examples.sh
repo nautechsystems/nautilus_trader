@@ -4,7 +4,6 @@ set -e
 
 # Backtest examples
 example_scripts=(
-    # "betfair_backtest_orderbook_imbalance.py"
     "crypto_ema_cross_ethusdt_trade_ticks.py"
     "crypto_ema_cross_ethusdt_trailing_stop.py"
     "fx_ema_cross_audusd_bars_from_ticks.py"
