@@ -172,6 +172,54 @@ cdef class OrderBookDeltaDataWrangler:
         )
 
 
+def prepare_tick_data_from_bars(
+    *,
+    data_open: dict,
+    data_high: dict,
+    data_low: dict,
+    data_close: dict,
+    offset_interval_ms: int,
+    random_seed: int | None,
+    ts_init_delta: int,
+    timestamp_is_close: bool,
+):
+    df_ticks_o = pd.DataFrame(data=data_open)
+    df_ticks_h = pd.DataFrame(data=data_high)
+    df_ticks_l = pd.DataFrame(data=data_low)
+    df_ticks_c = pd.DataFrame(data=data_close)
+
+    # Latency offsets
+    if timestamp_is_close:
+        df_ticks_o.index = df_ticks_o.index.shift(periods=-3 * offset_interval_ms, freq="ms")
+        df_ticks_h.index = df_ticks_h.index.shift(periods=-2 * offset_interval_ms, freq="ms")
+        df_ticks_l.index = df_ticks_l.index.shift(periods=-1 * offset_interval_ms, freq="ms")
+    else:  # timestamp is open
+        df_ticks_h.index = df_ticks_h.index.shift(periods=1 * offset_interval_ms, freq="ms")
+        df_ticks_l.index = df_ticks_l.index.shift(periods=2 * offset_interval_ms, freq="ms")
+        df_ticks_c.index = df_ticks_c.index.shift(periods=3 * offset_interval_ms, freq="ms")
+
+    # Merge tick data
+    df_ticks_final = pd.concat([df_ticks_o, df_ticks_h, df_ticks_l, df_ticks_c])
+    df_ticks_final.dropna(inplace=True)
+    df_ticks_final.sort_index(axis=0, kind="mergesort", inplace=True)
+
+    cdef int i
+    # Randomly shift high low prices
+    if random_seed is not None:
+        random.seed(random_seed)
+        for i in range(0, len(df_ticks_final), 4):
+            if random.getrandbits(1):
+                high = copy(df_ticks_final.iloc[i + 1])
+                low = copy(df_ticks_final.iloc[i + 2])
+                df_ticks_final.iloc[i + 1] = low
+                df_ticks_final.iloc[i + 2] = high
+
+    cdef uint64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in df_ticks_final.index], dtype=np.uint64)  # noqa
+    cdef uint64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.uint64)  # noqa
+
+    return df_ticks_final, ts_events, ts_inits
+
+
 cdef class QuoteTickDataWrangler:
     """
     Provides a means of building lists of Nautilus `QuoteTick` objects.
@@ -333,39 +381,16 @@ cdef class QuoteTickDataWrangler:
             "ask_size": ask_data["volume"] / 4,
         }
 
-        df_ticks_o = pd.DataFrame(data=data_open)
-        df_ticks_h = pd.DataFrame(data=data_high)
-        df_ticks_l = pd.DataFrame(data=data_low)
-        df_ticks_c = pd.DataFrame(data=data_close)
-
-        # Latency offsets
-        if timestamp_is_close:
-            df_ticks_o.index = df_ticks_o.index.shift(periods=-3 * offset_interval_ms, freq="ms")
-            df_ticks_h.index = df_ticks_h.index.shift(periods=-2 * offset_interval_ms, freq="ms")
-            df_ticks_l.index = df_ticks_l.index.shift(periods=-1 * offset_interval_ms, freq="ms")
-        else:  # timestamp is open
-            df_ticks_h.index = df_ticks_h.index.shift(periods=1 * offset_interval_ms, freq="ms")
-            df_ticks_l.index = df_ticks_l.index.shift(periods=2 * offset_interval_ms, freq="ms")
-            df_ticks_c.index = df_ticks_c.index.shift(periods=3 * offset_interval_ms, freq="ms")
-
-        # Merge tick data
-        df_ticks_final = pd.concat([df_ticks_o, df_ticks_h, df_ticks_l, df_ticks_c])
-        df_ticks_final.dropna(inplace=True)
-        df_ticks_final.sort_index(axis=0, kind="mergesort", inplace=True)
-
-        cdef int i
-        # Randomly shift high low prices
-        if random_seed is not None:
-            random.seed(random_seed)
-            for i in range(0, len(df_ticks_final), 4):
-                if random.getrandbits(1):
-                    high = copy(df_ticks_final.iloc[i + 1])
-                    low = copy(df_ticks_final.iloc[i + 2])
-                    df_ticks_final.iloc[i + 1] = low
-                    df_ticks_final.iloc[i + 2] = high
-
-        cdef uint64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in df_ticks_final.index], dtype=np.uint64)  # noqa
-        cdef uint64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.uint64)  # noqa
+        df_ticks_final, ts_events, ts_inits = prepare_tick_data_from_bars(
+            data_open=data_open,
+            data_high=data_high,
+            data_low=data_low,
+            data_close=data_close,
+            offset_interval_ms=offset_interval_ms,
+            random_seed=random_seed,
+            ts_init_delta=ts_init_delta,
+            timestamp_is_close=timestamp_is_close,
+        )
 
         if is_raw:
             return list(map(
@@ -497,6 +522,113 @@ cdef class TradeTickDataWrangler:
                 data["quantity"],
                 self._create_side_if_not_exist(data),
                 data["trade_id"].astype(str),
+                ts_events,
+                ts_inits,
+            ))
+
+    def process_bar_data(
+        self,
+        data: pd.DataFrame,
+        ts_init_delta: int = 0,
+        offset_interval_ms: int = 100,
+        bint timestamp_is_close: bool = True,
+        random_seed: int | None = None,
+        bint is_raw: bool = False,
+    ):
+        """
+        Process the given bar datasets into Nautilus `QuoteTick` objects.
+
+        Expects columns ['open', 'high', 'low', 'close', 'volume'] with 'timestamp' index.
+        Note: The 'volume' column is optional, will then use the `default_volume`.
+
+        Parameters
+        ----------
+        data : pd.DataFrame
+            The trade bar data.
+        ts_init_delta : int
+            The difference in nanoseconds between the data timestamps and the
+            `ts_init` value. Can be used to represent/simulate latency between
+            the data source and the Nautilus system.
+        offset_interval_ms : int, default 100
+            The number of milliseconds to offset each tick for the bar timestamps.
+            If `timestamp_is_close` then will use negative offsets,
+            otherwise will use positive offsets (see also `timestamp_is_close`).
+        random_seed : int, optional
+            The random seed for shuffling order of high and low ticks from bar
+            data. If random_seed is ``None`` then won't shuffle.
+        is_raw : bool, default False
+            If the data is scaled to the Nautilus fixed precision.
+        timestamp_is_close : bool, default True
+            If bar timestamps are at the close.
+            If True then open, high, low timestamps are offset before the close timestamp.
+            If False then high, low, close timestamps are offset after the open timestamp.
+
+        """
+        Condition.not_none(data, "data")
+        Condition.false(data.empty, "data.empty")
+        if random_seed is not None:
+            Condition.type(random_seed, int, "random_seed")
+
+        # Ensure index is tz-aware UTC
+        data = as_utc_index(data)
+
+        # Determine the Aggressor Side based on Close vs Open
+        if "side" not in data and "buyer_maker" not in data:
+            data['side'] = ['BUY' if close > open_ else 'SELL' for open_, close in zip(data['open'], data['close'])]
+
+        cdef dict data_open = {
+            "price": data["open"],
+            "size": data["volume"] / 4,
+            "side": data["side"],
+        }
+
+        cdef dict data_high = {
+            "price": data["high"],
+            "size": data["volume"] / 4,
+            "side": data["side"],
+        }
+
+        cdef dict data_low = {
+            "price": data["low"],
+            "size": data["volume"] / 4,
+            "side": data["side"],
+        }
+
+        cdef dict data_close = {
+            "price": data["close"],
+            "size": data["volume"] / 4,
+            "side": data["side"],
+        }
+
+        df_ticks_final, ts_events, ts_inits = prepare_tick_data_from_bars(
+            data_open=data_open,
+            data_high=data_high,
+            data_low=data_low,
+            data_close=data_close,
+            offset_interval_ms=offset_interval_ms,
+            random_seed=random_seed,
+            ts_init_delta=ts_init_delta,
+            timestamp_is_close=timestamp_is_close,
+        )
+        df_ticks_final["trade_id"] = df_ticks_final.index.view(np.uint64).astype(str)
+
+        if is_raw:
+            return list(map(
+                self._build_tick_from_raw,
+                df_ticks_final["price"],
+                df_ticks_final["size"],
+                self._create_side_if_not_exist(data),
+                df_ticks_final["trade_id"],
+                ts_events,
+                ts_inits,
+            ))
+        else:
+            return list(map(
+                self._build_tick,
+                df_ticks_final["price"],
+                df_ticks_final["size"],
+                self._create_side_if_not_exist(data),
+                df_ticks_final["trade_id"],
                 ts_events,
                 ts_inits,
             ))
