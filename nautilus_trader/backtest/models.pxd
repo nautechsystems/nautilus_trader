@@ -15,6 +15,12 @@
 
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.orders.base cimport Order
+
 
 cdef class FillModel:
     cdef readonly double prob_fill_on_limit
@@ -40,3 +46,19 @@ cdef class LatencyModel:
     """The latency (nanoseconds) for order update messages to reach the exchange.\n\n:returns: `int`"""
     cdef readonly uint64_t cancel_latency_nanos
     """The latency (nanoseconds) for order cancel messages to reach the exchange.\n\n:returns: `int`"""
+
+
+cdef class CommissionModel:
+    cpdef Money get_commission(self, Order order, Quantity fill_qty, Price fill_px, Instrument instrument)
+
+
+cdef class InstrumentSpecificPercentCommissionModel(CommissionModel):
+    """
+    Provide a commission model for trades based on a percentage of the notional value
+    of the trade.
+
+    """
+
+cdef class FixedCommissionModel(CommissionModel):
+    cdef Money commission
+    """The constant commission."""
