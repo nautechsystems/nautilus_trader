@@ -24,6 +24,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.matching_engine cimport OrderMatchingEngine
+from nautilus_trader.backtest.models cimport CommissionModel
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.models cimport LatencyModel
 from nautilus_trader.backtest.modules cimport SimulationModule
@@ -88,6 +89,8 @@ cdef class SimulatedExchange:
         The read-only cache for the exchange.
     fill_model : FillModel
         The fill model for the exchange.
+    commission_model : CommissionModel
+        The commission model for the matching engine.
     latency_model : LatencyModel, optional
         The latency model for the exchange.
     clock : TestClock
@@ -144,6 +147,7 @@ cdef class SimulatedExchange:
         CacheFacade cache not None,
         TestClock clock not None,
         FillModel fill_model not None,
+        CommissionModel commission_model not None,
         LatencyModel latency_model = None,
         BookType book_type = BookType.L1_MBP,
         bint frozen_account = False,
@@ -193,6 +197,7 @@ cdef class SimulatedExchange:
         self.use_random_ids = use_random_ids
         self.use_reduce_only = use_reduce_only
         self.fill_model = fill_model
+        self.commission_model = commission_model
         self.latency_model = latency_model
 
         # Load modules
@@ -328,6 +333,7 @@ cdef class SimulatedExchange:
             instrument=instrument,
             raw_id=len(self.instruments),
             fill_model=self.fill_model,
+            commission_model=self.commission_model,
             book_type=self.book_type,
             oms_type=self.oms_type,
             account_type=self.account_type,

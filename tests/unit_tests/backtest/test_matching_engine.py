@@ -19,6 +19,7 @@ import pytest
 
 from nautilus_trader.backtest.matching_engine import OrderMatchingEngine
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.models import InstrumentSpecificPercentCommissionModel
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.model.enums import AccountType
@@ -59,6 +60,7 @@ class TestOrderMatchingEngine:
             instrument=self.instrument,
             raw_id=0,
             fill_model=FillModel(),
+            commission_model=InstrumentSpecificPercentCommissionModel(),
             book_type=BookType.L1_MBP,
             oms_type=OmsType.NETTING,
             account_type=AccountType.MARGIN,

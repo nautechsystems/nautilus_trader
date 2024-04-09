@@ -18,6 +18,13 @@ import random
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport LiquiditySide
+from nautilus_trader.model.functions cimport liquidity_side_to_str
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.orders.base cimport Order
 
 
 cdef uint64_t NANOSECONDS_IN_MILLISECOND = 1_000_000
@@ -154,3 +161,105 @@ cdef class LatencyModel:
         self.insert_latency_nanos = base_latency_nanos + insert_latency_nanos
         self.update_latency_nanos = base_latency_nanos + update_latency_nanos
         self.cancel_latency_nanos = base_latency_nanos + cancel_latency_nanos
+
+
+cdef class CommissionModel:
+    """
+    Provide an abstract commission model for trades.
+    """
+    cpdef Money get_commission(
+        self,
+        Order order,
+        Quantity fill_qty,
+        Price fill_px,
+        Instrument instrument,
+    ):
+        """
+        Return the commission for a trade.
+
+        Parameters
+        ----------
+        order : Order
+            The order to calculate the commission for.
+        fill_qty : Quantity
+            The fill quantity of the order.
+        fill_px : Price
+            The fill price of the order.
+        instrument : Instrument
+            The instrument for the order.
+
+        Returns
+        -------
+        Money
+
+        """
+        raise NotImplementedError("Method 'get_commission' must be implemented in a subclass.")
+
+
+cdef class InstrumentSpecificPercentCommissionModel(CommissionModel):
+    """
+    Provide a commission model for trades based on a percentage of the notional value
+    of the trade.
+
+    """
+
+    cpdef Money get_commission(
+        self,
+        Order order,
+        Quantity fill_qty,
+        Price fill_px,
+        Instrument instrument,
+    ):
+        cdef double notional = instrument.notional_value(
+            quantity=fill_qty,
+            price=fill_px,
+            use_quote_for_inverse=False,
+        ).as_f64_c()
+
+        cdef double commission_f64
+        if order.liquidity_side == LiquiditySide.MAKER:
+            commission_f64 = notional * float(instrument.maker_fee)
+        elif order.liquidity_side == LiquiditySide.TAKER:
+            commission_f64 = notional * float(instrument.taker_fee)
+        else:
+            raise ValueError(
+                f"invalid `LiquiditySide`, was {liquidity_side_to_str(order.liquidity_side)}"
+            )
+
+        cdef Money commission
+        if instrument.is_inverse:  # Not using quote for inverse (see above):
+            commission = Money(commission_f64, instrument.base_currency)
+        else:
+            commission = Money(commission_f64, instrument.quote_currency)
+
+        return commission
+
+
+cdef class FixedCommissionModel(CommissionModel):
+    """
+    Provides a fixed commission model for trades.
+
+    Parameters
+    ----------
+    commission : Money
+        The fixed commission amount for trades.
+
+    Raises
+    ------
+    ValueError
+        If `commission` is not a positive amount.
+
+    """
+
+    def __init__(self, Money commission):
+        Condition.type(commission, Money, "commission")
+        self.commission = commission
+
+    cpdef Money get_commission(
+        self,
+        Order order,
+        Quantity fill_qty,
+        Price fill_px,
+        Instrument instrument,
+    ):
+        return self.commission

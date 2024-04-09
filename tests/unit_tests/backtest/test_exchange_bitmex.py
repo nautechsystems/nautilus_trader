@@ -18,6 +18,7 @@ from decimal import Decimal
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.models import InstrumentSpecificPercentCommissionModel
 from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
@@ -103,6 +104,7 @@ class TestBitmexExchange:
             instruments=[XBTUSD_BITMEX],
             modules=[],
             fill_model=FillModel(),
+            commission_model=InstrumentSpecificPercentCommissionModel(),
             clock=self.clock,
             latency_model=LatencyModel(0),
         )
