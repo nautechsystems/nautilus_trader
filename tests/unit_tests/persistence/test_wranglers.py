@@ -111,6 +111,7 @@ def test_trade_bar_data_wrangler(
     provider = TestDataProvider()
     data = provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv")
     data.loc[:, "volume"] = 100_0000
+    expected_ticks_count = len(data) * 4
 
     # Act
     ticks = wrangler.process_bar_data(
@@ -124,3 +125,4 @@ def test_trade_bar_data_wrangler(
     assert ticks[1].ts_event == ts_event2
     assert ticks[2].ts_event == ts_event3
     assert ticks[3].ts_event == ts_event4
+    assert len(ticks) == expected_ticks_count
