@@ -172,6 +172,54 @@ cdef class OrderBookDeltaDataWrangler:
         )
 
 
+def prepare_tick_data_from_bars(
+    *,
+    data_open: dict,
+    data_high: dict,
+    data_low: dict,
+    data_close: dict,
+    offset_interval_ms: int,
+    random_seed: int | None,
+    ts_init_delta: int,
+    timestamp_is_close: bool,
+):
+    df_ticks_o = pd.DataFrame(data=data_open)
+    df_ticks_h = pd.DataFrame(data=data_high)
+    df_ticks_l = pd.DataFrame(data=data_low)
+    df_ticks_c = pd.DataFrame(data=data_close)
+
+    # Latency offsets
+    if timestamp_is_close:
+        df_ticks_o.index = df_ticks_o.index.shift(periods=-3 * offset_interval_ms, freq="ms")
+        df_ticks_h.index = df_ticks_h.index.shift(periods=-2 * offset_interval_ms, freq="ms")
+        df_ticks_l.index = df_ticks_l.index.shift(periods=-1 * offset_interval_ms, freq="ms")
+    else:  # timestamp is open
+        df_ticks_h.index = df_ticks_h.index.shift(periods=1 * offset_interval_ms, freq="ms")
+        df_ticks_l.index = df_ticks_l.index.shift(periods=2 * offset_interval_ms, freq="ms")
+        df_ticks_c.index = df_ticks_c.index.shift(periods=3 * offset_interval_ms, freq="ms")
+
+    # Merge tick data
+    df_ticks_final = pd.concat([df_ticks_o, df_ticks_h, df_ticks_l, df_ticks_c])
+    df_ticks_final.dropna(inplace=True)
+    df_ticks_final.sort_index(axis=0, kind="mergesort", inplace=True)
+
+    cdef int i
+    # Randomly shift high low prices
+    if random_seed is not None:
+        random.seed(random_seed)
+        for i in range(0, len(df_ticks_final), 4):
+            if random.getrandbits(1):
+                high = copy(df_ticks_final.iloc[i + 1])
+                low = copy(df_ticks_final.iloc[i + 2])
+                df_ticks_final.iloc[i + 1] = low
+                df_ticks_final.iloc[i + 2] = high
+
+    cdef uint64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in df_ticks_final.index], dtype=np.uint64)  # noqa
+    cdef uint64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.uint64)  # noqa
+
+    return df_ticks_final, ts_events, ts_inits
+
+
 cdef class QuoteTickDataWrangler:
     """
     Provides a means of building lists of Nautilus `QuoteTick` objects.
@@ -333,39 +381,16 @@ cdef class QuoteTickDataWrangler:
             "ask_size": ask_data["volume"] / 4,
         }
 
-        df_ticks_o = pd.DataFrame(data=data_open)
-        df_ticks_h = pd.DataFrame(data=data_high)
-        df_ticks_l = pd.DataFrame(data=data_low)
-        df_ticks_c = pd.DataFrame(data=data_close)
-
-        # Latency offsets
-        if timestamp_is_close:
-            df_ticks_o.index = df_ticks_o.index.shift(periods=-3 * offset_interval_ms, freq="ms")
-            df_ticks_h.index = df_ticks_h.index.shift(periods=-2 * offset_interval_ms, freq="ms")
-            df_ticks_l.index = df_ticks_l.index.shift(periods=-1 * offset_interval_ms, freq="ms")
-        else:  # timestamp is open
-            df_ticks_h.index = df_ticks_h.index.shift(periods=1 * offset_interval_ms, freq="ms")
-            df_ticks_l.index = df_ticks_l.index.shift(periods=2 * offset_interval_ms, freq="ms")
-            df_ticks_c.index = df_ticks_c.index.shift(periods=3 * offset_interval_ms, freq="ms")
-
-        # Merge tick data
-        df_ticks_final = pd.concat([df_ticks_o, df_ticks_h, df_ticks_l, df_ticks_c])
-        df_ticks_final.dropna(inplace=True)
-        df_ticks_final.sort_index(axis=0, kind="mergesort", inplace=True)
-
-        cdef int i
-        # Randomly shift high low prices
-        if random_seed is not None:
-            random.seed(random_seed)
-            for i in range(0, len(df_ticks_final), 4):
-                if random.getrandbits(1):
-                    high = copy(df_ticks_final.iloc[i + 1])
-                    low = copy(df_ticks_final.iloc[i + 2])
-                    df_ticks_final.iloc[i + 1] = low
-                    df_ticks_final.iloc[i + 2] = high
-
-        cdef uint64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in df_ticks_final.index], dtype=np.uint64)  # noqa
-        cdef uint64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.uint64)  # noqa
+        df_ticks_final, ts_events, ts_inits = prepare_tick_data_from_bars(
+            data_open=data_open,
+            data_high=data_high,
+            data_low=data_low,
+            data_close=data_close,
+            offset_interval_ms=offset_interval_ms,
+            random_seed=random_seed,
+            ts_init_delta=ts_init_delta,
+            timestamp_is_close=timestamp_is_close,
+        )
 
         if is_raw:
             return list(map(
@@ -575,40 +600,16 @@ cdef class TradeTickDataWrangler:
             "side": data["side"],
         }
 
-        df_ticks_o = pd.DataFrame(data=data_open)
-        df_ticks_h = pd.DataFrame(data=data_high)
-        df_ticks_l = pd.DataFrame(data=data_low)
-        df_ticks_c = pd.DataFrame(data=data_close)
-
-        # Latency offsets
-        if timestamp_is_close:
-            df_ticks_o.index = df_ticks_o.index.shift(periods=-3 * offset_interval_ms, freq="ms")
-            df_ticks_h.index = df_ticks_h.index.shift(periods=-2 * offset_interval_ms, freq="ms")
-            df_ticks_l.index = df_ticks_l.index.shift(periods=-1 * offset_interval_ms, freq="ms")
-        else:  # timestamp is open
-            df_ticks_h.index = df_ticks_h.index.shift(periods=1 * offset_interval_ms, freq="ms")
-            df_ticks_l.index = df_ticks_l.index.shift(periods=2 * offset_interval_ms, freq="ms")
-            df_ticks_c.index = df_ticks_c.index.shift(periods=3 * offset_interval_ms, freq="ms")
-
-        # Merge tick data
-        df_ticks_final = pd.concat([df_ticks_o, df_ticks_h, df_ticks_l, df_ticks_c])
-        df_ticks_final.dropna(inplace=True)
-        df_ticks_final.sort_index(axis=0, kind="mergesort", inplace=True)
-
-        cdef int i
-        # Randomly shift high low prices
-        if random_seed is not None:
-            random.seed(random_seed)
-            for i in range(0, len(df_ticks_final), 4):
-                if random.getrandbits(1):
-                    high = copy(df_ticks_final.iloc[i + 1])
-                    low = copy(df_ticks_final.iloc[i + 2])
-                    df_ticks_final.iloc[i + 1] = low
-                    df_ticks_final.iloc[i + 2] = high
-
-        cdef uint64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in df_ticks_final.index], dtype=np.uint64)  # noqa
-        cdef uint64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.uint64)  # noqa
-
+        df_ticks_final, ts_events, ts_inits = prepare_tick_data_from_bars(
+            data_open=data_open,
+            data_high=data_high,
+            data_low=data_low,
+            data_close=data_close,
+            offset_interval_ms=offset_interval_ms,
+            random_seed=random_seed,
+            ts_init_delta=ts_init_delta,
+            timestamp_is_close=timestamp_is_close,
+        )
         df_ticks_final["trade_id"] = df_ticks_final.index.view(np.uint64).astype(str)
 
         if is_raw:
