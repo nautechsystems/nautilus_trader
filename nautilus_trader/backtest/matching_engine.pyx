@@ -21,6 +21,7 @@ import uuid
 from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.backtest.models cimport CommissionModel
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport LogColor
@@ -110,6 +111,8 @@ cdef class OrderMatchingEngine:
         The raw integer ID for the instrument.
     fill_model : FillModel
         The fill model for the matching engine.
+    commission_model : CommissionModel
+        The commission model for the matching engine.
     book_type : BookType
         The order book type for the engine.
     oms_type : OmsType
@@ -150,6 +153,7 @@ cdef class OrderMatchingEngine:
         Instrument instrument not None,
         uint32_t raw_id,
         FillModel fill_model not None,
+        CommissionModel commission_model not None,
         BookType book_type,
         OmsType oms_type,
         AccountType account_type,
@@ -187,6 +191,7 @@ cdef class OrderMatchingEngine:
         self._use_reduce_only = use_reduce_only
         # self._auction_match_algo = auction_match_algo
         self._fill_model = fill_model
+        self._commission_model = commission_model
         self._book = OrderBook(
             instrument_id=instrument.id,
             book_type=book_type,
@@ -1765,27 +1770,13 @@ cdef class OrderMatchingEngine:
         order.liquidity_side = liquidity_side
 
         # Calculate commission
-        cdef double notional = self.instrument.notional_value(
-            quantity=last_qty,
-            price=last_px,
-            use_quote_for_inverse=False,
-        ).as_f64_c()
-
-        cdef double commission_f64
-        if order.liquidity_side == LiquiditySide.MAKER:
-            commission_f64 = notional * float(self.instrument.maker_fee)
-        elif order.liquidity_side == LiquiditySide.TAKER:
-            commission_f64 = notional * float(self.instrument.taker_fee)
-        else:
-            raise ValueError(
-                f"invalid `LiquiditySide`, was {liquidity_side_to_str(order.liquidity_side)}"
-            )
-
         cdef Money commission
-        if self.instrument.is_inverse:  # Not using quote for inverse (see above):
-            commission = Money(commission_f64, self.instrument.base_currency)
-        else:
-            commission = Money(commission_f64, self.instrument.quote_currency)
+        commission = self._commission_model.get_commission(
+            order=order,
+            fill_qty=last_qty,
+            fill_px=last_px,
+            instrument=self.instrument,
+        )
 
         self._generate_order_filled(
             order=order,
