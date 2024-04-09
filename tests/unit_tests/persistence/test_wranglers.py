@@ -20,6 +20,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.persistence.loaders import BinanceOrderBookDeltaDataLoader
 from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
+from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TEST_DATA_DIR
@@ -43,7 +44,7 @@ def test_load_binance_deltas() -> None:
     assert deltas[0].flags == 42  # Snapshot
 
 
-@pytest.mark.parametrize(
+bar_timestamp_tests_params = (
     ("timestamp_is_close", "interval_ms", "ts_event1", "ts_event2", "ts_event3", "ts_event4"),
     [
         [
@@ -64,7 +65,10 @@ def test_load_binance_deltas() -> None:
         ],
     ],
 )
-def test_bar_data_wrangler(
+
+
+@pytest.mark.parametrize(*bar_timestamp_tests_params)
+def test_quote_bar_data_wrangler(
     timestamp_is_close: bool,
     interval_ms: int,
     ts_event1: int,
@@ -81,6 +85,36 @@ def test_bar_data_wrangler(
     ticks = wrangler.process_bar_data(
         bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
         ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
+        offset_interval_ms=interval_ms,
+        timestamp_is_close=timestamp_is_close,
+    )
+
+    # Assert
+    assert ticks[0].ts_event == ts_event1
+    assert ticks[1].ts_event == ts_event2
+    assert ticks[2].ts_event == ts_event3
+    assert ticks[3].ts_event == ts_event4
+
+
+@pytest.mark.parametrize(*bar_timestamp_tests_params)
+def test_trade_bar_data_wrangler(
+    timestamp_is_close: bool,
+    interval_ms: int,
+    ts_event1: int,
+    ts_event2: int,
+    ts_event3: int,
+    ts_event4: int,
+) -> None:
+    # Arrange
+    usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+    wrangler = TradeTickDataWrangler(instrument=usdjpy)
+    provider = TestDataProvider()
+    data = provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv")
+    data.loc[:, "volume"] = 100_0000
+
+    # Act
+    ticks = wrangler.process_bar_data(
+        data=data,
         offset_interval_ms=interval_ms,
         timestamp_is_close=timestamp_is_close,
     )
