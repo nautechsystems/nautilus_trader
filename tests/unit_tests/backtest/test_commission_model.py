@@ -17,7 +17,7 @@ import pytest
 
 # fmt: off
 from nautilus_trader.backtest.models import FixedCommissionModel
-from nautilus_trader.backtest.models import InstrumentSpecificPercentCommissionModel
+from nautilus_trader.backtest.models import MakerTakerFeeModel
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.instruments.base import Instrument
@@ -55,10 +55,10 @@ def sell_order(instrument: Instrument) -> Order:
 def test_fixed_commission(buy_order, instrument):
     # Arrange
     expected = Money(1, USD)
-    commission_model = FixedCommissionModel(expected)
+    fee_model = FixedCommissionModel(expected)
 
     # Act
-    commission = commission_model.get_commission(
+    commission = fee_model.get_commission(
         buy_order,
         buy_order.quantity,
         Price.from_str("1.1234"),
@@ -71,11 +71,11 @@ def test_fixed_commission(buy_order, instrument):
 
 def test_instrument_percent_commission_maker(instrument, buy_order):
     # Arrange
-    commission_model = InstrumentSpecificPercentCommissionModel()
+    fee_model = MakerTakerFeeModel()
     expected = buy_order.quantity * buy_order.price * instrument.maker_fee
 
     # Act
-    commission = commission_model.get_commission(
+    commission = fee_model.get_commission(
         buy_order,
         buy_order.quantity,
         buy_order.price,
@@ -89,11 +89,11 @@ def test_instrument_percent_commission_maker(instrument, buy_order):
 
 def test_instrument_percent_commission_taker(instrument, sell_order):
     # Arrange
-    commission_model = InstrumentSpecificPercentCommissionModel()
+    fee_model = MakerTakerFeeModel()
     expected = sell_order.quantity * sell_order.price * instrument.taker_fee
 
     # Act
-    commission = commission_model.get_commission(
+    commission = fee_model.get_commission(
         sell_order,
         sell_order.quantity,
         sell_order.price,

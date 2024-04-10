@@ -25,8 +25,8 @@ from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.backtest.models import InstrumentSpecificPercentCommissionModel
 from nautilus_trader.backtest.models import LatencyModel
+from nautilus_trader.backtest.models import MakerTakerFeeModel
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.enums import ComponentState
@@ -126,7 +126,7 @@ class TestStrategy:
             instruments=[_USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
-            commission_model=InstrumentSpecificPercentCommissionModel(),
+            fee_model=MakerTakerFeeModel(),
             clock=self.clock,
             latency_model=LatencyModel(0),
             support_contingent_orders=False,

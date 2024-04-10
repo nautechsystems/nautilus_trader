@@ -163,10 +163,11 @@ cdef class LatencyModel:
         self.cancel_latency_nanos = base_latency_nanos + cancel_latency_nanos
 
 
-cdef class CommissionModel:
+cdef class FeeModel:
     """
-    Provide an abstract commission model for trades.
+    Provides an abstract fee model for trades.
     """
+
     cpdef Money get_commission(
         self,
         Order order,
@@ -196,10 +197,10 @@ cdef class CommissionModel:
         raise NotImplementedError("Method 'get_commission' must be implemented in a subclass.")
 
 
-cdef class InstrumentSpecificPercentCommissionModel(CommissionModel):
+cdef class MakerTakerFeeModel(FeeModel):
     """
-    Provide a commission model for trades based on a percentage of the notional value
-    of the trade.
+    Provide a fee model for trades based on a maker/taker fee schedule
+    and notional value of the trade.
 
     """
 
@@ -235,7 +236,7 @@ cdef class InstrumentSpecificPercentCommissionModel(CommissionModel):
         return commission
 
 
-cdef class FixedCommissionModel(CommissionModel):
+cdef class FixedCommissionModel(FeeModel):
     """
     Provides a fixed commission model for trades.
 
@@ -253,7 +254,9 @@ cdef class FixedCommissionModel(CommissionModel):
 
     def __init__(self, Money commission):
         Condition.type(commission, Money, "commission")
-        self.commission = commission
+        Condition.positive(commission, "commission")
+
+        self._commission = commission
 
     cpdef Money get_commission(
         self,
@@ -262,4 +265,4 @@ cdef class FixedCommissionModel(CommissionModel):
         Price fill_px,
         Instrument instrument,
     ):
-        return self.commission
+        return self._commission

@@ -18,7 +18,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.matching_engine cimport OrderMatchingEngine
-from nautilus_trader.backtest.models cimport CommissionModel
+from nautilus_trader.backtest.models cimport FeeModel
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.models cimport LatencyModel
 from nautilus_trader.cache.cache cimport Cache
@@ -79,8 +79,8 @@ cdef class SimulatedExchange:
     """The latency model for the exchange.\n\n:returns: `LatencyModel`"""
     cdef readonly FillModel fill_model
     """The fill model for the exchange.\n\n:returns: `FillModel`"""
-    cdef readonly CommissionModel commission_model
-    """The commission model for the exchange.\n\n:returns: `CommissionModel`"""
+    cdef readonly FeeModel fee_model
+    """The fee model for the exchange.\n\n:returns: `FeeModel`"""
     cdef readonly bint bar_execution
     """If bars should be processed by the matching engine(s) (and move the market).\n\n:returns: `bool`"""
     cdef readonly bint reject_stop_orders
