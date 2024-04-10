@@ -3,6 +3,8 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Implemented `FeeModel` including `FixedCommissionModel` and `MakerTakerFeeModel` (#1584), thanks @rsmb7z
+- Implemented `TradeTickDataWrangler.process_bar_data` (#1585), thanks @rsmb7z
 - Implemented multiple timeframe bar execution (will use lowest timeframe per instrument)
 - Standardized adapter client logging (handle more logging from client base classes)
 - Simplified and consolidated Rust `OrderBook` design
