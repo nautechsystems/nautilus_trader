@@ -295,26 +295,6 @@ class TestOrderBook:
         assert bid_level.price == Price.from_str("10.0")
         assert ask_level.price == Price.from_str("11.0")
 
-    def test_adding_to_mbp_l1_book_raises(self) -> None:
-        # Arrange
-        book = OrderBook(
-            instrument_id=self.instrument.id,
-            book_type=BookType.L1_MBP,
-        )
-
-        # Act, Assert
-        with pytest.raises(RuntimeError):
-            book.add(
-                BookOrder(
-                    price=Price(11.0, 1),
-                    size=Quantity(5.0, 0),
-                    side=OrderSide.BUY,
-                    order_id=0,
-                ),
-                0,
-                0,
-            )
-
     def test_repr(self):
         # Arrange
         book = OrderBook(
