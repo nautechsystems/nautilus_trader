@@ -37,7 +37,7 @@ thiserror = { workspace = true }
 ustr = { workspace = true }
 databento = { version = "0.8.0", optional = true }
 streaming-iterator = "0.1.9"
-time = "0.3.34"
+time = "0.3.35"
 
 [dev-dependencies]
 criterion = { workspace = true }
