@@ -291,7 +291,7 @@ cdef class Strategy(Actor):
             submit_order_handler=None,
             cancel_order_handler=self.cancel_order,
             modify_order_handler=self.modify_order,
-            debug=True,  # Set True for debugging
+            debug=False,  # Set True for debugging
         )
 
         # Required subscriptions
@@ -1348,10 +1348,12 @@ cdef class Strategy(Actor):
                 updating = True
 
         if not updating:
+            price_str = f", {order.price=}" if order.has_price_c() else ""
+            trigger_str = f", {order.trigger_price=}" if order.has_trigger_price_c() else ""
             self.log.error(
                 "Cannot create command ModifyOrder: "
-                "quantity, price and trigger were either None "
-                "or the same as existing values",
+                f"{quantity=}, {price=}, {trigger_price=} were either None "
+                f"or the same as existing values: {order.quantity=}{price_str}{trigger_str}",
             )
             return None  # Cannot send command
 

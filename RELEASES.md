@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Simplified and consolidated Rust `OrderBook` design
 - Improved `CacheDatabaseAdapter` graceful close and thread join
 - Improved `MessageBus` graceful close and thread join
+- Improved `modify_order` error logging when order values remain unchanged
 - Interactive Brokers further improvements and fixes, thanks @rsmb7z
 - Ported Bias indicator to Rust, thanks @Pushkarm029
 
