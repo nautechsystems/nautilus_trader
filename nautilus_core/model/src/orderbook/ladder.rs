@@ -113,10 +113,8 @@ impl Ladder {
     }
 
     pub fn add(&mut self, order: BookOrder) {
-        let order_id = order.order_id;
         let book_price = order.to_book_price();
-
-        self.cache.insert(order_id, book_price);
+        self.cache.insert(order.order_id, book_price);
 
         match self.levels.get_mut(&book_price) {
             Some(level) => {
@@ -130,9 +128,8 @@ impl Ladder {
     }
 
     pub fn update(&mut self, order: BookOrder) {
-        let price_opt = self.cache.get(&order.order_id).copied();
-
-        if let Some(price) = price_opt {
+        let price = self.cache.get(&order.order_id).copied();
+        if let Some(price) = price {
             if let Some(level) = self.levels.get_mut(&price) {
                 if order.price == level.price.value {
                     // Update at current price level
@@ -191,7 +188,6 @@ impl Ladder {
     #[must_use]
     pub fn simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
         let is_reversed = self.side == OrderSide::Buy;
-
         let mut fills = Vec::new();
         let mut cumulative_denominator = Quantity::zero(order.size.precision);
         let target = order.size;

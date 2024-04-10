@@ -675,8 +675,12 @@ typedef enum TriggerType {
 typedef struct Level Level;
 
 /**
- * Provides an order book which can handle both MBO (market by order / L3)
- * and MBP (market by price / L2) granularity data.
+ * Provides an order book.
+ *
+ * Can handle the following granularity data:
+ * - MBO (market by order) / L3
+ * - MBP (market by price) / L2 aggregated order per level
+ * - MBP (market by price) / L1 top-of-book only
  */
 typedef struct OrderBook OrderBook;
 

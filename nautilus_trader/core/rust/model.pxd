@@ -363,8 +363,12 @@ cdef extern from "../includes/model.h":
     cdef struct Level:
         pass
 
-    # Provides an order book which can handle both MBO (market by order / L3)
-    # and MBP (market by price / L2) granularity data.
+    # Provides an order book.
+    #
+    # Can handle the following granularity data:
+    # - MBO (market by order) / L3
+    # - MBP (market by price) / L2 aggregated order per level
+    # - MBP (market by price) / L1 top-of-book only
     cdef struct OrderBook:
         pass
 

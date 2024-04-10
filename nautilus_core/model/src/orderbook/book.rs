@@ -20,14 +20,18 @@ use crate::{
     data::{
         delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10, order::BookOrder,
     },
-    enums::{BookAction, BookType, OrderSide},
+    enums::{BookAction, BookType, OrderSide, OrderSideSpecified},
     identifiers::instrument_id::InstrumentId,
     orderbook::{error::BookIntegrityError, ladder::Ladder},
     types::{price::Price, quantity::Quantity},
 };
 
-/// Provides an order book which can handle both MBO (market by order / L3)
-/// and MBP (market by price / L2) granularity data.
+/// Provides an order book.
+///
+/// Can handle the following granularity data:
+/// - MBO (market by order) / L3
+/// - MBP (market by price) / L2 aggregated order per level
+/// - MBP (market by price) / L1 top-of-book only
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
@@ -72,10 +76,9 @@ impl OrderBook {
 
     pub fn add(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
         let order = pre_process_order(self.book_type, order);
-        match order.side {
-            OrderSide::Buy => self.bids.add(order),
-            OrderSide::Sell => self.asks.add(order),
-            _ => panic!("{}", BookIntegrityError::NoOrderSide),
+        match order.side.as_specified() {
+            OrderSideSpecified::Buy => self.bids.add(order),
+            OrderSideSpecified::Sell => self.asks.add(order),
         }
 
         self.increment(ts_event, sequence);
@@ -83,10 +86,9 @@ impl OrderBook {
 
     pub fn update(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
         let order = pre_process_order(self.book_type, order);
-        match order.side {
-            OrderSide::Buy => self.bids.update(order),
-            OrderSide::Sell => self.asks.update(order),
-            _ => panic!("{}", BookIntegrityError::NoOrderSide),
+        match order.side.as_specified() {
+            OrderSideSpecified::Buy => self.bids.update(order),
+            OrderSideSpecified::Sell => self.asks.update(order),
         }
 
         self.increment(ts_event, sequence);
@@ -94,10 +96,9 @@ impl OrderBook {
 
     pub fn delete(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
         let order = pre_process_order(self.book_type, order);
-        match order.side {
-            OrderSide::Buy => self.bids.delete(order, ts_event, sequence),
-            OrderSide::Sell => self.asks.delete(order, ts_event, sequence),
-            _ => panic!("{}", BookIntegrityError::NoOrderSide),
+        match order.side.as_specified() {
+            OrderSideSpecified::Buy => self.bids.delete(order, ts_event, sequence),
+            OrderSideSpecified::Sell => self.asks.delete(order, ts_event, sequence),
         }
 
         self.increment(ts_event, sequence);
