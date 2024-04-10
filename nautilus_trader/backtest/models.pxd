@@ -48,17 +48,12 @@ cdef class LatencyModel:
     """The latency (nanoseconds) for order cancel messages to reach the exchange.\n\n:returns: `int`"""
 
 
-cdef class CommissionModel:
+cdef class FeeModel:
     cpdef Money get_commission(self, Order order, Quantity fill_qty, Price fill_px, Instrument instrument)
 
 
-cdef class InstrumentSpecificPercentCommissionModel(CommissionModel):
-    """
-    Provide a commission model for trades based on a percentage of the notional value
-    of the trade.
+cdef class MakerTakerFeeModel(FeeModel):
+    pass
 
-    """
-
-cdef class FixedCommissionModel(CommissionModel):
-    cdef Money commission
-    """The constant commission."""
+cdef class FixedCommissionModel(FeeModel):
+    cdef Money _commission

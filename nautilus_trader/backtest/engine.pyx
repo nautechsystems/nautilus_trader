@@ -41,10 +41,10 @@ from nautilus_trader.backtest.data_client cimport BacktestDataClient
 from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
-from nautilus_trader.backtest.models cimport CommissionModel
+from nautilus_trader.backtest.models cimport FeeModel
 from nautilus_trader.backtest.models cimport FillModel
-from nautilus_trader.backtest.models cimport InstrumentSpecificPercentCommissionModel
 from nautilus_trader.backtest.models cimport LatencyModel
+from nautilus_trader.backtest.models cimport MakerTakerFeeModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
@@ -368,7 +368,7 @@ cdef class BacktestEngine:
         leverages: dict[InstrumentId, Decimal] | None = None,
         modules: list[SimulationModule] | None = None,
         fill_model: FillModel | None = None,
-        commission_model: CommissionModel = InstrumentSpecificPercentCommissionModel(),
+        fee_model: FeeModel | None = None,
         latency_model: LatencyModel | None = None,
         book_type: BookType = BookType.L1_MBP,
         routing: bool = False,
@@ -405,8 +405,8 @@ cdef class BacktestEngine:
             The simulation modules to load into the exchange.
         fill_model : FillModel, optional
             The fill model for the exchange.
-        commission_model : CommissionModel, optional
-            The commission model for the exchange.
+        fee_model : FeeModel, optional
+            The fee model for the venue.
         latency_model : LatencyModel, optional
             The latency model for the exchange.
         book_type : BookType, default ``BookType.L1_MBP``
@@ -441,11 +441,14 @@ cdef class BacktestEngine:
             modules = []
         if fill_model is None:
             fill_model = FillModel()
+        if fee_model is None:
+            fee_model = MakerTakerFeeModel()
         Condition.not_none(venue, "venue")
         Condition.not_in(venue, self._venues, "venue", "_venues")
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(modules, SimulationModule, "modules")
-        Condition.type_or_none(fill_model, FillModel, "fill_model")
+        Condition.type(fill_model, FillModel, "fill_model")
+        Condition.type(fee_model, FeeModel, "fee_model")
 
         if default_leverage is None:
             if account_type == AccountType.MARGIN:
@@ -468,7 +471,7 @@ cdef class BacktestEngine:
             msgbus=self.kernel.msgbus,
             cache=self.kernel.cache,
             fill_model=fill_model,
-            commission_model=commission_model,
+            fee_model=fee_model,
             latency_model=latency_model,
             book_type=book_type,
             clock=self.kernel.clock,
