@@ -200,8 +200,8 @@ def prepare_tick_data_from_bars(
 
     # Merge tick data
     df_ticks_final = pd.concat([df_ticks_o, df_ticks_h, df_ticks_l, df_ticks_c])
-    df_ticks_final.dropna(inplace=True)
-    df_ticks_final.sort_index(axis=0, kind="mergesort", inplace=True)
+    df_ticks_final = df_ticks_final.dropna()
+    df_ticks_final = df_ticks_final.sort_index(axis=0, kind="mergesort")
 
     cdef int i
     # Randomly shift high low prices
@@ -603,6 +603,13 @@ cdef class TradeTickDataWrangler:
             timestamp_is_close=timestamp_is_close,
         )
         df_ticks_final["trade_id"] = df_ticks_final.index.view(np.uint64).astype(str)
+
+        # Adjust size precision
+        size_precision = self.instrument.size_precision
+        if is_raw:
+            df_ticks_final["size"] = df_ticks_final["size"].apply(lambda x: round(x, size_precision - 9))
+        else:
+            df_ticks_final["size"] = df_ticks_final["size"].round(size_precision)
 
         if is_raw:
             return list(map(

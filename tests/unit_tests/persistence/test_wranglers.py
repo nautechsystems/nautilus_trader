@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import pandas as pd
 import pytest
 
 from nautilus_trader.model.enums import BookAction
@@ -126,3 +126,41 @@ def test_trade_bar_data_wrangler(
     assert ticks[2].ts_event == ts_event3
     assert ticks[3].ts_event == ts_event4
     assert len(ticks) == expected_ticks_count
+
+
+@pytest.mark.parametrize("is_raw", [False, True])
+def test_trade_bar_data_wrangler_size_precision(is_raw: bool) -> None:
+    # Arrange
+    spy = TestInstrumentProvider.equity("SPY", "ARCA")
+    wrangler = TradeTickDataWrangler(instrument=spy)
+    factor = 1e9 if is_raw else 1
+    ts = pd.Timestamp("2024-01-05 21:00:00+0000", tz="UTC")
+    data = pd.DataFrame(
+        {
+            "open": {ts: 468.01 * factor},
+            "high": {ts: 468.08 * factor},
+            "low": {ts: 467.81 * factor},
+            "close": {ts: 467.96 * factor},
+            "volume": {ts: 18735.0 * factor},
+        },
+    )
+
+    # Calculate expected_size
+    if is_raw:
+        # For raw data, adjust precision by -9
+        expected_size = round(data["volume"].iloc[0] / 4, spy.size_precision - 9)
+    else:
+        # For non-raw data, apply standard precision and scale back up to compare with raw
+        expected_size = round(data["volume"].iloc[0] / 4, spy.size_precision) * 1e9
+
+    # Act
+    ticks = wrangler.process_bar_data(
+        data=data,
+        offset_interval_ms=0,
+        timestamp_is_close=True,
+        is_raw=is_raw,
+    )
+
+    # Assert
+    for tick in ticks:
+        assert tick.size.raw == expected_size
