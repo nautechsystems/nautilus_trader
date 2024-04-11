@@ -15,11 +15,7 @@
 
 from __future__ import annotations
 
-from nautilus_trader.serialization.base import register_serializable_object
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
-
-
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+from nautilus_trader.serialization.base import register_serializable_type
 
 
 class TestObject:
@@ -40,8 +36,12 @@ class TestObject:
 
 
 class TestSerializationBase:
-    def test_register_serializable_object(self):
+    def test_register_serializable_type(self):
         # Arrange, Act, Assert
-        register_serializable_object(TestObject, TestObject.to_dict, TestObject.from_dict)
+        register_serializable_type(
+            cls=TestObject,
+            to_dict=TestObject.to_dict,
+            from_dict=TestObject.from_dict,
+        )
 
         # Does not raise exception

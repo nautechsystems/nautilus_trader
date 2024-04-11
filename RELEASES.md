@@ -19,6 +19,7 @@ Released on TBD (UTC).
 - Changed Arrow schema for `CryptoFuture`: added `is_inverse` boolean field
 - Renamed both `OrderBookMbo` and `OrderBookMbp` to `OrderBook` (consolidated)
 - Renamed `Indicator.handle_book_mbo` and `Indicator.handle_book_mbp` to `handle_book` (consolidated)
+- Renamed `register_serializable_object` to `register_serializable_type` (also renames first param from `obj` to `cls`)
 
 ### Fixes
 - Fixed `BacktestNode` streaming data management (was not clearing between chunks), thanks for the report @dpmabo
