@@ -160,6 +160,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Get Python version
+        run: |
+          version=$(python -c "import sys; print('.'.join(map(str, sys.version_info[:3])))")
+          echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
+
       - name: Get Poetry version from poetry-version
         run: |
           version=$(cat poetry-version)
