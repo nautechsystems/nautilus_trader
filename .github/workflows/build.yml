@@ -179,7 +179,7 @@ jobs:
 
       - name: Get Python version
         run: |
-          import sys; print('.'.join(map(str, sys.version_info[:3])))
+          version=$(python -c "import sys; print('.'.join(map(str, sys.version_info[:3])))")
           echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
 
       - name: Get Poetry version from poetry-version
