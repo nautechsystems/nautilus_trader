@@ -62,6 +62,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Get Python version
+        run: |
+          version=$(cat poetry-version)
+          echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
+
       - name: Get Poetry version from poetry-version
         run: |
           version=$(cat poetry-version)
@@ -86,7 +91,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pre-commit
-          key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+          key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Set poetry cache-dir
         run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
@@ -96,7 +101,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.POETRY_CACHE_DIR }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
+          key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       - name: Run pre-commit
         run: |
@@ -172,6 +177,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Get Python version
+        run: |
+          version=$(cat poetry-version)
+          echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
+
       - name: Get Poetry version from poetry-version
         run: |
           version=$(cat poetry-version)
@@ -190,7 +200,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pre-commit
-          key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+          key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Set poetry cache-dir
         run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
@@ -200,7 +210,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.POETRY_CACHE_DIR }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
+          key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       - name: Run pre-commit
         run: |
