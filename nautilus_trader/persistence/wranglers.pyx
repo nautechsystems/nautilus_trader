@@ -200,8 +200,8 @@ def prepare_tick_data_from_bars(
 
     # Merge tick data
     df_ticks_final = pd.concat([df_ticks_o, df_ticks_h, df_ticks_l, df_ticks_c])
-    df_ticks_final.dropna(inplace=True)
-    df_ticks_final.sort_index(axis=0, kind="mergesort", inplace=True)
+    df_ticks_final = df_ticks_final.dropna()
+    df_ticks_final = df_ticks_final.sort_index(axis=0, kind="mergesort")
 
     cdef int i
     # Randomly shift high low prices
@@ -572,32 +572,24 @@ cdef class TradeTickDataWrangler:
         # Ensure index is tz-aware UTC
         data = as_utc_index(data)
 
-        # Determine the Aggressor Side based on Close vs Open
-        if "side" not in data and "buyer_maker" not in data:
-            data['side'] = ['BUY' if close > open_ else 'SELL' for open_, close in zip(data['open'], data['close'])]
-
         cdef dict data_open = {
             "price": data["open"],
             "size": data["volume"] / 4,
-            "side": data["side"],
         }
 
         cdef dict data_high = {
             "price": data["high"],
             "size": data["volume"] / 4,
-            "side": data["side"],
         }
 
         cdef dict data_low = {
             "price": data["low"],
             "size": data["volume"] / 4,
-            "side": data["side"],
         }
 
         cdef dict data_close = {
             "price": data["close"],
             "size": data["volume"] / 4,
-            "side": data["side"],
         }
 
         df_ticks_final, ts_events, ts_inits = prepare_tick_data_from_bars(
@@ -612,12 +604,19 @@ cdef class TradeTickDataWrangler:
         )
         df_ticks_final["trade_id"] = df_ticks_final.index.view(np.uint64).astype(str)
 
+        # Adjust size precision
+        size_precision = self.instrument.size_precision
+        if is_raw:
+            df_ticks_final["size"] = df_ticks_final["size"].apply(lambda x: round(x, size_precision - 9))
+        else:
+            df_ticks_final["size"] = df_ticks_final["size"].round(size_precision)
+
         if is_raw:
             return list(map(
                 self._build_tick_from_raw,
                 df_ticks_final["price"],
                 df_ticks_final["size"],
-                self._create_side_if_not_exist(data),
+                self._create_side_if_not_exist(df_ticks_final),
                 df_ticks_final["trade_id"],
                 ts_events,
                 ts_inits,
@@ -627,7 +626,7 @@ cdef class TradeTickDataWrangler:
                 self._build_tick,
                 df_ticks_final["price"],
                 df_ticks_final["size"],
-                self._create_side_if_not_exist(data),
+                self._create_side_if_not_exist(df_ticks_final),
                 df_ticks_final["trade_id"],
                 ts_events,
                 ts_inits,
@@ -636,8 +635,10 @@ cdef class TradeTickDataWrangler:
     def _create_side_if_not_exist(self, data):
         if "side" in data.columns:
             return data["side"].apply(lambda x: AggressorSide.BUYER if str(x).upper() == "BUY" else AggressorSide.SELLER)
-        else:
+        elif "buyer_maker" in data.columns:
             return data["buyer_maker"].apply(lambda x: AggressorSide.SELLER if x is True else AggressorSide.BUYER)
+        else:
+            return [AggressorSide.NO_AGGRESSOR] * len(data)
 
     # cpdef method for Python wrap() (called with map)
     cpdef TradeTick _build_tick_from_raw(
