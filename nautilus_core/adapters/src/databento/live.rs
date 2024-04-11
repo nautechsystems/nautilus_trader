@@ -31,6 +31,7 @@ use nautilus_model::{
         deltas::{OrderBookDeltas, OrderBookDeltas_API},
         Data,
     },
+    enums::RecordFlag,
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
     instruments::InstrumentType,
 };
@@ -267,12 +268,12 @@ impl DatabentoFeedHandler {
                         );
 
                         // Check if last message in the packet
-                        if msg.flags & dbn::flags::LAST == 0 {
+                        if !RecordFlag::LAST.matches(msg.flags) {
                             continue; // NOT last message
                         }
 
                         // Check if snapshot
-                        if msg.flags & dbn::flags::SNAPSHOT != 0 {
+                        if RecordFlag::SNAPSHOT.matches(msg.flags) {
                             continue; // Buffer snapshot
                         }
 

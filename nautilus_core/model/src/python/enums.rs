@@ -23,7 +23,8 @@ use crate::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
         BookType, ContingencyType, CurrencyType, HaltReason, InstrumentClass, InstrumentCloseType,
         LiquiditySide, MarketStatus, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
-        PositionSide, PriceType, TimeInForce, TradingState, TrailingOffsetType, TriggerType,
+        PositionSide, PriceType, RecordFlag, TimeInForce, TradingState, TrailingOffsetType,
+        TriggerType,
     },
     python::common::EnumIterator,
 };
@@ -1626,6 +1627,86 @@ impl PriceType {
     #[pyo3(name = "LAST")]
     fn py_last() -> Self {
         Self::Last
+    }
+}
+
+#[pymethods]
+impl RecordFlag {
+    #[new]
+    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
+        let t = Self::type_object(py);
+        Self::py_from_str(t, value)
+    }
+
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<{}.{}: '{}'>",
+            stringify!(RecordFlag),
+            self.name(),
+            self.value(),
+        )
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
+
+    #[classmethod]
+    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+        EnumIterator::new::<Self>(py)
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
+        let data_str: &str = data.str().and_then(|s| s.extract())?;
+        let tokenized = data_str.to_uppercase();
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+    }
+
+    #[classattr]
+    #[pyo3(name = "LAST")]
+    fn py_last() -> Self {
+        Self::LAST
+    }
+
+    #[classattr]
+    #[pyo3(name = "TOB")]
+    fn py_tob() -> Self {
+        Self::TOB
+    }
+
+    #[classattr]
+    #[pyo3(name = "SNAPSHOT")]
+    fn py_snapshot() -> Self {
+        Self::SNAPSHOT
+    }
+
+    #[classattr]
+    #[pyo3(name = "MBP")]
+    fn py_mbp() -> Self {
+        Self::MBP
+    }
+
+    #[pyo3(name = "matches")]
+    fn py_matches(&self, value: u8) -> bool {
+        self.matches(value)
     }
 }
 

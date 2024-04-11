@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Improved `CacheDatabaseAdapter` graceful close and thread join
 - Improved `MessageBus` graceful close and thread join
 - Improved `modify_order` error logging when order values remain unchanged
+- Added `RecordFlag` enum for Rust and Python
 - Interactive Brokers further improvements and fixes, thanks @rsmb7z
 - Ported Bias indicator to Rust, thanks @Pushkarm029
 

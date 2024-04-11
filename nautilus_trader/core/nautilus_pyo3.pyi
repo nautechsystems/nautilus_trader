@@ -753,6 +753,12 @@ class PriceType(Enum):
     MID = "MID"
     LAST = "LAST"
 
+class RecordFlag(Enum):
+    LAST = "LAST"
+    TOB = "TOB"
+    SNAPSHOT = "SNAPSHOT"
+    MBP = "MBP"
+
 class TimeInForce(Enum):
     GTC = "GTC"
     IOC = "IOC"
