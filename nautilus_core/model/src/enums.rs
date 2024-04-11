@@ -897,6 +897,52 @@ pub enum PriceType {
     Last = 4,
 }
 
+/// A bitflag for a data record.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
+#[allow(non_camel_case_types)]
+pub enum RecordFlag {
+    /// Last message in the packet from the venue for a given `instrument_id`.
+    LAST = 1 << 7, // 128
+    /// Top-of-book message, not an individual order.
+    TOB = 1 << 6, // 64
+    /// Message sourced from a replay, such as a snapshot server.
+    SNAPSHOT = 1 << 5, // 32
+    /// Aggregated price level message, not an individual order.
+    MBP = 1 << 4, // 16
+    /// Reserved for future use.
+    RESERVED_2 = 1 << 3, // 8
+    /// Reserved for future use.
+    RESERVED_1 = 1 << 2, // 4
+}
+
+impl RecordFlag {
+    /// Checks if the flag matches a given value.
+    pub fn matches(self, value: u8) -> bool {
+        (self as u8) & value != 0
+    }
+}
+
 /// The 'Time in Force' instruction for an order in the financial market.
 #[repr(C)]
 #[derive(
