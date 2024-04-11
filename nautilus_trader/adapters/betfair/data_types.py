@@ -30,7 +30,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.serialization.arrow.serializer import make_dict_deserializer
 from nautilus_trader.serialization.arrow.serializer import make_dict_serializer
 from nautilus_trader.serialization.arrow.serializer import register_arrow
-from nautilus_trader.serialization.base import register_serializable_object
+from nautilus_trader.serialization.base import register_serializable_type
 
 
 class SubscriptionStatus(Enum):
@@ -300,7 +300,7 @@ class BetfairStartingPrice(Data):
 
 
 # Register serialization/parquet BetfairTicker
-register_serializable_object(
+register_serializable_type(
     BetfairTicker,
     BetfairTicker.to_dict,
     BetfairTicker.from_dict,
@@ -314,7 +314,7 @@ register_arrow(
 )
 
 # Register serialization/parquet BetfairStartingPrice
-register_serializable_object(
+register_serializable_type(
     BetfairStartingPrice,
     BetfairStartingPrice.to_dict,
     BetfairStartingPrice.from_dict,
@@ -329,7 +329,7 @@ register_arrow(
 
 
 # Register serialization/parquet BSPOrderBookDeltas
-register_serializable_object(
+register_serializable_type(
     BSPOrderBookDelta,
     BSPOrderBookDelta.to_dict,
     BSPOrderBookDelta.from_dict,

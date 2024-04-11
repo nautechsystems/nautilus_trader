@@ -218,13 +218,13 @@ _EXTERNAL_PUBLISHABLE_TYPES = {
 }
 
 
-cpdef void register_serializable_object(
-    obj: type,
+cpdef void register_serializable_type(
+    cls: type,
     to_dict: Callable[[Any], dict[str, Any]],
     from_dict: Callable[[dict[str, Any]], Any],
 ):
     """
-    Register the given object with the global serialization object maps.
+    Register the given type with the global serialization type maps.
 
     The `type` will also be registered as an external publishable type and
     will be published externally on the message bus unless also added to
@@ -232,29 +232,29 @@ cpdef void register_serializable_object(
 
     Parameters
     ----------
-    obj : type
-        The object type to register.
+    cls : type
+        The type to register.
     to_dict : Callable[[Any], dict[str, Any]]
-        The delegate to instantiate a dict of primitive types from the object.
+        The delegate to instantiate a dict of primitive types from an object.
     from_dict : Callable[[dict[str, Any]], Any]
-        The delegate to instantiate the object from a dict of primitive types.
+        The delegate to instantiate an object from a dict of primitive types.
 
     Raises
     ------
     TypeError
         If `to_dict` or `from_dict` are not of type `Callable`.
     KeyError
-        If obj already registered with the global object maps.
+        If `type` already registered with the global type maps.
 
     """
     Condition.callable(to_dict, "to_dict")
     Condition.callable(from_dict, "from_dict")
-    Condition.not_in(obj.__name__, _OBJECT_TO_DICT_MAP, "obj.__name__", "_OBJECT_TO_DICT_MAP")
-    Condition.not_in(obj.__name__, _OBJECT_FROM_DICT_MAP, "obj.__name__", "_OBJECT_FROM_DICT_MAP")
+    Condition.not_in(cls.__name__, _OBJECT_TO_DICT_MAP, "cls.__name__", "_OBJECT_TO_DICT_MAP")
+    Condition.not_in(cls.__name__, _OBJECT_FROM_DICT_MAP, "cls.__name__", "_OBJECT_FROM_DICT_MAP")
 
-    _OBJECT_TO_DICT_MAP[obj.__name__] = to_dict
-    _OBJECT_FROM_DICT_MAP[obj.__name__] = from_dict
-    _EXTERNAL_PUBLISHABLE_TYPES.add(obj)
+    _OBJECT_TO_DICT_MAP[cls.__name__] = to_dict
+    _OBJECT_FROM_DICT_MAP[cls.__name__] = from_dict
+    _EXTERNAL_PUBLISHABLE_TYPES.add(cls)
 
 
 cdef class Serializer:
