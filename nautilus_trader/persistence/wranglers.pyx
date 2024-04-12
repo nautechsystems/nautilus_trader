@@ -47,7 +47,12 @@ def prepare_event_and_init_timestamps(
     ts_init_delta: int,
 ):
     Condition.type(index, pd.DatetimeIndex, "index")
+    Condition.not_none(index.tzinfo, "index.tzinfo")
     Condition.not_negative(ts_init_delta, "ts_init_delta")
+    expected_dtype = 'datetime64[ns, UTC]'
+    if index.dtype != expected_dtype:
+        index = index.astype(expected_dtype)
+
     ts_events = index.view(np.uint64)
     ts_inits = ts_events + ts_init_delta
     return ts_events, ts_inits
