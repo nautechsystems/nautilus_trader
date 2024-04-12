@@ -149,14 +149,14 @@ impl Ladder {
         self.add(order);
     }
 
-    pub fn delete(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
-        self.remove(order.order_id, ts_event, sequence);
+    pub fn delete(&mut self, order: BookOrder, sequence: u64, ts_event: u64) {
+        self.remove(order.order_id, sequence, ts_event);
     }
 
-    pub fn remove(&mut self, order_id: OrderId, ts_event: u64, sequence: u64) {
+    pub fn remove(&mut self, order_id: OrderId, sequence: u64, ts_event: u64) {
         if let Some(price) = self.cache.remove(&order_id) {
             if let Some(level) = self.levels.get_mut(&price) {
-                level.remove_by_id(order_id, ts_event, sequence);
+                level.remove_by_id(order_id, sequence, ts_event);
                 if level.is_empty() {
                     self.levels.remove(&price);
                 }

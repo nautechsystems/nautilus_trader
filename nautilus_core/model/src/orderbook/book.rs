@@ -74,58 +74,62 @@ impl OrderBook {
         self.count = 0;
     }
 
-    pub fn add(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
-        let order = pre_process_order(self.book_type, order);
+    pub fn add(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: u64) {
+        let order = pre_process_order(self.book_type, order, flags);
         match order.side.as_specified() {
             OrderSideSpecified::Buy => self.bids.add(order),
             OrderSideSpecified::Sell => self.asks.add(order),
         }
 
-        self.increment(ts_event, sequence);
+        self.increment(sequence, ts_event);
     }
 
-    pub fn update(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
-        let order = pre_process_order(self.book_type, order);
+    pub fn update(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: u64) {
+        let order = pre_process_order(self.book_type, order, flags);
         match order.side.as_specified() {
             OrderSideSpecified::Buy => self.bids.update(order),
             OrderSideSpecified::Sell => self.asks.update(order),
         }
 
-        self.increment(ts_event, sequence);
+        self.increment(sequence, ts_event);
     }
 
-    pub fn delete(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
-        let order = pre_process_order(self.book_type, order);
+    pub fn delete(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: u64) {
+        let order = pre_process_order(self.book_type, order, flags);
         match order.side.as_specified() {
-            OrderSideSpecified::Buy => self.bids.delete(order, ts_event, sequence),
-            OrderSideSpecified::Sell => self.asks.delete(order, ts_event, sequence),
+            OrderSideSpecified::Buy => self.bids.delete(order, sequence, ts_event),
+            OrderSideSpecified::Sell => self.asks.delete(order, sequence, ts_event),
         }
 
-        self.increment(ts_event, sequence);
+        self.increment(sequence, ts_event);
     }
 
-    pub fn clear(&mut self, ts_event: u64, sequence: u64) {
+    pub fn clear(&mut self, sequence: u64, ts_event: u64) {
         self.bids.clear();
         self.asks.clear();
-        self.increment(ts_event, sequence);
+        self.increment(sequence, ts_event);
     }
 
-    pub fn clear_bids(&mut self, ts_event: u64, sequence: u64) {
+    pub fn clear_bids(&mut self, sequence: u64, ts_event: u64) {
         self.bids.clear();
-        self.increment(ts_event, sequence);
+        self.increment(sequence, ts_event);
     }
 
-    pub fn clear_asks(&mut self, ts_event: u64, sequence: u64) {
+    pub fn clear_asks(&mut self, sequence: u64, ts_event: u64) {
         self.asks.clear();
-        self.increment(ts_event, sequence);
+        self.increment(sequence, ts_event);
     }
 
     pub fn apply_delta(&mut self, delta: OrderBookDelta) {
+        let order = delta.order;
+        let flags = delta.flags;
+        let sequence = delta.sequence;
+        let ts_event = delta.ts_event;
         match delta.action {
-            BookAction::Add => self.add(delta.order, delta.ts_event, delta.sequence),
-            BookAction::Update => self.update(delta.order, delta.ts_event, delta.sequence),
-            BookAction::Delete => self.delete(delta.order, delta.ts_event, delta.sequence),
-            BookAction::Clear => self.clear(delta.ts_event, delta.sequence),
+            BookAction::Add => self.add(order, flags, sequence, ts_event),
+            BookAction::Update => self.update(order, flags, sequence, ts_event),
+            BookAction::Delete => self.delete(order, flags, sequence, ts_event),
+            BookAction::Clear => self.clear(sequence, ts_event),
         }
     }
 
@@ -140,11 +144,11 @@ impl OrderBook {
         self.asks.clear();
 
         for order in depth.bids {
-            self.add(order, depth.ts_event, depth.sequence);
+            self.add(order, depth.flags, depth.sequence, depth.ts_event);
         }
 
         for order in depth.asks {
-            self.add(order, depth.ts_event, depth.sequence);
+            self.add(order, depth.flags, depth.sequence, depth.ts_event);
         }
     }
 
@@ -243,9 +247,9 @@ impl OrderBook {
         pprint_book(&self.bids, &self.asks, num_levels)
     }
 
-    fn increment(&mut self, ts_event: u64, sequence: u64) {
-        self.ts_last = ts_event;
+    fn increment(&mut self, sequence: u64, ts_event: u64) {
         self.sequence = sequence;
+        self.ts_last = ts_event;
         self.count += 1;
     }
 }
@@ -297,7 +301,7 @@ mod tests {
             Quantity::from("1.0"),
             1,
         );
-        book.add(order1, 100, 1);
+        book.add(order1, 0, 1, 100);
 
         assert_eq!(book.best_bid_price(), Some(Price::from("1.000")));
         assert_eq!(book.best_bid_size(), Some(Quantity::from("1.0")));
@@ -314,7 +318,7 @@ mod tests {
             Quantity::from("2.0"),
             2,
         );
-        book.add(order, 200, 2);
+        book.add(order, 0, 2, 200);
 
         assert_eq!(book.best_ask_price(), Some(Price::from("2.000")));
         assert_eq!(book.best_ask_size(), Some(Quantity::from("2.0")));
@@ -344,8 +348,8 @@ mod tests {
             Quantity::from("2.0"),
             2,
         );
-        book.add(bid1, 100, 1);
-        book.add(ask1, 200, 2);
+        book.add(bid1, 0, 1, 100);
+        book.add(ask1, 0, 2, 200);
 
         assert_eq!(book.spread(), Some(1.0));
     }
@@ -374,8 +378,8 @@ mod tests {
             Quantity::from("2.0"),
             2,
         );
-        book.add(bid1, 100, 1);
-        book.add(ask1, 200, 2);
+        book.add(bid1, 0, 1, 100);
+        book.add(ask1, 0, 2, 200);
 
         assert_eq!(book.midpoint(), Some(1.5));
     }
@@ -431,10 +435,10 @@ mod tests {
             Quantity::from("2.0"),
             0, // order_id not applicable
         );
-        book.add(bid1, 0, 1);
-        book.add(bid2, 0, 1);
-        book.add(ask1, 0, 1);
-        book.add(ask2, 0, 1);
+        book.add(bid1, 0, 1, 2);
+        book.add(bid2, 0, 1, 2);
+        book.add(ask1, 0, 1, 2);
+        book.add(ask2, 0, 1, 2);
 
         let qty = Quantity::from("1.5");
 
@@ -489,12 +493,12 @@ mod tests {
             Quantity::from("3.0"),
             0, // order_id not applicable
         );
-        book.add(bid1, 0, 1);
-        book.add(bid2, 0, 1);
-        book.add(bid3, 0, 1);
-        book.add(ask1, 0, 1);
-        book.add(ask2, 0, 1);
-        book.add(ask3, 0, 1);
+        book.add(bid1, 0, 0, 1);
+        book.add(bid2, 0, 0, 1);
+        book.add(bid3, 0, 0, 1);
+        book.add(ask1, 0, 0, 1);
+        book.add(ask2, 0, 0, 1);
+        book.add(ask3, 0, 0, 1);
 
         assert_eq!(
             book.get_quantity_for_price(Price::from("2.010"), OrderSide::Buy),
@@ -613,8 +617,8 @@ mod tests {
             Quantity::from("1.0"),
             0, // order_id not applicable
         );
-        book.add(bid1, 0, 1);
-        book.add(ask1, 0, 1);
+        book.add(bid1, 0, 0, 1);
+        book.add(ask1, 0, 0, 1);
 
         assert!(book_check_integrity(&book).is_err());
     }
@@ -661,12 +665,12 @@ mod tests {
             6,
         );
 
-        book.add(order1, 100, 1);
-        book.add(order2, 200, 2);
-        book.add(order3, 300, 3);
-        book.add(order4, 400, 4);
-        book.add(order5, 500, 5);
-        book.add(order6, 600, 6);
+        book.add(order1, 0, 1, 100);
+        book.add(order2, 0, 2, 200);
+        book.add(order3, 0, 3, 300);
+        book.add(order4, 0, 4, 400);
+        book.add(order5, 0, 5, 500);
+        book.add(order6, 0, 6, 600);
 
         let pprint_output = book.pprint(3);
 

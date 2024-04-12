@@ -897,7 +897,7 @@ pub enum PriceType {
     Last = 4,
 }
 
-/// A bitflag for a data record.
+/// A record flag bit field, indicating packet end and data information.
 #[repr(C)]
 #[derive(
     Copy,

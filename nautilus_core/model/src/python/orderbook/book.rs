@@ -98,16 +98,22 @@ impl OrderBook {
         self.reset();
     }
 
-    #[pyo3(signature = (order, ts_event, sequence=0))]
-    #[pyo3(name = "update")]
-    fn py_update(&mut self, order: BookOrder, ts_event: UnixNanos, sequence: u64) {
-        self.update(order, ts_event, sequence);
+    #[pyo3(signature = (order, ts_event, flags=0, sequence=0))]
+    #[pyo3(name = "add")]
+    fn py_add(&mut self, order: BookOrder, ts_event: UnixNanos, flags: u8, sequence: u64) {
+        self.add(order, flags, sequence, ts_event);
     }
 
-    #[pyo3(signature = (order, ts_event, sequence=0))]
+    #[pyo3(signature = (order, ts_event, flags=0, sequence=0))]
+    #[pyo3(name = "update")]
+    fn py_update(&mut self, order: BookOrder, ts_event: UnixNanos, flags: u8, sequence: u64) {
+        self.update(order, flags, sequence, ts_event);
+    }
+
+    #[pyo3(signature = (order, ts_event, flags=0, sequence=0))]
     #[pyo3(name = "delete")]
-    fn py_delete(&mut self, order: BookOrder, ts_event: UnixNanos, sequence: u64) {
-        self.delete(order, ts_event, sequence);
+    fn py_delete(&mut self, order: BookOrder, ts_event: UnixNanos, flags: u8, sequence: u64) {
+        self.delete(order, flags, sequence, ts_event);
     }
 
     #[pyo3(signature = (ts_event, sequence=0))]

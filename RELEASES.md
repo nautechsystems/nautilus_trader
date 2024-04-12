@@ -16,6 +16,9 @@ Released on TBD (UTC).
 - Ported Bias indicator to Rust, thanks @Pushkarm029
 
 ### Breaking Changes
+- Added `flags` parameter to `OrderBook.add`
+- Added `flags` parameter to `OrderBook.update`
+- Added `flags` parameter to `OrderBook.delete`
 - Changed Arrow schema for all instruments: added `info` binary field
 - Changed Arrow schema for `CryptoFuture`: added `is_inverse` boolean field
 - Renamed both `OrderBookMbo` and `OrderBookMbp` to `OrderBook` (consolidated)

@@ -543,7 +543,7 @@ typedef enum PriceType {
 } PriceType;
 
 /**
- * A bitflag for a data record.
+ * A record flag bit field, indicating packet end and data information.
  */
 typedef enum RecordFlag {
     /**
@@ -812,7 +812,7 @@ typedef struct OrderBookDelta_t {
      */
     struct BookOrder_t order;
     /**
-     * A combination of packet end with matching engine status.
+     * The record flags bit field, indicating packet end and data information.
      */
     uint8_t flags;
     /**
@@ -820,11 +820,11 @@ typedef struct OrderBookDelta_t {
      */
     uint64_t sequence;
     /**
-     * The UNIX timestamp (nanoseconds) when the data event occurred.
+     * The UNIX timestamp (nanoseconds) when the book event occurred.
      */
     uint64_t ts_event;
     /**
-     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     * The UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } OrderBookDelta_t;
@@ -876,7 +876,7 @@ typedef struct OrderBookDepth10_t {
      */
     uint32_t ask_counts[DEPTH10_LEN];
     /**
-     * A combination of packet end with matching engine status.
+     * The record flags bit field, indicating packet end and data information.
      */
     uint8_t flags;
     /**
@@ -884,11 +884,11 @@ typedef struct OrderBookDepth10_t {
      */
     uint64_t sequence;
     /**
-     * The UNIX timestamp (nanoseconds) when the data event occurred.
+     * The UNIX timestamp (nanoseconds) when the book event occurred.
      */
     uint64_t ts_event;
     /**
-     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     * The UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } OrderBookDepth10_t;
@@ -918,11 +918,11 @@ typedef struct QuoteTick_t {
      */
     struct Quantity_t ask_size;
     /**
-     * The UNIX timestamp (nanoseconds) when the tick event occurred.
+     * The UNIX timestamp (nanoseconds) when the quote event occurred.
      */
     uint64_t ts_event;
     /**
-     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     * The UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } QuoteTick_t;
@@ -969,11 +969,11 @@ typedef struct TradeTick_t {
      */
     struct TradeId_t trade_id;
     /**
-     * The UNIX timestamp (nanoseconds) when the tick event occurred.
+     * The UNIX timestamp (nanoseconds) when the trade event occurred.
      */
     uint64_t ts_event;
     /**
-     *  The UNIX timestamp (nanoseconds) when the data object was initialized.
+     * The UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } TradeTick_t;
@@ -1049,7 +1049,7 @@ typedef struct Bar_t {
      */
     uint64_t ts_event;
     /**
-     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     * The UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } Bar_t;
@@ -2191,18 +2191,21 @@ uint64_t orderbook_count(const struct OrderBook_API *book);
 
 void orderbook_add(struct OrderBook_API *book,
                    struct BookOrder_t order,
-                   uint64_t ts_event,
-                   uint64_t sequence);
+                   uint8_t flags,
+                   uint64_t sequence,
+                   uint64_t ts_event);
 
 void orderbook_update(struct OrderBook_API *book,
                       struct BookOrder_t order,
-                      uint64_t ts_event,
-                      uint64_t sequence);
+                      uint8_t flags,
+                      uint64_t sequence,
+                      uint64_t ts_event);
 
 void orderbook_delete(struct OrderBook_API *book,
                       struct BookOrder_t order,
-                      uint64_t ts_event,
-                      uint64_t sequence);
+                      uint8_t flags,
+                      uint64_t sequence,
+                      uint64_t ts_event);
 
 void orderbook_clear(struct OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
 

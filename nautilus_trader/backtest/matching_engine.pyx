@@ -1036,9 +1036,9 @@ cdef class OrderMatchingEngine:
 
     cdef void _process_auction_book_order(self, BookOrder order, TimeInForce time_in_force):
         if time_in_force == TimeInForce.AT_THE_OPEN:
-            self._opening_auction_book.add(order, 0, 0)
+            self._opening_auction_book.add(order, 0, 0, 0)
         elif time_in_force == TimeInForce.AT_THE_CLOSE:
-            self._closing_auction_book.add(order, 0, 0)
+            self._closing_auction_book.add(order, 0, 0, 0)
         else:
             raise RuntimeError(time_in_force)
 

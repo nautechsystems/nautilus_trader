@@ -232,7 +232,7 @@ cdef class OrderBook(Data):
         """
         orderbook_reset(&self._mem)
 
-    cpdef void add(self, BookOrder order, uint64_t ts_event, uint64_t sequence=0):
+    cpdef void add(self, BookOrder order, uint64_t ts_event, uint8_t flags=0, uint64_t sequence=0):
         """
         Add the given order to the book.
 
@@ -240,15 +240,27 @@ cdef class OrderBook(Data):
         ----------
         order : BookOrder
             The order to add.
-        sequence : uint64, default 0
+        ts_event : uint64_t
+            The UNIX timestamp (nanoseconds) when the book event occurred.
+        flags : uint8_t, default 0
+            The record flags bit field, indicating packet end and data information.
+        sequence : uint64_t, default 0
             The unique sequence number for the update. If default 0 then will increment the `sequence`.
+
+        Raises
+        ------
+        RuntimeError
+            If the book type is L1_MBP.
 
         """
         Condition.not_none(order, "order")
 
-        orderbook_add(&self._mem, order._mem, ts_event, sequence)
+        if self.book_type == BookType.L1_MBP:
+            raise RuntimeError("Invalid book operation: cannot add order for L1_MBP book")
 
-    cpdef void update(self, BookOrder order, uint64_t ts_event, uint64_t sequence=0):
+        orderbook_add(&self._mem, order._mem, flags, sequence, ts_event)
+
+    cpdef void update(self, BookOrder order, uint64_t ts_event, uint8_t flags=0, uint64_t sequence=0):
         """
         Update the given order in the book.
 
@@ -256,15 +268,19 @@ cdef class OrderBook(Data):
         ----------
         order : Order
             The order to update.
-        sequence : uint64, default 0
+        ts_event : uint64_t
+            The UNIX timestamp (nanoseconds) when the book event occurred.
+        flags : uint8_t, default 0
+            The record flags bit field, indicating packet end and data information.
+        sequence : uint64_t, default 0
             The unique sequence number for the update. If default 0 then will increment the `sequence`.
 
         """
         Condition.not_none(order, "order")
 
-        orderbook_update(&self._mem, order._mem, ts_event, sequence)
+        orderbook_update(&self._mem, order._mem, flags, sequence, ts_event)
 
-    cpdef void delete(self, BookOrder order, uint64_t ts_event, uint64_t sequence=0):
+    cpdef void delete(self, BookOrder order, uint64_t ts_event, uint8_t flags=0, uint64_t sequence=0):
         """
         Cancel the given order in the book.
 
@@ -272,13 +288,17 @@ cdef class OrderBook(Data):
         ----------
         order : Order
             The order to delete.
-        sequence : uint64, default 0
+        ts_event : uint64_t
+            The UNIX timestamp (nanoseconds) when the book event occurred.
+        flags : uint8_t, default 0
+            The record flags bit field, indicating packet end and data information.
+        sequence : uint64_t, default 0
             The unique sequence number for the update. If default 0 then will increment the `sequence`.
 
         """
         Condition.not_none(order, "order")
 
-        orderbook_delete(&self._mem, order._mem, ts_event, sequence)
+        orderbook_delete(&self._mem, order._mem, flags, sequence, ts_event)
 
     cpdef void clear(self, uint64_t ts_event, uint64_t sequence=0):
         """

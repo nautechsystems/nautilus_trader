@@ -106,30 +106,33 @@ pub extern "C" fn orderbook_count(book: &OrderBook_API) -> u64 {
 pub extern "C" fn orderbook_add(
     book: &mut OrderBook_API,
     order: BookOrder,
-    ts_event: u64,
+    flags: u8,
     sequence: u64,
+    ts_event: u64,
 ) {
-    book.add(order, ts_event, sequence);
+    book.add(order, flags, sequence, ts_event);
 }
 
 #[no_mangle]
 pub extern "C" fn orderbook_update(
     book: &mut OrderBook_API,
     order: BookOrder,
-    ts_event: u64,
+    flags: u8,
     sequence: u64,
+    ts_event: u64,
 ) {
-    book.update(order, ts_event, sequence);
+    book.update(order, flags, sequence, ts_event);
 }
 
 #[no_mangle]
 pub extern "C" fn orderbook_delete(
     book: &mut OrderBook_API,
     order: BookOrder,
-    ts_event: u64,
+    flags: u8,
     sequence: u64,
+    ts_event: u64,
 ) {
-    book.delete(order, ts_event, sequence);
+    book.delete(order, flags, sequence, ts_event);
 }
 
 #[no_mangle]
