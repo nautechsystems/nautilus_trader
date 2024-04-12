@@ -268,12 +268,12 @@ impl DatabentoFeedHandler {
                         );
 
                         // Check if last message in the packet
-                        if !RecordFlag::LAST.matches(msg.flags) {
+                        if !RecordFlag::F_LAST.matches(msg.flags) {
                             continue; // NOT last message
                         }
 
                         // Check if snapshot
-                        if RecordFlag::SNAPSHOT.matches(msg.flags) {
+                        if RecordFlag::F_SNAPSHOT.matches(msg.flags) {
                             continue; // Buffer snapshot
                         }
 

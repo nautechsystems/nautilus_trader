@@ -1683,25 +1683,25 @@ impl RecordFlag {
     #[classattr]
     #[pyo3(name = "LAST")]
     fn py_last() -> Self {
-        Self::LAST
+        Self::F_LAST
     }
 
     #[classattr]
     #[pyo3(name = "TOB")]
     fn py_tob() -> Self {
-        Self::TOB
+        Self::F_TOB
     }
 
     #[classattr]
     #[pyo3(name = "SNAPSHOT")]
     fn py_snapshot() -> Self {
-        Self::SNAPSHOT
+        Self::F_SNAPSHOT
     }
 
     #[classattr]
     #[pyo3(name = "MBP")]
     fn py_mbp() -> Self {
-        Self::MBP
+        Self::F_MBP
     }
 
     #[pyo3(name = "matches")]

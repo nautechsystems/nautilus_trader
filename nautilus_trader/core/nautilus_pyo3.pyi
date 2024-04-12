@@ -754,10 +754,10 @@ class PriceType(Enum):
     LAST = "LAST"
 
 class RecordFlag(Enum):
-    LAST = "LAST"
-    TOB = "TOB"
-    SNAPSHOT = "SNAPSHOT"
-    MBP = "MBP"
+    F_LAST = "F_LAST"
+    F_TOB = "F_TOB"
+    F_SNAPSHOT = "F_SNAPSHOT"
+    F_MBP = "F_MBP"
 
 class TimeInForce(Enum):
     GTC = "GTC"
