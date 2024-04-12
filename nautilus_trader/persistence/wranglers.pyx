@@ -27,11 +27,7 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport as_utc_index
-from nautilus_trader.core.datetime cimport dt_to_unix_nanos
-from nautilus_trader.core.rust.core cimport CVec
-from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport OrderSide
@@ -44,6 +40,17 @@ from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+
+
+def prepare_event_and_init_timestamps(
+    index: pd.DatetimeIndex,
+    ts_init_delta: int,
+):
+    Condition.type(index, pd.DatetimeIndex, "index")
+    Condition.not_negative(ts_init_delta, "ts_init_delta")
+    ts_events = index.view(np.uint64)
+    ts_inits = ts_events + ts_init_delta
+    return ts_events, ts_inits
 
 
 cdef class OrderBookDeltaDataWrangler:
@@ -85,8 +92,7 @@ cdef class OrderBookDeltaDataWrangler:
         Condition.false(data.empty, "data.empty")
 
         data = as_utc_index(data)
-        cdef uint64_t[:] ts_events = np.ascontiguousarray([dt_to_unix_nanos(dt) for dt in data.index], dtype=np.uint64)  # noqa
-        cdef uint64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.uint64)  # noqa
+        ts_events, ts_inits = prepare_event_and_init_timestamps(data.index, ts_init_delta)
 
         if is_raw:
             return list(map(
@@ -214,9 +220,7 @@ def prepare_tick_data_from_bars(
                 df_ticks_final.iloc[i + 1] = low
                 df_ticks_final.iloc[i + 2] = high
 
-    cdef uint64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in df_ticks_final.index], dtype=np.uint64)  # noqa
-    cdef uint64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.uint64)  # noqa
-
+    ts_events, ts_inits = prepare_event_and_init_timestamps(df_ticks_final.index, ts_init_delta)
     return df_ticks_final, ts_events, ts_inits
 
 
@@ -265,7 +269,7 @@ cdef class QuoteTickDataWrangler:
         Condition.false(data.empty, "data.empty")
         Condition.not_none(default_volume, "default_volume")
 
-        as_utc_index(data)
+        data = as_utc_index(data)
 
         columns = {
             "bid": "bid_price",
@@ -278,8 +282,7 @@ cdef class QuoteTickDataWrangler:
         if "ask_size" not in data.columns:
             data["ask_size"] = float(default_volume)
 
-        cdef uint64_t[:] ts_events = np.ascontiguousarray([dt_to_unix_nanos(dt) for dt in data.index], dtype=np.uint64)  # noqa
-        cdef uint64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.uint64)  # noqa
+        ts_events, ts_inits = prepare_event_and_init_timestamps(data.index, ts_init_delta)
 
         return list(map(
             self._build_tick,
@@ -502,8 +505,7 @@ cdef class TradeTickDataWrangler:
         Condition.false(data.empty, "data.empty")
 
         data = as_utc_index(data)
-        cdef uint64_t[:] ts_events = np.ascontiguousarray([dt_to_unix_nanos(dt) for dt in data.index], dtype=np.uint64)  # noqa
-        cdef uint64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.uint64)  # noqa
+        ts_events, ts_inits = prepare_event_and_init_timestamps(data.index, ts_init_delta)
 
         if is_raw:
             return list(map(
@@ -602,14 +604,14 @@ cdef class TradeTickDataWrangler:
             ts_init_delta=ts_init_delta,
             timestamp_is_close=timestamp_is_close,
         )
-        df_ticks_final["trade_id"] = df_ticks_final.index.view(np.uint64).astype(str)
+        df_ticks_final.loc[:, "trade_id"] = df_ticks_final.index.view(np.uint64).astype(str)
 
         # Adjust size precision
         size_precision = self.instrument.size_precision
         if is_raw:
-            df_ticks_final["size"] = df_ticks_final["size"].apply(lambda x: round(x, size_precision - 9))
+            df_ticks_final.loc[:, "size"] = df_ticks_final["size"].apply(lambda x: round(x, size_precision - 9))
         else:
-            df_ticks_final["size"] = df_ticks_final["size"].round(size_precision)
+            df_ticks_final.loc[:, "size"] = df_ticks_final["size"].round(size_precision)
 
         if is_raw:
             return list(map(
@@ -752,8 +754,7 @@ cdef class BarDataWrangler:
         if "volume" not in data:
             data["volume"] = float(default_volume)
 
-        cdef uint64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.uint64)  # noqa
-        cdef uint64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.uint64)  # noqa
+        ts_events, ts_inits = prepare_event_and_init_timestamps(data.index, ts_init_delta)
 
         return list(map(
             self._build_bar,
