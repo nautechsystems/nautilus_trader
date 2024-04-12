@@ -294,6 +294,21 @@ cdef extern from "../includes/model.h":
         # The last price at which a trade was made for an instrument.
         LAST # = 4,
 
+    # A bitflag for a data record.
+    cpdef enum RecordFlag:
+        # Last message in the packet from the venue for a given `instrument_id`.
+        F_LAST # = (1 << 7),
+        # Top-of-book message, not an individual order.
+        F_TOB # = (1 << 6),
+        # Message sourced from a replay, such as a snapshot server.
+        F_SNAPSHOT # = (1 << 5),
+        # Aggregated price level message, not an individual order.
+        F_MBP # = (1 << 4),
+        # Reserved for future use.
+        RESERVED_2 # = (1 << 3),
+        # Reserved for future use.
+        RESERVED_1 # = (1 << 2),
+
     # The 'Time in Force' instruction for an order in the financial market.
     cpdef enum TimeInForce:
         # Good Till Canceled (GTC) - the order remains active until canceled.
@@ -1161,6 +1176,15 @@ cdef extern from "../includes/model.h":
     #
     # - Assumes `ptr` is a valid C string pointer.
     PriceType price_type_from_cstr(const char *ptr);
+
+    const char *record_flag_to_cstr(RecordFlag value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    #
+    # - Assumes `ptr` is a valid C string pointer.
+    RecordFlag record_flag_from_cstr(const char *ptr);
 
     const char *time_in_force_to_cstr(TimeInForce value);
 

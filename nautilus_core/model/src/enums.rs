@@ -923,13 +923,13 @@ pub enum PriceType {
 #[allow(non_camel_case_types)]
 pub enum RecordFlag {
     /// Last message in the packet from the venue for a given `instrument_id`.
-    LAST = 1 << 7, // 128
+    F_LAST = 1 << 7, // 128
     /// Top-of-book message, not an individual order.
-    TOB = 1 << 6, // 64
+    F_TOB = 1 << 6, // 64
     /// Message sourced from a replay, such as a snapshot server.
-    SNAPSHOT = 1 << 5, // 32
+    F_SNAPSHOT = 1 << 5, // 32
     /// Aggregated price level message, not an individual order.
-    MBP = 1 << 4, // 16
+    F_MBP = 1 << 4, // 16
     /// Reserved for future use.
     RESERVED_2 = 1 << 3, // 8
     /// Reserved for future use.
@@ -1117,6 +1117,7 @@ enum_strum_serde!(OrderStatus);
 enum_strum_serde!(OrderType);
 enum_strum_serde!(PositionSide);
 enum_strum_serde!(PriceType);
+enum_strum_serde!(RecordFlag);
 enum_strum_serde!(TimeInForce);
 enum_strum_serde!(TradingState);
 enum_strum_serde!(TrailingOffsetType);

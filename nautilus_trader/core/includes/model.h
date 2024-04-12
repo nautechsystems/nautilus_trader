@@ -543,6 +543,36 @@ typedef enum PriceType {
 } PriceType;
 
 /**
+ * A bitflag for a data record.
+ */
+typedef enum RecordFlag {
+    /**
+     * Last message in the packet from the venue for a given `instrument_id`.
+     */
+    F_LAST = (1 << 7),
+    /**
+     * Top-of-book message, not an individual order.
+     */
+    F_TOB = (1 << 6),
+    /**
+     * Message sourced from a replay, such as a snapshot server.
+     */
+    F_SNAPSHOT = (1 << 5),
+    /**
+     * Aggregated price level message, not an individual order.
+     */
+    F_MBP = (1 << 4),
+    /**
+     * Reserved for future use.
+     */
+    RESERVED_2 = (1 << 3),
+    /**
+     * Reserved for future use.
+     */
+    RESERVED_1 = (1 << 2),
+} RecordFlag;
+
+/**
  * The 'Time in Force' instruction for an order in the financial market.
  */
 typedef enum TimeInForce {
@@ -1777,6 +1807,17 @@ const char *price_type_to_cstr(enum PriceType value);
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum PriceType price_type_from_cstr(const char *ptr);
+
+const char *record_flag_to_cstr(enum RecordFlag value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum RecordFlag record_flag_from_cstr(const char *ptr);
 
 const char *time_in_force_to_cstr(enum TimeInForce value);
 

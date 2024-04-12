@@ -36,6 +36,7 @@ from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.enums import TrailingOffsetType
@@ -82,6 +83,8 @@ from nautilus_trader.model.enums import position_side_from_str
 from nautilus_trader.model.enums import position_side_to_str
 from nautilus_trader.model.enums import price_type_from_str
 from nautilus_trader.model.enums import price_type_to_str
+from nautilus_trader.model.enums import record_flag_from_str
+from nautilus_trader.model.enums import record_flag_to_str
 from nautilus_trader.model.enums import time_in_force_from_str
 from nautilus_trader.model.enums import time_in_force_to_str
 from nautilus_trader.model.enums import trading_state_from_str
@@ -785,6 +788,40 @@ class TestOrderType:
     def test_order_type_from_str(self, string, expected):
         # Arrange, Act
         result = order_type_from_str(string)
+
+        # Assert
+        assert result == expected
+
+
+class TestRecordFlag:
+    @pytest.mark.parametrize(
+        ("enum", "expected"),
+        [
+            [RecordFlag.F_LAST, "F_LAST"],
+            [RecordFlag.F_TOB, "F_TOB"],
+            [RecordFlag.F_SNAPSHOT, "F_SNAPSHOT"],
+            [RecordFlag.F_MBP, "F_MBP"],
+        ],
+    )
+    def test_record_flag_to_str(self, enum, expected):
+        # Arrange, Act
+        result = record_flag_to_str(enum)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        ("string", "expected"),
+        [
+            ["F_LAST", RecordFlag.F_LAST],
+            ["F_TOB", RecordFlag.F_TOB],
+            ["F_SNAPSHOT", RecordFlag.F_SNAPSHOT],
+            ["F_MBP", RecordFlag.F_MBP],
+        ],
+    )
+    def test_record_flag_from_str(self, string, expected):
+        # Arrange, Act
+        result = record_flag_from_str(string)
 
         # Assert
         assert result == expected
