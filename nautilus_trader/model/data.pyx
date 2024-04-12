@@ -1620,7 +1620,7 @@ cdef class OrderBookDelta(Data):
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     flags : uint8_t, default 0 (no flags)
-        A combination of packet end with matching engine status.
+        The record flags bit field, indicating packet end and data information.
     sequence : uint64_t, default 0
         The unique sequence number for the update.
 
@@ -2021,7 +2021,7 @@ cdef class OrderBookDelta(Data):
         order_id : uint64_t
             The order ID.
         flags : uint8_t
-            A combination of packet end with matching engine status.
+            The record flags bit field, indicating packet end and data information.
         sequence : uint64_t
             The unique sequence number for the update.
         ts_event : uint64_t
@@ -2473,7 +2473,7 @@ cdef class OrderBookDepth10(Data):
     ask_counts : list[uint32_t]
         The count of ask orders per level for the update. Can be zeros if data not available.
     flags : uint8_t
-        A combination of packet end with matching engine status.
+        The record flags bit field, indicating packet end and data information.
     sequence : uint64_t
         The unique sequence number for the update.
     ts_event : uint64_t

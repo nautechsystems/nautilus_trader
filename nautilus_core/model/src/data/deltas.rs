@@ -37,13 +37,13 @@ pub struct OrderBookDeltas {
     pub instrument_id: InstrumentId,
     /// The order book deltas.
     pub deltas: Vec<OrderBookDelta>,
-    /// A combination of packet end with matching engine status.
+    /// The record flags bit field, indicating packet end and data information.
     pub flags: u8,
     /// The message sequence number assigned at the venue.
     pub sequence: u64,
-    /// The UNIX timestamp (nanoseconds) when the data event occurred.
+    /// The UNIX timestamp (nanoseconds) when the book event occurred.
     pub ts_event: UnixNanos,
-    /// The UNIX timestamp (nanoseconds) when the data object was initialized.
+    /// The UNIX timestamp (nanoseconds) when the struct was initialized.
     pub ts_init: UnixNanos,
 }
 

@@ -28,7 +28,7 @@ pub enum InvalidBookOperation {
 
 #[derive(thiserror::Error, Debug)]
 pub enum BookIntegrityError {
-    #[error("Integrity error: order not found: order_id={0}, ts_event={1}, sequence={2}")]
+    #[error("Integrity error: order not found: order_id={0}, sequence={1}, ts_event={2}")]
     OrderNotFound(u64, u64, u64),
     #[error("Integrity error: invalid `NoOrderSide` in book")]
     NoOrderSide,

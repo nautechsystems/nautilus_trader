@@ -223,7 +223,7 @@ pub struct Bar {
     pub volume: Quantity,
     /// The UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
-    /// The UNIX timestamp (nanoseconds) when the data object was initialized.
+    /// The UNIX timestamp (nanoseconds) when the struct was initialized.
     pub ts_init: UnixNanos,
 }
 

@@ -294,7 +294,7 @@ cdef extern from "../includes/model.h":
         # The last price at which a trade was made for an instrument.
         LAST # = 4,
 
-    # A bitflag for a data record.
+    # A record flag bit field, indicating packet end and data information.
     cpdef enum RecordFlag:
         # Last message in the packet from the venue for a given `instrument_id`.
         F_LAST # = (1 << 7),
@@ -444,13 +444,13 @@ cdef extern from "../includes/model.h":
         BookAction action;
         # The order to apply.
         BookOrder_t order;
-        # A combination of packet end with matching engine status.
+        # The record flags bit field, indicating packet end and data information.
         uint8_t flags;
         # The message sequence number assigned at the venue.
         uint64_t sequence;
-        # The UNIX timestamp (nanoseconds) when the data event occurred.
+        # The UNIX timestamp (nanoseconds) when the book event occurred.
         uint64_t ts_event;
-        # The UNIX timestamp (nanoseconds) when the data object was initialized.
+        # The UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
     # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
@@ -484,13 +484,13 @@ cdef extern from "../includes/model.h":
         uint32_t bid_counts[DEPTH10_LEN];
         # The count of ask orders per level for the depth update.
         uint32_t ask_counts[DEPTH10_LEN];
-        # A combination of packet end with matching engine status.
+        # The record flags bit field, indicating packet end and data information.
         uint8_t flags;
         # The message sequence number assigned at the venue.
         uint64_t sequence;
-        # The UNIX timestamp (nanoseconds) when the data event occurred.
+        # The UNIX timestamp (nanoseconds) when the book event occurred.
         uint64_t ts_event;
-        # The UNIX timestamp (nanoseconds) when the data object was initialized.
+        # The UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
     # Represents a single quote tick in a financial market.
@@ -505,9 +505,9 @@ cdef extern from "../includes/model.h":
         Quantity_t bid_size;
         # The top of book ask size.
         Quantity_t ask_size;
-        # The UNIX timestamp (nanoseconds) when the tick event occurred.
+        # The UNIX timestamp (nanoseconds) when the quote event occurred.
         uint64_t ts_event;
-        # The UNIX timestamp (nanoseconds) when the data object was initialized.
+        # The UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
     # Represents a valid trade match ID (assigned by a trading venue).
@@ -534,9 +534,9 @@ cdef extern from "../includes/model.h":
         AggressorSide aggressor_side;
         # The trade match ID (assigned by the venue).
         TradeId_t trade_id;
-        # The UNIX timestamp (nanoseconds) when the tick event occurred.
+        # The UNIX timestamp (nanoseconds) when the trade event occurred.
         uint64_t ts_event;
-        #  The UNIX timestamp (nanoseconds) when the data object was initialized.
+        # The UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
     # Represents a bar aggregation specification including a step, aggregation
@@ -575,7 +575,7 @@ cdef extern from "../includes/model.h":
         Quantity_t volume;
         # The UNIX timestamp (nanoseconds) when the data event occurred.
         uint64_t ts_event;
-        # The UNIX timestamp (nanoseconds) when the data object was initialized.
+        # The UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
     cpdef enum Data_t_Tag:
@@ -1503,18 +1503,21 @@ cdef extern from "../includes/model.h":
 
     void orderbook_add(OrderBook_API *book,
                        BookOrder_t order,
-                       uint64_t ts_event,
-                       uint64_t sequence);
+                       uint8_t flags,
+                       uint64_t sequence,
+                       uint64_t ts_event);
 
     void orderbook_update(OrderBook_API *book,
                           BookOrder_t order,
-                          uint64_t ts_event,
-                          uint64_t sequence);
+                          uint8_t flags,
+                          uint64_t sequence,
+                          uint64_t ts_event);
 
     void orderbook_delete(OrderBook_API *book,
                           BookOrder_t order,
-                          uint64_t ts_event,
-                          uint64_t sequence);
+                          uint8_t flags,
+                          uint64_t sequence,
+                          uint64_t ts_event);
 
     void orderbook_clear(OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
 

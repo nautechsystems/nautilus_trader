@@ -35,9 +35,9 @@ cdef class OrderBook(Data):
     cdef OrderBook_API _mem
 
     cpdef void reset(self)
-    cpdef void add(self, BookOrder order, uint64_t ts_event, uint64_t sequence=*)
-    cpdef void update(self, BookOrder order, uint64_t ts_event, uint64_t sequence=*)
-    cpdef void delete(self, BookOrder order, uint64_t ts_event, uint64_t sequence=*)
+    cpdef void add(self, BookOrder order, uint64_t ts_event, uint8_t flags=*, uint64_t sequence=*)
+    cpdef void update(self, BookOrder order, uint64_t ts_event, uint8_t flags=*, uint64_t sequence=*)
+    cpdef void delete(self, BookOrder order, uint64_t ts_event, uint8_t flags=*, uint64_t sequence=*)
     cpdef void clear(self, uint64_t ts_event, uint64_t sequence=*)
     cpdef void clear_bids(self, uint64_t ts_event, uint64_t sequence=*)
     cpdef void clear_asks(self, uint64_t ts_event, uint64_t sequence=*)
