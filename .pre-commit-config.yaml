@@ -73,7 +73,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/psf/black
-    rev: 24.3.0
+    rev: 24.4.0
     hooks:
       - id: black
         types_or: [python, pyi]
