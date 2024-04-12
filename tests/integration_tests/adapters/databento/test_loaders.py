@@ -598,7 +598,7 @@ def test_load_instruments() -> None:
 def test_load_order_book_deltas_pyo3_spy_large() -> None:
     # Arrange
     loader = DatabentoDataLoader()
-    path = DATABENTO_TEST_DATA_DIR / "temp" / "spy-xnas-itch-20231127.mbo.dbn.zst"
+    path = DATABENTO_TEST_DATA_DIR / "temp" / "spy-xnas-mbo-20231127.dbn.zst"
     instrument_id = InstrumentId.from_str("SPY.XNAS")
 
     # Act
