@@ -103,6 +103,7 @@ cdef class OrderBook(Data):
         InstrumentId instrument_id not None,
         BookType book_type,
     ) -> None:
+        self._book_type = book_type
         self._mem = orderbook_new(
             instrument_id._mem,
             book_type,
@@ -164,7 +165,7 @@ cdef class OrderBook(Data):
         BookType
 
         """
-        return <BookType>orderbook_book_type(&self._mem)
+        return self._book_type
 
     @property
     def sequence(self) -> int:
@@ -255,7 +256,7 @@ cdef class OrderBook(Data):
         """
         Condition.not_none(order, "order")
 
-        if self.book_type == BookType.L1_MBP:
+        if self._book_type == BookType.L1_MBP:
             raise RuntimeError("Invalid book operation: cannot add order for L1_MBP book")
 
         orderbook_add(&self._mem, order._mem, flags, sequence, ts_event)
@@ -655,7 +656,7 @@ cdef class OrderBook(Data):
             If `book_type` is not ``L1_MBP``.
 
         """
-        if self.book_type != BookType.L1_MBP:
+        if self._book_type != BookType.L1_MBP:
             raise RuntimeError(
                 "Invalid book operation: "
                 f"cannot update with tick for {book_type_to_str(self.book_type)} book",
@@ -680,7 +681,7 @@ cdef class OrderBook(Data):
             If `book_type` is not ``L1_MBP``.
 
         """
-        if self.book_type != BookType.L1_MBP:
+        if self._book_type != BookType.L1_MBP:
             raise RuntimeError(
                 "Invalid book operation: "
                 f"cannot update with tick for {book_type_to_str(self.book_type)} book",
