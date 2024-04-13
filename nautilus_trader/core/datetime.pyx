@@ -21,6 +21,7 @@ Functions include awareness/tz checks and conversions, as well as ISO 8601 conve
 
 import pandas as pd
 import pytz
+from pandas.api.types import is_datetime64_ns_dtype
 
 # Re-exports
 from nautilus_trader.core.nautilus_pyo3 import micros_to_nanos as micros_to_nanos
@@ -37,8 +38,6 @@ from cpython.unicode cimport PyUnicode_Contains
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-
-from pandas.api.types import is_datetime64_ns_dtype
 
 
 # UNIX epoch is the UTC time at 00:00:00 on 1/1/1970
@@ -256,7 +255,7 @@ cpdef object as_utc_index(data: pd.DataFrame):
 
     # Check if the index is in nanosecond resolution, convert if not
     if not is_datetime64_ns_dtype(data.index.dtype):
-        data.index = data.index.astype('datetime64[ns, UTC]')
+        data.index = data.index.astype("datetime64[ns, UTC]")
 
     return data
 
