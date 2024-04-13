@@ -16,7 +16,7 @@
 import pytest
 
 # fmt: off
-from nautilus_trader.backtest.models import FixedCommissionModel
+from nautilus_trader.backtest.models import FixedFeeModel
 from nautilus_trader.backtest.models import MakerTakerFeeModel
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OrderSide
@@ -55,7 +55,7 @@ def sell_order(instrument: Instrument) -> Order:
 def test_fixed_commission(buy_order, instrument):
     # Arrange
     expected = Money(1, USD)
-    fee_model = FixedCommissionModel(expected)
+    fee_model = FixedFeeModel(expected)
 
     # Act
     commission = fee_model.get_commission(

@@ -236,9 +236,9 @@ cdef class MakerTakerFeeModel(FeeModel):
         return commission
 
 
-cdef class FixedCommissionModel(FeeModel):
+cdef class FixedFeeModel(FeeModel):
     """
-    Provides a fixed commission model for trades.
+    Provides a fixed fee model for trades.
 
     Parameters
     ----------
@@ -252,8 +252,7 @@ cdef class FixedCommissionModel(FeeModel):
 
     """
 
-    def __init__(self, Money commission):
-        Condition.type(commission, Money, "commission")
+    def __init__(self, Money commission not None):
         Condition.positive(commission, "commission")
 
         self._commission = commission
