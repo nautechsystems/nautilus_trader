@@ -219,6 +219,7 @@ class BybitAccountHttpAPI:
         price: str | None = None,
         time_in_force: BybitTimeInForce | None = None,
         client_order_id: str | None = None,
+        reduce_only: bool | None = None,
     ) -> BybitPlaceOrderResponse:
         market_unit = "baseCoin" if not quote_quantity else "quoteCoin"
         result = await self._endpoint_place_order.post(
@@ -232,6 +233,7 @@ class BybitAccountHttpAPI:
                 price=price,
                 timeInForce=time_in_force,
                 orderLinkId=client_order_id,
+                reduceOnly=reduce_only,
             ),
         )
         return result
@@ -313,4 +315,4 @@ class BybitAccountHttpAPI:
                 request=request,
             ),
         )
-        return response.result
+        return response.result.list

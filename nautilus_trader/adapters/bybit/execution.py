@@ -532,45 +532,49 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
-        await self._http_account.cancel_all_orders(
-            bybit_symbol.product_type,
-            bybit_symbol.raw_symbol,
+
+        if bybit_symbol.product_type == BybitProductType.INVERSE:
+            # Batch cancel not implemented for INVERSE
+            self._log.warning(
+                f"Batch cancel not implemented for INVERSE, "
+                f"canceling all for symbol {command.instrument_id.symbol.value}",
+            )
+            await self._http_account.cancel_all_orders(
+                bybit_symbol.product_type,
+                bybit_symbol.raw_symbol,
+            )
+            return
+
+        open_orders_strategy: list[Order] = self._cache.orders_open(
+            instrument_id=command.instrument_id,
+            strategy_id=command.strategy_id,
         )
 
-    # TODO: Determine signing issue for batch requests
-    # async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-    #     open_orders_strategy: list[Order] = self._cache.orders_open(
-    #         instrument_id=command.instrument_id,
-    #         strategy_id=command.strategy_id,
-    #     )
-    #
-    #     bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
-    #
-    #     # Check total orders for instrument
-    #     open_orders_total_count = self._cache.orders_open_count(
-    #         instrument_id=command.instrument_id,
-    #     )
-    #     if open_orders_total_count > 10:
-    #         # This could be reimplemented later to group requests into batches of 10
-    #         self._log.warning(
-    #             f"Total {command.instrument_id.symbol.value} orders open exceeds 10, "
-    #             f"is {open_orders_total_count}: canceling all for symbol",
-    #         )
-    #         await self._http_account.cancel_all_orders(
-    #             bybit_symbol.product_type,
-    #             bybit_symbol.raw_symbol,
-    #         )
-    #         return
-    #
-    #     cancel_batch: list[Order] = []
-    #     for order in open_orders_strategy:
-    #         cancel_batch.append(order)
-    #
-    #     await self._http_account.batch_cancel_orders(
-    #         product_type=bybit_symbol.product_type,
-    #         symbol=bybit_symbol.raw_symbol,
-    #         orders=cancel_batch,
-    #     )
+        # Check total orders for instrument
+        open_orders_total_count = self._cache.orders_open_count(
+            instrument_id=command.instrument_id,
+        )
+        if open_orders_total_count > 10:
+            # This could be reimplemented later to group requests into batches of 10
+            self._log.warning(
+                f"Total {command.instrument_id.symbol.value} orders open exceeds 10, "
+                f"is {open_orders_total_count}: canceling all for symbol",
+            )
+            await self._http_account.cancel_all_orders(
+                bybit_symbol.product_type,
+                bybit_symbol.raw_symbol,
+            )
+            return
+
+        cancel_batch: list[Order] = []
+        for order in open_orders_strategy:
+            cancel_batch.append(order)
+
+        await self._http_account.batch_cancel_orders(
+            product_type=bybit_symbol.product_type,
+            symbol=bybit_symbol.raw_symbol,
+            orders=cancel_batch,
+        )
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
@@ -578,7 +582,8 @@ class BybitExecutionClient(LiveExecutionClient):
             self._log.warning(f"Order {order} is already closed")
             return
 
-        if not self._check_order_validity(order):
+        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
+        if not self._check_order_validity(order, bybit_symbol.product_type):
             return
 
         self._log.debug(f"Submitting order {order}")
@@ -600,17 +605,25 @@ class BybitExecutionClient(LiveExecutionClient):
             except BybitError as e:
                 self._log.error(repr(e))
 
-    def _check_order_validity(self, order: Order) -> bool:
+    def _check_order_validity(self, order: Order, product_type: BybitProductType) -> bool:
         # Check order type valid
         if order.order_type not in self._enum_parser.valid_order_types:
             self._log.error(
                 f"Cannot submit {order} has invalid order type {order.order_type}, unsupported on Bybit",
             )
             return False
+
         # Check post only
         if order.is_post_only and order.order_type != OrderType.LIMIT:
             self._log.error(
                 f"Cannot submit {order} has invalid post only {order.is_post_only}, unsupported on Bybit",
+            )
+            return False
+
+        # Check reduce only
+        if order.is_reduce_only and product_type == BybitProductType.SPOT:
+            self._log.error(
+                f"Cannot submit {order} is reduce_only, unsupported on Bybit SPOT",
             )
             return False
 
@@ -630,6 +643,7 @@ class BybitExecutionClient(LiveExecutionClient):
             quote_quantity=order.is_quote_quantity,
             time_in_force=time_in_force,
             client_order_id=str(order.client_order_id),
+            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
         )
 
     async def _submit_limit_order(self, order: LimitOrder) -> None:
@@ -647,6 +661,7 @@ class BybitExecutionClient(LiveExecutionClient):
             price=str(order.price),
             time_in_force=time_in_force,
             client_order_id=str(order.client_order_id),
+            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
         )
 
     def _handle_ws_message(self, raw: bytes) -> None:

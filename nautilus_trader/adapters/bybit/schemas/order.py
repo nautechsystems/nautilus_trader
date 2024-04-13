@@ -216,6 +216,15 @@ class BybitAmendOrderResponse(msgspec.Struct):
 ################################################################################
 
 
+class BybitPlaceResult(msgspec.Struct):
+    code: int  # Success/error code
+    msg: str  # Success/error message
+
+
+class BybitBatchPlaceOrderExtInfo(msgspec.Struct):
+    list: list[BybitPlaceResult]
+
+
 class BybitBatchPlaceOrder(msgspec.Struct):
     category: BybitProductType
     symbol: str
@@ -224,10 +233,15 @@ class BybitBatchPlaceOrder(msgspec.Struct):
     createAt: str
 
 
+class BybitBatchPlaceOrderResult(msgspec.Struct):
+    list: list[BybitBatchPlaceOrder]
+
+
 class BybitBatchPlaceOrderResponse(msgspec.Struct):
     retCode: int
     retMsg: str
-    result: list[BybitBatchPlaceOrder]
+    result: BybitBatchPlaceOrderResult
+    retExtInfo: BybitBatchPlaceOrderExtInfo
     time: int
 
 
@@ -241,6 +255,10 @@ class BybitCancelResult(msgspec.Struct):
     msg: str  # Success/error message
 
 
+class BybitBatchCancelOrderExtInfo(msgspec.Struct):
+    list: list[BybitCancelResult]
+
+
 class BybitBatchCancelOrder(msgspec.Struct):
     category: BybitProductType
     symbol: str
@@ -248,11 +266,15 @@ class BybitBatchCancelOrder(msgspec.Struct):
     orderLinkId: str
 
 
+class BybitBatchCancelOrderResult(msgspec.Struct):
+    list: list[BybitBatchCancelOrder]
+
+
 class BybitBatchCancelOrderResponse(msgspec.Struct):
     retCode: int
     retMsg: str
-    result: list[BybitBatchCancelOrder]
-    retExtInfo: list[BybitCancelResult]
+    result: BybitBatchCancelOrderResult
+    retExtInfo: BybitBatchCancelOrderExtInfo
     time: int
 
 
@@ -266,16 +288,24 @@ class BybitAmendResult(msgspec.Struct):
     msg: str  # Success/error message
 
 
-class BybitBatchAmend(msgspec.Struct):
+class BybitBatchAmendOrderExtInfo(msgspec.Struct):
+    list: list[BybitAmendResult]
+
+
+class BybitBatchAmendOrder(msgspec.Struct):
     category: BybitProductType
     symbol: str
     orderId: str
     orderLinkId: str
 
 
+class BybitBatchAmendOrderResult(msgspec.Struct):
+    list: list[BybitBatchAmendOrder]
+
+
 class BybitBatchAmendOrderResponse(msgspec.Struct):
     retCode: int
     retMsg: str
-    result: list[BybitBatchAmend]
-    retExtInfo: list[BybitAmendResult]
+    result: BybitBatchAmendOrderResult
+    retExtInfo: BybitBatchAmendOrderExtInfo
     time: int

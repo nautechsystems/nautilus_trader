@@ -40,6 +40,7 @@ class BybitPlaceOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=True)
     triggerBy: BybitTriggerType | None = None
     timeInForce: BybitTimeInForce | None = None
     orderLinkId: str | None = None
+    reduceOnly: bool | None = None
 
 
 class BybitPlaceOrderEndpoint(BybitHttpEndpoint):

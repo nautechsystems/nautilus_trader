@@ -31,17 +31,6 @@ from nautilus_trader.core.nautilus_pyo3 import HttpResponse
 from nautilus_trader.core.nautilus_pyo3 import Quota
 
 
-def create_string_from_dict(data):
-    property_strings = []
-
-    for key, value in data.items():
-        property_string = f'"{key}":"{value}"'
-        property_strings.append(property_string)
-
-    result_string = "{" + ",".join(property_strings) + "}"
-    return result_string
-
-
 class ResponseCode(msgspec.Struct):
     retCode: int
 
@@ -80,7 +69,7 @@ class BybitHttpClient:
         self._log: Logger = Logger(name=type(self).__name__)
         self._api_key: str = api_key
         self._api_secret: str = api_secret
-        self._recv_window: int = 8000
+        self._recv_window: int = 5000
 
         self._base_url: str = base_url
         self._headers: dict[str, Any] = {
@@ -178,7 +167,7 @@ class BybitHttpClient:
 
     def _sign_post_request(self, payload: dict[str, Any]) -> list[str]:
         timestamp = str(self._clock.timestamp_ms())
-        payload_str = create_string_from_dict(payload)
+        payload_str = msgspec.json.encode(payload).decode()
         result = timestamp + self._api_key + str(self._recv_window) + payload_str
         signature = hmac.new(
             self._api_secret.encode(),
