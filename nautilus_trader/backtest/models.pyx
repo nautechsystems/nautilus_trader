@@ -244,6 +244,8 @@ cdef class FixedFeeModel(FeeModel):
     ----------
     commission : Money
         The fixed commission amount for trades.
+    charge_commission_once : bool, default True
+        Whether to charge the commission once per order or per fill.
 
     Raises
     ------
@@ -252,10 +254,16 @@ cdef class FixedFeeModel(FeeModel):
 
     """
 
-    def __init__(self, Money commission not None):
+    def __init__(
+        self,
+        Money commission not None,
+        bint charge_commission_once: bool = True,
+    ):
         Condition.positive(commission, "commission")
 
         self._commission = commission
+        self._zero_commission = Money(0, commission.currency)
+        self._charge_commission_once = charge_commission_once
 
     cpdef Money get_commission(
         self,
@@ -264,4 +272,7 @@ cdef class FixedFeeModel(FeeModel):
         Price fill_px,
         Instrument instrument,
     ):
-        return self._commission
+        if not self._charge_commission_once or order.filled_qty == 0:
+            return self._commission
+        else:
+            return self._zero_commission
