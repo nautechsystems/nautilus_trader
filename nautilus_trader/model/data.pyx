@@ -15,6 +15,8 @@
 
 import pickle
 
+import numpy as np
+
 from nautilus_trader.core import nautilus_pyo3
 
 from cpython.datetime cimport timedelta
@@ -130,11 +132,10 @@ from nautilus_trader.model.functions cimport price_type_from_str
 from nautilus_trader.model.functions cimport price_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-import numpy as np
-from nautilus_trader.model.identifiers cimport TradeId
 
 
 cdef inline BookOrder order_from_mem_c(BookOrder_t mem):
@@ -3507,16 +3508,15 @@ cdef class QuoteTick(Data):
         uint64_t[:] ts_events,
         uint64_t[:] ts_inits,
     ):
-        Condition.type(instrument_id, InstrumentId, "instrument_id")
-        Condition.not_negative(price_prec, "price_prec")
-        Condition.not_negative(size_prec, "size_prec")
         Condition.true(len(bid_prices_raw) == len(ask_prices_raw) == len(bid_sizes_raw) == len(ask_sizes_raw)
                        == len(ts_events) == len(ts_inits), "Array lengths must be equal")
 
-        cdef int i
         cdef int count = ts_events.shape[0]
-        cdef list ticks = []
-        cdef QuoteTick quote
+        cdef list[QuoteTick] ticks = []
+
+        cdef:
+            int i
+            QuoteTick quote
         for i in range(count):
             quote = QuoteTick.__new__(QuoteTick)
             quote._mem = quote_tick_new(
@@ -3533,6 +3533,7 @@ cdef class QuoteTick(Data):
                 ts_inits[i],
             )
             ticks.append(quote)
+
         return ticks
 
     @staticmethod
@@ -4062,18 +4063,17 @@ cdef class TradeTick(Data):
         uint64_t[:] ts_events,
         uint64_t[:] ts_inits,
     ):
-        Condition.type(instrument_id, InstrumentId, "instrument_id")
-        Condition.not_negative(price_prec, "price_prec")
-        Condition.not_negative(size_prec, "size_prec")
         Condition.true(len(prices_raw) == len(sizes_raw) == len(aggressor_sides) == len(trade_ids) ==
                        len(ts_events) == len(ts_inits), "Array lengths must be equal")
 
-        cdef int i
         cdef int count = ts_events.shape[0]
-        cdef list trades = []
-        cdef TradeTick trade
-        cdef AggressorSide aggressor_side
-        cdef TradeId trade_id
+        cdef list[TradeTick] trades = []
+
+        cdef:
+            int i
+            AggressorSide aggressor_side
+            TradeId trade_id
+            TradeTick trade
         for i in range(count):
             aggressor_side = <AggressorSide>aggressor_sides[i]
             trade_id = TradeId(trade_ids[i])
@@ -4090,6 +4090,7 @@ cdef class TradeTick(Data):
                 ts_inits[i],
             )
             trades.append(trade)
+
         return trades
 
     @staticmethod
