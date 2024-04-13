@@ -559,12 +559,12 @@ cdef class AccountsManager:
                 new_free = balance.free.as_f64_c() + pnl.as_f64_c()
                 total = Money(new_total, pnl.currency)
                 free = Money(new_free, pnl.currency)
-                if new_total < 0:
+                if new_total < 0.0:
                     raise AccountBalanceNegative(
                         balance=total.as_decimal(),
                         currency=pnl.currency,
                     )
-                if new_free <= 0:
+                if new_free < 0.0:
                     raise AccountMarginExceeded(
                         balance=total.as_decimal(),
                         margin=balance.locked.as_decimal(),

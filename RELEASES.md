@@ -31,6 +31,7 @@ Released on TBD (UTC).
 - Fixed `RiskEngine` cumulative notional calculations for margin accounts (was incorrectly using base currency when selling)
 - Fixed selling `Equity` instruments with `CASH` account and `NETTING` OMS incorrectly rejecting (should be able to reduce position)
 - Fixed Databento bars decoding (was incorrectly applying display factor)
+- Fixed `AccountMarginExceeded` error condition (margin must actually be exceeded now, and can be zero)
 
 ---
 

@@ -466,7 +466,7 @@ cdef class MarginAccount(Account):
 
         cdef double total_free = current_balance.total.as_f64_c() - total_margin
 
-        if total_free <= 0.0:
+        if total_free < 0.0:
             raise AccountMarginExceeded(
                 balance=current_balance.total.as_decimal(),
                 margin=Money(total_margin, currency).as_decimal(),
