@@ -131,6 +131,7 @@ cdef class OrderBook(Data):
 
     def __setstate__(self, state):
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
+        self._book_type = state[1]
         self._mem = orderbook_new(
             instrument_id._mem,
             state[1],
