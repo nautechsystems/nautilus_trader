@@ -26,6 +26,7 @@ Released on TBD (UTC).
 - Renamed `register_serializable_object` to `register_serializable_type` (also renames first param from `obj` to `cls`)
 
 ### Fixes
+- Fixed `MessageBus` pattern resolving (fixes a performance regression where topics published with no subscribers would always re-resolve)
 - Fixed `BacktestNode` streaming data management (was not clearing between chunks), thanks for the report @dpmabo
 - Fixed `RiskEngine` cumulative notional calculations for margin accounts (was incorrectly using base currency when selling)
 - Fixed selling `Equity` instruments with `CASH` account and `NETTING` OMS incorrectly rejecting (should be able to reduce position)

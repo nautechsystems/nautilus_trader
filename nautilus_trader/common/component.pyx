@@ -2074,7 +2074,7 @@ cdef class MessageBus:
         if types_filter is not None:
             self._publishable_types = tuple(o for o in _EXTERNAL_PUBLISHABLE_TYPES if o not in types_filter)
         self._has_backing = config.database is not None
-        self._unresolved_topics = set()
+        self._resolved = False
 
         # Counters
         self.sent_count = 0
@@ -2417,7 +2417,7 @@ cdef class MessageBus:
 
         self._subscriptions[sub] = sorted(matches)
 
-        self._unresolved_topics.add(topic)
+        self._resolved = False
 
         self._log.debug(f"Added {sub}")
 
@@ -2462,7 +2462,7 @@ cdef class MessageBus:
 
         del self._subscriptions[sub]
 
-        self._unresolved_topics.add(topic)
+        self._resolved = False
 
         self._log.debug(f"Removed {sub}")
 
@@ -2492,10 +2492,10 @@ cdef class MessageBus:
         # Get all subscriptions matching topic pattern
         # Note: cannot use truthiness on array
         cdef Subscription[:] subs = self._patterns.get(topic)
-        cdef str u_topic
-        if subs is None or any(is_matching(topic, u_topic) for u_topic in self._unresolved_topics):
+        if subs is None or (len(subs) == 0 and not self._resolved):
             # Add the topic pattern and get matching subscribers
             subs = self._resolve_subscriptions(topic)
+            self._resolved = True
 
         # Send message to all matched subscribers
         cdef:
@@ -2528,7 +2528,6 @@ cdef class MessageBus:
         for existing_sub in self._subscriptions.copy():
             if is_matching(topic, existing_sub.topic):
                 subs_list.append(existing_sub)
-                self._unresolved_topics.discard(existing_sub.topic)
 
         subs_list = sorted(subs_list, reverse=True)
         cdef Subscription[:] subs_array = np.ascontiguousarray(subs_list, dtype=Subscription)
