@@ -55,5 +55,5 @@ cdef class FeeModel:
 cdef class MakerTakerFeeModel(FeeModel):
     pass
 
-cdef class FixedCommissionModel(FeeModel):
+cdef class FixedFeeModel(FeeModel):
     cdef Money _commission
