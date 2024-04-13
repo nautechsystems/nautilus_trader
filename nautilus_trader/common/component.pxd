@@ -254,8 +254,9 @@ cdef class MessageBus:
     cdef dict[str, Subscription[:]] _patterns
     cdef dict[str, object] _endpoints
     cdef dict[UUID4, object] _correlation_index
-    cdef bint _has_backing
     cdef tuple[type] _publishable_types
+    cdef bint _has_backing
+    cdef set _unresolved_topics
 
     cdef readonly TraderId trader_id
     """The trader ID associated with the bus.\n\n:returns: `TraderId`"""
@@ -267,14 +268,14 @@ cdef class MessageBus:
     """If order state snapshots should be published externally.\n\n:returns: `bool`"""
     cdef readonly bint snapshot_positions
     """If position state snapshots should be published externally.\n\n:returns: `bool`"""
-    cdef readonly int sent_count
-    """The count of messages sent through the bus.\n\n:returns: `int`"""
-    cdef readonly int req_count
-    """The count of requests processed by the bus.\n\n:returns: `int`"""
-    cdef readonly int res_count
-    """The count of responses processed by the bus.\n\n:returns: `int`"""
-    cdef readonly int pub_count
-    """The count of messages published by the bus.\n\n:returns: `int`"""
+    cdef readonly uint64_t sent_count
+    """The count of messages sent through the bus.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t req_count
+    """The count of requests processed by the bus.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t res_count
+    """The count of responses processed by the bus.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t pub_count
+    """The count of messages published by the bus.\n\n:returns: `uint64_t`"""
 
     cpdef list endpoints(self)
     cpdef list topics(self)

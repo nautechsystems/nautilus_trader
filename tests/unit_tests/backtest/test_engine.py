@@ -269,8 +269,8 @@ class TestBacktestEngine:
         # Assert
         msg = messages[11]
         assert msg.__class__.__name__ == "SignalCounter"
-        assert msg.ts_init == 1359676799700000000
-        assert msg.ts_event == 1359676799700000000
+        assert msg.ts_init == 1359676800000000000
+        assert msg.ts_event == 1359676800000000000
 
     def test_set_instance_id(self):
         # Arrange
