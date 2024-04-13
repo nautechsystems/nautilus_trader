@@ -2070,10 +2070,11 @@ cdef class MessageBus:
         self._patterns: dict[str, Subscription[:]] = {}
         self._subscriptions: dict[Subscription, list[str]] = {}
         self._correlation_index: dict[UUID4, Callable[[Any], None]] = {}
-        self._has_backing = config.database is not None
         self._publishable_types = tuple(_EXTERNAL_PUBLISHABLE_TYPES)
         if types_filter is not None:
             self._publishable_types = tuple(o for o in _EXTERNAL_PUBLISHABLE_TYPES if o not in types_filter)
+        self._has_backing = config.database is not None
+        self._unresolved_topics = set()
 
         # Counters
         self.sent_count = 0
@@ -2416,6 +2417,8 @@ cdef class MessageBus:
 
         self._subscriptions[sub] = sorted(matches)
 
+        self._unresolved_topics.add(topic)
+
         self._log.debug(f"Added {sub}")
 
     cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]):
@@ -2459,6 +2462,8 @@ cdef class MessageBus:
 
         del self._subscriptions[sub]
 
+        self._unresolved_topics.add(topic)
+
         self._log.debug(f"Removed {sub}")
 
     cpdef void publish(self, str topic, msg: Any):
@@ -2485,8 +2490,10 @@ cdef class MessageBus:
         Condition.not_none(msg, "msg")
 
         # Get all subscriptions matching topic pattern
+        # Note: cannot use truthiness on array
         cdef Subscription[:] subs = self._patterns.get(topic)
-        if subs is None or len(subs) == 0:  # Cannot use truthiness on array
+        cdef str u_topic
+        if subs is None or any(is_matching(topic, u_topic) for u_topic in self._unresolved_topics):
             # Add the topic pattern and get matching subscribers
             subs = self._resolve_subscriptions(topic)
 
@@ -2521,6 +2528,7 @@ cdef class MessageBus:
         for existing_sub in self._subscriptions.copy():
             if is_matching(topic, existing_sub.topic):
                 subs_list.append(existing_sub)
+                self._unresolved_topics.discard(existing_sub.topic)
 
         subs_list = sorted(subs_list, reverse=True)
         cdef Subscription[:] subs_array = np.ascontiguousarray(subs_list, dtype=Subscription)
