@@ -19,20 +19,17 @@ use pyo3::{IntoPy, PyObject, PyResult, Python};
 use crate::instruments::{
     crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
     equity::Equity, futures_contract::FuturesContract, futures_spread::FuturesSpread,
-    options_contract::OptionsContract, InstrumentType,
+    options_contract::OptionsContract, InstrumentAny,
 };
 
-pub fn convert_instrument_to_pyobject(
-    py: Python,
-    instrument: InstrumentType,
-) -> PyResult<PyObject> {
+pub fn convert_instrument_to_pyobject(py: Python, instrument: InstrumentAny) -> PyResult<PyObject> {
     match instrument {
-        InstrumentType::CurrencyPair(inst) => Ok(inst.into_py(py)),
-        InstrumentType::Equity(inst) => Ok(inst.into_py(py)),
-        InstrumentType::FuturesContract(inst) => Ok(inst.into_py(py)),
-        InstrumentType::FuturesSpread(inst) => Ok(inst.into_py(py)),
-        InstrumentType::OptionsContract(inst) => Ok(inst.into_py(py)),
-        InstrumentType::OptionsSpread(inst) => Ok(inst.into_py(py)),
+        InstrumentAny::CurrencyPair(inst) => Ok(inst.into_py(py)),
+        InstrumentAny::Equity(inst) => Ok(inst.into_py(py)),
+        InstrumentAny::FuturesContract(inst) => Ok(inst.into_py(py)),
+        InstrumentAny::FuturesSpread(inst) => Ok(inst.into_py(py)),
+        InstrumentAny::OptionsContract(inst) => Ok(inst.into_py(py)),
+        InstrumentAny::OptionsSpread(inst) => Ok(inst.into_py(py)),
         _ => Err(to_pyvalue_err("Unsupported instrument type")),
     }
 }
@@ -40,34 +37,34 @@ pub fn convert_instrument_to_pyobject(
 pub fn convert_pyobject_to_instrument_type(
     py: Python,
     instrument: PyObject,
-) -> PyResult<InstrumentType> {
+) -> PyResult<InstrumentAny> {
     let instrument_type = instrument
         .getattr(py, "instrument_type")?
         .extract::<String>(py)?;
     if instrument_type == "CryptoFuture" {
         let crypto_future = instrument.extract::<CryptoFuture>(py)?;
-        Ok(InstrumentType::CryptoFuture(crypto_future))
+        Ok(InstrumentAny::CryptoFuture(crypto_future))
     } else if instrument_type == "CryptoPerpetual" {
         let crypto_perpetual = instrument.extract::<CryptoPerpetual>(py)?;
-        Ok(InstrumentType::CryptoPerpetual(crypto_perpetual))
+        Ok(InstrumentAny::CryptoPerpetual(crypto_perpetual))
     } else if instrument_type == "CurrencyPair" {
         let currency_pair = instrument.extract::<CurrencyPair>(py)?;
-        Ok(InstrumentType::CurrencyPair(currency_pair))
+        Ok(InstrumentAny::CurrencyPair(currency_pair))
     } else if instrument_type == "Equity" {
         let equity = instrument.extract::<Equity>(py)?;
-        Ok(InstrumentType::Equity(equity))
+        Ok(InstrumentAny::Equity(equity))
     } else if instrument_type == "FuturesContract" {
         let futures_contract = instrument.extract::<FuturesContract>(py)?;
-        Ok(InstrumentType::FuturesContract(futures_contract))
+        Ok(InstrumentAny::FuturesContract(futures_contract))
     } else if instrument_type == "FuturesSpread" {
         let futures_spread = instrument.extract::<FuturesSpread>(py)?;
-        Ok(InstrumentType::FuturesSpread(futures_spread))
+        Ok(InstrumentAny::FuturesSpread(futures_spread))
     } else if instrument_type == "OptionsContract" {
         let options_contract = instrument.extract::<OptionsContract>(py)?;
-        Ok(InstrumentType::OptionsContract(options_contract))
+        Ok(InstrumentAny::OptionsContract(options_contract))
     } else if instrument_type == "OptionsSpread" {
         let options_spread = instrument.extract::<CryptoFuture>(py)?;
-        Ok(InstrumentType::CryptoFuture(options_spread))
+        Ok(InstrumentAny::CryptoFuture(options_spread))
     } else {
         Err(to_pyvalue_err(
             "Error in conversion from pyobject to instrument type",

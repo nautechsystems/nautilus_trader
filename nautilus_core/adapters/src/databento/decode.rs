@@ -39,7 +39,7 @@ use nautilus_model::{
     identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
     instruments::{
         equity::Equity, futures_contract::FuturesContract, futures_spread::FuturesSpread,
-        options_contract::OptionsContract, options_spread::OptionsSpread, InstrumentType,
+        options_contract::OptionsContract, options_spread::OptionsSpread, InstrumentAny,
     },
     types::{currency::Currency, fixed::FIXED_SCALAR, price::Price, quantity::Quantity},
 };
@@ -706,29 +706,29 @@ pub fn decode_instrument_def_msg_v1(
     msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> anyhow::Result<InstrumentType> {
+) -> anyhow::Result<InstrumentAny> {
     match msg.instrument_class as u8 as char {
-        'K' => Ok(InstrumentType::Equity(decode_equity_v1(
+        'K' => Ok(InstrumentAny::Equity(decode_equity_v1(
             msg,
             instrument_id,
             ts_init,
         )?)),
-        'F' => Ok(InstrumentType::FuturesContract(decode_futures_contract_v1(
+        'F' => Ok(InstrumentAny::FuturesContract(decode_futures_contract_v1(
             msg,
             instrument_id,
             ts_init,
         )?)),
-        'S' => Ok(InstrumentType::FuturesSpread(decode_futures_spread_v1(
+        'S' => Ok(InstrumentAny::FuturesSpread(decode_futures_spread_v1(
             msg,
             instrument_id,
             ts_init,
         )?)),
-        'C' | 'P' => Ok(InstrumentType::OptionsContract(decode_options_contract_v1(
+        'C' | 'P' => Ok(InstrumentAny::OptionsContract(decode_options_contract_v1(
             msg,
             instrument_id,
             ts_init,
         )?)),
-        'T' | 'M' => Ok(InstrumentType::OptionsSpread(decode_options_spread_v1(
+        'T' | 'M' => Ok(InstrumentAny::OptionsSpread(decode_options_spread_v1(
             msg,
             instrument_id,
             ts_init,
@@ -746,29 +746,29 @@ pub fn decode_instrument_def_msg(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> anyhow::Result<InstrumentType> {
+) -> anyhow::Result<InstrumentAny> {
     match msg.instrument_class as u8 as char {
-        'K' => Ok(InstrumentType::Equity(decode_equity(
+        'K' => Ok(InstrumentAny::Equity(decode_equity(
             msg,
             instrument_id,
             ts_init,
         )?)),
-        'F' => Ok(InstrumentType::FuturesContract(decode_futures_contract(
+        'F' => Ok(InstrumentAny::FuturesContract(decode_futures_contract(
             msg,
             instrument_id,
             ts_init,
         )?)),
-        'S' => Ok(InstrumentType::FuturesSpread(decode_futures_spread(
+        'S' => Ok(InstrumentAny::FuturesSpread(decode_futures_spread(
             msg,
             instrument_id,
             ts_init,
         )?)),
-        'C' | 'P' => Ok(InstrumentType::OptionsContract(decode_options_contract(
+        'C' | 'P' => Ok(InstrumentAny::OptionsContract(decode_options_contract(
             msg,
             instrument_id,
             ts_init,
         )?)),
-        'T' | 'M' => Ok(InstrumentType::OptionsSpread(decode_options_spread(
+        'T' | 'M' => Ok(InstrumentAny::OptionsSpread(decode_options_spread(
             msg,
             instrument_id,
             ts_init,

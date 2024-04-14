@@ -33,7 +33,7 @@ use nautilus_model::{
     },
     enums::RecordFlag,
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
-    instruments::InstrumentType,
+    instruments::InstrumentAny,
 };
 use tokio::{
     sync::mpsc::{self, error::TryRecvError},
@@ -62,7 +62,7 @@ pub enum LiveCommand {
 #[allow(clippy::large_enum_variant)] // TODO: Optimize this (largest variant 1096 vs 80 bytes)
 pub enum LiveMessage {
     Data(Data),
-    Instrument(InstrumentType),
+    Instrument(InstrumentAny),
     Imbalance(DatabentoImbalance),
     Statistics(DatabentoStatistics),
     Error(anyhow::Error),
@@ -375,7 +375,7 @@ fn handle_instrument_def_msg(
     msg: &dbn::InstrumentDefMsg,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     clock: &AtomicTime,
-) -> anyhow::Result<InstrumentType> {
+) -> anyhow::Result<InstrumentAny> {
     let c_str: &CStr = unsafe { CStr::from_ptr(msg.raw_symbol.as_ptr()) };
     let raw_symbol: &str = c_str.to_str().map_err(to_pyvalue_err)?;
 

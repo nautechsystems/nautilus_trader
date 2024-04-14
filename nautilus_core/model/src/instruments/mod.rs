@@ -42,7 +42,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub enum InstrumentType {
+pub enum InstrumentAny {
     CryptoFuture(CryptoFuture),
     CryptoPerpetual(CryptoPerpetual),
     CurrencyPair(CurrencyPair),

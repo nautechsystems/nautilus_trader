@@ -29,7 +29,7 @@ use crate::{
         strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
         venue::Venue, venue_order_id::VenueOrderId,
     },
-    instruments::InstrumentType,
+    instruments::InstrumentAny,
     position::Position,
     python::instruments::convert_pyobject_to_instrument_type,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
@@ -41,14 +41,14 @@ impl Position {
     fn py_new(py: Python, instrument: PyObject, fill: OrderFilled) -> PyResult<Self> {
         let instrument_type = convert_pyobject_to_instrument_type(py, instrument)?;
         match instrument_type {
-            InstrumentType::CryptoFuture(inst) => Ok(Self::new(inst, fill).unwrap()),
-            InstrumentType::CryptoPerpetual(inst) => Ok(Self::new(inst, fill).unwrap()),
-            InstrumentType::CurrencyPair(inst) => Ok(Self::new(inst, fill).unwrap()),
-            InstrumentType::Equity(inst) => Ok(Self::new(inst, fill).unwrap()),
-            InstrumentType::FuturesContract(inst) => Ok(Self::new(inst, fill).unwrap()),
-            InstrumentType::FuturesSpread(inst) => Ok(Self::new(inst, fill).unwrap()),
-            InstrumentType::OptionsContract(inst) => Ok(Self::new(inst, fill).unwrap()),
-            InstrumentType::OptionsSpread(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentAny::CryptoFuture(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentAny::CryptoPerpetual(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentAny::CurrencyPair(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentAny::Equity(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentAny::FuturesContract(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentAny::FuturesSpread(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentAny::OptionsContract(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentAny::OptionsSpread(inst) => Ok(Self::new(inst, fill).unwrap()),
         }
     }
 
