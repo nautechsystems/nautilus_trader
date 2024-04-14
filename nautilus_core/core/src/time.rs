@@ -22,15 +22,10 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crate::datetime::{
-    NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND,
+use crate::{
+    datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
+    nanos::UnixNanos,
 };
-
-/// Represents a timestamp in nanoseconds since UNIX epoch.
-pub type UnixNanos = u64;
-
-/// Represents a timedelta in nanoseconds.
-pub type TimedeltaNanos = i64;
 
 /// Provides a global atomic time in real-time mode for use across the system.
 pub static ATOMIC_CLOCK_REALTIME: OnceLock<AtomicTime> = OnceLock::new();
@@ -45,7 +40,7 @@ pub fn get_atomic_clock_realtime() -> &'static AtomicTime {
 
 /// Returns a static reference to the global atomic clock in static mode.
 pub fn get_atomic_clock_static() -> &'static AtomicTime {
-    ATOMIC_CLOCK_STATIC.get_or_init(|| AtomicTime::new(false, 0))
+    ATOMIC_CLOCK_STATIC.get_or_init(|| AtomicTime::new(false, UnixNanos::default()))
 }
 
 #[must_use]
@@ -89,7 +84,7 @@ impl Deref for AtomicTime {
 
 impl Default for AtomicTime {
     fn default() -> Self {
-        Self::new(true, 0)
+        Self::new(true, UnixNanos::default())
     }
 }
 
@@ -99,7 +94,7 @@ impl AtomicTime {
     pub fn new(realtime: bool, time: UnixNanos) -> Self {
         Self {
             realtime: AtomicBool::new(realtime),
-            timestamp_ns: AtomicU64::new(time),
+            timestamp_ns: AtomicU64::new(time.into()),
         }
     }
 
@@ -111,36 +106,36 @@ impl AtomicTime {
     pub fn get_time_ns(&self) -> UnixNanos {
         match self.realtime.load(Ordering::Relaxed) {
             true => self.time_since_epoch(),
-            false => self.timestamp_ns.load(Ordering::Relaxed),
+            false => UnixNanos::from(self.timestamp_ns.load(Ordering::Relaxed)),
         }
     }
 
     /// Get time as microseconds.
     #[must_use]
     pub fn get_time_us(&self) -> u64 {
-        self.get_time_ns() / NANOSECONDS_IN_MICROSECOND
+        self.get_time_ns().as_u64() / NANOSECONDS_IN_MICROSECOND
     }
 
     /// Get time as milliseconds.
     #[must_use]
     pub fn get_time_ms(&self) -> u64 {
-        self.get_time_ns() / NANOSECONDS_IN_MILLISECOND
+        self.get_time_ns().as_u64() / NANOSECONDS_IN_MILLISECOND
     }
 
     /// Get time as seconds.
     #[must_use]
     pub fn get_time(&self) -> f64 {
-        self.get_time_ns() as f64 / (NANOSECONDS_IN_SECOND as f64)
+        self.get_time_ns().as_f64() / (NANOSECONDS_IN_SECOND as f64)
     }
 
     /// Sets new time for the clock.
     pub fn set_time(&self, time: UnixNanos) {
-        self.store(time, Ordering::Relaxed);
+        self.store(time.into(), Ordering::Relaxed);
     }
 
     /// Increments current time with a delta and returns the updated time.
     pub fn increment_time(&self, delta: u64) -> UnixNanos {
-        self.fetch_add(delta, Ordering::Relaxed) + delta
+        UnixNanos::from(self.fetch_add(delta, Ordering::Relaxed) + delta)
     }
 
     /// Stores and returns current time.
@@ -150,7 +145,7 @@ impl AtomicTime {
         let last = self.load(Ordering::SeqCst) + 1;
         let time = now.max(last);
         self.store(time, Ordering::SeqCst);
-        time
+        UnixNanos::from(time)
     }
 
     pub fn make_realtime(&self) {
@@ -175,8 +170,8 @@ mod tests {
 
     #[rstest]
     fn test_duration_since_unix_epoch() {
-        let time = AtomicTime::new(true, 0);
-        let duration = Duration::from_nanos(time.get_time_ns());
+        let time = AtomicTime::new(true, UnixNanos::default());
+        let duration = Duration::from_nanos(time.get_time_ns().into());
         let now = SystemTime::now();
 
         // Check if the duration is close to the actual difference between now and UNIX_EPOCH
@@ -192,7 +187,7 @@ mod tests {
 
     #[rstest]
     fn test_unix_timestamp_is_monotonic_increasing() {
-        let time = AtomicTime::new(true, 0);
+        let time = AtomicTime::new(true, UnixNanos::default());
         let result1 = time.get_time();
         let result2 = time.get_time();
         let result3 = time.get_time();
@@ -208,7 +203,7 @@ mod tests {
 
     #[rstest]
     fn test_unix_timestamp_ms_is_monotonic_increasing() {
-        let time = AtomicTime::new(true, 0);
+        let time = AtomicTime::new(true, UnixNanos::default());
         let result1 = time.get_time_ms();
         let result2 = time.get_time_ms();
         let result3 = time.get_time_ms();
@@ -224,7 +219,7 @@ mod tests {
 
     #[rstest]
     fn test_unix_timestamp_us_is_monotonic_increasing() {
-        let time = AtomicTime::new(true, 0);
+        let time = AtomicTime::new(true, UnixNanos::default());
         let result1 = time.get_time_us();
         let result2 = time.get_time_us();
         let result3 = time.get_time_us();
@@ -240,7 +235,7 @@ mod tests {
 
     #[rstest]
     fn test_unix_timestamp_ns_is_monotonic_increasing() {
-        let time = AtomicTime::new(true, 0);
+        let time = AtomicTime::new(true, UnixNanos::default());
         let result1 = time.get_time_ns();
         let result2 = time.get_time_ns();
         let result3 = time.get_time_ns();
@@ -251,6 +246,6 @@ mod tests {
         assert!(result3 >= result2);
         assert!(result4 >= result3);
         assert!(result5 >= result4);
-        assert!(result1 > 1_650_000_000_000_000_000);
+        assert!(result1.as_u64() > 1_650_000_000_000_000_000);
     }
 }

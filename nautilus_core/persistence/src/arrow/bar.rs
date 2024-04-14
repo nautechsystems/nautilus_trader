@@ -92,8 +92,8 @@ impl EncodeToRecordBatch for Bar {
             low_builder.append_value(bar.low.raw);
             close_builder.append_value(bar.close.raw);
             volume_builder.append_value(bar.volume.raw);
-            ts_event_builder.append_value(bar.ts_event);
-            ts_init_builder.append_value(bar.ts_init);
+            ts_event_builder.append_value(bar.ts_event.as_u64());
+            ts_init_builder.append_value(bar.ts_init.as_u64());
         }
 
         let open_array = open_builder.finish();
@@ -142,8 +142,8 @@ impl DecodeFromRecordBatch for Bar {
                 let low = Price::from_raw(low_values.value(i), price_precision).unwrap();
                 let close = Price::from_raw(close_values.value(i), price_precision).unwrap();
                 let volume = Quantity::from_raw(volume_values.value(i), size_precision).unwrap();
-                let ts_event = ts_event_values.value(i);
-                let ts_init = ts_init_values.value(i);
+                let ts_event = ts_event_values.value(i).into();
+                let ts_init = ts_init_values.value(i).into();
 
                 Ok(Self {
                     bar_type,
@@ -228,8 +228,8 @@ mod tests {
             Price::from("100.00"),
             Price::from("101.00"),
             Quantity::from(1100),
-            1,
-            3,
+            1.into(),
+            3.into(),
         );
         let bar2 = Bar::new(
             bar_type,
@@ -238,8 +238,8 @@ mod tests {
             Price::from("100.00"),
             Price::from("100.10"),
             Quantity::from(1110),
-            2,
-            4,
+            2.into(),
+            4.into(),
         );
 
         let data = vec![bar1, bar2];

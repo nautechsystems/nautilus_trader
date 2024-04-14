@@ -23,7 +23,7 @@ pub mod quote;
 pub mod stubs;
 pub mod trade;
 
-use nautilus_core::time::UnixNanos;
+use nautilus_core::nanos::UnixNanos;
 
 use self::{
     bar::Bar,

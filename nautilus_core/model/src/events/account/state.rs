@@ -15,7 +15,7 @@
 
 use std::fmt::{Display, Formatter};
 
-use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
 
 use crate::{

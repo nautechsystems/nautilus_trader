@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use pyo3::{
     basic::CompareOp,
     prelude::*,
@@ -57,8 +57,8 @@ impl LimitOrder {
         reduce_only: bool,
         quote_quantity: bool,
         init_id: UUID4,
-        ts_init: UnixNanos,
-        expire_time: Option<UnixNanos>,
+        ts_init: u64,
+        expire_time: Option<u64>,
         display_qty: Option<Quantity>,
         emulation_trigger: Option<TriggerType>,
         trigger_instrument_id: Option<InstrumentId>,
@@ -81,7 +81,7 @@ impl LimitOrder {
             quantity,
             price,
             time_in_force,
-            expire_time,
+            expire_time.map(UnixNanos::from),
             post_only,
             reduce_only,
             quote_quantity,
@@ -97,7 +97,7 @@ impl LimitOrder {
             exec_spawn_id,
             tags.map(|s| Ustr::from(&s)),
             init_id,
-            ts_init,
+            ts_init.into(),
         )
         .unwrap())
     }
@@ -168,8 +168,8 @@ impl LimitOrder {
 
     #[getter]
     #[pyo3(name = "expire_time")]
-    fn py_expire_time(&self) -> Option<UnixNanos> {
-        self.expire_time
+    fn py_expire_time(&self) -> Option<u64> {
+        self.expire_time.map(|e| e.into())
     }
 
     #[getter]
@@ -334,8 +334,8 @@ impl LimitOrder {
 
     #[getter]
     #[pyo3(name = "expire_time_ns")]
-    fn py_expire_time_ns(&self) -> Option<UnixNanos> {
-        self.expire_time
+    fn py_expire_time_ns(&self) -> Option<u64> {
+        self.expire_time.map(|e| e.into())
     }
 
     #[getter]
@@ -358,8 +358,8 @@ impl LimitOrder {
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> UnixNanos {
-        self.ts_init
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 
     #[staticmethod]
@@ -404,7 +404,7 @@ impl LimitOrder {
             .unwrap();
         let expire_time_ns = dict
             .get_item("expire_time_ns")
-            .map(|x| x.and_then(|inner| inner.extract::<UnixNanos>().ok()))?;
+            .map(|x| x.and_then(|inner| inner.extract::<u64>().ok()))?;
         let is_post_only = dict.get_item("is_post_only")?.unwrap().extract::<bool>()?;
         let is_reduce_only = dict
             .get_item("is_reduce_only")?
@@ -510,7 +510,7 @@ impl LimitOrder {
             .get_item("init_id")
             .map(|x| x.and_then(|inner| inner.extract::<&str>().unwrap().parse::<UUID4>().ok()))?
             .unwrap();
-        let ts_init = dict.get_item("ts_init")?.unwrap().extract::<UnixNanos>()?;
+        let ts_init = dict.get_item("ts_init")?.unwrap().extract::<u64>()?;
         let limit_order = Self::new(
             trader_id,
             strategy_id,
@@ -520,7 +520,7 @@ impl LimitOrder {
             quantity,
             price,
             time_in_force,
-            expire_time_ns,
+            expire_time_ns.map(UnixNanos::from),
             is_post_only,
             is_reduce_only,
             is_quote_quantity,
@@ -536,7 +536,7 @@ impl LimitOrder {
             exec_spawn_id,
             tags,
             init_id,
-            ts_init,
+            ts_init.into(),
         )
         .unwrap();
         Ok(limit_order)
@@ -555,14 +555,14 @@ impl LimitOrder {
         dict.set_item("price", self.price.to_string())?;
         dict.set_item("status", self.status.to_string())?;
         dict.set_item("time_in_force", self.time_in_force.to_string())?;
-        dict.set_item("expire_time_ns", self.expire_time)?;
+        dict.set_item("expire_time_ns", self.expire_time.map(|e| e.as_u64()))?;
         dict.set_item("is_post_only", self.is_post_only)?;
         dict.set_item("is_reduce_only", self.is_reduce_only)?;
         dict.set_item("is_quote_quantity", self.is_quote_quantity)?;
         dict.set_item("filled_qty", self.filled_qty.to_string())?;
         dict.set_item("init_id", self.init_id.to_string())?;
-        dict.set_item("ts_init", self.ts_init)?;
-        dict.set_item("ts_last", self.ts_last)?;
+        dict.set_item("ts_init", self.ts_init.as_u64())?;
+        dict.set_item("ts_last", self.ts_last.as_u64())?;
         let commissions_dict = PyDict::new(py);
         for (key, value) in &self.commissions {
             commissions_dict.set_item(key.code.to_string(), value.to_string())?;

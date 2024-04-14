@@ -18,7 +18,7 @@
 #![allow(unused_variables)]
 
 use nautilus_common::cache::Cache;
-use nautilus_core::time::UnixNanos;
+use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
     events::{account::state::AccountState, order::event::OrderEvent},

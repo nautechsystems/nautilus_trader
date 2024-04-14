@@ -16,8 +16,8 @@
 use std::collections::HashMap;
 
 use nautilus_core::{
+    nanos::UnixNanos,
     python::{serialization::from_dict_pyo3, to_pyvalue_err},
-    time::UnixNanos,
     uuid::UUID4,
 };
 use pyo3::{
@@ -25,7 +25,6 @@ use pyo3::{
     prelude::*,
     types::{PyDict, PyList},
 };
-use rust_decimal::prelude::ToPrimitive;
 use ustr::Ustr;
 
 use crate::{
@@ -58,15 +57,15 @@ impl OrderInitialized {
         quote_quantity: bool,
         reconciliation: bool,
         event_id: UUID4,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
+        ts_event: u64,
+        ts_init: u64,
         price: Option<Price>,
         trigger_price: Option<Price>,
         trigger_type: Option<TriggerType>,
         limit_offset: Option<Price>,
         trailing_offset: Option<Price>,
         trailing_offset_type: Option<TrailingOffsetType>,
-        expire_time: Option<UnixNanos>,
+        expire_time: Option<u64>,
         display_qty: Option<Quantity>,
         emulation_trigger: Option<TriggerType>,
         trigger_instrument_id: Option<InstrumentId>,
@@ -93,15 +92,15 @@ impl OrderInitialized {
             quote_quantity,
             reconciliation,
             event_id,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
             price,
             trigger_price,
             trigger_type,
             limit_offset,
             trailing_offset,
             trailing_offset_type,
-            expire_time,
+            expire_time.map(UnixNanos::from),
             display_qty,
             emulation_trigger,
             trigger_instrument_id,
@@ -242,8 +241,8 @@ impl OrderInitialized {
         dict.set_item("quote_quantity", self.quote_quantity)?;
         dict.set_item("reconciliation", self.reconciliation)?;
         dict.set_item("event_id", self.event_id.to_string())?;
-        dict.set_item("ts_event", self.ts_event.to_u64())?;
-        dict.set_item("ts_init", self.ts_init.to_u64())?;
+        dict.set_item("ts_event", self.ts_event.as_u64())?;
+        dict.set_item("ts_init", self.ts_init.as_u64())?;
         match self.price {
             Some(price) => dict.set_item("price", price.to_string())?,
             None => dict.set_item("price", py.None())?,
@@ -273,7 +272,7 @@ impl OrderInitialized {
             None => dict.set_item("trailing_offset_type", py.None())?,
         }
         match self.expire_time {
-            Some(expire_time) => dict.set_item("expire_time", expire_time.to_u64())?,
+            Some(expire_time) => dict.set_item("expire_time", expire_time.as_u64())?,
             None => dict.set_item("expire_time", py.None())?,
         }
         match self.display_qty {

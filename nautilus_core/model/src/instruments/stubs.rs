@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use chrono::{TimeZone, Utc};
-use nautilus_core::time::UnixNanos;
+use nautilus_core::nanos::UnixNanos;
 use rstest::fixture;
 use rust_decimal_macros::dec;
 use ustr::Ustr;
@@ -46,8 +46,8 @@ pub fn crypto_future_btcusdt() -> CryptoFuture {
         Currency::from("USDT"),
         Currency::from("USDT"),
         false,
-        activation.timestamp_nanos_opt().unwrap() as UnixNanos,
-        expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
+        UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
+        UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
         2,
         6,
         Price::from("0.01"),
@@ -63,8 +63,8 @@ pub fn crypto_future_btcusdt() -> CryptoFuture {
         Some(Money::new(10.00, Currency::from("USDT")).unwrap()),
         Some(Price::from("1000000.00")),
         Some(Price::from("0.01")),
-        0,
-        0,
+        0.into(),
+        0.into(),
     )
     .unwrap()
 }
@@ -97,8 +97,8 @@ pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
         Some(Money::new(10.00, Currency::from("USDT")).unwrap()),
         Some(Price::from("15000.00")),
         Some(Price::from("1.0")),
-        0,
-        0,
+        0.into(),
+        0.into(),
     )
     .unwrap()
 }
@@ -127,8 +127,8 @@ pub fn xbtusd_bitmex() -> CryptoPerpetual {
         Some(Money::from("1 USD")),
         Some(Price::from("10000000")),
         Some(Price::from("0.01")),
-        0,
-        0,
+        0.into(),
+        0.into(),
     )
     .unwrap()
 }
@@ -157,8 +157,8 @@ pub fn ethusdt_bitmex() -> CryptoPerpetual {
         None,
         Some(Price::from("10000000")),
         Some(Price::from("0.01")),
-        0,
-        0,
+        0.into(),
+        0.into(),
     )
     .unwrap()
 }
@@ -189,8 +189,8 @@ pub fn currency_pair_btcusdt() -> CurrencyPair {
         None,
         Some(Price::from("1000000")),
         Some(Price::from("0.01")),
-        0,
-        0,
+        0.into(),
+        0.into(),
     )
     .unwrap()
 }
@@ -217,8 +217,8 @@ pub fn currency_pair_ethusdt() -> CurrencyPair {
         None,
         Some(Price::from("1000000")),
         Some(Price::from("0.01")),
-        0,
-        0,
+        0.into(),
+        0.into(),
     )
     .unwrap()
 }
@@ -251,8 +251,8 @@ pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
         None,
         None,
         None,
-        0,
-        0,
+        0.into(),
+        0.into(),
     )
     .unwrap()
 }
@@ -288,8 +288,8 @@ pub fn equity_aapl() -> Equity {
         None,
         None,
         None,
-        0,
-        0,
+        0.into(),
+        0.into(),
     )
     .unwrap()
 }
@@ -308,8 +308,8 @@ pub fn futures_contract_es() -> FuturesContract {
         AssetClass::Index,
         Some(Ustr::from("XCME")),
         Ustr::from("ES"),
-        activation.timestamp_nanos_opt().unwrap() as UnixNanos,
-        expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
+        UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
+        UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
         Currency::USD(),
         2,
         Price::from("0.01"),
@@ -321,8 +321,8 @@ pub fn futures_contract_es() -> FuturesContract {
         None,
         None,
         None,
-        0,
-        0,
+        0.into(),
+        0.into(),
     )
     .unwrap()
 }
@@ -342,8 +342,8 @@ pub fn futures_spread_es() -> FuturesSpread {
         Some(Ustr::from("XCME")),
         Ustr::from("ES"),
         Ustr::from("EQ"),
-        activation.timestamp_nanos_opt().unwrap() as UnixNanos,
-        expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
+        UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
+        UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
         Currency::USD(),
         2,
         Price::from("0.01"),
@@ -355,8 +355,8 @@ pub fn futures_spread_es() -> FuturesSpread {
         None,
         None,
         None,
-        0,
-        0,
+        0.into(),
+        0.into(),
     )
     .unwrap()
 }
@@ -376,8 +376,8 @@ pub fn options_contract_appl() -> OptionsContract {
         Some(Ustr::from("GMNI")), // Nasdaq GEMX
         Ustr::from("AAPL"),
         OptionKind::Call,
-        activation.timestamp_nanos_opt().unwrap() as UnixNanos,
-        expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
+        UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
+        UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
         Price::from("149.0"),
         Currency::USD(),
         2,
@@ -390,8 +390,8 @@ pub fn options_contract_appl() -> OptionsContract {
         None,
         None,
         None,
-        0,
-        0,
+        0.into(),
+        0.into(),
     )
     .unwrap()
 }
@@ -411,8 +411,8 @@ pub fn options_spread() -> OptionsSpread {
         Some(Ustr::from("XCME")),
         Ustr::from("SR3"), // British Pound futures (option on futures)
         Ustr::from("GN"),
-        activation.timestamp_nanos_opt().unwrap() as UnixNanos,
-        expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
+        UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
+        UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
         Currency::USD(),
         2,
         Price::from("0.01"),
@@ -424,8 +424,8 @@ pub fn options_spread() -> OptionsSpread {
         None,
         None,
         None,
-        0,
-        0,
+        0.into(),
+        0.into(),
     )
     .unwrap()
 }

@@ -19,7 +19,7 @@ use std::{
 };
 
 use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
-use nautilus_core::time::UnixNanos;
+use nautilus_core::nanos::UnixNanos;
 
 use crate::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
@@ -164,8 +164,8 @@ mod tests {
             2,
             vec![btc_binance, ltc_binance],
             formula.clone(),
-            0,
-            0,
+            0.into(),
+            0.into(),
         )
         .unwrap();
 
@@ -189,8 +189,8 @@ mod tests {
             2,
             vec![btc_binance, ltc_binance],
             formula.clone(),
-            0,
-            0,
+            0.into(),
+            0.into(),
         )
         .unwrap();
 
@@ -211,8 +211,8 @@ mod tests {
             2,
             vec![btc_binance, ltc_binance],
             formula,
-            0,
-            0,
+            0.into(),
+            0.into(),
         )
         .unwrap();
 

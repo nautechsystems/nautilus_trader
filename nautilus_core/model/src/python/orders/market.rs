@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::{python::to_pyvalue_err, time::UnixNanos, uuid::UUID4};
+use nautilus_core::{python::to_pyvalue_err, uuid::UUID4};
 use pyo3::{
     basic::CompareOp,
     pymethods,
@@ -51,7 +51,7 @@ impl MarketOrder {
         order_side: OrderSide,
         quantity: Quantity,
         init_id: UUID4,
-        ts_init: UnixNanos,
+        ts_init: u64,
         time_in_force: TimeInForce,
         reduce_only: bool,
         quote_quantity: bool,
@@ -73,7 +73,7 @@ impl MarketOrder {
             quantity,
             time_in_force,
             init_id,
-            ts_init,
+            ts_init.into(),
             reduce_only,
             quote_quantity,
             contingency_type,
@@ -156,8 +156,8 @@ impl MarketOrder {
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> UnixNanos {
-        self.ts_init
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 
     #[getter]
@@ -288,8 +288,8 @@ impl MarketOrder {
         dict.set_item("is_quote_quantity", self.is_quote_quantity)?;
         dict.set_item("filled_qty", self.filled_qty.to_string())?;
         dict.set_item("init_id", self.init_id.to_string())?;
-        dict.set_item("ts_init", self.ts_init)?;
-        dict.set_item("ts_last", self.ts_last)?;
+        dict.set_item("ts_init", self.ts_init.as_u64())?;
+        dict.set_item("ts_last", self.ts_last.as_u64())?;
         let commissions_dict = PyDict::new(py);
         for (key, value) in &self.commissions {
             commissions_dict.set_item(key.code.to_string(), value.to_string())?;
@@ -407,7 +407,7 @@ impl MarketOrder {
             .get_item("init_id")
             .map(|x| x.and_then(|inner| inner.extract::<&str>().unwrap().parse::<UUID4>().ok()))?
             .unwrap();
-        let ts_init = dict.get_item("ts_init")?.unwrap().extract::<UnixNanos>()?;
+        let ts_init = dict.get_item("ts_init")?.unwrap().extract::<u64>()?;
         let is_reduce_only = dict
             .get_item("is_reduce_only")?
             .unwrap()
@@ -501,7 +501,7 @@ impl MarketOrder {
             quantity,
             time_in_force,
             init_id,
-            ts_init,
+            ts_init.into(),
             is_reduce_only,
             is_quote_quantity,
             contingency_type,

@@ -17,7 +17,8 @@ use std::{collections::HashMap, ops::Deref};
 
 use nautilus_core::{
     correctness::check_valid_string,
-    time::{get_atomic_clock_realtime, AtomicTime, UnixNanos},
+    nanos::UnixNanos,
+    time::{get_atomic_clock_realtime, AtomicTime},
 };
 use ustr::Ustr;
 
@@ -78,7 +79,7 @@ impl TestClock {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            time: AtomicTime::new(false, 0),
+            time: AtomicTime::new(false, UnixNanos::default()),
             timers: HashMap::new(),
             default_callback: None,
             callbacks: HashMap::new(),
@@ -199,7 +200,12 @@ impl Clock for TestClock {
         // TODO: should the atomic clock be shared
         // currently share timestamp nanoseconds
         let time_ns = self.time.get_time_ns();
-        let timer = TestTimer::new(name, alert_time_ns - time_ns, time_ns, Some(alert_time_ns));
+        let timer = TestTimer::new(
+            name,
+            (alert_time_ns - time_ns).into(),
+            time_ns,
+            Some(alert_time_ns),
+        );
         self.timers.insert(name_ustr, timer);
     }
 
@@ -230,7 +236,7 @@ impl Clock for TestClock {
     fn next_time_ns(&self, name: &str) -> UnixNanos {
         let timer = self.timers.get(&Ustr::from(name));
         match timer {
-            None => 0,
+            None => 0.into(),
             Some(timer) => timer.next_time_ns,
         }
     }
@@ -328,7 +334,7 @@ impl Clock for LiveClock {
         alert_time_ns = std::cmp::max(alert_time_ns, ts_now);
         let mut timer = LiveTimer::new(
             name,
-            alert_time_ns - ts_now,
+            (alert_time_ns - ts_now).into(),
             ts_now,
             Some(alert_time_ns),
             callback,
@@ -364,7 +370,7 @@ impl Clock for LiveClock {
     fn next_time_ns(&self, name: &str) -> UnixNanos {
         let timer = self.timers.get(&Ustr::from(name));
         match timer {
-            None => 0,
+            None => 0.into(),
             Some(timer) => timer.next_time_ns,
         }
     }

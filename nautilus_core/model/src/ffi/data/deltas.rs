@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{ffi::cvec::CVec, time::UnixNanos};
+use nautilus_core::{ffi::cvec::CVec, nanos::UnixNanos};
 
 use crate::{
     data::{

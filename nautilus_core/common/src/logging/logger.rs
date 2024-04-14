@@ -31,7 +31,8 @@ use log::{
 };
 use nautilus_core::{
     datetime::unix_nanos_to_iso8601,
-    time::{get_atomic_clock_realtime, get_atomic_clock_static, UnixNanos},
+    nanos::UnixNanos,
+    time::{get_atomic_clock_realtime, get_atomic_clock_static},
     uuid::UUID4,
 };
 use nautilus_model::identifiers::trader_id::TraderId;

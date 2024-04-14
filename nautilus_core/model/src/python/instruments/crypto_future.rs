@@ -18,12 +18,9 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::{
-    python::{serialization::from_dict_pyo3, to_pyvalue_err},
-    time::UnixNanos,
-};
+use nautilus_core::python::{serialization::from_dict_pyo3, to_pyvalue_err};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal::Decimal;
 
 use crate::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
@@ -42,8 +39,8 @@ impl CryptoFuture {
         quote_currency: Currency,
         settlement_currency: Currency,
         is_inverse: bool,
-        activation_ns: UnixNanos,
-        expiration_ns: UnixNanos,
+        activation_ns: u64,
+        expiration_ns: u64,
         price_precision: u8,
         size_precision: u8,
         price_increment: Price,
@@ -52,8 +49,8 @@ impl CryptoFuture {
         taker_fee: Decimal,
         margin_init: Decimal,
         margin_maint: Decimal,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
+        ts_event: u64,
+        ts_init: u64,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
@@ -69,8 +66,8 @@ impl CryptoFuture {
             quote_currency,
             settlement_currency,
             is_inverse,
-            activation_ns,
-            expiration_ns,
+            activation_ns.into(),
+            expiration_ns.into(),
             price_precision,
             size_precision,
             price_increment,
@@ -86,8 +83,8 @@ impl CryptoFuture {
             min_notional,
             max_price,
             min_price,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         )
         .map_err(to_pyvalue_err)
     }
@@ -149,14 +146,14 @@ impl CryptoFuture {
 
     #[getter]
     #[pyo3(name = "activation_ns")]
-    fn py_activation_ns(&self) -> UnixNanos {
-        self.activation_ns
+    fn py_activation_ns(&self) -> u64 {
+        self.activation_ns.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "expiration_ns")]
-    fn py_expiration_ns(&self) -> UnixNanos {
-        self.expiration_ns
+    fn py_expiration_ns(&self) -> u64 {
+        self.expiration_ns.as_u64()
     }
 
     #[getter]
@@ -257,14 +254,14 @@ impl CryptoFuture {
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> UnixNanos {
-        self.ts_event
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> UnixNanos {
-        self.ts_init
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 
     #[staticmethod]
@@ -286,8 +283,8 @@ impl CryptoFuture {
             self.settlement_currency.code.to_string(),
         )?;
         dict.set_item("is_inverse", self.is_inverse)?;
-        dict.set_item("activation_ns", self.activation_ns.to_u64())?;
-        dict.set_item("expiration_ns", self.expiration_ns.to_u64())?;
+        dict.set_item("activation_ns", self.activation_ns.as_u64())?;
+        dict.set_item("expiration_ns", self.expiration_ns.as_u64())?;
         dict.set_item("price_precision", self.price_precision)?;
         dict.set_item("size_precision", self.size_precision)?;
         dict.set_item("price_increment", self.price_increment.to_string())?;
@@ -298,8 +295,8 @@ impl CryptoFuture {
         dict.set_item("info", PyDict::new(py))?;
         dict.set_item("maker_fee", self.maker_fee.to_string())?;
         dict.set_item("taker_fee", self.taker_fee.to_string())?;
-        dict.set_item("ts_event", self.ts_event)?;
-        dict.set_item("ts_init", self.ts_init)?;
+        dict.set_item("ts_event", self.ts_event.as_u64())?;
+        dict.set_item("ts_init", self.ts_init.as_u64())?;
         match self.max_quantity {
             Some(value) => dict.set_item("max_quantity", value.to_string())?,
             None => dict.set_item("max_quantity", py.None())?,

@@ -15,7 +15,7 @@
 
 use std::str::FromStr;
 
-use nautilus_core::uuid::UUID4;
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use rstest::fixture;
 use ustr::Ustr;
 
@@ -69,8 +69,8 @@ pub fn order_filled(
         Currency::from_str("USDT").unwrap(),
         LiquiditySide::Taker,
         uuid4,
-        0,
-        0,
+        UnixNanos::default(),
+        UnixNanos::default(),
         false,
         None,
         Some(Money::from_str("12.2 USDT").unwrap()),
@@ -93,8 +93,8 @@ pub fn order_denied_max_submitted_rate(
         client_order_id,
         Ustr::from("Exceeded MAX_ORDER_SUBMIT_RATE"),
         uuid4,
-        0,
-        0,
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
     .unwrap()
 }
@@ -116,8 +116,8 @@ pub fn order_rejected_insufficient_margin(
         account_id,
         Ustr::from("INSUFFICIENT_MARGIN"),
         uuid4,
-        0,
-        0,
+        UnixNanos::default(),
+        UnixNanos::default(),
         false,
     )
     .unwrap()
@@ -147,8 +147,8 @@ pub fn order_initialized_buy_limit(
         false,
         false,
         uuid4,
-        0,
-        0,
+        UnixNanos::default(),
+        UnixNanos::default(),
         Some(Price::from_str("22000").unwrap()),
         None,
         None,
@@ -187,8 +187,8 @@ pub fn order_submitted(
         client_order_id,
         account_id,
         uuid4,
-        0,
-        0,
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
     .unwrap()
 }
@@ -209,8 +209,8 @@ pub fn order_triggered(
         instrument_id_btc_usdt,
         client_order_id,
         uuid4,
-        0,
-        0,
+        UnixNanos::default(),
+        UnixNanos::default(),
         false,
         Some(venue_order_id),
         Some(account_id),
@@ -232,8 +232,8 @@ pub fn order_emulated(
         instrument_id_btc_usdt,
         client_order_id,
         uuid4,
-        0,
-        0,
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
     .unwrap()
 }
@@ -253,8 +253,8 @@ pub fn order_released(
         client_order_id,
         Price::from_str("22000").unwrap(),
         uuid4,
-        0,
-        0,
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
     .unwrap()
 }
@@ -276,8 +276,8 @@ pub fn order_updated(
         client_order_id,
         Quantity::from(100),
         uuid4,
-        0,
-        0,
+        UnixNanos::default(),
+        UnixNanos::default(),
         false,
         Some(venue_order_id),
         Some(account_id),
@@ -304,8 +304,8 @@ pub fn order_pending_update(
         client_order_id,
         account_id,
         uuid4,
-        0,
-        0,
+        UnixNanos::default(),
+        UnixNanos::default(),
         false,
         Some(venue_order_id),
     )
@@ -329,8 +329,8 @@ pub fn order_pending_cancel(
         client_order_id,
         account_id,
         uuid4,
-        0,
-        0,
+        UnixNanos::default(),
+        UnixNanos::default(),
         false,
         Some(venue_order_id),
     )
@@ -354,8 +354,8 @@ pub fn order_modify_rejected(
         client_order_id,
         Ustr::from("ORDER_DOES_NOT_EXIST"),
         uuid4,
-        0,
-        0,
+        UnixNanos::default(),
+        UnixNanos::default(),
         false,
         Some(venue_order_id),
         Some(account_id),
@@ -381,8 +381,8 @@ pub fn order_accepted(
         venue_order_id,
         account_id,
         uuid4,
-        0,
-        0,
+        UnixNanos::default(),
+        UnixNanos::default(),
         false,
     )
     .unwrap()
@@ -405,8 +405,8 @@ pub fn order_cancel_rejected(
         client_order_id,
         Ustr::from("ORDER_DOES_NOT_EXISTS"),
         uuid4,
-        0,
-        0,
+        UnixNanos::default(),
+        UnixNanos::default(),
         false,
         Some(venue_order_id),
         Some(account_id),
@@ -430,8 +430,8 @@ pub fn order_expired(
         instrument_id_btc_usdt,
         client_order_id,
         uuid4,
-        0,
-        0,
+        UnixNanos::default(),
+        UnixNanos::default(),
         false,
         Some(venue_order_id),
         Some(account_id),

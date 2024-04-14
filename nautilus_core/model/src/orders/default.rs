@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::uuid::UUID4;
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 
 use super::{
     limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder, market::MarketOrder,
@@ -58,7 +58,7 @@ impl Default for LimitOrder {
             None,
             None,
             UUID4::default(),
-            0,
+            UnixNanos::default(),
         )
         .unwrap() // SAFETY: Valid default values are used
     }
@@ -94,7 +94,7 @@ impl Default for LimitIfTouchedOrder {
             None,
             None,
             UUID4::default(),
-            0,
+            UnixNanos::default(),
         )
         .unwrap() // SAFETY: Valid default values are used
     }
@@ -112,7 +112,7 @@ impl Default for MarketOrder {
             Quantity::from(100_000),
             TimeInForce::Day,
             UUID4::default(),
-            0,
+            UnixNanos::default(),
             false,
             false,
             None,
@@ -156,7 +156,7 @@ impl Default for MarketIfTouchedOrder {
             None,
             None,
             UUID4::default(),
-            0,
+            UnixNanos::default(),
         )
         .unwrap() // SAFETY: Valid default values are used
     }
@@ -187,7 +187,7 @@ impl Default for MarketToLimitOrder {
             None,
             None,
             UUID4::default(),
-            0,
+            UnixNanos::default(),
         )
         .unwrap() // SAFETY: Valid default values are used
     }
@@ -223,7 +223,7 @@ impl Default for StopLimitOrder {
             None,
             None,
             UUID4::default(),
-            0,
+            UnixNanos::default(),
         )
         .unwrap() // SAFETY: Valid default values are used
     }
@@ -257,7 +257,7 @@ impl Default for StopMarketOrder {
             None,
             None,
             UUID4::default(),
-            0,
+            UnixNanos::default(),
         )
         .unwrap() // SAFETY: Valid default values are used
     }
@@ -296,7 +296,7 @@ impl Default for TrailingStopLimitOrder {
             None,
             None,
             UUID4::default(),
-            0,
+            UnixNanos::default(),
         )
         .unwrap() // SAFETY: Valid default values are used
     }
@@ -332,7 +332,7 @@ impl Default for TrailingStopMarketOrder {
             None,
             None,
             UUID4::default(),
-            0,
+            UnixNanos::default(),
         )
         .unwrap() // SAFETY: Valid default values are used
     }

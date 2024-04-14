@@ -21,7 +21,7 @@ use std::collections::HashMap;
 
 use log::{debug, info};
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
-use nautilus_core::time::{AtomicTime, UnixNanos};
+use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
 use nautilus_execution::matching_core::OrderMatchingCore;
 use nautilus_model::{
     data::{
@@ -140,7 +140,7 @@ impl OrderMatchingEngine {
     }
 
     pub fn reset(&mut self) {
-        self.book.clear(0, 0);
+        self.book.clear(0, UnixNanos::default());
         self.execution_bar_types.clear();
         self.execution_bar_deltas.clear();
         self.account_ids.clear();

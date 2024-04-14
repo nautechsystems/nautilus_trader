@@ -13,10 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{
-    python::{to_pyruntime_err, to_pyvalue_err},
-    time::UnixNanos,
-};
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use pyo3::prelude::*;
 
 use crate::{
@@ -71,20 +68,20 @@ impl OrderBook {
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> UnixNanos {
-        self.ts_last
+    fn py_ts_event(&self) -> u64 {
+        self.ts_last.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> UnixNanos {
-        self.ts_last
+    fn py_ts_init(&self) -> u64 {
+        self.ts_last.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_last")]
-    fn py_ts_last(&self) -> UnixNanos {
-        self.ts_last
+    fn py_ts_last(&self) -> u64 {
+        self.ts_last.as_u64()
     }
 
     #[getter]
@@ -100,38 +97,38 @@ impl OrderBook {
 
     #[pyo3(signature = (order, ts_event, flags=0, sequence=0))]
     #[pyo3(name = "add")]
-    fn py_add(&mut self, order: BookOrder, ts_event: UnixNanos, flags: u8, sequence: u64) {
-        self.add(order, flags, sequence, ts_event);
+    fn py_add(&mut self, order: BookOrder, ts_event: u64, flags: u8, sequence: u64) {
+        self.add(order, flags, sequence, ts_event.into());
     }
 
     #[pyo3(signature = (order, ts_event, flags=0, sequence=0))]
     #[pyo3(name = "update")]
-    fn py_update(&mut self, order: BookOrder, ts_event: UnixNanos, flags: u8, sequence: u64) {
-        self.update(order, flags, sequence, ts_event);
+    fn py_update(&mut self, order: BookOrder, ts_event: u64, flags: u8, sequence: u64) {
+        self.update(order, flags, sequence, ts_event.into());
     }
 
     #[pyo3(signature = (order, ts_event, flags=0, sequence=0))]
     #[pyo3(name = "delete")]
-    fn py_delete(&mut self, order: BookOrder, ts_event: UnixNanos, flags: u8, sequence: u64) {
-        self.delete(order, flags, sequence, ts_event);
+    fn py_delete(&mut self, order: BookOrder, ts_event: u64, flags: u8, sequence: u64) {
+        self.delete(order, flags, sequence, ts_event.into());
     }
 
     #[pyo3(signature = (ts_event, sequence=0))]
     #[pyo3(name = "clear")]
-    fn py_clear(&mut self, ts_event: UnixNanos, sequence: u64) {
-        self.clear(ts_event, sequence);
+    fn py_clear(&mut self, ts_event: u64, sequence: u64) {
+        self.clear(sequence, ts_event.into());
     }
 
     #[pyo3(signature = (ts_event, sequence=0))]
     #[pyo3(name = "clear_bids")]
-    fn py_clear_bids(&mut self, ts_event: UnixNanos, sequence: u64) {
-        self.clear_bids(ts_event, sequence);
+    fn py_clear_bids(&mut self, ts_event: u64, sequence: u64) {
+        self.clear_bids(sequence, ts_event.into());
     }
 
     #[pyo3(signature = (ts_event, sequence=0))]
     #[pyo3(name = "clear_asks")]
-    fn py_clear_asks(&mut self, ts_event: UnixNanos, sequence: u64) {
-        self.clear_asks(ts_event, sequence);
+    fn py_clear_asks(&mut self, ts_event: u64, sequence: u64) {
+        self.clear_asks(sequence, ts_event.into());
     }
 
     #[pyo3(name = "apply_delta")]

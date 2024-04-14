@@ -16,7 +16,7 @@
 use std::fmt::Display;
 
 use derive_builder::Builder;
-use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     enums::OrderSide,
     identifiers::{

@@ -22,7 +22,8 @@ use std::{
 
 use nautilus_core::{
     correctness::check_valid_string,
-    time::{get_atomic_clock_realtime, TimedeltaNanos, UnixNanos},
+    nanos::{TimedeltaNanos, UnixNanos},
+    time::get_atomic_clock_realtime,
     uuid::UUID4,
 };
 #[cfg(feature = "python")]
@@ -148,7 +149,7 @@ impl TestTimer {
             interval_ns,
             start_time_ns,
             stop_time_ns,
-            next_time_ns: start_time_ns + interval_ns,
+            next_time_ns: (start_time_ns.as_u64() + interval_ns).into(),
             is_expired: false,
         }
     }
@@ -167,8 +168,8 @@ impl TestTimer {
     /// of events. A [`TimeEvent`] is appended for each time a next event is
     /// <= the given `to_time_ns`.
     pub fn advance(&mut self, to_time_ns: UnixNanos) -> impl Iterator<Item = TimeEvent> + '_ {
-        let advances =
-            to_time_ns.saturating_sub(self.next_time_ns - self.interval_ns) / self.interval_ns;
+        let advances = to_time_ns.saturating_sub(self.next_time_ns.as_u64() - self.interval_ns)
+            / self.interval_ns;
         self.take(advances as usize).map(|(event, _)| event)
     }
 
@@ -240,7 +241,7 @@ impl LiveTimer {
             interval_ns,
             start_time_ns,
             stop_time_ns,
-            next_time_ns: start_time_ns + interval_ns,
+            next_time_ns: (start_time_ns.as_u64() + interval_ns).into(),
             is_expired: false,
             callback,
             canceler: None,
@@ -265,11 +266,11 @@ impl LiveTimer {
                 start_time_ns = clock.get_time_ns();
             }
 
-            let mut next_time_ns = start_time_ns + interval_ns;
+            let mut next_time_ns: UnixNanos = (start_time_ns.as_u64() + interval_ns).into();
 
             loop {
                 tokio::select! {
-                    _ = tokio::time::sleep(Duration::from_nanos(next_time_ns.saturating_sub(clock.get_time_ns()))) => {
+                    _ = tokio::time::sleep(Duration::from_nanos(next_time_ns.saturating_sub(clock.get_time_ns().into()))) => {
                         // TODO: Remove this clone
                         let callback = callback.clone();
                         call_python_with_time_event(event_name, next_time_ns, clock.get_time_ns(), callback);

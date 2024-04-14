@@ -82,7 +82,7 @@ pub extern "C" fn logging_clock_set_static_mode() {
 #[no_mangle]
 pub extern "C" fn logging_clock_set_static_time(time_ns: u64) {
     let clock = get_atomic_clock_static();
-    clock.set_time(time_ns);
+    clock.set_time(time_ns.into());
 }
 
 ///

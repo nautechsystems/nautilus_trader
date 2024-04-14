@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{python::serialization::from_dict_pyo3, time::UnixNanos};
+use nautilus_core::python::serialization::from_dict_pyo3;
 use pyo3::{
     basic::CompareOp,
     prelude::*,
@@ -190,20 +190,20 @@ impl Position {
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> UnixNanos {
-        self.ts_init
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_opened")]
-    fn py_ts_opened(&self) -> UnixNanos {
-        self.ts_opened
+    fn py_ts_opened(&self) -> u64 {
+        self.ts_opened.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_closed")]
-    fn py_ts_closed(&self) -> Option<UnixNanos> {
-        self.ts_closed
+    fn py_ts_closed(&self) -> Option<u64> {
+        self.ts_closed.map(|ts_closed| ts_closed.into())
     }
 
     #[getter]
@@ -381,11 +381,11 @@ impl Position {
             "settlement_currency",
             self.settlement_currency.code.to_string(),
         )?;
-        dict.set_item("ts_init", self.ts_init.to_u64())?;
-        dict.set_item("ts_opened", self.ts_opened.to_u64())?;
-        dict.set_item("ts_last", self.ts_last.to_u64())?;
+        dict.set_item("ts_init", self.ts_init.as_u64())?;
+        dict.set_item("ts_opened", self.ts_opened.as_u64())?;
+        dict.set_item("ts_last", self.ts_last.as_u64())?;
         match self.ts_closed {
-            Some(ts_closed) => dict.set_item("ts_closed", ts_closed.to_u64())?,
+            Some(ts_closed) => dict.set_item("ts_closed", ts_closed.as_u64())?,
             None => dict.set_item("ts_closed", py.None())?,
         }
         dict.set_item("duration_ns", self.duration_ns.to_u64())?;

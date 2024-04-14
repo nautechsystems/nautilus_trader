@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::time::UnixNanos;
+use nautilus_core::nanos::UnixNanos;
 
 use super::{aggregation::pre_process_order, analysis, display::pprint_book, level::Level};
 use crate::{
@@ -59,7 +59,7 @@ impl OrderBook {
             book_type,
             instrument_id,
             sequence: 0,
-            ts_last: 0,
+            ts_last: UnixNanos::default(),
             count: 0,
             bids: Ladder::new(OrderSide::Buy),
             asks: Ladder::new(OrderSide::Sell),
@@ -70,11 +70,11 @@ impl OrderBook {
         self.bids.clear();
         self.asks.clear();
         self.sequence = 0;
-        self.ts_last = 0;
+        self.ts_last = UnixNanos::default();
         self.count = 0;
     }
 
-    pub fn add(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: u64) {
+    pub fn add(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: UnixNanos) {
         let order = pre_process_order(self.book_type, order, flags);
         match order.side.as_specified() {
             OrderSideSpecified::Buy => self.bids.add(order),
@@ -84,7 +84,7 @@ impl OrderBook {
         self.increment(sequence, ts_event);
     }
 
-    pub fn update(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: u64) {
+    pub fn update(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: UnixNanos) {
         let order = pre_process_order(self.book_type, order, flags);
         match order.side.as_specified() {
             OrderSideSpecified::Buy => self.bids.update(order),
@@ -94,7 +94,7 @@ impl OrderBook {
         self.increment(sequence, ts_event);
     }
 
-    pub fn delete(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: u64) {
+    pub fn delete(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: UnixNanos) {
         let order = pre_process_order(self.book_type, order, flags);
         match order.side.as_specified() {
             OrderSideSpecified::Buy => self.bids.delete(order, sequence, ts_event),
@@ -104,18 +104,18 @@ impl OrderBook {
         self.increment(sequence, ts_event);
     }
 
-    pub fn clear(&mut self, sequence: u64, ts_event: u64) {
+    pub fn clear(&mut self, sequence: u64, ts_event: UnixNanos) {
         self.bids.clear();
         self.asks.clear();
         self.increment(sequence, ts_event);
     }
 
-    pub fn clear_bids(&mut self, sequence: u64, ts_event: u64) {
+    pub fn clear_bids(&mut self, sequence: u64, ts_event: UnixNanos) {
         self.bids.clear();
         self.increment(sequence, ts_event);
     }
 
-    pub fn clear_asks(&mut self, sequence: u64, ts_event: u64) {
+    pub fn clear_asks(&mut self, sequence: u64, ts_event: UnixNanos) {
         self.asks.clear();
         self.increment(sequence, ts_event);
     }
@@ -247,7 +247,7 @@ impl OrderBook {
         pprint_book(&self.bids, &self.asks, num_levels)
     }
 
-    fn increment(&mut self, sequence: u64, ts_event: u64) {
+    fn increment(&mut self, sequence: u64, ts_event: UnixNanos) {
         self.sequence = sequence;
         self.ts_last = ts_event;
         self.count += 1;
@@ -301,7 +301,7 @@ mod tests {
             Quantity::from("1.0"),
             1,
         );
-        book.add(order1, 0, 1, 100);
+        book.add(order1, 0, 1, 100.into());
 
         assert_eq!(book.best_bid_price(), Some(Price::from("1.000")));
         assert_eq!(book.best_bid_size(), Some(Quantity::from("1.0")));
@@ -318,7 +318,7 @@ mod tests {
             Quantity::from("2.0"),
             2,
         );
-        book.add(order, 0, 2, 200);
+        book.add(order, 0, 2, 200.into());
 
         assert_eq!(book.best_ask_price(), Some(Price::from("2.000")));
         assert_eq!(book.best_ask_size(), Some(Quantity::from("2.0")));
@@ -348,8 +348,8 @@ mod tests {
             Quantity::from("2.0"),
             2,
         );
-        book.add(bid1, 0, 1, 100);
-        book.add(ask1, 0, 2, 200);
+        book.add(bid1, 0, 1, 100.into());
+        book.add(ask1, 0, 2, 200.into());
 
         assert_eq!(book.spread(), Some(1.0));
     }
@@ -378,8 +378,8 @@ mod tests {
             Quantity::from("2.0"),
             2,
         );
-        book.add(bid1, 0, 1, 100);
-        book.add(ask1, 0, 2, 200);
+        book.add(bid1, 0, 1, 100.into());
+        book.add(ask1, 0, 2, 200.into());
 
         assert_eq!(book.midpoint(), Some(1.5));
     }
@@ -435,10 +435,10 @@ mod tests {
             Quantity::from("2.0"),
             0, // order_id not applicable
         );
-        book.add(bid1, 0, 1, 2);
-        book.add(bid2, 0, 1, 2);
-        book.add(ask1, 0, 1, 2);
-        book.add(ask2, 0, 1, 2);
+        book.add(bid1, 0, 1, 2.into());
+        book.add(bid2, 0, 1, 2.into());
+        book.add(ask1, 0, 1, 2.into());
+        book.add(ask2, 0, 1, 2.into());
 
         let qty = Quantity::from("1.5");
 
@@ -493,12 +493,12 @@ mod tests {
             Quantity::from("3.0"),
             0, // order_id not applicable
         );
-        book.add(bid1, 0, 0, 1);
-        book.add(bid2, 0, 0, 1);
-        book.add(bid3, 0, 0, 1);
-        book.add(ask1, 0, 0, 1);
-        book.add(ask2, 0, 0, 1);
-        book.add(ask3, 0, 0, 1);
+        book.add(bid1, 0, 0, 1.into());
+        book.add(bid2, 0, 0, 1.into());
+        book.add(bid3, 0, 0, 1.into());
+        book.add(ask1, 0, 0, 1.into());
+        book.add(ask2, 0, 0, 1.into());
+        book.add(ask3, 0, 0, 1.into());
 
         assert_eq!(
             book.get_quantity_for_price(Price::from("2.010"), OrderSide::Buy),
@@ -541,7 +541,7 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let mut book = OrderBook::new(BookType::L1_MBP, instrument_id);
         book.sequence = 10;
-        book.ts_last = 100;
+        book.ts_last = 100.into();
         book.count = 3;
 
         book.reset();
@@ -562,8 +562,8 @@ mod tests {
             Price::from("5100.000"),
             Quantity::from("100.00000000"),
             Quantity::from("99.00000000"),
-            0,
-            0,
+            0.into(),
+            0.into(),
         )
         .unwrap();
 
@@ -588,8 +588,8 @@ mod tests {
             size,
             AggressorSide::Buyer,
             TradeId::new("123456789").unwrap(),
-            0,
-            0,
+            0.into(),
+            0.into(),
         );
 
         update_book_with_trade_tick(&mut book, &trade).unwrap();
@@ -617,8 +617,8 @@ mod tests {
             Quantity::from("1.0"),
             0, // order_id not applicable
         );
-        book.add(bid1, 0, 0, 1);
-        book.add(ask1, 0, 0, 1);
+        book.add(bid1, 0, 0, 1.into());
+        book.add(ask1, 0, 0, 1.into());
 
         assert!(book_check_integrity(&book).is_err());
     }
@@ -665,12 +665,12 @@ mod tests {
             6,
         );
 
-        book.add(order1, 0, 1, 100);
-        book.add(order2, 0, 2, 200);
-        book.add(order3, 0, 3, 300);
-        book.add(order4, 0, 4, 400);
-        book.add(order5, 0, 5, 500);
-        book.add(order6, 0, 6, 600);
+        book.add(order1, 0, 1, 100.into());
+        book.add(order2, 0, 2, 200.into());
+        book.add(order3, 0, 3, 300.into());
+        book.add(order4, 0, 4, 400.into());
+        book.add(order5, 0, 5, 500.into());
+        book.add(order6, 0, 6, 600.into());
 
         let pprint_output = book.pprint(3);
 

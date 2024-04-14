@@ -18,7 +18,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::time::UnixNanos;
+use nautilus_core::nanos::UnixNanos;
 
 use crate::{
     data::{delta::OrderBookDelta, order::BookOrder},

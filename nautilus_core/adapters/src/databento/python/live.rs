@@ -13,14 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{fs, str::FromStr};
+use std::{fs, i128, str::FromStr};
 
 use databento::{dbn, live::Subscription};
 use indexmap::IndexMap;
-use nautilus_core::{
-    python::{to_pyruntime_err, to_pyvalue_err},
-    time::UnixNanos,
-};
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     identifiers::venue::Venue,
     python::{data::data_to_pycapsule, instruments::convert_instrument_to_pyobject},
@@ -154,7 +151,7 @@ impl DatabentoLiveClient {
         &mut self,
         schema: String,
         symbols: Vec<&str>,
-        start: Option<UnixNanos>,
+        start: Option<u64>,
     ) -> PyResult<()> {
         let stype_in = infer_symbology_type(symbols.first().unwrap());
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;

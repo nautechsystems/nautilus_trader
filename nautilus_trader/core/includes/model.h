@@ -2207,11 +2207,11 @@ void orderbook_delete(struct OrderBook_API *book,
                       uint64_t sequence,
                       uint64_t ts_event);
 
-void orderbook_clear(struct OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
+void orderbook_clear(struct OrderBook_API *book, uint64_t sequence, uint64_t ts_event);
 
-void orderbook_clear_bids(struct OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
+void orderbook_clear_bids(struct OrderBook_API *book, uint64_t sequence, uint64_t ts_event);
 
-void orderbook_clear_asks(struct OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
+void orderbook_clear_asks(struct OrderBook_API *book, uint64_t sequence, uint64_t ts_event);
 
 void orderbook_apply_delta(struct OrderBook_API *book, struct OrderBookDelta_t delta);
 

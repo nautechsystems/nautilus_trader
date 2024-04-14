@@ -94,7 +94,7 @@ pub extern "C" fn orderbook_sequence(book: &OrderBook_API) -> u64 {
 
 #[no_mangle]
 pub extern "C" fn orderbook_ts_last(book: &OrderBook_API) -> u64 {
-    book.ts_last
+    book.ts_last.into()
 }
 
 #[no_mangle]
@@ -110,7 +110,7 @@ pub extern "C" fn orderbook_add(
     sequence: u64,
     ts_event: u64,
 ) {
-    book.add(order, flags, sequence, ts_event);
+    book.add(order, flags, sequence, ts_event.into());
 }
 
 #[no_mangle]
@@ -121,7 +121,7 @@ pub extern "C" fn orderbook_update(
     sequence: u64,
     ts_event: u64,
 ) {
-    book.update(order, flags, sequence, ts_event);
+    book.update(order, flags, sequence, ts_event.into());
 }
 
 #[no_mangle]
@@ -132,22 +132,22 @@ pub extern "C" fn orderbook_delete(
     sequence: u64,
     ts_event: u64,
 ) {
-    book.delete(order, flags, sequence, ts_event);
+    book.delete(order, flags, sequence, ts_event.into());
 }
 
 #[no_mangle]
-pub extern "C" fn orderbook_clear(book: &mut OrderBook_API, ts_event: u64, sequence: u64) {
-    book.clear(ts_event, sequence);
+pub extern "C" fn orderbook_clear(book: &mut OrderBook_API, sequence: u64, ts_event: u64) {
+    book.clear(sequence, ts_event.into());
 }
 
 #[no_mangle]
-pub extern "C" fn orderbook_clear_bids(book: &mut OrderBook_API, ts_event: u64, sequence: u64) {
-    book.clear_bids(ts_event, sequence);
+pub extern "C" fn orderbook_clear_bids(book: &mut OrderBook_API, sequence: u64, ts_event: u64) {
+    book.clear_bids(sequence, ts_event.into());
 }
 
 #[no_mangle]
-pub extern "C" fn orderbook_clear_asks(book: &mut OrderBook_API, ts_event: u64, sequence: u64) {
-    book.clear_asks(ts_event, sequence);
+pub extern "C" fn orderbook_clear_asks(book: &mut OrderBook_API, sequence: u64, ts_event: u64) {
+    book.clear_asks(sequence, ts_event.into());
 }
 
 #[no_mangle]

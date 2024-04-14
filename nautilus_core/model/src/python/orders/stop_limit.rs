@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::{python::to_pyvalue_err, time::UnixNanos, uuid::UUID4};
+use nautilus_core::{nanos::UnixNanos, python::to_pyvalue_err, uuid::UUID4};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use ustr::Ustr;
 
@@ -53,8 +53,8 @@ impl StopLimitOrder {
         reduce_only: bool,
         quote_quantity: bool,
         init_id: UUID4,
-        ts_init: UnixNanos,
-        expire_time: Option<UnixNanos>,
+        ts_init: u64,
+        expire_time: Option<u64>,
         display_qty: Option<Quantity>,
         emulation_trigger: Option<TriggerType>,
         trigger_instrument_id: Option<InstrumentId>,
@@ -79,7 +79,7 @@ impl StopLimitOrder {
             trigger_price,
             trigger_type,
             time_in_force,
-            expire_time,
+            expire_time.map(UnixNanos::from),
             post_only,
             reduce_only,
             quote_quantity,
@@ -95,7 +95,7 @@ impl StopLimitOrder {
             exec_spawn_id,
             tags.map(|s| Ustr::from(&s)),
             init_id,
-            ts_init,
+            ts_init.into(),
         )
         .map_err(to_pyvalue_err)
     }
@@ -183,8 +183,8 @@ impl StopLimitOrder {
 
     #[getter]
     #[pyo3(name = "expire_time")]
-    fn py_expire_time(&self) -> Option<UnixNanos> {
-        self.expire_time
+    fn py_expire_time(&self) -> Option<u64> {
+        self.expire_time.map(|e| e.into())
     }
 
     #[getter]
@@ -201,8 +201,8 @@ impl StopLimitOrder {
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> UnixNanos {
-        self.ts_init
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 
     #[getter]
@@ -359,9 +359,9 @@ impl StopLimitOrder {
         dict.set_item("is_reduce_only", self.is_reduce_only)?;
         dict.set_item("is_quote_quantity", self.is_quote_quantity)?;
         dict.set_item("init_id", self.init_id.to_string())?;
-        dict.set_item("expire_time_ns", self.expire_time.unwrap_or(0))?;
-        dict.set_item("ts_init", self.ts_init)?;
-        dict.set_item("ts_last", self.ts_last)?;
+        dict.set_item("expire_time_ns", self.expire_time.map(|e| e.as_u64()))?;
+        dict.set_item("ts_init", self.ts_init.as_u64())?;
+        dict.set_item("ts_last", self.ts_last.as_u64())?;
         let commissions_dict = PyDict::new(py);
         for (key, value) in &self.commissions {
             commissions_dict.set_item(key.code.to_string(), value.to_string())?;
@@ -494,7 +494,7 @@ impl StopLimitOrder {
             .extract::<bool>()?;
         let expire_time = dict
             .get_item("expire_time")
-            .map(|x| x.and_then(|x| x.extract::<UnixNanos>().ok()))
+            .map(|x| x.and_then(|x| x.extract::<u64>().ok()))
             .unwrap();
         let display_quantity = dict
             .get_item("display_qty")
@@ -611,7 +611,7 @@ impl StopLimitOrder {
             .get_item("init_id")
             .map(|x| x.and_then(|inner| inner.extract::<&str>().unwrap().parse::<UUID4>().ok()))?
             .unwrap();
-        let ts_init = dict.get_item("ts_init")?.unwrap().extract::<UnixNanos>()?;
+        let ts_init = dict.get_item("ts_init")?.unwrap().extract::<u64>()?;
         let stop_limit_order = Self::new(
             trader_id,
             strategy_id,
@@ -623,7 +623,7 @@ impl StopLimitOrder {
             trigger_price,
             trigger_type,
             time_in_force,
-            expire_time,
+            expire_time.map(UnixNanos::from),
             post_only,
             reduce_only,
             quote_quantity,
@@ -639,7 +639,7 @@ impl StopLimitOrder {
             exec_spawn_id,
             tags,
             init_id,
-            ts_init,
+            ts_init.into(),
         )
         .unwrap();
         Ok(stop_limit_order)

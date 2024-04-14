@@ -173,7 +173,7 @@ impl DatabentoDataLoader {
                         .expect("`Venue` not found `publisher_id`");
                     let instrument_id = InstrumentId::new(symbol, *venue);
 
-                    match decode_instrument_def_msg_v1(rec, instrument_id, msg.ts_recv) {
+                    match decode_instrument_def_msg_v1(rec, instrument_id, msg.ts_recv.into()) {
                         Ok(data) => Some(Ok(data)),
                         Err(e) => Some(Err(e)),
                     }
@@ -261,7 +261,12 @@ impl DatabentoDataLoader {
                     let msg = record
                         .get::<dbn::ImbalanceMsg>()
                         .expect("Invalid `ImbalanceMsg`");
-                    match decode_imbalance_msg(msg, instrument_id, price_precision, msg.ts_recv) {
+                    match decode_imbalance_msg(
+                        msg,
+                        instrument_id,
+                        price_precision,
+                        msg.ts_recv.into(),
+                    ) {
                         Ok(data) => Some(Ok(data)),
                         Err(e) => Some(Err(e)),
                     }
@@ -301,7 +306,12 @@ impl DatabentoDataLoader {
                     };
 
                     let msg = record.get::<dbn::StatMsg>().expect("Invalid `StatMsg`");
-                    match decode_statistics_msg(msg, instrument_id, price_precision, msg.ts_recv) {
+                    match decode_statistics_msg(
+                        msg,
+                        instrument_id,
+                        price_precision,
+                        msg.ts_recv.into(),
+                    ) {
                         Ok(data) => Some(Ok(data)),
                         Err(e) => Some(Err(e)),
                     }

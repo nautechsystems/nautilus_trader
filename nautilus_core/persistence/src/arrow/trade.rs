@@ -93,8 +93,8 @@ impl EncodeToRecordBatch for TradeTick {
             size_builder.append_value(tick.size.raw);
             aggressor_side_builder.append_value(tick.aggressor_side as u8);
             trade_id_builder.append_value(tick.trade_id.to_string());
-            ts_event_builder.append_value(tick.ts_event);
-            ts_init_builder.append_value(tick.ts_init);
+            ts_event_builder.append_value(tick.ts_event.as_u64());
+            ts_init_builder.append_value(tick.ts_init.as_u64());
         }
 
         let price_array = price_builder.finish();
@@ -147,8 +147,8 @@ impl DecodeFromRecordBatch for TradeTick {
                         )
                     })?;
                 let trade_id = TradeId::from(trade_id_values.value(i));
-                let ts_event = ts_event_values.value(i);
-                let ts_init = ts_init_values.value(i);
+                let ts_event = ts_event_values.value(i).into();
+                let ts_init = ts_init_values.value(i).into();
 
                 Ok(Self {
                     instrument_id,
@@ -233,8 +233,8 @@ mod tests {
             size: Quantity::from(1000),
             aggressor_side: AggressorSide::Buyer,
             trade_id: TradeId::new("1").unwrap(),
-            ts_event: 1,
-            ts_init: 3,
+            ts_event: 1.into(),
+            ts_init: 3.into(),
         };
 
         let tick2 = TradeTick {
@@ -243,8 +243,8 @@ mod tests {
             size: Quantity::from(500),
             aggressor_side: AggressorSide::Seller,
             trade_id: TradeId::new("2").unwrap(),
-            ts_event: 2,
-            ts_init: 4,
+            ts_event: 2.into(),
+            ts_init: 4.into(),
         };
 
         let data = vec![tick1, tick2];

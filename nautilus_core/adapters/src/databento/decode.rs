@@ -21,7 +21,7 @@ use std::{
 };
 
 use databento::dbn::{self};
-use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, time::UnixNanos};
+use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::{
         bar::{Bar, BarSpecification, BarType},
@@ -205,11 +205,11 @@ pub fn decode_equity_v1(
         None, // TBD
         None, // TBD
         Some(Quantity::new(msg.min_lot_size_round_lot.into(), 0)?),
-        None,        // TBD
-        None,        // TBD
-        None,        // TBD
-        None,        // TBD
-        msg.ts_recv, // More accurate and reliable timestamp
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -231,8 +231,8 @@ pub fn decode_futures_contract_v1(
         asset_class.unwrap_or(AssetClass::Commodity),
         Some(exchange),
         underlying,
-        msg.activation,
-        msg.expiration,
+        msg.activation.into(),
+        msg.expiration.into(),
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
@@ -244,7 +244,7 @@ pub fn decode_futures_contract_v1(
         None,                   // TBD
         None,                   // TBD
         None,                   // TBD
-        msg.ts_recv,            // More accurate and reliable timestamp
+        msg.ts_recv.into(),     // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -268,8 +268,8 @@ pub fn decode_futures_spread_v1(
         Some(exchange),
         underlying,
         strategy_type,
-        msg.activation,
-        msg.expiration,
+        msg.activation.into(),
+        msg.expiration.into(),
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
@@ -281,7 +281,7 @@ pub fn decode_futures_spread_v1(
         None,                   // TBD
         None,                   // TBD
         None,                   // TBD
-        msg.ts_recv,            // More accurate and reliable timestamp
+        msg.ts_recv.into(),     // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -311,8 +311,8 @@ pub fn decode_options_contract_v1(
         Some(exchange),
         underlying,
         parse_option_kind(msg.instrument_class)?,
-        msg.activation,
-        msg.expiration,
+        msg.activation.into(),
+        msg.expiration.into(),
         Price::from_raw(msg.strike_price, currency.precision)?,
         currency,
         currency.precision,
@@ -325,7 +325,7 @@ pub fn decode_options_contract_v1(
         None,                   // TBD
         None,
         None,
-        msg.ts_recv, // More accurate and reliable timestamp
+        msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -356,8 +356,8 @@ pub fn decode_options_spread_v1(
         Some(exchange),
         underlying,
         strategy_type,
-        msg.activation,
-        msg.expiration,
+        msg.activation.into(),
+        msg.expiration.into(),
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
@@ -369,7 +369,7 @@ pub fn decode_options_spread_v1(
         None,                   // TBD
         None,                   // TBD
         None,                   // TBD
-        msg.ts_recv,            // More accurate and reliable timestamp
+        msg.ts_recv.into(),     // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -395,7 +395,7 @@ pub fn decode_mbo_msg(
                 Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0)?,
                 parse_aggressor_side(msg.side),
                 TradeId::new(itoa::Buffer::new().format(msg.sequence))?,
-                msg.ts_recv,
+                msg.ts_recv.into(),
                 ts_init,
             );
             return Ok((None, Some(trade)));
@@ -417,7 +417,7 @@ pub fn decode_mbo_msg(
         order,
         msg.flags,
         msg.sequence.into(),
-        msg.ts_recv,
+        msg.ts_recv.into(),
         ts_init,
     );
 
@@ -436,7 +436,7 @@ pub fn decode_trade_msg(
         Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0)?,
         parse_aggressor_side(msg.side),
         TradeId::new(itoa::Buffer::new().format(msg.sequence))?,
-        msg.ts_recv,
+        msg.ts_recv.into(),
         ts_init,
     );
 
@@ -456,7 +456,7 @@ pub fn decode_tbbo_msg(
         Price::from_raw(top_level.ask_px, price_precision)?,
         Quantity::from_raw(u64::from(top_level.bid_sz) * FIXED_SCALAR as u64, 0)?,
         Quantity::from_raw(u64::from(top_level.ask_sz) * FIXED_SCALAR as u64, 0)?,
-        msg.ts_recv,
+        msg.ts_recv.into(),
         ts_init,
     )?;
 
@@ -466,7 +466,7 @@ pub fn decode_tbbo_msg(
         Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0)?,
         parse_aggressor_side(msg.side),
         TradeId::new(itoa::Buffer::new().format(msg.sequence))?,
-        msg.ts_recv,
+        msg.ts_recv.into(),
         ts_init,
     );
 
@@ -487,7 +487,7 @@ pub fn decode_mbp1_msg(
         Price::from_raw(top_level.ask_px, price_precision)?,
         Quantity::from_raw(u64::from(top_level.bid_sz) * FIXED_SCALAR as u64, 0)?,
         Quantity::from_raw(u64::from(top_level.ask_sz) * FIXED_SCALAR as u64, 0)?,
-        msg.ts_recv,
+        msg.ts_recv.into(),
         ts_init,
     )?;
 
@@ -498,7 +498,7 @@ pub fn decode_mbp1_msg(
             Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0)?,
             parse_aggressor_side(msg.side),
             TradeId::new(itoa::Buffer::new().format(msg.sequence))?,
-            msg.ts_recv,
+            msg.ts_recv.into(),
             ts_init,
         ))
     } else {
@@ -553,7 +553,7 @@ pub fn decode_mbp10_msg(
         ask_counts,
         msg.flags,
         msg.sequence.into(),
-        msg.ts_recv,
+        msg.ts_recv.into(),
         ts_init,
     );
 
@@ -614,7 +614,7 @@ pub fn decode_ts_event_adjustment(msg: &dbn::OhlcvMsg) -> anyhow::Result<UnixNan
         ),
     };
 
-    Ok(adjustment)
+    Ok(adjustment.into())
 }
 
 pub fn decode_ohlcv_msg(
@@ -627,7 +627,7 @@ pub fn decode_ohlcv_msg(
     let ts_event_adjustment = decode_ts_event_adjustment(msg)?;
 
     // Adjust `ts_event` from open to close of bar
-    let ts_event = msg.hd.ts_event;
+    let ts_event = msg.hd.ts_event.into();
     let ts_init = cmp::max(ts_init, ts_event) + ts_event_adjustment;
 
     // Adjust raw prices by a display factor
@@ -661,7 +661,7 @@ pub fn decode_record(
     // into quotes and trades when loading, and the live client will
     // never subscribe to `tbbo`.
     let result = if let Some(msg) = record.get::<dbn::MboMsg>() {
-        let ts_init = determine_timestamp(ts_init, msg.ts_recv);
+        let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
         let result = decode_mbo_msg(msg, instrument_id, price_precision, ts_init, include_trades)?;
         match result {
             (Some(delta), None) => (Some(Data::Delta(delta)), None),
@@ -670,22 +670,22 @@ pub fn decode_record(
             _ => anyhow::bail!("Invalid `MboMsg` parsing combination"),
         }
     } else if let Some(msg) = record.get::<dbn::TradeMsg>() {
-        let ts_init = determine_timestamp(ts_init, msg.ts_recv);
+        let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
         let trade = decode_trade_msg(msg, instrument_id, price_precision, ts_init)?;
         (Some(Data::Trade(trade)), None)
     } else if let Some(msg) = record.get::<dbn::Mbp1Msg>() {
-        let ts_init = determine_timestamp(ts_init, msg.ts_recv);
+        let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
         let result = decode_mbp1_msg(msg, instrument_id, price_precision, ts_init, include_trades)?;
         match result {
             (quote, None) => (Some(Data::Quote(quote)), None),
             (quote, Some(trade)) => (Some(Data::Quote(quote)), Some(Data::Trade(trade))),
         }
     } else if let Some(msg) = record.get::<dbn::Mbp10Msg>() {
-        let ts_init = determine_timestamp(ts_init, msg.ts_recv);
+        let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
         let depth = decode_mbp10_msg(msg, instrument_id, price_precision, ts_init)?;
         (Some(Data::Depth10(depth)), None)
     } else if let Some(msg) = record.get::<dbn::OhlcvMsg>() {
-        let ts_init = determine_timestamp(ts_init, msg.hd.ts_event);
+        let ts_init = determine_timestamp(ts_init, msg.hd.ts_event.into());
         let bar = decode_ohlcv_msg(msg, instrument_id, price_precision, ts_init)?;
         (Some(Data::Bar(bar)), None)
     } else {
@@ -801,11 +801,11 @@ pub fn decode_equity(
         None, // TBD
         None, // TBD
         Some(Quantity::new(msg.min_lot_size_round_lot.into(), 0)?),
-        None,        // TBD
-        None,        // TBD
-        None,        // TBD
-        None,        // TBD
-        msg.ts_recv, // More accurate and reliable timestamp
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -827,20 +827,20 @@ pub fn decode_futures_contract(
         asset_class.unwrap_or(AssetClass::Commodity),
         Some(exchange),
         underlying,
-        msg.activation,
-        msg.expiration,
+        msg.activation.into(),
+        msg.expiration.into(),
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(1.0, 0)?, // TBD
         Quantity::new(1.0, 0)?, // TBD
         None,
-        None,        // TBD
-        None,        // TBD
-        None,        // TBD
-        None,        // TBD
-        None,        // TBD
-        msg.ts_recv, // More accurate and reliable timestamp
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -864,8 +864,8 @@ pub fn decode_futures_spread(
         Some(exchange),
         underlying,
         strategy_type,
-        msg.activation,
-        msg.expiration,
+        msg.activation.into(),
+        msg.expiration.into(),
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
@@ -877,7 +877,7 @@ pub fn decode_futures_spread(
         None,                   // TBD
         None,                   // TBD
         None,                   // TBD
-        msg.ts_recv,            // More accurate and reliable timestamp
+        msg.ts_recv.into(),     // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -907,8 +907,8 @@ pub fn decode_options_contract(
         Some(exchange),
         underlying,
         parse_option_kind(msg.instrument_class)?,
-        msg.activation,
-        msg.expiration,
+        msg.activation.into(),
+        msg.expiration.into(),
         Price::from_raw(msg.strike_price, currency.precision)?,
         currency,
         currency.precision,
@@ -921,7 +921,7 @@ pub fn decode_options_contract(
         None,                   // TBD
         None,                   // TBD
         None,                   // TBD
-        msg.ts_recv,            // More accurate and reliable timestamp
+        msg.ts_recv.into(),     // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -952,8 +952,8 @@ pub fn decode_options_spread(
         Some(exchange),
         underlying,
         strategy_type,
-        msg.activation,
-        msg.expiration,
+        msg.activation.into(),
+        msg.expiration.into(),
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
@@ -965,7 +965,7 @@ pub fn decode_options_spread(
         None,                   // TBD
         None,                   // TBD
         None,                   // TBD
-        msg.ts_recv,            // More accurate and reliable timestamp
+        msg.ts_recv.into(),     // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -985,8 +985,8 @@ pub fn decode_imbalance_msg(
         Quantity::new(f64::from(msg.total_imbalance_qty), 0)?,
         parse_order_side(msg.side),
         msg.significant_imbalance as c_char,
-        msg.hd.ts_event,
-        msg.ts_recv,
+        msg.hd.ts_event.into(),
+        msg.ts_recv.into(),
         ts_init,
     )
 }
@@ -1011,10 +1011,10 @@ pub fn decode_statistics_msg(
         msg.channel_id,
         msg.stat_flags,
         msg.sequence,
-        msg.ts_ref,
+        msg.ts_ref.into(),
         msg.ts_in_delta,
-        msg.hd.ts_event,
-        msg.ts_recv,
+        msg.hd.ts_event.into(),
+        msg.ts_recv.into(),
         ts_init,
     )
 }
@@ -1044,7 +1044,7 @@ mod tests {
         let msg = dbn_stream.next().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let (delta, _) = decode_mbo_msg(msg, instrument_id, 2, 0, false).unwrap();
+        let (delta, _) = decode_mbo_msg(msg, instrument_id, 2, 0.into(), false).unwrap();
         let delta = delta.unwrap();
 
         assert_eq!(delta.instrument_id, instrument_id);
@@ -1069,7 +1069,7 @@ mod tests {
         let msg = dbn_stream.next().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let (quote, _) = decode_mbp1_msg(msg, instrument_id, 2, 0, false).unwrap();
+        let (quote, _) = decode_mbp1_msg(msg, instrument_id, 2, 0.into(), false).unwrap();
 
         assert_eq!(quote.instrument_id, instrument_id);
         assert_eq!(quote.bid_price, Price::from("3720.25"));
@@ -1090,7 +1090,7 @@ mod tests {
         let msg = dbn_stream.next().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let depth10 = decode_mbp10_msg(msg, instrument_id, 2, 0).unwrap();
+        let depth10 = decode_mbp10_msg(msg, instrument_id, 2, 0.into()).unwrap();
 
         assert_eq!(depth10.instrument_id, instrument_id);
         assert_eq!(depth10.bids.len(), 10);
@@ -1113,7 +1113,7 @@ mod tests {
         let msg = dbn_stream.next().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let trade = decode_trade_msg(msg, instrument_id, 2, 0).unwrap();
+        let trade = decode_trade_msg(msg, instrument_id, 2, 0.into()).unwrap();
 
         assert_eq!(trade.instrument_id, instrument_id);
         assert_eq!(trade.price, Price::from("3720.25"));
@@ -1134,7 +1134,7 @@ mod tests {
         let msg = dbn_stream.next().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let (quote, trade) = decode_tbbo_msg(msg, instrument_id, 2, 0).unwrap();
+        let (quote, trade) = decode_tbbo_msg(msg, instrument_id, 2, 0.into()).unwrap();
 
         assert_eq!(quote.instrument_id, instrument_id);
         assert_eq!(quote.bid_price, Price::from("3720.25"));
@@ -1164,7 +1164,7 @@ mod tests {
         let msg = dbn_stream.next().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let bar = decode_ohlcv_msg(msg, instrument_id, 2, 0).unwrap();
+        let bar = decode_ohlcv_msg(msg, instrument_id, 2, 0.into()).unwrap();
 
         assert_eq!(
             bar.bar_type,
@@ -1187,7 +1187,7 @@ mod tests {
         let msg = dbn_stream.next().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let result = decode_instrument_def_msg(msg, instrument_id, 0);
+        let result = decode_instrument_def_msg(msg, instrument_id, 0.into());
 
         assert!(result.is_ok());
     }
@@ -1201,7 +1201,7 @@ mod tests {
         let msg = dbn_stream.next().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let result = decode_instrument_def_msg_v1(msg, instrument_id, 0);
+        let result = decode_instrument_def_msg_v1(msg, instrument_id, 0.into());
 
         assert!(result.is_ok());
     }
@@ -1215,7 +1215,7 @@ mod tests {
         let msg = dbn_stream.next().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let imbalance = decode_imbalance_msg(msg, instrument_id, 2, 0).unwrap();
+        let imbalance = decode_imbalance_msg(msg, instrument_id, 2, 0.into()).unwrap();
 
         assert_eq!(imbalance.instrument_id, instrument_id);
         assert_eq!(imbalance.ref_price, Price::from("229.43"));
@@ -1239,7 +1239,7 @@ mod tests {
         let msg = dbn_stream.next().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let statistics = decode_statistics_msg(msg, instrument_id, 2, 0).unwrap();
+        let statistics = decode_statistics_msg(msg, instrument_id, 2, 0.into()).unwrap();
 
         assert_eq!(statistics.instrument_id, instrument_id);
         assert_eq!(statistics.stat_type, DatabentoStatisticType::LowestOffer);

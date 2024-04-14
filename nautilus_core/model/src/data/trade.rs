@@ -20,7 +20,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{serialization::Serializable, time::UnixNanos};
+use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -127,6 +127,7 @@ impl Serializable for TradeTick {}
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(feature = "stubs")]
 pub mod stubs {
+    use nautilus_core::nanos::UnixNanos;
     use rstest::fixture;
 
     use crate::{
@@ -144,8 +145,8 @@ pub mod stubs {
             size: Quantity::from("1.00000000"),
             aggressor_side: AggressorSide::Buyer,
             trade_id: TradeId::new("123456789").unwrap(),
-            ts_event: 0,
-            ts_init: 1,
+            ts_event: UnixNanos::from(0),
+            ts_init: UnixNanos::from(1),
         }
     }
 }

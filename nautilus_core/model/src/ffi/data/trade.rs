@@ -46,8 +46,8 @@ pub extern "C" fn trade_tick_new(
         Quantity::from_raw(size_raw, size_prec).unwrap(),
         aggressor_side,
         trade_id,
-        ts_event,
-        ts_init,
+        ts_event.into(),
+        ts_init.into(),
     )
 }
 

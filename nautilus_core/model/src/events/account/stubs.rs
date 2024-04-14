@@ -36,8 +36,8 @@ pub fn cash_account_state() -> AccountState {
         vec![],
         true,
         uuid4(),
-        0,
-        0,
+        0.into(),
+        0.into(),
         Some(Currency::USD()),
     )
     .unwrap()
@@ -57,8 +57,8 @@ pub fn cash_account_state_million_usd() -> AccountState {
         vec![],
         true,
         uuid4(),
-        0,
-        0,
+        0.into(),
+        0.into(),
         Some(Currency::USD()),
     )
     .unwrap()
@@ -78,8 +78,8 @@ pub fn cash_account_state_million_usdt() -> AccountState {
         vec![],
         true,
         uuid4(),
-        0,
-        0,
+        0.into(),
+        0.into(),
         Some(Currency::USD()),
     )
     .unwrap()
@@ -106,8 +106,8 @@ pub fn cash_account_state_multi() -> AccountState {
         vec![],
         true,
         uuid4(),
-        0,
-        0,
+        0.into(),
+        0.into(),
         None, // multi cash account
     )
     .unwrap()
@@ -134,8 +134,8 @@ pub fn cash_account_state_multi_changed_btc() -> AccountState {
         vec![],
         true,
         uuid4(),
-        0,
-        0,
+        0.into(),
+        0.into(),
         None, // multi cash account
     )
     .unwrap()
@@ -150,8 +150,8 @@ pub fn margin_account_state() -> AccountState {
         vec![margin_balance_test()],
         true,
         uuid4(),
-        0,
-        0,
+        0.into(),
+        0.into(),
         Some(Currency::USD()),
     )
     .unwrap()

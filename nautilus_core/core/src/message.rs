@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::{time::UnixNanos, uuid::UUID4};
+use crate::{nanos::UnixNanos, uuid::UUID4};
 
 #[derive(Debug, Clone)]
 pub enum Message {

@@ -15,6 +15,8 @@
 
 use std::{cmp::Ordering, collections::BTreeMap};
 
+use nautilus_core::nanos::UnixNanos;
+
 use crate::{
     data::order::{BookOrder, OrderId},
     orderbook::{error::BookIntegrityError, ladder::BookPrice},
@@ -143,7 +145,7 @@ impl Level {
         self.update_insertion_order();
     }
 
-    pub fn remove_by_id(&mut self, order_id: OrderId, sequence: u64, ts_event: u64) {
+    pub fn remove_by_id(&mut self, order_id: OrderId, sequence: u64, ts_event: UnixNanos) {
         assert!(
             self.orders.remove(&order_id).is_some(),
             "{}",
@@ -331,7 +333,7 @@ mod tests {
 
         level.add(order1);
         level.add(order2);
-        level.remove_by_id(order2_id, 0, 0);
+        level.remove_by_id(order2_id, 0, 0.into());
         assert_eq!(level.len(), 1);
         assert!(level.orders.contains_key(&order1_id));
         assert_eq!(level.size(), 10.0);
@@ -369,7 +371,7 @@ mod tests {
     )]
     fn test_remove_nonexistent_order() {
         let mut level = Level::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
-        level.remove_by_id(1, 2, 3);
+        level.remove_by_id(1, 2, 3.into());
     }
 
     #[rstest]
