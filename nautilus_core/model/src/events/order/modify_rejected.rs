@@ -85,8 +85,8 @@ impl Display for OrderModifyRejected {
             "OrderModifyRejected(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={},reason={}, ts_event={})",
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}")),
-            self.account_id.map_or_else(|| "None".to_string(), |account_id| format!("{account_id}")),
+            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
+            self.account_id.map_or("None".to_string(), |account_id| format!("{account_id}")),
             self.reason,
             self.ts_event
         )

@@ -27,6 +27,7 @@ documentation = "https://docs.nautilustrader.io"
 [workspace.dependencies]
 anyhow = "1.0.82"
 chrono = "0.4.37"
+derive_builder = "0.20.0"
 futures = "0.3.30"
 indexmap = { version = "2.2.6", features = ["serde"] }
 itertools = "0.12.1"

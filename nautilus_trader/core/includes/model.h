@@ -328,7 +328,7 @@ typedef enum MarketStatus {
  */
 typedef enum OmsType {
     /**
-     * There is no specific type of order management specified (will defer to the venue).
+     * There is no specific type of order management specified (will defer to the venue OMS).
      */
     UNSPECIFIED = 0,
     /**

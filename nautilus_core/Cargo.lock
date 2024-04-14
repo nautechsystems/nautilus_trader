@@ -2595,6 +2595,7 @@ version = "0.21.0"
 dependencies = [
  "anyhow",
  "criterion",
+ "derive_builder",
  "indexmap 2.2.6",
  "log",
  "nautilus-common",

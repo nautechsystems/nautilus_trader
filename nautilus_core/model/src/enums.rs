@@ -96,6 +96,7 @@ pub enum AggregationSource {
     Copy,
     Clone,
     Debug,
+    Default,
     Display,
     Hash,
     PartialEq,
@@ -115,6 +116,7 @@ pub enum AggregationSource {
 )]
 pub enum AggressorSide {
     /// There was no specific aggressor for the trade.
+    #[default]
     NoAggressor = 0,
     /// The BUY order was the aggressor for the trade.
     Buyer = 1,
@@ -378,6 +380,7 @@ impl FromU8 for BookType {
     Copy,
     Clone,
     Debug,
+    Default,
     Display,
     Hash,
     PartialEq,
@@ -397,6 +400,7 @@ impl FromU8 for BookType {
 )]
 pub enum ContingencyType {
     /// Not a contingent order.
+    #[default]
     NoContingency = 0,
     /// One-Cancels-the-Other.
     Oco = 1,
@@ -579,6 +583,7 @@ pub enum HaltReason {
     Copy,
     Clone,
     Debug,
+    Default,
     Display,
     Hash,
     PartialEq,
@@ -597,7 +602,8 @@ pub enum HaltReason {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
 )]
 pub enum OmsType {
-    /// There is no specific type of order management specified (will defer to the venue).
+    /// There is no specific type of order management specified (will defer to the venue OMS).
+    #[default]
     Unspecified = 0,
     /// The netting type where there is one position per instrument.
     Netting = 1,
@@ -643,6 +649,7 @@ pub enum OptionKind {
     Copy,
     Clone,
     Debug,
+    Default,
     Display,
     Hash,
     PartialEq,
@@ -663,6 +670,7 @@ pub enum OptionKind {
 )]
 pub enum OrderSide {
     /// No order side is specified.
+    #[default]
     NoOrderSide = 0,
     /// The order is a BUY.
     Buy = 1,
@@ -834,6 +842,7 @@ pub enum OrderType {
     Copy,
     Clone,
     Debug,
+    Default,
     Display,
     Hash,
     PartialEq,
@@ -854,6 +863,7 @@ pub enum OrderType {
 )]
 pub enum PositionSide {
     /// No position side is specified (only valid in the context of a filter for actions involving positions).
+    #[default]
     NoPositionSide = 0,
     /// A neural/flat position, where no position is currently held in the market.
     Flat = 1,
@@ -1058,6 +1068,7 @@ pub enum TrailingOffsetType {
     Copy,
     Clone,
     Debug,
+    Default,
     Display,
     Hash,
     PartialEq,
@@ -1077,6 +1088,7 @@ pub enum TrailingOffsetType {
 )]
 pub enum TriggerType {
     /// No trigger type is specified (invalid for orders with a trigger).
+    #[default]
     NoTrigger = 0,
     /// The default trigger type set by the trading venue.
     Default = 1,
