@@ -36,7 +36,7 @@ use nautilus_model::{
     instruments::Instrument,
     orderbook::book::OrderBook,
     orders::{
-        base::{PassiveOrderType, StopOrderType},
+        base::{PassiveOrderAny, StopOrderAny},
         trailing_stop_limit::TrailingStopLimitOrder,
         trailing_stop_market::TrailingStopMarketOrder,
     },
@@ -171,12 +171,12 @@ impl OrderMatchingEngine {
     }
 
     #[must_use]
-    pub fn get_open_bid_orders(&self) -> &[PassiveOrderType] {
+    pub fn get_open_bid_orders(&self) -> &[PassiveOrderAny] {
         self.core.get_orders_bid()
     }
 
     #[must_use]
-    pub fn get_open_ask_orders(&self) -> &[PassiveOrderType] {
+    pub fn get_open_ask_orders(&self) -> &[PassiveOrderAny] {
         self.core.get_orders_ask()
     }
 
@@ -211,7 +211,7 @@ impl OrderMatchingEngine {
         self.iterate_orders(timestamp_ns, &orders_ask);
     }
 
-    fn iterate_orders(&mut self, timestamp_ns: UnixNanos, orders: &[PassiveOrderType]) {
+    fn iterate_orders(&mut self, timestamp_ns: UnixNanos, orders: &[PassiveOrderAny]) {
         for order in orders {
             if order.is_closed() {
                 continue;
@@ -229,10 +229,10 @@ impl OrderMatchingEngine {
             }
 
             // Manage trailing stop
-            if let PassiveOrderType::Stop(o) = order {
+            if let PassiveOrderAny::Stop(o) = order {
                 match o {
-                    StopOrderType::TrailingStopMarket(o) => self.update_trailing_stop_market(o),
-                    StopOrderType::TrailingStopLimit(o) => self.update_trailing_stop_limit(o),
+                    StopOrderAny::TrailingStopMarket(o) => self.update_trailing_stop_market(o),
+                    StopOrderAny::TrailingStopLimit(o) => self.update_trailing_stop_limit(o),
                     _ => {}
                 }
             }
@@ -249,7 +249,7 @@ impl OrderMatchingEngine {
         self.target_last = None;
     }
 
-    fn expire_order(&mut self, order: &PassiveOrderType) {
+    fn expire_order(&mut self, order: &PassiveOrderAny) {
         todo!();
     }
 

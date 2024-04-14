@@ -294,12 +294,12 @@ impl GetEmulationTrigger for OrderAny {
 }
 
 #[derive(Clone, Debug)]
-pub enum PassiveOrderType {
-    Limit(LimitOrderType),
-    Stop(StopOrderType),
+pub enum PassiveOrderAny {
+    Limit(LimitOrderAny),
+    Stop(StopOrderAny),
 }
 
-impl PassiveOrderType {
+impl PassiveOrderAny {
     #[must_use]
     pub fn is_closed(&self) -> bool {
         match self {
@@ -317,7 +317,7 @@ impl PassiveOrderType {
     }
 }
 
-impl PartialEq for PassiveOrderType {
+impl PartialEq for PassiveOrderAny {
     fn eq(&self, rhs: &Self) -> bool {
         match self {
             Self::Limit(order) => order.client_order_id() == rhs.client_order_id(),
@@ -327,14 +327,14 @@ impl PartialEq for PassiveOrderType {
 }
 
 #[derive(Clone, Debug)]
-pub enum LimitOrderType {
+pub enum LimitOrderAny {
     Limit(LimitOrder),
     MarketToLimit(MarketToLimitOrder),
     StopLimit(StopLimitOrder),
     TrailingStopLimit(TrailingStopLimitOrder),
 }
 
-impl LimitOrderType {
+impl LimitOrderAny {
     #[must_use]
     pub fn is_closed(&self) -> bool {
         match self {
@@ -356,7 +356,7 @@ impl LimitOrderType {
     }
 }
 
-impl PartialEq for LimitOrderType {
+impl PartialEq for LimitOrderAny {
     fn eq(&self, rhs: &Self) -> bool {
         match self {
             Self::Limit(order) => order.client_order_id == rhs.client_order_id(),
@@ -368,7 +368,7 @@ impl PartialEq for LimitOrderType {
 }
 
 #[derive(Clone, Debug)]
-pub enum StopOrderType {
+pub enum StopOrderAny {
     LimitIfTouched(LimitIfTouchedOrder),
     MarketIfTouched(MarketIfTouchedOrder),
     StopLimit(StopLimitOrder),
@@ -377,7 +377,7 @@ pub enum StopOrderType {
     TrailingStopMarket(TrailingStopMarketOrder),
 }
 
-impl StopOrderType {
+impl StopOrderAny {
     #[must_use]
     pub fn is_closed(&self) -> bool {
         match self {
@@ -403,7 +403,7 @@ impl StopOrderType {
     }
 }
 
-impl PartialEq for StopOrderType {
+impl PartialEq for StopOrderAny {
     fn eq(&self, rhs: &Self) -> bool {
         match self {
             Self::LimitIfTouched(order) => order.client_order_id == rhs.client_order_id(),
@@ -416,7 +416,7 @@ impl PartialEq for StopOrderType {
     }
 }
 
-impl GetClientOrderId for PassiveOrderType {
+impl GetClientOrderId for PassiveOrderAny {
     fn client_order_id(&self) -> ClientOrderId {
         match self {
             Self::Limit(order) => order.client_order_id(),
@@ -425,7 +425,7 @@ impl GetClientOrderId for PassiveOrderType {
     }
 }
 
-impl GetOrderSideSpecified for PassiveOrderType {
+impl GetOrderSideSpecified for PassiveOrderAny {
     fn order_side_specified(&self) -> OrderSideSpecified {
         match self {
             Self::Limit(order) => order.order_side_specified(),
@@ -434,7 +434,7 @@ impl GetOrderSideSpecified for PassiveOrderType {
     }
 }
 
-impl GetClientOrderId for LimitOrderType {
+impl GetClientOrderId for LimitOrderAny {
     fn client_order_id(&self) -> ClientOrderId {
         match self {
             Self::Limit(order) => order.client_order_id,
@@ -445,7 +445,7 @@ impl GetClientOrderId for LimitOrderType {
     }
 }
 
-impl GetOrderSideSpecified for LimitOrderType {
+impl GetOrderSideSpecified for LimitOrderAny {
     fn order_side_specified(&self) -> OrderSideSpecified {
         match self {
             Self::Limit(order) => order.side.as_specified(),
@@ -456,7 +456,7 @@ impl GetOrderSideSpecified for LimitOrderType {
     }
 }
 
-impl GetLimitPrice for LimitOrderType {
+impl GetLimitPrice for LimitOrderAny {
     fn limit_px(&self) -> Price {
         match self {
             Self::Limit(order) => order.price,
@@ -467,7 +467,7 @@ impl GetLimitPrice for LimitOrderType {
     }
 }
 
-impl GetClientOrderId for StopOrderType {
+impl GetClientOrderId for StopOrderAny {
     fn client_order_id(&self) -> ClientOrderId {
         match self {
             Self::LimitIfTouched(order) => order.client_order_id,
@@ -480,7 +480,7 @@ impl GetClientOrderId for StopOrderType {
     }
 }
 
-impl GetOrderSideSpecified for StopOrderType {
+impl GetOrderSideSpecified for StopOrderAny {
     fn order_side_specified(&self) -> OrderSideSpecified {
         match self {
             Self::LimitIfTouched(order) => order.side.as_specified(),
@@ -493,7 +493,7 @@ impl GetOrderSideSpecified for StopOrderType {
     }
 }
 
-impl GetStopPrice for StopOrderType {
+impl GetStopPrice for StopOrderAny {
     fn stop_px(&self) -> Price {
         match self {
             Self::LimitIfTouched(o) => o.trigger_price,
