@@ -843,70 +843,49 @@ pub struct OrderCore {
 }
 
 impl OrderCore {
-    #[must_use]
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        trader_id: TraderId,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        order_side: OrderSide,
-        order_type: OrderType,
-        quantity: Quantity,
-        time_in_force: TimeInForce,
-        reduce_only: bool,
-        quote_quantity: bool,
-        emulation_trigger: Option<TriggerType>,
-        contingency_type: Option<ContingencyType>,
-        order_list_id: Option<OrderListId>,
-        linked_order_ids: Option<Vec<ClientOrderId>>,
-        parent_order_id: Option<ClientOrderId>,
-        exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
-        exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<Ustr>,
-        init_id: UUID4,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self {
-            events: Vec::new(),
+    pub fn new(init: OrderInitialized) -> anyhow::Result<Self> {
+        let events: Vec<OrderEvent> = vec![OrderEvent::OrderInitialized(init.clone())];
+        Ok(OrderCore {
+            events,
             commissions: HashMap::new(),
             venue_order_ids: Vec::new(),
             trade_ids: Vec::new(),
             previous_status: None,
             status: OrderStatus::Initialized,
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
+            trader_id: init.trader_id,
+            strategy_id: init.strategy_id,
+            instrument_id: init.instrument_id,
+            client_order_id: init.client_order_id,
             venue_order_id: None,
             position_id: None,
             account_id: None,
             last_trade_id: None,
-            side: order_side,
-            order_type,
-            quantity,
-            time_in_force,
+            side: init.order_side,
+            order_type: init.order_type,
+            quantity: init.quantity,
+            time_in_force: init.time_in_force,
             liquidity_side: Some(LiquiditySide::NoLiquiditySide),
-            is_reduce_only: reduce_only,
-            is_quote_quantity: quote_quantity,
-            emulation_trigger: emulation_trigger.or(Some(TriggerType::NoTrigger)),
-            contingency_type: contingency_type.or(Some(ContingencyType::NoContingency)),
-            order_list_id,
-            linked_order_ids,
-            parent_order_id,
-            exec_algorithm_id,
-            exec_algorithm_params,
-            exec_spawn_id,
-            tags,
-            filled_qty: Quantity::zero(quantity.precision),
-            leaves_qty: quantity,
+            is_reduce_only: init.reduce_only,
+            is_quote_quantity: init.quote_quantity,
+            emulation_trigger: init.emulation_trigger.or(Some(TriggerType::NoTrigger)),
+            contingency_type: init
+                .contingency_type
+                .or(Some(ContingencyType::NoContingency)),
+            order_list_id: init.order_list_id,
+            linked_order_ids: init.linked_order_ids,
+            parent_order_id: init.parent_order_id,
+            exec_algorithm_id: init.exec_algorithm_id,
+            exec_algorithm_params: init.exec_algorithm_params,
+            exec_spawn_id: init.exec_spawn_id,
+            tags: init.tags,
+            filled_qty: Quantity::zero(init.quantity.precision),
+            leaves_qty: init.quantity,
             avg_px: None,
             slippage: None,
-            init_id,
-            ts_init,
-            ts_last: ts_init,
-        }
+            init_id: init.event_id,
+            ts_init: init.ts_event,
+            ts_last: init.ts_event,
+        })
     }
 
     pub fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
@@ -1202,7 +1181,7 @@ mod tests {
         assert_eq!(order.status, OrderStatus::Denied);
         assert!(order.is_closed());
         assert!(!order.is_open());
-        assert_eq!(order.event_count(), 1);
+        assert_eq!(order.event_count(), 2);
         assert_eq!(order.last_event(), &event);
     }
 
