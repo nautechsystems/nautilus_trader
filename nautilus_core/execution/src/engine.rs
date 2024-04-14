@@ -27,7 +27,7 @@ use nautilus_model::{
     identifiers::{
         client_id::ClientId, instrument_id::InstrumentId, strategy_id::StrategyId, venue::Venue,
     },
-    instruments::InstrumentType,
+    instruments::InstrumentAny,
     orders::base::OrderAny,
     position::Position,
     types::quantity::Quantity,
@@ -221,7 +221,7 @@ impl ExecutionEngine {
 
     fn open_position(
         &self,
-        instrument: InstrumentType,
+        instrument: InstrumentAny,
         position: &Position,
         fill: OrderFilled,
         oms_type: OmsType,
@@ -231,7 +231,7 @@ impl ExecutionEngine {
 
     fn update_position(
         &self,
-        instrument: InstrumentType,
+        instrument: InstrumentAny,
         position: &Position,
         fill: OrderFilled,
         oms_type: OmsType,
@@ -245,7 +245,7 @@ impl ExecutionEngine {
 
     fn flip_position(
         &self,
-        instrument: InstrumentType,
+        instrument: InstrumentAny,
         position: &Position,
         fill: OrderFilled,
         oms_type: OmsType,

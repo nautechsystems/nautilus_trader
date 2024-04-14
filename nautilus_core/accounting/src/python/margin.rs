@@ -17,7 +17,7 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     events::account::state::AccountState,
     identifiers::{account_id::AccountId, instrument_id::InstrumentId},
-    instruments::InstrumentType,
+    instruments::InstrumentAny,
     python::instruments::convert_pyobject_to_instrument_type,
     types::{money::Money, price::Price, quantity::Quantity},
 };
@@ -170,22 +170,22 @@ impl MarginAccount {
     ) -> PyResult<Money> {
         let instrument_type = convert_pyobject_to_instrument_type(py, instrument)?;
         match instrument_type {
-            InstrumentType::CryptoFuture(inst) => {
+            InstrumentAny::CryptoFuture(inst) => {
                 Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
             }
-            InstrumentType::CryptoPerpetual(inst) => {
+            InstrumentAny::CryptoPerpetual(inst) => {
                 Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
             }
-            InstrumentType::CurrencyPair(inst) => {
+            InstrumentAny::CurrencyPair(inst) => {
                 Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
             }
-            InstrumentType::Equity(inst) => {
+            InstrumentAny::Equity(inst) => {
                 Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
             }
-            InstrumentType::FuturesContract(inst) => {
+            InstrumentAny::FuturesContract(inst) => {
                 Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
             }
-            InstrumentType::OptionsContract(inst) => {
+            InstrumentAny::OptionsContract(inst) => {
                 Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
             }
             _ => Err(to_pyvalue_err("Unsupported instrument type")),
@@ -203,22 +203,22 @@ impl MarginAccount {
     ) -> PyResult<Money> {
         let instrument_type = convert_pyobject_to_instrument_type(py, instrument)?;
         match instrument_type {
-            InstrumentType::CryptoFuture(inst) => {
+            InstrumentAny::CryptoFuture(inst) => {
                 Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
             }
-            InstrumentType::CryptoPerpetual(inst) => {
+            InstrumentAny::CryptoPerpetual(inst) => {
                 Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
             }
-            InstrumentType::CurrencyPair(inst) => {
+            InstrumentAny::CurrencyPair(inst) => {
                 Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
             }
-            InstrumentType::Equity(inst) => {
+            InstrumentAny::Equity(inst) => {
                 Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
             }
-            InstrumentType::FuturesContract(inst) => {
+            InstrumentAny::FuturesContract(inst) => {
                 Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
             }
-            InstrumentType::OptionsContract(inst) => {
+            InstrumentAny::OptionsContract(inst) => {
                 Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))
             }
             _ => Err(to_pyvalue_err("Unsupported instrument type")),

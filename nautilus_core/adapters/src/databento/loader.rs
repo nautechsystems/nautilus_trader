@@ -24,7 +24,7 @@ use indexmap::IndexMap;
 use nautilus_model::{
     data::Data,
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
-    instruments::InstrumentType,
+    instruments::InstrumentAny,
     types::currency::Currency,
 };
 use streaming_iterator::StreamingIterator;
@@ -148,7 +148,7 @@ impl DatabentoDataLoader {
     pub fn read_definition_records(
         &mut self,
         path: PathBuf,
-    ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<InstrumentType>> + '_> {
+    ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<InstrumentAny>> + '_> {
         let mut decoder = Decoder::from_zstd_file(path)?;
         decoder.set_upgrade_policy(dbn::VersionUpgradePolicy::Upgrade);
         let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsgV1>();

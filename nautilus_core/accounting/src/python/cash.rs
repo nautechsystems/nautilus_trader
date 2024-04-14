@@ -21,7 +21,7 @@ use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
     identifiers::account_id::AccountId,
-    instruments::InstrumentType,
+    instruments::InstrumentAny,
     position::Position,
     python::instruments::convert_pyobject_to_instrument_type,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
@@ -158,28 +158,28 @@ impl CashAccount {
     ) -> PyResult<Money> {
         let instrument_type = convert_pyobject_to_instrument_type(py, instrument)?;
         match instrument_type {
-            InstrumentType::CryptoFuture(inst) => Ok(self
+            InstrumentAny::CryptoFuture(inst) => Ok(self
                 .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
                 .unwrap()),
-            InstrumentType::CryptoPerpetual(inst) => Ok(self
+            InstrumentAny::CryptoPerpetual(inst) => Ok(self
                 .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
                 .unwrap()),
-            InstrumentType::CurrencyPair(inst) => Ok(self
+            InstrumentAny::CurrencyPair(inst) => Ok(self
                 .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
                 .unwrap()),
-            InstrumentType::Equity(inst) => Ok(self
+            InstrumentAny::Equity(inst) => Ok(self
                 .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
                 .unwrap()),
-            InstrumentType::FuturesContract(inst) => Ok(self
+            InstrumentAny::FuturesContract(inst) => Ok(self
                 .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
                 .unwrap()),
-            InstrumentType::FuturesSpread(inst) => Ok(self
+            InstrumentAny::FuturesSpread(inst) => Ok(self
                 .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
                 .unwrap()),
-            InstrumentType::OptionsContract(inst) => Ok(self
+            InstrumentAny::OptionsContract(inst) => Ok(self
                 .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
                 .unwrap()),
-            InstrumentType::OptionsSpread(inst) => Ok(self
+            InstrumentAny::OptionsSpread(inst) => Ok(self
                 .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
                 .unwrap()),
         }
@@ -200,7 +200,7 @@ impl CashAccount {
         }
         let instrument_type = convert_pyobject_to_instrument_type(py, instrument)?;
         match instrument_type {
-            InstrumentType::CryptoFuture(inst) => Ok(self
+            InstrumentAny::CryptoFuture(inst) => Ok(self
                 .calculate_commission(
                     inst,
                     last_qty,
@@ -209,7 +209,7 @@ impl CashAccount {
                     use_quote_for_inverse,
                 )
                 .unwrap()),
-            InstrumentType::CryptoPerpetual(inst) => Ok(self
+            InstrumentAny::CryptoPerpetual(inst) => Ok(self
                 .calculate_commission(
                     inst,
                     last_qty,
@@ -218,7 +218,7 @@ impl CashAccount {
                     use_quote_for_inverse,
                 )
                 .unwrap()),
-            InstrumentType::CurrencyPair(inst) => Ok(self
+            InstrumentAny::CurrencyPair(inst) => Ok(self
                 .calculate_commission(
                     inst,
                     last_qty,
@@ -227,7 +227,7 @@ impl CashAccount {
                     use_quote_for_inverse,
                 )
                 .unwrap()),
-            InstrumentType::Equity(inst) => Ok(self
+            InstrumentAny::Equity(inst) => Ok(self
                 .calculate_commission(
                     inst,
                     last_qty,
@@ -236,7 +236,7 @@ impl CashAccount {
                     use_quote_for_inverse,
                 )
                 .unwrap()),
-            InstrumentType::FuturesContract(inst) => Ok(self
+            InstrumentAny::FuturesContract(inst) => Ok(self
                 .calculate_commission(
                     inst,
                     last_qty,
@@ -245,7 +245,7 @@ impl CashAccount {
                     use_quote_for_inverse,
                 )
                 .unwrap()),
-            InstrumentType::FuturesSpread(inst) => Ok(self
+            InstrumentAny::FuturesSpread(inst) => Ok(self
                 .calculate_commission(
                     inst,
                     last_qty,
@@ -254,7 +254,7 @@ impl CashAccount {
                     use_quote_for_inverse,
                 )
                 .unwrap()),
-            InstrumentType::OptionsContract(inst) => Ok(self
+            InstrumentAny::OptionsContract(inst) => Ok(self
                 .calculate_commission(
                     inst,
                     last_qty,
@@ -263,7 +263,7 @@ impl CashAccount {
                     use_quote_for_inverse,
                 )
                 .unwrap()),
-            InstrumentType::OptionsSpread(inst) => Ok(self
+            InstrumentAny::OptionsSpread(inst) => Ok(self
                 .calculate_commission(
                     inst,
                     last_qty,
@@ -285,26 +285,26 @@ impl CashAccount {
     ) -> PyResult<Vec<Money>> {
         let instrument_type = convert_pyobject_to_instrument_type(py, instrument)?;
         match instrument_type {
-            InstrumentType::CryptoFuture(inst) => {
+            InstrumentAny::CryptoFuture(inst) => {
                 Ok(self.calculate_pnls(inst, fill, position).unwrap())
             }
-            InstrumentType::CryptoPerpetual(inst) => {
+            InstrumentAny::CryptoPerpetual(inst) => {
                 Ok(self.calculate_pnls(inst, fill, position).unwrap())
             }
-            InstrumentType::CurrencyPair(inst) => {
+            InstrumentAny::CurrencyPair(inst) => {
                 Ok(self.calculate_pnls(inst, fill, position).unwrap())
             }
-            InstrumentType::Equity(inst) => Ok(self.calculate_pnls(inst, fill, position).unwrap()),
-            InstrumentType::FuturesContract(inst) => {
+            InstrumentAny::Equity(inst) => Ok(self.calculate_pnls(inst, fill, position).unwrap()),
+            InstrumentAny::FuturesContract(inst) => {
                 Ok(self.calculate_pnls(inst, fill, position).unwrap())
             }
-            InstrumentType::FuturesSpread(inst) => {
+            InstrumentAny::FuturesSpread(inst) => {
                 Ok(self.calculate_pnls(inst, fill, position).unwrap())
             }
-            InstrumentType::OptionsContract(inst) => {
+            InstrumentAny::OptionsContract(inst) => {
                 Ok(self.calculate_pnls(inst, fill, position).unwrap())
             }
-            InstrumentType::OptionsSpread(inst) => {
+            InstrumentAny::OptionsSpread(inst) => {
                 Ok(self.calculate_pnls(inst, fill, position).unwrap())
             }
         }
