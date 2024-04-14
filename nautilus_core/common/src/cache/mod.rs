@@ -19,6 +19,7 @@ pub mod database;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use log::{debug, info};
 use nautilus_core::correctness::{check_key_not_in_map, check_slice_not_empty, check_valid_string};
 use nautilus_model::{
     data::{
@@ -43,7 +44,6 @@ use nautilus_model::{
     position::Position,
     types::currency::Currency,
 };
-use tracing::{debug, info};
 use ustr::Ustr;
 
 use self::database::CacheDatabaseAdapter;

@@ -206,7 +206,7 @@ cdef class OrderMatchingEngine:
         )
 
         self._account_ids: dict[TraderId, AccountId]  = {}
-        self._execution_bar_types: dict[Instrument, BarType]  =  {}
+        self._execution_bar_types: dict[InstrumentId, BarType]  =  {}
         self._execution_bar_deltas: dict[BarType, timedelta]  =  {}
 
         # Market

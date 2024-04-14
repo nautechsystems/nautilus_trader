@@ -17,7 +17,7 @@
 
 use nautilus_model::{
     enums::OrderSideSpecified,
-    identifiers::instrument_id::InstrumentId,
+    identifiers::{client_order_id::ClientOrderId, instrument_id::InstrumentId},
     orders::{
         base::{LimitOrderType, OrderError, PassiveOrderType, StopOrderType},
         market::MarketOrder,
@@ -83,6 +83,17 @@ impl OrderMatchingCore {
     #[must_use]
     pub fn get_orders_ask(&self) -> &[PassiveOrderType] {
         self.orders_ask.as_slice()
+    }
+
+    #[must_use]
+    pub fn order_exists(&self, client_order_id: ClientOrderId) -> bool {
+        self.orders_bid
+            .iter()
+            .any(|o| o.client_order_id() == client_order_id)
+            || self
+                .orders_ask
+                .iter()
+                .any(|o| o.client_order_id() == client_order_id)
     }
 
     // -- COMMANDS --------------------------------------------------------------------------------
@@ -229,6 +240,7 @@ mod tests {
             None,
             None,
         );
+        let client_order_id = order.client_order_id;
 
         let passive_order = PassiveOrderType::Limit(LimitOrderType::Limit(order));
         matching_core.add_order(passive_order.clone()).unwrap();
@@ -237,6 +249,7 @@ mod tests {
         assert!(!matching_core.get_orders_ask().contains(&passive_order));
         assert_eq!(matching_core.get_orders_bid().len(), 1);
         assert!(matching_core.get_orders_ask().is_empty());
+        assert!(matching_core.order_exists(client_order_id));
     }
 
     #[rstest]
@@ -252,6 +265,7 @@ mod tests {
             None,
             None,
         );
+        let client_order_id = order.client_order_id;
 
         let passive_order = PassiveOrderType::Limit(LimitOrderType::Limit(order));
         matching_core.add_order(passive_order.clone()).unwrap();
@@ -260,6 +274,7 @@ mod tests {
         assert!(!matching_core.get_orders_bid().contains(&passive_order));
         assert_eq!(matching_core.get_orders_ask().len(), 1);
         assert!(matching_core.get_orders_bid().is_empty());
+        assert!(matching_core.order_exists(client_order_id));
     }
 
     #[rstest]
@@ -275,6 +290,7 @@ mod tests {
             None,
             None,
         );
+        let client_order_id = order.client_order_id;
 
         let passive_order = PassiveOrderType::Limit(LimitOrderType::Limit(order));
         matching_core.add_order(passive_order).unwrap();
@@ -289,6 +305,7 @@ mod tests {
         assert!(matching_core.last.is_none());
         assert!(matching_core.get_orders_bid().is_empty());
         assert!(matching_core.get_orders_ask().is_empty());
+        assert!(!matching_core.order_exists(client_order_id));
     }
 
     #[rstest]
