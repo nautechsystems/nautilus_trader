@@ -13,9 +13,55 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_model::identifiers::{client_id::ClientId, instrument_id::InstrumentId};
+use strum::Display;
+
+use self::{
+    cancel::CancelOrder, cancel_all::CancelAllOrders, cancel_batch::BatchCancelOrders,
+    modify::ModifyOrder, query::QueryOrder, submit::SubmitOrder, submit_list::SubmitOrderList,
+};
+
 pub mod cancel;
 pub mod cancel_all;
+pub mod cancel_batch;
 pub mod modify;
 pub mod query;
 pub mod submit;
 pub mod submit_list;
+
+#[derive(Clone, Debug, Display)]
+pub enum TradingCommand {
+    SubmitOrder(SubmitOrder),
+    SubmitOrderList(SubmitOrderList),
+    ModifyOrder(ModifyOrder),
+    CancelOrder(CancelOrder),
+    CancelAllOrders(CancelAllOrders),
+    BatchCancelOrders(BatchCancelOrders),
+    QueryOrder(QueryOrder),
+}
+
+impl TradingCommand {
+    pub fn client_id(&self) -> ClientId {
+        match self {
+            Self::SubmitOrder(command) => command.client_id,
+            Self::SubmitOrderList(command) => command.client_id,
+            Self::ModifyOrder(command) => command.client_id,
+            Self::CancelOrder(command) => command.client_id,
+            Self::CancelAllOrders(command) => command.client_id,
+            Self::BatchCancelOrders(command) => command.client_id,
+            Self::QueryOrder(command) => command.client_id,
+        }
+    }
+
+    pub fn instrument_id(&self) -> InstrumentId {
+        match self {
+            Self::SubmitOrder(command) => command.instrument_id,
+            Self::SubmitOrderList(command) => command.instrument_id,
+            Self::ModifyOrder(command) => command.instrument_id,
+            Self::CancelOrder(command) => command.instrument_id,
+            Self::CancelAllOrders(command) => command.instrument_id,
+            Self::BatchCancelOrders(command) => command.instrument_id,
+            Self::QueryOrder(command) => command.instrument_id,
+        }
+    }
+}
