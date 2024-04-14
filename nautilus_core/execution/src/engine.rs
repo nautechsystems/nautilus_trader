@@ -19,6 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use log::debug;
 use nautilus_common::{cache::Cache, generators::position_id::PositionIdGenerator};
 use nautilus_model::{
     enums::{OmsType, OrderSide},
@@ -32,7 +33,14 @@ use nautilus_model::{
     types::quantity::Quantity,
 };
 
-use crate::client::ExecutionClient;
+use crate::{
+    client::ExecutionClient,
+    messages::{
+        cancel::CancelOrder, cancel_all::CancelAllOrders, cancel_batch::BatchCancelOrders,
+        modify::ModifyOrder, query::QueryOrder, submit::SubmitOrder, submit_list::SubmitOrderList,
+        TradingCommand,
+    },
+};
 
 pub struct ExecutionEngineConfig {
     pub debug: bool,
@@ -115,10 +123,9 @@ impl ExecutionEngine {
         todo!();
     }
 
-    // TODO: Implement `TradingCommand` enum
-    // pub fn execute(&self, command: TradingCommand) {
-    //     todo!();
-    // }
+    pub fn execute(&mut self, command: TradingCommand) {
+        self.execute_command(command);
+    }
 
     pub fn process(&self, event: &OrderEvent) {
         todo!();
@@ -126,45 +133,61 @@ impl ExecutionEngine {
 
     // -- COMMAND HANDLERS ----------------------------------------------------
 
-    // fn execute_command(&self, command: TradingCommand) {
-    //     todo!();
-    // }
+    fn execute_command(&mut self, command: TradingCommand) {
+        debug!("<--[CMD] {:?}", command); // TODO: Log constants
+        self.command_count += 1;
 
-    // TODO: Implement `SubmitOrder`
-    // fn handle_submit_order(&self, client: &ExecutionClient, command: SubmitOrder) {
-    //     todo!();
-    // }
+        // TODO: Refine getting the client (no need for two expects)
+        let client = if let Some(client) = self.clients.get(&command.client_id()) {
+            client
+        } else if let Some(client_id) = self.routing_map.get(&command.instrument_id().venue) {
+            if let Some(client) = self.clients.get(client_id) {
+                client
+            } else {
+                self.default_client.as_ref().expect("No client found")
+            }
+        } else {
+            self.default_client.as_ref().expect("No client found")
+        };
 
-    // TODO: Implement `SubmitOrderList`
-    // fn handle_submit_order_list(&self, client: &ExecutionClient, command: SubmitOrderList) {
-    //     todo!();
-    // }
+        match command {
+            TradingCommand::SubmitOrder(cmd) => self.handle_submit_order(client, cmd),
+            TradingCommand::SubmitOrderList(cmd) => self.handle_submit_order_list(client, cmd),
+            TradingCommand::ModifyOrder(cmd) => self.handle_modify_order(client, cmd),
+            TradingCommand::CancelOrder(cmd) => self.handle_cancel_order(client, cmd),
+            TradingCommand::CancelAllOrders(cmd) => self.handle_cancel_all_orders(client, cmd),
+            TradingCommand::BatchCancelOrders(cmd) => self.handle_batch_cancel_orders(client, cmd),
+            TradingCommand::QueryOrder(cmd) => self.handle_query_order(client, cmd),
+        }
+    }
 
-    // TODO: Implement `ModifyOrder`
-    // fn handle_modify_order(&self, client: &ExecutionClient, command: ModifyOrder) {
-    //     todo!();
-    // }
+    fn handle_submit_order(&self, client: &ExecutionClient, command: SubmitOrder) {
+        todo!();
+    }
 
-    // TODO: Implement `CancelOrder`
-    // fn handle_cancel_order(&self, client: &ExecutionClient, command: CancelOrder) {
-    //     todo!();
-    // }
+    fn handle_submit_order_list(&self, client: &ExecutionClient, command: SubmitOrderList) {
+        todo!();
+    }
 
-    // TODO: Implement `CancelAllOrder`
-    // fn handle_cancel_all_orders(&self, client: &ExecutionClient, command: CancelAllOrders) {
-    //     todo!();
-    // }
+    fn handle_modify_order(&self, client: &ExecutionClient, command: ModifyOrder) {
+        todo!();
+    }
 
-    // TODO: Implement `BatchCancelOrders`
-    // fn handle_batch_cancel_orders(&self, client: &ExecutionClient, command:
-    // BatchCancelOrders) {
-    //     todo!();
-    // }
+    fn handle_cancel_order(&self, client: &ExecutionClient, command: CancelOrder) {
+        todo!();
+    }
 
-    // TODO: Implement `QueryOrder`
-    // fn handle_query_order(&self, client: &ExecutionClient, command: QueryOrder) {
-    //     todo!();
-    // }
+    fn handle_cancel_all_orders(&self, client: &ExecutionClient, command: CancelAllOrders) {
+        todo!();
+    }
+
+    fn handle_batch_cancel_orders(&self, client: &ExecutionClient, command: BatchCancelOrders) {
+        todo!();
+    }
+
+    fn handle_query_order(&self, client: &ExecutionClient, command: QueryOrder) {
+        todo!();
+    }
 
     // -- EVENT HANDLERS ----------------------------------------------------
 
