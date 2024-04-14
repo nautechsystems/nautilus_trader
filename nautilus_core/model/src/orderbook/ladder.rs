@@ -19,6 +19,8 @@ use std::{
     fmt::{Display, Formatter},
 };
 
+use nautilus_core::nanos::UnixNanos;
+
 use super::error::BookIntegrityError;
 use crate::{
     data::order::{BookOrder, OrderId},
@@ -149,11 +151,11 @@ impl Ladder {
         self.add(order);
     }
 
-    pub fn delete(&mut self, order: BookOrder, sequence: u64, ts_event: u64) {
+    pub fn delete(&mut self, order: BookOrder, sequence: u64, ts_event: UnixNanos) {
         self.remove(order.order_id, sequence, ts_event);
     }
 
-    pub fn remove(&mut self, order_id: OrderId, sequence: u64, ts_event: u64) {
+    pub fn remove(&mut self, order_id: OrderId, sequence: u64, ts_event: UnixNanos) {
         if let Some(price) = self.cache.remove(&order_id) {
             if let Some(level) = self.levels.get_mut(&price) {
                 level.remove_by_id(order_id, sequence, ts_event);
@@ -412,7 +414,7 @@ mod tests {
         let mut ladder = Ladder::new(OrderSide::Buy);
         let order = BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(20), 1);
 
-        ladder.delete(order, 0, 0);
+        ladder.delete(order, 0, 0.into());
 
         assert_eq!(ladder.len(), 0);
     }
@@ -426,7 +428,7 @@ mod tests {
 
         let order = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(10), 1);
 
-        ladder.delete(order, 0, 0);
+        ladder.delete(order, 0, 0.into());
         assert_eq!(ladder.len(), 0);
         assert_eq!(ladder.sizes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);
@@ -442,7 +444,7 @@ mod tests {
 
         let order = BookOrder::new(OrderSide::Sell, Price::from("10.00"), Quantity::from(10), 1);
 
-        ladder.delete(order, 0, 0);
+        ladder.delete(order, 0, 0.into());
         assert_eq!(ladder.len(), 0);
         assert_eq!(ladder.sizes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);

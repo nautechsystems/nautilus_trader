@@ -43,7 +43,7 @@ pub fn stub_delta() -> OrderBookDelta {
         order,
         flags,
         sequence,
-        ts_event,
-        ts_init,
+        ts_event.into(),
+        ts_init.into(),
     )
 }

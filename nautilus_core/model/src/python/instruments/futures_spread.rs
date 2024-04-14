@@ -18,12 +18,9 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::{
-    python::{serialization::from_dict_pyo3, to_pyvalue_err},
-    time::UnixNanos,
-};
+use nautilus_core::python::{serialization::from_dict_pyo3, to_pyvalue_err};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
@@ -43,15 +40,15 @@ impl FuturesSpread {
         asset_class: AssetClass,
         underlying: String,
         strategy_type: String,
-        activation_ns: UnixNanos,
-        expiration_ns: UnixNanos,
+        activation_ns: u64,
+        expiration_ns: u64,
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
         multiplier: Quantity,
         lot_size: Quantity,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
+        ts_event: u64,
+        ts_init: u64,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
         max_quantity: Option<Quantity>,
@@ -67,8 +64,8 @@ impl FuturesSpread {
             exchange.map(|e| Ustr::from(&e)),
             underlying.into(),
             strategy_type.into(),
-            activation_ns,
-            expiration_ns,
+            activation_ns.into(),
+            expiration_ns.into(),
             currency,
             price_precision,
             price_increment,
@@ -80,8 +77,8 @@ impl FuturesSpread {
             min_price,
             margin_init,
             margin_maint,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         )
         .map_err(to_pyvalue_err)
     }
@@ -143,14 +140,14 @@ impl FuturesSpread {
 
     #[getter]
     #[pyo3(name = "activation_ns")]
-    fn py_activation_ns(&self) -> UnixNanos {
-        self.activation_ns
+    fn py_activation_ns(&self) -> u64 {
+        self.activation_ns.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "expiration_ns")]
-    fn py_expiration_ns(&self) -> UnixNanos {
-        self.expiration_ns
+    fn py_expiration_ns(&self) -> u64 {
+        self.expiration_ns.as_u64()
     }
 
     #[getter]
@@ -239,14 +236,14 @@ impl FuturesSpread {
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> UnixNanos {
-        self.ts_event
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> UnixNanos {
-        self.ts_init
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 
     #[staticmethod]
@@ -264,8 +261,8 @@ impl FuturesSpread {
         dict.set_item("asset_class", self.asset_class.to_string())?;
         dict.set_item("underlying", self.underlying.to_string())?;
         dict.set_item("strategy_type", self.strategy_type.to_string())?;
-        dict.set_item("activation_ns", self.activation_ns.to_u64())?;
-        dict.set_item("expiration_ns", self.expiration_ns.to_u64())?;
+        dict.set_item("activation_ns", self.activation_ns.as_u64())?;
+        dict.set_item("expiration_ns", self.expiration_ns.as_u64())?;
         dict.set_item("currency", self.currency.code.to_string())?;
         dict.set_item("price_precision", self.price_precision)?;
         dict.set_item("price_increment", self.price_increment.to_string())?;
@@ -276,8 +273,8 @@ impl FuturesSpread {
         dict.set_item("margin_init", self.margin_init.to_string())?;
         dict.set_item("margin_maint", self.margin_maint.to_string())?;
         dict.set_item("info", PyDict::new(py))?;
-        dict.set_item("ts_event", self.ts_event)?;
-        dict.set_item("ts_init", self.ts_init)?;
+        dict.set_item("ts_event", self.ts_event.as_u64())?;
+        dict.set_item("ts_init", self.ts_init.as_u64())?;
         match self.max_quantity {
             Some(value) => dict.set_item("max_quantity", value.to_string())?,
             None => dict.set_item("max_quantity", py.None())?,

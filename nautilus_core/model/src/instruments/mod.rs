@@ -26,7 +26,7 @@ pub mod synthetic;
 #[cfg(feature = "stubs")]
 pub mod stubs;
 
-use nautilus_core::time::UnixNanos;
+use nautilus_core::nanos::UnixNanos;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 

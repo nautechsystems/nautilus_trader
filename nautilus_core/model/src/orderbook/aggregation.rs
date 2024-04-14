@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::nanos::UnixNanos;
+
 use super::{book::OrderBook, error::InvalidBookOperation};
 use crate::{
     data::{order::BookOrder, quote::QuoteTick, trade::TradeTick},
@@ -91,7 +93,7 @@ pub(crate) fn update_book_with_trade_tick(
     Ok(())
 }
 
-fn update_book_ask(book: &mut OrderBook, order: BookOrder, ts_event: u64) {
+fn update_book_ask(book: &mut OrderBook, order: BookOrder, ts_event: UnixNanos) {
     if let Some(top_asks) = book.asks.top() {
         if let Some(top_ask) = top_asks.first() {
             book.asks.remove(top_ask.order_id, 0, ts_event);
@@ -100,7 +102,7 @@ fn update_book_ask(book: &mut OrderBook, order: BookOrder, ts_event: u64) {
     book.asks.add(order);
 }
 
-fn update_book_bid(book: &mut OrderBook, order: BookOrder, ts_event: u64) {
+fn update_book_bid(book: &mut OrderBook, order: BookOrder, ts_event: UnixNanos) {
     if let Some(top_bids) = book.bids.top() {
         if let Some(top_bid) = top_bids.first() {
             book.bids.remove(top_bid.order_id, 0, ts_event);

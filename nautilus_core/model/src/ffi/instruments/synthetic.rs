@@ -24,7 +24,7 @@ use nautilus_core::{
         parsing::{bytes_to_string_vec, string_vec_to_bytes},
         string::{cstr_to_str, str_to_cstr},
     },
-    time::UnixNanos,
+    nanos::UnixNanos,
 };
 
 use crate::{
@@ -84,8 +84,8 @@ pub unsafe extern "C" fn synthetic_instrument_new(
         price_precision,
         components,
         formula,
-        ts_event,
-        ts_init,
+        ts_event.into(),
+        ts_init.into(),
     );
 
     SyntheticInstrument_API(Box::new(synth.unwrap()))

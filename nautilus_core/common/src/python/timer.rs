@@ -15,7 +15,7 @@
 
 use std::str::FromStr;
 
-use nautilus_core::{python::to_pyvalue_err, time::UnixNanos, uuid::UUID4};
+use nautilus_core::{nanos::UnixNanos, python::to_pyvalue_err, uuid::UUID4};
 use pyo3::{
     basic::CompareOp,
     prelude::*,
@@ -28,17 +28,19 @@ use crate::timer::TimeEvent;
 #[pymethods]
 impl TimeEvent {
     #[new]
-    fn py_new(name: &str, event_id: UUID4, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
-        Self::new(Ustr::from(name), event_id, ts_event, ts_init)
+    fn py_new(name: &str, event_id: UUID4, ts_event: u64, ts_init: u64) -> Self {
+        Self::new(Ustr::from(name), event_id, ts_event.into(), ts_init.into())
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         let tuple: (&PyString, &PyString, &PyLong, &PyLong) = state.extract(py)?;
+        let ts_event: u64 = tuple.2.extract()?;
+        let ts_init: u64 = tuple.3.extract()?;
 
         self.name = Ustr::from(tuple.0.extract()?);
         self.event_id = UUID4::from_str(tuple.1.extract()?).map_err(to_pyvalue_err)?;
-        self.ts_event = tuple.2.extract()?;
-        self.ts_init = tuple.3.extract()?;
+        self.ts_event = ts_event.into();
+        self.ts_init = ts_init.into();
 
         Ok(())
     }
@@ -47,8 +49,8 @@ impl TimeEvent {
         Ok((
             self.name.to_string(),
             self.event_id.to_string(),
-            self.ts_event,
-            self.ts_init,
+            self.ts_event.as_u64(),
+            self.ts_init.as_u64(),
         )
             .to_object(py))
     }
@@ -61,7 +63,12 @@ impl TimeEvent {
 
     #[staticmethod]
     fn _safe_constructor() -> Self {
-        Self::new(Ustr::from("NULL"), UUID4::new(), 0, 0)
+        Self::new(
+            Ustr::from("NULL"),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -94,13 +101,13 @@ impl TimeEvent {
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> UnixNanos {
-        self.ts_event
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> UnixNanos {
-        self.ts_init
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 }

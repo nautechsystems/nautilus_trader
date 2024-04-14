@@ -1519,11 +1519,11 @@ cdef extern from "../includes/model.h":
                           uint64_t sequence,
                           uint64_t ts_event);
 
-    void orderbook_clear(OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
+    void orderbook_clear(OrderBook_API *book, uint64_t sequence, uint64_t ts_event);
 
-    void orderbook_clear_bids(OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
+    void orderbook_clear_bids(OrderBook_API *book, uint64_t sequence, uint64_t ts_event);
 
-    void orderbook_clear_asks(OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
+    void orderbook_clear_asks(OrderBook_API *book, uint64_t sequence, uint64_t ts_event);
 
     void orderbook_apply_delta(OrderBook_API *book, OrderBookDelta_t delta);
 

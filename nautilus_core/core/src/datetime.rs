@@ -20,7 +20,7 @@ use chrono::{
     Datelike, NaiveDate, SecondsFormat, TimeDelta, Weekday,
 };
 
-use crate::time::UnixNanos;
+use crate::nanos::UnixNanos;
 
 pub const MILLISECONDS_IN_SECOND: u64 = 1_000;
 pub const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
@@ -87,8 +87,8 @@ pub extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
 /// Converts a UNIX nanoseconds timestamp to an ISO 8601 formatted string.
 #[inline]
 #[must_use]
-pub fn unix_nanos_to_iso8601(timestamp_ns: u64) -> String {
-    let dt = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(timestamp_ns));
+pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
+    let dt = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(unix_nanos.as_u64()));
     dt.to_rfc3339_opts(SecondsFormat::Nanos, true)
 }
 
@@ -112,13 +112,16 @@ pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> anyhow::Result<Uni
         .and_hms_nano_opt(0, 0, 0, 0)
         .ok_or_else(|| anyhow::anyhow!("Failed `and_hms_nano_opt`"))?;
 
-    Ok(unix_timestamp_ns
-        .and_utc()
-        .timestamp_nanos_opt()
-        .ok_or_else(|| anyhow::anyhow!("Failed `timestamp_nanos_opt`"))? as UnixNanos)
+    Ok(UnixNanos::from(
+        unix_timestamp_ns
+            .and_utc()
+            .timestamp_nanos_opt()
+            .ok_or_else(|| anyhow::anyhow!("Failed `timestamp_nanos_opt`"))? as u64,
+    ))
 }
 
 pub fn is_within_last_24_hours(timestamp_ns: UnixNanos) -> anyhow::Result<bool> {
+    let timestamp_ns = timestamp_ns.as_u64();
     let seconds = timestamp_ns / NANOSECONDS_IN_SECOND;
     let nanoseconds = (timestamp_ns % NANOSECONDS_IN_SECOND) as u32;
     let timestamp = DateTime::from_timestamp(seconds as i64, nanoseconds)
@@ -232,7 +235,7 @@ mod tests {
         #[case] day: u32,
         #[case] expected: u64,
     ) {
-        let result = last_weekday_nanos(year, month, day).unwrap();
+        let result = last_weekday_nanos(year, month, day).unwrap().as_u64();
         assert_eq!(result, expected);
     }
 
@@ -257,7 +260,7 @@ mod tests {
     #[rstest]
     fn test_is_within_last_24_hours_when_now() {
         let now_ns = Utc::now().timestamp_nanos_opt().unwrap();
-        assert!(is_within_last_24_hours(now_ns as UnixNanos).unwrap());
+        assert!(is_within_last_24_hours(UnixNanos::from(now_ns as u64)).unwrap());
     }
 
     #[rstest]
@@ -265,6 +268,6 @@ mod tests {
         let past_ns = (Utc::now() - TimeDelta::try_days(2).unwrap())
             .timestamp_nanos_opt()
             .unwrap();
-        assert!(!is_within_last_24_hours(past_ns as UnixNanos).unwrap());
+        assert!(!is_within_last_24_hours(UnixNanos::from(past_ns as u64)).unwrap());
     }
 }

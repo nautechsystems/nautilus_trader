@@ -306,19 +306,19 @@ cdef class OrderBook(Data):
         """
         Clear the entire order book.
         """
-        orderbook_clear(&self._mem, ts_event, sequence)
+        orderbook_clear(&self._mem, sequence, ts_event)
 
     cpdef void clear_bids(self, uint64_t ts_event, uint64_t sequence=0):
         """
         Clear the bids from the order book.
         """
-        orderbook_clear_bids(&self._mem, ts_event, sequence)
+        orderbook_clear_bids(&self._mem, sequence, ts_event)
 
     cpdef void clear_asks(self, uint64_t ts_event, uint64_t sequence=0):
         """
         Clear the asks from the order book.
         """
-        orderbook_clear_asks(&self._mem, ts_event, sequence)
+        orderbook_clear_asks(&self._mem, sequence, ts_event)
 
     cpdef void apply_delta(self, OrderBookDelta delta):
         """

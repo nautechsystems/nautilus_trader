@@ -22,7 +22,7 @@ use databento::{
 use indexmap::IndexMap;
 use nautilus_core::{
     python::to_pyvalue_err,
-    time::{get_atomic_clock_realtime, AtomicTime, UnixNanos},
+    time::{get_atomic_clock_realtime, AtomicTime},
 };
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick, Data},
@@ -115,16 +115,16 @@ impl DatabentoHistoricalClient {
         py: Python<'py>,
         dataset: String,
         symbols: Vec<&str>,
-        start: UnixNanos,
-        end: Option<UnixNanos>,
+        start: u64,
+        end: Option<u64>,
         limit: Option<u64>,
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
-        let end = end.unwrap_or(self.clock.get_time_ns());
-        let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
+        let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
+        let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
             .date_time_range(time_range)
@@ -183,16 +183,16 @@ impl DatabentoHistoricalClient {
         py: Python<'py>,
         dataset: String,
         symbols: Vec<&str>,
-        start: UnixNanos,
-        end: Option<UnixNanos>,
+        start: u64,
+        end: Option<u64>,
         limit: Option<u64>,
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
-        let end = end.unwrap_or(self.clock.get_time_ns());
-        let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
+        let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
+        let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
             .date_time_range(time_range)
@@ -250,16 +250,16 @@ impl DatabentoHistoricalClient {
         py: Python<'py>,
         dataset: String,
         symbols: Vec<&str>,
-        start: UnixNanos,
-        end: Option<UnixNanos>,
+        start: u64,
+        end: Option<u64>,
         limit: Option<u64>,
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
-        let end = end.unwrap_or(self.clock.get_time_ns());
-        let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
+        let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
+        let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
             .date_time_range(time_range)
@@ -319,8 +319,8 @@ impl DatabentoHistoricalClient {
         dataset: String,
         symbols: Vec<&str>,
         aggregation: BarAggregation,
-        start: UnixNanos,
-        end: Option<UnixNanos>,
+        start: u64,
+        end: Option<u64>,
         limit: Option<u64>,
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
@@ -334,8 +334,8 @@ impl DatabentoHistoricalClient {
             BarAggregation::Day => dbn::Schema::Ohlcv1D,
             _ => panic!("Invalid `BarAggregation` for request, was {aggregation}"),
         };
-        let end = end.unwrap_or(self.clock.get_time_ns());
-        let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
+        let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
+        let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
             .date_time_range(time_range)
@@ -394,16 +394,16 @@ impl DatabentoHistoricalClient {
         py: Python<'py>,
         dataset: String,
         symbols: Vec<&str>,
-        start: UnixNanos,
-        end: Option<UnixNanos>,
+        start: u64,
+        end: Option<u64>,
         limit: Option<u64>,
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
-        let end = end.unwrap_or(self.clock.get_time_ns());
-        let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
+        let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
+        let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
             .date_time_range(time_range)
@@ -451,16 +451,16 @@ impl DatabentoHistoricalClient {
         py: Python<'py>,
         dataset: String,
         symbols: Vec<&str>,
-        start: UnixNanos,
-        end: Option<UnixNanos>,
+        start: u64,
+        end: Option<u64>,
         limit: Option<u64>,
     ) -> PyResult<&'py PyAny> {
         let client = self.inner.clone();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
-        let end = end.unwrap_or(self.clock.get_time_ns());
-        let time_range = get_date_time_range(start, end).map_err(to_pyvalue_err)?;
+        let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
+        let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
         let params = GetRangeParams::builder()
             .dataset(dataset)
             .date_time_range(time_range)

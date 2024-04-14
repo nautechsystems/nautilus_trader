@@ -19,7 +19,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use nautilus_core::time::UnixNanos;
+use nautilus_core::nanos::UnixNanos;
 
 use super::delta::OrderBookDelta;
 use crate::identifiers::instrument_id::InstrumentId;
@@ -160,7 +160,8 @@ pub mod stubs {
         let ts_event = 1;
         let ts_init = 2;
 
-        let delta0 = OrderBookDelta::clear(instrument_id, sequence, ts_event, ts_init);
+        let delta0 =
+            OrderBookDelta::clear(instrument_id, sequence, ts_event.into(), ts_init.into());
         let delta1 = OrderBookDelta::new(
             instrument_id,
             BookAction::Add,
@@ -172,8 +173,8 @@ pub mod stubs {
             ),
             flags,
             sequence,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         );
         let delta2 = OrderBookDelta::new(
             instrument_id,
@@ -186,8 +187,8 @@ pub mod stubs {
             ),
             flags,
             sequence,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         );
         let delta3 = OrderBookDelta::new(
             instrument_id,
@@ -200,8 +201,8 @@ pub mod stubs {
             ),
             flags,
             sequence,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         );
         let delta4 = OrderBookDelta::new(
             instrument_id,
@@ -214,8 +215,8 @@ pub mod stubs {
             ),
             flags,
             sequence,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         );
         let delta5 = OrderBookDelta::new(
             instrument_id,
@@ -228,8 +229,8 @@ pub mod stubs {
             ),
             flags,
             sequence,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         );
         let delta6 = OrderBookDelta::new(
             instrument_id,
@@ -242,8 +243,8 @@ pub mod stubs {
             ),
             flags,
             sequence,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         );
 
         let deltas = vec![delta0, delta1, delta2, delta3, delta4, delta5, delta6];
@@ -274,7 +275,8 @@ mod tests {
         let ts_event = 1;
         let ts_init = 2;
 
-        let delta0 = OrderBookDelta::clear(instrument_id, sequence, ts_event, ts_init);
+        let delta0 =
+            OrderBookDelta::clear(instrument_id, sequence, ts_event.into(), ts_init.into());
         let delta1 = OrderBookDelta::new(
             instrument_id,
             BookAction::Add,
@@ -286,8 +288,8 @@ mod tests {
             ),
             flags,
             sequence,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         );
         let delta2 = OrderBookDelta::new(
             instrument_id,
@@ -300,8 +302,8 @@ mod tests {
             ),
             flags,
             sequence,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         );
         let delta3 = OrderBookDelta::new(
             instrument_id,
@@ -314,8 +316,8 @@ mod tests {
             ),
             flags,
             sequence,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         );
         let delta4 = OrderBookDelta::new(
             instrument_id,
@@ -328,8 +330,8 @@ mod tests {
             ),
             flags,
             sequence,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         );
         let delta5 = OrderBookDelta::new(
             instrument_id,
@@ -342,8 +344,8 @@ mod tests {
             ),
             flags,
             sequence,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         );
         let delta6 = OrderBookDelta::new(
             instrument_id,
@@ -356,8 +358,8 @@ mod tests {
             ),
             flags,
             sequence,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         );
 
         let deltas = OrderBookDeltas::new(

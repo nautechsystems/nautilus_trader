@@ -21,7 +21,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{correctness::check_equal_u8, serialization::Serializable, time::UnixNanos};
+use nautilus_core::{correctness::check_equal_u8, nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -167,6 +167,7 @@ impl Serializable for QuoteTick {}
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(feature = "stubs")]
 pub mod stubs {
+    use nautilus_core::nanos::UnixNanos;
     use rstest::fixture;
 
     use crate::{
@@ -183,8 +184,8 @@ pub mod stubs {
             ask_price: Price::from("10001.0000"),
             bid_size: Quantity::from("1.00000000"),
             ask_size: Quantity::from("1.00000000"),
-            ts_event: 0,
-            ts_init: 1,
+            ts_event: UnixNanos::from(0),
+            ts_init: UnixNanos::from(1),
         }
     }
 }

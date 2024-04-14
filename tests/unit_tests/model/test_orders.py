@@ -694,7 +694,7 @@ class TestOrders:
             "price": "1.00000",
             "trigger_price": "1.10010",
             "trigger_type": "MARK_PRICE",
-            "expire_time_ns": 0,
+            "expire_time_ns": None,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NO_LIQUIDITY_SIDE",

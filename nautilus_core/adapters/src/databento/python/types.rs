@@ -18,7 +18,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::{python::serialization::from_dict_pyo3, time::UnixNanos};
+use nautilus_core::python::serialization::from_dict_pyo3;
 use nautilus_model::{
     enums::OrderSide,
     identifiers::instrument_id::InstrumentId,
@@ -119,20 +119,20 @@ impl DatabentoImbalance {
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> UnixNanos {
-        self.ts_event
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_recv")]
-    fn py_ts_recv(&self) -> UnixNanos {
-        self.ts_recv
+    fn py_ts_recv(&self) -> u64 {
+        self.ts_recv.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> UnixNanos {
-        self.ts_init
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 
     #[staticmethod]
@@ -240,8 +240,8 @@ impl DatabentoStatistics {
 
     #[getter]
     #[pyo3(name = "ts_ref")]
-    fn py_ts_ref(&self) -> UnixNanos {
-        self.ts_ref
+    fn py_ts_ref(&self) -> u64 {
+        self.ts_ref.as_u64()
     }
 
     #[getter]
@@ -252,20 +252,20 @@ impl DatabentoStatistics {
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> UnixNanos {
-        self.ts_event
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
     }
 
     #[pyo3(name = "ts_recv")]
     #[getter]
-    fn py_ts_recv(&self) -> UnixNanos {
-        self.ts_recv
+    fn py_ts_recv(&self) -> u64 {
+        self.ts_recv.as_u64()
     }
 
     #[pyo3(name = "ts_init")]
     #[getter]
-    fn py_ts_init(&self) -> UnixNanos {
-        self.ts_init
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 
     #[staticmethod]

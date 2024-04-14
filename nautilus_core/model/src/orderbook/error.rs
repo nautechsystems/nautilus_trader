@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::nanos::UnixNanos;
+
 use super::ladder::BookPrice;
 use crate::enums::{BookType, OrderSide};
 
@@ -29,7 +31,7 @@ pub enum InvalidBookOperation {
 #[derive(thiserror::Error, Debug)]
 pub enum BookIntegrityError {
     #[error("Integrity error: order not found: order_id={0}, sequence={1}, ts_event={2}")]
-    OrderNotFound(u64, u64, u64),
+    OrderNotFound(u64, u64, UnixNanos),
     #[error("Integrity error: invalid `NoOrderSide` in book")]
     NoOrderSide,
     #[error("Integrity error: orders in cross [{0} {1}]")]

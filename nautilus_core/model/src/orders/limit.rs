@@ -19,7 +19,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -123,7 +123,7 @@ impl LimitOrder {
                 ts_init,
             ),
             price,
-            expire_time: expire_time.or(Some(0)),
+            expire_time: expire_time.or(Some(UnixNanos::default())),
             is_post_only: post_only,
             display_qty,
             trigger_instrument_id,

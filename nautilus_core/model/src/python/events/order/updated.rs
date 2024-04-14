@@ -15,11 +15,9 @@
 
 use nautilus_core::{
     python::{serialization::from_dict_pyo3, to_pyvalue_err},
-    time::UnixNanos,
     uuid::UUID4,
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
-use rust_decimal::prelude::ToPrimitive;
 
 use crate::{
     events::order::updated::OrderUpdated,
@@ -41,8 +39,8 @@ impl OrderUpdated {
         client_order_id: ClientOrderId,
         quantity: Quantity,
         event_id: UUID4,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
+        ts_event: u64,
+        ts_init: u64,
         reconciliation: bool,
         venue_order_id: Option<VenueOrderId>,
         account_id: Option<AccountId>,
@@ -56,8 +54,8 @@ impl OrderUpdated {
             client_order_id,
             quantity,
             event_id,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
             reconciliation,
             venue_order_id,
             account_id,
@@ -84,11 +82,11 @@ impl OrderUpdated {
             self.strategy_id,
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}")),
-            self.account_id.map_or_else(|| "None".to_string(), |account_id| format!("{account_id}")),
+            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
+            self.account_id.map_or("None".to_string(), |account_id| format!("{account_id}")),
             self.quantity,
-            self.price.map_or_else(|| "None".to_string(), |price| format!("{price}")),
-            self.trigger_price.map_or_else(|| "None".to_string(), |trigger_price| format!("{trigger_price}")),
+            self.price.map_or("None".to_string(), |price| format!("{price}")),
+            self.trigger_price.map_or("None".to_string(), |trigger_price| format!("{trigger_price}")),
             self.event_id,
             self.ts_event,
             self.ts_init
@@ -101,11 +99,11 @@ impl OrderUpdated {
             stringify!(OrderUpdated),
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}")),
-            self.account_id.map_or_else(|| "None".to_string(), |account_id| format!("{account_id}")),
+            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
+            self.account_id.map_or("None".to_string(), |account_id| format!("{account_id}")),
             self.quantity,
-            self.price.map_or_else(|| "None".to_string(), |price| format!("{price}")),
-            self.trigger_price.map_or_else(|| "None".to_string(), |trigger_price| format!("{trigger_price}")),
+            self.price.map_or("None".to_string(), |price| format!("{price}")),
+            self.trigger_price.map_or("None".to_string(), |trigger_price| format!("{trigger_price}")),
             self.ts_event,
         )
     }
@@ -131,8 +129,8 @@ impl OrderUpdated {
         dict.set_item("client_order_id", self.client_order_id.to_string())?;
         dict.set_item("quantity", self.quantity.to_string())?;
         dict.set_item("event_id", self.event_id.to_string())?;
-        dict.set_item("ts_event", self.ts_event.to_u64())?;
-        dict.set_item("ts_init", self.ts_init.to_u64())?;
+        dict.set_item("ts_event", self.ts_event.as_u64())?;
+        dict.set_item("ts_init", self.ts_init.as_u64())?;
         dict.set_item("reconciliation", self.reconciliation)?;
         match self.venue_order_id {
             Some(venue_order_id) => dict.set_item("venue_order_id", venue_order_id.to_string())?,

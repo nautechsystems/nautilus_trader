@@ -16,7 +16,7 @@
 //! Common functions to support Databento adapter operations.
 
 use databento::historical::DateTimeRange;
-use nautilus_core::time::UnixNanos;
+use nautilus_core::nanos::UnixNanos;
 use time::OffsetDateTime;
 
 pub const DATABENTO: &str = "DATABENTO";
@@ -24,8 +24,8 @@ pub const ALL_SYMBOLS: &str = "ALL_SYMBOLS";
 
 pub fn get_date_time_range(start: UnixNanos, end: UnixNanos) -> anyhow::Result<DateTimeRange> {
     Ok(DateTimeRange::from((
-        OffsetDateTime::from_unix_timestamp_nanos(i128::from(start))?,
-        OffsetDateTime::from_unix_timestamp_nanos(i128::from(end))?,
+        OffsetDateTime::from_unix_timestamp_nanos(i128::from(start.as_u64()))?,
+        OffsetDateTime::from_unix_timestamp_nanos(i128::from(end.as_u64()))?,
     )))
 }
 
@@ -39,8 +39,8 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case(0, 0, "DateTimeRange { start: 1970-01-01 0:00:00.0 +00:00:00, end: 1970-01-01 0:00:00.0 +00:00:00 }")]
-    #[case(0, 1_000_000_000, "DateTimeRange { start: 1970-01-01 0:00:00.0 +00:00:00, end: 1970-01-01 0:00:01.0 +00:00:00 }")]
+    #[case(UnixNanos::default(), UnixNanos::default(), "DateTimeRange { start: 1970-01-01 0:00:00.0 +00:00:00, end: 1970-01-01 0:00:00.0 +00:00:00 }")]
+    #[case(UnixNanos::default(), 1_000_000_000.into(), "DateTimeRange { start: 1970-01-01 0:00:00.0 +00:00:00, end: 1970-01-01 0:00:01.0 +00:00:00 }")]
     fn test_get_date_time_range(
         #[case] start: UnixNanos,
         #[case] end: UnixNanos,

@@ -21,7 +21,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{serialization::Serializable, time::UnixNanos};
+use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
 #[cfg(feature = "python")]
 use pyo3::{PyAny, PyResult};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -315,11 +315,18 @@ impl Bar {
         let volume_prec: u8 = volume_py.getattr("precision")?.extract()?;
         let volume = Quantity::from_raw(volume_raw, volume_prec).map_err(to_pyvalue_err)?;
 
-        let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
-        let ts_init: UnixNanos = obj.getattr("ts_init")?.extract()?;
+        let ts_event: u64 = obj.getattr("ts_event")?.extract()?;
+        let ts_init: u64 = obj.getattr("ts_init")?.extract()?;
 
         Ok(Self::new(
-            bar_type, open, high, low, close, volume, ts_event, ts_init,
+            bar_type,
+            open,
+            high,
+            low,
+            close,
+            volume,
+            ts_event.into(),
+            ts_init.into(),
         ))
     }
 }
@@ -341,6 +348,7 @@ impl Display for Bar {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(feature = "stubs")]
 pub mod stubs {
+    use nautilus_core::nanos::UnixNanos;
     use rstest::fixture;
 
     use crate::{
@@ -373,8 +381,8 @@ pub mod stubs {
             low: Price::from("1.00002"),
             close: Price::from("1.00003"),
             volume: Quantity::from("100000"),
-            ts_event: 0,
-            ts_init: 1,
+            ts_event: UnixNanos::from(0),
+            ts_init: UnixNanos::from(1),
         }
     }
 }
@@ -584,8 +592,8 @@ mod tests {
             low: Price::from("1.00002"),
             close: Price::from("1.00003"),
             volume: Quantity::from("100000"),
-            ts_event: 0,
-            ts_init: 0,
+            ts_event: UnixNanos::from(0),
+            ts_init: UnixNanos::from(0),
         };
 
         let bar2 = Bar {
@@ -595,8 +603,8 @@ mod tests {
             low: Price::from("1.00002"),
             close: Price::from("1.00003"),
             volume: Quantity::from("100000"),
-            ts_event: 0,
-            ts_init: 0,
+            ts_event: UnixNanos::from(0),
+            ts_init: UnixNanos::from(0),
         };
         assert_eq!(bar1, bar1);
         assert_ne!(bar1, bar2);

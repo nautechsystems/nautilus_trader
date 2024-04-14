@@ -22,7 +22,6 @@ use std::{
 use nautilus_core::{
     python::{serialization::from_dict_pyo3, to_pyvalue_err},
     serialization::Serializable,
-    time::UnixNanos,
 };
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 
@@ -140,10 +139,19 @@ impl Bar {
         low: Price,
         close: Price,
         volume: Quantity,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
+        ts_event: u64,
+        ts_init: u64,
     ) -> Self {
-        Self::new(bar_type, open, high, low, close, volume, ts_event, ts_init)
+        Self::new(
+            bar_type,
+            open,
+            high,
+            low,
+            close,
+            volume,
+            ts_event.into(),
+            ts_init.into(),
+        )
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -206,14 +214,14 @@ impl Bar {
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> UnixNanos {
-        self.ts_event
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> UnixNanos {
-        self.ts_init
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 
     #[staticmethod]

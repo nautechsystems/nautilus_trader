@@ -21,5 +21,5 @@ use crate::{datetime::unix_nanos_to_iso8601, ffi::string::str_to_cstr};
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn unix_nanos_to_iso8601_cstr(timestamp_ns: u64) -> *const c_char {
-    str_to_cstr(&unix_nanos_to_iso8601(timestamp_ns))
+    str_to_cstr(&unix_nanos_to_iso8601(timestamp_ns.into()))
 }

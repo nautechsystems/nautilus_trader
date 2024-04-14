@@ -21,7 +21,6 @@ use std::{
 use nautilus_core::{
     python::{serialization::from_dict_pyo3, to_pyvalue_err},
     serialization::Serializable,
-    time::UnixNanos,
 };
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 
@@ -50,8 +49,8 @@ impl OrderBookDepth10 {
         ask_counts: [u32; DEPTH10_LEN],
         flags: u8,
         sequence: u64,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
+        ts_event: u64,
+        ts_init: u64,
     ) -> Self {
         Self::new(
             instrument_id,
@@ -61,8 +60,8 @@ impl OrderBookDepth10 {
             ask_counts,
             flags,
             sequence,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         )
     }
 
@@ -132,14 +131,14 @@ impl OrderBookDepth10 {
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> UnixNanos {
-        self.ts_event
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> UnixNanos {
-        self.ts_init
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 
     #[staticmethod]
@@ -273,8 +272,8 @@ impl OrderBookDepth10 {
             ask_counts,
             flags,
             sequence,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         )
     }
 

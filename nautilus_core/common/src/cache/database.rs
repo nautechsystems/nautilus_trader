@@ -19,7 +19,7 @@
 
 use std::{collections::HashMap, sync::mpsc::Receiver};
 
-use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     identifiers::{
         account_id::AccountId, client_id::ClientId, client_order_id::ClientOrderId,

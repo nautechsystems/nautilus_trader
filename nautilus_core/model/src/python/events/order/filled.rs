@@ -15,11 +15,9 @@
 
 use nautilus_core::{
     python::{serialization::from_dict_pyo3, to_pyvalue_err},
-    time::UnixNanos,
     uuid::UUID4,
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
-use rust_decimal::prelude::ToPrimitive;
 
 use crate::{
     enums::{LiquiditySide, OrderSide, OrderType},
@@ -51,8 +49,8 @@ impl OrderFilled {
         currency: Currency,
         liquidity_side: LiquiditySide,
         event_id: UUID4,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
+        ts_event: u64,
+        ts_init: u64,
         reconciliation: bool,
         position_id: Option<PositionId>,
         commission: Option<Money>,
@@ -72,8 +70,8 @@ impl OrderFilled {
             currency,
             liquidity_side,
             event_id,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
             reconciliation,
             position_id,
             commission,
@@ -279,14 +277,14 @@ impl OrderFilled {
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> UnixNanos {
-        self.ts_event
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> UnixNanos {
-        self.ts_init
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 
     #[getter]
@@ -336,8 +334,8 @@ impl OrderFilled {
         dict.set_item("currency", self.currency.code.to_string())?;
         dict.set_item("liquidity_side", self.liquidity_side.to_string())?;
         dict.set_item("event_id", self.event_id.to_string())?;
-        dict.set_item("ts_event", self.ts_event.to_u64())?;
-        dict.set_item("ts_init", self.ts_init.to_u64())?;
+        dict.set_item("ts_event", self.ts_event.as_u64())?;
+        dict.set_item("ts_init", self.ts_init.as_u64())?;
         dict.set_item("reconciliation", self.reconciliation)?;
         match self.position_id {
             Some(position_id) => dict.set_item("position_id", position_id.to_string())?,

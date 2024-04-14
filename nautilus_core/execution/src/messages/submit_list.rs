@@ -15,7 +15,7 @@
 
 use std::fmt::Display;
 
-use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     identifiers::{
         client_id::ClientId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,

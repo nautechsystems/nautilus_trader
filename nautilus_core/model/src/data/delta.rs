@@ -20,7 +20,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{serialization::Serializable, time::UnixNanos};
+use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
 use super::order::{BookOrder, NULL_ORDER};
@@ -179,8 +179,8 @@ pub mod stubs {
             order,
             flags,
             sequence,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         )
     }
 }
@@ -221,8 +221,8 @@ mod tests {
             order,
             flags,
             sequence,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         );
 
         assert_eq!(delta.instrument_id, instrument_id);
@@ -244,7 +244,7 @@ mod tests {
         let ts_event = 2;
         let ts_init = 3;
 
-        let delta = OrderBookDelta::clear(instrument_id, sequence, ts_event, ts_init);
+        let delta = OrderBookDelta::clear(instrument_id, sequence, ts_event.into(), ts_init.into());
 
         assert_eq!(delta.instrument_id, instrument_id);
         assert_eq!(delta.action, BookAction::Clear);

@@ -18,7 +18,7 @@ use std::ops::{Deref, DerefMut};
 use nautilus_common::{clock::TestClock, ffi::clock::TestClock_API, timer::TimeEventHandler};
 use nautilus_core::{
     ffi::{cvec::CVec, parsing::u8_as_bool},
-    time::UnixNanos,
+    nanos::UnixNanos,
 };
 
 /// Provides a means of accumulating and draining time event handlers.
@@ -128,9 +128,24 @@ mod tests {
 
             let mut accumulator = TimeEventAccumulator::new();
 
-            let time_event1 = TimeEvent::new(Ustr::from("TEST_EVENT_1"), UUID4::new(), 100, 100);
-            let time_event2 = TimeEvent::new(Ustr::from("TEST_EVENT_2"), UUID4::new(), 300, 300);
-            let time_event3 = TimeEvent::new(Ustr::from("TEST_EVENT_3"), UUID4::new(), 200, 200);
+            let time_event1 = TimeEvent::new(
+                Ustr::from("TEST_EVENT_1"),
+                UUID4::new(),
+                100.into(),
+                100.into(),
+            );
+            let time_event2 = TimeEvent::new(
+                Ustr::from("TEST_EVENT_2"),
+                UUID4::new(),
+                300.into(),
+                300.into(),
+            );
+            let time_event3 = TimeEvent::new(
+                Ustr::from("TEST_EVENT_3"),
+                UUID4::new(),
+                200.into(),
+                200.into(),
+            );
 
             // Note: as_ptr returns a borrowed pointer. It is valid as long
             // as the object is in scope. In this case `callback_ptr` is valid

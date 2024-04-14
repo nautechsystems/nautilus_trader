@@ -16,7 +16,7 @@
 use std::fmt::Display;
 
 use derive_builder::Builder;
-use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::identifiers::{
     client_id::ClientId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
     instrument_id::InstrumentId, position_id::PositionId, strategy_id::StrategyId,

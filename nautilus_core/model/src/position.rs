@@ -19,7 +19,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::time::UnixNanos;
+use nautilus_core::nanos::UnixNanos;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -192,7 +192,7 @@ impl Position {
             self.closing_order_id = Some(fill.client_order_id);
             self.ts_closed = Some(fill.ts_event);
             self.duration_ns = if self.ts_closed.is_some() {
-                self.ts_closed.unwrap() - self.ts_opened
+                self.ts_closed.unwrap().as_u64() - self.ts_opened.as_u64()
             } else {
                 0
             };
@@ -521,6 +521,7 @@ impl Display for Position {
 mod tests {
     use std::str::FromStr;
 
+    use nautilus_core::nanos::UnixNanos;
     use rstest::rstest;
 
     use crate::{
@@ -628,7 +629,7 @@ mod tests {
         assert_eq!(position.signed_qty, 100_000.0);
         assert_eq!(position.entry, OrderSide::Buy);
         assert_eq!(position.side, PositionSide::Long);
-        assert_eq!(position.ts_opened, 0);
+        assert_eq!(position.ts_opened.as_u64(), 0);
         assert_eq!(position.duration_ns, 0);
         assert_eq!(position.avg_px_open, 1.00001);
         assert_eq!(position.event_count(), 1);
@@ -693,7 +694,7 @@ mod tests {
         assert_eq!(position.signed_qty, -100_000.0);
         assert_eq!(position.entry, OrderSide::Sell);
         assert_eq!(position.side, PositionSide::Short);
-        assert_eq!(position.ts_opened, 0);
+        assert_eq!(position.ts_opened.as_u64(), 0);
         assert_eq!(position.avg_px_open, 1.00001);
         assert_eq!(position.event_count(), 1);
         assert_eq!(position.id, PositionId::new("1").unwrap());
@@ -753,7 +754,7 @@ mod tests {
         assert_eq!(position.signed_qty, 50000.0);
         assert_eq!(position.avg_px_open, 1.00001);
         assert_eq!(position.event_count(), 1);
-        assert_eq!(position.ts_opened, 0);
+        assert_eq!(position.ts_opened.as_u64(), 0);
         assert!(position.is_long());
         assert!(!position.is_short());
         assert!(position.is_open());
@@ -864,7 +865,7 @@ mod tests {
             Some(Price::from("1.00001")),
             None,
             None,
-            Some(1_000_000_000),
+            Some(UnixNanos::from(1_000_000_000)),
         );
         let mut position = Position::new(audusd_sim, fill).unwrap();
 
@@ -885,8 +886,8 @@ mod tests {
             audusd_sim.quote_currency,
             LiquiditySide::Taker,
             uuid4(),
-            2_000_000_000,
-            0,
+            2_000_000_000.into(),
+            0.into(),
             false,
             Some(PositionId::new("T1").unwrap()),
             Some(Money::from_str("0.0 USD").unwrap()),
@@ -904,7 +905,7 @@ mod tests {
         assert_eq!(position.signed_qty, 0.0);
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.ts_opened, 1_000_000_000);
-        assert_eq!(position.ts_closed, Some(2_000_000_000));
+        assert_eq!(position.ts_closed, Some(UnixNanos::from(2_000_000_000)));
         assert_eq!(position.duration_ns, 1_000_000_000);
         assert_eq!(position.avg_px_open, 1.00001);
         assert_eq!(position.avg_px_close, Some(1.00011));
@@ -992,7 +993,7 @@ mod tests {
         assert_eq!(position.ts_opened, 0);
         assert_eq!(position.avg_px_open, 1.0);
         assert_eq!(position.events.len(), 3);
-        assert_eq!(position.ts_closed, Some(0));
+        assert_eq!(position.ts_closed, Some(UnixNanos::default()));
         assert_eq!(position.avg_px_close, Some(1.00002));
         assert!(!position.is_long());
         assert!(!position.is_short());
@@ -1071,7 +1072,7 @@ mod tests {
         assert_eq!(position.avg_px_open, 1.0);
         assert_eq!(position.events.len(), 2);
         assert_eq!(position.trade_ids, vec![fill1.trade_id, fill2.trade_id]);
-        assert_eq!(position.ts_closed, Some(0));
+        assert_eq!(position.ts_closed, Some(UnixNanos::default()));
         assert_eq!(position.avg_px_close, Some(1.0));
         assert!(!position.is_long());
         assert!(!position.is_short());
@@ -1172,7 +1173,7 @@ mod tests {
             position.trade_ids,
             vec![fill1.trade_id, fill2.trade_id, fill3.trade_id]
         );
-        assert_eq!(position.ts_closed, Some(0));
+        assert_eq!(position.ts_closed, Some(UnixNanos::default()));
         assert_eq!(position.avg_px_close, Some(1.0001));
         assert!(position.is_closed());
         assert!(!position.is_open());
@@ -1351,7 +1352,7 @@ mod tests {
             Some(Price::from("1.00001")),
             None,
             Some(commission1),
-            Some(1_000_000_000),
+            Some(UnixNanos::from(1_000_000_000)),
         );
         let mut position = Position::new(audusd_sim, fill1).unwrap();
 
@@ -1372,8 +1373,8 @@ mod tests {
             audusd_sim.quote_currency,
             LiquiditySide::Taker,
             uuid4(),
-            2_000_000_000,
-            0,
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::default(),
             false,
             Some(PositionId::from("P-123456")),
             Some(Money::from("0 USD")),
@@ -1397,8 +1398,8 @@ mod tests {
             audusd_sim.quote_currency,
             LiquiditySide::Taker,
             uuid4(),
-            3_000_000_000,
-            0,
+            UnixNanos::from(3_000_000_000),
+            UnixNanos::default(),
             false,
             Some(PositionId::from("P-123456")),
             Some(Money::from("0 USD")),

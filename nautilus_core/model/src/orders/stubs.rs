@@ -15,7 +15,7 @@
 
 use std::str::FromStr;
 
-use nautilus_core::uuid::UUID4;
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 
 use super::{limit::LimitOrder, stop_market::StopMarketOrder};
 use crate::{
@@ -50,7 +50,7 @@ impl TestOrderEventStubs {
         last_px: Option<Price>,
         last_qty: Option<Quantity>,
         commission: Option<Money>,
-        ts_filled_ns: Option<u64>,
+        ts_filled_ns: Option<UnixNanos>,
     ) -> OrderFilled {
         let trader_id = trader_id();
         let strategy_id = strategy_id.unwrap_or(order.strategy_id());
@@ -87,8 +87,8 @@ impl TestOrderEventStubs {
             instrument.quote_currency(),
             liquidity_side,
             event,
-            ts_filled_ns.unwrap_or(0),
-            0,
+            ts_filled_ns.unwrap_or_default(),
+            UnixNanos::default(),
             false,
             Some(position_id),
             Some(commission),
@@ -122,7 +122,7 @@ impl TestOrderStubs {
             quantity,
             time_in_force,
             UUID4::new(),
-            12_321_312_321_312,
+            UnixNanos::default(),
             false,
             false,
             None,
@@ -176,7 +176,7 @@ impl TestOrderStubs {
             Some(client_order_id),
             None,
             UUID4::new(),
-            12_321_312_321_312,
+            UnixNanos::default(),
         )
         .unwrap()
     }
@@ -221,7 +221,7 @@ impl TestOrderStubs {
             None,
             None,
             UUID4::new(),
-            12_321_312_321_312,
+            UnixNanos::default(),
         )
         .unwrap()
     }

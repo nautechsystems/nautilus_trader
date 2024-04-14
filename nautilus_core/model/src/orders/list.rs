@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::time::UnixNanos;
+use nautilus_core::nanos::UnixNanos;
 use serde::{Deserialize, Serialize};
 
 use super::base::OrderAny;

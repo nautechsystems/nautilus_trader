@@ -17,7 +17,7 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     correctness::{check_equal_u8, check_positive_i64, check_valid_string_optional},
-    time::UnixNanos,
+    nanos::UnixNanos,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
