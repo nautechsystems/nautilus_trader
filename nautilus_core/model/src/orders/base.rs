@@ -89,7 +89,7 @@ pub enum OrderError {
     NoPreviousState,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum OrderAny {
     Limit(LimitOrder),
     LimitIfTouched(LimitIfTouchedOrder),

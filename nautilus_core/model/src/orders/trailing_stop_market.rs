@@ -19,6 +19,7 @@ use std::{
 };
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use super::base::{Order, OrderAny, OrderCore};
@@ -38,7 +39,7 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
