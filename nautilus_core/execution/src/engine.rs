@@ -1,0 +1,258 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+// Under development
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
+use std::collections::{HashMap, HashSet};
+
+use nautilus_common::{cache::Cache, generators::position_id::PositionIdGenerator};
+use nautilus_model::{
+    enums::{OmsType, OrderSide},
+    events::order::{event::OrderEvent, filled::OrderFilled},
+    identifiers::{
+        client_id::ClientId, instrument_id::InstrumentId, strategy_id::StrategyId, venue::Venue,
+    },
+    instruments::InstrumentType,
+    orders::base::OrderAny,
+    position::Position,
+    types::quantity::Quantity,
+};
+
+use crate::client::ExecutionClient;
+
+pub struct ExecutionEngineConfig {
+    pub debug: bool,
+    pub allow_cash_positions: bool,
+}
+
+pub struct ExecutionEngine {
+    pub command_count: u64,
+    pub event_count: u64,
+    pub report_count: u64,
+    cache: &'static Cache,
+    default_client: Option<ExecutionClient>,
+    pos_id_generator: PositionIdGenerator,
+    clients: HashMap<ClientId, ExecutionClient>,
+    routing_map: HashMap<Venue, ClientId>,
+    oms_overrides: HashMap<StrategyId, OmsType>,
+    external_order_claims: HashMap<InstrumentId, StrategyId>,
+    config: ExecutionEngineConfig,
+}
+
+impl ExecutionEngine {
+    pub fn position_id_count(&self, strategy_id: StrategyId) -> u64 {
+        todo!();
+    }
+
+    pub fn check_integrity(&self) -> bool {
+        todo!();
+    }
+
+    pub fn check_connected(&self) -> bool {
+        todo!();
+    }
+
+    pub fn check_disconnected(&self) -> bool {
+        todo!();
+    }
+
+    pub fn check_residuals(&self) -> bool {
+        todo!();
+    }
+
+    pub fn get_external_order_claims_instruments(&self) -> HashSet<InstrumentId> {
+        todo!();
+    }
+
+    // -- REGISTRATION --------------------------------------------------------
+
+    pub fn register_client(&mut self, client: ExecutionClient) -> anyhow::Result<()> {
+        todo!();
+    }
+
+    pub fn register_default_client(&mut self, client: ExecutionClient) -> anyhow::Result<()> {
+        todo!();
+    }
+
+    pub fn register_venue_routing(
+        &mut self,
+        client_id: ClientId,
+        venue: Venue,
+    ) -> anyhow::Result<()> {
+        todo!();
+    }
+
+    // TODO: Implement `Strategy`
+    // pub fn register_external_order_claims(&mut self, strategy: Strategy) -> anyhow::Result<()> {
+    //     todo!();
+    // }
+
+    pub fn deregister_client(&mut self, client_id: ClientId) -> anyhow::Result<()> {
+        todo!();
+    }
+
+    // -- COMMANDS ------------------------------------------------------------
+
+    pub fn load_cache(&self) {
+        todo!();
+    }
+
+    pub fn flush_db(&self) {
+        todo!();
+    }
+
+    // TODO: Implement `TradingCommand` enum
+    // pub fn execute(&self, command: TradingCommand) {
+    //     todo!();
+    // }
+
+    pub fn process(&self, event: &OrderEvent) {
+        todo!();
+    }
+
+    // -- COMMAND HANDLERS ----------------------------------------------------
+
+    // fn execute_command(&self, command: TradingCommand) {
+    //     todo!();
+    // }
+
+    // TODO: Implement `SubmitOrder`
+    // fn handle_submit_order(&self, client: &ExecutionClient, command: SubmitOrder) {
+    //     todo!();
+    // }
+
+    // TODO: Implement `SubmitOrderList`
+    // fn handle_submit_order_list(&self, client: &ExecutionClient, command: SubmitOrderList) {
+    //     todo!();
+    // }
+
+    // TODO: Implement `ModifyOrder`
+    // fn handle_modify_order(&self, client: &ExecutionClient, command: ModifyOrder) {
+    //     todo!();
+    // }
+
+    // TODO: Implement `CancelOrder`
+    // fn handle_cancel_order(&self, client: &ExecutionClient, command: CancelOrder) {
+    //     todo!();
+    // }
+
+    // TODO: Implement `CancelAllOrder`
+    // fn handle_cancel_all_orders(&self, client: &ExecutionClient, command: CancelAllOrders) {
+    //     todo!();
+    // }
+
+    // TODO: Implement `BatchCancelOrders`
+    // fn handle_batch_cancel_orders(&self, client: &ExecutionClient, command:
+    // BatchCancelOrders) {
+    //     todo!();
+    // }
+
+    // TODO: Implement `QueryOrder`
+    // fn handle_query_order(&self, client: &ExecutionClient, command: QueryOrder) {
+    //     todo!();
+    // }
+
+    // -- EVENT HANDLERS ----------------------------------------------------
+
+    fn handle_event(&self, event: OrderEvent) {
+        todo!();
+    }
+
+    fn determine_oms_type(&self, fill: OrderFilled) {
+        todo!();
+    }
+
+    fn determine_position_id(&self, fill: OrderFilled, oms_type: OmsType) {
+        todo!();
+    }
+
+    fn determine_hedging_position_id(&self, fill: OrderFilled) {
+        todo!();
+    }
+
+    fn determine_netting_position_id(&self, fill: OrderFilled) {
+        todo!();
+    }
+
+    fn apply_event_to_order(&self, order: &OrderAny, event: OrderEvent) {
+        todo!();
+    }
+
+    fn handle_order_fill(&self, order: &OrderAny, fill: OrderFilled, oms_type: OmsType) {
+        todo!();
+    }
+
+    fn open_position(
+        &self,
+        instrument: InstrumentType,
+        position: &Position,
+        fill: OrderFilled,
+        oms_type: OmsType,
+    ) {
+        todo!();
+    }
+
+    fn update_position(
+        &self,
+        instrument: InstrumentType,
+        position: &Position,
+        fill: OrderFilled,
+        oms_type: OmsType,
+    ) {
+        todo!();
+    }
+
+    fn will_flip_position(&self, position: &Position, fill: OrderFilled) {
+        todo!();
+    }
+
+    fn flip_position(
+        &self,
+        instrument: InstrumentType,
+        position: &Position,
+        fill: OrderFilled,
+        oms_type: OmsType,
+    ) {
+        todo!();
+    }
+
+    fn publish_order_snapshot(&self, order: &OrderAny) {
+        todo!();
+    }
+
+    fn publish_position_snapshot(&self, position: &Position) {
+        todo!();
+    }
+
+    // -- INTERNAL ------------------------------------------------------------
+
+    fn set_position_id_counts(&self) {
+        todo!();
+    }
+
+    fn last_px_for_conversion(&self, instrument_id: InstrumentId, side: OrderSide) {
+        todo!();
+    }
+
+    fn set_order_base_qty(&self, order: &OrderAny, base_qty: Quantity) {
+        todo!();
+    }
+
+    fn deny_order(&self, order: &OrderAny, reason: &str) {
+        todo!();
+    }
+}

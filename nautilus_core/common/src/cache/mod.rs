@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![allow(dead_code)] // Under development
+// Under development
+#![allow(dead_code)]
+#![allow(unused_variables)]
 
 pub mod database;
 

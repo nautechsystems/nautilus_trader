@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![allow(dead_code)] // Under development
+// Under development
+#![allow(dead_code)]
+#![allow(unused_variables)]
 
 use std::collections::HashMap;
 
@@ -247,15 +249,15 @@ impl OrderMatchingEngine {
         self.target_last = None;
     }
 
-    fn expire_order(&mut self, _order: &PassiveOrderType) {
+    fn expire_order(&mut self, order: &PassiveOrderType) {
         todo!();
     }
 
-    fn update_trailing_stop_market(&mut self, _order: &TrailingStopMarketOrder) {
+    fn update_trailing_stop_market(&mut self, order: &TrailingStopMarketOrder) {
         todo!()
     }
 
-    fn update_trailing_stop_limit(&mut self, _order: &TrailingStopLimitOrder) {
+    fn update_trailing_stop_limit(&mut self, order: &TrailingStopLimitOrder) {
         todo!()
     }
 }
