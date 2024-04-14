@@ -93,11 +93,11 @@ impl Display for OrderUpdated {
             "OrderUpdated(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={},quantity={}, price={}, trigger_price={}, ts_event={})",
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}")),
-            self.account_id.map_or_else(|| "None".to_string(), |account_id| format!("{account_id}")),
+            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
+            self.account_id.map_or("None".to_string(), |account_id| format!("{account_id}")),
             self.quantity,
-            self.price.map_or_else(|| "None".to_string(), |price| format!("{price}")),
-            self.trigger_price.map_or_else(|| "None".to_string(), |trigger_price| format!("{trigger_price}")),
+            self.price.map_or("None".to_string(), |price| format!("{price}")),
+            self.trigger_price.map_or("None".to_string(), |trigger_price| format!("{trigger_price}")),
             self.ts_event
         )
     }

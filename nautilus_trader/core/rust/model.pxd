@@ -176,7 +176,7 @@ cdef extern from "../includes/model.h":
 
     # The order management system (OMS) type for a trading venue or trading strategy.
     cpdef enum OmsType:
-        # There is no specific type of order management specified (will defer to the venue).
+        # There is no specific type of order management specified (will defer to the venue OMS).
         UNSPECIFIED # = 0,
         # The netting type where there is one position per instrument.
         NETTING # = 1,

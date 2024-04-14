@@ -81,7 +81,7 @@ impl Display for OrderPendingCancel {
             "OrderPendingCancel(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, ts_event={})",
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}")),
+            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
             self.account_id,
             self.ts_event
         )

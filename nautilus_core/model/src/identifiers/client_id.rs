@@ -43,6 +43,14 @@ impl ClientId {
     }
 }
 
+impl Default for ClientId {
+    fn default() -> Self {
+        Self {
+            value: Ustr::from("SIM"),
+        }
+    }
+}
+
 impl Debug for ClientId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.value)

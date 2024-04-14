@@ -17,73 +17,57 @@ use std::fmt::Display;
 
 use derive_builder::Builder;
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use nautilus_model::{
+    enums::OrderSide,
+    identifiers::{
+        client_id::ClientId, instrument_id::InstrumentId, strategy_id::StrategyId,
+        trader_id::TraderId,
+    },
+};
 use serde::{Deserialize, Serialize};
 
-use crate::identifiers::{
-    account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
-    strategy_id::StrategyId, trader_id::TraderId, venue_order_id::VenueOrderId,
-};
-
-#[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
-)]
-pub struct OrderCanceled {
+pub struct CancelAllOrders {
     pub trader_id: TraderId,
+    pub client_id: ClientId,
     pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
-    pub client_order_id: ClientOrderId,
-    pub event_id: UUID4,
-    pub ts_event: UnixNanos,
+    pub order_side: OrderSide,
+    pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub reconciliation: u8,
-    pub venue_order_id: Option<VenueOrderId>,
-    pub account_id: Option<AccountId>,
 }
 
-impl OrderCanceled {
+impl CancelAllOrders {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
+        client_id: ClientId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        event_id: UUID4,
-        ts_event: UnixNanos,
+        order_side: OrderSide,
+        command_id: UUID4,
         ts_init: UnixNanos,
-        reconciliation: bool,
-        venue_order_id: Option<VenueOrderId>,
-        account_id: Option<AccountId>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             trader_id,
+            client_id,
             strategy_id,
             instrument_id,
-            client_order_id,
-            event_id,
-            ts_event,
+            order_side,
+            command_id,
             ts_init,
-            reconciliation: u8::from(reconciliation),
-            venue_order_id,
-            account_id,
         })
     }
 }
 
-impl Display for OrderCanceled {
+impl Display for CancelAllOrders {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "OrderCanceled(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, ts_event={})",
-            self.instrument_id,
-            self.client_order_id,
-            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
-            self.account_id.map_or("None".to_string(), |account_id| format!("{account_id}")),
-            self.ts_event
+            "CancelAllOrders(instrument_id={}, order_side={})",
+            self.instrument_id, self.order_side,
         )
     }
 }
