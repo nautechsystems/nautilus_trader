@@ -300,6 +300,7 @@ pub enum PassiveOrderType {
 }
 
 impl PassiveOrderType {
+    #[must_use]
     pub fn is_closed(&self) -> bool {
         match self {
             Self::Limit(o) => o.is_closed(),
@@ -307,6 +308,7 @@ impl PassiveOrderType {
         }
     }
 
+    #[must_use]
     pub fn expire_time(&self) -> Option<UnixNanos> {
         match self {
             Self::Limit(o) => o.expire_time(),
@@ -333,6 +335,7 @@ pub enum LimitOrderType {
 }
 
 impl LimitOrderType {
+    #[must_use]
     pub fn is_closed(&self) -> bool {
         match self {
             Self::Limit(o) => o.is_closed(),
@@ -342,6 +345,7 @@ impl LimitOrderType {
         }
     }
 
+    #[must_use]
     pub fn expire_time(&self) -> Option<UnixNanos> {
         match self {
             Self::Limit(o) => o.expire_time,
@@ -374,6 +378,7 @@ pub enum StopOrderType {
 }
 
 impl StopOrderType {
+    #[must_use]
     pub fn is_closed(&self) -> bool {
         match self {
             Self::LimitIfTouched(o) => o.is_closed(),
@@ -385,6 +390,7 @@ impl StopOrderType {
         }
     }
 
+    #[must_use]
     pub fn expire_time(&self) -> Option<UnixNanos> {
         match self {
             Self::LimitIfTouched(o) => o.expire_time,

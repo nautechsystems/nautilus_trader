@@ -938,6 +938,7 @@ pub enum RecordFlag {
 
 impl RecordFlag {
     /// Checks if the flag matches a given value.
+    #[must_use]
     pub fn matches(self, value: u8) -> bool {
         (self as u8) & value != 0
     }

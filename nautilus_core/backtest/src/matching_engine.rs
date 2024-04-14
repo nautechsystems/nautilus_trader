@@ -153,26 +153,32 @@ impl OrderMatchingEngine {
         info!("Reset {}", self.instrument.id());
     }
 
+    #[must_use]
     pub fn best_bid_price(&self) -> Option<Price> {
         self.book.best_bid_price()
     }
 
+    #[must_use]
     pub fn best_ask_price(&self) -> Option<Price> {
         self.book.best_ask_price()
     }
 
+    #[must_use]
     pub fn get_book(&self) -> &OrderBook {
         &self.book
     }
 
+    #[must_use]
     pub fn get_open_bid_orders(&self) -> &[PassiveOrderType] {
         self.core.get_orders_bid()
     }
 
+    #[must_use]
     pub fn get_open_ask_orders(&self) -> &[PassiveOrderType] {
         self.core.get_orders_ask()
     }
 
+    #[must_use]
     pub fn order_exists(&self, client_order_id: ClientOrderId) -> bool {
         self.core.order_exists(client_order_id)
     }
