@@ -299,6 +299,22 @@ pub enum PassiveOrderType {
     Stop(StopOrderType),
 }
 
+impl PassiveOrderType {
+    pub fn is_closed(&self) -> bool {
+        match self {
+            Self::Limit(o) => o.is_closed(),
+            Self::Stop(o) => o.is_closed(),
+        }
+    }
+
+    pub fn expire_time(&self) -> Option<UnixNanos> {
+        match self {
+            Self::Limit(o) => o.expire_time(),
+            Self::Stop(o) => o.expire_time(),
+        }
+    }
+}
+
 impl PartialEq for PassiveOrderType {
     fn eq(&self, rhs: &Self) -> bool {
         match self {
@@ -314,6 +330,26 @@ pub enum LimitOrderType {
     MarketToLimit(MarketToLimitOrder),
     StopLimit(StopLimitOrder),
     TrailingStopLimit(TrailingStopLimitOrder),
+}
+
+impl LimitOrderType {
+    pub fn is_closed(&self) -> bool {
+        match self {
+            Self::Limit(o) => o.is_closed(),
+            Self::MarketToLimit(o) => o.is_closed(),
+            Self::StopLimit(o) => o.is_closed(),
+            Self::TrailingStopLimit(o) => o.is_closed(),
+        }
+    }
+
+    pub fn expire_time(&self) -> Option<UnixNanos> {
+        match self {
+            Self::Limit(o) => o.expire_time,
+            Self::MarketToLimit(o) => o.expire_time,
+            Self::StopLimit(o) => o.expire_time,
+            Self::TrailingStopLimit(o) => o.expire_time,
+        }
+    }
 }
 
 impl PartialEq for LimitOrderType {
@@ -335,6 +371,30 @@ pub enum StopOrderType {
     StopMarket(StopMarketOrder),
     TrailingStopLimit(TrailingStopLimitOrder),
     TrailingStopMarket(TrailingStopMarketOrder),
+}
+
+impl StopOrderType {
+    pub fn is_closed(&self) -> bool {
+        match self {
+            Self::LimitIfTouched(o) => o.is_closed(),
+            Self::MarketIfTouched(o) => o.is_closed(),
+            Self::StopLimit(o) => o.is_closed(),
+            Self::StopMarket(o) => o.is_closed(),
+            Self::TrailingStopLimit(o) => o.is_closed(),
+            Self::TrailingStopMarket(o) => o.is_closed(),
+        }
+    }
+
+    pub fn expire_time(&self) -> Option<UnixNanos> {
+        match self {
+            Self::LimitIfTouched(o) => o.expire_time,
+            Self::MarketIfTouched(o) => o.expire_time,
+            Self::StopLimit(o) => o.expire_time,
+            Self::StopMarket(o) => o.expire_time,
+            Self::TrailingStopLimit(o) => o.expire_time,
+            Self::TrailingStopMarket(o) => o.expire_time,
+        }
+    }
 }
 
 impl PartialEq for StopOrderType {
