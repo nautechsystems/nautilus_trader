@@ -13,6 +13,35 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod client;
-pub mod engine;
-pub mod matching_core;
+// Under development
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
+use nautilus_common::cache::Cache;
+use nautilus_model::{
+    enums::{AccountType, OmsType},
+    identifiers::{account_id::AccountId, venue::Venue},
+    types::currency::Currency,
+};
+
+pub struct ExecutionClient {
+    pub venue: Venue,
+    pub oms_type: OmsType,
+    pub account_id: AccountId,
+    pub account_type: AccountType,
+    pub base_currency: Option<Currency>,
+    pub is_connected: bool,
+    cache: &'static Cache,
+}
+
+impl ExecutionClient {
+    // pub fn get_account(&self) -> Box<dyn Account> {
+    //     todo!();
+    // }
+
+    // -- COMMAND HANDLERS ----------------------------------------------------
+
+    // pub fn submit_order(&self, command: SubmitOrder) -> anyhow::Result<()> {
+    //     todo!();
+    // }
+}
