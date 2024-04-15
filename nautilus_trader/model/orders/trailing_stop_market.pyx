@@ -294,7 +294,7 @@ cdef class TrailingStopMarketOrder(Order):
             "trigger_type": trigger_type_to_str(self.trigger_type),
             "trailing_offset": str(self.trailing_offset),
             "trailing_offset_type": trailing_offset_type_to_str(self.trailing_offset_type),
-            "expire_time_ns": self.expire_time_ns,
+            "expire_time_ns": self.expire_time_ns if self.expire_time_ns > 0 else None,
             "time_in_force": time_in_force_to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),

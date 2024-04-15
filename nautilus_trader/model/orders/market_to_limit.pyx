@@ -259,7 +259,7 @@ cdef class MarketToLimitOrder(Order):
             "quantity": str(self.quantity),
             "price": str(self.price),
             "time_in_force": time_in_force_to_str(self.time_in_force),
-            "expire_time_ns": self.expire_time_ns,
+            "expire_time_ns": self.expire_time_ns if self.expire_time_ns > 0 else None,
             "is_reduce_only": self.is_reduce_only,
             "is_quote_quantity": self.is_quote_quantity,
             "display_qty": str(self.display_qty) if self.display_qty is not None else None,
