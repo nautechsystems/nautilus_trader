@@ -26,14 +26,14 @@ use nautilus_model::{
         component_id::ComponentId, instrument_id::InstrumentId, position_id::PositionId,
         strategy_id::StrategyId, trader_id::TraderId, venue_order_id::VenueOrderId,
     },
-    instruments::{synthetic::SyntheticInstrument, Instrument},
+    instruments::{synthetic::SyntheticInstrument, InstrumentAny},
     orders::base::{Order, OrderAny},
     position::Position,
     types::currency::Currency,
 };
 use ustr::Ustr;
 
-use crate::enums::SerializationEncoding;
+use crate::{enums::SerializationEncoding, interface::account::Account};
 
 /// A type of database operation.
 #[derive(Clone, Debug)]
@@ -128,7 +128,7 @@ impl CacheDatabaseAdapter {
         Ok(HashMap::new()) // TODO
     }
 
-    pub fn load_instruments(&self) -> anyhow::Result<HashMap<InstrumentId, Box<dyn Instrument>>> {
+    pub fn load_instruments(&self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
         Ok(HashMap::new()) // TODO
     }
 
@@ -136,9 +136,9 @@ impl CacheDatabaseAdapter {
         Ok(HashMap::new()) // TODO
     }
 
-    // pub fn load_accounts() -> anyhow::Result<HashMap<AccountId, Box<dyn Account>>> {
-    //     Ok(HashMap::new()) // TODO
-    // }
+    pub fn load_accounts(&self) -> anyhow::Result<HashMap<AccountId, Box<dyn Account>>> {
+        Ok(HashMap::new()) // TODO
+    }
 
     pub fn load_orders(&self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
         Ok(HashMap::new()) // TODO
@@ -160,10 +160,7 @@ impl CacheDatabaseAdapter {
         todo!() // TODO
     }
 
-    pub fn load_instrument(
-        &self,
-        instrument_id: &InstrumentId,
-    ) -> anyhow::Result<Box<dyn Instrument>> {
+    pub fn load_instrument(&self, instrument_id: &InstrumentId) -> anyhow::Result<InstrumentAny> {
         todo!() // TODO
     }
 
@@ -212,27 +209,27 @@ impl CacheDatabaseAdapter {
         todo!() // TODO
     }
 
-    pub fn add_currency(&self, currency: Currency) -> anyhow::Result<()> {
+    pub fn add_currency(&self, currency: &Currency) -> anyhow::Result<()> {
         todo!() // TODO
     }
 
-    pub fn add_instrument(&self, instrument: Box<dyn Instrument>) -> anyhow::Result<()> {
+    pub fn add_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         todo!() // TODO
     }
 
-    pub fn add_synthetic(&self, synthetic: SyntheticInstrument) -> anyhow::Result<()> {
+    pub fn add_synthetic(&self, synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
         todo!() // TODO
     }
 
-    // pub fn add_account(&self) -> anyhow::Result<Box<dyn Account>> {
-    //     todo!() // TODO
-    // }
+    pub fn add_account(&self, account: &dyn Account) -> anyhow::Result<Box<dyn Account>> {
+        todo!() // TODO
+    }
 
     pub fn add_order(&self, order: &OrderAny) -> anyhow::Result<()> {
         todo!() // TODO
     }
 
-    pub fn add_position(&self, position: Position) -> anyhow::Result<()> {
+    pub fn add_position(&self, position: &Position) -> anyhow::Result<()> {
         todo!() // TODO
     }
 
@@ -264,19 +261,19 @@ impl CacheDatabaseAdapter {
         todo!() // TODO
     }
 
-    pub fn update_order(&self, order: Box<dyn Order>) -> anyhow::Result<()> {
+    pub fn update_order(&self, order: &OrderAny) -> anyhow::Result<()> {
         todo!() // TODO
     }
 
-    pub fn update_position(&self, position: Position) -> anyhow::Result<()> {
+    pub fn update_position(&self, position: &Position) -> anyhow::Result<()> {
         todo!() // TODO
     }
 
-    pub fn snapshot_order_state(&self, order: OrderAny) -> anyhow::Result<()> {
+    pub fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()> {
         todo!() // TODO
     }
 
-    pub fn snapshot_position_state(&self, position: Position) -> anyhow::Result<()> {
+    pub fn snapshot_position_state(&self, position: &Position) -> anyhow::Result<()> {
         todo!() // TODO
     }
 

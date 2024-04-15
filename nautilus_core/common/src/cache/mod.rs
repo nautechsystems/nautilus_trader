@@ -36,7 +36,7 @@ use nautilus_model::{
         position_id::PositionId, strategy_id::StrategyId, venue::Venue,
         venue_order_id::VenueOrderId,
     },
-    instruments::{synthetic::SyntheticInstrument, Instrument},
+    instruments::{synthetic::SyntheticInstrument, InstrumentAny},
     orderbook::book::OrderBook,
     orders::base::OrderAny,
     polymorphism::{
@@ -49,7 +49,7 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use self::database::CacheDatabaseAdapter;
-use crate::enums::SerializationEncoding;
+use crate::{enums::SerializationEncoding, interface::account::Account};
 
 pub struct CacheConfig {
     pub encoding: SerializationEncoding,
@@ -175,10 +175,10 @@ pub struct Cache {
     books: HashMap<InstrumentId, OrderBook>,
     bars: HashMap<BarType, VecDeque<Bar>>,
     currencies: HashMap<Ustr, Currency>,
-    instruments: HashMap<InstrumentId, Box<dyn Instrument>>,
+    instruments: HashMap<InstrumentId, InstrumentAny>,
     synthetics: HashMap<InstrumentId, SyntheticInstrument>,
-    // accounts: HashMap<AccountId, Box<dyn Account>>,  // TODO: Account not object safe
-    orders: HashMap<ClientOrderId, OrderAny>, // TODO: Efficency (use enum)
+    accounts: HashMap<AccountId, Box<dyn Account>>,
+    orders: HashMap<ClientOrderId, OrderAny>,
     // order_lists: HashMap<OrderListId, VecDeque<OrderList>>,  TODO: Need `OrderList`
     positions: HashMap<PositionId, Position>,
     position_snapshots: HashMap<PositionId, Vec<u8>>,
@@ -234,8 +234,8 @@ impl Cache {
             currencies: HashMap::new(),
             instruments: HashMap::new(),
             synthetics: HashMap::new(),
-            // accounts: HashMap<AccountId, Box<dyn Account>>,  TODO: Decide where trait should go
-            orders: HashMap::new(), // TODO: Efficency (use enum)
+            accounts: HashMap::new(),
+            orders: HashMap::new(),
             // order_lists: HashMap<OrderListId, VecDeque<OrderList>>,  TODO: Need `OrderList`
             positions: HashMap::new(),
             position_snapshots: HashMap::new(),
@@ -290,18 +290,18 @@ impl Cache {
         Ok(())
     }
 
-    // pub fn cache_accounts(&mut self) -> anyhow::Result<()> {
-    //     self.accounts = match &self.database {
-    //         Some(db) => db.load_accounts()?,
-    //         None => HashMap::new(),
-    //     };
-    //
-    //     info!(
-    //         "Cached {} synthetic instruments from database",
-    //         self.general.len()
-    //     );
-    //     Ok(())
-    // }
+    pub fn cache_accounts(&mut self) -> anyhow::Result<()> {
+        self.accounts = match &self.database {
+            Some(db) => db.load_accounts()?,
+            None => HashMap::new(),
+        };
+
+        info!(
+            "Cached {} synthetic instruments from database",
+            self.general.len()
+        );
+        Ok(())
+    }
 
     pub fn cache_orders(&mut self) -> anyhow::Result<()> {
         self.orders = match &self.database {
@@ -486,51 +486,47 @@ impl Cache {
 
     pub fn add_currency(&mut self, currency: Currency) -> anyhow::Result<()> {
         debug!("Add `Currency` {}", currency.code);
-        self.currencies.insert(currency.code, currency);
 
         if let Some(database) = &self.database {
-            database.add_currency(currency)?;
+            database.add_currency(&currency)?;
         }
+
+        self.currencies.insert(currency.code, currency);
         Ok(())
     }
 
-    pub fn add_instrument<T>(&mut self, instrument: T) -> anyhow::Result<()>
-    where
-        T: Instrument + Clone,
-    {
+    pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
         debug!("Add `Instrument` {}", instrument.id());
-        self.instruments
-            .insert(instrument.id(), Box::new(instrument.clone()));
 
-        // TODO: Revisit boxing
         if let Some(database) = &self.database {
-            database.add_instrument(Box::new(instrument))?;
+            database.add_instrument(&instrument)?;
         }
+
+        self.instruments.insert(instrument.id(), instrument);
         Ok(())
     }
 
     pub fn add_synthetic(&mut self, synthetic: SyntheticInstrument) -> anyhow::Result<()> {
         debug!("Add `SyntheticInstrument` {}", synthetic.id);
-        self.synthetics.insert(synthetic.id, synthetic.clone());
 
         if let Some(database) = &self.database {
-            database.add_synthetic(synthetic)?;
+            database.add_synthetic(&synthetic)?;
         }
+
+        self.synthetics.insert(synthetic.id, synthetic.clone());
         Ok(())
     }
 
-    // pub fn add_account<T>(&mut self, account: T) -> anyhow::Result<()>
-    // where
-    //     T: Account,
-    // {
-    //     debug!("Add `Account` {}", account.id());
-    //     self.accounts.insert(account.id(), account);
-    //
-    //     if let Some(database) = &self.database {
-    //         database.add_synthetic(synthetic)?;
-    //     }
-    //     Ok(())
-    // }
+    pub fn add_account(&mut self, account: Box<dyn Account>) -> anyhow::Result<()> {
+        debug!("Add `Account` {}", account.id());
+
+        if let Some(database) = &self.database {
+            database.add_account(account.as_ref())?;
+        }
+
+        self.accounts.insert(account.id(), account);
+        Ok(())
+    }
 
     /// Add the order to the cache indexed with any given identifiers.
     ///
