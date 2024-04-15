@@ -16,3 +16,9 @@
 pub mod limit;
 pub mod market;
 pub mod stop_limit;
+mod limit_if_touched;
+mod market_if_touched;
+mod market_to_limit;
+mod stop_market;
+mod trailing_stop_market;
+mod trailing_stop_limit;
