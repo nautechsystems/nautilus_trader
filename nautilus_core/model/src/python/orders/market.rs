@@ -64,6 +64,7 @@ impl MarketOrder {
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<String>,
     ) -> PyResult<Self> {
+        let exec_algorithm_params = exec_algorithm_params.map(str_hashmap_to_ustr);
         Self::new(
             trader_id,
             strategy_id,
@@ -81,7 +82,7 @@ impl MarketOrder {
             linked_order_ids,
             parent_order_id,
             exec_algorithm_id,
-            exec_algorithm_params.map(str_hashmap_to_ustr),
+            exec_algorithm_params,
             exec_spawn_id,
             tags.map(|s| Ustr::from(&s)),
         )
