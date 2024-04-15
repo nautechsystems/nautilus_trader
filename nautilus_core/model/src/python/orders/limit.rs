@@ -169,7 +169,7 @@ impl LimitOrder {
     #[getter]
     #[pyo3(name = "expire_time")]
     fn py_expire_time(&self) -> Option<u64> {
-        self.expire_time.map(|e| e.into())
+        self.expire_time.map(std::convert::Into::into)
     }
 
     #[getter]
@@ -335,7 +335,7 @@ impl LimitOrder {
     #[getter]
     #[pyo3(name = "expire_time_ns")]
     fn py_expire_time_ns(&self) -> Option<u64> {
-        self.expire_time.map(|e| e.into())
+        self.expire_time.map(std::convert::Into::into)
     }
 
     #[getter]

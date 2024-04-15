@@ -54,6 +54,7 @@ pub enum InstrumentAny {
 }
 
 impl InstrumentAny {
+    #[must_use]
     pub fn id(&self) -> InstrumentId {
         match self {
             Self::CryptoFuture(inst) => inst.id,
@@ -67,6 +68,7 @@ impl InstrumentAny {
         }
     }
 
+    #[must_use]
     pub fn base_currency(&self) -> Option<Currency> {
         match self {
             Self::CryptoFuture(inst) => inst.base_currency(),
@@ -80,6 +82,7 @@ impl InstrumentAny {
         }
     }
 
+    #[must_use]
     pub fn quote_currency(&self) -> Currency {
         match self {
             Self::CryptoFuture(inst) => inst.quote_currency(),
@@ -93,6 +96,7 @@ impl InstrumentAny {
         }
     }
 
+    #[must_use]
     pub fn settlement_currency(&self) -> Currency {
         match self {
             Self::CryptoFuture(inst) => inst.settlement_currency(),
@@ -106,6 +110,7 @@ impl InstrumentAny {
         }
     }
 
+    #[must_use]
     pub fn is_inverse(&self) -> bool {
         match self {
             Self::CryptoFuture(inst) => inst.is_inverse(),
@@ -119,6 +124,7 @@ impl InstrumentAny {
         }
     }
 
+    #[must_use]
     pub fn calculate_notional_value(
         &self,
         quantity: Quantity,
@@ -154,6 +160,7 @@ impl InstrumentAny {
     }
 
     // #[deprecated(since = "0.21.0", note = "Will be removed in a future version")]
+    #[must_use]
     pub fn maker_fee(&self) -> Decimal {
         match self {
             Self::CryptoFuture(inst) => inst.maker_fee(),
@@ -168,6 +175,7 @@ impl InstrumentAny {
     }
 
     // #[deprecated(since = "0.21.0", note = "Will be removed in a future version")]
+    #[must_use]
     pub fn taker_fee(&self) -> Decimal {
         match self {
             Self::CryptoFuture(inst) => inst.taker_fee(),

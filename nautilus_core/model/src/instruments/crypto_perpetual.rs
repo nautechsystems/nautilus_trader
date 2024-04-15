@@ -22,14 +22,13 @@ use nautilus_core::{
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+use super::InstrumentAny;
 use crate::{
     enums::{AssetClass, InstrumentClass},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     instruments::Instrument,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
-
-use super::InstrumentAny;
 
 #[repr(C)]
 #[derive(Clone, Debug, Serialize, Deserialize)]

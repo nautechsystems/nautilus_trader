@@ -79,7 +79,7 @@ impl StopLimitOrder {
             trigger_price,
             trigger_type,
             time_in_force,
-            expire_time.map(|x| x.into()),
+            expire_time.map(std::convert::Into::into),
             post_only,
             reduce_only,
             quote_quantity,
@@ -184,7 +184,7 @@ impl StopLimitOrder {
     #[getter]
     #[pyo3(name = "expire_time")]
     fn py_expire_time(&self) -> Option<u64> {
-        self.expire_time.map(|e| e.into())
+        self.expire_time.map(std::convert::Into::into)
     }
 
     #[getter]

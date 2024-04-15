@@ -24,7 +24,7 @@ use nautilus_model::identifiers::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 pub struct SubmitOrder {

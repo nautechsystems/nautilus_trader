@@ -203,7 +203,7 @@ impl Position {
     #[getter]
     #[pyo3(name = "ts_closed")]
     fn py_ts_closed(&self) -> Option<u64> {
-        self.ts_closed.map(|ts_closed| ts_closed.into())
+        self.ts_closed.map(std::convert::Into::into)
     }
 
     #[getter]

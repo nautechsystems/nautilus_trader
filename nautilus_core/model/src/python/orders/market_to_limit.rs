@@ -67,7 +67,7 @@ impl MarketToLimitOrder {
             order_side,
             quantity,
             time_in_force,
-            expire_time.map(|x| x.into()),
+            expire_time.map(std::convert::Into::into),
             post_only,
             reduce_only,
             quote_quantity,
