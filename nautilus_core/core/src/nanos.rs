@@ -17,6 +17,7 @@ use std::{
     cmp::Ordering,
     fmt::Display,
     ops::{Add, AddAssign, Deref, MulAssign, Sub, SubAssign},
+    str::FromStr,
 };
 
 use serde::{Deserialize, Serialize};
@@ -73,6 +74,20 @@ impl PartialOrd<Option<u64>> for UnixNanos {
 impl From<u64> for UnixNanos {
     fn from(value: u64) -> Self {
         UnixNanos(value)
+    }
+}
+
+impl From<&str> for UnixNanos {
+    fn from(value: &str) -> Self {
+        UnixNanos(value.parse().unwrap())
+    }
+}
+
+impl FromStr for UnixNanos {
+    type Err = std::num::ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse().map(UnixNanos)
     }
 }
 

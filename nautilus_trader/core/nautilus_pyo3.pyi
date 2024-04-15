@@ -962,7 +962,37 @@ class LimitOrder:
     def from_dict(cls, values: dict[str, str]) -> LimitOrder: ...
 
 
-class LimitIfTouchedOrder: ...
+class LimitIfTouchedOrder:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        trigger_price: Price,
+        trigger_type: TriggerType,
+        time_in_force: TimeInForce,
+        post_only: bool,
+        reduce_only: bool,
+        quote_quantity: bool,
+        init_id: UUID4,
+        ts_init: int,
+        expire_time: int | None = None,
+        display_qty: Quantity | None = None,
+        emulation_trigger: TriggerType | None = None,
+        trigger_instrument_id: InstrumentId | None = None,
+        contingency_type: ContingencyType | None = None,
+        order_list_id: OrderListId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
+        exec_algorithm_id: ExecAlgorithmId | None = None,
+        exec_algorithm_params: dict[str, str] | None = None,
+        exec_spawn_id: ClientOrderId | None = None,
+        tags: str | None = None,
+    ) -> None: ...
 
 class MarketOrder:
     def __init__(
@@ -975,13 +1005,13 @@ class MarketOrder:
         quantity: Quantity,
         init_id: UUID4,
         ts_init: int,
-        time_in_force: TimeInForce = ...,
-        reduce_only: bool = False,
-        quote_quantity: bool = False,
+        time_in_force: TimeInForce,
+        reduce_only: bool,
+        quote_quantity: bool,
         contingency_type: ContingencyType | None = None,
         order_list_id: OrderListId | None = None,
         linked_order_ids: list[ClientOrderId] | None = None,
-        parent_order_id: ClientOrderId | None = None,
+        parent_order_id: ClientOrderId | None  = None,
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, str] | None = None,
         exec_spawn_id: ClientOrderId | None = None,
@@ -1023,7 +1053,62 @@ class MarketOrder:
     @property
     def price(self) -> Price | None: ...
 
-class MarketToLimitOrder: ...
+class MarketToLimitOrder:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        post_only: bool,
+        reduce_only: bool,
+        quote_quantity: bool,
+        init_id: UUID4,
+        ts_init: int,
+        expire_time: int | None = None,
+        display_qty: Quantity | None = None,
+        contingency_type: ContingencyType | None = None,
+        order_list_id: OrderListId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
+        exec_algorithm_id: ExecAlgorithmId | None = None,
+        exec_algorithm_params: dict[str, str] | None = None,
+        exec_spawn_id: ClientOrderId | None = None,
+        tags: str | None = None,
+    ): ...
+
+class MarketIfTouchedOrder:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        trigger_price: Price,
+        trigger_type: TriggerType,
+        time_in_force: TimeInForce,
+        reduce_only: bool,
+        quote_quantity: bool,
+        init_id: UUID4,
+        ts_init: int,
+        expire_time: int | None = None,
+        display_qty: Quantity | None = None,
+        emulation_trigger: TriggerType | None = None,
+        trigger_instrument_id: InstrumentId | None = None,
+        contingency_type: ContingencyType | None = None,
+        order_list_id: OrderListId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
+        exec_algorithm_id: ExecAlgorithmId | None = None,
+        exec_algorithm_params: dict[str, str] | None = None,
+        exec_spawn_id: ClientOrderId | None = None,
+        tags: str | None = None,
+    ): ...
 class StopLimitOrder:
     def __init__(
         self,
@@ -1103,9 +1188,100 @@ class StopLimitOrder:
     @property
     def expire_time(self) -> int | None: ...
 
-class StopMarketOrder: ...
-class TrailingStopLimitOrder: ...
-class TrailingStopMarketOrder: ...
+class StopMarketOrder:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        trigger_price: Price,
+        trigger_type: TriggerType,
+        time_in_force: TimeInForce,
+        reduce_only: bool,
+        quote_quantity: bool,
+        init_id: UUID4,
+        ts_init: int,
+        expire_time: int | None = None,
+        display_qty: Quantity | None = None,
+        emulation_trigger: TriggerType | None = None,
+        trigger_instrument_id: InstrumentId | None = None,
+        contingency_type: ContingencyType | None = None,
+        order_list_id: OrderListId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
+        exec_algorithm_id: ExecAlgorithmId | None = None,
+        exec_algorithm_params: dict[str, str] | None = None,
+        exec_spawn_id: ClientOrderId | None = None,
+        tags: str | None = None,
+    ): ...
+class TrailingStopLimitOrder:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        trigger_price: Price,
+        trigger_type: TriggerType,
+        limit_offset: Price,
+        trailing_offset: Price,
+        trailing_offset_type: TrailingOffsetType,
+        time_in_force: TimeInForce,
+        post_only: bool,
+        reduce_only: bool,
+        quote_quantity: bool,
+        init_id: UUID4,
+        ts_init: int,
+        expire_time: int | None = None,
+        display_qty: Quantity | None = None,
+        emulation_trigger: TriggerType | None = None,
+        trigger_instrument_id: InstrumentId | None = None,
+        contingency_type: ContingencyType | None = None,
+        order_list_id: OrderListId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
+        exec_algorithm_id: ExecAlgorithmId | None = None,
+        exec_algorithm_params: dict[str, str] | None = None,
+        exec_spawn_id: ClientOrderId | None = None,
+        tags: str | None = None,
+    ): ...
+class TrailingStopMarketOrder:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        trigger_price: Price,
+        trigger_type: TriggerType,
+        trailing_offset: Price,
+        trailing_offset_type: TrailingOffsetType,
+        time_in_force: TimeInForce,
+        reduce_only: bool,
+        quote_quantity: bool,
+        init_id: UUID4,
+        ts_init: int,
+        expire_time: int | None = None,
+        display_qty: Quantity | None = None,
+        emulation_trigger: TriggerType | None = None,
+        trigger_instrument_id: InstrumentId | None = None,
+        contingency_type: ContingencyType | None = None,
+        order_list_id: OrderListId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
+        exec_algorithm_id: ExecAlgorithmId | None = None,
+        exec_algorithm_params: dict[str, str] | None = None,
+        exec_spawn_id: ClientOrderId | None = None,
+        tags: str | None = None,
+    ): ...
 
 ### Objects
 
