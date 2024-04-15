@@ -79,7 +79,7 @@ impl StopLimitOrder {
             trigger_price,
             trigger_type,
             time_in_force,
-            expire_time.map(UnixNanos::from),
+            expire_time.map(|x| x.into()),
             post_only,
             reduce_only,
             quote_quantity,

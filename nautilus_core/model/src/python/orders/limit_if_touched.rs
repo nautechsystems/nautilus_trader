@@ -13,26 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-
 use std::collections::HashMap;
+
+use nautilus_core::uuid::UUID4;
 use pyo3::prelude::*;
 use ustr::Ustr;
-use nautilus_core::uuid::UUID4;
-use crate::enums::{ContingencyType, OrderSide, TimeInForce, TriggerType};
-use crate::identifiers::client_order_id::ClientOrderId;
-use crate::identifiers::exec_algorithm_id::ExecAlgorithmId;
-use crate::identifiers::instrument_id::InstrumentId;
-use crate::identifiers::order_list_id::OrderListId;
-use crate::identifiers::strategy_id::StrategyId;
-use crate::identifiers::trader_id::TraderId;
-use crate::orders::base::str_hashmap_to_ustr;
-use crate::orders::limit_if_touched::LimitIfTouchedOrder;
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
+
+use crate::{
+    enums::{ContingencyType, OrderSide, TimeInForce, TriggerType},
+    identifiers::{
+        client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
+        instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
+        trader_id::TraderId,
+    },
+    orders::{base::str_hashmap_to_ustr, limit_if_touched::LimitIfTouchedOrder},
+    types::{price::Price, quantity::Quantity},
+};
 
 #[pymethods]
-impl LimitIfTouchedOrder{
+impl LimitIfTouchedOrder {
     #[new]
+    #[allow(clippy::too_many_arguments)]
     fn py_new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -61,39 +62,37 @@ impl LimitIfTouchedOrder{
         exec_algorithm_params: Option<HashMap<String, String>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<String>,
-
     ) -> PyResult<Self> {
         let exec_algorithm_params = exec_algorithm_params.map(str_hashmap_to_ustr);
-        Ok(
-            Self::new(
-                trader_id,
-                strategy_id,
-                instrument_id,
-                client_order_id,
-                order_side,
-                quantity,
-                price,
-                trigger_price,
-                trigger_type,
-                time_in_force,
-                expire_time.map(|x| x.into()),
-                post_only,
-                reduce_only,
-                quote_quantity,
-                display_qty,
-                emulation_trigger,
-                trigger_instrument_id,
-                contingency_type,
-                order_list_id,
-                linked_order_ids,
-                parent_order_id,
-                exec_algorithm_id,
-                exec_algorithm_params,
-                exec_spawn_id,
-                tags.map(|s| Ustr::from(&s)),
-                init_id,
-                ts_init.into(),
-            ).unwrap()
+        Ok(Self::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            order_side,
+            quantity,
+            price,
+            trigger_price,
+            trigger_type,
+            time_in_force,
+            expire_time.map(|x| x.into()),
+            post_only,
+            reduce_only,
+            quote_quantity,
+            display_qty,
+            emulation_trigger,
+            trigger_instrument_id,
+            contingency_type,
+            order_list_id,
+            linked_order_ids,
+            parent_order_id,
+            exec_algorithm_id,
+            exec_algorithm_params,
+            exec_spawn_id,
+            tags.map(|s| Ustr::from(&s)),
+            init_id,
+            ts_init.into(),
         )
+        .unwrap())
     }
 }
