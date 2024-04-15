@@ -77,7 +77,7 @@ impl MarketOrder {
     ) -> anyhow::Result<Self> {
         check_quantity_positive(quantity)?;
         if time_in_force == TimeInForce::Gtd {
-            anyhow::bail!("{}", "GTD not supported for Market orders");
+            anyhow::bail!("GTD not supported for Market orders");
         }
         let init_order = OrderInitialized::new(
             trader_id,

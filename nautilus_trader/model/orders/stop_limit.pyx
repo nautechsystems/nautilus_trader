@@ -184,7 +184,7 @@ cdef class StopLimitOrder(Order):
             Condition.true(expire_time_ns == 0, "`expire_time_ns` was set when `time_in_force` not GTD.")
         Condition.true(
             display_qty is None or 0 <= display_qty <= quantity,
-            fail_msg="display_qty was negative or greater than order quantity",
+            fail_msg="`display_qty` was negative or greater than `quantity`",
         )
 
         # Set options

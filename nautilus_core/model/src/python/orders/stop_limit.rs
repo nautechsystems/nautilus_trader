@@ -359,7 +359,10 @@ impl StopLimitOrder {
         dict.set_item("is_reduce_only", self.is_reduce_only)?;
         dict.set_item("is_quote_quantity", self.is_quote_quantity)?;
         dict.set_item("init_id", self.init_id.to_string())?;
-        dict.set_item("expire_time_ns", self.expire_time.map(|e| e.as_u64()))?;
+        dict.set_item(
+            "expire_time_ns",
+            self.expire_time.filter(|&t| t != 0).map(|t| t.as_u64()),
+        )?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
         dict.set_item("ts_last", self.ts_last.as_u64())?;
         let commissions_dict = PyDict::new(py);

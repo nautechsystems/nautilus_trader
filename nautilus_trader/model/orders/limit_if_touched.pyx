@@ -179,7 +179,7 @@ cdef class LimitIfTouchedOrder(Order):
             Condition.true(expire_time_ns == 0, "`expire_time_ns` was set when `time_in_force` not GTD.")
         Condition.true(
             display_qty is None or 0 <= display_qty <= quantity,
-            fail_msg="display_qty was negative or greater than order quantity",
+            fail_msg="`display_qty` was negative or greater than `quantity`",
         )
 
         # Set options
@@ -312,7 +312,7 @@ cdef class LimitIfTouchedOrder(Order):
             "price": str(self.price),
             "trigger_price": str(self.trigger_price),
             "trigger_type": trigger_type_to_str(self.trigger_type),
-            "expire_time_ns": self.expire_time_ns,
+            "expire_time_ns": self.expire_time_ns if self.expire_time_ns > 0 else None,
             "time_in_force": time_in_force_to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),

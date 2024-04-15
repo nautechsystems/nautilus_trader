@@ -555,7 +555,10 @@ impl LimitOrder {
         dict.set_item("price", self.price.to_string())?;
         dict.set_item("status", self.status.to_string())?;
         dict.set_item("time_in_force", self.time_in_force.to_string())?;
-        dict.set_item("expire_time_ns", self.expire_time.map(|e| e.as_u64()))?;
+        dict.set_item(
+            "expire_time_ns",
+            self.expire_time.filter(|&t| t != 0).map(|t| t.as_u64()),
+        )?;
         dict.set_item("is_post_only", self.is_post_only)?;
         dict.set_item("is_reduce_only", self.is_reduce_only)?;
         dict.set_item("is_quote_quantity", self.is_quote_quantity)?;

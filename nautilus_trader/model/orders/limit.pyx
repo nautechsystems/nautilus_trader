@@ -165,7 +165,7 @@ cdef class LimitOrder(Order):
             Condition.true(expire_time_ns == 0, "`expire_time_ns` was set when `time_in_force` not GTD.")
         Condition.true(
             display_qty is None or 0 <= display_qty <= quantity,
-            fail_msg="display_qty was negative or greater than order quantity",
+            fail_msg="`display_qty` was negative or greater than `quantity`",
         )
 
         # Set options
@@ -319,7 +319,7 @@ cdef class LimitOrder(Order):
             "quantity": str(self.quantity),
             "price": str(self.price),
             "time_in_force": time_in_force_to_str(self.time_in_force),
-            "expire_time_ns": self.expire_time_ns,
+            "expire_time_ns": self.expire_time_ns if self.expire_time_ns > 0 else None,
             "filled_qty": str(self.filled_qty),
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
             "avg_px": str(self.avg_px) if self.filled_qty.as_f64_c() > 0.0 else None,
