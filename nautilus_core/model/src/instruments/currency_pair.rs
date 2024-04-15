@@ -22,7 +22,7 @@ use nautilus_core::{
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use super::Instrument;
+use super::{Instrument, InstrumentAny};
 use crate::{
     enums::{AssetClass, InstrumentClass},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
@@ -141,6 +141,10 @@ impl Hash for CurrencyPair {
 }
 
 impl Instrument for CurrencyPair {
+    fn into_any(self) -> InstrumentAny {
+        InstrumentAny::CurrencyPair(self)
+    }
+
     fn id(&self) -> InstrumentId {
         self.id
     }

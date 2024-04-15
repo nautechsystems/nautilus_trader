@@ -21,9 +21,8 @@ use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
     identifiers::account_id::AccountId,
-    instruments::InstrumentAny,
     position::Position,
-    python::instruments::convert_pyobject_to_instrument_type,
+    python::instruments::convert_pyobject_to_instrument_any,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
@@ -156,33 +155,9 @@ impl CashAccount {
         use_quote_for_inverse: Option<bool>,
         py: Python,
     ) -> PyResult<Money> {
-        let instrument_type = convert_pyobject_to_instrument_type(py, instrument)?;
-        match instrument_type {
-            InstrumentAny::CryptoFuture(inst) => Ok(self
-                .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
-                .unwrap()),
-            InstrumentAny::CryptoPerpetual(inst) => Ok(self
-                .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
-                .unwrap()),
-            InstrumentAny::CurrencyPair(inst) => Ok(self
-                .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
-                .unwrap()),
-            InstrumentAny::Equity(inst) => Ok(self
-                .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
-                .unwrap()),
-            InstrumentAny::FuturesContract(inst) => Ok(self
-                .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
-                .unwrap()),
-            InstrumentAny::FuturesSpread(inst) => Ok(self
-                .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
-                .unwrap()),
-            InstrumentAny::OptionsContract(inst) => Ok(self
-                .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
-                .unwrap()),
-            InstrumentAny::OptionsSpread(inst) => Ok(self
-                .calculate_balance_locked(inst, side, quantity, price, use_quote_for_inverse)
-                .unwrap()),
-        }
+        let instrument = convert_pyobject_to_instrument_any(py, instrument)?;
+        self.calculate_balance_locked(instrument, side, quantity, price, use_quote_for_inverse)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "calculate_commission")]
@@ -198,81 +173,15 @@ impl CashAccount {
         if liquidity_side == LiquiditySide::NoLiquiditySide {
             return Err(to_pyvalue_err("Invalid liquidity side"));
         }
-        let instrument_type = convert_pyobject_to_instrument_type(py, instrument)?;
-        match instrument_type {
-            InstrumentAny::CryptoFuture(inst) => Ok(self
-                .calculate_commission(
-                    inst,
-                    last_qty,
-                    last_px,
-                    liquidity_side,
-                    use_quote_for_inverse,
-                )
-                .unwrap()),
-            InstrumentAny::CryptoPerpetual(inst) => Ok(self
-                .calculate_commission(
-                    inst,
-                    last_qty,
-                    last_px,
-                    liquidity_side,
-                    use_quote_for_inverse,
-                )
-                .unwrap()),
-            InstrumentAny::CurrencyPair(inst) => Ok(self
-                .calculate_commission(
-                    inst,
-                    last_qty,
-                    last_px,
-                    liquidity_side,
-                    use_quote_for_inverse,
-                )
-                .unwrap()),
-            InstrumentAny::Equity(inst) => Ok(self
-                .calculate_commission(
-                    inst,
-                    last_qty,
-                    last_px,
-                    liquidity_side,
-                    use_quote_for_inverse,
-                )
-                .unwrap()),
-            InstrumentAny::FuturesContract(inst) => Ok(self
-                .calculate_commission(
-                    inst,
-                    last_qty,
-                    last_px,
-                    liquidity_side,
-                    use_quote_for_inverse,
-                )
-                .unwrap()),
-            InstrumentAny::FuturesSpread(inst) => Ok(self
-                .calculate_commission(
-                    inst,
-                    last_qty,
-                    last_px,
-                    liquidity_side,
-                    use_quote_for_inverse,
-                )
-                .unwrap()),
-            InstrumentAny::OptionsContract(inst) => Ok(self
-                .calculate_commission(
-                    inst,
-                    last_qty,
-                    last_px,
-                    liquidity_side,
-                    use_quote_for_inverse,
-                )
-                .unwrap()),
-            InstrumentAny::OptionsSpread(inst) => Ok(self
-                .calculate_commission(
-                    inst,
-                    last_qty,
-                    last_px,
-                    liquidity_side,
-                    use_quote_for_inverse,
-                )
-                .unwrap()),
-        }
+        let instrument = convert_pyobject_to_instrument_any(py, instrument)?;
+        self.calculate_commission(
+            instrument,
+            last_qty,
+            last_px,
+            liquidity_side,
+            use_quote_for_inverse,
+        )
+        .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "calculate_pnls")]
@@ -283,31 +192,9 @@ impl CashAccount {
         position: Option<Position>,
         py: Python,
     ) -> PyResult<Vec<Money>> {
-        let instrument_type = convert_pyobject_to_instrument_type(py, instrument)?;
-        match instrument_type {
-            InstrumentAny::CryptoFuture(inst) => {
-                Ok(self.calculate_pnls(inst, fill, position).unwrap())
-            }
-            InstrumentAny::CryptoPerpetual(inst) => {
-                Ok(self.calculate_pnls(inst, fill, position).unwrap())
-            }
-            InstrumentAny::CurrencyPair(inst) => {
-                Ok(self.calculate_pnls(inst, fill, position).unwrap())
-            }
-            InstrumentAny::Equity(inst) => Ok(self.calculate_pnls(inst, fill, position).unwrap()),
-            InstrumentAny::FuturesContract(inst) => {
-                Ok(self.calculate_pnls(inst, fill, position).unwrap())
-            }
-            InstrumentAny::FuturesSpread(inst) => {
-                Ok(self.calculate_pnls(inst, fill, position).unwrap())
-            }
-            InstrumentAny::OptionsContract(inst) => {
-                Ok(self.calculate_pnls(inst, fill, position).unwrap())
-            }
-            InstrumentAny::OptionsSpread(inst) => {
-                Ok(self.calculate_pnls(inst, fill, position).unwrap())
-            }
-        }
+        let instrument = convert_pyobject_to_instrument_any(py, instrument)?;
+        self.calculate_pnls(instrument, fill, position)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "to_dict")]
