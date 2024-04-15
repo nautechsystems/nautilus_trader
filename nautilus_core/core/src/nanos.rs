@@ -73,13 +73,13 @@ impl PartialOrd<Option<u64>> for UnixNanos {
 
 impl From<u64> for UnixNanos {
     fn from(value: u64) -> Self {
-        UnixNanos(value)
+        Self(value)
     }
 }
 
 impl From<&str> for UnixNanos {
     fn from(value: &str) -> Self {
-        UnixNanos(value.parse().unwrap())
+        Self(value.parse().unwrap())
     }
 }
 
@@ -208,6 +208,6 @@ mod tests {
     #[rstest]
     fn test_display() {
         let nanos = UnixNanos::from(123);
-        assert_eq!(format!("{}", nanos), "123");
+        assert_eq!(format!("{nanos}"), "123");
     }
 }

@@ -81,7 +81,7 @@ impl TrailingStopLimitOrder {
             trailing_offset,
             trailing_offset_type,
             time_in_force,
-            expire_time.map(|x| x.into()),
+            expire_time.map(std::convert::Into::into),
             post_only,
             reduce_only,
             quote_quantity,

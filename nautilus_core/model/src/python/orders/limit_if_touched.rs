@@ -75,7 +75,7 @@ impl LimitIfTouchedOrder {
             trigger_price,
             trigger_type,
             time_in_force,
-            expire_time.map(|x| x.into()),
+            expire_time.map(std::convert::Into::into),
             post_only,
             reduce_only,
             quote_quantity,

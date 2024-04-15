@@ -44,6 +44,7 @@ pub fn cash_account_multi(cash_account_state_multi: AccountState) -> CashAccount
     CashAccount::new(cash_account_state_multi, true).unwrap()
 }
 
+#[must_use]
 pub fn calculate_commission(
     instrument: InstrumentAny,
     quantity: Quantity,

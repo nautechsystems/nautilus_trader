@@ -76,7 +76,7 @@ impl TrailingStopMarketOrder {
             trailing_offset,
             trailing_offset_type,
             time_in_force,
-            expire_time.map(|x| x.into()),
+            expire_time.map(std::convert::Into::into),
             reduce_only,
             quote_quantity,
             display_qty,

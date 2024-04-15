@@ -62,26 +62,32 @@ pub struct ExecutionEngine {
 }
 
 impl ExecutionEngine {
+    #[must_use]
     pub fn position_id_count(&self, strategy_id: StrategyId) -> u64 {
         todo!();
     }
 
+    #[must_use]
     pub fn check_integrity(&self) -> bool {
         todo!();
     }
 
+    #[must_use]
     pub fn check_connected(&self) -> bool {
         todo!();
     }
 
+    #[must_use]
     pub fn check_disconnected(&self) -> bool {
         todo!();
     }
 
+    #[must_use]
     pub fn check_residuals(&self) -> bool {
         todo!();
     }
 
+    #[must_use]
     pub fn get_external_order_claims_instruments(&self) -> HashSet<InstrumentId> {
         todo!();
     }

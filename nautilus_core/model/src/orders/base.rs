@@ -845,7 +845,7 @@ pub struct OrderCore {
 impl OrderCore {
     pub fn new(init: OrderInitialized) -> anyhow::Result<Self> {
         let events: Vec<OrderEvent> = vec![OrderEvent::OrderInitialized(init.clone())];
-        Ok(OrderCore {
+        Ok(Self {
             events,
             commissions: HashMap::new(),
             venue_order_ids: Vec::new(),
