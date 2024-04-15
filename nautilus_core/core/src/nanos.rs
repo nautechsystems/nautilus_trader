@@ -41,6 +41,14 @@ impl UnixNanos {
     }
 }
 
+impl Deref for UnixNanos {
+    type Target = u64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl PartialEq<u64> for UnixNanos {
     fn eq(&self, other: &u64) -> bool {
         self.0 == *other
@@ -88,20 +96,6 @@ impl FromStr for UnixNanos {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.parse().map(UnixNanos)
-    }
-}
-
-// impl Into<u64> for UnixNanos {
-//     fn into(self) -> u64 {
-//         self.0
-//     }
-// }
-
-impl Deref for UnixNanos {
-    type Target = u64;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }
 
@@ -209,5 +203,62 @@ mod tests {
     fn test_display() {
         let nanos = UnixNanos::from(123);
         assert_eq!(format!("{nanos}"), "123");
+    }
+
+    #[rstest]
+    fn test_addition() {
+        let nanos1 = UnixNanos::from(100);
+        let nanos2 = UnixNanos::from(200);
+        let result = nanos1 + nanos2;
+        assert_eq!(result.as_u64(), 300);
+    }
+
+    #[rstest]
+    fn test_add_assign() {
+        let mut nanos = UnixNanos::from(100);
+        nanos += 50_u64;
+        assert_eq!(nanos.as_u64(), 150);
+    }
+
+    #[rstest]
+    fn test_subtraction() {
+        let nanos1 = UnixNanos::from(200);
+        let nanos2 = UnixNanos::from(100);
+        let result = nanos1 - nanos2;
+        assert_eq!(result.as_u64(), 100);
+    }
+
+    #[rstest]
+    fn test_sub_assign() {
+        let mut nanos = UnixNanos::from(200);
+        nanos -= 50_u64;
+        assert_eq!(nanos.as_u64(), 150);
+    }
+
+    #[rstest]
+    fn test_multiplication_assign() {
+        let mut nanos = UnixNanos::from(100);
+        nanos *= 3_u64;
+        assert_eq!(nanos.as_u64(), 300);
+    }
+
+    #[rstest]
+    fn test_from_str() {
+        let nanos: UnixNanos = "123".parse().unwrap();
+        assert_eq!(nanos.as_u64(), 123);
+    }
+
+    #[rstest]
+    fn test_from_str_invalid() {
+        let result = "abc".parse::<UnixNanos>();
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_serde_json() {
+        let nanos = UnixNanos::from(123);
+        let json = serde_json::to_string(&nanos).unwrap();
+        let deserialized: UnixNanos = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, nanos);
     }
 }
