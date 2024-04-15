@@ -24,7 +24,7 @@ use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
     identifiers::account_id::AccountId,
-    instruments::Instrument,
+    instruments::InstrumentAny,
     position::Position,
     types::{
         balance::AccountBalance, currency::Currency, money::Money, price::Price, quantity::Quantity,
@@ -141,9 +141,9 @@ impl Account for CashAccount {
         self.base_apply(event);
     }
 
-    fn calculate_balance_locked<T: Instrument>(
+    fn calculate_balance_locked(
         &mut self,
-        instrument: T,
+        instrument: InstrumentAny,
         side: OrderSide,
         quantity: Quantity,
         price: Price,
@@ -152,18 +152,18 @@ impl Account for CashAccount {
         self.base_calculate_balance_locked(instrument, side, quantity, price, use_quote_for_inverse)
     }
 
-    fn calculate_pnls<T: Instrument>(
+    fn calculate_pnls(
         &self,
-        instrument: T,
+        instrument: InstrumentAny,
         fill: OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
         self.base_calculate_pnls(instrument, fill, position)
     }
 
-    fn calculate_commission<T: Instrument>(
+    fn calculate_commission(
         &self,
-        instrument: T,
+        instrument: InstrumentAny,
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
@@ -230,7 +230,7 @@ mod tests {
         identifiers::{account_id::AccountId, position_id::PositionId, strategy_id::StrategyId},
         instruments::{
             crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, equity::Equity,
-            stubs::*,
+            stubs::*, Instrument,
         },
         orders::{market::MarketOrder, stubs::TestOrderEventStubs},
         position::Position,
@@ -390,7 +390,7 @@ mod tests {
     ) {
         let balance_locked = cash_account_million_usd
             .calculate_balance_locked(
-                audusd_sim,
+                audusd_sim.into_any(),
                 OrderSide::Buy,
                 Quantity::from("1000000"),
                 Price::from("0.8"),
@@ -407,7 +407,7 @@ mod tests {
     ) {
         let balance_locked = cash_account_million_usd
             .calculate_balance_locked(
-                audusd_sim,
+                audusd_sim.into_any(),
                 OrderSide::Sell,
                 Quantity::from("1000000"),
                 Price::from("0.8"),
@@ -424,7 +424,7 @@ mod tests {
     ) {
         let balance_locked = cash_account_million_usd
             .calculate_balance_locked(
-                equity_aapl,
+                equity_aapl.into_any(),
                 OrderSide::Sell,
                 Quantity::from("100"),
                 Price::from("1500.0"),
@@ -464,7 +464,7 @@ mod tests {
         );
         let position = Position::new(audusd_sim, fill).unwrap();
         let pnls = cash_account_million_usd
-            .calculate_pnls(audusd_sim, fill, Some(position))
+            .calculate_pnls(audusd_sim.into_any(), fill, Some(position))
             .unwrap();
         assert_eq!(pnls, vec![Money::from("-800000 USD")]);
     }
@@ -499,7 +499,11 @@ mod tests {
         );
         let position = Position::new(currency_pair_btcusdt, fill1).unwrap();
         let result1 = cash_account_multi
-            .calculate_pnls(currency_pair_btcusdt, fill1, Some(position.clone()))
+            .calculate_pnls(
+                currency_pair_btcusdt.into_any(),
+                fill1,
+                Some(position.clone()),
+            )
             .unwrap();
         let order2 = order_factory.market(
             currency_pair_btcusdt.id,
@@ -524,7 +528,7 @@ mod tests {
             None,
         );
         let result2 = cash_account_multi
-            .calculate_pnls(currency_pair_btcusdt, fill2, Some(position))
+            .calculate_pnls(currency_pair_btcusdt.into_any(), fill2, Some(position))
             .unwrap();
         // use hash set to ignore order of results
         let result1_set: HashSet<Money> = result1.into_iter().collect();
@@ -552,7 +556,7 @@ mod tests {
     ) {
         let result = cash_account_million_usd
             .calculate_commission(
-                xbtusd_bitmex,
+                xbtusd_bitmex.into_any(),
                 Quantity::from("100000"),
                 Price::from("11450.50"),
                 LiquiditySide::Maker,
@@ -569,7 +573,7 @@ mod tests {
     ) {
         let result = cash_account_million_usd
             .calculate_commission(
-                audusd_sim,
+                audusd_sim.into_any(),
                 Quantity::from("1500000"),
                 Price::from("0.8005"),
                 LiquiditySide::Taker,
@@ -586,7 +590,7 @@ mod tests {
     ) {
         let result = cash_account_million_usd
             .calculate_commission(
-                xbtusd_bitmex,
+                xbtusd_bitmex.into_any(),
                 Quantity::from("100000"),
                 Price::from("11450.50"),
                 LiquiditySide::Taker,
@@ -601,7 +605,7 @@ mod tests {
         let instrument = usdjpy_idealpro();
         let result = cash_account_million_usd
             .calculate_commission(
-                instrument,
+                instrument.into_any(),
                 Quantity::from("2200000"),
                 Price::from("120.310"),
                 LiquiditySide::Taker,

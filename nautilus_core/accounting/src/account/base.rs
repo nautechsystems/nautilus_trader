@@ -19,7 +19,7 @@ use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
     identifiers::account_id::AccountId,
-    instruments::Instrument,
+    instruments::InstrumentAny,
     position::Position,
     types::{
         balance::AccountBalance, currency::Currency, money::Money, price::Price, quantity::Quantity,
@@ -137,9 +137,9 @@ impl BaseAccount {
         self.events.push(event);
     }
 
-    pub fn base_calculate_balance_locked<T: Instrument>(
+    pub fn base_calculate_balance_locked(
         &mut self,
-        instrument: T,
+        instrument: InstrumentAny,
         side: OrderSide,
         quantity: Quantity,
         price: Price,
@@ -172,9 +172,9 @@ impl BaseAccount {
         }
     }
 
-    pub fn base_calculate_pnls<T: Instrument>(
+    pub fn base_calculate_pnls(
         &self,
-        instrument: T,
+        instrument: InstrumentAny,
         fill: OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
@@ -214,9 +214,9 @@ impl BaseAccount {
         Ok(pnls.into_values().collect())
     }
 
-    pub fn base_calculate_commission<T: Instrument>(
+    pub fn base_calculate_commission(
         &self,
-        instrument: T,
+        instrument: InstrumentAny,
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,

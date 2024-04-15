@@ -27,7 +27,7 @@ use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
     identifiers::{account_id::AccountId, instrument_id::InstrumentId},
-    instruments::Instrument,
+    instruments::{Instrument, InstrumentAny},
     position::Position,
     types::{
         balance::{AccountBalance, MarginBalance},
@@ -339,9 +339,9 @@ impl Account for MarginAccount {
     fn apply(&mut self, event: AccountState) {
         self.base_apply(event);
     }
-    fn calculate_balance_locked<T: Instrument>(
+    fn calculate_balance_locked(
         &mut self,
-        instrument: T,
+        instrument: InstrumentAny,
         side: OrderSide,
         quantity: Quantity,
         price: Price,
@@ -349,17 +349,17 @@ impl Account for MarginAccount {
     ) -> anyhow::Result<Money> {
         self.base_calculate_balance_locked(instrument, side, quantity, price, use_quote_for_inverse)
     }
-    fn calculate_pnls<T: Instrument>(
+    fn calculate_pnls(
         &self,
-        instrument: T,
+        instrument: InstrumentAny,
         fill: OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
         self.base_calculate_pnls(instrument, fill, position)
     }
-    fn calculate_commission<T: Instrument>(
+    fn calculate_commission(
         &self,
-        instrument: T,
+        instrument: InstrumentAny,
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,

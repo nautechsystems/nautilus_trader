@@ -17,7 +17,7 @@ use nautilus_common::interface::account::Account;
 use nautilus_model::{
     enums::LiquiditySide,
     events::account::{state::AccountState, stubs::*},
-    instruments::Instrument,
+    instruments::InstrumentAny,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 use rstest::fixture;
@@ -44,8 +44,8 @@ pub fn cash_account_multi(cash_account_state_multi: AccountState) -> CashAccount
     CashAccount::new(cash_account_state_multi, true).unwrap()
 }
 
-pub fn calculate_commission<T: Instrument>(
-    instrument: T,
+pub fn calculate_commission(
+    instrument: InstrumentAny,
     quantity: Quantity,
     price: Price,
     currency: Option<Currency>,

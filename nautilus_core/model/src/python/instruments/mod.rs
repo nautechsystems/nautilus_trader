@@ -22,7 +22,10 @@ use crate::instruments::{
     options_contract::OptionsContract, InstrumentAny,
 };
 
-pub fn convert_instrument_to_pyobject(py: Python, instrument: InstrumentAny) -> PyResult<PyObject> {
+pub fn convert_instrument_any_to_pyobject(
+    py: Python,
+    instrument: InstrumentAny,
+) -> PyResult<PyObject> {
     match instrument {
         InstrumentAny::CurrencyPair(inst) => Ok(inst.into_py(py)),
         InstrumentAny::Equity(inst) => Ok(inst.into_py(py)),
@@ -34,7 +37,7 @@ pub fn convert_instrument_to_pyobject(py: Python, instrument: InstrumentAny) -> 
     }
 }
 
-pub fn convert_pyobject_to_instrument_type(
+pub fn convert_pyobject_to_instrument_any(
     py: Python,
     instrument: PyObject,
 ) -> PyResult<InstrumentAny> {

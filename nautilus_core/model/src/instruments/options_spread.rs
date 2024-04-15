@@ -25,7 +25,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::Instrument;
+use super::{Instrument, InstrumentAny};
 use crate::{
     enums::{AssetClass, InstrumentClass},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
@@ -145,6 +145,10 @@ impl Hash for OptionsSpread {
 }
 
 impl Instrument for OptionsSpread {
+    fn into_any(self) -> InstrumentAny {
+        InstrumentAny::OptionsSpread(self)
+    }
+
     fn id(&self) -> InstrumentId {
         self.id
     }

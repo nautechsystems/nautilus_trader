@@ -29,6 +29,8 @@ use crate::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
+use super::InstrumentAny;
+
 #[repr(C)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
@@ -147,6 +149,10 @@ impl Hash for CryptoPerpetual {
 }
 
 impl Instrument for CryptoPerpetual {
+    fn into_any(self) -> InstrumentAny {
+        InstrumentAny::CryptoPerpetual(self)
+    }
+
     fn id(&self) -> InstrumentId {
         self.id
     }

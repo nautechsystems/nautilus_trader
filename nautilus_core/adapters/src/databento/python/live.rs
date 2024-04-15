@@ -20,7 +20,7 @@ use indexmap::IndexMap;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     identifiers::venue::Venue,
-    python::{data::data_to_pycapsule, instruments::convert_instrument_to_pyobject},
+    python::{data::data_to_pycapsule, instruments::convert_instrument_any_to_pyobject},
 };
 use pyo3::prelude::*;
 use time::OffsetDateTime;
@@ -73,7 +73,7 @@ impl DatabentoLiveClient {
                     call_python(py, &callback, py_obj)
                 }),
                 LiveMessage::Instrument(data) => Python::with_gil(|py| {
-                    let py_obj = convert_instrument_to_pyobject(py, data)
+                    let py_obj = convert_instrument_any_to_pyobject(py, data)
                         .expect("Error creating instrument");
                     call_python(py, &callback, py_obj)
                 }),
