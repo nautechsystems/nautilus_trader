@@ -227,8 +227,8 @@ pub fn currency_pair_ethusdt() -> CurrencyPair {
 pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
     let target_venue = venue.unwrap_or(Venue::from("SIM"));
     let instrument_id = InstrumentId::new(symbol, target_venue);
-    let base_currency = symbol.value.split('/').next().unwrap();
-    let quote_currency = symbol.value.split('/').last().unwrap();
+    let base_currency = symbol.as_str().split('/').next().unwrap();
+    let quote_currency = symbol.as_str().split('/').last().unwrap();
     let price_precision = if quote_currency == "JPY" { 3 } else { 5 };
     let price_increment = Price::new(1.0 / 10.0f64, price_precision).unwrap();
     CurrencyPair::new(

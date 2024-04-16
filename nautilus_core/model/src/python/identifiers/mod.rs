@@ -21,7 +21,6 @@ use pyo3::{
     pyclass::CompareOp,
     types::{PyString, PyTuple},
 };
-use ustr::Ustr;
 
 use crate::identifier_for_python;
 

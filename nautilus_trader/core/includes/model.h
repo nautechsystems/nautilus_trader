@@ -731,20 +731,14 @@ typedef struct SyntheticInstrument SyntheticInstrument;
  * Represents a valid ticker symbol ID for a tradable financial market instrument.
  */
 typedef struct Symbol_t {
-    /**
-     * The ticker symbol ID value.
-     */
-    char* value;
+    char* _0;
 } Symbol_t;
 
 /**
  * Represents a valid trading venue ID.
  */
 typedef struct Venue_t {
-    /**
-     * The venue ID value.
-     */
-    char* value;
+    char* _0;
 } Venue_t;
 
 /**
@@ -1099,10 +1093,7 @@ typedef struct Data_t {
  * do not collide with those from another node instance.
  */
 typedef struct TraderId_t {
-    /**
-     * The trader ID value.
-     */
-    char* value;
+    char* _0;
 } TraderId_t;
 
 /**
@@ -1118,20 +1109,14 @@ typedef struct TraderId_t {
  * do not collide with those from another strategy within the node instance.
  */
 typedef struct StrategyId_t {
-    /**
-     * The strategy ID value.
-     */
-    char* value;
+    char* _0;
 } StrategyId_t;
 
 /**
  * Represents a valid client order ID (assigned by the Nautilus system).
  */
 typedef struct ClientOrderId_t {
-    /**
-     * The client order ID value.
-     */
-    char* value;
+    char* _0;
 } ClientOrderId_t;
 
 typedef struct OrderDenied_t {
@@ -1176,10 +1161,7 @@ typedef struct OrderReleased_t {
  * Example: "IB-D02851908".
  */
 typedef struct AccountId_t {
-    /**
-     * The account ID value.
-     */
-    char* value;
+    char* _0;
 } AccountId_t;
 
 typedef struct OrderSubmitted_t {
@@ -1197,10 +1179,7 @@ typedef struct OrderSubmitted_t {
  * Represents a valid venue order ID (assigned by a trading venue).
  */
 typedef struct VenueOrderId_t {
-    /**
-     * The venue assigned order ID value.
-     */
-    char* value;
+    char* _0;
 } VenueOrderId_t;
 
 typedef struct OrderAccepted_t {
@@ -1233,50 +1212,35 @@ typedef struct OrderRejected_t {
  * Represents a system client ID.
  */
 typedef struct ClientId_t {
-    /**
-     * The client ID value.
-     */
-    char* value;
+    char* _0;
 } ClientId_t;
 
 /**
  * Represents a valid component ID.
  */
 typedef struct ComponentId_t {
-    /**
-     * The component ID value.
-     */
-    char* value;
+    char* _0;
 } ComponentId_t;
 
 /**
  * Represents a valid execution algorithm ID.
  */
 typedef struct ExecAlgorithmId_t {
-    /**
-     * The execution algorithm ID value.
-     */
-    char* value;
+    char* _0;
 } ExecAlgorithmId_t;
 
 /**
  * Represents a valid order list ID (assigned by the Nautilus system).
  */
 typedef struct OrderListId_t {
-    /**
-     * The order list ID value.
-     */
-    char* value;
+    char* _0;
 } OrderListId_t;
 
 /**
  * Represents a valid position ID.
  */
 typedef struct PositionId_t {
-    /**
-     * The position ID value.
-     */
-    char* value;
+    char* _0;
 } PositionId_t;
 
 /**

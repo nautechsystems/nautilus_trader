@@ -400,13 +400,11 @@ cdef extern from "../includes/model.h":
 
     # Represents a valid ticker symbol ID for a tradable financial market instrument.
     cdef struct Symbol_t:
-        # The ticker symbol ID value.
-        char* value;
+        char* _0;
 
     # Represents a valid trading venue ID.
     cdef struct Venue_t:
-        # The venue ID value.
-        char* value;
+        char* _0;
 
     # Represents a valid instrument ID.
     #
@@ -605,8 +603,7 @@ cdef extern from "../includes/model.h":
     # The reason for the numerical component of the ID is so that order and position IDs
     # do not collide with those from another node instance.
     cdef struct TraderId_t:
-        # The trader ID value.
-        char* value;
+        char* _0;
 
     # Represents a valid strategy ID.
     #
@@ -619,13 +616,11 @@ cdef extern from "../includes/model.h":
     # The reason for the numerical component of the ID is so that order and position IDs
     # do not collide with those from another strategy within the node instance.
     cdef struct StrategyId_t:
-        # The strategy ID value.
-        char* value;
+        char* _0;
 
     # Represents a valid client order ID (assigned by the Nautilus system).
     cdef struct ClientOrderId_t:
-        # The client order ID value.
-        char* value;
+        char* _0;
 
     cdef struct OrderDenied_t:
         TraderId_t trader_id;
@@ -664,8 +659,7 @@ cdef extern from "../includes/model.h":
     #
     # Example: "IB-D02851908".
     cdef struct AccountId_t:
-        # The account ID value.
-        char* value;
+        char* _0;
 
     cdef struct OrderSubmitted_t:
         TraderId_t trader_id;
@@ -679,8 +673,7 @@ cdef extern from "../includes/model.h":
 
     # Represents a valid venue order ID (assigned by a trading venue).
     cdef struct VenueOrderId_t:
-        # The venue assigned order ID value.
-        char* value;
+        char* _0;
 
     cdef struct OrderAccepted_t:
         TraderId_t trader_id;
@@ -708,28 +701,23 @@ cdef extern from "../includes/model.h":
 
     # Represents a system client ID.
     cdef struct ClientId_t:
-        # The client ID value.
-        char* value;
+        char* _0;
 
     # Represents a valid component ID.
     cdef struct ComponentId_t:
-        # The component ID value.
-        char* value;
+        char* _0;
 
     # Represents a valid execution algorithm ID.
     cdef struct ExecAlgorithmId_t:
-        # The execution algorithm ID value.
-        char* value;
+        char* _0;
 
     # Represents a valid order list ID (assigned by the Nautilus system).
     cdef struct OrderListId_t:
-        # The order list ID value.
-        char* value;
+        char* _0;
 
     # Represents a valid position ID.
     cdef struct PositionId_t:
-        # The position ID value.
-        char* value;
+        char* _0;
 
     # Provides a C compatible Foreign Function Interface (FFI) for an underlying
     # [`SyntheticInstrument`].

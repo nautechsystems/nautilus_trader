@@ -570,7 +570,7 @@ fn get_trader_key(
         key.push_str("trader-");
     }
 
-    key.push_str(trader_id.value.as_str());
+    key.push_str(trader_id.as_str());
 
     if let Some(json!(true)) = config.get("use_instance_id") {
         key.push(DELIMITER);

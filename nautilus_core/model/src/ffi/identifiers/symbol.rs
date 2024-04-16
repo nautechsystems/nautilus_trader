@@ -31,5 +31,5 @@ pub unsafe extern "C" fn symbol_new(ptr: *const c_char) -> Symbol {
 
 #[no_mangle]
 pub extern "C" fn symbol_hash(id: &Symbol) -> u64 {
-    id.value.precomputed_hash()
+    id.inner().precomputed_hash()
 }

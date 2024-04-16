@@ -28,38 +28,54 @@ use ustr::Ustr;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-pub struct VenueOrderId {
-    /// The venue assigned order ID value.
-    pub value: Ustr,
-}
+pub struct VenueOrderId(Ustr);
 
 impl VenueOrderId {
+    /// Creates a new `VenueOrderId` from the given identifier value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value is not a valid string.
     pub fn new(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
 
-        Ok(Self {
-            value: Ustr::from(value),
-        })
+        Ok(Self(Ustr::from(value)))
+    }
+
+    /// Sets the inner identifier value.
+    pub(crate) fn set_inner(&mut self, value: &str) {
+        self.0 = Ustr::from(value);
+    }
+
+    /// Returns the inner identifier value.
+    #[must_use]
+    pub fn inner(&self) -> Ustr {
+        self.0
+    }
+
+    /// Returns the inner identifier value as a string slice.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
     }
 }
 
 impl Default for VenueOrderId {
     fn default() -> Self {
-        Self {
-            value: Ustr::from("001"),
-        }
+        // SAFETY: Default value is safe
+        Self::new("001").unwrap()
     }
 }
 
 impl Debug for VenueOrderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value)
+        write!(f, "{:?}", self.0)
     }
 }
 
 impl Display for VenueOrderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        write!(f, "{}", self.0)
     }
 }
 
@@ -80,7 +96,7 @@ mod tests {
 
     #[rstest]
     fn test_string_reprs(venue_order_id: VenueOrderId) {
-        assert_eq!(venue_order_id.to_string(), "001");
+        assert_eq!(venue_order_id.as_str(), "001");
         assert_eq!(format!("{venue_order_id}"), "001");
     }
 }

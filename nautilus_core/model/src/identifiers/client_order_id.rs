@@ -28,38 +28,52 @@ use ustr::Ustr;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-pub struct ClientOrderId {
-    /// The client order ID value.
-    pub value: Ustr,
-}
+pub struct ClientOrderId(Ustr);
 
 impl ClientOrderId {
+    /// Creates a new `ClientOrderId` from the given identifier value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value is not a valid string.
     pub fn new(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
 
-        Ok(Self {
-            value: Ustr::from(value),
-        })
+        Ok(Self(Ustr::from(value)))
+    }
+
+    /// Sets the inner identifier value.
+    pub(crate) fn set_inner(&mut self, value: &str) {
+        self.0 = Ustr::from(value);
+    }
+
+    /// Returns the inner identifier value.
+    pub fn inner(&self) -> Ustr {
+        self.0
+    }
+
+    /// Returns the inner identifier value as a string slice.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
     }
 }
 
 impl Default for ClientOrderId {
     fn default() -> Self {
-        Self {
-            value: Ustr::from("O-123456789"),
-        }
+        // SAFETY: Default value is safe
+        Self::new("O-123456789").unwrap()
     }
 }
 
 impl Debug for ClientOrderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value)
+        write!(f, "{:?}", self.0)
     }
 }
 
 impl Display for ClientOrderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        write!(f, "{}", self.0)
     }
 }
 
@@ -79,7 +93,7 @@ pub fn optional_vec_client_order_ids_to_ustr(vec: Option<Vec<ClientOrderId>>) ->
     vec.map(|client_order_ids| {
         let s: String = client_order_ids
             .into_iter()
-            .map(|id| id.value.to_string())
+            .map(|id| id.to_string())
             .collect::<Vec<String>>()
             .join(",");
         Ustr::from(&s)
@@ -110,7 +124,7 @@ mod tests {
 
     #[rstest]
     fn test_string_reprs(client_order_id: ClientOrderId) {
-        assert_eq!(client_order_id.to_string(), "O-20200814-102234-001-001-1");
+        assert_eq!(client_order_id.as_str(), "O-20200814-102234-001-001-1");
         assert_eq!(format!("{client_order_id}"), "O-20200814-102234-001-001-1");
     }
 
@@ -122,9 +136,9 @@ mod tests {
         // Test with Some
         let ustr = Ustr::from("id1,id2,id3");
         let client_order_ids = optional_ustr_to_vec_client_order_ids(Some(ustr)).unwrap();
-        assert_eq!(client_order_ids[0].value.to_string(), "id1");
-        assert_eq!(client_order_ids[1].value.to_string(), "id2");
-        assert_eq!(client_order_ids[2].value.to_string(), "id3");
+        assert_eq!(client_order_ids[0].as_str(), "id1");
+        assert_eq!(client_order_ids[1].as_str(), "id2");
+        assert_eq!(client_order_ids[2].as_str(), "id3");
     }
 
     #[rstest]

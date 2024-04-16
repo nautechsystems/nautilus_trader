@@ -31,7 +31,7 @@ pub unsafe extern "C" fn client_id_new(ptr: *const c_char) -> ClientId {
 
 #[no_mangle]
 pub extern "C" fn client_id_hash(id: &ClientId) -> u64 {
-    id.value.precomputed_hash()
+    id.inner().precomputed_hash()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -49,7 +49,7 @@ mod tests {
     #[rstest]
     fn test_client_id_to_cstr_c() {
         let id = ClientId::from("BINANCE");
-        let c_string = id.value.as_char_ptr();
+        let c_string = id.inner().as_char_ptr();
         let rust_string = unsafe { CStr::from_ptr(c_string) }.to_str().unwrap();
         assert_eq!(rust_string, "BINANCE");
     }

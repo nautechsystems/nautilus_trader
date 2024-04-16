@@ -62,7 +62,7 @@ impl TestOrderEventStubs {
             .account_id()
             .unwrap_or(AccountId::new("SIM-001").unwrap());
         let trade_id = trade_id.unwrap_or(
-            TradeId::new(order.client_order_id().value.replace('O', "E").as_str()).unwrap(),
+            TradeId::new(order.client_order_id().as_str().replace('O', "E").as_str()).unwrap(),
         );
         let liquidity_side = order.liquidity_side().unwrap_or(LiquiditySide::Maker);
         let event = UUID4::new();

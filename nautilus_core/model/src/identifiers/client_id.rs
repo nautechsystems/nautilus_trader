@@ -28,38 +28,54 @@ use ustr::Ustr;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-pub struct ClientId {
-    /// The client ID value.
-    pub value: Ustr,
-}
+pub struct ClientId(Ustr);
 
 impl ClientId {
+    /// Creates a new `ClientId` from the given identifier value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value is not a valid string.
     pub fn new(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
 
-        Ok(Self {
-            value: Ustr::from(value),
-        })
+        Ok(Self(Ustr::from(value)))
+    }
+
+    /// Sets the inner identifier value.
+    pub(crate) fn set_inner(&mut self, value: &str) {
+        self.0 = Ustr::from(value);
+    }
+
+    /// Returns the inner identifier value.
+    #[must_use]
+    pub fn inner(&self) -> Ustr {
+        self.0
+    }
+
+    /// Returns the inner identifier value as a string slice.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
     }
 }
 
 impl Default for ClientId {
     fn default() -> Self {
-        Self {
-            value: Ustr::from("SIM"),
-        }
+        // SAFETY: Default value is safe
+        Self::new("SIM").unwrap()
     }
 }
 
 impl Debug for ClientId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value)
+        write!(f, "{:?}", self.0)
     }
 }
 
 impl Display for ClientId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        write!(f, "{}", self.0)
     }
 }
 
@@ -81,7 +97,7 @@ mod tests {
 
     #[rstest]
     fn test_string_reprs(client_id_binance: ClientId) {
-        assert_eq!(client_id_binance.to_string(), "BINANCE");
+        assert_eq!(client_id_binance.as_str(), "BINANCE");
         assert_eq!(format!("{client_id_binance}"), "BINANCE");
     }
 }

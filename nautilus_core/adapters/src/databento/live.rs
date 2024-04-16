@@ -40,7 +40,6 @@ use tokio::{
     time::{timeout, Duration},
 };
 use tracing::{debug, error, info, trace};
-use ustr::Ustr;
 
 use super::{
     decode::{decode_imbalance_msg, decode_statistics_msg},
@@ -357,9 +356,7 @@ fn update_instrument_id_map(
         .get_for_rec(record)
         .expect("Cannot resolve `raw_symbol` from `symbol_map`");
 
-    let symbol = Symbol {
-        value: Ustr::from(raw_symbol),
-    };
+    let symbol = Symbol::from_str_unchecked(raw_symbol);
 
     let publisher_id = header.publisher_id;
     let venue = publisher_venue_map
@@ -378,10 +375,7 @@ fn handle_instrument_def_msg(
 ) -> anyhow::Result<InstrumentAny> {
     let c_str: &CStr = unsafe { CStr::from_ptr(msg.raw_symbol.as_ptr()) };
     let raw_symbol: &str = c_str.to_str().map_err(to_pyvalue_err)?;
-
-    let symbol = Symbol {
-        value: Ustr::from(raw_symbol),
-    };
+    let symbol = Symbol::from(raw_symbol);
 
     let publisher_id = msg.header().publisher_id;
     let venue = publisher_venue_map

@@ -31,5 +31,5 @@ pub unsafe extern "C" fn component_id_new(ptr: *const c_char) -> ComponentId {
 
 #[no_mangle]
 pub extern "C" fn component_id_hash(id: &ComponentId) -> u64 {
-    id.value.precomputed_hash()
+    id.inner().precomputed_hash()
 }

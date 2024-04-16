@@ -31,7 +31,7 @@ pub unsafe extern "C" fn account_id_new(ptr: *const c_char) -> AccountId {
 
 #[no_mangle]
 pub extern "C" fn account_id_hash(id: &AccountId) -> u64 {
-    id.value.precomputed_hash()
+    id.inner().precomputed_hash()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -51,7 +51,7 @@ mod tests {
         let c_string = CString::new(s).unwrap();
         let ptr = c_string.as_ptr();
         let account_id = unsafe { account_id_new(ptr) };
-        let char_ptr = account_id.value.as_char_ptr();
+        let char_ptr = account_id.inner().as_char_ptr();
         let account_id_2 = unsafe { account_id_new(char_ptr) };
         assert_eq!(account_id, account_id_2);
     }
@@ -62,7 +62,7 @@ mod tests {
         let c_string = CString::new(s).unwrap();
         let ptr = c_string.as_ptr();
         let account_id = unsafe { account_id_new(ptr) };
-        let cstr_ptr = account_id.value.as_char_ptr();
+        let cstr_ptr = account_id.inner().as_char_ptr();
         let c_str = unsafe { CStr::from_ptr(cstr_ptr) };
         assert_eq!(c_str.to_str().unwrap(), s);
     }

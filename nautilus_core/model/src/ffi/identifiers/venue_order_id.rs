@@ -31,5 +31,5 @@ pub unsafe extern "C" fn venue_order_id_new(ptr: *const c_char) -> VenueOrderId 
 
 #[no_mangle]
 pub extern "C" fn venue_order_id_hash(id: &VenueOrderId) -> u64 {
-    id.value.precomputed_hash()
+    id.inner().precomputed_hash()
 }

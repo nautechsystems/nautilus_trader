@@ -20,7 +20,7 @@ macro_rules! impl_serialization_for_identifier {
             where
                 S: Serializer,
             {
-                self.value.serialize(serializer)
+                self.inner().serialize(serializer)
             }
         }
 

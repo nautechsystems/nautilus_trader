@@ -151,7 +151,7 @@ impl DatabentoHistoricalClient {
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::InstrumentDefMsg>().await {
                 let raw_symbol = unsafe { raw_ptr_to_ustr(msg.raw_symbol.as_ptr()).unwrap() };
-                let symbol = Symbol { value: raw_symbol };
+                let symbol = Symbol::from(raw_symbol);
 
                 let publisher = msg.hd.publisher().expect("Invalid `publisher` for record");
                 let venue = publisher_venue_map

@@ -34,45 +34,61 @@ use ustr::Ustr;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-pub struct TraderId {
-    /// The trader ID value.
-    pub value: Ustr,
-}
+pub struct TraderId(Ustr);
 
 impl TraderId {
+    /// Creates a new `TraderId` from the given identifier value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value is not a valid string, or does not contain a hyphen '-' separator.
     pub fn new(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
         check_string_contains(value, "-", stringify!(value))?;
 
-        Ok(Self {
-            value: Ustr::from(value),
-        })
+        Ok(Self(Ustr::from(value)))
+    }
+
+    /// Sets the inner identifier value.
+    pub(crate) fn set_inner(&mut self, value: &str) {
+        self.0 = Ustr::from(value);
+    }
+
+    /// Returns the inner identifier value.
+    #[must_use]
+    pub fn inner(&self) -> Ustr {
+        self.0
+    }
+
+    /// Returns the inner identifier value as a string slice.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
     }
 
     #[must_use]
     pub fn get_tag(&self) -> &str {
         // SAFETY: Unwrap safe as value previously validated
-        self.value.split('-').last().unwrap()
+        self.0.split('-').last().unwrap()
     }
 }
 
 impl Default for TraderId {
     fn default() -> Self {
-        Self {
-            value: Ustr::from("TRADER-000"),
-        }
+        // SAFETY: Default value is safe
+        Self(Ustr::from("TRADER-000"))
     }
 }
 
 impl Debug for TraderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value)
+        write!(f, "{:?}", self.0)
     }
 }
 
 impl Display for TraderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        write!(f, "{}", self.0)
     }
 }
 
@@ -93,7 +109,7 @@ mod tests {
 
     #[rstest]
     fn test_string_reprs(trader_id: TraderId) {
-        assert_eq!(trader_id.to_string(), "TRADER-001");
+        assert_eq!(trader_id.as_str(), "TRADER-001");
         assert_eq!(format!("{trader_id}"), "TRADER-001");
     }
 
