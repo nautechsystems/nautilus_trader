@@ -16,7 +16,7 @@
 use std::{
     cmp::Ordering,
     fmt::Display,
-    ops::{Add, AddAssign, Deref, MulAssign, Sub, SubAssign},
+    ops::{Add, AddAssign, Deref, Sub, SubAssign},
     str::FromStr,
 };
 
@@ -85,6 +85,12 @@ impl From<u64> for UnixNanos {
     }
 }
 
+impl From<UnixNanos> for u64 {
+    fn from(value: UnixNanos) -> Self {
+        value.0
+    }
+}
+
 impl From<&str> for UnixNanos {
     fn from(value: &str) -> Self {
         Self(value.parse().unwrap())
@@ -102,38 +108,62 @@ impl FromStr for UnixNanos {
 impl Add for UnixNanos {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0)
+        Self(
+            self.0
+                .checked_add(rhs.0)
+                .expect("Error adding with overflow"),
+        )
     }
 }
 
 impl Sub for UnixNanos {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
-        Self(self.0 - rhs.0)
+        Self(
+            self.0
+                .checked_sub(rhs.0)
+                .expect("Error subtracting with underflow"),
+        )
     }
 }
 
-impl From<UnixNanos> for u64 {
-    fn from(value: UnixNanos) -> Self {
-        value.0
+impl Add<u64> for UnixNanos {
+    type Output = Self;
+
+    fn add(self, rhs: u64) -> Self::Output {
+        Self(self.0.checked_add(rhs).expect("Error adding with overflow"))
+    }
+}
+
+impl Sub<u64> for UnixNanos {
+    type Output = Self;
+
+    fn sub(self, rhs: u64) -> Self::Output {
+        Self(
+            self.0
+                .checked_sub(rhs)
+                .expect("Error subtracting with underflow"),
+        )
     }
 }
 
 impl<T: Into<u64>> AddAssign<T> for UnixNanos {
     fn add_assign(&mut self, other: T) {
-        self.0 += other.into();
+        let other_u64 = other.into();
+        self.0 = self
+            .0
+            .checked_add(other_u64)
+            .expect("Error adding with overflow");
     }
 }
 
 impl<T: Into<u64>> SubAssign<T> for UnixNanos {
     fn sub_assign(&mut self, other: T) {
-        self.0 -= other.into();
-    }
-}
-
-impl<T: Into<u64>> MulAssign<T> for UnixNanos {
-    fn mul_assign(&mut self, other: T) {
-        self.0 *= other.into();
+        let other_u64 = other.into();
+        self.0 = self
+            .0
+            .checked_sub(other_u64)
+            .expect("Error subtracting with underflow");
     }
 }
 
@@ -200,6 +230,12 @@ mod tests {
     }
 
     #[rstest]
+    fn test_edge_case_max_value() {
+        let nanos = UnixNanos::from(u64::MAX);
+        assert_eq!(format!("{}", nanos), format!("{}", u64::MAX));
+    }
+
+    #[rstest]
     fn test_display() {
         let nanos = UnixNanos::from(123);
         assert_eq!(format!("{nanos}"), "123");
@@ -236,13 +272,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_multiplication_assign() {
-        let mut nanos = UnixNanos::from(100);
-        nanos *= 3_u64;
-        assert_eq!(nanos.as_u64(), 300);
-    }
-
-    #[rstest]
     fn test_from_str() {
         let nanos: UnixNanos = "123".parse().unwrap();
         assert_eq!(nanos.as_u64(), 123);
@@ -252,6 +281,32 @@ mod tests {
     fn test_from_str_invalid() {
         let result = "abc".parse::<UnixNanos>();
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Error adding with overflow")]
+    fn test_overflow_add() {
+        let nanos = UnixNanos::from(u64::MAX);
+        let _ = nanos + UnixNanos::from(1); // This should panic due to overflow
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Error adding with overflow")]
+    fn test_overflow_add_u64() {
+        let nanos = UnixNanos::from(u64::MAX);
+        let _ = nanos + 1_u64; // This should panic due to overflow
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Error subtracting with underflow")]
+    fn test_overflow_sub() {
+        let _ = UnixNanos::from(0) - UnixNanos::from(1); // This should panic due to underflow
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Error subtracting with underflow")]
+    fn test_overflow_sub_u64() {
+        let _ = UnixNanos::from(0) - 1_u64; // This should panic due to underflow
     }
 
     #[rstest]
