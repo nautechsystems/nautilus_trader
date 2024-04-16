@@ -23,7 +23,7 @@ use nautilus_core::{
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::{prelude::*, types::PyBytes};
 
-use crate::redis::RedisCacheDatabase;
+use crate::redis::cache::RedisCacheDatabase;
 
 #[pymethods]
 impl RedisCacheDatabase {

@@ -13,141 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::{HashMap, VecDeque},
-    sync::mpsc::{Receiver, TryRecvError},
-    thread,
-    time::{Duration, Instant},
-};
+pub mod cache;
+pub mod msgbus;
 
-use nautilus_core::{time::duration_since_unix_epoch, uuid::UUID4};
+use std::{collections::HashMap, time::Duration};
+
+use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use redis::*;
 use serde_json::{json, Value};
-use tracing::{debug, error};
-
-use crate::msgbus::{BusMessage, CLOSE_TOPIC};
+use tracing::debug;
 
 const DELIMITER: char = ':';
-const XTRIM: &str = "XTRIM";
-const MINID: &str = "MINID";
-
-pub fn handle_messages_with_redis(
-    rx: Receiver<BusMessage>,
-    trader_id: TraderId,
-    instance_id: UUID4,
-    config: HashMap<String, Value>,
-) -> anyhow::Result<()> {
-    let database_config = config
-        .get("database")
-        .ok_or(anyhow::anyhow!("No database config"))?;
-    debug!("Creating msgbus redis connection");
-    let mut conn = create_redis_connection(&database_config.clone())?;
-
-    let stream_name = get_stream_name(trader_id, instance_id, &config);
-
-    // Autotrimming
-    let autotrim_mins = config
-        .get("autotrim_mins")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0) as usize;
-    let autotrim_duration = if autotrim_mins > 0 {
-        Some(Duration::from_secs(autotrim_mins as u64 * 60))
-    } else {
-        None
-    };
-    let mut last_trim_index: HashMap<String, usize> = HashMap::new();
-
-    // Buffering
-    let mut buffer: VecDeque<BusMessage> = VecDeque::new();
-    let mut last_drain = Instant::now();
-    let recv_interval = Duration::from_millis(1);
-    let buffer_interval = get_buffer_interval(&config);
-
-    loop {
-        if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
-            drain_buffer(
-                &mut conn,
-                &stream_name,
-                autotrim_duration,
-                &mut last_trim_index,
-                &mut buffer,
-            )?;
-            last_drain = Instant::now();
-        } else {
-            // Continue to receive and handle messages until channel is hung up
-            // or the close topic is received.
-            match rx.try_recv() {
-                Ok(msg) => {
-                    if msg.topic == CLOSE_TOPIC {
-                        drop(rx);
-                        break;
-                    }
-                    buffer.push_back(msg);
-                }
-                Err(TryRecvError::Empty) => thread::sleep(recv_interval),
-                Err(TryRecvError::Disconnected) => break, // Channel hung up
-            }
-        }
-    }
-
-    // Drain any remaining messages
-    if !buffer.is_empty() {
-        drain_buffer(
-            &mut conn,
-            &stream_name,
-            autotrim_duration,
-            &mut last_trim_index,
-            &mut buffer,
-        )?;
-    }
-
-    Ok(())
-}
-
-fn drain_buffer(
-    conn: &mut Connection,
-    stream_name: &str,
-    autotrim_duration: Option<Duration>,
-    last_trim_index: &mut HashMap<String, usize>,
-    buffer: &mut VecDeque<BusMessage>,
-) -> anyhow::Result<()> {
-    let mut pipe = redis::pipe();
-    pipe.atomic();
-
-    for msg in buffer.drain(..) {
-        let key = format!("{stream_name}{}", &msg.topic);
-        let items: Vec<(&str, &Vec<u8>)> = vec![("payload", &msg.payload)];
-        pipe.xadd(&key, "*", &items);
-
-        if autotrim_duration.is_none() {
-            continue; // Nothing else to do
-        }
-
-        // Autotrim stream
-        let last_trim_ms = last_trim_index.entry(key.clone()).or_insert(0); // Remove clone
-        let unix_duration_now = duration_since_unix_epoch();
-
-        // Improve efficiency of this by batching
-        if *last_trim_ms < (unix_duration_now - Duration::from_secs(60)).as_millis() as usize {
-            let min_timestamp_ms =
-                (unix_duration_now - autotrim_duration.unwrap()).as_millis() as usize;
-            let result: Result<(), redis::RedisError> = redis::cmd(XTRIM)
-                .arg(&key)
-                .arg(MINID)
-                .arg(min_timestamp_ms)
-                .query(conn);
-
-            if let Err(e) = result {
-                error!("Error trimming stream '{key}': {e}");
-            } else {
-                last_trim_index.insert(key, unix_duration_now.as_millis() as usize);
-            }
-        }
-    }
-
-    pipe.query::<()>(conn).map_err(anyhow::Error::from)
-}
 
 pub fn get_redis_url(database_config: &serde_json::Value) -> (String, String) {
     let host = database_config

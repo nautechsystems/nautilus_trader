@@ -31,7 +31,6 @@ from nautilus_trader.core.rust.common cimport LiveClock_API
 from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.common cimport LogGuard_API
 from nautilus_trader.core.rust.common cimport LogLevel
-from nautilus_trader.core.rust.common cimport MessageBus_API
 from nautilus_trader.core.rust.common cimport TestClock_API
 from nautilus_trader.core.rust.common cimport TimeEvent_t
 from nautilus_trader.core.rust.core cimport CVec
@@ -247,9 +246,9 @@ cdef class Component:
 
 
 cdef class MessageBus:
-    cdef MessageBus_API _mem
     cdef Clock _clock
     cdef Logger _log
+    cdef object _database
     cdef dict[Subscription, list[str]] _subscriptions
     cdef dict[str, Subscription[:]] _patterns
     cdef dict[str, object] _endpoints

@@ -94,10 +94,6 @@ from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.common cimport logging_log_header
 from nautilus_trader.core.rust.common cimport logging_log_sysinfo
 from nautilus_trader.core.rust.common cimport logging_shutdown
-from nautilus_trader.core.rust.common cimport msgbus_close
-from nautilus_trader.core.rust.common cimport msgbus_drop
-from nautilus_trader.core.rust.common cimport msgbus_new
-from nautilus_trader.core.rust.common cimport msgbus_publish_external
 from nautilus_trader.core.rust.common cimport test_clock_advance_time
 from nautilus_trader.core.rust.common cimport test_clock_cancel_timer
 from nautilus_trader.core.rust.common cimport test_clock_cancel_timers
@@ -1985,6 +1981,8 @@ cdef class MessageBus:
         The custom name for the message bus.
     serializer : Serializer, optional
         The serializer for database operations.
+    database : nautilus_pyo3.RedisMessageBusDatabase, optional
+        The backing database for the message bus.
     snapshot_orders : bool, default False
         If order state snapshots should be published externally.
     snapshot_positions : bool, default False
@@ -2010,6 +2008,7 @@ cdef class MessageBus:
         UUID4 instance_id = None,
         str name = None,
         Serializer serializer = None,
+        database: nautilus_pyo3.RedisMessageBusDatabase | None = None,
         bint snapshot_orders: bool = False,
         bint snapshot_positions: bool = False,
         config: Any | None = None,
@@ -2028,12 +2027,13 @@ cdef class MessageBus:
 
         self.trader_id = trader_id
         self.serializer = serializer
-        self.has_backing = config.database is not None
+        self.has_backing = database is not None
         self.snapshot_orders = snapshot_orders
         self.snapshot_positions = snapshot_positions
 
         self._clock = clock
         self._log = Logger(name)
+        self._database = database
 
         # Validate configuration
         if config.buffer_interval_ms and config.buffer_interval_ms > 1000:
@@ -2059,13 +2059,6 @@ cdef class MessageBus:
         if config.types_filter is not None:
             config.types_filter.clear()
 
-        self._mem = msgbus_new(
-            pystr_to_cstr(trader_id.value),
-            pystr_to_cstr(name) if name else NULL,
-            pystr_to_cstr(instance_id.to_str()),
-            pybytes_to_cstr(msgspec.json.encode(config)),
-        )
-
         self._endpoints: dict[str, Callable[[Any], None]] = {}
         self._patterns: dict[str, Subscription[:]] = {}
         self._subscriptions: dict[Subscription, list[str]] = {}
@@ -2073,7 +2066,6 @@ cdef class MessageBus:
         self._publishable_types = tuple(_EXTERNAL_PUBLISHABLE_TYPES)
         if types_filter is not None:
             self._publishable_types = tuple(o for o in _EXTERNAL_PUBLISHABLE_TYPES if o not in types_filter)
-        self._has_backing = config.database is not None
         self._resolved = False
 
         # Counters
@@ -2081,10 +2073,6 @@ cdef class MessageBus:
         self.req_count = 0
         self.res_count = 0
         self.pub_count = 0
-
-    def __del__(self) -> None:
-        if self._mem._0 != NULL:
-            msgbus_drop(self._mem)
 
     cpdef list endpoints(self):
         """
@@ -2199,7 +2187,10 @@ cdef class MessageBus:
 
         """
         self._log.debug("Closing message bus")
-        msgbus_close(&self._mem)
+
+        if self._database is not None:
+            self._database.close()
+
         self._log.info("Closed message bus")
 
     cpdef void register(self, str endpoint, handler: Callable[[Any], None]):
@@ -2507,16 +2498,15 @@ cdef class MessageBus:
 
         # Publish externally (if configured)
         cdef bytes payload_bytes
-        if self._has_backing and self.serializer is not None:
+        if self._database is not None and self.serializer is not None:
             if isinstance(msg, self._publishable_types):
                 if isinstance(msg, bytes):
                     payload_bytes = msg
                 else:
                     payload_bytes = self.serializer.serialize(msg)
-                msgbus_publish_external(
-                    &self._mem,
-                    pystr_to_cstr(topic),
-                    pybytes_to_cstr(payload_bytes),
+                self._database.publish(
+                    topic,
+                    payload_bytes,
                 )
 
         self.pub_count += 1

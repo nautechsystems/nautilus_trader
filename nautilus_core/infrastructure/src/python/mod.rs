@@ -15,10 +15,12 @@
 
 use pyo3::{prelude::*, pymodule};
 
-pub mod cache;
+#[cfg(feature = "redis")]
+pub mod redis;
 
 #[pymodule]
 pub fn infrastructure(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<crate::redis::RedisCacheDatabase>()?;
+    m.add_class::<crate::redis::cache::RedisCacheDatabase>()?;
+    m.add_class::<crate::redis::msgbus::RedisMessageBusDatabase>()?;
     Ok(())
 }
