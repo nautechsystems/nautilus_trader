@@ -774,6 +774,13 @@ cdef class Portfolio(PortfolioFacade):
                 )
                 return None  # Cannot calculate
 
+            if position.side == PositionSide.FLAT:
+                self._log.error(
+                    f"Cannot calculate net exposures: "
+                    f"position is flat for {position.instrument_id}"
+                )
+                continue  # Nothing to calculate
+
             last = self._get_last_price(position)
             if last is None:
                 self._log.error(
@@ -1070,6 +1077,9 @@ cdef class Portfolio(PortfolioFacade):
             if position.instrument_id != instrument_id:
                 continue  # Nothing to calculate
 
+            if position.side == PositionSide.FLAT:
+                continue  # Nothing to calculate
+
             last = self._get_last_price(position)
             if last is None:
                 self._log.debug(
@@ -1102,19 +1112,24 @@ cdef class Portfolio(PortfolioFacade):
         return Money(total_pnl, currency)
 
     cdef Price _get_last_price(self, Position position):
-        cdef QuoteTick quote_tick = self._cache.quote_tick(position.instrument_id)
-        if quote_tick is not None:
-            if position.side == PositionSide.LONG:
-                return quote_tick.bid_price
-            elif position.side == PositionSide.SHORT:
-                return quote_tick.ask_price
-            else:  # pragma: no cover (design-time error)
-                raise RuntimeError(
-                    f"invalid `PositionSide`, was {position_side_to_str(position.side)}",
-                )
+        cdef PriceType price_type
+        if position.side == PositionSide.LONG:
+            price_type = PriceType.BID
+        elif position.side == PositionSide.SHORT:
+            price_type = PriceType.ASK
+        else:  # pragma: no cover (design-time error)
+            raise RuntimeError(
+                f"invalid `PositionSide`, was {position_side_to_str(position.side)}",
+            )
 
-        cdef TradeTick trade_tick = self._cache.trade_tick(position.instrument_id)
-        return trade_tick.price if trade_tick is not None else None
+        cdef Price price
+        return self._cache.price(
+            instrument_id=position.instrument_id,
+            price_type=price_type,
+        ) or self._cache.price(
+            instrument_id=position.instrument_id,
+            price_type=PriceType.LAST,
+        )
 
     cdef double _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side):
         if account.base_currency is not None:

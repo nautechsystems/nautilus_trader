@@ -23,6 +23,7 @@ from decimal import Decimal
 from nautilus_trader.cache.config import CacheConfig
 
 from cpython.datetime cimport datetime
+from cpython.datetime cimport timedelta
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
@@ -37,6 +38,10 @@ from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceType
+
+from nautilus_trader.core.rust.model import PriceType as PriceType_py
+
+from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.model.data cimport Bar
@@ -2033,10 +2038,20 @@ cdef class Cache(CacheFacade):
 
         if price_type == PriceType.LAST:
             trade_tick = self.trade_tick(instrument_id)
-            return trade_tick.price if trade_tick is not None else None
+            if trade_tick is not None:
+                return trade_tick.price
         else:
             quote_tick = self.quote_tick(instrument_id)
-            return quote_tick.extract_price(price_type) if quote_tick is not None else None
+            if quote_tick is not None:
+                return quote_tick.extract_price(price_type)
+
+        # Fallback to bar pricing
+        cdef Bar bar
+        cdef list bar_types = self.bar_types(instrument_id, price_type, AggregationSource.EXTERNAL)
+        if bar_types:
+            bar = self.bar(bar_types[0])  # Bar with smallest timedelta
+            if bar is not None:
+                return bar.close
 
     cpdef OrderBook order_book(self, InstrumentId instrument_id):
         """
@@ -2438,6 +2453,48 @@ cdef class Cache(CacheFacade):
 
         """
         return [x for x in self._instruments.values() if venue is None or venue == x.id.venue]
+
+    cdef timedelta _get_timedelta(self, BarType bar_type):
+        """ Helper method to get the timedelta from a BarType. """
+        return bar_type.spec.timedelta
+
+    cpdef list bar_types(
+        self,
+        InstrumentId instrument_id = None,
+        object price_type = None,
+        AggregationSource aggregation_source = AggregationSource.EXTERNAL,
+    ):
+        """
+        Return a list of BarType for the given instrument ID and price type.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID to filter the BarType objects. If None, no filtering is done based on instrument ID.
+        price_type : PriceType or None, optional
+            The price type to filter the BarType objects. If None, no filtering is done based on price type.
+        aggregation_source : AggregationSource, default AggregationSource.EXTERNAL
+            The aggregation source to filter the BarType objects.
+        Returns
+        -------
+        list[BarType]
+        """
+        Condition.type_or_none(instrument_id, InstrumentId, "instrument_id")
+        Condition.type_or_none(price_type, PriceType_py, "price_type")
+
+        cdef list bar_types = [bar_type for bar_type in self._bars.keys()
+                               if bar_type.aggregation_source == aggregation_source]
+
+        if instrument_id is not None:
+            bar_types = [bar_type for bar_type in bar_types if bar_type.instrument_id == instrument_id]
+
+        if price_type is not None:
+            bar_types = [bar_type for bar_type in bar_types if bar_type.spec.price_type == price_type]
+
+        if instrument_id and price_type:
+            bar_types.sort(key=self._get_timedelta)
+
+        return bar_types
 
 # -- SYNTHETIC QUERIES ----------------------------------------------------------------------------
 
