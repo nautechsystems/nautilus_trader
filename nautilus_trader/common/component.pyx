@@ -15,14 +15,10 @@
 
 import asyncio
 import copy
-import platform
 import socket
 import sys
-import time
 import traceback
 from collections import deque
-from platform import python_version
-from threading import Timer as TimerThread
 from typing import Any
 from typing import Callable
 

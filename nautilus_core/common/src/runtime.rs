@@ -19,6 +19,16 @@ use tokio::runtime::Runtime;
 
 static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
+/// Retrieves a reference to a globally shared Tokio runtime.
+/// The runtime is lazily initialized on the first call and reused thereafter.
+///
+/// This global runtime is intended for use cases where passing a runtime
+/// around is impractical. It uses default configuration values.
+///
+/// # Panics
+///
+/// Panics if the runtime could not be created, which typically indicates
+/// an inability to spawn threads or allocate necessary resources.
 pub fn get_runtime() -> &'static tokio::runtime::Runtime {
     // Using default configuration values for now
     RUNTIME.get_or_init(|| Runtime::new().expect("Failed to create tokio runtime"))

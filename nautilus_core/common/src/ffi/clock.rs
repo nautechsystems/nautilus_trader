@@ -152,7 +152,9 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
         }
     };
 
-    clock.set_time_alert_ns(name, alert_time_ns, handler);
+    clock
+        .set_time_alert_ns(name, alert_time_ns, handler)
+        .unwrap();
 }
 
 /// # Safety
@@ -183,7 +185,9 @@ pub unsafe extern "C" fn test_clock_set_timer(
         }
     };
 
-    clock.set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, handler);
+    clock
+        .set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, handler)
+        .unwrap();
 }
 
 /// # Safety
@@ -353,7 +357,9 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
         }
     };
 
-    clock.set_time_alert_ns(name, alert_time_ns, handler);
+    clock
+        .set_time_alert_ns(name, alert_time_ns, handler)
+        .unwrap();
 }
 
 /// # Safety
@@ -385,7 +391,9 @@ pub unsafe extern "C" fn live_clock_set_timer(
         }
     };
 
-    clock.set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, handler);
+    clock
+        .set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, handler)
+        .unwrap();
 }
 
 /// # Safety

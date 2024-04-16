@@ -17,18 +17,17 @@ use std::{
     cmp::Ordering,
     ffi::c_char,
     fmt::{Display, Formatter},
-    time::Duration,
 };
 
 use nautilus_core::{
-    correctness::check_valid_string,
+    correctness::{check_positive_u64, check_valid_string},
     nanos::{TimedeltaNanos, UnixNanos},
     time::get_atomic_clock_realtime,
     uuid::UUID4,
 };
 #[cfg(feature = "python")]
 use pyo3::{types::PyCapsule, IntoPy, PyObject, Python};
-use tokio::sync::oneshot;
+use tokio::{sync::oneshot, time::Duration};
 use tracing::error;
 use ustr::Ustr;
 
@@ -36,7 +35,6 @@ use crate::{handlers::EventHandler, runtime::get_runtime};
 
 #[repr(C)]
 #[derive(Clone, Debug)]
-#[allow(clippy::redundant_allocation)] // C ABI compatibility
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
@@ -135,23 +133,23 @@ pub struct TestTimer {
 }
 
 impl TestTimer {
-    #[must_use]
     pub fn new(
         name: &str,
         interval_ns: u64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
-    ) -> Self {
-        check_valid_string(name, stringify!(name)).unwrap();
+    ) -> anyhow::Result<Self> {
+        check_valid_string(name, stringify!(name))?;
+        check_positive_u64(interval_ns, stringify!(interval_ns))?;
 
-        Self {
+        Ok(Self {
             name: Ustr::from(name),
             interval_ns,
             start_time_ns,
             stop_time_ns,
-            next_time_ns: (start_time_ns.as_u64() + interval_ns).into(),
+            next_time_ns: start_time_ns + interval_ns,
             is_expired: false,
-        }
+        })
     }
 
     #[must_use]
@@ -226,26 +224,26 @@ pub struct LiveTimer {
 }
 
 impl LiveTimer {
-    #[must_use]
     pub fn new(
         name: &str,
         interval_ns: u64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
         callback: EventHandler,
-    ) -> Self {
-        check_valid_string(name, stringify!(name)).unwrap();
+    ) -> anyhow::Result<Self> {
+        check_valid_string(name, stringify!(name))?;
+        check_positive_u64(interval_ns, stringify!(interval_ns))?;
 
-        Self {
+        Ok(Self {
             name: Ustr::from(name),
             interval_ns,
             start_time_ns,
             stop_time_ns,
-            next_time_ns: (start_time_ns.as_u64() + interval_ns).into(),
+            next_time_ns: start_time_ns + interval_ns,
             is_expired: false,
             callback,
             canceler: None,
-        }
+        })
     }
 
     pub fn start(&mut self) {
@@ -253,27 +251,25 @@ impl LiveTimer {
         let mut start_time_ns = self.start_time_ns;
         let stop_time_ns = self.stop_time_ns;
         let interval_ns = self.interval_ns;
-
         let callback = self.callback.clone();
 
         // Setup oneshot channel for cancelling timer task
         let (cancel_tx, mut cancel_rx) = oneshot::channel();
         self.canceler = Some(cancel_tx);
 
-        get_runtime().spawn(async move {
-            let clock = get_atomic_clock_realtime();
-            if start_time_ns == 0 {
-                start_time_ns = clock.get_time_ns();
-            }
+        let clock = get_atomic_clock_realtime();
+        if start_time_ns == 0 {
+            start_time_ns = clock.get_time_ns();
+        }
 
-            let mut next_time_ns: UnixNanos = (start_time_ns.as_u64() + interval_ns).into();
+        let mut next_time_ns = start_time_ns + interval_ns;
 
+        let rt = get_runtime();
+        rt.spawn(async move {
             loop {
                 tokio::select! {
-                    _ = tokio::time::sleep(Duration::from_nanos(next_time_ns.saturating_sub(clock.get_time_ns().into()))) => {
-                        // TODO: Remove this clone
-                        let callback = callback.clone();
-                        call_python_with_time_event(event_name, next_time_ns, clock.get_time_ns(), callback);
+                    _ = tokio::time::sleep(Duration::from_nanos(next_time_ns.saturating_sub(clock.get_time_ns().as_u64()))) => {
+                        call_python_with_time_event(event_name, next_time_ns, clock.get_time_ns(), &callback);
 
                         // Prepare next time interval
                         next_time_ns += interval_ns;
@@ -310,7 +306,7 @@ fn call_python_with_time_event(
     name: Ustr,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-    handler: EventHandler,
+    handler: &EventHandler,
 ) {
     Python::with_gil(|py| {
         // Create new time event
