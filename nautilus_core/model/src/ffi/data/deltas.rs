@@ -24,7 +24,7 @@ use crate::{
     identifiers::instrument_id::InstrumentId,
 };
 
-/// Creates a new `OrderBookDeltas` object from a `CVec` of `OrderBookDelta`.
+/// Creates a new `OrderBookDeltas` instance from a `CVec` of `OrderBookDelta`.
 ///
 /// # Safety
 /// - The `deltas` must be a valid pointer to a `CVec` containing `OrderBookDelta` objects
