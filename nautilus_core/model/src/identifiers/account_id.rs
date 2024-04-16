@@ -37,7 +37,7 @@ use ustr::Ustr;
 pub struct AccountId(Ustr);
 
 impl AccountId {
-    /// Creates a new `AccountId` from the given identifier value.
+    /// Creates a new `AccountId` instance from the given identifier value.
     ///
     /// # Panics
     ///

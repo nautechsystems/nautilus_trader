@@ -27,7 +27,7 @@ pub struct TimeEventAccumulator {
 }
 
 impl TimeEventAccumulator {
-    /// Initializes a new `TimeEventAccumulator` instance.
+    /// Creates a new `TimeEventAccumulator` instance.
     #[must_use]
     pub fn new() -> Self {
         Self {

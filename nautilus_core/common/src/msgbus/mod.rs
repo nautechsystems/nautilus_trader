@@ -167,7 +167,7 @@ pub struct MessageBus {
 }
 
 impl MessageBus {
-    /// Initializes a new instance of the [`MessageBus`].
+    /// Creates a new `MessageBus` instance.
     pub fn new(
         trader_id: TraderId,
         instance_id: UUID4,

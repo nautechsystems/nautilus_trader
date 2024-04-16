@@ -316,12 +316,12 @@ pub trait Instrument: 'static + Send {
     fn ts_event(&self) -> UnixNanos;
     fn ts_init(&self) -> UnixNanos;
 
-    /// Creates a new price from the given `value` with the correct price precision for the instrument.
+    /// Creates a new `Price` from the given `value` with the correct price precision for the instrument.
     fn make_price(&self, value: f64) -> anyhow::Result<Price> {
         Price::new(value, self.price_precision())
     }
 
-    /// Creates a new quantity from the given `value` with the correct size precision for the instrument.
+    /// Creates a new `Quantity` from the given `value` with the correct size precision for the instrument.
     fn make_qty(&self, value: f64) -> anyhow::Result<Quantity> {
         Quantity::new(value, self.size_precision())
     }
