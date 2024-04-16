@@ -138,9 +138,10 @@ class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
                 instrument_id,
                 BookAction.ADD,
                 o,
-                ts_init,
-                ts_init,
+                flags=0,
                 sequence=self.lastUpdateId,
+                ts_event=ts_init,  # No event timestamp
+                ts_init=ts_init,
             )
             for o in bids + asks
         ]

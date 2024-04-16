@@ -17,6 +17,8 @@ Released on TBD (UTC).
 - Ported Bias indicator to Rust, thanks @Pushkarm029
 
 ### Breaking Changes
+- Reordered `OrderBookDelta` params `flags` and `sequence` and removed default 0 values (more explicit and less chance of mismatches)
+- Reordered `OrderBook` params `flags` and `sequence` and removed default 0 values (more explicit and less chance of mismatches)
 - Added `flags` parameter to `OrderBook.add`
 - Added `flags` parameter to `OrderBook.update`
 - Added `flags` parameter to `OrderBook.delete`
