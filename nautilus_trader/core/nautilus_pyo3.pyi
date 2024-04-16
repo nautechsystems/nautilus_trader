@@ -2181,10 +2181,21 @@ def update_book_with_trade_tick(book: OrderBook, trade: TradeTick) -> None: ...
 # Infrastructure
 ###################################################################################################
 
+class RedisMessageBusDatabase:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        instance_id: UUID4,
+        config_json: bytes,  # TODO: Standardize this back to `dict[str, Any]`
+    ) -> None: ...
+    def publish(self, topic: str, payload: bytes) -> None: ...
+    def close(self) -> None: ...
+
 class RedisCacheDatabase:
     def __init__(
         self,
         trader_id: TraderId,
+        instance_id: UUID4,
         config: dict[str, Any],
     ) -> None: ...
 

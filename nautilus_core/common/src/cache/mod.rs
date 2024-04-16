@@ -360,7 +360,7 @@ impl Cache {
         self.bars.clear();
         self.instruments.clear();
         self.synthetics.clear();
-        // self.accounts.clear();  // TODO
+        self.accounts.clear();
         self.orders.clear();
         // self.order_lists.clear();  // TODO
         self.positions.clear();

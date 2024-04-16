@@ -236,6 +236,27 @@ class NautilusKernel:
                     # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
                     self._setup_loop()
 
+        ########################################################################
+        # MessageBus database
+        ########################################################################
+        if not config.message_bus or not config.message_bus.database:
+            msgbus_db = None
+        elif config.message_bus.database.type == "redis":
+            msgbus_db = nautilus_pyo3.RedisMessageBusDatabase(
+                trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
+                instance_id=nautilus_pyo3.UUID4(self._instance_id.value),
+                config_json=msgspec.json.encode(config.message_bus),
+            )
+        else:
+            raise ValueError(
+                f"Unrecognized `config.message_bus.database.type`, was '{config.message_bus.database.type}'. "
+                "The only database type currently supported is 'redis', if you don't want a message bus database backing "
+                "then you can pass `None` for the `message_bus.database` ('in-memory' is no longer valid)",
+            )
+
+        ########################################################################
+        # Cache database
+        ########################################################################
         if not config.cache or not config.cache.database:
             cache_db = None
         elif config.cache.database.type == "redis":
@@ -260,17 +281,6 @@ class NautilusKernel:
         ########################################################################
         # Core components
         ########################################################################
-        if (
-            config.message_bus
-            and config.message_bus.database
-            and config.message_bus.database.type != "redis"
-        ):
-            raise ValueError(
-                f"Unrecognized `config.message_bus.type`, was '{config.message_bus.database.type}'. "
-                "The only database type currently supported is 'redis', if you don't want a message bus database backing "
-                "then you can pass `None` for the `message_bus.database`",
-            )
-
         msgbus_serializer = None
         if config.message_bus:
             encoding = config.message_bus.encoding.lower()
@@ -284,6 +294,7 @@ class NautilusKernel:
             instance_id=self._instance_id,
             clock=self._clock,
             serializer=msgbus_serializer,
+            database=msgbus_db,
             snapshot_orders=config.snapshot_orders,
             snapshot_positions=config.snapshot_positions,
             config=config.message_bus,
@@ -429,6 +440,7 @@ class NautilusKernel:
                 config=self._config.controller,
                 trader=self._trader,
             )
+            assert self._controller is not None  # Type checking
             self._controller.register_base(
                 portfolio=self._portfolio,
                 msgbus=self._msgbus,

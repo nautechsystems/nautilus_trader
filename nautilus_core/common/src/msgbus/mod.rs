@@ -13,28 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod database;
+
 use std::{
     collections::HashMap,
     fmt,
     hash::{Hash, Hasher},
-    sync::{
-        mpsc::{channel, Receiver, SendError, Sender},
-        Arc, Mutex,
-    },
-    thread::{self, JoinHandle},
 };
 
 use indexmap::IndexMap;
+use log::error;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use tracing::{debug, error, info};
 use ustr::Ustr;
 
 use crate::handlers::MessageHandler;
-#[cfg(feature = "redis")]
-use crate::redis::handle_messages_with_redis;
 
 pub const CLOSE_TOPIC: &str = "CLOSE";
 
@@ -156,7 +150,6 @@ pub struct MessageBus {
     pub pub_count: u64,
     /// If the message bus is backed by a database.
     pub has_backing: bool,
-    tx: Option<Sender<BusMessage>>,
     /// mapping from topic to the corresponding handler
     /// a topic can be a string with wildcards
     /// * '?' - any character
@@ -171,7 +164,6 @@ pub struct MessageBus {
     /// a request maps it's id to a handler so that a response
     /// with the same id can later be handled.
     correlation_index: IndexMap<UUID4, MessageHandler>,
-    handle: Arc<Mutex<Option<JoinHandle<Result<(), anyhow::Error>>>>>,
 }
 
 impl MessageBus {
@@ -180,31 +172,12 @@ impl MessageBus {
         trader_id: TraderId,
         instance_id: UUID4,
         name: Option<String>,
-        config: Option<HashMap<String, serde_json::Value>>,
+        _config: Option<HashMap<String, serde_json::Value>>,
     ) -> anyhow::Result<Self> {
-        let config = config.unwrap_or_default();
-        let has_backing = config
-            .get("database")
-            .map_or(false, |v| v != &serde_json::Value::Null);
-        let mut handle: Option<JoinHandle<Result<(), anyhow::Error>>> = None;
-        let tx = if has_backing {
-            let (tx, rx) = channel::<BusMessage>();
-            handle = Some(
-                thread::Builder::new()
-                    .name("msgbus".to_string())
-                    .spawn(move || Self::handle_messages(rx, trader_id, instance_id, config))
-                    .expect("Error spawning `msgbus` thread"),
-            );
-            Some(tx)
-        } else {
-            None
-        };
-
         Ok(Self {
-            tx,
             trader_id,
             instance_id,
-            name: name.unwrap_or_else(|| stringify!(MessageBus).to_owned()),
+            name: name.unwrap_or(stringify!(MessageBus).to_owned()),
             sent_count: 0,
             req_count: 0,
             res_count: 0,
@@ -213,8 +186,7 @@ impl MessageBus {
             patterns: IndexMap::new(),
             endpoints: IndexMap::new(),
             correlation_index: IndexMap::new(),
-            has_backing,
-            handle: Arc::new(Mutex::new(handle)),
+            has_backing: false,
         })
     }
 
@@ -283,28 +255,7 @@ impl MessageBus {
 
     /// Close the message bus which will close the sender channel and join the thread.
     pub fn close(&self) -> anyhow::Result<()> {
-        if let Some(tx) = &self.tx {
-            debug!("Closing msgbus tx channel");
-            tx.send(BusMessage {
-                topic: CLOSE_TOPIC.to_string(),
-                payload: vec![],
-            })
-            .map_err(anyhow::Error::new)?;
-        };
-
-        let maybe_handle = self
-            .handle
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Lock error: {:?}", e))?
-            .take();
-
-        if let Some(handle) = maybe_handle {
-            debug!("Joining `msgbus` thread");
-            let join_result = handle.join().map_err(|e| anyhow::anyhow!("{:?}", e))?;
-            join_result.map_err(|e| anyhow::anyhow!("{:?}", e))?;
-            info!("Closed msgbus");
-        }
-
+        // TODO: Integrate the backing database
         Ok(())
     }
 
@@ -326,8 +277,7 @@ impl MessageBus {
         let sub = Subscription::new(topic, handler, self.subscriptions.len(), priority);
 
         if self.subscriptions.contains_key(&sub) {
-            // TODO: Implement proper logging
-            println!("{sub:?} already exists.");
+            error!("{sub:?} already exists.");
             return;
         }
 
@@ -431,60 +381,6 @@ impl MessageBus {
             }
         })
     }
-
-    pub fn publish_external(&self, topic: String, payload: Vec<u8>) {
-        if let Some(tx) = &self.tx {
-            let msg = BusMessage { topic, payload };
-            if let Err(SendError(e)) = tx.send(msg) {
-                error!("Error publishing external message: {e}");
-            }
-        } else {
-            error!("Error publishing external message: no tx channel");
-        }
-    }
-
-    fn handle_messages(
-        rx: Receiver<BusMessage>,
-        trader_id: TraderId,
-        instance_id: UUID4,
-        config: HashMap<String, serde_json::Value>,
-    ) -> anyhow::Result<()> {
-        let database_config = config
-            .get("database")
-            .expect("No `MessageBusConfig` `database` config specified");
-        let backing_type = database_config
-            .get("type")
-            .expect("No `MessageBusConfig` database config `type` specified")
-            .as_str()
-            .expect("`MessageBusConfig` database `type` must be a valid string");
-
-        match backing_type {
-            "redis" => handle_messages_with_redis_if_enabled(rx, trader_id, instance_id, config),
-            other => panic!("Unsupported message bus backing database type '{other}'"),
-        }
-    }
-}
-
-/// Handles messages using Redis if the `redis` feature is enabled.
-#[cfg(feature = "redis")]
-fn handle_messages_with_redis_if_enabled(
-    rx: Receiver<BusMessage>,
-    trader_id: TraderId,
-    instance_id: UUID4,
-    config: HashMap<String, Value>,
-) -> anyhow::Result<()> {
-    handle_messages_with_redis(rx, trader_id, instance_id, config)
-}
-
-/// Handles messages using a default method if the "redis" feature is not enabled.
-#[cfg(not(feature = "redis"))]
-fn handle_messages_with_redis_if_enabled(
-    _rx: Receiver<BusMessage>,
-    _trader_id: TraderId,
-    _instance_id: UUID4,
-    _config: HashMap<String, Value>,
-) {
-    panic!("`redis` feature is not enabled");
 }
 
 /// Match a topic and a string pattern

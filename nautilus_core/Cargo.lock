@@ -2555,7 +2555,6 @@ dependencies = [
  "nautilus-model",
  "pyo3",
  "pyo3-asyncio",
- "redis",
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",

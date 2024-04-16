@@ -13,7 +13,25 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod clock;
-pub mod enums;
-pub mod logging;
-pub mod timer;
+use std::collections::HashMap;
+
+use nautilus_core::uuid::UUID4;
+use nautilus_model::identifiers::trader_id::TraderId;
+
+/// Provides a generic message bus database facade.
+///
+/// The main operations take a consistent `key` and `payload` which should provide enough
+/// information to implement the message bus database in many different technologies.
+///
+/// Delete operations may need a `payload` to target specific values.
+pub trait MessageBusDatabaseAdapter {
+    type DatabaseType;
+
+    fn new(
+        trader_id: TraderId,
+        instance_id: UUID4,
+        config: HashMap<String, serde_json::Value>,
+    ) -> anyhow::Result<Self::DatabaseType>;
+    fn publish(&self, topic: String, payload: Vec<u8>) -> anyhow::Result<()>;
+    fn close(&mut self) -> anyhow::Result<()>;
+}
