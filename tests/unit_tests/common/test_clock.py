@@ -646,178 +646,177 @@ class TestLiveClock:
         assert len(self.handler) == 1
         assert isinstance(self.handler[0], TimeEvent)
 
+    def test_cancel_time_alert(self):
+        # Arrange
+        name = "TEST_ALERT"
+        interval = timedelta(milliseconds=300)
+        alert_time = self.clock.utc_now() + interval
 
-#     def test_cancel_time_alert(self):
-#         # Arrange
-#         name = "TEST_ALERT"
-#         interval = timedelta(milliseconds=300)
-#         alert_time = self.clock.utc_now() + interval
-#
-#         self.clock.set_time_alert(name, alert_time)
-#
-#         # Act
-#         self.clock.cancel_timer(name)
-#
-#         # Assert
-#         assert self.clock.timer_count == 0
-#         assert len(self.handler) == 0
-#
-#     def test_set_multiple_time_alerts(self):
-#         # Arrange
-#         alert_time1 = self.clock.utc_now() + timedelta(milliseconds=200)
-#         alert_time2 = self.clock.utc_now() + timedelta(milliseconds=300)
-#
-#         # Act
-#         self.clock.set_time_alert("TEST_ALERT1", alert_time1)
-#         self.clock.set_time_alert("TEST_ALERT2", alert_time2)
-#         time.sleep(2.0)
-#
-#         # Assert
-#         assert self.clock.timer_count == 0
-#         assert len(self.handler) >= 2
-#         assert isinstance(self.handler[0], TimeEvent)
-#         assert isinstance(self.handler[1], TimeEvent)
-#
-#     def test_set_timer_with_immediate_start_time(self):
-#         # Arrange
-#         name = "TEST_TIMER"
-#
-#         # Act
-#         self.clock.set_timer(
-#             name=name,
-#             interval=timedelta(milliseconds=100),
-#             start_time=None,
-#             stop_time=None,
-#         )
-#
-#         time.sleep(2.0)
-#
-#         # Assert
-#         assert self.clock.timer_names == [name]
-#         assert isinstance(self.handler[0], TimeEvent)
-#
-#     def test_set_timer(self):
-#         # Arrange
-#         name = "TEST_TIMER"
-#         interval = timedelta(milliseconds=100)
-#         start_time = self.clock.utc_now() + interval
-#
-#         # Act
-#         self.clock.set_timer(
-#             name=name,
-#             interval=interval,
-#             start_time=start_time,
-#             stop_time=None,
-#         )
-#
-#         time.sleep(2.0)
-#
-#         # Assert
-#         assert self.clock.timer_names == [name]
-#         assert len(self.handler) > 0
-#         assert isinstance(self.handler[0], TimeEvent)
-#
-#     def test_set_timer_with_stop_time(self):
-#         # Arrange
-#         name = "TEST_TIMER"
-#         interval = timedelta(milliseconds=100)
-#         start_time = self.clock.utc_now()
-#         stop_time = start_time + interval
-#
-#         # Act
-#         self.clock.set_timer(
-#             name=name,
-#             interval=interval,
-#             start_time=start_time,
-#             stop_time=stop_time,
-#         )
-#
-#         time.sleep(2.0)
-#
-#         # Assert
-#         assert self.clock.timer_count == 0
-#         assert len(self.handler) > 0
-#         assert isinstance(self.handler[0], TimeEvent)
-#
-#     def test_cancel_timer(self):
-#         # Arrange
-#         name = "TEST_TIMER"
-#         interval = timedelta(milliseconds=100)
-#
-#         self.clock.set_timer(name=name, interval=interval)
-#
-#         # Act
-#         time.sleep(0.3)
-#         self.clock.cancel_timer(name)
-#         time.sleep(0.3)
-#
-#         # Assert
-#         assert self.clock.timer_count == 0
-#         assert len(self.handler) <= 4
-#
-#     def test_set_repeating_timer(self):
-#         # Arrange
-#         name = "TEST_TIMER"
-#         interval = timedelta(milliseconds=100)
-#         start_time = self.clock.utc_now()
-#
-#         # Act
-#         self.clock.set_timer(
-#             name=name,
-#             interval=interval,
-#             start_time=start_time,
-#             stop_time=None,
-#         )
-#
-#         time.sleep(2.0)
-#
-#         # Assert
-#         assert len(self.handler) > 0
-#         assert isinstance(self.handler[0], TimeEvent)
-#
-#     def test_cancel_repeating_timer(self):
-#         # Arrange
-#         name = "TEST_TIMER"
-#         interval = timedelta(milliseconds=100)
-#         start_time = self.clock.utc_now()
-#         stop_time = start_time + timedelta(seconds=5)
-#
-#         self.clock.set_timer(
-#             name=name,
-#             interval=interval,
-#             start_time=start_time,
-#             stop_time=stop_time,
-#         )
-#
-#         # Act
-#         time.sleep(0.3)
-#         self.clock.cancel_timer(name)
-#         time.sleep(0.5)
-#
-#         # Assert
-#         assert len(self.handler) <= 6
-#
-#     def test_set_two_repeating_timers(self):
-#         # Arrange
-#         interval = timedelta(milliseconds=100)
-#         start_time = self.clock.utc_now() + timedelta(milliseconds=100)
-#
-#         # Act
-#         self.clock.set_timer(
-#             name="TEST_TIMER1",
-#             interval=interval,
-#             start_time=start_time,
-#             stop_time=None,
-#         )
-#
-#         self.clock.set_timer(
-#             name="TEST_TIMER2",
-#             interval=interval,
-#             start_time=start_time,
-#             stop_time=None,
-#         )
-#
-#         time.sleep(1.0)
-#
-#         # Assert
-#         assert len(self.handler) >= 2
+        self.clock.set_time_alert(name, alert_time)
+
+        # Act
+        self.clock.cancel_timer(name)
+
+        # Assert
+        assert self.clock.timer_count == 0
+        assert len(self.handler) == 0
+
+    def test_set_multiple_time_alerts(self):
+        # Arrange
+        alert_time1 = self.clock.utc_now() + timedelta(milliseconds=200)
+        alert_time2 = self.clock.utc_now() + timedelta(milliseconds=300)
+
+        # Act
+        self.clock.set_time_alert("TEST_ALERT1", alert_time1)
+        self.clock.set_time_alert("TEST_ALERT2", alert_time2)
+        time.sleep(2.0)
+
+        # Assert
+        assert self.clock.timer_count == 0
+        assert len(self.handler) >= 2
+        assert isinstance(self.handler[0], TimeEvent)
+        assert isinstance(self.handler[1], TimeEvent)
+
+    def test_set_timer_with_immediate_start_time(self):
+        # Arrange
+        name = "TEST_TIMER"
+
+        # Act
+        self.clock.set_timer(
+            name=name,
+            interval=timedelta(milliseconds=100),
+            start_time=None,
+            stop_time=None,
+        )
+
+        time.sleep(2.0)
+
+        # Assert
+        assert self.clock.timer_names == [name]
+        assert isinstance(self.handler[0], TimeEvent)
+
+    def test_set_timer(self):
+        # Arrange
+        name = "TEST_TIMER"
+        interval = timedelta(milliseconds=100)
+        start_time = self.clock.utc_now() + interval
+
+        # Act
+        self.clock.set_timer(
+            name=name,
+            interval=interval,
+            start_time=start_time,
+            stop_time=None,
+        )
+
+        time.sleep(2.0)
+
+        # Assert
+        assert self.clock.timer_names == [name]
+        assert len(self.handler) > 0
+        assert isinstance(self.handler[0], TimeEvent)
+
+    def test_set_timer_with_stop_time(self):
+        # Arrange
+        name = "TEST_TIMER"
+        interval = timedelta(milliseconds=100)
+        start_time = self.clock.utc_now()
+        stop_time = start_time + interval
+
+        # Act
+        self.clock.set_timer(
+            name=name,
+            interval=interval,
+            start_time=start_time,
+            stop_time=stop_time,
+        )
+
+        time.sleep(2.0)
+
+        # Assert
+        assert self.clock.timer_count == 0
+        assert len(self.handler) > 0
+        assert isinstance(self.handler[0], TimeEvent)
+
+    def test_cancel_timer(self):
+        # Arrange
+        name = "TEST_TIMER"
+        interval = timedelta(milliseconds=100)
+
+        self.clock.set_timer(name=name, interval=interval)
+
+        # Act
+        time.sleep(0.3)
+        self.clock.cancel_timer(name)
+        time.sleep(0.3)
+
+        # Assert
+        assert self.clock.timer_count == 0
+        assert len(self.handler) <= 4
+
+    def test_set_repeating_timer(self):
+        # Arrange
+        name = "TEST_TIMER"
+        interval = timedelta(milliseconds=100)
+        start_time = self.clock.utc_now()
+
+        # Act
+        self.clock.set_timer(
+            name=name,
+            interval=interval,
+            start_time=start_time,
+            stop_time=None,
+        )
+
+        time.sleep(2.0)
+
+        # Assert
+        assert len(self.handler) > 0
+        assert isinstance(self.handler[0], TimeEvent)
+
+    def test_cancel_repeating_timer(self):
+        # Arrange
+        name = "TEST_TIMER"
+        interval = timedelta(milliseconds=100)
+        start_time = self.clock.utc_now()
+        stop_time = start_time + timedelta(seconds=5)
+
+        self.clock.set_timer(
+            name=name,
+            interval=interval,
+            start_time=start_time,
+            stop_time=stop_time,
+        )
+
+        # Act
+        time.sleep(0.3)
+        self.clock.cancel_timer(name)
+        time.sleep(0.5)
+
+        # Assert
+        assert len(self.handler) <= 6
+
+    def test_set_two_repeating_timers(self):
+        # Arrange
+        interval = timedelta(milliseconds=100)
+        start_time = self.clock.utc_now() + timedelta(milliseconds=100)
+
+        # Act
+        self.clock.set_timer(
+            name="TEST_TIMER1",
+            interval=interval,
+            start_time=start_time,
+            stop_time=None,
+        )
+
+        self.clock.set_timer(
+            name="TEST_TIMER2",
+            interval=interval,
+            start_time=start_time,
+            stop_time=None,
+        )
+
+        time.sleep(1.0)
+
+        # Assert
+        assert len(self.handler) >= 2
