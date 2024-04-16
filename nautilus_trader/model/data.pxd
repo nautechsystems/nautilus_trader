@@ -242,9 +242,9 @@ cdef class OrderBookDelta(Data):
     @staticmethod
     cdef OrderBookDelta clear_c(
         InstrumentId instrument_id,
+        uint64_t sequence,
         uint64_t ts_event,
         uint64_t ts_init,
-        uint64_t sequence=*,
     )
 
     @staticmethod

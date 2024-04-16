@@ -57,7 +57,7 @@ impl OrderBook {
     #[getter]
     #[pyo3(name = "book_type")]
     fn py_book_type(&self) -> BookType {
-        BookType::L3_MBO
+        self.book_type
     }
 
     #[getter]
@@ -95,39 +95,39 @@ impl OrderBook {
         self.reset();
     }
 
-    #[pyo3(signature = (order, ts_event, flags=0, sequence=0))]
+    #[pyo3(signature = (order, flags, sequence, ts_event))]
     #[pyo3(name = "add")]
-    fn py_add(&mut self, order: BookOrder, ts_event: u64, flags: u8, sequence: u64) {
+    fn py_add(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: u64) {
         self.add(order, flags, sequence, ts_event.into());
     }
 
-    #[pyo3(signature = (order, ts_event, flags=0, sequence=0))]
+    #[pyo3(signature = (order, flags, sequence, ts_event))]
     #[pyo3(name = "update")]
-    fn py_update(&mut self, order: BookOrder, ts_event: u64, flags: u8, sequence: u64) {
+    fn py_update(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: u64) {
         self.update(order, flags, sequence, ts_event.into());
     }
 
-    #[pyo3(signature = (order, ts_event, flags=0, sequence=0))]
+    #[pyo3(signature = (order, flags, sequence, ts_event))]
     #[pyo3(name = "delete")]
-    fn py_delete(&mut self, order: BookOrder, ts_event: u64, flags: u8, sequence: u64) {
+    fn py_delete(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: u64) {
         self.delete(order, flags, sequence, ts_event.into());
     }
 
-    #[pyo3(signature = (ts_event, sequence=0))]
+    #[pyo3(signature = (sequence, ts_event))]
     #[pyo3(name = "clear")]
-    fn py_clear(&mut self, ts_event: u64, sequence: u64) {
+    fn py_clear(&mut self, sequence: u64, ts_event: u64) {
         self.clear(sequence, ts_event.into());
     }
 
-    #[pyo3(signature = (ts_event, sequence=0))]
+    #[pyo3(signature = (sequence, ts_event))]
     #[pyo3(name = "clear_bids")]
-    fn py_clear_bids(&mut self, ts_event: u64, sequence: u64) {
+    fn py_clear_bids(&mut self, sequence: u64, ts_event: u64) {
         self.clear_bids(sequence, ts_event.into());
     }
 
-    #[pyo3(signature = (ts_event, sequence=0))]
+    #[pyo3(signature = (sequence, ts_event))]
     #[pyo3(name = "clear_asks")]
-    fn py_clear_asks(&mut self, ts_event: u64, sequence: u64) {
+    fn py_clear_asks(&mut self, sequence: u64, ts_event: u64) {
         self.clear_asks(sequence, ts_event.into());
     }
 

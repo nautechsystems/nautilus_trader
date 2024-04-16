@@ -446,6 +446,7 @@ class TestOrderBook:
                 Quantity(672.45, 2),
                 0,  # "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
             ),
+            flags=0,
             sequence=1,
             ts_event=0,
             ts_init=0,
@@ -470,6 +471,7 @@ class TestOrderBook:
                 Quantity(672.45, 2),
                 0,
             ),
+            flags=0,
             sequence=1,
             ts_event=0,
             ts_init=0,
@@ -494,6 +496,7 @@ class TestOrderBook:
                 Quantity(672.45, 2),
                 0,  # "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
             ),
+            flags=0,
             sequence=1,
             ts_event=pd.Timestamp.utcnow().timestamp() * 1e9,
             ts_init=pd.Timestamp.utcnow().timestamp() * 1e9,
@@ -640,6 +643,8 @@ class TestOrderBook:
             return TestDataStubs.order_book_delta(
                 instrument_id=instrument_id,
                 order=order,
+                flags=0,
+                sequence=0,
                 ts_init=ts,
                 ts_event=ts,
             )

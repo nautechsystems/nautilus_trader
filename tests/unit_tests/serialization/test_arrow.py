@@ -133,6 +133,8 @@ class TestArrowSerializer:
             instrument_id=TestIdStubs.audusd_id(),
             action=BookAction.CLEAR,
             order=None,
+            flags=0,
+            sequence=0,
             ts_event=0,
             ts_init=0,
         )

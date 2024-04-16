@@ -44,6 +44,8 @@ class TestBetfairPersistence:
                 side=OrderSide.BUY,
                 order_id=1,
             ),
+            flags=0,
+            sequence=0,
             ts_event=1635313844283000000,
             ts_init=1635313844283000000,
         )

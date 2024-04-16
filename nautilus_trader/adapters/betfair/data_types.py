@@ -72,6 +72,8 @@ class BSPOrderBookDelta(OrderBookDelta):
                 instrument_id=instrument_id,
                 action=action,
                 order=book_order,
+                flags=0,
+                sequence=0,
                 ts_event=batch["ts_event"].to_pylist()[idx],
                 ts_init=batch["ts_init"].to_pylist()[idx],
             )

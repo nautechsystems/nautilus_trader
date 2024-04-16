@@ -1618,14 +1618,16 @@ cdef class OrderBookDelta(Data):
         The order book delta action.
     order : BookOrder, optional with no default so ``None`` must be passed explicitly
         The book order for the delta.
+    flags : uint8_t
+        The record flags bit field, indicating packet end and data information.
+        A value of zero indicates no flags.
+    sequence : uint64_t
+        The unique sequence number for the update.
+        If no sequence number provided in the source data then use a value of zero.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
-    flags : uint8_t, default 0 (no flags)
-        The record flags bit field, indicating packet end and data information.
-    sequence : uint64_t, default 0
-        The unique sequence number for the update.
 
     """
 
@@ -1634,10 +1636,10 @@ cdef class OrderBookDelta(Data):
         InstrumentId instrument_id not None,
         BookAction action,
         BookOrder order: BookOrder | None,
+        uint8_t flags,
+        uint64_t sequence,
         uint64_t ts_event,
         uint64_t ts_init,
-        uint8_t flags=0,
-        uint64_t sequence=0,
     ) -> None:
         # Placeholder for now
         cdef BookOrder_t book_order = order._mem if order is not None else book_order_from_raw(
@@ -1932,17 +1934,18 @@ cdef class OrderBookDelta(Data):
     @staticmethod
     cdef OrderBookDelta clear_c(
         InstrumentId instrument_id,
+        uint64_t sequence,
         uint64_t ts_event,
         uint64_t ts_init,
-        uint64_t sequence=0,
     ):
         return OrderBookDelta(
             instrument_id=instrument_id,
             action=BookAction.CLEAR,
             order=None,
+            flags=0,
+            sequence=sequence,
             ts_event=ts_event,
             ts_init=ts_init,
-            sequence=sequence,
         )
 
     @staticmethod
@@ -2025,8 +2028,10 @@ cdef class OrderBookDelta(Data):
             The order ID.
         flags : uint8_t
             The record flags bit field, indicating packet end and data information.
+            A value of zero indicates no flags.
         sequence : uint64_t
             The unique sequence number for the update.
+            If no sequence number provided in the source data then use a value of zero.
         ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the tick event occurred.
         ts_init : uint64_t
@@ -2082,7 +2087,7 @@ cdef class OrderBookDelta(Data):
         return OrderBookDelta.to_dict_c(obj)
 
     @staticmethod
-    def clear(InstrumentId instrument_id, uint64_t ts_event, uint64_t ts_init, uint64_t sequence=0):
+    def clear(InstrumentId instrument_id, uint64_t sequence, uint64_t ts_event, uint64_t ts_init):
         """
         Return an order book delta which acts as an initial ``CLEAR``.
 
@@ -2091,7 +2096,7 @@ cdef class OrderBookDelta(Data):
         OrderBookDelta
 
         """
-        return OrderBookDelta.clear_c(instrument_id, ts_event, ts_init, sequence)
+        return OrderBookDelta.clear_c(instrument_id, sequence, ts_event, ts_init)
 
     @staticmethod
     def to_pyo3_list(list[OrderBookDelta] deltas) -> list[nautilus_pyo3.OrderBookDelta]:
@@ -2477,8 +2482,10 @@ cdef class OrderBookDepth10(Data):
         The count of ask orders per level for the update. Can be zeros if data not available.
     flags : uint8_t
         The record flags bit field, indicating packet end and data information.
+        A value of zero indicates no flags.
     sequence : uint64_t
         The unique sequence number for the update.
+        If no sequence number provided in the source data then use a value of zero.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the tick event occurred.
     ts_init : uint64_t
