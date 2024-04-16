@@ -121,6 +121,10 @@ class TestDataStubs:
         return BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
 
     @staticmethod
+    def bar_spec_5min_bid() -> BarSpecification:
+        return BarSpecification(5, BarAggregation.MINUTE, PriceType.BID)
+
+    @staticmethod
     def bar_spec_1min_ask() -> BarSpecification:
         return BarSpecification(1, BarAggregation.MINUTE, PriceType.ASK)
 
@@ -143,6 +147,10 @@ class TestDataStubs:
     @staticmethod
     def bartype_audusd_1min_bid() -> BarType:
         return BarType(TestIdStubs.audusd_id(), TestDataStubs.bar_spec_1min_bid())
+
+    @staticmethod
+    def bartype_audusd_5min_bid() -> BarType:
+        return BarType(TestIdStubs.audusd_id(), TestDataStubs.bar_spec_5min_bid())
 
     @staticmethod
     def bartype_audusd_1min_ask() -> BarType:
@@ -184,6 +192,19 @@ class TestDataStubs:
             high=Price.from_str("1.00004"),
             low=Price.from_str("1.00001"),
             close=Price.from_str("1.00003"),
+            volume=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def bar_5decimal_5min_bid() -> Bar:
+        return Bar(
+            bar_type=TestDataStubs.bartype_audusd_5min_bid(),
+            open=Price.from_str("1.00101"),
+            high=Price.from_str("1.00208"),
+            low=Price.from_str("1.00100"),
+            close=Price.from_str("1.00205"),
             volume=Quantity.from_int(1_000_000),
             ts_event=0,
             ts_init=0,
