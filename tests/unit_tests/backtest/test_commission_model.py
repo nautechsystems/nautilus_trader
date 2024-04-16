@@ -23,8 +23,8 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
-from nautilus_trader.model.orders import Order
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 
 
@@ -36,31 +36,20 @@ def instrument() -> Instrument:
     return TestInstrumentProvider.default_fx_ccy("EUR/USD")
 
 
-@pytest.fixture()
-def buy_order(instrument: Instrument) -> Order:
-    return TestExecStubs.make_filled_order(
-        instrument=instrument,
-        order_side=OrderSide.BUY,
-    )
-
-
-@pytest.fixture()
-def sell_order(instrument: Instrument) -> Order:
-    return TestExecStubs.make_filled_order(
-        instrument=instrument,
-        order_side=OrderSide.SELL,
-    )
-
-
-def test_fixed_commission(buy_order, instrument):
+@pytest.mark.parametrize("order_side", [OrderSide.BUY, OrderSide.SELL])
+def test_fixed_commission_single_fill(instrument, order_side):
     # Arrange
     expected = Money(1, USD)
     fee_model = FixedFeeModel(expected)
+    order = TestExecStubs.make_accepted_order(
+        instrument=instrument,
+        order_side=order_side,
+    )
 
     # Act
     commission = fee_model.get_commission(
-        buy_order,
-        buy_order.quantity,
+        order,
+        instrument.make_qty(10),
         Price.from_str("1.1234"),
         instrument,
     )
@@ -69,16 +58,67 @@ def test_fixed_commission(buy_order, instrument):
     assert commission == expected
 
 
-def test_instrument_percent_commission_maker(instrument, buy_order):
+@pytest.mark.parametrize(
+    "order_side, charge_commission_once, expected_first_fill, expected_next_fill",
+    [
+        [OrderSide.BUY, True, Money(1, USD), Money(0, USD)],
+        [OrderSide.SELL, True, Money(1, USD), Money(0, USD)],
+        [OrderSide.BUY, False, Money(1, USD), Money(1, USD)],
+        [OrderSide.SELL, False, Money(1, USD), Money(1, USD)],
+    ],
+)
+def test_fixed_commission_multiple_fills(
+    instrument,
+    order_side,
+    charge_commission_once,
+    expected_first_fill,
+    expected_next_fill,
+):
+    # Arrange
+    fee_model = FixedFeeModel(
+        commission=expected_first_fill,
+        charge_commission_once=charge_commission_once,
+    )
+    order = TestExecStubs.make_accepted_order(
+        instrument=instrument,
+        order_side=order_side,
+    )
+
+    # Act
+    commission_first_fill = fee_model.get_commission(
+        order,
+        instrument.make_qty(10),
+        Price.from_str("1.1234"),
+        instrument,
+    )
+    fill = TestEventStubs.order_filled(order=order, instrument=instrument)
+    order.apply(fill)
+    commission_next_fill = fee_model.get_commission(
+        order,
+        instrument.make_qty(10),
+        Price.from_str("1.1234"),
+        instrument,
+    )
+
+    # Assert
+    assert commission_first_fill == expected_first_fill
+    assert commission_next_fill == expected_next_fill
+
+
+def test_instrument_percent_commission_maker(instrument):
     # Arrange
     fee_model = MakerTakerFeeModel()
-    expected = buy_order.quantity * buy_order.price * instrument.maker_fee
+    order = TestExecStubs.make_filled_order(
+        instrument=instrument,
+        order_side=OrderSide.SELL,
+    )
+    expected = order.quantity * order.price * instrument.maker_fee
 
     # Act
     commission = fee_model.get_commission(
-        buy_order,
-        buy_order.quantity,
-        buy_order.price,
+        order,
+        order.quantity,
+        order.price,
         instrument,
     )
 
@@ -87,16 +127,20 @@ def test_instrument_percent_commission_maker(instrument, buy_order):
     assert commission.as_decimal() == expected
 
 
-def test_instrument_percent_commission_taker(instrument, sell_order):
+def test_instrument_percent_commission_taker(instrument):
     # Arrange
     fee_model = MakerTakerFeeModel()
-    expected = sell_order.quantity * sell_order.price * instrument.taker_fee
+    order = TestExecStubs.make_filled_order(
+        instrument=instrument,
+        order_side=OrderSide.SELL,
+    )
+    expected = order.quantity * order.price * instrument.taker_fee
 
     # Act
     commission = fee_model.get_commission(
-        sell_order,
-        sell_order.quantity,
-        sell_order.price,
+        order,
+        order.quantity,
+        order.price,
         instrument,
     )
 
