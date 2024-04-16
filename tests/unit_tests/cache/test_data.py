@@ -17,6 +17,7 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.core.rust.model import AggregationSource
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
@@ -386,6 +387,70 @@ class TestCache:
 
         # Assert
         assert result == expected
+
+    @pytest.mark.parametrize(
+        ("price_type", "expected"),
+        [[PriceType.BID, Price.from_str("1.00003")], [PriceType.LAST, None]],
+    )
+    def test_price_returned_with_external_bars(self, price_type, expected):
+        # Arrange
+        self.cache.add_bar(TestDataStubs.bar_5decimal())
+        self.cache.add_bar(TestDataStubs.bar_5decimal_5min_bid())
+        self.cache.add_bar(TestDataStubs.bar_3decimal())
+
+        # Act
+        result = self.cache.price(AUDUSD_SIM.id, price_type)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        ("instrument_id", "price_type", "aggregation_source", "expected"),
+        [
+            [
+                AUDUSD_SIM.id,
+                PriceType.BID,
+                AggregationSource.EXTERNAL,
+                [TestDataStubs.bartype_audusd_1min_bid(), TestDataStubs.bartype_audusd_5min_bid()],
+            ],
+            [AUDUSD_SIM.id, PriceType.BID, AggregationSource.INTERNAL, []],
+            [AUDUSD_SIM.id, PriceType.ASK, AggregationSource.EXTERNAL, []],
+            [ETHUSDT_BINANCE.id, PriceType.BID, AggregationSource.EXTERNAL, []],
+        ],
+    )
+    def test_retrieved_bar_types_match_expected(
+        self,
+        instrument_id,
+        price_type,
+        aggregation_source,
+        expected,
+    ):
+        # Arrange
+        self.cache.add_bar(TestDataStubs.bar_5decimal())
+        self.cache.add_bar(TestDataStubs.bar_5decimal_5min_bid())
+        self.cache.add_bar(TestDataStubs.bar_3decimal())
+
+        # Act
+        result = self.cache.bar_types(
+            instrument_id=instrument_id,
+            price_type=price_type,
+            aggregation_source=aggregation_source,
+        )
+
+        # Assert
+        assert result == expected
+
+    def test_retrieved_all_bar_types_match_expected(self):
+        # Arrange
+        self.cache.add_bar(TestDataStubs.bar_5decimal())
+        self.cache.add_bar(TestDataStubs.bar_5decimal_5min_bid())
+        self.cache.add_bar(TestDataStubs.bar_3decimal())
+
+        # Act
+        result = self.cache.bar_types()
+
+        # Assert
+        assert len(result) == 3
 
     def test_quote_tick_when_index_out_of_range_returns_none(self):
         # Arrange
