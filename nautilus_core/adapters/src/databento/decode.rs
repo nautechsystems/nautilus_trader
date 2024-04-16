@@ -294,7 +294,7 @@ pub fn decode_options_contract_v1(
     let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
     let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
-    let asset_class_opt = match instrument_id.venue.value.as_str() {
+    let asset_class_opt = match instrument_id.venue.as_str() {
         "OPRA" => Some(AssetClass::Equity),
         _ => {
             let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
@@ -338,7 +338,7 @@ pub fn decode_options_spread_v1(
     let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
     let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
-    let asset_class_opt = match instrument_id.venue.value.as_str() {
+    let asset_class_opt = match instrument_id.venue.as_str() {
         "OPRA" => Some(AssetClass::Equity),
         _ => {
             let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
@@ -632,7 +632,7 @@ pub fn decode_ohlcv_msg(
 
     // Adjust raw prices by a display factor
     let mut display_factor = 1;
-    if instrument_id.venue.value == "GLBX" {
+    if instrument_id.venue.as_str() == "GLBX" {
         display_factor = 100;
     };
 
@@ -890,7 +890,7 @@ pub fn decode_options_contract(
     let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
     let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
-    let asset_class_opt = match instrument_id.venue.value.as_str() {
+    let asset_class_opt = match instrument_id.venue.as_str() {
         "OPRA" => Some(AssetClass::Equity),
         _ => {
             let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
@@ -933,7 +933,7 @@ pub fn decode_options_spread(
 ) -> anyhow::Result<OptionsSpread> {
     let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
-    let asset_class_opt = match instrument_id.venue.value.as_str() {
+    let asset_class_opt = match instrument_id.venue.as_str() {
         "OPRA" => Some(AssetClass::Equity),
         _ => {
             let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;

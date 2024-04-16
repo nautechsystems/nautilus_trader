@@ -32,25 +32,40 @@ pub const SYNTHETIC_VENUE: &str = "SYNTH";
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-pub struct Venue {
-    /// The venue ID value.
-    pub value: Ustr,
-}
+pub struct Venue(Ustr);
 
 impl Venue {
+    /// Creates a new `Venue` from the given identifier value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value is not a valid string.
     pub fn new(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
 
-        Ok(Self {
-            value: Ustr::from(value),
-        })
+        Ok(Self(Ustr::from(value)))
+    }
+
+    /// Sets the inner identifier value.
+    pub(crate) fn set_inner(&mut self, value: &str) {
+        self.0 = Ustr::from(value);
+    }
+
+    /// Returns the inner identifier value.
+    #[must_use]
+    pub fn inner(&self) -> Ustr {
+        self.0
+    }
+
+    /// Returns the inner value as a string slice.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
     }
 
     #[must_use]
     pub fn from_str_unchecked(s: &str) -> Self {
-        Self {
-            value: Ustr::from(s),
-        }
+        Self(Ustr::from(s))
     }
 
     pub fn from_code(code: &str) -> anyhow::Result<Self> {
@@ -71,27 +86,26 @@ impl Venue {
 
     #[must_use]
     pub fn is_synthetic(&self) -> bool {
-        self.value.as_str() == SYNTHETIC_VENUE
+        self.0.as_str() == SYNTHETIC_VENUE
     }
 }
 
 impl Default for Venue {
     fn default() -> Self {
-        Self {
-            value: Ustr::from("SIM"),
-        }
+        // SAFETY: Default value is safe
+        Self::new("SIM").unwrap()
     }
 }
 
 impl Debug for Venue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value)
+        write!(f, "{:?}", self.0)
     }
 }
 
 impl Display for Venue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        write!(f, "{}", self.0)
     }
 }
 
@@ -112,7 +126,7 @@ mod tests {
 
     #[rstest]
     fn test_string_reprs(venue_binance: Venue) {
-        assert_eq!(venue_binance.to_string(), "BINANCE");
+        assert_eq!(venue_binance.as_str(), "BINANCE");
         assert_eq!(format!("{venue_binance}"), "BINANCE");
     }
 }

@@ -45,6 +45,11 @@ pub struct TradeId {
 }
 
 impl TradeId {
+    /// Creates a new `TradeId` from the given identifier value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value is not a valid string, or value length is greater than 36.
     pub fn new(value: &str) -> anyhow::Result<Self> {
         let cstr = CString::new(value).expect("`CString` conversion failed");
         Self::from_cstr(cstr)

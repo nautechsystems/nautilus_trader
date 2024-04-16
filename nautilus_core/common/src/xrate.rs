@@ -77,7 +77,7 @@ pub fn get_exchange_rate(
 
     // Build quote table
     for (symbol, quote) in calculation_quotes.iter() {
-        let pieces: Vec<&str> = symbol.value.as_str().split('/').collect();
+        let pieces: Vec<&str> = symbol.as_str().split('/').collect();
         let code_lhs = Ustr::from(pieces[0]);
         let code_rhs = Ustr::from(pieces[1]);
 

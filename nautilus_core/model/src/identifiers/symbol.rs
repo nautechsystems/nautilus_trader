@@ -28,45 +28,65 @@ use ustr::Ustr;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-pub struct Symbol {
-    /// The ticker symbol ID value.
-    pub value: Ustr,
-}
+pub struct Symbol(Ustr);
 
 impl Symbol {
+    /// Creates a new `Symbol` from the given identifier value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value is not a valid string.
     pub fn new(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
 
-        Ok(Self {
-            value: Ustr::from(value),
-        })
+        Ok(Self(Ustr::from(value)))
+    }
+
+    /// Sets the inner identifier value.
+    pub(crate) fn set_inner(&mut self, value: &str) {
+        self.0 = Ustr::from(value);
     }
 
     #[must_use]
     pub fn from_str_unchecked(s: &str) -> Self {
-        Self {
-            value: Ustr::from(s),
-        }
+        Self(Ustr::from(s))
+    }
+
+    /// Returns the inner identifier value.
+    #[must_use]
+    pub fn inner(&self) -> Ustr {
+        self.0
+    }
+
+    /// Returns the inner identifier value as a string slice.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
     }
 }
 
 impl Default for Symbol {
     fn default() -> Self {
-        Self {
-            value: Ustr::from("AUD/USD"),
-        }
+        // SAFETY: Default value is safe
+        Self::new("AUD/USD").unwrap()
     }
 }
 
 impl Debug for Symbol {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value)
+        write!(f, "{:?}", self.0)
     }
 }
 
 impl Display for Symbol {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<Ustr> for Symbol {
+    fn from(input: Ustr) -> Self {
+        Self(input)
     }
 }
 
@@ -87,7 +107,7 @@ mod tests {
 
     #[rstest]
     fn test_string_reprs(symbol_eth_perp: Symbol) {
-        assert_eq!(symbol_eth_perp.to_string(), "ETH-PERP");
+        assert_eq!(symbol_eth_perp.as_str(), "ETH-PERP");
         assert_eq!(format!("{symbol_eth_perp}"), "ETH-PERP");
     }
 }

@@ -165,7 +165,7 @@ impl DatabentoDataLoader {
                         raw_ptr_to_ustr(rec.raw_symbol.as_ptr())
                             .expect("Error obtaining `raw_symbol` pointer")
                     };
-                    let symbol = Symbol { value: raw_symbol };
+                    let symbol = Symbol::from(raw_symbol);
 
                     let venue = self
                         .publisher_venue_map

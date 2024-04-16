@@ -249,7 +249,7 @@ fn get_stream_name(
     }
 
     if let Some(json!(true)) = config.get("use_trader_id") {
-        stream_name.push_str(trader_id.value.as_str());
+        stream_name.push_str(trader_id.as_str());
         stream_name.push(DELIMITER);
     }
 

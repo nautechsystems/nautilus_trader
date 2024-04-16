@@ -37,59 +37,74 @@ const EXTERNAL_STRATEGY_ID: &str = "EXTERNAL";
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
-pub struct StrategyId {
-    /// The strategy ID value.
-    pub value: Ustr,
-}
+pub struct StrategyId(Ustr);
 
 impl StrategyId {
+    /// Creates a new `StrategyId` from the given identifier value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value is not a valid string, or does not contain a hyphen '-' separator.
     pub fn new(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
         if value != EXTERNAL_STRATEGY_ID {
             check_string_contains(value, "-", stringify!(value))?;
         }
 
-        Ok(Self {
-            value: Ustr::from(value),
-        })
+        Ok(Self(Ustr::from(value)))
+    }
+
+    /// Sets the inner identifier value.
+    pub(crate) fn set_inner(&mut self, value: &str) {
+        self.0 = Ustr::from(value);
+    }
+
+    /// Returns the inner identifier value.
+    #[must_use]
+    pub fn inner(&self) -> Ustr {
+        self.0
+    }
+
+    /// Returns the inner identifier value as a string slice.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
     }
 
     #[must_use]
     pub fn external() -> Self {
-        Self {
-            value: Ustr::from(EXTERNAL_STRATEGY_ID),
-        }
+        // SAFETY:: Constant value is safe
+        Self::new(EXTERNAL_STRATEGY_ID).unwrap()
     }
 
     #[must_use]
     pub fn is_external(&self) -> bool {
-        self.value == EXTERNAL_STRATEGY_ID
+        self.0 == EXTERNAL_STRATEGY_ID
     }
 
     #[must_use]
     pub fn get_tag(&self) -> &str {
         // SAFETY: Unwrap safe as value previously validated
-        self.value.split('-').last().unwrap()
+        self.0.split('-').last().unwrap()
     }
 }
 
 impl Default for StrategyId {
     fn default() -> Self {
-        Self {
-            value: Ustr::from("S-001"),
-        }
+        // SAFETY: Default value is safe
+        Self::new("S-001").unwrap()
     }
 }
 
 impl Debug for StrategyId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value)
+        write!(f, "{:?}", self.0)
     }
 }
 
 impl Display for StrategyId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        write!(f, "{}", self.0)
     }
 }
 
@@ -111,13 +126,13 @@ mod tests {
 
     #[rstest]
     fn test_string_reprs(strategy_id_ema_cross: StrategyId) {
-        assert_eq!(strategy_id_ema_cross.to_string(), "EMACross-001");
+        assert_eq!(strategy_id_ema_cross.as_str(), "EMACross-001");
         assert_eq!(format!("{strategy_id_ema_cross}"), "EMACross-001");
     }
 
     #[rstest]
     fn test_get_external() {
-        assert_eq!(StrategyId::external().value, "EXTERNAL");
+        assert_eq!(StrategyId::external().as_str(), "EXTERNAL");
     }
 
     #[rstest]
