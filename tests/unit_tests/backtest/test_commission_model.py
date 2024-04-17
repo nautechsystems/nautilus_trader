@@ -15,7 +15,6 @@
 
 import pytest
 
-# fmt: off
 from nautilus_trader.backtest.models import FixedFeeModel
 from nautilus_trader.backtest.models import MakerTakerFeeModel
 from nautilus_trader.model.currencies import USD
@@ -26,9 +25,6 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
-
-
-# fmt: on
 
 
 @pytest.fixture()
