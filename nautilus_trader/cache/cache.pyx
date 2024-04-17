@@ -21,6 +21,7 @@ from collections import deque
 from decimal import Decimal
 
 from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.core.rust.model import PriceType as PriceType_py
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
@@ -33,15 +34,12 @@ from nautilus_trader.cache.facade cimport CacheDatabaseFacade
 from nautilus_trader.common.component cimport LogColor
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceType
-
-from nautilus_trader.core.rust.model import PriceType as PriceType_py
-
-from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.model.data cimport Bar
@@ -2475,9 +2473,11 @@ cdef class Cache(CacheFacade):
             The price type to filter the BarType objects. If None, no filtering is done based on price type.
         aggregation_source : AggregationSource, default AggregationSource.EXTERNAL
             The aggregation source to filter the BarType objects.
+
         Returns
         -------
         list[BarType]
+
         """
         Condition.type_or_none(instrument_id, InstrumentId, "instrument_id")
         Condition.type_or_none(price_type, PriceType_py, "price_type")
