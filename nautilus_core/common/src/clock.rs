@@ -13,13 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, ops::Deref};
+use std::{collections::HashMap, ops::Deref, sync::atomic::Ordering};
 
 use nautilus_core::{
     correctness::{check_positive_u64, check_predicate_true, check_valid_string},
     nanos::UnixNanos,
     time::{get_atomic_clock_realtime, AtomicTime},
 };
+use tracing::error;
 use ustr::Ustr;
 
 use crate::{
@@ -298,7 +299,7 @@ impl Clock for LiveClock {
     fn timer_names(&self) -> Vec<&str> {
         self.timers
             .iter()
-            .filter(|(_, timer)| !timer.is_expired)
+            .filter(|(_, timer)| !timer.is_expired.load(Ordering::SeqCst))
             .map(|(k, _)| k.as_str())
             .collect()
     }
@@ -306,7 +307,7 @@ impl Clock for LiveClock {
     fn timer_count(&self) -> usize {
         self.timers
             .iter()
-            .filter(|(_, timer)| !timer.is_expired)
+            .filter(|(_, timer)| !timer.is_expired.load(Ordering::SeqCst))
             .count()
     }
 
@@ -323,7 +324,7 @@ impl Clock for LiveClock {
         check_valid_string(name, stringify!(name)).unwrap();
         assert!(
             callback.is_some() | self.default_callback.is_some(),
-            "All Python callbacks were `None`"
+            "No callbacks provided",
         );
 
         let callback = match callback {
@@ -333,13 +334,9 @@ impl Clock for LiveClock {
 
         let ts_now = self.get_time_ns();
         alert_time_ns = std::cmp::max(alert_time_ns, ts_now);
-        let mut timer = LiveTimer::new(
-            name,
-            (alert_time_ns - ts_now).into(),
-            ts_now,
-            Some(alert_time_ns),
-            callback,
-        )?;
+        let interval_ns = (alert_time_ns - ts_now).into();
+        let mut timer = LiveTimer::new(name, interval_ns, ts_now, Some(alert_time_ns), callback)?;
+
         timer.start();
         self.timers.insert(Ustr::from(name), timer);
         Ok(())
@@ -357,7 +354,7 @@ impl Clock for LiveClock {
         check_positive_u64(interval_ns, stringify!(interval_ns))?;
         check_predicate_true(
             callback.is_some() | self.default_callback.is_some(),
-            "All Python callbacks were `None`",
+            "No callbacks provided",
         )?;
 
         let callback = match callback {
@@ -383,15 +380,21 @@ impl Clock for LiveClock {
         let timer = self.timers.remove(&Ustr::from(name));
         match timer {
             None => {}
-            Some(mut timer) => timer.cancel(),
+            Some(mut timer) => {
+                if let Err(e) = timer.cancel() {
+                    error!("Error on timer cancel: {:?}", e);
+                }
+            }
         }
     }
 
     fn cancel_timers(&mut self) {
         for timer in &mut self.timers.values_mut() {
-            timer.cancel();
+            if let Err(e) = timer.cancel() {
+                error!("Error on timer cancel: {:?}", e);
+            }
         }
-        self.timers = HashMap::new();
+        self.timers.clear();
     }
 }
 

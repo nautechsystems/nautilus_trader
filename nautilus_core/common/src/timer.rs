@@ -17,6 +17,10 @@ use std::{
     cmp::Ordering,
     ffi::c_char,
     fmt::{Display, Formatter},
+    sync::{
+        atomic::{self, AtomicBool},
+        Arc,
+    },
 };
 
 use nautilus_core::{
@@ -27,7 +31,10 @@ use nautilus_core::{
 };
 #[cfg(feature = "python")]
 use pyo3::{types::PyCapsule, IntoPy, PyObject, Python};
-use tokio::{sync::oneshot, time::Duration};
+use tokio::{
+    sync::oneshot,
+    time::{Duration, Instant},
+};
 use tracing::error;
 use ustr::Ustr;
 
@@ -218,7 +225,7 @@ pub struct LiveTimer {
     pub start_time_ns: UnixNanos,
     pub stop_time_ns: Option<UnixNanos>,
     pub next_time_ns: UnixNanos,
-    pub is_expired: bool,
+    pub is_expired: Arc<AtomicBool>,
     callback: EventHandler,
     canceler: Option<oneshot::Sender<()>>,
 }
@@ -240,7 +247,7 @@ impl LiveTimer {
             start_time_ns,
             stop_time_ns,
             next_time_ns: start_time_ns + interval_ns,
-            is_expired: false,
+            is_expired: Arc::new(AtomicBool::new(false)),
             callback,
             canceler: None,
         })
@@ -248,27 +255,35 @@ impl LiveTimer {
 
     pub fn start(&mut self) {
         let event_name = self.name;
-        let mut start_time_ns = self.start_time_ns;
+        let start_time_ns = self.start_time_ns;
         let stop_time_ns = self.stop_time_ns;
         let interval_ns = self.interval_ns;
+        let is_expired = self.is_expired.clone();
         let callback = self.callback.clone();
 
         // Setup oneshot channel for cancelling timer task
         let (cancel_tx, mut cancel_rx) = oneshot::channel();
         self.canceler = Some(cancel_tx);
 
-        let clock = get_atomic_clock_realtime();
-        if start_time_ns == 0 {
-            start_time_ns = clock.get_time_ns();
-        }
-
-        let mut next_time_ns = start_time_ns + interval_ns;
-
         let rt = get_runtime();
         rt.spawn(async move {
+            let clock = get_atomic_clock_realtime();
+            let now_ns = clock.get_time_ns();
+            let start_instant = if start_time_ns <= now_ns {
+                Instant::now()
+            } else {
+                let delay_duration = Duration::from_nanos((start_time_ns - now_ns).into());
+                Instant::now() + delay_duration
+            };
+
+            let mut timer = tokio::time::interval_at(start_instant, Duration::from_millis(interval_ns));
+            let mut next_time_ns = start_time_ns + interval_ns;
+
             loop {
+                // SAFETY: `timer.tick` is cancellation safe, if the cancel branch completes
+                // first then no tick has been consumed (no event was ready).
                 tokio::select! {
-                    _ = tokio::time::sleep(Duration::from_nanos(next_time_ns.saturating_sub(clock.get_time_ns().as_u64()))) => {
+                    _ = timer.tick() => {
                         call_python_with_time_event(event_name, next_time_ns, clock.get_time_ns(), &callback);
 
                         // Prepare next time interval
@@ -287,17 +302,19 @@ impl LiveTimer {
                 }
             }
 
+            is_expired.store(true, atomic::Ordering::SeqCst);
+
             Ok::<(), anyhow::Error>(())
         });
-
-        self.is_expired = true;
     }
 
     /// Cancels the timer (the timer will not generate an event).
-    pub fn cancel(&mut self) {
+    pub fn cancel(&mut self) -> anyhow::Result<()> {
         if let Some(sender) = self.canceler.take() {
-            let _ = sender.send(());
+            // Send cancellation signal
+            sender.send(()).map_err(|e| anyhow::anyhow!("{:?}", e))?;
         }
+        Ok(())
     }
 }
 
