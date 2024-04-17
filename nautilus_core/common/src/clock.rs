@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, ops::Deref, sync::atomic::Ordering};
+use std::{collections::HashMap, ops::Deref};
 
 use nautilus_core::{
     correctness::{check_positive_u64, check_predicate_true, check_valid_string},
@@ -299,7 +299,7 @@ impl Clock for LiveClock {
     fn timer_names(&self) -> Vec<&str> {
         self.timers
             .iter()
-            .filter(|(_, timer)| !timer.is_expired.load(Ordering::SeqCst))
+            .filter(|(_, timer)| !timer.is_expired())
             .map(|(k, _)| k.as_str())
             .collect()
     }
@@ -307,7 +307,7 @@ impl Clock for LiveClock {
     fn timer_count(&self) -> usize {
         self.timers
             .iter()
-            .filter(|(_, timer)| !timer.is_expired.load(Ordering::SeqCst))
+            .filter(|(_, timer)| !timer.is_expired())
             .count()
     }
 
