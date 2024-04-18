@@ -70,7 +70,7 @@ config_node = TradingNodeConfig(
             use_position_ids=False,
         ),
     },
-    timeout_connection=20.0,
+    timeout_connection=30.0,
     timeout_reconciliation=10.0,
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,
