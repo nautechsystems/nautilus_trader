@@ -92,6 +92,11 @@ pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
     dt.to_rfc3339_opts(SecondsFormat::Nanos, true)
 }
 
+/// Floor the given UNIX nanoseconds to the nearest microsecond.
+pub fn floor_to_nearest_microsecond(unix_nanos: u64) -> u64 {
+    (unix_nanos / NANOSECONDS_IN_MICROSECOND) * NANOSECONDS_IN_MICROSECOND
+}
+
 pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> anyhow::Result<UnixNanos> {
     let date =
         NaiveDate::from_ymd_opt(year, month, day).ok_or_else(|| anyhow::anyhow!("Invalid date"))?;

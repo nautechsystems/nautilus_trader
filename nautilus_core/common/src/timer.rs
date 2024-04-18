@@ -25,6 +25,7 @@ use std::{
 
 use nautilus_core::{
     correctness::{check_positive_u64, check_valid_string},
+    datetime::floor_to_nearest_microsecond,
     nanos::{TimedeltaNanos, UnixNanos},
     time::get_atomic_clock_realtime,
     uuid::UUID4,
@@ -35,7 +36,7 @@ use tokio::{
     sync::oneshot,
     time::{Duration, Instant},
 };
-use tracing::error;
+use tracing::{debug, error, trace};
 use ustr::Ustr;
 
 use crate::{handlers::EventHandler, runtime::get_runtime};
@@ -241,6 +242,7 @@ impl LiveTimer {
         check_valid_string(name, stringify!(name))?;
         check_positive_u64(interval_ns, stringify!(interval_ns))?;
 
+        debug!("Creating timer '{}'", name);
         Ok(Self {
             name: Ustr::from(name),
             interval_ns,
@@ -259,11 +261,15 @@ impl LiveTimer {
 
     pub fn start(&mut self) {
         let event_name = self.name;
-        let start_time_ns = self.start_time_ns;
         let stop_time_ns = self.stop_time_ns;
+        let mut start_time_ns = self.start_time_ns;
+        let next_time_ns = self.next_time_ns;
         let interval_ns = self.interval_ns;
         let is_expired = self.is_expired.clone();
         let callback = self.callback.clone();
+
+        // Floor the next time to the nearest microsecond which is within the timers accuracy
+        let mut next_time_ns = UnixNanos::from(floor_to_nearest_microsecond(next_time_ns.into()));
 
         // Setup oneshot channel for cancelling timer task
         let (cancel_tx, mut cancel_rx) = oneshot::channel();
@@ -273,22 +279,38 @@ impl LiveTimer {
         rt.spawn(async move {
             let clock = get_atomic_clock_realtime();
             let now_ns = clock.get_time_ns();
-            let start_instant = if start_time_ns <= now_ns {
+
+            if start_time_ns == 0 {
+                // No start was specified so start immediately
+                start_time_ns = now_ns;
+            }
+
+            let start = if next_time_ns <= now_ns {
                 Instant::now()
             } else {
-                let delay_duration = Duration::from_nanos((start_time_ns - now_ns).into());
-                Instant::now() + delay_duration
+                // Timer initialization delay
+                let delay = Duration::from_millis(1);
+                let diff: u64 = (next_time_ns - now_ns).into();
+                Instant::now() + Duration::from_nanos(diff) - delay
             };
 
-            let mut timer = tokio::time::interval_at(start_instant, Duration::from_millis(interval_ns));
-            let mut next_time_ns = start_time_ns + interval_ns;
+            if let Some(stop_time_ns) = stop_time_ns {
+                assert!(stop_time_ns > now_ns, "stop_time was < now_ns");
+                assert!(
+                    start_time_ns + interval_ns <= stop_time_ns,
+                    "start_time + interval was > stop_time"
+                )
+            };
+
+            let mut timer = tokio::time::interval_at(start, Duration::from_nanos(interval_ns));
 
             loop {
                 // SAFETY: `timer.tick` is cancellation safe, if the cancel branch completes
                 // first then no tick has been consumed (no event was ready).
                 tokio::select! {
                     _ = timer.tick() => {
-                        call_python_with_time_event(event_name, next_time_ns, clock.get_time_ns(), &callback);
+                        let now_ns = clock.get_time_ns();
+                        call_python_with_time_event(event_name, next_time_ns, now_ns, &callback);
 
                         // Prepare next time interval
                         next_time_ns += interval_ns;
@@ -301,6 +323,7 @@ impl LiveTimer {
                         }
                     },
                     _ = (&mut cancel_rx) => {
+                        trace!("Received timer cancel");
                         break; // Timer canceled
                     },
                 }
@@ -314,6 +337,7 @@ impl LiveTimer {
 
     /// Cancels the timer (the timer will not generate an event).
     pub fn cancel(&mut self) -> anyhow::Result<()> {
+        debug!("Cancel timer '{}'", self.name);
         if let Some(sender) = self.canceler.take() {
             // Send cancellation signal
             sender.send(()).map_err(|e| anyhow::anyhow!("{:?}", e))?;

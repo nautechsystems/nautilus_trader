@@ -6,6 +6,7 @@ Released on TBD (UTC).
 - Implemented `FeeModel` including `FixedFeeModel` and `MakerTakerFeeModel` (#1584), thanks @rsmb7z
 - Implemented `TradeTickDataWrangler.process_bar_data` (#1585), thanks @rsmb7z
 - Implemented multiple timeframe bar execution (will use lowest timeframe per instrument)
+- Optimized `LiveTimer` efficiency and accuracy with `tokio` timer under the hood
 - Optimized `QuoteTickDataWrangler` and `TradeTickDataWrangler` (#1590), thanks @rsmb7z
 - Standardized adapter client logging (handle more logging from client base classes)
 - Simplified and consolidated Rust `OrderBook` design
