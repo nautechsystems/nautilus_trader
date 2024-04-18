@@ -771,14 +771,6 @@ cdef class LiveClock(Clock):
         if callback is not None:
             callback = create_pyo3_conversion_wrapper(callback)
 
-        cdef uint64_t ts_now = self.timestamp_ns()  # Call here for greater accuracy
-
-        if start_time_ns == 0:
-            start_time_ns = ts_now
-        if stop_time_ns:
-            Condition.true(stop_time_ns > ts_now, "stop_time was < ts_now")
-            Condition.true(start_time_ns + interval_ns <= stop_time_ns, "start_time + interval was > stop_time")
-
         live_clock_set_timer(
             &self._mem,
             pystr_to_cstr(name),
