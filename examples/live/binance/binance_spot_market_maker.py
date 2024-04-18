@@ -95,7 +95,7 @@ config_node = TradingNodeConfig(
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
-    timeout_connection=20.0,
+    timeout_connection=30.0,
     timeout_reconciliation=10.0,
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,
@@ -109,7 +109,7 @@ node = TradingNode(config=config_node)
 strat_config = VolatilityMarketMakerConfig(
     instrument_id=InstrumentId.from_str("ETHUSDT.BINANCE"),
     external_order_claims=[InstrumentId.from_str("ETHUSDT.BINANCE")],
-    bar_type=BarType.from_str("ETHUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+    bar_type=BarType.from_str("ETHUSDT.BINANCE-1-MINUTE-LAST-INTERNAL"),
     atr_period=20,
     atr_multiple=6.0,
     trade_size=Decimal("0.010"),
