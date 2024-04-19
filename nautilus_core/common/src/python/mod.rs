@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
+
 pub mod clock;
 pub mod enums;
 pub mod logging;
