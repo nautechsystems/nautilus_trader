@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
+
 use pyo3::prelude::*;
 
 pub mod backend;
