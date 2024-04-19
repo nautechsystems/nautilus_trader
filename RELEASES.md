@@ -37,6 +37,7 @@ Released on TBD (UTC).
 - Fixed Databento bars decoding (was incorrectly applying display factor)
 - Fixed `Binance` bar (kline) to use `close_time` for `ts_event` was `opentime` (#1591), thanks for reporting @OnlyC
 - Fixed `AccountMarginExceeded` error condition (margin must actually be exceeded now, and can be zero)
+- Fixed `ParquetDataCatalog` path globbing which was including all paths with substrings of specified instrument IDs
 
 ---
 

@@ -412,15 +412,22 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         file_prefix = class_to_filename(data_cls)
         glob_path = f"{self.path}/data/{file_prefix}/**/*"
-        dirs = self.fs.glob(glob_path)
+        dirs: list[str] = self.fs.glob(glob_path)
         if self.show_query_paths:
             print(dirs)
 
         for idx, path in enumerate(dirs):
             assert self.fs.exists(path)
-            if instrument_ids and not any(urisafe_instrument_id(x) in path for x in instrument_ids):
+            # Parse the parent directory which *should* be the instrument ID,
+            # this prevents us matching all instrument ID substrings.
+            parent_dir = path.split("/")[-2]
+            if instrument_ids and not any(
+                parent_dir.startswith(urisafe_instrument_id(x)) for x in instrument_ids
+            ):
                 continue
-            if bar_types and not any(urisafe_instrument_id(x) in path for x in bar_types):
+            if bar_types and not any(
+                parent_dir.startswith(urisafe_instrument_id(x)) for x in bar_types
+            ):
                 continue
             table = f"{file_prefix}_{idx}"
             query = self._build_query(
