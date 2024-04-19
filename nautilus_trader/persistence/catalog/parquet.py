@@ -420,14 +420,10 @@ class ParquetDataCatalog(BaseDataCatalog):
             assert self.fs.exists(path)
             # Parse the parent directory which *should* be the instrument ID,
             # this prevents us matching all instrument ID substrings.
-            parent_dir = path.split("/")[-2]
-            if instrument_ids and not any(
-                parent_dir.startswith(urisafe_instrument_id(x)) for x in instrument_ids
-            ):
+            dir = path.split("/")[-2]
+            if instrument_ids and not any(dir == urisafe_instrument_id(x) for x in instrument_ids):
                 continue
-            if bar_types and not any(
-                parent_dir.startswith(urisafe_instrument_id(x)) for x in bar_types
-            ):
+            if bar_types and not any(dir == urisafe_instrument_id(x) for x in bar_types):
                 continue
             table = f"{file_prefix}_{idx}"
             query = self._build_query(
