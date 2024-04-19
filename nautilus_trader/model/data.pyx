@@ -3247,7 +3247,7 @@ cdef class InstrumentClose(Data):
 
 cdef class QuoteTick(Data):
     """
-    Represents a single quote tick in a financial market.
+    Represents a single quote tick in a market.
 
     Contains information about the best top of book bid and ask.
 
@@ -3843,7 +3843,7 @@ cdef class QuoteTick(Data):
 
 cdef class TradeTick(Data):
     """
-    Represents a single trade tick in a financial market.
+    Represents a single trade tick in a market.
 
     Contains information about a single unique trade which matched buyer and
     seller counterparties.

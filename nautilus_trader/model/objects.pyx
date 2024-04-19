@@ -516,7 +516,7 @@ cdef class Quantity:
 @cython.auto_pickle(True)
 cdef class Price:
     """
-    Represents a price in a financial market.
+    Represents a price in a market.
 
     The number of decimal places may vary. For certain asset classes, prices may
     have negative values. For example, prices for options instruments can be

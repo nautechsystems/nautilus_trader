@@ -116,7 +116,7 @@ cdef extern from "../includes/model.h":
         # Trading halt is imposed by the venue to protect against extreme volatility.
         VOLATILITY # = 3,
 
-    # The asset type for a financial market product.
+    # The instrument class.
     cpdef enum InstrumentClass:
         # A spot market instrument class. The current market price of an instrument that is bought or sold for immediate delivery and payment.
         SPOT # = 1,
@@ -148,7 +148,7 @@ cdef extern from "../includes/model.h":
         # When the instrument expiration was reached.
         CONTRACT_EXPIRED # = 2,
 
-    # The liqudity side for a trade in a financial market.
+    # The liqudity side for a trade.
     cpdef enum LiquiditySide:
         # No liquidity side specified.
         NO_LIQUIDITY_SIDE # = 0,
@@ -283,7 +283,7 @@ cdef extern from "../includes/model.h":
         # A short position in the market, typically acquired through one or many SELL orders.
         SHORT # = 3,
 
-    # The type of price for an instrument in a financial market.
+    # The type of price for an instrument in market.
     cpdef enum PriceType:
         # A quoted order price where a buyer is willing to buy a quantity of an instrument.
         BID # = 1,
@@ -309,7 +309,7 @@ cdef extern from "../includes/model.h":
         # Reserved for future use.
         RESERVED_1 # = (1 << 2),
 
-    # The 'Time in Force' instruction for an order in the financial market.
+    # The 'Time in Force' instruction for an order.
     cpdef enum TimeInForce:
         # Good Till Canceled (GTC) - the order remains active until canceled.
         GTC # = 1,
@@ -398,7 +398,7 @@ cdef extern from "../includes/model.h":
     cdef struct SyntheticInstrument:
         pass
 
-    # Represents a valid ticker symbol ID for a tradable financial market instrument.
+    # Represents a valid ticker symbol ID for a tradable instrument.
     cdef struct Symbol_t:
         char* _0;
 
@@ -491,7 +491,7 @@ cdef extern from "../includes/model.h":
         # The UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
-    # Represents a single quote tick in a financial market.
+    # Represents a single quote tick in market.
     cdef struct QuoteTick_t:
         # The quotes instrument ID.
         InstrumentId_t instrument_id;
@@ -520,7 +520,7 @@ cdef extern from "../includes/model.h":
         # The trade match ID value as a fixed-length C string byte array (includes null terminator).
         uint8_t value[37];
 
-    # Represents a single trade tick in a financial market.
+    # Represents a single trade tick in a market.
     cdef struct TradeTick_t:
         # The trade instrument ID.
         InstrumentId_t instrument_id;

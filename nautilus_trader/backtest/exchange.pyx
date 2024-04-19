@@ -64,7 +64,7 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 cdef class SimulatedExchange:
     """
-    Provides a simulated financial market exchange.
+    Provides a simulated exchange venue.
 
     Parameters
     ----------

@@ -34,7 +34,7 @@ use crate::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
-/// Represents a position in a financial market.
+/// Represents a position in a market.
 ///
 /// The position ID may be assigned at the trading venue, or can be system
 /// generated depending on a strategies OMS (Order Management System) settings.

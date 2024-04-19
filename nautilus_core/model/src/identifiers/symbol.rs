@@ -21,7 +21,7 @@ use std::{
 use nautilus_core::correctness::check_valid_string;
 use ustr::Ustr;
 
-/// Represents a valid ticker symbol ID for a tradable financial market instrument.
+/// Represents a valid ticker symbol ID for a tradable instrument.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
