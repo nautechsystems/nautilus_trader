@@ -30,7 +30,7 @@ use crate::{
     types::{fixed::FIXED_PRECISION, price::Price, quantity::Quantity},
 };
 
-/// Represents a single quote tick in a financial market.
+/// Represents a single quote tick in market.
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type")]

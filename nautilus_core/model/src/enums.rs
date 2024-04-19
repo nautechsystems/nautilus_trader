@@ -176,7 +176,7 @@ pub enum AssetClass {
     Alternative = 7,
 }
 
-/// The asset type for a financial market product.
+/// The instrument class.
 #[repr(C)]
 #[derive(
     Copy,
@@ -472,7 +472,7 @@ pub enum InstrumentCloseType {
     ContractExpired = 2,
 }
 
-/// The liqudity side for a trade in a financial market.
+/// The liqudity side for a trade.
 #[repr(C)]
 #[derive(
     Copy,
@@ -873,7 +873,7 @@ pub enum PositionSide {
     Short = 3,
 }
 
-/// The type of price for an instrument in a financial market.
+/// The type of price for an instrument in market.
 #[repr(C)]
 #[derive(
     Copy,
@@ -954,7 +954,7 @@ impl RecordFlag {
     }
 }
 
-/// The 'Time in Force' instruction for an order in the financial market.
+/// The 'Time in Force' instruction for an order.
 #[repr(C)]
 #[derive(
     Copy,

@@ -208,7 +208,7 @@ typedef enum HaltReason {
 } HaltReason;
 
 /**
- * The asset type for a financial market product.
+ * The instrument class.
  */
 typedef enum InstrumentClass {
     /**
@@ -272,7 +272,7 @@ typedef enum InstrumentCloseType {
 } InstrumentCloseType;
 
 /**
- * The liqudity side for a trade in a financial market.
+ * The liqudity side for a trade.
  */
 typedef enum LiquiditySide {
     /**
@@ -521,7 +521,7 @@ typedef enum PositionSide {
 } PositionSide;
 
 /**
- * The type of price for an instrument in a financial market.
+ * The type of price for an instrument in market.
  */
 typedef enum PriceType {
     /**
@@ -573,7 +573,7 @@ typedef enum RecordFlag {
 } RecordFlag;
 
 /**
- * The 'Time in Force' instruction for an order in the financial market.
+ * The 'Time in Force' instruction for an order.
  */
 typedef enum TimeInForce {
     /**
@@ -728,7 +728,7 @@ typedef struct OrderBookDeltas_t OrderBookDeltas_t;
 typedef struct SyntheticInstrument SyntheticInstrument;
 
 /**
- * Represents a valid ticker symbol ID for a tradable financial market instrument.
+ * Represents a valid ticker symbol ID for a tradable instrument.
  */
 typedef struct Symbol_t {
     char* _0;
@@ -888,7 +888,7 @@ typedef struct OrderBookDepth10_t {
 } OrderBookDepth10_t;
 
 /**
- * Represents a single quote tick in a financial market.
+ * Represents a single quote tick in market.
  */
 typedef struct QuoteTick_t {
     /**
@@ -939,7 +939,7 @@ typedef struct TradeId_t {
 } TradeId_t;
 
 /**
- * Represents a single trade tick in a financial market.
+ * Represents a single trade tick in a market.
  */
 typedef struct TradeTick_t {
     /**
