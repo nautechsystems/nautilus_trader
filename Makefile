@@ -70,7 +70,7 @@ docs-python: install-just-deps-all
 
 .PHONY: docs-rust
 docs-rust:
-	(cd nautilus_core && RUSTDOCFLAGS="--enable-index-page -Zunstable-options --allow warnings" cargo +nightly doc --no-deps)
+	(cd nautilus_core && RUSTDOCFLAGS="--enable-index-page -Zunstable-options --allow warnings --allow errors" cargo +nightly doc --no-deps)
 
 .PHONY: clippy
 clippy:
