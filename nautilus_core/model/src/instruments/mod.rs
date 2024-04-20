@@ -29,7 +29,6 @@ pub mod stubs;
 use nautilus_core::nanos::UnixNanos;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use sqlx::{postgres::PgRow, Error, FromRow, Row};
 use ustr::Ustr;
 
 use self::{
@@ -270,45 +269,6 @@ impl InstrumentAny {
             Self::FuturesSpread(inst) => inst.taker_fee(),
             Self::OptionsContract(inst) => inst.taker_fee(),
             Self::OptionsSpread(inst) => inst.taker_fee(),
-        }
-    }
-}
-
-impl<'r> FromRow<'r, PgRow> for InstrumentAny {
-    fn from_row(row: &'r PgRow) -> Result<Self, Error> {
-        let kind = row.get::<String, _>("kind");
-        if kind == "CRYPTO_FUTURE" {
-            Ok(InstrumentAny::CryptoFuture(
-                CryptoFuture::from_row(row).unwrap(),
-            ))
-        } else if kind == "CRYPTO_PERPETUAL" {
-            Ok(InstrumentAny::CryptoPerpetual(
-                CryptoPerpetual::from_row(row).unwrap(),
-            ))
-        } else if kind == "CURRENCY_PAIR" {
-            Ok(InstrumentAny::CurrencyPair(
-                CurrencyPair::from_row(row).unwrap(),
-            ))
-        } else if kind == "EQUITY" {
-            Ok(InstrumentAny::Equity(Equity::from_row(row).unwrap()))
-        } else if kind == "FUTURES_CONTRACT" {
-            Ok(InstrumentAny::FuturesContract(
-                FuturesContract::from_row(row).unwrap(),
-            ))
-        } else if kind == "FUTURES_SPREAD" {
-            Ok(InstrumentAny::FuturesSpread(
-                FuturesSpread::from_row(row).unwrap(),
-            ))
-        } else if kind == "OPTIONS_CONTRACT" {
-            Ok(InstrumentAny::OptionsContract(
-                OptionsContract::from_row(row).unwrap(),
-            ))
-        } else if kind == "OPTIONS_SPREAD" {
-            Ok(InstrumentAny::OptionsSpread(
-                OptionsSpread::from_row(row).unwrap(),
-            ))
-        } else {
-            panic!("Unknown instrument type")
         }
     }
 }

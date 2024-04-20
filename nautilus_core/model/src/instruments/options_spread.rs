@@ -23,7 +23,6 @@ use nautilus_core::{
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use sqlx::{postgres::PgRow, FromRow};
 use ustr::Ustr;
 
 use super::{Instrument, InstrumentAny};
@@ -263,12 +262,6 @@ impl Instrument for OptionsSpread {
 
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
-    }
-}
-
-impl<'r> FromRow<'r, PgRow> for OptionsSpread {
-    fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        todo!("Implement FromRow for OptionsSpread")
     }
 }
 

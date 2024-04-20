@@ -29,7 +29,6 @@ ustr = { workspace = true }
 chrono = { workspace = true }
 evalexpr = "11.3.0"
 tabled = "0.15.0"
-sqlx = { workspace = true}
 
 [dev-dependencies]
 criterion = { workspace = true }
