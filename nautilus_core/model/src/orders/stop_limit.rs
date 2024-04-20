@@ -15,13 +15,15 @@
 
 use std::{
     collections::HashMap,
+    fmt::Display,
     ops::{Deref, DerefMut},
 };
 
-use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::base::{Order, OrderCore, OrderError};
+use super::base::{Order, OrderAny, OrderCore, OrderError};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
@@ -37,7 +39,7 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -86,30 +88,44 @@ impl StopLimitOrder {
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
+        let init_order = OrderInitialized::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            order_side,
+            OrderType::StopLimit,
+            quantity,
+            time_in_force,
+            post_only,
+            reduce_only,
+            quote_quantity,
+            false,
+            init_id,
+            ts_init,
+            ts_init,
+            Some(price),
+            Some(trigger_price),
+            Some(trigger_type),
+            None,
+            None,
+            None,
+            expire_time,
+            display_qty,
+            emulation_trigger,
+            trigger_instrument_id,
+            contingency_type,
+            order_list_id,
+            linked_order_ids,
+            parent_order_id,
+            exec_algorithm_id,
+            exec_algorithm_params,
+            exec_spawn_id,
+            tags,
+        )
+        .unwrap();
         Ok(Self {
-            core: OrderCore::new(
-                trader_id,
-                strategy_id,
-                instrument_id,
-                client_order_id,
-                order_side,
-                OrderType::LimitIfTouched,
-                quantity,
-                time_in_force,
-                reduce_only,
-                quote_quantity,
-                emulation_trigger,
-                contingency_type,
-                order_list_id,
-                linked_order_ids,
-                parent_order_id,
-                exec_algorithm_id,
-                exec_algorithm_params,
-                exec_spawn_id,
-                tags,
-                init_id,
-                ts_init,
-            ),
+            core: OrderCore::new(init_order).unwrap(),
             price,
             trigger_price,
             trigger_type,
@@ -137,7 +153,17 @@ impl DerefMut for StopLimitOrder {
     }
 }
 
+impl PartialEq for StopLimitOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.client_order_id == other.client_order_id
+    }
+}
+
 impl Order for StopLimitOrder {
+    fn into_any(self) -> OrderAny {
+        OrderAny::StopLimit(self)
+    }
+
     fn status(&self) -> OrderStatus {
         self.status
     }
@@ -395,5 +421,27 @@ impl From<OrderInitialized> for StopLimitOrder {
             event.ts_event,
         )
         .unwrap() // SAFETY: From can panic
+    }
+}
+
+impl Display for StopLimitOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "StopLimitOrder({} {} {} {} @ {}-STOP[{}] {}-LIMIT {}, status={}, client_order_id={}, venue_order_id={}, position_id={}, tags={})",
+            self.side,
+            self.quantity.to_formatted_string(),
+            self.instrument_id,
+            self.order_type,
+            self.trigger_price,
+            self.trigger_type,
+            self.price,
+            self.time_in_force,
+            self.status,
+            self.client_order_id,
+            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}") ),
+            self.position_id.map_or_else(|| "None".to_string(), |position_id| format!("{position_id}")),
+            self.tags.map_or_else(|| "None".to_string(), |tags| format!("{tags}"))
+        )
     }
 }

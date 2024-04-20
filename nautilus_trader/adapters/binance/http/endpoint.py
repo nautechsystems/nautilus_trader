@@ -18,8 +18,8 @@ from typing import Any
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbols
+from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.common.symbol import BinanceSymbols
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
@@ -68,10 +68,10 @@ class BinanceHttpEndpoint:
     async def _method(
         self,
         method_type: HttpMethod,
-        parameters: Any,
+        params: Any,
         ratelimiter_keys: list[str] | None = None,
     ) -> bytes:
-        payload: dict = self.decoder.decode(self.encoder.encode(parameters))
+        payload: dict = self.decoder.decode(self.encoder.encode(params))
         if self.methods_desc[method_type] is None:
             raise RuntimeError(
                 f"{method_type.name} not available for {self.url_path}",

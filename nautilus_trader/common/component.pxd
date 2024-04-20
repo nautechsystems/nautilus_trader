@@ -31,7 +31,6 @@ from nautilus_trader.core.rust.common cimport LiveClock_API
 from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.common cimport LogGuard_API
 from nautilus_trader.core.rust.common cimport LogLevel
-from nautilus_trader.core.rust.common cimport MessageBus_API
 from nautilus_trader.core.rust.common cimport TestClock_API
 from nautilus_trader.core.rust.common cimport TimeEvent_t
 from nautilus_trader.core.rust.core cimport CVec
@@ -247,15 +246,16 @@ cdef class Component:
 
 
 cdef class MessageBus:
-    cdef MessageBus_API _mem
     cdef Clock _clock
     cdef Logger _log
+    cdef object _database
     cdef dict[Subscription, list[str]] _subscriptions
     cdef dict[str, Subscription[:]] _patterns
     cdef dict[str, object] _endpoints
     cdef dict[UUID4, object] _correlation_index
-    cdef bint _has_backing
     cdef tuple[type] _publishable_types
+    cdef bint _has_backing
+    cdef bint _resolved
 
     cdef readonly TraderId trader_id
     """The trader ID associated with the bus.\n\n:returns: `TraderId`"""
@@ -267,14 +267,14 @@ cdef class MessageBus:
     """If order state snapshots should be published externally.\n\n:returns: `bool`"""
     cdef readonly bint snapshot_positions
     """If position state snapshots should be published externally.\n\n:returns: `bool`"""
-    cdef readonly int sent_count
-    """The count of messages sent through the bus.\n\n:returns: `int`"""
-    cdef readonly int req_count
-    """The count of requests processed by the bus.\n\n:returns: `int`"""
-    cdef readonly int res_count
-    """The count of responses processed by the bus.\n\n:returns: `int`"""
-    cdef readonly int pub_count
-    """The count of messages published by the bus.\n\n:returns: `int`"""
+    cdef readonly uint64_t sent_count
+    """The count of messages sent through the bus.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t req_count
+    """The count of requests processed by the bus.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t res_count
+    """The count of responses processed by the bus.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t pub_count
+    """The count of messages published by the bus.\n\n:returns: `uint64_t`"""
 
     cpdef list endpoints(self)
     cpdef list topics(self)
@@ -283,6 +283,7 @@ cdef class MessageBus:
     cpdef bint is_subscribed(self, str topic, handler)
     cpdef bint is_pending_request(self, UUID4 request_id)
 
+    cpdef void dispose(self)
     cpdef void register(self, str endpoint, handler)
     cpdef void deregister(self, str endpoint, handler)
     cpdef void send(self, str endpoint, msg)

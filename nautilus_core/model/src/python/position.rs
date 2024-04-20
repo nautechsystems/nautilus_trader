@@ -13,10 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{
-    python::{serialization::from_dict_pyo3, to_pyvalue_err},
-    time::UnixNanos,
-};
+use nautilus_core::python::serialization::from_dict_pyo3;
 use pyo3::{
     basic::CompareOp,
     prelude::*,
@@ -32,12 +29,9 @@ use crate::{
         strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
         venue::Venue, venue_order_id::VenueOrderId,
     },
-    instruments::{
-        crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
-        currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
-        options_contract::OptionsContract,
-    },
+    instruments::InstrumentAny,
     position::Position,
+    python::instruments::convert_pyobject_to_instrument_any,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
@@ -45,30 +39,16 @@ use crate::{
 impl Position {
     #[new]
     fn py_new(py: Python, instrument: PyObject, fill: OrderFilled) -> PyResult<Self> {
-        // Extract instrument from PyObject
-        let instrument_type = instrument
-            .getattr(py, "instrument_type")?
-            .extract::<String>(py)?;
-        if instrument_type == "CryptoFuture" {
-            let instrument_rust = instrument.extract::<CryptoFuture>(py)?;
-            Ok(Self::new(instrument_rust, fill).unwrap())
-        } else if instrument_type == "CryptoPerpetual" {
-            let instrument_rust = instrument.extract::<CryptoPerpetual>(py)?;
-            Ok(Self::new(instrument_rust, fill).unwrap())
-        } else if instrument_type == "CurrencyPair" {
-            let instrument_rust = instrument.extract::<CurrencyPair>(py)?;
-            Ok(Self::new(instrument_rust, fill).unwrap())
-        } else if instrument_type == "Equity" {
-            let instrument_rust = instrument.extract::<Equity>(py)?;
-            Ok(Self::new(instrument_rust, fill).unwrap())
-        } else if instrument_type == "FuturesContract" {
-            let instrument_rust = instrument.extract::<FuturesContract>(py)?;
-            Ok(Self::new(instrument_rust, fill).unwrap())
-        } else if instrument_type == "OptionsContract" {
-            let instrument_rust = instrument.extract::<OptionsContract>(py)?;
-            Ok(Self::new(instrument_rust, fill).unwrap())
-        } else {
-            Err(to_pyvalue_err("Unsupported instrument type"))
+        let instrument_type = convert_pyobject_to_instrument_any(py, instrument)?;
+        match instrument_type {
+            InstrumentAny::CryptoFuture(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentAny::CryptoPerpetual(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentAny::CurrencyPair(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentAny::Equity(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentAny::FuturesContract(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentAny::FuturesSpread(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentAny::OptionsContract(inst) => Ok(Self::new(inst, fill).unwrap()),
+            InstrumentAny::OptionsSpread(inst) => Ok(Self::new(inst, fill).unwrap()),
         }
     }
 
@@ -210,20 +190,20 @@ impl Position {
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> UnixNanos {
-        self.ts_init
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_opened")]
-    fn py_ts_opened(&self) -> UnixNanos {
-        self.ts_opened
+    fn py_ts_opened(&self) -> u64 {
+        self.ts_opened.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_closed")]
-    fn py_ts_closed(&self) -> Option<UnixNanos> {
-        self.ts_closed
+    fn py_ts_closed(&self) -> Option<u64> {
+        self.ts_closed.map(std::convert::Into::into)
     }
 
     #[getter]
@@ -401,11 +381,11 @@ impl Position {
             "settlement_currency",
             self.settlement_currency.code.to_string(),
         )?;
-        dict.set_item("ts_init", self.ts_init.to_u64())?;
-        dict.set_item("ts_opened", self.ts_opened.to_u64())?;
-        dict.set_item("ts_last", self.ts_last.to_u64())?;
+        dict.set_item("ts_init", self.ts_init.as_u64())?;
+        dict.set_item("ts_opened", self.ts_opened.as_u64())?;
+        dict.set_item("ts_last", self.ts_last.as_u64())?;
         match self.ts_closed {
-            Some(ts_closed) => dict.set_item("ts_closed", ts_closed.to_u64())?,
+            Some(ts_closed) => dict.set_item("ts_closed", ts_closed.as_u64())?,
             None => dict.set_item("ts_closed", py.None())?,
         }
         dict.set_item("duration_ns", self.duration_ns.to_u64())?;

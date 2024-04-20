@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
+
 use pyo3::prelude::*;
 
 pub mod common;
@@ -107,9 +109,16 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::instruments::options_spread::OptionsSpread>()?;
     m.add_class::<crate::instruments::synthetic::SyntheticInstrument>()?;
     // Order book
-    m.add_class::<crate::orderbook::book_mbo::OrderBookMbo>()?;
-    m.add_class::<crate::orderbook::book_mbp::OrderBookMbp>()?;
+    m.add_class::<crate::orderbook::book::OrderBook>()?;
     m.add_class::<crate::orderbook::level::Level>()?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::orderbook::book::py_update_book_with_quote_tick,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::orderbook::book::py_update_book_with_trade_tick,
+        m
+    )?)?;
     // Events - order
     m.add_class::<crate::events::order::denied::OrderDenied>()?;
     m.add_class::<crate::events::order::filled::OrderFilled>()?;

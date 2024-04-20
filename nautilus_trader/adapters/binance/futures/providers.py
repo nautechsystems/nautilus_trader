@@ -22,7 +22,7 @@ from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbolFilter
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesContractStatus
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesContractType
 from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
@@ -334,6 +334,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                     underlying=base_currency,
                     quote_currency=quote_currency,
                     settlement_currency=settlement_currency,
+                    is_inverse=False,  # No inverse instruments trade on Binance
                     activation_ns=activation.value,
                     expiration_ns=expiration.value,
                     price_precision=price_precision,
@@ -366,4 +367,4 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             self._log.debug(f"Added instrument {instrument.id}.")
         except ValueError as e:
             if self._log_warnings:
-                self._log.warning(f"Unable to parse instrument {symbol_info.symbol}, {e}.")
+                self._log.warning(f"Unable to parse instrument {symbol_info.symbol}: {e}.")

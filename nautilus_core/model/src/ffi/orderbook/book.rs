@@ -20,7 +20,7 @@ use std::{
 
 use nautilus_core::ffi::{cvec::CVec, string::str_to_cstr};
 
-use super::{container::OrderBookContainer, level::Level_API};
+use super::level::Level_API;
 use crate::{
     data::{
         delta::OrderBookDelta, deltas::OrderBookDeltas_API, depth::OrderBookDepth10,
@@ -28,6 +28,11 @@ use crate::{
     },
     enums::{BookType, OrderSide},
     identifiers::instrument_id::InstrumentId,
+    orderbook::{
+        aggregation::{update_book_with_quote_tick, update_book_with_trade_tick},
+        analysis::book_check_integrity,
+        book::OrderBook,
+    },
     types::{price::Price, quantity::Quantity},
 };
 
@@ -41,10 +46,10 @@ use crate::{
 /// having to manually access the underlying `OrderBook` instance.
 #[repr(C)]
 #[allow(non_camel_case_types)]
-pub struct OrderBook_API(Box<OrderBookContainer>);
+pub struct OrderBook_API(Box<OrderBook>);
 
 impl Deref for OrderBook_API {
-    type Target = OrderBookContainer;
+    type Target = OrderBook;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -59,7 +64,7 @@ impl DerefMut for OrderBook_API {
 
 #[no_mangle]
 pub extern "C" fn orderbook_new(instrument_id: InstrumentId, book_type: BookType) -> OrderBook_API {
-    OrderBook_API(Box::new(OrderBookContainer::new(instrument_id, book_type)))
+    OrderBook_API(Box::new(OrderBook::new(book_type, instrument_id)))
 }
 
 #[no_mangle]
@@ -84,62 +89,65 @@ pub extern "C" fn orderbook_book_type(book: &OrderBook_API) -> BookType {
 
 #[no_mangle]
 pub extern "C" fn orderbook_sequence(book: &OrderBook_API) -> u64 {
-    book.sequence()
+    book.sequence
 }
 
 #[no_mangle]
 pub extern "C" fn orderbook_ts_last(book: &OrderBook_API) -> u64 {
-    book.ts_last()
+    book.ts_last.into()
 }
 
 #[no_mangle]
 pub extern "C" fn orderbook_count(book: &OrderBook_API) -> u64 {
-    book.count()
+    book.count
 }
 
 #[no_mangle]
 pub extern "C" fn orderbook_add(
     book: &mut OrderBook_API,
     order: BookOrder,
-    ts_event: u64,
+    flags: u8,
     sequence: u64,
+    ts_event: u64,
 ) {
-    book.add(order, ts_event, sequence);
+    book.add(order, flags, sequence, ts_event.into());
 }
 
 #[no_mangle]
 pub extern "C" fn orderbook_update(
     book: &mut OrderBook_API,
     order: BookOrder,
-    ts_event: u64,
+    flags: u8,
     sequence: u64,
+    ts_event: u64,
 ) {
-    book.update(order, ts_event, sequence);
+    book.update(order, flags, sequence, ts_event.into());
 }
 
 #[no_mangle]
 pub extern "C" fn orderbook_delete(
     book: &mut OrderBook_API,
     order: BookOrder,
-    ts_event: u64,
+    flags: u8,
     sequence: u64,
+    ts_event: u64,
 ) {
-    book.delete(order, ts_event, sequence);
+    book.delete(order, flags, sequence, ts_event.into());
 }
 
 #[no_mangle]
-pub extern "C" fn orderbook_clear(book: &mut OrderBook_API, ts_event: u64, sequence: u64) {
-    book.clear(ts_event, sequence);
+pub extern "C" fn orderbook_clear(book: &mut OrderBook_API, sequence: u64, ts_event: u64) {
+    book.clear(sequence, ts_event.into());
 }
 
 #[no_mangle]
-pub extern "C" fn orderbook_clear_bids(book: &mut OrderBook_API, ts_event: u64, sequence: u64) {
-    book.clear_bids(ts_event, sequence);
+pub extern "C" fn orderbook_clear_bids(book: &mut OrderBook_API, sequence: u64, ts_event: u64) {
+    book.clear_bids(sequence, ts_event.into());
 }
 
 #[no_mangle]
-pub extern "C" fn orderbook_clear_asks(book: &mut OrderBook_API, ts_event: u64, sequence: u64) {
-    book.clear_asks(ts_event, sequence);
+pub extern "C" fn orderbook_clear_asks(book: &mut OrderBook_API, sequence: u64, ts_event: u64) {
+    book.clear_asks(sequence, ts_event.into());
 }
 
 #[no_mangle]
@@ -160,18 +168,20 @@ pub extern "C" fn orderbook_apply_depth(book: &mut OrderBook_API, depth: OrderBo
 
 #[no_mangle]
 pub extern "C" fn orderbook_bids(book: &mut OrderBook_API) -> CVec {
-    book.bids()
-        .iter()
-        .map(|l| Level_API::new(l.to_owned().clone()))
+    book.bids
+        .levels
+        .values()
+        .map(|level| Level_API::new(level.clone()))
         .collect::<Vec<Level_API>>()
         .into()
 }
 
 #[no_mangle]
 pub extern "C" fn orderbook_asks(book: &mut OrderBook_API) -> CVec {
-    book.asks()
-        .iter()
-        .map(|l| Level_API::new(l.to_owned().clone()))
+    book.asks
+        .levels
+        .values()
+        .map(|level| Level_API::new(level.clone()))
         .collect::<Vec<Level_API>>()
         .into()
 }
@@ -240,14 +250,24 @@ pub extern "C" fn orderbook_get_quantity_for_price(
     book.get_quantity_for_price(price, order_side)
 }
 
+/// Updates the order book with a quote tick.
+///
+/// # Panics
+///
+/// If book type is not `L1_MBP`.
 #[no_mangle]
-pub extern "C" fn orderbook_update_quote_tick(book: &mut OrderBook_API, tick: &QuoteTick) {
-    book.update_quote_tick(tick);
+pub extern "C" fn orderbook_update_quote_tick(book: &mut OrderBook_API, quote: &QuoteTick) {
+    update_book_with_quote_tick(book, quote).unwrap();
 }
 
+/// Updates the order book with a trade tick.
+///
+/// # Panics
+///
+/// If book type is not `L1_MBP`.
 #[no_mangle]
 pub extern "C" fn orderbook_update_trade_tick(book: &mut OrderBook_API, tick: &TradeTick) {
-    book.update_trade_tick(tick);
+    update_book_with_trade_tick(book, tick).unwrap();
 }
 
 #[no_mangle]
@@ -257,7 +277,7 @@ pub extern "C" fn orderbook_simulate_fills(book: &OrderBook_API, order: BookOrde
 
 #[no_mangle]
 pub extern "C" fn orderbook_check_integrity(book: &OrderBook_API) -> u8 {
-    u8::from(book.check_integrity().is_ok())
+    u8::from(book_check_integrity(book).is_ok())
 }
 
 // TODO: This struct implementation potentially leaks memory

@@ -201,6 +201,7 @@ class TestInstrument:
             "underlying": "BTC",
             "quote_currency": "USDT",
             "settlement_currency": "USDT",
+            "is_inverse": False,
             "activation_ns": 1640390400000000000,
             "expiration_ns": 1648166400000000000,
             "price_precision": 2,
@@ -248,6 +249,7 @@ class TestInstrument:
             "taker_fee": "0",
             "ts_event": 0,
             "ts_init": 0,
+            "info": None,
         }
 
     def test_future_instrument_to_dict(self):

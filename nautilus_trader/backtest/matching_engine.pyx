@@ -18,17 +18,19 @@ import uuid
 
 # from nautilus_trader.backtest.auction import default_auction_match
 
+from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.backtest.models cimport FeeModel
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport LogColor
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.component cimport TestClock
+from nautilus_trader.common.component cimport is_logging_initialized
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport BookType
@@ -56,6 +58,7 @@ from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
 from nautilus_trader.model.book cimport OrderBook
+from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport BookOrder
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
@@ -108,6 +111,8 @@ cdef class OrderMatchingEngine:
         The raw integer ID for the instrument.
     fill_model : FillModel
         The fill model for the matching engine.
+    fee_model : FeeModel
+        The fee model for the matching engine.
     book_type : BookType
         The order book type for the engine.
     oms_type : OmsType
@@ -148,6 +153,7 @@ cdef class OrderMatchingEngine:
         Instrument instrument not None,
         uint32_t raw_id,
         FillModel fill_model not None,
+        FeeModel fee_model not None,
         BookType book_type,
         OmsType oms_type,
         AccountType account_type,
@@ -185,6 +191,7 @@ cdef class OrderMatchingEngine:
         self._use_reduce_only = use_reduce_only
         # self._auction_match_algo = auction_match_algo
         self._fill_model = fill_model
+        self._fee_model = fee_model
         self._book = OrderBook(
             instrument_id=instrument.id,
             book_type=book_type,
@@ -199,6 +206,8 @@ cdef class OrderMatchingEngine:
         )
 
         self._account_ids: dict[TraderId, AccountId]  = {}
+        self._execution_bar_types: dict[InstrumentId, BarType]  =  {}
+        self._execution_bar_deltas: dict[BarType, timedelta]  =  {}
 
         # Market
         self._core = MatchingCore(
@@ -229,10 +238,12 @@ cdef class OrderMatchingEngine:
         )
 
     cpdef void reset(self):
-        self._log.debug(f"Resetting OrderMatchingEngine {self.instrument.id}...")
+        self._log.debug(f"Resetting OrderMatchingEngine {self.instrument.id}")
 
         self._book.clear(0, 0)
         self._account_ids.clear()
+        self._execution_bar_types.clear()
+        self._execution_bar_deltas.clear()
         self._core.reset()
         self._target_bid = 0
         self._target_ask = 0
@@ -245,7 +256,7 @@ cdef class OrderMatchingEngine:
         self._order_count = 0
         self._execution_count = 0
 
-        self._log.info(f"Reset OrderMatchingEngine {self.instrument.id}.")
+        self._log.info(f"Reset OrderMatchingEngine {self.instrument.id}")
 
     cpdef void set_fill_model(self, FillModel fill_model):
         """
@@ -261,7 +272,7 @@ cdef class OrderMatchingEngine:
 
         self._fill_model = fill_model
 
-        self._log.debug(f"Changed `FillModel` to {self._fill_model}.")
+        self._log.debug(f"Changed `FillModel` to {self._fill_model}")
 
 # -- QUERIES --------------------------------------------------------------------------------------
 
@@ -348,12 +359,12 @@ cdef class OrderMatchingEngine:
         """
         Condition.not_none(delta, "delta")
 
-        if logging_is_initialized():
-            self._log.debug(f"Processing {repr(delta)}...")
+        if is_logging_initialized():
+            self._log.debug(f"Processing {repr(delta)}")
 
         self._book.apply_delta(delta)
 
-        # TODO(cs): WIP to introduce flags
+        # TODO: WIP to introduce flags
         # if data.flags == TimeInForce.GTC:
         #     self._book.apply(data)
         # elif data.flags == TimeInForce.AT_THE_OPEN:
@@ -377,12 +388,12 @@ cdef class OrderMatchingEngine:
         """
         Condition.not_none(deltas, "deltas")
 
-        if logging_is_initialized():
-            self._log.debug(f"Processing {repr(deltas)}...")
+        if is_logging_initialized():
+            self._log.debug(f"Processing {repr(deltas)}")
 
         self._book.apply_deltas(deltas)
 
-        # TODO(cs): WIP to introduce flags
+        # TODO: WIP to introduce flags
         # if data.flags == TimeInForce.GTC:
         #     self._book.apply(data)
         # elif data.flags == TimeInForce.AT_THE_OPEN:
@@ -408,8 +419,8 @@ cdef class OrderMatchingEngine:
         """
         Condition.not_none(tick, "tick")
 
-        if logging_is_initialized():
-            self._log.debug(f"Processing {repr(tick)}...")
+        if is_logging_initialized():
+            self._log.debug(f"Processing {repr(tick)}")
 
         if self.book_type == BookType.L1_MBP:
             self._book.update_quote_tick(tick)
@@ -430,8 +441,8 @@ cdef class OrderMatchingEngine:
         """
         Condition.not_none(tick, "tick")
 
-        if logging_is_initialized():
-            self._log.debug(f"Processing {repr(tick)}...")
+        if is_logging_initialized():
+            self._log.debug(f"Processing {repr(tick)}")
 
         if self.book_type == BookType.L1_MBP:
             self._book.update_trade_tick(tick)
@@ -457,13 +468,32 @@ cdef class OrderMatchingEngine:
         if not self._bar_execution:
             return
 
-        if logging_is_initialized():
-            self._log.debug(f"Processing {repr(bar)}...")
-
         if self.book_type != BookType.L1_MBP:
             return  # Can only process an L1 book with bars
 
-        cdef PriceType price_type = bar.bar_type.spec.price_type
+        cdef BarType bar_type = bar.bar_type
+        cdef InstrumentId instrument_id = bar_type.instrument_id
+        cdef BarType execution_bar_type = self._execution_bar_types.get(instrument_id)
+
+        if execution_bar_type is None:
+            execution_bar_type = bar_type
+            self._execution_bar_types[instrument_id] = bar_type
+            self._execution_bar_deltas[bar_type] = bar_type.spec.timedelta
+
+        if execution_bar_type != bar_type:
+            bar_type_timedelta = self._execution_bar_deltas.get(bar_type)
+            if bar_type_timedelta is None:
+                bar_type_timedelta = bar_type.spec.timedelta
+                self._execution_bar_deltas[bar_type] = bar_type_timedelta
+            if self._execution_bar_deltas[execution_bar_type] >= bar_type_timedelta:
+                self._execution_bar_types[instrument_id] = bar_type
+            else:
+                return
+
+        if is_logging_initialized():
+            self._log.debug(f"Processing {repr(bar)}")
+
+        cdef PriceType price_type = bar_type.spec.price_type
         if price_type == PriceType.LAST or price_type == PriceType.MID:
             self._process_trade_ticks_from_bar(bar)
         elif price_type == PriceType.BID:
@@ -708,6 +738,11 @@ cdef class OrderMatchingEngine:
 
         cdef Position position = self.cache.position_for_order(order.client_order_id)
 
+        cdef PositionId position_id
+        if position is None and self.oms_type == OmsType.NETTING:
+            position_id = PositionId(f"{order.instrument_id}-{order.strategy_id}")
+            position = self.cache.position(position_id)
+
         # Check not shorting an equity without a MARGIN account
         if (
             order.side == OrderSide.SELL
@@ -717,7 +752,7 @@ cdef class OrderMatchingEngine:
         ):
             self._generate_order_rejected(
                 order,
-                f"SHORT SELLING not permitted on a CASH account with order {repr(order)}."
+                f"SHORT SELLING not permitted on a CASH account with position {position} and order {repr(order)}"
             )
             return  # Cannot short sell
 
@@ -732,7 +767,7 @@ cdef class OrderMatchingEngine:
                 self._generate_order_rejected(
                     order,
                     f"REDUCE_ONLY {order.type_string_c()} {order.side_string_c()} order "
-                    f"would have increased position.",
+                    f"would have increased position",
                 )
                 return  # Reduce only
 
@@ -1001,9 +1036,9 @@ cdef class OrderMatchingEngine:
 
     cdef void _process_auction_book_order(self, BookOrder order, TimeInForce time_in_force):
         if time_in_force == TimeInForce.AT_THE_OPEN:
-            self._opening_auction_book.add(order, 0, 0)
+            self._opening_auction_book.add(order, 0, 0, 0)
         elif time_in_force == TimeInForce.AT_THE_CLOSE:
-            self._closing_auction_book.add(order, 0, 0)
+            self._closing_auction_book.add(order, 0, 0, 0)
         else:
             raise RuntimeError(time_in_force)
 
@@ -1447,7 +1482,7 @@ cdef class OrderMatchingEngine:
         if self._use_reduce_only and order.is_reduce_only and position is None:
             self._log.warning(
                 f"Canceling REDUCE_ONLY {order.type_string_c()} "
-                f"as would increase position.",
+                f"as would increase position",
             )
             self.cancel_order(order)
             return  # Order canceled
@@ -1494,7 +1529,7 @@ cdef class OrderMatchingEngine:
         if self._use_reduce_only and order.is_reduce_only and position is None:
             self._log.warning(
                 f"Canceling REDUCE_ONLY {order.type_string_c()} "
-                f"as would increase position.",
+                f"as would increase position",
             )
             self.cancel_order(order)
             return  # Order canceled
@@ -1568,19 +1603,19 @@ cdef class OrderMatchingEngine:
 
         if not fills:
             self._log.error(
-                "Cannot fill order: no fills from book when fills were expected (check sizes in data).",
+                "Cannot fill order: no fills from book when fills were expected (check sizes in data)",
             )
             return  # No fills
 
         if self.oms_type == OmsType.NETTING:
             venue_position_id = None  # No position IDs generated by the venue
 
-        if logging_is_initialized():
+        if is_logging_initialized():
             self._log.debug(
                 f"Applying fills to {order}, "
                 f"venue_position_id={venue_position_id}, "
                 f"position={position}, "
-                f"fills={fills}.",
+                f"fills={fills}",
             )
 
         cdef:
@@ -1588,18 +1623,18 @@ cdef class OrderMatchingEngine:
             Price last_fill_px = None
         for fill_px, fill_qty in fills:
             # Validate price precision
-            if fill_px.precision != self.instrument.price_precision:
+            if fill_px._mem.precision != self.instrument.price_precision:
                 raise RuntimeError(
                     f"Invalid price precision for fill {fill_px.precision} "
                     f"when instrument price precision is {self.instrument.price_precision}. "
-                    f"Check that the data price precision matches the {self.instrument.id} instrument."
+                    f"Check that the data price precision matches the {self.instrument.id} instrument"
                 )
             # Validate size precision
-            if fill_qty.precision != self.instrument.size_precision:
+            if fill_qty._mem.precision != self.instrument.size_precision:
                 raise RuntimeError(
                     f"Invalid size precision for fill {fill_qty.precision} "
                     f"when instrument size precision is {self.instrument.size_precision}. "
-                    f"Check that the data size precision matches the {self.instrument.id} instrument."
+                    f"Check that the data size precision matches the {self.instrument.id} instrument"
                 )
 
             if order.filled_qty._mem.raw == 0:
@@ -1735,27 +1770,12 @@ cdef class OrderMatchingEngine:
         order.liquidity_side = liquidity_side
 
         # Calculate commission
-        cdef double notional = self.instrument.notional_value(
-            quantity=last_qty,
-            price=last_px,
-            use_quote_for_inverse=False,
-        ).as_f64_c()
-
-        cdef double commission_f64
-        if order.liquidity_side == LiquiditySide.MAKER:
-            commission_f64 = notional * float(self.instrument.maker_fee)
-        elif order.liquidity_side == LiquiditySide.TAKER:
-            commission_f64 = notional * float(self.instrument.taker_fee)
-        else:
-            raise ValueError(
-                f"invalid `LiquiditySide`, was {liquidity_side_to_str(order.liquidity_side)}"
-            )
-
-        cdef Money commission
-        if self.instrument.is_inverse:  # Not using quote for inverse (see above):
-            commission = Money(commission_f64, self.instrument.base_currency)
-        else:
-            commission = Money(commission_f64, self.instrument.quote_currency)
+        cdef Money commission = self._fee_model.get_commission(
+            order=order,
+            fill_qty=last_qty,
+            fill_px=last_px,
+            instrument=self.instrument,
+        )
 
         self._generate_order_filled(
             order=order,
@@ -1926,7 +1946,7 @@ cdef class OrderMatchingEngine:
     cpdef void cancel_order(self, Order order, bint cancel_contingencies=True):
         if order.is_active_local_c():
             self._log.error(
-                f"Cannot cancel an order with {order.status_string_c()} from the matching engine.",
+                f"Cannot cancel an order with {order.status_string_c()} from the matching engine",
             )
             return
 

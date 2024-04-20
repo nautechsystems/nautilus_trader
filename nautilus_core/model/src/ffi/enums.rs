@@ -21,7 +21,8 @@ use crate::enums::{
     AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
     BookType, ContingencyType, CurrencyType, HaltReason, InstrumentClass, InstrumentCloseType,
     LiquiditySide, MarketStatus, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
-    PositionSide, PriceType, TimeInForce, TradingState, TrailingOffsetType, TriggerType,
+    PositionSide, PriceType, RecordFlag, TimeInForce, TradingState, TrailingOffsetType,
+    TriggerType,
 };
 
 #[no_mangle]
@@ -382,6 +383,23 @@ pub unsafe extern "C" fn price_type_from_cstr(ptr: *const c_char) -> PriceType {
     let value = cstr_to_str(ptr);
     PriceType::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `PriceType` enum string value, was '{value}'"))
+}
+
+#[no_mangle]
+pub extern "C" fn record_flag_to_cstr(value: RecordFlag) -> *const c_char {
+    str_to_cstr(value.as_ref())
+}
+
+/// Returns an enum from a Python string.
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn record_flag_from_cstr(ptr: *const c_char) -> RecordFlag {
+    let value = cstr_to_str(ptr);
+    RecordFlag::from_str(value)
+        .unwrap_or_else(|_| panic!("invalid `RecordFlag` enum string value, was '{value}'"))
 }
 
 #[no_mangle]

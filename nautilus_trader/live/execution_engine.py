@@ -162,7 +162,7 @@ class LiveExecutionEngine(ExecutionEngine):
         if self._clients:
             self._log.info("Connecting all clients...")
         else:
-            self._log.warning("No clients to connect.")
+            self._log.warning("No clients to connect")
             return
 
         for client in self._clients.values():
@@ -175,7 +175,7 @@ class LiveExecutionEngine(ExecutionEngine):
         if self._clients:
             self._log.info("Disconnecting all clients...")
         else:
-            self._log.warning("No clients to disconnect.")
+            self._log.warning("No clients to disconnect")
             return
 
         for client in self._clients.values():
@@ -242,15 +242,15 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         Kill the engine by abruptly canceling the queue task and calling stop.
         """
-        self._log.warning("Killing engine...")
+        self._log.warning("Killing engine")
         self._kill = True
         self.stop()
         if self._cmd_queue_task:
-            self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}...")
+            self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}")
             self._cmd_queue_task.cancel()
             self._cmd_queue_task = None
         if self._evt_queue_task:
-            self._log.debug(f"Canceling {self._evt_queue_task.get_name()}...")
+            self._log.debug(f"Canceling {self._evt_queue_task.get_name()}")
             self._evt_queue_task.cancel()
             self._evt_queue_task = None
 
@@ -280,7 +280,7 @@ class LiveExecutionEngine(ExecutionEngine):
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_cmd_queue.put` as queue full "
-                f"at {self._cmd_queue.qsize():_} items.",
+                f"at {self._cmd_queue.qsize():_} items",
             )
             # Schedule the `put` operation to be executed once there is space in the queue
             self._loop.create_task(self._cmd_queue.put(command))
@@ -310,7 +310,7 @@ class LiveExecutionEngine(ExecutionEngine):
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_evt_queue.put` as queue full "
-                f"at {self._evt_queue.qsize():_} items.",
+                f"at {self._evt_queue.qsize():_} items",
             )
             # Schedule the `put` operation to be executed once there is space in the queue
             self._loop.create_task(self._evt_queue.put(event))
@@ -320,16 +320,16 @@ class LiveExecutionEngine(ExecutionEngine):
     def _enqueue_sentinel(self) -> None:
         self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, self._sentinel)
         self._loop.call_soon_threadsafe(self._evt_queue.put_nowait, self._sentinel)
-        self._log.debug("Sentinel messages placed on queues.")
+        self._log.debug("Sentinel messages placed on queues")
 
     def _on_start(self) -> None:
         if not self._loop.is_running():
-            self._log.warning("Started when loop is not running.")
+            self._log.warning("Started when loop is not running")
 
         self._cmd_queue_task = self._loop.create_task(self._run_cmd_queue(), name="cmd_queue")
         self._evt_queue_task = self._loop.create_task(self._run_evt_queue(), name="evt_queue")
-        self._log.debug(f"Scheduled {self._cmd_queue_task}.")
-        self._log.debug(f"Scheduled {self._evt_queue_task}.")
+        self._log.debug(f"Scheduled {self._cmd_queue_task}")
+        self._log.debug(f"Scheduled {self._evt_queue_task}")
 
         if not self._inflight_check_task:
             if self.inflight_check_interval_ms > 0:
@@ -337,11 +337,11 @@ class LiveExecutionEngine(ExecutionEngine):
                     self._inflight_check_loop(),
                     name="inflight_check",
                 )
-                self._log.debug(f"Scheduled {self._inflight_check_task}.")
+                self._log.debug(f"Scheduled {self._inflight_check_task}")
 
     def _on_stop(self) -> None:
         if self._inflight_check_task:
-            self._log.info("Canceling in-flight check task...")
+            self._log.info("Canceling in-flight check task")
             self._inflight_check_task.cancel()
             self._inflight_check_task = None
 
@@ -358,7 +358,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
     async def _run_cmd_queue(self) -> None:
         self._log.debug(
-            f"Command message queue processing starting (qsize={self.cmd_qsize()})...",
+            f"Command message queue processing starting (qsize={self.cmd_qsize()})",
         )
         try:
             while True:
@@ -367,19 +367,19 @@ class LiveExecutionEngine(ExecutionEngine):
                     break
                 self._execute_command(command)
         except asyncio.CancelledError:
-            self._log.warning("Command message queue canceled.")
+            self._log.warning("Command message queue canceled")
         except RuntimeError as e:
-            self._log.error(f"RuntimeError: {e}.")
+            self._log.error(f"RuntimeError: {e}")
         finally:
             stopped_msg = "Command message queue stopped"
             if not self._cmd_queue.empty():
-                self._log.warning(f"{stopped_msg} with {self.cmd_qsize()} message(s) on queue.")
+                self._log.warning(f"{stopped_msg} with {self.cmd_qsize()} message(s) on queue")
             else:
-                self._log.debug(stopped_msg + ".")
+                self._log.debug(stopped_msg)
 
     async def _run_evt_queue(self) -> None:
         self._log.debug(
-            f"Event message queue processing starting (qsize={self.evt_qsize()})...",
+            f"Event message queue processing starting (qsize={self.evt_qsize()})",
         )
         try:
             while True:
@@ -388,15 +388,15 @@ class LiveExecutionEngine(ExecutionEngine):
                     break
                 self._handle_event(event)
         except asyncio.CancelledError:
-            self._log.warning("Event message queue canceled.")
+            self._log.warning("Event message queue canceled")
         except RuntimeError as e:
-            self._log.error(f"RuntimeError: {e}.")
+            self._log.error(f"RuntimeError: {e}")
         finally:
             stopped_msg = "Event message queue stopped"
             if not self._evt_queue.empty():
-                self._log.warning(f"{stopped_msg} with {self.evt_qsize()} message(s) on queue.")
+                self._log.warning(f"{stopped_msg} with {self.evt_qsize()} message(s) on queue")
             else:
-                self._log.debug(stopped_msg + ".")
+                self._log.debug(stopped_msg)
 
     async def _inflight_check_loop(self) -> None:
         try:
@@ -404,14 +404,14 @@ class LiveExecutionEngine(ExecutionEngine):
                 await asyncio.sleep(self.inflight_check_interval_ms / 1000)
                 await self._check_inflight_orders()
         except asyncio.CancelledError:
-            self._log.debug("In-flight check loop task canceled.")
+            self._log.debug("In-flight check loop task canceled")
 
     async def _check_inflight_orders(self) -> None:
         self._log.debug("Checking in-flight orders status...")
 
         inflight_orders: list[Order] = self._cache.orders_inflight()
         inflight_len = len(inflight_orders)
-        self._log.debug(f"Found {inflight_len} order{'' if inflight_len == 1 else 's'} in-flight.")
+        self._log.debug(f"Found {inflight_len} order{'' if inflight_len == 1 else 's'} in-flight")
         for order in inflight_orders:
             ts_now = self._clock.timestamp_ns()
             ts_init_last = order.last_event.ts_event
@@ -455,7 +455,7 @@ class LiveExecutionEngine(ExecutionEngine):
         PyCondition.positive(timeout_secs, "timeout_secs")
 
         if not self.reconciliation:
-            self._log.warning("Reconciliation deactivated.")
+            self._log.warning("Reconciliation deactivated")
             return True
 
         results: list[bool] = []
@@ -491,10 +491,10 @@ class LiveExecutionEngine(ExecutionEngine):
             True if reconciliation successful, else False.
 
         """
-        self._log.debug(f"[RECV][RPT] {report}.")
+        self._log.debug(f"[RECV][RPT] {report}")
         self.report_count += 1
 
-        self._log.info(f"Reconciling {report}.", color=LogColor.BLUE)
+        self._log.info(f"Reconciling {report}", color=LogColor.BLUE)
 
         if isinstance(report, OrderStatusReport):
             result = self._reconcile_order_report(report, [])  # No trades to reconcile
@@ -504,7 +504,7 @@ class LiveExecutionEngine(ExecutionEngine):
             result = self._reconcile_position_report(report)
         else:
             self._log.error(  # pragma: no cover (design-time error)
-                f"Cannot handle unrecognized report: {report}.",  # pragma: no cover (design-time error)
+                f"Cannot handle unrecognized report: {report}",  # pragma: no cover (design-time error)
             )
             return False
 
@@ -533,15 +533,15 @@ class LiveExecutionEngine(ExecutionEngine):
         self,
         mass_status: ExecutionMassStatus,
     ) -> bool:
-        self._log.debug(f"[RECV][RPT] {mass_status}.")
+        self._log.debug(f"[RECV][RPT] {mass_status}")
         self.report_count += 1
 
         if mass_status is None:
-            self._log.error("Error reconciling mass status (was None).")
+            self._log.error("Error reconciling mass status (was None)")
             return False
 
         self._log.info(
-            f"Reconciling ExecutionMassStatus for {mass_status.venue}.",
+            f"Reconciling ExecutionMassStatus for {mass_status.venue}",
             color=LogColor.BLUE,
         )
 
@@ -563,7 +563,7 @@ class LiveExecutionEngine(ExecutionEngine):
             for fill_report in trades:
                 if fill_report.trade_id in reconciled_trades:
                     self._log.warning(
-                        f"Duplicate {fill_report.trade_id!r} detected: {fill_report}.",
+                        f"Duplicate {fill_report.trade_id!r} detected: {fill_report}",
                     )
                 reconciled_trades.add(fill_report.trade_id)
 
@@ -605,7 +605,7 @@ class LiveExecutionEngine(ExecutionEngine):
             # Assign to report
             report.client_order_id = client_order_id
 
-        self._log.info(f"Reconciling order for {client_order_id!r}...", LogColor.BLUE)
+        self._log.info(f"Reconciling order for {client_order_id!r}", LogColor.BLUE)
 
         order: Order = self._cache.order(client_order_id)
         if order is None:
@@ -620,7 +620,7 @@ class LiveExecutionEngine(ExecutionEngine):
         if instrument is None:
             self._log.error(
                 f"Cannot reconcile order {order.client_order_id}: "
-                f"instrument {order.instrument_id} not found.",
+                f"instrument {order.instrument_id} not found",
             )
             return False  # Failed
 
@@ -671,7 +671,7 @@ class LiveExecutionEngine(ExecutionEngine):
             self._reconcile_fill_report(order, trade, instrument)
 
         if report.avg_px is None:
-            self._log.warning("report.avg_px was `None` when a value was expected.")
+            self._log.warning("report.avg_px was `None` when a value was expected")
 
         # Check reported filled qty against order filled qty
         if report.filled_qty != order.filled_qty:
@@ -694,14 +694,14 @@ class LiveExecutionEngine(ExecutionEngine):
         )
         if client_order_id is None:
             self._log.error(
-                f"Cannot reconcile FillReport: client order ID {client_order_id} not found.",
+                f"Cannot reconcile FillReport: client order ID {client_order_id} not found",
             )
             return False  # Failed
 
         order: Order | None = self._cache.order(client_order_id)
         if order is None:
             self._log.error(
-                "Cannot reconcile FillReport: no order for client order ID {client_order_id}",
+                f"Cannot reconcile FillReport: no order for client order ID {client_order_id}",
             )
             return False  # Failed
 
@@ -709,7 +709,7 @@ class LiveExecutionEngine(ExecutionEngine):
         if instrument is None:
             self._log.error(
                 f"Cannot reconcile order {order.client_order_id}: "
-                f"instrument {order.instrument_id} not found.",
+                f"instrument {order.instrument_id} not found",
             )
             return False  # Failed
 
@@ -745,15 +745,15 @@ class LiveExecutionEngine(ExecutionEngine):
         position: Position | None = self._cache.position(report.venue_position_id)
         if position is None:
             self._log.error(
-                f"Cannot reconcile position: position ID {report.venue_position_id} not found.",
+                f"Cannot reconcile position: position ID {report.venue_position_id} not found",
             )
             return False  # Failed
         position_signed_decimal_qty: Decimal = position.signed_decimal_qty()
         if position_signed_decimal_qty != report.signed_decimal_qty:
             self._log.error(
                 f"Cannot reconcile {report.instrument_id} {report.venue_position_id}: position "
-                f"net qty {position_signed_decimal_qty} != reported net qty {report.signed_decimal_qty}. "
-                f"{report}.",
+                f"net qty {position_signed_decimal_qty} != reported net qty {report.signed_decimal_qty},"
+                f"{report}",
             )
             return False  # Failed
 
@@ -771,8 +771,8 @@ class LiveExecutionEngine(ExecutionEngine):
         if position_signed_decimal_qty != report.signed_decimal_qty:
             self._log.error(
                 f"Cannot reconcile {report.instrument_id}: position "
-                f"net qty {position_signed_decimal_qty} != reported net qty {report.signed_decimal_qty}. "
-                f"{report}.",
+                f"net qty {position_signed_decimal_qty} != reported net qty {report.signed_decimal_qty}, "
+                f"{report}",
             )
             return False  # Failed
 
@@ -834,7 +834,7 @@ class LiveExecutionEngine(ExecutionEngine):
             reconciliation=True,
         )
 
-        self._log.warning(f"Generated inferred {filled}.")
+        self._log.warning(f"Generated inferred {filled}")
         return filled
 
     def _generate_external_order(self, report: OrderStatusReport) -> Order | None:
@@ -878,7 +878,7 @@ class LiveExecutionEngine(ExecutionEngine):
         if self.filter_unclaimed_external_orders and strategy_id.value == "EXTERNAL":
             # Experimental: will call this out with a warning log for now
             self._log.warning(
-                f"Filtering report for unclaimed EXTERNAL order, {report}.",
+                f"Filtering report for unclaimed EXTERNAL order, {report}",
             )
             return None  # No further reconciliation
 
@@ -911,7 +911,7 @@ class LiveExecutionEngine(ExecutionEngine):
         )
 
         order: Order = OrderUnpacker.from_init(initialized)
-        self._log.debug(f"Generated {initialized}.")
+        self._log.debug(f"Generated {initialized}")
 
         return order
 
@@ -928,7 +928,7 @@ class LiveExecutionEngine(ExecutionEngine):
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
         )
-        self._log.debug(f"Generated {rejected}.")
+        self._log.debug(f"Generated {rejected}")
         self._handle_event(rejected)
 
     def _generate_order_accepted(self, order: Order, report: OrderStatusReport) -> None:
@@ -944,7 +944,7 @@ class LiveExecutionEngine(ExecutionEngine):
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
         )
-        self._log.debug(f"Generated {accepted}.")
+        self._log.debug(f"Generated {accepted}")
         self._handle_event(accepted)
 
     def _generate_order_triggered(self, order: Order, report: OrderStatusReport) -> None:
@@ -960,7 +960,7 @@ class LiveExecutionEngine(ExecutionEngine):
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
         )
-        self._log.debug(f"Generated {triggered}.")
+        self._log.debug(f"Generated {triggered}")
         self._handle_event(triggered)
 
     def _generate_order_updated(self, order: Order, report: OrderStatusReport) -> None:
@@ -979,7 +979,7 @@ class LiveExecutionEngine(ExecutionEngine):
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
         )
-        self._log.debug(f"Generated {updated}.")
+        self._log.debug(f"Generated {updated}")
         self._handle_event(updated)
 
     def _generate_order_canceled(self, order: Order, report: OrderStatusReport) -> None:
@@ -995,7 +995,7 @@ class LiveExecutionEngine(ExecutionEngine):
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
         )
-        self._log.debug(f"Generated {canceled}.")
+        self._log.debug(f"Generated {canceled}")
         self._handle_event(canceled)
 
     def _generate_order_expired(self, order: Order, report: OrderStatusReport) -> None:
@@ -1011,7 +1011,7 @@ class LiveExecutionEngine(ExecutionEngine):
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
         )
-        self._log.debug(f"Generated {expired}.")
+        self._log.debug(f"Generated {expired}")
         self._handle_event(expired)
 
     def _generate_order_filled(
@@ -1041,7 +1041,7 @@ class LiveExecutionEngine(ExecutionEngine):
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
         )
-        self._log.debug(f"Generated {filled}.")
+        self._log.debug(f"Generated {filled}")
         self._handle_event(filled)
 
     def _should_update(self, order: Order, report: OrderStatusReport) -> bool:

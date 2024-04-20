@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
+
 use pyo3::{prelude::*, pymodule};
 
 pub mod average;
@@ -38,6 +40,7 @@ pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     // momentum
     m.add_class::<crate::momentum::rsi::RelativeStrengthIndex>()?;
     m.add_class::<crate::momentum::aroon::AroonOscillator>()?;
+    m.add_class::<crate::momentum::bias::Bias>()?;
     m.add_class::<crate::momentum::cmo::ChandeMomentumOscillator>()?;
     // volatility
     m.add_class::<crate::volatility::atr::AverageTrueRange>()?;

@@ -157,13 +157,13 @@ class OrderBookImbalance(Strategy):
         Check for trigger conditions.
         """
         if not self.instrument:
-            self.log.error("No instrument loaded.")
+            self.log.error("No instrument loaded")
             return
 
         # Fetch book from the cache being maintained by the `DataEngine`
         book = self.cache.order_book(self.instrument_id)
         if not book:
-            self.log.error("No book being maintained.")
+            self.log.error("No book being maintained")
             return
 
         if not book.spread():
@@ -172,7 +172,7 @@ class OrderBookImbalance(Strategy):
         bid_size: Quantity | None = book.best_bid_size()
         ask_size: Quantity | None = book.best_ask_size()
         if (bid_size is None or bid_size <= 0) or (ask_size is None or ask_size <= 0):
-            self.log.warning("No market yet.")
+            self.log.warning("No market yet")
             return
 
         smaller = min(bid_size, ask_size)
@@ -192,7 +192,7 @@ class OrderBookImbalance(Strategy):
             if len(self.cache.orders_inflight(strategy_id=self.id)) > 0:
                 self.log.info("Already have orders in flight - skipping.")
             elif seconds_since_last_trigger < self.min_seconds_between_triggers:
-                self.log.info("Time since last order < min_seconds_between_triggers - skipping.")
+                self.log.info("Time since last order < min_seconds_between_triggers - skipping")
             elif bid_size > ask_size:
                 order = self.order_factory.limit(
                     instrument_id=self.instrument.id,

@@ -41,7 +41,7 @@ cdef class Instrument(Data):
     """
     The base class for all instruments.
 
-    Represents a tradable financial market instrument. This class can be used to
+    Represents a tradable instrument. This class can be used to
     define an instrument, or act as a parent class for more specific instruments.
 
     Parameters
@@ -56,7 +56,7 @@ cdef class Instrument(Data):
         The instrument class.
     quote_currency : Currency
         The quote currency.
-    is_inverse : Currency
+    is_inverse : bool
         If the instrument costing is inverse (quantity expressed in quote currency units).
     price_precision : int
         The price decimal precision.
@@ -233,7 +233,7 @@ cdef class Instrument(Data):
     def __hash__(self) -> int:
         return hash(self.id)
 
-    def __repr__(self) -> str:  # TODO(cs): tick_scheme_name pending
+    def __repr__(self) -> str:  # TODO: tick_scheme_name pending
         return (
             f"{type(self).__name__}"
             f"(id={self.id.to_str()}, "

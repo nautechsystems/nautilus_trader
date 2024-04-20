@@ -46,7 +46,7 @@ class LiveDataClientFactory:
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
         name : str
-            The client name.
+            The custom client ID.
         config : dict[str, object]
             The configuration for the client.
         msgbus : MessageBus
@@ -88,7 +88,7 @@ class LiveExecClientFactory:
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
         name : str
-            The client name.
+            The custom client ID.
         config : dict[str, object]
             The configuration for the client.
         msgbus : MessageBus

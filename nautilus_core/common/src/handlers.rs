@@ -37,7 +37,6 @@ pub struct SafeMessageCallback {
 unsafe impl Send for SafeMessageCallback {}
 unsafe impl Sync for SafeMessageCallback {}
 
-#[allow(dead_code)]
 #[derive(Clone)]
 pub struct SafeTimeEventCallback {
     pub callback: Arc<dyn Fn(TimeEvent) + Send>,

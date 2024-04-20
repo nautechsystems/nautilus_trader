@@ -16,6 +16,7 @@
 use databento::dbn;
 use dbn::Record;
 use indexmap::IndexMap;
+use nautilus_core::correctness::check_slice_not_empty;
 use nautilus_model::identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue};
 
 use super::types::PublisherId;
@@ -92,9 +93,7 @@ pub fn infer_symbology_type(symbol: &str) -> String {
 }
 
 pub fn check_consistent_symbology(symbols: &[&str]) -> anyhow::Result<()> {
-    if symbols.is_empty() {
-        return Err(anyhow::anyhow!("Symbols was empty"));
-    };
+    check_slice_not_empty(symbols, stringify!(symbols))?;
 
     // SAFETY: We checked len so know there must be at least one symbol
     let first_symbol = symbols.first().unwrap();
@@ -149,7 +148,10 @@ mod tests {
         let symbols: Vec<&str> = vec![];
         let result = check_consistent_symbology(&symbols);
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap().to_string(), "Symbols was empty");
+        assert_eq!(
+            result.err().unwrap().to_string(),
+            "Condition failed: the 'symbols' slice `&[&str]` was empty"
+        );
     }
 
     #[rstest]

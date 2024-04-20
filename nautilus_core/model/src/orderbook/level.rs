@@ -15,9 +15,11 @@
 
 use std::{cmp::Ordering, collections::BTreeMap};
 
+use nautilus_core::nanos::UnixNanos;
+
 use crate::{
     data::order::{BookOrder, OrderId},
-    orderbook::{book::BookIntegrityError, ladder::BookPrice},
+    orderbook::{error::BookIntegrityError, ladder::BookPrice},
     types::fixed::FIXED_SCALAR,
 };
 
@@ -143,11 +145,11 @@ impl Level {
         self.update_insertion_order();
     }
 
-    pub fn remove_by_id(&mut self, order_id: OrderId, ts_event: u64, sequence: u64) {
+    pub fn remove_by_id(&mut self, order_id: OrderId, sequence: u64, ts_event: UnixNanos) {
         assert!(
             self.orders.remove(&order_id).is_some(),
             "{}",
-            &BookIntegrityError::OrderNotFound(order_id, ts_event, sequence)
+            &BookIntegrityError::OrderNotFound(order_id, sequence, ts_event)
         );
         self.update_insertion_order();
     }
@@ -331,7 +333,7 @@ mod tests {
 
         level.add(order1);
         level.add(order2);
-        level.remove_by_id(order2_id, 0, 0);
+        level.remove_by_id(order2_id, 0, 0.into());
         assert_eq!(level.len(), 1);
         assert!(level.orders.contains_key(&order1_id));
         assert_eq!(level.size(), 10.0);
@@ -365,11 +367,11 @@ mod tests {
 
     #[rstest]
     #[should_panic(
-        expected = "Integrity error: order not found: order_id=1, ts_event=2, sequence=3"
+        expected = "Integrity error: order not found: order_id=1, sequence=2, ts_event=3"
     )]
     fn test_remove_nonexistent_order() {
         let mut level = Level::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
-        level.remove_by_id(1, 2, 3);
+        level.remove_by_id(1, 2, 3.into());
     }
 
     #[rstest]

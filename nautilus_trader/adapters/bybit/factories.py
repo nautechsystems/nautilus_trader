@@ -15,14 +15,19 @@
 
 import asyncio
 
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.constants import BYBIT_ALL_PRODUCTS
+from nautilus_trader.adapters.bybit.common.credentials import get_api_key
+from nautilus_trader.adapters.bybit.common.credentials import get_api_secret
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
+from nautilus_trader.adapters.bybit.common.urls import get_http_base_url
+from nautilus_trader.adapters.bybit.common.urls import get_ws_base_url_private
+from nautilus_trader.adapters.bybit.common.urls import get_ws_base_url_public
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.data import BybitDataClient
 from nautilus_trader.adapters.bybit.execution import BybitExecutionClient
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
-from nautilus_trader.adapters.bybit.provider import BybitInstrumentProvider
-from nautilus_trader.adapters.env import get_env_key
+from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -67,9 +72,9 @@ def get_bybit_http_client(
 
     """
     global HTTP_CLIENTS
-    key = key or _get_api_key(is_testnet)
-    secret = secret or _get_api_secret(is_testnet)
-    http_base_url = base_url or _get_http_base_url(is_testnet)
+    key = key or get_api_key(is_testnet)
+    secret = secret or get_api_secret(is_testnet)
+    http_base_url = base_url or get_http_base_url(is_testnet)
     client_key: str = "|".join((key, secret))
 
     # Setup rate limit quotas
@@ -95,7 +100,7 @@ def get_bybit_http_client(
 def get_bybit_instrument_provider(
     client: BybitHttpClient,
     clock: LiveClock,
-    instrument_types: list[BybitInstrumentType],
+    product_types: list[BybitProductType],
     config: InstrumentProviderConfig,
 ) -> BybitInstrumentProvider:
     """
@@ -110,8 +115,8 @@ def get_bybit_instrument_provider(
         The client for the instrument provider.
     clock : LiveClock
         The clock for the instrument provider.
-    instrument_types : list[BybitInstrumentType]
-        List of instruments to load and sync with.
+    product_types : list[BybitProductType]
+        The product types to load.
     is_testnet : bool
         If the provider is for the Spot testnet.
     config : InstrumentProviderConfig
@@ -126,7 +131,7 @@ def get_bybit_instrument_provider(
         client=client,
         config=config,
         clock=clock,
-        instrument_types=instrument_types,
+        product_types=product_types,
     )
 
 
@@ -152,7 +157,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
         name : str
-            The client name.
+            The custom client ID.
         config : BybitDataClientConfig
             The client configuration.
         msgbus : MessageBus
@@ -167,6 +172,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
         BybitDataClient
 
         """
+        product_types = config.product_types or BYBIT_ALL_PRODUCTS
         client: BybitHttpClient = get_bybit_http_client(
             clock=clock,
             key=config.api_key,
@@ -177,13 +183,13 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
         provider = get_bybit_instrument_provider(
             client=client,
             clock=clock,
-            instrument_types=config.instrument_types,
+            product_types=product_types,
             config=config.instrument_provider,
         )
-        ws_base_urls: dict[BybitInstrumentType, str] = {}
-        for instrument_type in config.instrument_types:
-            ws_base_urls[instrument_type] = _get_ws_base_url_public(
-                instrument_type=instrument_type,
+        ws_base_urls: dict[BybitProductType, str] = {}
+        for product_type in product_types:
+            ws_base_urls[product_type] = get_ws_base_url_public(
+                product_type=product_type,
                 is_testnet=config.testnet,
             )
         return BybitDataClient(
@@ -193,9 +199,10 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             cache=cache,
             clock=clock,
             instrument_provider=provider,
-            instrument_types=config.instrument_types,
-            ws_urls=ws_base_urls,
+            product_types=product_types,
+            ws_base_urls=ws_base_urls,
             config=config,
+            name=name,
         )
 
 
@@ -221,7 +228,7 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
         name : str
-            The client name.
+            The custom client ID.
         config : BybitExecClientConfig
             The client configuration.
         msgbus : MessageBus
@@ -246,10 +253,10 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
         provider = get_bybit_instrument_provider(
             client=client,
             clock=clock,
-            instrument_types=config.instrument_types,
+            product_types=config.product_types or BYBIT_ALL_PRODUCTS,
             config=config.instrument_provider,
         )
-        default_base_url_ws: str = _get_ws_base_url_private(config.testnet)
+        base_url_ws: str = get_ws_base_url_private(config.testnet)
         return BybitExecutionClient(
             loop=loop,
             client=client,
@@ -257,77 +264,8 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             cache=cache,
             clock=clock,
             instrument_provider=provider,
-            instrument_types=config.instrument_types,
-            base_url_ws=config.base_url_ws or default_base_url_ws,
+            product_types=config.product_types or [BybitProductType.SPOT],
+            base_url_ws=config.base_url_ws or base_url_ws,
             config=config,
+            name=name,
         )
-
-
-def _get_api_key(is_testnet: bool) -> str:
-    if is_testnet:
-        key = get_env_key("BYBIT_TESTNET_API_KEY")
-        if not key:
-            raise ValueError(
-                "BYBIT_TESTNET_API_KEY environment variable not set",
-            )
-        return key
-    else:
-        key = get_env_key("BYBIT_API_KEY")
-        if not key:
-            raise ValueError("BYBIT_API_KEY environment variable not set")
-        return key
-
-
-def _get_api_secret(is_testnet: bool) -> str:
-    if is_testnet:
-        secret = get_env_key("BYBIT_TESTNET_API_SECRET")
-        if not secret:
-            raise ValueError(
-                "BYBIT_TESTNET_API_SECRET environment variable not set",
-            )
-        return secret
-    else:
-        secret = get_env_key("BYBIT_API_SECRET")
-        if not secret:
-            raise ValueError("BYBIT_API_SECRET environment variable not set")
-        return secret
-
-
-def _get_http_base_url(is_testnet: bool):
-    if is_testnet:
-        return "https://api-testnet.bybit.com"
-    else:
-        return "https://api.bytick.com"
-
-
-def _get_ws_base_url_public(
-    instrument_type: BybitInstrumentType,
-    is_testnet: bool,
-) -> str:
-    if not is_testnet:
-        if instrument_type == BybitInstrumentType.SPOT:
-            return "wss://stream.bybit.com/v5/public/spot"
-        elif instrument_type == BybitInstrumentType.LINEAR:
-            return "wss://stream.bybit.com/v5/public/linear"
-        elif instrument_type == BybitInstrumentType.INVERSE:
-            return "wss://stream.bybit.com/v5/public/inverse"
-        else:
-            raise RuntimeError(
-                f"invalid `BybitAccountType`, was {instrument_type}",  # pragma: no cover
-            )
-    else:
-        if instrument_type == BybitInstrumentType.SPOT:
-            return "wss://stream-testnet.bybit.com/v5/public/spot"
-        elif instrument_type == BybitInstrumentType.LINEAR:
-            return "wss://stream-testnet.bybit.com/v5/public/linear"
-        elif instrument_type == BybitInstrumentType.INVERSE:
-            return "wss://stream-testnet.bybit.com/v5/public/inverse"
-        else:
-            raise RuntimeError(f"invalid `BybitAccountType`, was {instrument_type}")
-
-
-def _get_ws_base_url_private(is_testnet: bool) -> str:
-    if is_testnet:
-        return "wss://stream-testnet.bybit.com/v5/private"
-    else:
-        return "wss://stream.bybit.com/v5/private"

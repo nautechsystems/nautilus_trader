@@ -18,7 +18,7 @@ import pytest
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.http.account import BinanceOrderHttp
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccountHttpAPI
@@ -54,7 +54,7 @@ class TestBinanceSpotAccountHttpAPI:
 
         # Act
         await endpoint.post(
-            parameters=endpoint.PostParameters(
+            params=endpoint.PostParameters(
                 symbol=BinanceSymbol("ETHUSDT"),
                 side=BinanceOrderSide.SELL,
                 type=BinanceOrderType.LIMIT,

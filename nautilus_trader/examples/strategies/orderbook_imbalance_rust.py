@@ -21,7 +21,6 @@ from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import BookImbalanceRatio
-from nautilus_trader.core.nautilus_pyo3 import OrderBookMbp
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import QuoteTick
@@ -114,7 +113,7 @@ class OrderBookImbalance(Strategy):
 
         # We need to initialize the Rust pyo3 objects
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value)
-        self.book = OrderBookMbp(pyo3_instrument_id, config.use_quote_ticks)
+        self.book = nautilus_pyo3.OrderBook(self.book_type, pyo3_instrument_id)
         self.imbalance = BookImbalanceRatio()
 
     def on_start(self) -> None:
@@ -146,18 +145,19 @@ class OrderBookImbalance(Strategy):
         Actions to be performed when order book deltas are received.
         """
         self.book.apply_deltas(pyo3_deltas)
-        self.imbalance.handle_book_mbp(self.book)
+        self.imbalance.handle_book(self.book)
         self.check_trigger()
 
-    def on_quote_tick(self, tick: QuoteTick) -> None:
+    def on_quote_tick(self, quote: QuoteTick) -> None:
         """
-        Actions to be performed when a delta is received.
+        Actions to be performed when a quote tick is received.
         """
-        self.book.update_quote_tick(tick)
-        self.imbalance.handle_book_mbp(self.book)
-        self.check_trigger()
+        if self.config.use_quote_ticks:
+            nautilus_pyo3.update_book_with_quote_tick(self.book, quote)
+            self.imbalance.handle_book(self.book)
+            self.check_trigger()
 
-    def on_order_book(self, order_book: OrderBook) -> None:
+    def on_order_book(self, book: OrderBook) -> None:
         """
         Actions to be performed when an order book update is received.
         """
@@ -168,7 +168,7 @@ class OrderBookImbalance(Strategy):
         Check for trigger conditions.
         """
         if not self.instrument:
-            self.log.error("No instrument loaded.")
+            self.log.error("No instrument loaded")
             return
 
         # This could be more efficient: for demonstration
@@ -177,7 +177,7 @@ class OrderBookImbalance(Strategy):
         bid_size = self.book.best_bid_size()
         ask_size = self.book.best_ask_size()
         if not bid_size or not ask_size:
-            self.log.warning("No market yet.")
+            self.log.warning("No market yet")
             return
 
         larger = max(bid_size.as_double(), ask_size.as_double())
@@ -196,7 +196,7 @@ class OrderBookImbalance(Strategy):
             if len(self.cache.orders_inflight(strategy_id=self.id)) > 0:
                 self.log.info("Already have orders in flight - skipping.")
             elif seconds_since_last_trigger < self.min_seconds_between_triggers:
-                self.log.info("Time since last order < min_seconds_between_triggers - skipping.")
+                self.log.info("Time since last order < min_seconds_between_triggers - skipping")
             elif bid_size.as_double() > ask_size.as_double():
                 order = self.order_factory.limit(
                     instrument_id=self.instrument.id,

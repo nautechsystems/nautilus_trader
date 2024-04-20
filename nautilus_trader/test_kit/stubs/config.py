@@ -95,12 +95,12 @@ class TestConfigStubs:
 
     @staticmethod
     def backtest_engine_config(
+        catalog: ParquetDataCatalog,
         log_level="INFO",
         bypass_logging: bool = True,
         bypass_risk: bool = False,
         allow_cash_position: bool = True,
         persist: bool = False,
-        catalog: ParquetDataCatalog | None = None,
         strategies: list[ImportableStrategyConfig] | None = None,
     ) -> BacktestEngineConfig:
         if persist:

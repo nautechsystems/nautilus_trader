@@ -845,13 +845,14 @@ async def test_generate_order_status_report_client_id(
     instrument_provider.add(instrument)
 
     # Act
-    report: OrderStatusReport = await exec_client.generate_order_status_report(
+    report: OrderStatusReport | None = await exec_client.generate_order_status_report(
         instrument_id=instrument.id,
         venue_order_id=VenueOrderId("1"),
         client_order_id=None,
     )
 
     # Assert
+    assert report
     assert report.order_status == OrderStatus.ACCEPTED
     assert report.price == Price(5.0, BETFAIR_PRICE_PRECISION)
     assert report.quantity == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
@@ -874,13 +875,14 @@ async def test_generate_order_status_report_venue_order_id(
     venue_order_id = VenueOrderId("323427122115")
 
     # Act
-    report: OrderStatusReport = await exec_client.generate_order_status_report(
+    report: OrderStatusReport | None = await exec_client.generate_order_status_report(
         instrument_id=instrument.id,
         venue_order_id=venue_order_id,
         client_order_id=client_order_id,
     )
 
     # Assert
+    assert report
     assert report.order_status == OrderStatus.ACCEPTED
     assert report.price == Price(5.0, BETFAIR_PRICE_PRECISION)
     assert report.quantity == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)

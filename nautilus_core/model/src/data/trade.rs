@@ -20,7 +20,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{serialization::Serializable, time::UnixNanos};
+use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -29,7 +29,7 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-/// Represents a single trade tick in a financial market.
+/// Represents a single trade tick in a market.
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -49,9 +49,9 @@ pub struct TradeTick {
     pub aggressor_side: AggressorSide,
     /// The trade match ID (assigned by the venue).
     pub trade_id: TradeId,
-    /// The UNIX timestamp (nanoseconds) when the tick event occurred.
+    /// The UNIX timestamp (nanoseconds) when the trade event occurred.
     pub ts_event: UnixNanos,
-    ///  The UNIX timestamp (nanoseconds) when the data object was initialized.
+    /// The UNIX timestamp (nanoseconds) when the struct was initialized.
     pub ts_init: UnixNanos,
 }
 
@@ -127,6 +127,7 @@ impl Serializable for TradeTick {}
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(feature = "stubs")]
 pub mod stubs {
+    use nautilus_core::nanos::UnixNanos;
     use rstest::fixture;
 
     use crate::{
@@ -144,8 +145,8 @@ pub mod stubs {
             size: Quantity::from("1.00000000"),
             aggressor_side: AggressorSide::Buyer,
             trade_id: TradeId::new("123456789").unwrap(),
-            ts_event: 0,
-            ts_init: 1,
+            ts_event: UnixNanos::from(0),
+            ts_init: UnixNanos::from(1),
         }
     }
 }

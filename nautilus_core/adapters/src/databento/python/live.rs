@@ -13,21 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{fs, str::FromStr};
+use std::{fs, i128, str::FromStr};
 
 use databento::{dbn, live::Subscription};
 use indexmap::IndexMap;
-use nautilus_core::{
-    python::{to_pyruntime_err, to_pyvalue_err},
-    time::UnixNanos,
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_model::{
+    identifiers::venue::Venue,
+    python::{data::data_to_pycapsule, instruments::convert_instrument_any_to_pyobject},
 };
-use nautilus_model::{identifiers::venue::Venue, python::data::data_to_pycapsule};
 use pyo3::prelude::*;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use tracing::{debug, error, trace};
 
-use super::loader::convert_instrument_to_pyobject;
 use crate::databento::{
     live::{DatabentoFeedHandler, LiveCommand, LiveMessage},
     symbology::{check_consistent_symbology, infer_symbology_type},
@@ -74,7 +73,7 @@ impl DatabentoLiveClient {
                     call_python(py, &callback, py_obj)
                 }),
                 LiveMessage::Instrument(data) => Python::with_gil(|py| {
-                    let py_obj = convert_instrument_to_pyobject(py, data)
+                    let py_obj = convert_instrument_any_to_pyobject(py, data)
                         .expect("Error creating instrument");
                     call_python(py, &callback, py_obj)
                 }),
@@ -152,7 +151,7 @@ impl DatabentoLiveClient {
         &mut self,
         schema: String,
         symbols: Vec<&str>,
-        start: Option<UnixNanos>,
+        start: Option<u64>,
     ) -> PyResult<()> {
         let stype_in = infer_symbology_type(symbols.first().unwrap());
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;

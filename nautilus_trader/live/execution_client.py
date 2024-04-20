@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 """
 The `LiveExecutionClient` class is responsible for interfacing with a particular API
-which may be presented directly by an exchange, or broker intermediary.
+which may be presented directly by a venue, or through a broker intermediary.
 """
 
 import asyncio
@@ -49,6 +49,7 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -152,7 +153,8 @@ class LiveExecutionClient(ExecutionClient):
         coro: Coroutine,
         log_msg: str | None = None,
         actions: Callable | None = None,
-        success: str | None = None,
+        success_msg: str | None = None,
+        success_color: LogColor = LogColor.NORMAL,
     ) -> asyncio.Task:
         """
         Run the given coroutine with error handling and optional callback actions when
@@ -166,8 +168,10 @@ class LiveExecutionClient(ExecutionClient):
             The log message for the task.
         actions : Callable, optional
             The actions callback to run when the coroutine is done.
-        success : str, optional
-            The log message to write on actions success.
+        success_msg : str, optional
+            The log message to write on `actions` success.
+        success_color : str, default ``NORMAL``
+            The log message color for `actions` success.
 
         Returns
         -------
@@ -175,7 +179,7 @@ class LiveExecutionClient(ExecutionClient):
 
         """
         log_msg = log_msg or coro.__name__
-        self._log.debug(f"Creating task {log_msg}.")
+        self._log.debug(f"Creating task {log_msg}")
         task = self._loop.create_task(
             coro,
             name=coro.__name__,
@@ -184,7 +188,8 @@ class LiveExecutionClient(ExecutionClient):
             functools.partial(
                 self._on_task_completed,
                 actions,
-                success,
+                success_msg,
+                success_color,
             ),
         )
         return task
@@ -192,7 +197,8 @@ class LiveExecutionClient(ExecutionClient):
     def _on_task_completed(
         self,
         actions: Callable | None,
-        success: str | None,
+        success_msg: str | None,
+        success_color: LogColor,
         task: Task,
     ) -> None:
         e: BaseException | None = task.exception()
@@ -211,8 +217,8 @@ class LiveExecutionClient(ExecutionClient):
                         f"Failed triggering action {actions.__name__} on `{task.get_name()}`: "
                         f"{e!r}\n{tb_str}",
                     )
-            if success:
-                self._log.info(success, LogColor.GREEN)
+            if success_msg:
+                self._log.info(success_msg, success_color)
 
     def connect(self) -> None:
         """
@@ -222,7 +228,8 @@ class LiveExecutionClient(ExecutionClient):
         self.create_task(
             self._connect(),
             actions=lambda: self._set_connected(True),
-            success="Connected",
+            success_msg="Connected",
+            success_color=LogColor.GREEN,
         )
 
     def disconnect(self) -> None:
@@ -233,46 +240,64 @@ class LiveExecutionClient(ExecutionClient):
         self.create_task(
             self._disconnect(),
             actions=lambda: self._set_connected(False),
-            success="Disconnected",
+            success_msg="Disconnected",
+            success_color=LogColor.GREEN,
         )
 
     def submit_order(self, command: SubmitOrder) -> None:
+        self._log.info(f"Submit {command.order}", LogColor.BLUE)
         self.create_task(
             self._submit_order(command),
             log_msg=f"submit_order: {command}",
         )
 
     def submit_order_list(self, command: SubmitOrderList) -> None:
+        self._log.info(f"Submit {command.order_list}", LogColor.BLUE)
         self.create_task(
             self._submit_order_list(command),
             log_msg=f"submit_order_list: {command}",
         )
 
     def modify_order(self, command: ModifyOrder) -> None:
+        venue_order_id_str = (
+            " " + repr(command.venue_order_id) if command.venue_order_id is not None else ""
+        )
+        self._log.info(f"Modify {command.client_order_id!r}{venue_order_id_str}", LogColor.BLUE)
         self.create_task(
             self._modify_order(command),
             log_msg=f"modify_order: {command}",
         )
 
     def cancel_order(self, command: CancelOrder) -> None:
+        venue_order_id_str = (
+            " " + repr(command.venue_order_id) if command.venue_order_id is not None else ""
+        )
+        self._log.info(f"Cancel {command.client_order_id!r}{venue_order_id_str}", LogColor.BLUE)
         self.create_task(
             self._cancel_order(command),
             log_msg=f"cancel_order: {command}",
         )
 
     def cancel_all_orders(self, command: CancelAllOrders) -> None:
+        side_str = f" {order_side_to_str(command.order_side)} " if command.order_side else " "
+        self._log.info(f"Cancel all{side_str}orders", LogColor.BLUE)
         self.create_task(
             self._cancel_all_orders(command),
             log_msg=f"cancel_all_orders: {command}",
         )
 
     def batch_cancel_orders(self, command: BatchCancelOrders) -> None:
+        self._log.info(
+            f"Batch cancel orders {[repr(c.client_order_id) for c in command.cancels]}",
+            LogColor.BLUE,
+        )
         self.create_task(
             self._batch_cancel_orders(command),
             log_msg=f"batch_cancel_orders: {command}",
         )
 
     def query_order(self, command: QueryOrder) -> None:
+        self._log.info(f"Query {command.client_order_id!r}", LogColor.BLUE)
         self.create_task(
             self._query_order(command),
             log_msg=f"query_order: {command}",
@@ -457,7 +482,7 @@ class LiveExecutionClient(ExecutionClient):
         return None
 
     async def _query_order(self, command: QueryOrder) -> None:
-        self._log.debug(f"Synchronizing order status {command}.")
+        self._log.debug(f"Synchronizing order status {command}")
 
         report: OrderStatusReport | None = await self.generate_order_status_report(
             instrument_id=command.instrument_id,
@@ -466,7 +491,7 @@ class LiveExecutionClient(ExecutionClient):
         )
 
         if report is None:
-            self._log.warning("Did not receive `OrderStatusReport` from request.")
+            self._log.warning("Did not receive `OrderStatusReport` from request")
             return
 
         self._send_order_status_report(report)

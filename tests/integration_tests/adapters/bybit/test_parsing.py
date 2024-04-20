@@ -28,7 +28,7 @@ ETHUSDT_BYBIT = TestInstrumentProvider.ethusdt_binance()
 
 
 class TestBybitParsing:
-    def setup(self):
+    def setup(self) -> None:
         self._enum_parser = BybitEnumParser()
         self.instrument: str = "ETHUSDT.BINANCE"
 
@@ -50,12 +50,12 @@ class TestBybitParsing:
             ["ETHUSDT.BYBIT-1-MONTH-LAST-EXTERNAL", "M"],
         ],
     )
-    def test_parse_bybit_kline_correct(self, bar_type, bybit_kline_interval):
+    def test_parse_bybit_kline_correct(self, bar_type: str, bybit_kline_interval: str) -> None:
         bar_type = BarType.from_str(bar_type)
         result = self._enum_parser.parse_bybit_kline(bar_type)
         assert result.value == bybit_kline_interval
 
-    def test_parse_bybit_kline_incorrect(self):
+    def test_parse_bybit_kline_incorrect(self) -> None:
         # MINUTE
         with pytest.raises(ValueError):
             self._enum_parser.parse_bybit_kline(
@@ -90,7 +90,11 @@ class TestBybitParsing:
             [BybitOrderSide.SELL, OrderSide.SELL],
         ],
     )
-    def test_parse_bybit_order_side(self, bybit_order_side, order_side):
+    def test_parse_bybit_order_side(
+        self,
+        bybit_order_side: BybitOrderSide,
+        order_side: OrderSide,
+    ) -> None:
         result = self._enum_parser.parse_bybit_order_side(bybit_order_side)
         assert result == order_side
 
@@ -101,7 +105,11 @@ class TestBybitParsing:
             [OrderSide.SELL, BybitOrderSide.SELL],
         ],
     )
-    def test_parse_nautilus_order_side(self, order_side, bybit_order_side):
+    def test_parse_nautilus_order_side(
+        self,
+        order_side: OrderSide,
+        bybit_order_side: BybitOrderSide,
+    ) -> None:
         result = self._enum_parser.parse_nautilus_order_side(order_side)
         assert result == bybit_order_side
 
@@ -114,7 +122,11 @@ class TestBybitParsing:
             [BybitOrderStatus.CANCELED, OrderStatus.CANCELED],
         ],
     )
-    def test_parse_bybit_order_status(self, bybit_order_status, order_status):
+    def test_parse_bybit_order_status(
+        self,
+        bybit_order_status: BybitOrderStatus,
+        order_status: OrderStatus,
+    ) -> None:
         result = self._enum_parser.parse_bybit_order_status(bybit_order_status)
         assert result == order_status
 
@@ -127,6 +139,10 @@ class TestBybitParsing:
             [OrderStatus.CANCELED, BybitOrderStatus.CANCELED],
         ],
     )
-    def test_parse_nautilus_order_status(self, order_status, bybit_order_status):
+    def test_parse_nautilus_order_status(
+        self,
+        order_status: OrderStatus,
+        bybit_order_status: BybitOrderStatus,
+    ) -> None:
         result = self._enum_parser.parse_nautilus_order_status(order_status)
         assert result == bybit_order_status

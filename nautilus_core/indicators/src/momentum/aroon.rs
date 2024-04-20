@@ -166,3 +166,96 @@ impl AroonOscillator {
         }
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::indicator::Indicator;
+
+    #[rstest]
+    fn test_name_returns_expected_string() {
+        let aroon = AroonOscillator::new(10).unwrap();
+        assert_eq!(aroon.name(), "AroonOscillator");
+    }
+
+    #[rstest]
+    fn test_period() {
+        let aroon = AroonOscillator::new(10).unwrap();
+        assert_eq!(aroon.period, 10);
+    }
+
+    #[rstest]
+    fn test_initialized_without_inputs_returns_false() {
+        let aroon = AroonOscillator::new(10).unwrap();
+        assert!(!aroon.initialized());
+    }
+
+    #[rstest]
+    fn test_initialized_with_required_inputs_returns_true() {
+        let mut aroon = AroonOscillator::new(10).unwrap();
+        for _ in 0..20 {
+            aroon.update_raw(110.08, 109.61);
+        }
+        assert!(aroon.initialized());
+    }
+
+    #[rstest]
+    fn test_value_with_one_input() {
+        let mut aroon = AroonOscillator::new(1).unwrap();
+        aroon.update_raw(110.08, 109.61);
+        assert_eq!(aroon.aroon_up, 100.0);
+        assert_eq!(aroon.aroon_down, 100.0);
+        assert_eq!(aroon.value, 0.0);
+    }
+
+    #[rstest]
+    fn test_value_with_twenty_inputs() {
+        let mut aroon = AroonOscillator::new(20).unwrap();
+        let inputs = [
+            (110.08, 109.61),
+            (110.15, 109.91),
+            (110.1, 109.73),
+            (110.06, 109.77),
+            (110.29, 109.88),
+            (110.53, 110.29),
+            (110.61, 110.26),
+            (110.28, 110.17),
+            (110.3, 110.0),
+            (110.25, 110.01),
+            (110.25, 109.81),
+            (109.92, 109.71),
+            (110.21, 109.84),
+            (110.08, 109.95),
+            (110.2, 109.96),
+            (110.16, 109.95),
+            (109.99, 109.75),
+            (110.2, 109.73),
+            (110.1, 109.81),
+            (110.04, 109.96),
+        ];
+        for &(high, low) in &inputs {
+            aroon.update_raw(high, low);
+        }
+        assert_eq!(aroon.aroon_up, 35.0);
+        assert_eq!(aroon.aroon_down, 5.0);
+        assert_eq!(aroon.value, 30.0);
+    }
+
+    #[rstest]
+    fn test_reset_successfully_returns_indicator_to_fresh_state() {
+        let mut aroon = AroonOscillator::new(10).unwrap();
+        for _ in 0..1000 {
+            aroon.update_raw(110.08, 109.61);
+        }
+        aroon.reset();
+        assert!(!aroon.initialized());
+        assert_eq!(aroon.aroon_up, 0.0);
+        assert_eq!(aroon.aroon_down, 0.0);
+        assert_eq!(aroon.value, 0.0);
+    }
+}

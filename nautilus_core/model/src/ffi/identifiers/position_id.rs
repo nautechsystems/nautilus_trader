@@ -31,5 +31,5 @@ pub unsafe extern "C" fn position_id_new(ptr: *const c_char) -> PositionId {
 
 #[no_mangle]
 pub extern "C" fn position_id_hash(id: &PositionId) -> u64 {
-    id.value.precomputed_hash()
+    id.inner().precomputed_hash()
 }

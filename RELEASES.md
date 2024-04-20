@@ -1,3 +1,46 @@
+# NautilusTrader 1.191.0 Beta
+
+Released on 20th April 2024 (UTC).
+
+### Enhancements
+- Implemented `FeeModel` including `FixedFeeModel` and `MakerTakerFeeModel` (#1584), thanks @rsmb7z
+- Implemented `TradeTickDataWrangler.process_bar_data` (#1585), thanks @rsmb7z
+- Implemented multiple timeframe bar execution (will use lowest timeframe per instrument)
+- Optimized `LiveTimer` efficiency and accuracy with `tokio` timer under the hood
+- Optimized `QuoteTickDataWrangler` and `TradeTickDataWrangler` (#1590), thanks @rsmb7z
+- Standardized adapter client logging (handle more logging from client base classes)
+- Simplified and consolidated Rust `OrderBook` design
+- Improved `CacheDatabaseAdapter` graceful close and thread join
+- Improved `MessageBus` graceful close and thread join
+- Improved `modify_order` error logging when order values remain unchanged
+- Added `RecordFlag` enum for Rust and Python
+- Interactive Brokers further improvements and fixes, thanks @rsmb7z
+- Ported Bias indicator to Rust, thanks @Pushkarm029
+
+### Breaking Changes
+- Reordered `OrderBookDelta` params `flags` and `sequence` and removed default 0 values (more explicit and less chance of mismatches)
+- Reordered `OrderBook` params `flags` and `sequence` and removed default 0 values (more explicit and less chance of mismatches)
+- Added `flags` parameter to `OrderBook.add`
+- Added `flags` parameter to `OrderBook.update`
+- Added `flags` parameter to `OrderBook.delete`
+- Changed Arrow schema for all instruments: added `info` binary field
+- Changed Arrow schema for `CryptoFuture`: added `is_inverse` boolean field
+- Renamed both `OrderBookMbo` and `OrderBookMbp` to `OrderBook` (consolidated)
+- Renamed `Indicator.handle_book_mbo` and `Indicator.handle_book_mbp` to `handle_book` (consolidated)
+- Renamed `register_serializable_object` to `register_serializable_type` (also renames first param from `obj` to `cls`)
+
+### Fixes
+- Fixed `MessageBus` pattern resolving (fixes a performance regression where topics published with no subscribers would always re-resolve)
+- Fixed `BacktestNode` streaming data management (was not clearing between chunks), thanks for the report @dpmabo
+- Fixed `RiskEngine` cumulative notional calculations for margin accounts (was incorrectly using base currency when selling)
+- Fixed selling `Equity` instruments with `CASH` account and `NETTING` OMS incorrectly rejecting (should be able to reduce position)
+- Fixed Databento bars decoding (was incorrectly applying display factor)
+- Fixed `Binance` bar (kline) to use `close_time` for `ts_event` was `opentime` (#1591), thanks for reporting @OnlyC
+- Fixed `AccountMarginExceeded` error condition (margin must actually be exceeded now, and can be zero)
+- Fixed `ParquetDataCatalog` path globbing which was including all paths with substrings of specified instrument IDs
+
+---
+
 # NautilusTrader 1.190.0 Beta
 
 Released on 22nd March 2024 (UTC).
@@ -11,6 +54,8 @@ Released on 22nd March 2024 (UTC).
 - Improved Binance execution client ping listen key error handling and logging
 - Improved Redis cache adapter and message bus error handling and logging
 - Improved Redis port parsing (`DatabaseConfig.port` can now be either a string or integer)
+- Ported ChandeMomentumOscillator indicator to Rust, thanks @Pushkarm029
+- Ported VIDYA indicator to Rust, thanks @Pushkarm029
 - Refactored `InteractiveBrokersEWrapper`, thanks @rsmb7z
 - Redact Redis passwords in strings and logs
 - Upgraded `redis` crate to 0.25.2 which bumps up TLS dependencies, and turned on `tls-rustls-webpki-roots` feature flag

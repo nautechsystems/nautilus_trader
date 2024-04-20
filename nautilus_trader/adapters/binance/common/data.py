@@ -31,7 +31,7 @@ from nautilus_trader.adapters.binance.common.schemas.market import BinanceDataMs
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceOrderBookMsg
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceQuoteMsg
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceTickerMsg
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
@@ -84,9 +84,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
     client : BinanceHttpClient
-        The binance HTTP client.
+        The Binance HTTP client.
     market : BinanceMarketHttpAPI
-        The binance Market HTTP API.
+        The Binance Market HTTP API.
     enum_parser : BinanceEnumParser
         The parser for Binance enums.
     msgbus : MessageBus
@@ -100,7 +100,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     account_type : BinanceAccountType
         The account type for the client.
     base_url_ws : str
-        The base URL for the WebSocket client.
+        The base url for the WebSocket client.
+    name : str, optional
+        The custom client ID.
     config : BinanceDataClientConfig
         The configuration for the client.
 
@@ -122,11 +124,12 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType,
         base_url_ws: str,
+        name: str | None,
         config: BinanceDataClientConfig,
     ) -> None:
         super().__init__(
             loop=loop,
-            client_id=ClientId(BINANCE_VENUE.value),
+            client_id=ClientId(name or BINANCE_VENUE.value),
             venue=BINANCE_VENUE,
             msgbus=msgbus,
             cache=cache,
@@ -137,7 +140,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         # Configuration
         self._binance_account_type = account_type
         self._use_agg_trade_ticks = config.use_agg_trade_ticks
-        self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
+        self._log.info(f"Account type: {self._binance_account_type.value}", LogColor.BLUE)
         self._log.info(f"{config.use_agg_trade_ticks=}", LogColor.BLUE)
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
@@ -170,8 +173,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             list[OrderBookDelta | OrderBookDeltas],
         ] = {}
 
-        self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
-        self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
+        self._log.info(f"Base url HTTP {self._http_client.base_url}", LogColor.BLUE)
+        self._log.info(f"Base url WebSocket {base_url_ws}", LogColor.BLUE)
 
         # Register common WebSocket message handlers
         self._ws_handlers = {
@@ -220,7 +223,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 try:
                     self._log.debug(
                         f"Scheduled `update_instruments` to run in "
-                        f"{self._update_instrument_interval}s.",
+                        f"{self._update_instrument_interval}s",
                     )
                     await asyncio.sleep(self._update_instrument_interval)
                     await self._instrument_provider.load_all_async()
@@ -236,11 +239,11 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
                     self._log.warning(
                         f"{error_code.name}: retrying update instruments "
-                        f"{retries}/{self._max_retries} in {self._retry_delay}s ...",
+                        f"{retries}/{self._max_retries} in {self._retry_delay}s",
                     )
                     await asyncio.sleep(self._retry_delay)
                 except asyncio.CancelledError:
-                    self._log.debug("Canceled `update_instruments` task.")
+                    self._log.debug("Canceled `update_instruments` task")
                     return
 
     async def _reconnect(self) -> None:
@@ -253,7 +256,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     async def _disconnect(self) -> None:
         # Cancel update instruments task
         if self._update_instruments_task:
-            self._log.debug("Canceling `update_instruments` task...")
+            self._log.debug("Canceling `update_instruments` task")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
 
@@ -274,7 +277,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId | None = data_type.metadata.get("instrument_id")
         if instrument_id is None:
             self._log.error(
-                f"Cannot subscribe to `{data_type.type}` no instrument ID in `data_type` metadata.",
+                f"Cannot subscribe to `{data_type.type}` no instrument ID in `data_type` metadata",
             )
             return
 
@@ -284,20 +287,20 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             if not self._binance_account_type.is_futures:
                 self._log.error(
                     f"Cannot subscribe to `BinanceFuturesMarkPriceUpdate` "
-                    f"for {self._binance_account_type.value} account types.",
+                    f"for {self._binance_account_type.value} account types",
                 )
                 return
             await self._ws_client.subscribe_mark_price(instrument_id.symbol.value, speed=1000)
         else:
             self._log.error(
-                f"Cannot subscribe to {data_type.type} (not implemented).",
+                f"Cannot subscribe to {data_type.type} (not implemented)",
             )
 
     async def _unsubscribe(self, data_type: DataType) -> None:
         instrument_id: InstrumentId | None = data_type.metadata.get("instrument_id")
         if instrument_id is None:
             self._log.error(
-                "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` no instrument ID in `data_type` metadata.",
+                "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` no instrument ID in `data_type` metadata",
             )
             return
 
@@ -307,12 +310,12 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             if not self._binance_account_type.is_futures:
                 self._log.error(
                     "Cannot unsubscribe from `BinanceFuturesMarkPriceUpdate` "
-                    f"for {self._binance_account_type.value} account types.",
+                    f"for {self._binance_account_type.value} account types",
                 )
                 return
         else:
             self._log.error(
-                f"Cannot unsubscribe from {data_type.type} (not implemented).",
+                f"Cannot unsubscribe from {data_type.type} (not implemented)",
             )
 
     async def _subscribe_instruments(self) -> None:
@@ -366,7 +369,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             self._log.error(
                 "Cannot subscribe to order book deltas: "
                 "L3_MBO data is not published by Binance. "
-                "Valid book types are L1_MBP, L2_MBP.",
+                "Valid book types are L1_MBP, L2_MBP",
             )
             return
 
@@ -381,7 +384,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             self._log.error(
                 "Cannot subscribe to order book:"
                 f"invalid `update_speed`, was {update_speed}. "
-                f"Valid update speeds are {valid_speeds} ms.",
+                f"Valid update speeds are {valid_speeds} ms",
             )
             return
 
@@ -394,7 +397,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 self._log.error(
                     "Cannot subscribe to order book snapshots: "
                     f"invalid `depth`, was {depth}. "
-                    "Valid depths are 5, 10 or 20.",
+                    "Valid depths are 5, 10 or 20",
                 )
                 return
             await self._ws_client.subscribe_partial_book_depth(
@@ -455,7 +458,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
         if not bar_type.spec.is_time_aggregated():
             self._log.error(
-                f"Cannot subscribe to {bar_type}: only time bars are aggregated by Binance.",
+                f"Cannot subscribe to {bar_type}: only time bars are aggregated by Binance",
             )
             return
 
@@ -463,13 +466,13 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         if self._binance_account_type.is_futures and resolution == "s":
             self._log.error(
                 f"Cannot subscribe to {bar_type}. "
-                "Second interval bars are not aggregated by Binance Futures.",
+                "Second interval bars are not aggregated by Binance Futures",
             )
         try:
             interval = BinanceKlineInterval(f"{bar_type.spec.step}{resolution}")
         except ValueError:
             self._log.error(
-                f"Bar interval {bar_type.spec.step}{resolution} not supported by Binance.",
+                f"Bar interval {bar_type.spec.step}{resolution} not supported by Binance",
             )
             return
 
@@ -499,7 +502,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     async def _unsubscribe_bars(self, bar_type: BarType) -> None:
         if not bar_type.spec.is_time_aggregated():
             self._log.error(
-                f"Cannot unsubscribe from {bar_type}: only time bars are aggregated by Binance.",
+                f"Cannot unsubscribe from {bar_type}: only time bars are aggregated by Binance",
             )
             return
 
@@ -507,13 +510,13 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         if self._binance_account_type.is_futures and resolution == "s":
             self._log.error(
                 f"Cannot unsubscribe from {bar_type}. "
-                "Second interval bars are not aggregated by Binance Futures.",
+                "Second interval bars are not aggregated by Binance Futures",
             )
         try:
             interval = BinanceKlineInterval(f"{bar_type.spec.step}{resolution}")
         except ValueError:
             self._log.error(
-                f"Bar interval {bar_type.spec.step}{resolution} not supported by Binance.",
+                f"Bar interval {bar_type.spec.step}{resolution} not supported by Binance",
             )
             return
 
@@ -533,17 +536,17 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     ) -> None:
         if start is not None:
             self._log.warning(
-                f"Requesting instrument {instrument_id} with specified `start` which has no effect.",
+                f"Requesting instrument {instrument_id} with specified `start` which has no effect",
             )
 
         if end is not None:
             self._log.warning(
-                f"Requesting instrument {instrument_id} with specified `end` which has no effect.",
+                f"Requesting instrument {instrument_id} with specified `end` which has no effect",
             )
 
         instrument: Instrument | None = self._instrument_provider.find(instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot find instrument for {instrument_id}.")
+            self._log.error(f"Cannot find instrument for {instrument_id}")
             return
 
         data_type = DataType(
@@ -566,7 +569,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         end: pd.Timestamp | None = None,
     ) -> None:
         self._log.error(
-            "Cannot request historical quote ticks: not published by Binance.",
+            "Cannot request historical quote ticks: not published by Binance",
         )
 
     async def _request_trade_ticks(
@@ -585,7 +588,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 self._log.warning(
                     "Trade ticks have been requested with a from/to time range, "
                     f"however the request will be for the most recent {limit}. "
-                    "Consider using aggregated trade ticks (`use_agg_trade_ticks`).",
+                    "Consider using aggregated trade ticks (`use_agg_trade_ticks`)",
                 )
             ticks = await self._http_market.request_trade_ticks(
                 instrument_id=instrument_id,
@@ -621,7 +624,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         if bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
                 f"Cannot request {bar_type}: "
-                f"only historical bars for LAST price type available from Binance.",
+                f"only historical bars for LAST price type available from Binance",
             )
             return
 
@@ -636,7 +639,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         if bar_type.is_externally_aggregated() or bar_type.spec.is_time_aggregated():
             if not bar_type.spec.is_time_aggregated():
                 self._log.error(
-                    f"Cannot request {bar_type}: only time bars are aggregated by Binance.",
+                    f"Cannot request {bar_type}: only time bars are aggregated by Binance",
                 )
                 return
 
@@ -644,14 +647,14 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             if not self._binance_account_type.is_spot_or_margin and resolution == "s":
                 self._log.error(
                     f"Cannot request {bar_type}: "
-                    "second interval bars are not aggregated by Binance Futures.",
+                    "second interval bars are not aggregated by Binance Futures",
                 )
             try:
                 interval = BinanceKlineInterval(f"{bar_type.spec.step}{resolution}")
             except ValueError:
                 self._log.error(
                     f"Cannot create Binance Kline interval. {bar_type.spec.step}{resolution} "
-                    "not supported.",
+                    "not supported",
                 )
                 return
 
@@ -666,7 +669,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
             if bar_type.is_internally_aggregated():
                 self._log.info(
-                    "Inferred INTERNAL time bars from EXTERNAL time bars.",
+                    "Inferred INTERNAL time bars from EXTERNAL time bars",
                     LogColor.BLUE,
                 )
         else:
@@ -698,7 +701,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         instrument = self._instrument_provider.find(bar_type.instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot aggregate internal bars: instrument {bar_type.instrument_id} not found.",
+                f"Cannot aggregate internal bars: instrument {bar_type.instrument_id} not found",
             )
             return []
 
@@ -756,7 +759,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
 
         self._log.info(
-            f"Inferred {len(bars)} {bar_type} bars aggregated from {len(binance_bars)} 1-MINUTE Binance bars.",
+            f"Inferred {len(bars)} {bar_type} bars aggregated from {len(binance_bars)} 1-MINUTE Binance bars",
             LogColor.BLUE,
         )
 
@@ -840,7 +843,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         instrument = self._instrument_provider.find(bar_type.instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot aggregate internal bars: instrument {bar_type.instrument_id} not found.",
+                f"Cannot aggregate internal bars: instrument {bar_type.instrument_id} not found",
             )
             return []
 
@@ -884,7 +887,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             aggregator.handle_trade_tick(tick)
 
         self._log.info(
-            f"Inferred {len(bars)} {bar_type} bars aggregated from {len(ticks)} trade ticks.",
+            f"Inferred {len(bars)} {bar_type} bars aggregated from {len(ticks)} trade ticks",
             LogColor.BLUE,
         )
 
@@ -902,7 +905,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
         binance_symbol = BinanceSymbol(symbol)
-        assert binance_symbol
         nautilus_symbol: str = binance_symbol.parse_as_nautilus(
             self._binance_account_type,
         )
@@ -915,7 +917,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     # -- WEBSOCKET HANDLERS ---------------------------------------------------------------------------------
 
     def _handle_ws_message(self, raw: bytes) -> None:
-        # TODO(cs): Uncomment for development
+        # TODO: Uncomment for development
         # self._log.info(str(raw), LogColor.CYAN)
         wrapper = self._decoder_data_msg_wrapper.decode(raw)
         if not wrapper.stream:

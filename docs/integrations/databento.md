@@ -45,7 +45,7 @@ and won't need to necessarily work with these lower level components directly.
 ## Databento documentation
 
 Databento provides extensive documentation for users which can be found in the [Databento knowledge base](https://databento.com/docs/knowledge-base/new-users).
-It's recommended you also refer to this Databento documentation in conjunction with this NautilusTrader integration guide.
+It's recommended you also refer to the Databento documentation in conjunction with this NautilusTrader integration guide.
 
 ## Databento Binary Encoding (DBN)
 
@@ -63,21 +63,21 @@ The same Rust implemented Nautilus decoder is used for:
 
 The following Databento schemas are supported by NautilusTrader:
 
-| Databento schema | Nautilus data type           |
-|------------------|------------------------------|
-| MBO              | `OrderBookDelta`             |
-| MBP_1            | `QuoteTick` + `TradeTick`    |
-| MBP_10           | `OrderBookDepth10`           |
-| TBBO             | `QuoteTick` + `TradeTick`    |
-| TRADES           | `TradeTick`                  |
-| OHLCV_1S         | `Bar`                        |
-| OHLCV_1M         | `Bar`                        |
-| OHLCV_1H         | `Bar`                        |
-| OHLCV_1D         | `Bar`                        |
-| DEFINITION       | `Instrument` (various types) |
-| IMBALANCE        | `DatabentoImbalance`         |
-| STATISTICS       | `DatabentoStatistics`        |
-| STATUS           | Not yet available            |
+| Databento schema | Nautilus data type                |
+|------------------|-----------------------------------|
+| MBO              | `OrderBookDelta`                  |
+| MBP_1            | `(QuoteTick, Option<TradeTick>)`  |
+| MBP_10           | `OrderBookDepth10`                |
+| TBBO             | `(QuoteTick, TradeTick)`          |
+| TRADES           | `TradeTick`                       |
+| OHLCV_1S         | `Bar`                             |
+| OHLCV_1M         | `Bar`                             |
+| OHLCV_1H         | `Bar`                             |
+| OHLCV_1D         | `Bar`                             |
+| DEFINITION       | `Instrument` (various types)      |
+| IMBALANCE        | `DatabentoImbalance`              |
+| STATISTICS       | `DatabentoStatistics`             |
+| STATUS           | Not yet available                 |
 
 ## Instrument IDs and symbology
 
@@ -124,6 +124,8 @@ Nautilus data includes at *least* two timestamps (required by the `Data` contrac
 
 When decoding and normalizing Databento to Nautilus we generally assign the Databento `ts_recv` value to the Nautilus
 `ts_event` field, as this timestamp is much more reliable and consistent, and is guaranteed to be monotonically increasing per instrument.
+The exception to this are the `DatabentoImbalance` and `DatabentoStatistics` data types, which have fields for all timestamps
+- as the types are defined specifically for the adapter.
 
 ```{note}
 See the following Databento docs for further information:

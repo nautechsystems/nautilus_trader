@@ -3,7 +3,7 @@ repos:
   #  General checks
   ##############################################################################
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v4.6.0
     hooks:
       - id: forbid-new-submodules
       - id: fix-encoding-pragma
@@ -73,7 +73,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/psf/black
-    rev: 24.3.0
+    rev: 24.4.0
     hooks:
       - id: black
         types_or: [python, pyi]
@@ -82,7 +82,7 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.3.4
+    rev: v0.3.7
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -115,10 +115,8 @@ repos:
     hooks:
       - id: mypy
         args: [
-          "--ignore-missing-imports",
+          "--config", "pyproject.toml",
           "--allow-incomplete-defs",
-          "--no-strict-optional",  # Fixing in progress
-          "--warn-no-return",
         ]
         additional_dependencies: [
           msgspec,

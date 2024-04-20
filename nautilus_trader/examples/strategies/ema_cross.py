@@ -83,8 +83,6 @@ class EMACross(Strategy):
     When the fast EMA crosses the slow EMA then enter a position at the market
     in that direction.
 
-    Cancels all orders and closes all positions on stop.
-
     Parameters
     ----------
     config : EMACrossConfig
@@ -137,8 +135,8 @@ class EMACross(Strategy):
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
-        self.subscribe_quote_ticks(self.instrument_id)
-        # self.subscribe_trade_ticks(self.instrument_id)
+        # self.subscribe_quote_ticks(self.instrument_id)
+        self.subscribe_trade_ticks(self.instrument_id)
         # self.subscribe_ticker(self.instrument_id)  # For debugging
         # self.subscribe_order_book_deltas(self.instrument_id, depth=20)  # For debugging
         # self.subscribe_order_book_snapshots(self.instrument_id, depth=20)  # For debugging
@@ -194,7 +192,7 @@ class EMACross(Strategy):
 
         """
         # For debugging (must add a subscription)
-        # self.log.info(repr(tick), LogColor.CYAN)
+        self.log.info(repr(tick), LogColor.CYAN)
 
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
@@ -207,7 +205,7 @@ class EMACross(Strategy):
 
         """
         # For debugging (must add a subscription)
-        # self.log.info(repr(tick), LogColor.CYAN)
+        self.log.info(repr(tick), LogColor.CYAN)
 
     def on_bar(self, bar: Bar) -> None:
         """
@@ -224,7 +222,7 @@ class EMACross(Strategy):
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(
-                f"Waiting for indicators to warm up [{self.cache.bar_count(self.bar_type)}]...",
+                f"Waiting for indicators to warm up [{self.cache.bar_count(self.bar_type)}]",
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
@@ -307,7 +305,7 @@ class EMACross(Strategy):
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
         # self.unsubscribe_quote_ticks(self.instrument_id)
-        # self.unsubscribe_trade_ticks(self.instrument_id)
+        self.unsubscribe_trade_ticks(self.instrument_id)
         # self.unsubscribe_ticker(self.instrument_id)
         # self.unsubscribe_order_book_deltas(self.instrument_id)
         # self.unsubscribe_order_book_snapshots(self.instrument_id)

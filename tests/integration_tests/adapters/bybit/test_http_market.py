@@ -18,8 +18,8 @@ import pkgutil
 import msgspec
 import pytest
 
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsLinearResponse
@@ -79,7 +79,7 @@ class TestBybitMarketHttpAPI:
         response_decoded = msgspec.json.Decoder(BybitInstrumentsSpotResponse).decode(response)
 
         monkeypatch.setattr(HttpClient, "request", get_mock(response))
-        instruments = await self.http_api.fetch_instruments(BybitInstrumentType.SPOT)
+        instruments = await self.http_api.fetch_instruments(BybitProductType.SPOT)
         assert len(instruments) == 2
         assert response_decoded.result.list[0] == instruments[0]
         assert response_decoded.result.list[1] == instruments[1]
@@ -93,7 +93,7 @@ class TestBybitMarketHttpAPI:
         response_decoded = msgspec.json.Decoder(BybitInstrumentsLinearResponse).decode(response)
 
         monkeypatch.setattr(HttpClient, "request", get_mock(response))
-        instruments = await self.http_api.fetch_instruments(BybitInstrumentType.LINEAR)
+        instruments = await self.http_api.fetch_instruments(BybitProductType.LINEAR)
         assert len(instruments) == 2
         assert response_decoded.result.list[0] == instruments[0]
         assert response_decoded.result.list[1] == instruments[1]
@@ -107,7 +107,7 @@ class TestBybitMarketHttpAPI:
         response_decoded = msgspec.json.Decoder(BybitInstrumentsOptionResponse).decode(response)
 
         monkeypatch.setattr(HttpClient, "request", get_mock(response))
-        instruments = await self.http_api.fetch_instruments(BybitInstrumentType.OPTION)
+        instruments = await self.http_api.fetch_instruments(BybitProductType.OPTION)
         assert len(instruments) == 2
         assert response_decoded.result.list[0] == instruments[0]
         assert response_decoded.result.list[1] == instruments[1]
@@ -125,7 +125,7 @@ class TestBybitMarketHttpAPI:
         response_decoded = msgspec.json.Decoder(BybitKlinesResponse).decode(response)
         monkeypatch.setattr(HttpClient, "request", get_mock(response))
         klines = await self.http_api.fetch_klines(
-            BybitInstrumentType.SPOT,
+            BybitProductType.SPOT,
             "BTCUSDT",
             BybitKlineInterval.DAY_1,
             3,
@@ -144,7 +144,7 @@ class TestBybitMarketHttpAPI:
         response_decoded = msgspec.json.Decoder(BybitKlinesResponse).decode(response)
         monkeypatch.setattr(HttpClient, "request", get_mock(response))
         klines = await self.http_api.fetch_klines(
-            BybitInstrumentType.LINEAR,
+            BybitProductType.LINEAR,
             "BTCUSDT",
             BybitKlineInterval.DAY_1,
             3,
@@ -166,7 +166,7 @@ class TestBybitMarketHttpAPI:
         )
         response_decoded = msgspec.json.Decoder(BybitTickersLinearResponse).decode(response)
         monkeypatch.setattr(HttpClient, "request", get_mock(response))
-        tickers = await self.http_api.fetch_tickers(BybitInstrumentType.LINEAR)
+        tickers = await self.http_api.fetch_tickers(BybitProductType.LINEAR)
         assert response_decoded.result.list == tickers
         assert len(tickers) == 1
         assert tickers[0].symbol == "BTCUSDT"
@@ -180,7 +180,7 @@ class TestBybitMarketHttpAPI:
         )
         response_decoded = msgspec.json.Decoder(BybitTickersOptionResponse).decode(response)
         monkeypatch.setattr(HttpClient, "request", get_mock(response))
-        tickers = await self.http_api.fetch_tickers(BybitInstrumentType.OPTION)
+        tickers = await self.http_api.fetch_tickers(BybitProductType.OPTION)
         assert response_decoded.result.list == tickers
         assert len(tickers) == 1
         assert tickers[0].symbol == "BTC-30DEC22-18000-C"
@@ -194,7 +194,7 @@ class TestBybitMarketHttpAPI:
         )
         response_decoded = msgspec.json.Decoder(BybitTickersSpotResponse).decode(response)
         monkeypatch.setattr(HttpClient, "request", get_mock(response))
-        tickers = await self.http_api.fetch_tickers(BybitInstrumentType.SPOT)
+        tickers = await self.http_api.fetch_tickers(BybitProductType.SPOT)
         assert response_decoded.result.list == tickers
         assert len(tickers) == 1
         assert tickers[0].symbol == "BTCUSDT"

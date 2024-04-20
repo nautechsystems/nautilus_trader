@@ -20,7 +20,7 @@ use std::{
 
 use nautilus_core::{
     ffi::{cvec::CVec, parsing::u8_as_bool, string::cstr_to_str},
-    time::UnixNanos,
+    nanos::UnixNanos,
 };
 use pyo3::{
     ffi,
@@ -89,7 +89,7 @@ pub unsafe extern "C" fn test_clock_register_default_handler(
 
 #[no_mangle]
 pub extern "C" fn test_clock_set_time(clock: &TestClock_API, to_time_ns: u64) {
-    clock.set_time(to_time_ns);
+    clock.set_time(to_time_ns.into());
 }
 
 #[no_mangle]
@@ -109,7 +109,7 @@ pub extern "C" fn test_clock_timestamp_us(clock: &TestClock_API) -> u64 {
 
 #[no_mangle]
 pub extern "C" fn test_clock_timestamp_ns(clock: &TestClock_API) -> u64 {
-    clock.get_time_ns()
+    clock.get_time_ns().as_u64()
 }
 
 #[no_mangle]
@@ -152,7 +152,9 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
         }
     };
 
-    clock.set_time_alert_ns(name, alert_time_ns, handler);
+    clock
+        .set_time_alert_ns(name, alert_time_ns, handler)
+        .unwrap();
 }
 
 /// # Safety
@@ -171,7 +173,7 @@ pub unsafe extern "C" fn test_clock_set_timer(
     assert!(!callback_ptr.is_null());
 
     let name = cstr_to_str(name_ptr);
-    let stop_time_ns = match stop_time_ns {
+    let stop_time_ns = match stop_time_ns.into() {
         0 => None,
         _ => Some(stop_time_ns),
     };
@@ -183,7 +185,9 @@ pub unsafe extern "C" fn test_clock_set_timer(
         }
     };
 
-    clock.set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, handler);
+    clock
+        .set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, handler)
+        .unwrap();
 }
 
 /// # Safety
@@ -195,7 +199,7 @@ pub unsafe extern "C" fn test_clock_advance_time(
     to_time_ns: u64,
     set_time: u8,
 ) -> CVec {
-    let events: Vec<TimeEvent> = clock.advance_time(to_time_ns, u8_as_bool(set_time));
+    let events: Vec<TimeEvent> = clock.advance_time(to_time_ns.into(), u8_as_bool(set_time));
     clock.match_handlers(events).into()
 }
 
@@ -310,7 +314,7 @@ pub extern "C" fn live_clock_timestamp_us(clock: &mut LiveClock_API) -> u64 {
 
 #[no_mangle]
 pub extern "C" fn live_clock_timestamp_ns(clock: &mut LiveClock_API) -> u64 {
-    clock.get_time_ns()
+    clock.get_time_ns().as_u64()
 }
 
 #[no_mangle]
@@ -353,7 +357,9 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
         }
     };
 
-    clock.set_time_alert_ns(name, alert_time_ns, handler);
+    clock
+        .set_time_alert_ns(name, alert_time_ns, handler)
+        .unwrap();
 }
 
 /// # Safety
@@ -372,7 +378,7 @@ pub unsafe extern "C" fn live_clock_set_timer(
     assert!(!callback_ptr.is_null());
 
     let name = cstr_to_str(name_ptr);
-    let stop_time_ns = match stop_time_ns {
+    let stop_time_ns = match stop_time_ns.into() {
         0 => None,
         _ => Some(stop_time_ns),
     };
@@ -385,7 +391,9 @@ pub unsafe extern "C" fn live_clock_set_timer(
         }
     };
 
-    clock.set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, handler);
+    clock
+        .set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, handler)
+        .unwrap();
 }
 
 /// # Safety

@@ -135,15 +135,15 @@ class LiveRiskEngine(RiskEngine):
         """
         Kill the engine by abruptly canceling the queue task and calling stop.
         """
-        self._log.warning("Killing engine...")
+        self._log.warning("Killing engine")
         self._kill = True
         self.stop()
         if self._cmd_queue_task:
-            self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}...")
+            self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}")
             self._cmd_queue_task.cancel()
             self._cmd_queue_task = None
         if self._evt_queue_task:
-            self._log.debug(f"Canceling {self._evt_queue_task.get_name()}...")
+            self._log.debug(f"Canceling {self._evt_queue_task.get_name()}")
             self._evt_queue_task.cancel()
             self._evt_queue_task = None
 
@@ -173,7 +173,7 @@ class LiveRiskEngine(RiskEngine):
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_cmd_queue.put` as queue full "
-                f"at {self._cmd_queue.qsize():_} items.",
+                f"at {self._cmd_queue.qsize():_} items",
             )
             # Schedule the `put` operation to be executed once there is space in the queue
             self._loop.create_task(self._cmd_queue.put(command))
@@ -204,7 +204,7 @@ class LiveRiskEngine(RiskEngine):
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_evt_queue.put` as queue full "
-                f"at {self._evt_queue.qsize():_} items.",
+                f"at {self._evt_queue.qsize():_} items",
             )
             # Schedule the `put` operation to be executed once there is space in the queue
             self._loop.create_task(self._evt_queue.put(event))
@@ -214,11 +214,11 @@ class LiveRiskEngine(RiskEngine):
     def _enqueue_sentinel(self) -> None:
         self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, self._sentinel)
         self._loop.call_soon_threadsafe(self._evt_queue.put_nowait, self._sentinel)
-        self._log.debug("Sentinel messages placed on queues.")
+        self._log.debug("Sentinel messages placed on queues")
 
     def _on_start(self) -> None:
         if not self._loop.is_running():
-            self._log.warning("Started when loop is not running.")
+            self._log.warning("Started when loop is not running")
 
         self._cmd_queue_task = self._loop.create_task(self._run_cmd_queue(), name="cmd_queue")
         self._evt_queue_task = self._loop.create_task(self._run_evt_queue(), name="evt_queue")
@@ -234,7 +234,7 @@ class LiveRiskEngine(RiskEngine):
 
     async def _run_cmd_queue(self) -> None:
         self._log.debug(
-            f"Command message queue processing (qsize={self.cmd_qsize()})...",
+            f"Command message queue processing (qsize={self.cmd_qsize()})",
         )
         try:
             while True:
@@ -243,19 +243,19 @@ class LiveRiskEngine(RiskEngine):
                     break
                 self._execute_command(command)
         except asyncio.CancelledError:
-            self._log.warning("Command message queue canceled.")
+            self._log.warning("Command message queue canceled")
         except RuntimeError as e:
-            self._log.error(f"RuntimeError: {e}.")
+            self._log.error(f"RuntimeError: {e}")
         finally:
             stopped_msg = "Command message queue stopped"
             if not self._cmd_queue.empty():
-                self._log.warning(f"{stopped_msg} with {self.cmd_qsize()} message(s) on queue.")
+                self._log.warning(f"{stopped_msg} with {self.cmd_qsize()} message(s) on queue")
             else:
-                self._log.debug(stopped_msg + ".")
+                self._log.debug(stopped_msg)
 
     async def _run_evt_queue(self) -> None:
         self._log.debug(
-            f"Event message queue processing starting (qsize={self.evt_qsize()})...",
+            f"Event message queue processing starting (qsize={self.evt_qsize()})",
         )
         try:
             while True:
@@ -264,12 +264,12 @@ class LiveRiskEngine(RiskEngine):
                     break
                 self._handle_event(event)
         except asyncio.CancelledError:
-            self._log.warning("Event message queue canceled.")
+            self._log.warning("Event message queue canceled")
         except RuntimeError as e:
-            self._log.error(f"RuntimeError: {e}.")
+            self._log.error(f"RuntimeError: {e}")
         finally:
             stopped_msg = "Event message queue stopped"
             if not self._evt_queue.empty():
-                self._log.warning(f"{stopped_msg} with {self.evt_qsize()} message(s) on queue.")
+                self._log.warning(f"{stopped_msg} with {self.evt_qsize()} message(s) on queue")
             else:
-                self._log.debug(stopped_msg + ".")
+                self._log.debug(stopped_msg)

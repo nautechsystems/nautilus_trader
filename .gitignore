@@ -18,8 +18,10 @@
 *.tar.gz*
 *.zip
 
+*.dbz
 *.dbn
 *.dbn.zst
+!/nautilus_core/adapters/src/databento/test_data/*
 
 .benchmarks*
 .coverage*
@@ -65,6 +67,7 @@ examples/backtest/notebooks/catalog
 nautilus_trader/**/.gitignore
 nautilus_trader/test_kit/mocks/.nautilus/
 tests/test_data/catalog/
+tests/unit_tests/catalog/
 tests/unit_tests/persistence/catalog
 bench_data/
 

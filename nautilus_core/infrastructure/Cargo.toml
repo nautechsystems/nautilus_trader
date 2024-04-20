@@ -11,7 +11,7 @@ name = "nautilus_infrastructure"
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]
-nautilus-common = { path = "../common", features = ["redis"] }
+nautilus-common = { path = "../common", features = ["python"] }
 nautilus-core = { path = "../core" , features = ["python"] }
 nautilus-model = { path = "../model" , features = ["python"] }
 anyhow = { workspace = true }

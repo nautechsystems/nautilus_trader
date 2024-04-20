@@ -153,9 +153,10 @@ class BinanceDepth(msgspec.Struct, frozen=True):
                 instrument_id,
                 BookAction.ADD,
                 o,
-                ts_init,
-                ts_init,
+                flags=0,
                 sequence=self.lastUpdateId or 0,
+                ts_event=ts_init,  # No event timestamp
+                ts_init=ts_init,
             )
             for o in bids + asks
         ]
@@ -264,7 +265,7 @@ class BinanceKline(msgspec.Struct, array_like=True):
             count=self.trades_count,
             taker_buy_base_volume=Decimal(self.taker_base_volume),
             taker_buy_quote_volume=Decimal(self.taker_quote_volume),
-            ts_event=millis_to_nanos(self.open_time),
+            ts_event=millis_to_nanos(self.close_time),
             ts_init=ts_init,
         )
 

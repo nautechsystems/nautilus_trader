@@ -13,19 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    any::Any,
-    hash::{Hash, Hasher},
-};
+use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     correctness::{check_equal_u8, check_positive_i64, check_positive_u64},
-    time::UnixNanos,
+    nanos::UnixNanos,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use super::Instrument;
+use super::{Instrument, InstrumentAny};
 use crate::{
     enums::{AssetClass, InstrumentClass},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
@@ -45,6 +42,7 @@ pub struct CryptoFuture {
     pub underlying: Currency,
     pub quote_currency: Currency,
     pub settlement_currency: Currency,
+    pub is_inverse: bool,
     pub activation_ns: UnixNanos,
     pub expiration_ns: UnixNanos,
     pub price_precision: u8,
@@ -74,6 +72,7 @@ impl CryptoFuture {
         underlying: Currency,
         quote_currency: Currency,
         settlement_currency: Currency,
+        is_inverse: bool,
         activation_ns: UnixNanos,
         expiration_ns: UnixNanos,
         price_precision: u8,
@@ -115,6 +114,7 @@ impl CryptoFuture {
             underlying,
             quote_currency,
             settlement_currency,
+            is_inverse,
             activation_ns,
             expiration_ns,
             price_precision,
@@ -153,6 +153,10 @@ impl Hash for CryptoFuture {
 }
 
 impl Instrument for CryptoFuture {
+    fn into_any(self) -> InstrumentAny {
+        InstrumentAny::CryptoFuture(self)
+    }
+
     fn id(&self) -> InstrumentId {
         self.id
     }
@@ -182,7 +186,7 @@ impl Instrument for CryptoFuture {
     }
 
     fn is_inverse(&self) -> bool {
-        false
+        self.is_inverse
     }
 
     fn price_precision(&self) -> u8 {
@@ -232,10 +236,6 @@ impl Instrument for CryptoFuture {
 
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 

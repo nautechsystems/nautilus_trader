@@ -67,7 +67,7 @@ class BinanceSpotSymbolInfo(msgspec.Struct, frozen=True):
         return Currency(
             code=self.baseAsset,
             precision=self.baseAssetPrecision,
-            iso4217=0,  # Currently undetermined for crypto assets
+            iso4217=0,  # Currently unspecified for crypto assets
             name=self.baseAsset,
             currency_type=CurrencyType.CRYPTO,
         )
@@ -76,7 +76,7 @@ class BinanceSpotSymbolInfo(msgspec.Struct, frozen=True):
         return Currency(
             code=self.quoteAsset,
             precision=self.quoteAssetPrecision,
-            iso4217=0,  # Currently undetermined for crypto assets
+            iso4217=0,  # Currently unspecified for crypto assets
             name=self.quoteAsset,
             currency_type=CurrencyType.CRYPTO,
         )
@@ -138,9 +138,10 @@ class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
                 instrument_id,
                 BookAction.ADD,
                 o,
-                ts_init,
-                ts_init,
+                flags=0,
                 sequence=self.lastUpdateId,
+                ts_event=ts_init,  # No event timestamp
+                ts_init=ts_init,
             )
             for o in bids + asks
         ]

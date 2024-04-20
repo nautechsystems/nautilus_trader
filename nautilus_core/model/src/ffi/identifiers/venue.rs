@@ -31,7 +31,7 @@ pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
 
 #[no_mangle]
 pub extern "C" fn venue_hash(id: &Venue) -> u64 {
-    id.value.precomputed_hash()
+    id.inner().precomputed_hash()
 }
 
 #[no_mangle]

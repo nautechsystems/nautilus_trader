@@ -84,7 +84,7 @@ class BinanceFuturesSymbolInfo(msgspec.Struct, kw_only=True, frozen=True):
         return Currency(
             code=self.baseAsset,
             precision=self.baseAssetPrecision,
-            iso4217=0,  # Currently undetermined for crypto assets
+            iso4217=0,  # Currently unspecified for crypto assets
             name=self.baseAsset,
             currency_type=CurrencyType.CRYPTO,
         )
@@ -93,7 +93,7 @@ class BinanceFuturesSymbolInfo(msgspec.Struct, kw_only=True, frozen=True):
         return Currency(
             code=self.quoteAsset,
             precision=self.quotePrecision,
-            iso4217=0,  # Currently undetermined for crypto assets
+            iso4217=0,  # Currently unspecified for crypto assets
             name=self.quoteAsset,
             currency_type=CurrencyType.CRYPTO,
         )

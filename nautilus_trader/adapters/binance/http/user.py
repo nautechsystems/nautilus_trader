@@ -18,8 +18,8 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.common.schemas.user import BinanceListenKey
+from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.core.correctness import PyCondition
@@ -105,19 +105,19 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
         symbol: BinanceSymbol | None = None  # MARGIN_ISOLATED only, mandatory
         listenKey: str | None = None  # SPOT/MARGIN only, mandatory
 
-    async def _post(self, parameters: PostParameters | None = None) -> BinanceListenKey:
+    async def _post(self, params: PostParameters | None = None) -> BinanceListenKey:
         method_type = HttpMethod.POST
-        raw = await self._method(method_type, parameters)
+        raw = await self._method(method_type, params)
         return self._post_resp_decoder.decode(raw)
 
-    async def _put(self, parameters: PutDeleteParameters | None = None) -> dict:
+    async def _put(self, params: PutDeleteParameters | None = None) -> dict:
         method_type = HttpMethod.PUT
-        raw = await self._method(method_type, parameters)
+        raw = await self._method(method_type, params)
         return self._put_resp_decoder.decode(raw)
 
-    async def _delete(self, parameters: PutDeleteParameters | None = None) -> dict:
+    async def _delete(self, params: PutDeleteParameters | None = None) -> dict:
         method_type = HttpMethod.DELETE
-        raw = await self._method(method_type, parameters)
+        raw = await self._method(method_type, params)
         return self._delete_resp_decoder.decode(raw)
 
 
@@ -177,8 +177,8 @@ class BinanceUserDataHttpAPI:
         Create Binance ListenKey.
         """
         key = await self._endpoint_listenkey._post(
-            parameters=self._endpoint_listenkey.PostParameters(
-                symbol=BinanceSymbol(symbol),
+            params=self._endpoint_listenkey.PostParameters(
+                symbol=BinanceSymbol(symbol) if symbol else None,
             ),
         )
         return key
@@ -192,8 +192,8 @@ class BinanceUserDataHttpAPI:
         Ping/Keepalive Binance ListenKey.
         """
         await self._endpoint_listenkey._put(
-            parameters=self._endpoint_listenkey.PutDeleteParameters(
-                symbol=BinanceSymbol(symbol),
+            params=self._endpoint_listenkey.PutDeleteParameters(
+                symbol=BinanceSymbol(symbol) if symbol else None,
                 listenKey=listen_key,
             ),
         )
@@ -207,8 +207,8 @@ class BinanceUserDataHttpAPI:
         Delete Binance ListenKey.
         """
         await self._endpoint_listenkey._delete(
-            parameters=self._endpoint_listenkey.PutDeleteParameters(
-                symbol=BinanceSymbol(symbol),
+            params=self._endpoint_listenkey.PutDeleteParameters(
+                symbol=BinanceSymbol(symbol) if symbol else None,
                 listenKey=listen_key,
             ),
         )

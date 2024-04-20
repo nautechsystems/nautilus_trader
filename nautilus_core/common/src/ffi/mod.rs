@@ -16,5 +16,4 @@
 pub mod clock;
 pub mod enums;
 pub mod logging;
-pub mod msgbus;
 pub mod timer;

@@ -24,8 +24,8 @@ from nautilus_trader.accounting.accounts.margin cimport MarginAccount
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
+from nautilus_trader.common.component cimport is_logging_initialized
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
@@ -111,7 +111,7 @@ cdef class AccountsManager:
         # *** position could still be None here ***
 
         cdef list pnls = account.calculate_pnls(instrument, fill, position)
-        if logging_is_initialized():
+        if is_logging_initialized():
             self._log.debug(f"Calculated PnLs: {pnls}")
 
         # Calculate final PnL including commissions
@@ -230,7 +230,7 @@ cdef class AccountsManager:
                         self._log.debug(
                             f"Cannot calculate balance locked: "
                             f"insufficient data for "
-                            f"{instrument.get_settlement_currency()}/{account.base_currency}."
+                            f"{instrument.get_settlement_currency()}/{account.base_currency}"
                         )
                         return None  # Cannot calculate
 
@@ -318,7 +318,7 @@ cdef class AccountsManager:
                         self._log.debug(
                             f"Cannot calculate initial (order) margin: "
                             f"insufficient data for "
-                            f"{instrument.get_settlement_currency()}/{account.base_currency}."
+                            f"{instrument.get_settlement_currency()}/{account.base_currency}"
                         )
                         return None  # Cannot calculate
 
@@ -392,7 +392,7 @@ cdef class AccountsManager:
                 instrument,
                 position.side,
                 position.quantity,
-                instrument.make_price(position.avg_px_open),  # TODO(cs): Temporary pending refactor
+                instrument.make_price(position.avg_px_open),  # TODO: Temporary pending refactor
             ).as_f64_c()
 
             if account.base_currency is not None:
@@ -409,7 +409,7 @@ cdef class AccountsManager:
                         self._log.debug(
                             f"Cannot calculate maintenance (position) margin: "
                             f"insufficient data for "
-                            f"{instrument.get_settlement_currency()}/{account.base_currency}."
+                            f"{instrument.get_settlement_currency()}/{account.base_currency}"
                         )
                         return None  # Cannot calculate
 
@@ -452,7 +452,7 @@ cdef class AccountsManager:
                 self._log.error(
                     f"Cannot calculate account state: "
                     f"insufficient data for "
-                    f"{fill.commission.currency}/{account.base_currency}."
+                    f"{fill.commission.currency}/{account.base_currency}"
                 )
                 return  # Cannot calculate
 
@@ -470,7 +470,7 @@ cdef class AccountsManager:
                 self._log.error(
                     f"Cannot calculate account state: "
                     f"insufficient data for "
-                    f"{pnl.currency}/{account.base_currency}."
+                    f"{pnl.currency}/{account.base_currency}"
                 )
                 return  # Cannot calculate
 
@@ -483,7 +483,7 @@ cdef class AccountsManager:
 
         cdef AccountBalance balance = account.balance()
         if balance is None:
-            self._log.error(f"Cannot complete transaction: no balance for {pnl.currency}.")
+            self._log.error(f"Cannot complete transaction: no balance for {pnl.currency}")
             return
 
         # Calculate new balance
@@ -523,7 +523,7 @@ cdef class AccountsManager:
                     if commission._mem.raw > 0:
                         self._log.error(
                             f"Cannot complete transaction: no {commission.currency} "
-                            f"balance to deduct a {commission.to_str()} commission from."
+                            f"balance to deduct a {commission.to_str()} commission from"
                         )
                         return
                     else:
@@ -546,7 +546,7 @@ cdef class AccountsManager:
                 if pnl._mem.raw < 0:
                     self._log.error(
                         "Cannot complete transaction: "
-                        f"no {pnl.currency} to deduct a {pnl.to_str()} realized PnL from."
+                        f"no {pnl.currency} to deduct a {pnl.to_str()} realized PnL from"
                     )
                     return
                 new_balance = AccountBalance(
@@ -559,12 +559,12 @@ cdef class AccountsManager:
                 new_free = balance.free.as_f64_c() + pnl.as_f64_c()
                 total = Money(new_total, pnl.currency)
                 free = Money(new_free, pnl.currency)
-                if new_total < 0:
+                if new_total < 0.0:
                     raise AccountBalanceNegative(
                         balance=total.as_decimal(),
                         currency=pnl.currency,
                     )
-                if new_free <= 0:
+                if new_free < 0.0:
                     raise AccountMarginExceeded(
                         balance=total.as_decimal(),
                         margin=balance.locked.as_decimal(),
@@ -580,14 +580,14 @@ cdef class AccountsManager:
 
             balances.append(new_balance)
 
-        # TODO(cs): Refactor and consolidate
+        # TODO: Refactor and consolidate
         if not pnls and commission._mem.raw != 0:
             currency = commission.currency
             balance = account.balance(currency)
             if balance is None:
                 self._log.error(
                     "Cannot calculate account state: "
-                    f"no cached balances for {currency}."
+                    f"no cached balances for {currency}"
                 )
                 return
 

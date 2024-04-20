@@ -254,7 +254,7 @@ class EMACrossTrailingStop(Strategy):
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(
-                f"Waiting for indicators to warm up [{self.cache.bar_count(self.bar_type)}]...",
+                f"Waiting for indicators to warm up [{self.cache.bar_count(self.bar_type)}]",
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
@@ -272,7 +272,7 @@ class EMACrossTrailingStop(Strategy):
         Users simple buy entry method (example).
         """
         if not self.instrument:
-            self.log.error("No instrument loaded.")
+            self.log.error("No instrument loaded")
             return
 
         order: MarketOrder = self.order_factory.market(
@@ -289,7 +289,7 @@ class EMACrossTrailingStop(Strategy):
         Users simple sell entry method (example).
         """
         if not self.instrument:
-            self.log.error("No instrument loaded.")
+            self.log.error("No instrument loaded")
             return
 
         order: MarketOrder = self.order_factory.market(
@@ -306,7 +306,7 @@ class EMACrossTrailingStop(Strategy):
         Users simple trailing stop BUY for (``SHORT`` positions).
         """
         if not self.instrument:
-            self.log.error("No instrument loaded.")
+            self.log.error("No instrument loaded")
             return
 
         offset = self.atr.value * self.trailing_atr_multiple
@@ -329,7 +329,7 @@ class EMACrossTrailingStop(Strategy):
         Users simple trailing stop SELL for (LONG positions).
         """
         if not self.instrument:
-            self.log.error("No instrument loaded.")
+            self.log.error("No instrument loaded")
             return
 
         offset = self.atr.value * self.trailing_atr_multiple

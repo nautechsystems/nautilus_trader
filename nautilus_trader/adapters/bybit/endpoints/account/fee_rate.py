@@ -16,15 +16,15 @@
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRateResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitFeeRateGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
-    category: BybitInstrumentType | None = None
+class BybitFeeRateGetParams(msgspec.Struct, omit_defaults=True, frozen=True):
+    category: BybitProductType | None = None
     symbol: str | None = None
     baseCoin: str | None = None
 
@@ -44,9 +44,11 @@ class BybitFeeRateEndpoint(BybitHttpEndpoint):
         )
         self._get_resp_decoder = msgspec.json.Decoder(BybitFeeRateResponse)
 
-    async def get(self, parameters: BybitFeeRateGetParameters) -> BybitFeeRateResponse:
-        raw = await self._method(self.http_method, parameters)
+    async def get(self, params: BybitFeeRateGetParams) -> BybitFeeRateResponse:
+        raw = await self._method(self.http_method, params)
         try:
             return self._get_resp_decoder.decode(raw)
         except Exception as e:
-            raise RuntimeError(f"Failed to decode response fee rate response: {raw!s}") from e
+            raise RuntimeError(
+                f"Failed to decode response from {self.url_path}: {raw.decode()}",
+            ) from e

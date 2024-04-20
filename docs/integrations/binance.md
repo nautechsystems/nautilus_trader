@@ -43,6 +43,7 @@ pair, and the `BTCUSDT` perpetual futures contract (this symbol is used for _bot
 E.g. for Binance Futures, the said instruments symbol is `BTCUSDT-PERP` within the Nautilus system boundary.
 
 ## Order types
+
 |                        | Spot                            | Margin                          | Futures           |
 |------------------------|---------------------------------|---------------------------------|-------------------|
 | `MARKET`               | ✓                               | ✓                               | ✓                 |
@@ -155,7 +156,7 @@ using the `BinanceAccountType` enum. The account type options are:
 - `USDT_FUTURE` (USDT or BUSD stablecoins as collateral)
 - `COIN_FUTURE` (other cryptocurrency as collateral)
 
-### Base URL overrides
+### Base url overrides
 
 It's possible to override the default base URLs for both HTTP Rest and
 WebSocket APIs. This is useful for configuring API clusters for performance reasons,
@@ -241,9 +242,9 @@ There is a limitation of one order book per instrument per trader instance.
 As stream subscriptions may vary, the latest order book data (deltas or snapshots)
 subscription will be used by the Binance data client.
 
-Order book snapshot rebuilds will be triggered:
-- On initial subscription of the order book data
-- On data websocket reconnects
+Order book snapshot rebuilds will be triggered on:
+- Initial subscription of the order book data
+- Data websocket reconnects
 
 The sequence of events is as follows:
 - Deltas will start buffered
@@ -253,6 +254,11 @@ The sequence of events is as follows:
 - Buffered deltas are iterated, dropping those where the sequence number is not greater than the last delta in the snapshot
 - Deltas will stop buffering
 - Remaining deltas are sent to the `DataEngine`
+
+## Binance data differences
+
+The `ts_event` field value for `QuoteTick` objects will differ between Spot and Futures exchanges,
+where the former does not provide an event timestamp, so the `ts_init` is used (which means `ts_event` and `ts_init` are identical).
 
 ## Binance specific data
 

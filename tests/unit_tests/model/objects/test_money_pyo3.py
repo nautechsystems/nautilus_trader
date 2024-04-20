@@ -37,12 +37,12 @@ class TestMoney:
     def test_instantiate_with_none_value_raises_type_error(self) -> None:
         # Arrange, Act, Assert
         with pytest.raises(TypeError):
-            Money(None, currency=USD)
+            Money(None, currency=USD)  # type: ignore
 
     def test_instantiate_with_none_currency_raises_type_error(self) -> None:
         # Arrange, Act, Assert
         with pytest.raises(TypeError):
-            Money(1.0, None)
+            Money(1.0, None)  # type: ignore
 
     def test_instantiate_with_value_exceeding_positive_limit_raises_value_error(self) -> None:
         # Arrange, Act, Assert

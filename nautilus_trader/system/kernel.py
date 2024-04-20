@@ -33,6 +33,7 @@ from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.component import Clock
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
+from nautilus_trader.common.component import LogGuard
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.component import init_logging
@@ -158,6 +159,7 @@ class NautilusKernel:
         register_component_clock(self._instance_id, self._clock)
 
         # Initialize logging system
+        self._log_guard: nautilus_pyo3.LogGuard | LogGuard | None = None
         logging: LoggingConfig = config.logging or LoggingConfig()
 
         if not is_logging_initialized():
@@ -218,7 +220,7 @@ class NautilusKernel:
                 )
 
         self._log: Logger = Logger(name=name)
-        self._log.info("Building system kernel...")
+        self._log.info("Building system kernel")
 
         # Setup loop (if sandbox live)
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -234,6 +236,27 @@ class NautilusKernel:
                     # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
                     self._setup_loop()
 
+        ########################################################################
+        # MessageBus database
+        ########################################################################
+        if not config.message_bus or not config.message_bus.database:
+            msgbus_db = None
+        elif config.message_bus.database.type == "redis":
+            msgbus_db = nautilus_pyo3.RedisMessageBusDatabase(
+                trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
+                instance_id=nautilus_pyo3.UUID4(self._instance_id.value),
+                config_json=msgspec.json.encode(config.message_bus),
+            )
+        else:
+            raise ValueError(
+                f"Unrecognized `config.message_bus.database.type`, was '{config.message_bus.database.type}'. "
+                "The only database type currently supported is 'redis', if you don't want a message bus database backing "
+                "then you can pass `None` for the `message_bus.database` ('in-memory' is no longer valid)",
+            )
+
+        ########################################################################
+        # Cache database
+        ########################################################################
         if not config.cache or not config.cache.database:
             cache_db = None
         elif config.cache.database.type == "redis":
@@ -258,17 +281,6 @@ class NautilusKernel:
         ########################################################################
         # Core components
         ########################################################################
-        if (
-            config.message_bus
-            and config.message_bus.database
-            and config.message_bus.database.type != "redis"
-        ):
-            raise ValueError(
-                f"Unrecognized `config.message_bus.type`, was '{config.message_bus.database.type}'. "
-                "The only database type currently supported is 'redis', if you don't want a message bus database backing "
-                "then you can pass `None` for the `message_bus.database`",
-            )
-
         msgbus_serializer = None
         if config.message_bus:
             encoding = config.message_bus.encoding.lower()
@@ -282,6 +294,7 @@ class NautilusKernel:
             instance_id=self._instance_id,
             clock=self._clock,
             serializer=msgbus_serializer,
+            database=msgbus_db,
             snapshot_orders=config.snapshot_orders,
             snapshot_positions=config.snapshot_positions,
             config=config.message_bus,
@@ -427,6 +440,7 @@ class NautilusKernel:
                 config=self._config.controller,
                 trader=self._trader,
             )
+            assert self._controller is not None  # Type checking
             self._controller.register_base(
                 portfolio=self._portfolio,
                 msgbus=self._msgbus,
@@ -465,7 +479,7 @@ class NautilusKernel:
             self._trader.add_exec_algorithm(exec_algorithm)
 
         build_time_ms = nanos_to_millis(time.time_ns() - self.ts_created)
-        self._log.info(f"Initialized in {build_time_ms}ms.")
+        self._log.info(f"Initialized in {build_time_ms}ms")
 
     def __del__(self) -> None:
         if hasattr(self, "_writer") and self._writer and not self._writer.is_closed:
@@ -476,14 +490,14 @@ class NautilusKernel:
             raise RuntimeError("No event loop available for the node")
 
         if self._loop.is_closed():
-            self._log.error("Cannot setup signal handling (event loop was closed).")
+            self._log.error("Cannot setup signal handling (event loop was closed)")
             return
 
         signal.signal(signal.SIGINT, signal.SIG_DFL)
         signals = (signal.SIGTERM, signal.SIGINT, signal.SIGABRT)
         for sig in signals:
             self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
-        self._log.debug(f"Event loop signal handling setup for {signals}.")
+        self._log.debug(f"Event loop signal handling setup for {signals}")
 
     def _loop_sig_handler(self, sig: signal.Signals) -> None:
         if self._loop is None:
@@ -787,11 +801,24 @@ class NautilusKernel:
         """
         return self._catalog
 
+    def get_log_guard(self) -> nautilus_pyo3.LogGuard | LogGuard | None:
+        """
+        Return the global logging systems log guard.
+
+        May return ``None`` if the logging system was already initialized.
+
+        Returns
+        -------
+        nautilus_pyo3.LogGuard | LogGuard | None
+
+        """
+        return self._log_guard
+
     def start(self) -> None:
         """
         Start the Nautilus system kernel.
         """
-        self._log.info("STARTING...")
+        self._log.info("STARTING")
 
         self._start_engines()
         self._connect_clients()
@@ -815,7 +842,7 @@ class NautilusKernel:
         if self.loop is None:
             raise RuntimeError("no event loop has been assigned to the kernel")
 
-        self._log.info("STARTING...")
+        self._log.info("STARTING")
 
         self._register_executor()
         self._start_engines()
@@ -842,7 +869,7 @@ class NautilusKernel:
         """
         Stop the Nautilus system kernel.
         """
-        self._log.info("STOPPING...")
+        self._log.info("STOPPING")
 
         if self._controller:
             self._controller.stop()
@@ -859,7 +886,7 @@ class NautilusKernel:
         self._cancel_timers()
         self._flush_writer()
 
-        self._log.info("STOPPED.")
+        self._log.info("STOPPED")
 
     async def stop_async(self) -> None:
         """
@@ -878,7 +905,7 @@ class NautilusKernel:
         if self.loop is None:
             raise RuntimeError("no event loop has been assigned to the kernel")
 
-        self._log.info("STOPPING...")
+        self._log.info("STOPPING")
 
         if self._trader.is_running:
             self._trader.stop()
@@ -895,7 +922,7 @@ class NautilusKernel:
         self._cancel_timers()
         self._flush_writer()
 
-        self._log.info("STOPPED.")
+        self._log.info("STOPPED")
 
     def dispose(self) -> None:
         """
@@ -915,6 +942,9 @@ class NautilusKernel:
             self.risk_engine.dispose()
         if not self.exec_engine.is_disposed:
             self.exec_engine.dispose()
+
+        self._cache.dispose()
+        self._msgbus.dispose()
 
         if not self.trader.is_disposed:
             self.trader.dispose()
@@ -937,7 +967,7 @@ class NautilusKernel:
 
         to_cancel = asyncio.tasks.all_tasks(self.loop)
         if not to_cancel:
-            self._log.info("All tasks canceled.")
+            self._log.info("All tasks canceled")
             return
 
         for task in to_cancel:
@@ -945,7 +975,7 @@ class NautilusKernel:
             task.cancel()
 
         if self.loop and self.loop.is_running():
-            self._log.warning("Event loop still running during `cancel_all_tasks`.")
+            self._log.warning("Event loop still running during `cancel_all_tasks`")
             return
 
         finish_all_tasks: asyncio.Future = asyncio.tasks.gather(*to_cancel)
@@ -1011,7 +1041,7 @@ class NautilusKernel:
         )
         if not await self._check_engines_connected():
             self._log.warning(
-                f"Timed out ({self._config.timeout_connection}s) waiting for engines to connect and initialize."
+                f"Timed out ({self._config.timeout_connection}s) waiting for engines to connect and initialize"
                 f"\nStatus"
                 f"\n------"
                 f"\nDataEngine.check_connected() == {self._data_engine.check_connected()}"
@@ -1029,7 +1059,7 @@ class NautilusKernel:
         )
         if not await self._check_engines_disconnected():
             self._log.error(
-                f"Timed out ({self._config.timeout_disconnection}s) waiting for engines to disconnect."
+                f"Timed out ({self._config.timeout_disconnection}s) waiting for engines to disconnect"
                 f"\nStatus"
                 f"\n------"
                 f"\nDataEngine.check_disconnected() == {self._data_engine.check_disconnected()}"
@@ -1045,10 +1075,10 @@ class NautilusKernel:
         if not await self._exec_engine.reconcile_state(
             timeout_secs=self._config.timeout_reconciliation,
         ):
-            self._log.error("Execution state could not be reconciled.")
+            self._log.error("Execution state could not be reconciled")
             return False
 
-        self._log.info("Execution state reconciled.", color=LogColor.GREEN)
+        self._log.info("Execution state reconciled", color=LogColor.GREEN)
         return True
 
     async def _await_portfolio_initialization(self) -> bool:
@@ -1058,14 +1088,14 @@ class NautilusKernel:
         )
         if not await self._check_portfolio_initialized():
             self._log.warning(
-                f"Timed out ({self._config.timeout_portfolio}s) waiting for portfolio to initialize."
+                f"Timed out ({self._config.timeout_portfolio}s) waiting for portfolio to initialize"
                 f"\nStatus"
                 f"\n------"
                 f"\nPortfolio.initialized == {self._portfolio.initialized}",
             )
             return False
 
-        self._log.info("Portfolio initialized.", color=LogColor.GREEN)
+        self._log.info("Portfolio initialized", color=LogColor.GREEN)
         return True
 
     async def _await_trader_residuals(self) -> None:
@@ -1133,7 +1163,7 @@ class NautilusKernel:
         self._clock.cancel_timers()
 
         for name in timer_names:
-            self._log.info(f"Canceled Timer(name={name}).")
+            self._log.info(f"Canceled Timer(name={name})")
 
     def _flush_writer(self) -> None:
         if self._writer is not None:

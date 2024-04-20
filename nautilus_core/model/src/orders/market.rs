@@ -19,11 +19,11 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::base::{Order, OrderCore};
+use super::base::{Order, OrderAny, OrderCore};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
@@ -77,33 +77,47 @@ impl MarketOrder {
     ) -> anyhow::Result<Self> {
         check_quantity_positive(quantity)?;
         if time_in_force == TimeInForce::Gtd {
-            anyhow::bail!("{}", "GTD not supported for Market orders");
+            anyhow::bail!("GTD not supported for Market orders");
         }
+        let init_order = OrderInitialized::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            order_side,
+            OrderType::Market,
+            quantity,
+            time_in_force,
+            false,
+            reduce_only,
+            quote_quantity,
+            false,
+            init_id,
+            ts_init,
+            ts_init,
+            None,
+            None,
+            Some(TriggerType::NoTrigger),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            contingency_type,
+            order_list_id,
+            linked_order_ids,
+            parent_order_id,
+            exec_algorithm_id,
+            exec_algorithm_params,
+            exec_spawn_id,
+            tags,
+        )
+        .unwrap();
 
         Ok(Self {
-            core: OrderCore::new(
-                trader_id,
-                strategy_id,
-                instrument_id,
-                client_order_id,
-                order_side,
-                OrderType::Market,
-                quantity,
-                time_in_force,
-                reduce_only,
-                quote_quantity,
-                None, // Emulation trigger
-                contingency_type,
-                order_list_id,
-                linked_order_ids,
-                parent_order_id,
-                exec_algorithm_id,
-                exec_algorithm_params,
-                exec_spawn_id,
-                tags,
-                init_id,
-                ts_init,
-            ),
+            core: OrderCore::new(init_order).unwrap(),
         })
     }
 }
@@ -129,6 +143,10 @@ impl PartialEq for MarketOrder {
 }
 
 impl Order for MarketOrder {
+    fn into_any(self) -> OrderAny {
+        OrderAny::Market(self)
+    }
+
     fn status(&self) -> OrderStatus {
         self.status
     }

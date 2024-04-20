@@ -19,7 +19,9 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use super::book::BookIntegrityError;
+use nautilus_core::nanos::UnixNanos;
+
+use super::error::BookIntegrityError;
 use crate::{
     data::order::{BookOrder, OrderId},
     enums::OrderSide,
@@ -113,10 +115,8 @@ impl Ladder {
     }
 
     pub fn add(&mut self, order: BookOrder) {
-        let order_id = order.order_id;
         let book_price = order.to_book_price();
-
-        self.cache.insert(order_id, book_price);
+        self.cache.insert(order.order_id, book_price);
 
         match self.levels.get_mut(&book_price) {
             Some(level) => {
@@ -130,9 +130,8 @@ impl Ladder {
     }
 
     pub fn update(&mut self, order: BookOrder) {
-        let price_opt = self.cache.get(&order.order_id).copied();
-
-        if let Some(price) = price_opt {
+        let price = self.cache.get(&order.order_id).copied();
+        if let Some(price) = price {
             if let Some(level) = self.levels.get_mut(&price) {
                 if order.price == level.price.value {
                     // Update at current price level
@@ -152,14 +151,14 @@ impl Ladder {
         self.add(order);
     }
 
-    pub fn delete(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
-        self.remove(order.order_id, ts_event, sequence);
+    pub fn delete(&mut self, order: BookOrder, sequence: u64, ts_event: UnixNanos) {
+        self.remove(order.order_id, sequence, ts_event);
     }
 
-    pub fn remove(&mut self, order_id: OrderId, ts_event: u64, sequence: u64) {
+    pub fn remove(&mut self, order_id: OrderId, sequence: u64, ts_event: UnixNanos) {
         if let Some(price) = self.cache.remove(&order_id) {
             if let Some(level) = self.levels.get_mut(&price) {
-                level.remove_by_id(order_id, ts_event, sequence);
+                level.remove_by_id(order_id, sequence, ts_event);
                 if level.is_empty() {
                     self.levels.remove(&price);
                 }
@@ -191,7 +190,6 @@ impl Ladder {
     #[must_use]
     pub fn simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
         let is_reversed = self.side == OrderSide::Buy;
-
         let mut fills = Vec::new();
         let mut cumulative_denominator = Quantity::zero(order.size.precision);
         let target = order.size;
@@ -416,7 +414,7 @@ mod tests {
         let mut ladder = Ladder::new(OrderSide::Buy);
         let order = BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(20), 1);
 
-        ladder.delete(order, 0, 0);
+        ladder.delete(order, 0, 0.into());
 
         assert_eq!(ladder.len(), 0);
     }
@@ -430,7 +428,7 @@ mod tests {
 
         let order = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(10), 1);
 
-        ladder.delete(order, 0, 0);
+        ladder.delete(order, 0, 0.into());
         assert_eq!(ladder.len(), 0);
         assert_eq!(ladder.sizes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);
@@ -446,7 +444,7 @@ mod tests {
 
         let order = BookOrder::new(OrderSide::Sell, Price::from("10.00"), Quantity::from(10), 1);
 
-        ladder.delete(order, 0, 0);
+        ladder.delete(order, 0, 0.into());
         assert_eq!(ladder.len(), 0);
         assert_eq!(ladder.sizes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);

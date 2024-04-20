@@ -19,17 +19,19 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use nautilus_common::interface::account::Account;
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
-    instruments::Instrument,
+    identifiers::account_id::AccountId,
+    instruments::InstrumentAny,
     position::Position,
     types::{
         balance::AccountBalance, currency::Currency, money::Money, price::Price, quantity::Quantity,
     },
 };
 
-use crate::account::{base::BaseAccount, Account};
+use crate::account::base::BaseAccount;
 
 #[derive(Debug)]
 #[cfg_attr(
@@ -63,9 +65,34 @@ impl CashAccount {
 }
 
 impl Account for CashAccount {
+    fn id(&self) -> AccountId {
+        self.id
+    }
+
+    fn account_type(&self) -> AccountType {
+        self.account_type
+    }
+
+    fn base_currency(&self) -> Option<Currency> {
+        self.base_currency
+    }
+
+    fn is_cash_account(&self) -> bool {
+        self.account_type == AccountType::Cash
+    }
+
+    fn is_margin_account(&self) -> bool {
+        self.account_type == AccountType::Margin
+    }
+
+    fn calculated_account_state(&self) -> bool {
+        false // TODO (implement this logic)
+    }
+
     fn balance_total(&self, currency: Option<Currency>) -> Option<Money> {
         self.base_balance_total(currency)
     }
+
     fn balances_total(&self) -> HashMap<Currency, Money> {
         self.base_balances_total()
     }
@@ -77,37 +104,46 @@ impl Account for CashAccount {
     fn balances_free(&self) -> HashMap<Currency, Money> {
         self.base_balances_free()
     }
+
     fn balance_locked(&self, currency: Option<Currency>) -> Option<Money> {
         self.base_balance_locked(currency)
     }
+
     fn balances_locked(&self) -> HashMap<Currency, Money> {
         self.base_balances_locked()
     }
+
     fn last_event(&self) -> Option<AccountState> {
         self.base_last_event()
     }
+
     fn events(&self) -> Vec<AccountState> {
         self.events.clone()
     }
+
     fn event_count(&self) -> usize {
         self.events.len()
     }
+
     fn currencies(&self) -> Vec<Currency> {
         self.balances.keys().copied().collect()
     }
+
     fn starting_balances(&self) -> HashMap<Currency, Money> {
         self.balances_starting.clone()
     }
+
     fn balances(&self) -> HashMap<Currency, AccountBalance> {
         self.balances.clone()
     }
+
     fn apply(&mut self, event: AccountState) {
         self.base_apply(event);
     }
 
-    fn calculate_balance_locked<T: Instrument>(
+    fn calculate_balance_locked(
         &mut self,
-        instrument: T,
+        instrument: InstrumentAny,
         side: OrderSide,
         quantity: Quantity,
         price: Price,
@@ -115,17 +151,19 @@ impl Account for CashAccount {
     ) -> anyhow::Result<Money> {
         self.base_calculate_balance_locked(instrument, side, quantity, price, use_quote_for_inverse)
     }
-    fn calculate_pnls<T: Instrument>(
+
+    fn calculate_pnls(
         &self,
-        instrument: T,
+        instrument: InstrumentAny,
         fill: OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
         self.base_calculate_pnls(instrument, fill, position)
     }
-    fn calculate_commission<T: Instrument>(
+
+    fn calculate_commission(
         &self,
-        instrument: T,
+        instrument: InstrumentAny,
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
@@ -185,14 +223,14 @@ impl Display for CashAccount {
 mod tests {
     use std::collections::{HashMap, HashSet};
 
-    use nautilus_common::{factories::OrderFactory, stubs::*};
+    use nautilus_common::{factories::OrderFactory, interface::account::Account, stubs::*};
     use nautilus_model::{
         enums::{AccountType, LiquiditySide, OrderSide},
         events::account::{state::AccountState, stubs::*},
         identifiers::{account_id::AccountId, position_id::PositionId, strategy_id::StrategyId},
         instruments::{
             crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, equity::Equity,
-            stubs::*,
+            stubs::*, Instrument,
         },
         orders::{market::MarketOrder, stubs::TestOrderEventStubs},
         position::Position,
@@ -200,7 +238,7 @@ mod tests {
     };
     use rstest::rstest;
 
-    use crate::account::{cash::CashAccount, stubs::*, Account};
+    use crate::account::{cash::CashAccount, stubs::*};
 
     #[rstest]
     fn test_display(cash_account: CashAccount) {
@@ -352,7 +390,7 @@ mod tests {
     ) {
         let balance_locked = cash_account_million_usd
             .calculate_balance_locked(
-                audusd_sim,
+                audusd_sim.into_any(),
                 OrderSide::Buy,
                 Quantity::from("1000000"),
                 Price::from("0.8"),
@@ -369,7 +407,7 @@ mod tests {
     ) {
         let balance_locked = cash_account_million_usd
             .calculate_balance_locked(
-                audusd_sim,
+                audusd_sim.into_any(),
                 OrderSide::Sell,
                 Quantity::from("1000000"),
                 Price::from("0.8"),
@@ -386,7 +424,7 @@ mod tests {
     ) {
         let balance_locked = cash_account_million_usd
             .calculate_balance_locked(
-                equity_aapl,
+                equity_aapl.into_any(),
                 OrderSide::Sell,
                 Quantity::from("100"),
                 Price::from("1500.0"),
@@ -426,7 +464,7 @@ mod tests {
         );
         let position = Position::new(audusd_sim, fill).unwrap();
         let pnls = cash_account_million_usd
-            .calculate_pnls(audusd_sim, fill, Some(position))
+            .calculate_pnls(audusd_sim.into_any(), fill, Some(position))
             .unwrap();
         assert_eq!(pnls, vec![Money::from("-800000 USD")]);
     }
@@ -461,7 +499,11 @@ mod tests {
         );
         let position = Position::new(currency_pair_btcusdt, fill1).unwrap();
         let result1 = cash_account_multi
-            .calculate_pnls(currency_pair_btcusdt, fill1, Some(position.clone()))
+            .calculate_pnls(
+                currency_pair_btcusdt.into_any(),
+                fill1,
+                Some(position.clone()),
+            )
             .unwrap();
         let order2 = order_factory.market(
             currency_pair_btcusdt.id,
@@ -486,7 +528,7 @@ mod tests {
             None,
         );
         let result2 = cash_account_multi
-            .calculate_pnls(currency_pair_btcusdt, fill2, Some(position))
+            .calculate_pnls(currency_pair_btcusdt.into_any(), fill2, Some(position))
             .unwrap();
         // use hash set to ignore order of results
         let result1_set: HashSet<Money> = result1.into_iter().collect();
@@ -514,7 +556,7 @@ mod tests {
     ) {
         let result = cash_account_million_usd
             .calculate_commission(
-                xbtusd_bitmex,
+                xbtusd_bitmex.into_any(),
                 Quantity::from("100000"),
                 Price::from("11450.50"),
                 LiquiditySide::Maker,
@@ -531,7 +573,7 @@ mod tests {
     ) {
         let result = cash_account_million_usd
             .calculate_commission(
-                audusd_sim,
+                audusd_sim.into_any(),
                 Quantity::from("1500000"),
                 Price::from("0.8005"),
                 LiquiditySide::Taker,
@@ -548,7 +590,7 @@ mod tests {
     ) {
         let result = cash_account_million_usd
             .calculate_commission(
-                xbtusd_bitmex,
+                xbtusd_bitmex.into_any(),
                 Quantity::from("100000"),
                 Price::from("11450.50"),
                 LiquiditySide::Taker,
@@ -563,7 +605,7 @@ mod tests {
         let instrument = usdjpy_idealpro();
         let result = cash_account_million_usd
             .calculate_commission(
-                instrument,
+                instrument.into_any(),
                 Quantity::from("2200000"),
                 Price::from("120.310"),
                 LiquiditySide::Taker,

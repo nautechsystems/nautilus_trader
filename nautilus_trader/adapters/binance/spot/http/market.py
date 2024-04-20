@@ -13,13 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbols
+from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.common.symbol import BinanceSymbols
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
@@ -76,9 +75,9 @@ class BinanceSpotExchangeInfoHttp(BinanceHttpEndpoint):
         symbols: BinanceSymbols | None = None
         permissions: BinanceSpotPermissions | None = None
 
-    async def get(self, parameters: GetParameters | None = None) -> BinanceSpotExchangeInfo:
+    async def get(self, params: GetParameters | None = None) -> BinanceSpotExchangeInfo:
         method_type = HttpMethod.GET
-        raw = await self._method(method_type, parameters)
+        raw = await self._method(method_type, params)
         return self._get_resp_decoder.decode(raw)
 
 
@@ -123,9 +122,9 @@ class BinanceSpotAvgPriceHttp(BinanceHttpEndpoint):
 
         symbol: BinanceSymbol = None
 
-    async def get(self, parameters: GetParameters) -> BinanceSpotAvgPrice:
+    async def get(self, params: GetParameters) -> BinanceSpotAvgPrice:
         method_type = HttpMethod.GET
-        raw = await self._method(method_type, parameters)
+        raw = await self._method(method_type, params)
         return self._get_resp_decoder.decode(raw)
 
 
@@ -172,9 +171,9 @@ class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
         if symbol and symbols:
             raise ValueError("`symbol` and `symbols` cannot be sent together")
         return await self._endpoint_spot_exchange_info.get(
-            parameters=self._endpoint_spot_exchange_info.GetParameters(
-                symbol=BinanceSymbol(symbol),
-                symbols=BinanceSymbols(symbols),
+            params=self._endpoint_spot_exchange_info.GetParameters(
+                symbol=BinanceSymbol(symbol) if symbol else None,
+                symbols=BinanceSymbols(symbols) if symbols else None,
                 permissions=permissions,
             ),
         )
@@ -184,7 +183,7 @@ class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
         Check average price for a provided symbol on the Spot exchange.
         """
         return await self._endpoint_spot_average_price.get(
-            parameters=self._endpoint_spot_average_price.GetParameters(
+            params=self._endpoint_spot_average_price.GetParameters(
                 symbol=BinanceSymbol(symbol),
             ),
         )

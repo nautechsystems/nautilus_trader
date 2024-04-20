@@ -107,7 +107,7 @@ class BetfairDataClient(LiveMarketDataClient):
     async def _connect(self):
         self._log.info("Connecting to BetfairHttpClient...")
         await self._client.connect()
-        self._log.info("BetfairClient login successful.", LogColor.GREEN)
+        self._log.info("BetfairClient login successful", LogColor.GREEN)
 
         # Connect market data socket
         await self._stream.connect()
@@ -116,7 +116,7 @@ class BetfairDataClient(LiveMarketDataClient):
         if self._instrument_provider.count == 0:
             await self._instrument_provider.load_all_async()
         instruments = self._instrument_provider.list_all()
-        self._log.debug(f"Loading {len(instruments)} instruments from provider into cache.")
+        self._log.debug(f"Loading {len(instruments)} instruments from provider into cache")
         for instrument in instruments:
             self._handle_data(instrument)
 
@@ -144,23 +144,23 @@ class BetfairDataClient(LiveMarketDataClient):
 
     async def _disconnect(self):
         # Close socket
-        self._log.info("Closing streaming socket...")
+        self._log.info("Closing streaming socket")
         await self._stream.disconnect()
 
         # Ensure client closed
-        self._log.info("Closing BetfairClient...")
+        self._log.info("Closing BetfairClient")
         await self._client.disconnect()
 
     def _reset(self):
         if self.is_connected:
-            self._log.error("Cannot reset a connected data client.")
+            self._log.error("Cannot reset a connected data client")
             return
 
         self._subscribed_instrument_ids = set()
 
     def _dispose(self):
         if self.is_connected:
-            self._log.error("Cannot dispose a connected data client.")
+            self._log.error("Cannot dispose a connected data client")
             return
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
@@ -179,7 +179,7 @@ class BetfairDataClient(LiveMarketDataClient):
         if instrument.market_id in self._subscribed_market_ids:
             self._log.warning(
                 f"Already subscribed to market_id: {instrument.market_id} "
-                f"[Instrument: {instrument_id.symbol}] <OrderBook> data.",
+                f"[Instrument: {instrument_id.symbol}] <OrderBook> data",
             )
             return
 
@@ -201,7 +201,7 @@ class BetfairDataClient(LiveMarketDataClient):
             self.create_task(self.delayed_subscribe(delay=0))
 
         self._log.info(
-            f"Added market_id {instrument.market_id} for {instrument_id.symbol} <OrderBook> data.",
+            f"Added market_id {instrument.market_id} for {instrument_id.symbol} <OrderBook> data",
         )
 
     async def delayed_subscribe(self, delay=0):
@@ -209,7 +209,7 @@ class BetfairDataClient(LiveMarketDataClient):
         await asyncio.sleep(delay)
         self._log.info(f"Sending subscribe for market_ids {self._subscribed_market_ids}")
         await self._stream.send_subscription_message(market_ids=list(self._subscribed_market_ids))
-        self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBook> data.")
+        self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBook> data")
 
     async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
         pass  # Subscribed as part of orderbook

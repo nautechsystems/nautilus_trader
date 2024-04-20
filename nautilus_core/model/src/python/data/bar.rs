@@ -22,7 +22,6 @@ use std::{
 use nautilus_core::{
     python::{serialization::from_dict_pyo3, to_pyvalue_err},
     serialization::Serializable,
-    time::UnixNanos,
 };
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 
@@ -129,6 +128,52 @@ impl BarType {
     }
 }
 
+impl Bar {
+    pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
+        let bar_type_obj: &PyAny = obj.getattr("bar_type")?.extract()?;
+        let bar_type_str = bar_type_obj.call_method0("__str__")?.extract()?;
+        let bar_type = BarType::from_str(bar_type_str)
+            .map_err(to_pyvalue_err)
+            .unwrap();
+
+        let open_py: &PyAny = obj.getattr("open")?;
+        let price_prec: u8 = open_py.getattr("precision")?.extract()?;
+        let open_raw: i64 = open_py.getattr("raw")?.extract()?;
+        let open = Price::from_raw(open_raw, price_prec).map_err(to_pyvalue_err)?;
+
+        let high_py: &PyAny = obj.getattr("high")?;
+        let high_raw: i64 = high_py.getattr("raw")?.extract()?;
+        let high = Price::from_raw(high_raw, price_prec).map_err(to_pyvalue_err)?;
+
+        let low_py: &PyAny = obj.getattr("low")?;
+        let low_raw: i64 = low_py.getattr("raw")?.extract()?;
+        let low = Price::from_raw(low_raw, price_prec).map_err(to_pyvalue_err)?;
+
+        let close_py: &PyAny = obj.getattr("close")?;
+        let close_raw: i64 = close_py.getattr("raw")?.extract()?;
+        let close = Price::from_raw(close_raw, price_prec).map_err(to_pyvalue_err)?;
+
+        let volume_py: &PyAny = obj.getattr("volume")?;
+        let volume_raw: u64 = volume_py.getattr("raw")?.extract()?;
+        let volume_prec: u8 = volume_py.getattr("precision")?.extract()?;
+        let volume = Quantity::from_raw(volume_raw, volume_prec).map_err(to_pyvalue_err)?;
+
+        let ts_event: u64 = obj.getattr("ts_event")?.extract()?;
+        let ts_init: u64 = obj.getattr("ts_init")?.extract()?;
+
+        Ok(Self::new(
+            bar_type,
+            open,
+            high,
+            low,
+            close,
+            volume,
+            ts_event.into(),
+            ts_init.into(),
+        ))
+    }
+}
+
 #[pymethods]
 #[allow(clippy::too_many_arguments)]
 impl Bar {
@@ -140,10 +185,19 @@ impl Bar {
         low: Price,
         close: Price,
         volume: Quantity,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
+        ts_event: u64,
+        ts_init: u64,
     ) -> Self {
-        Self::new(bar_type, open, high, low, close, volume, ts_event, ts_init)
+        Self::new(
+            bar_type,
+            open,
+            high,
+            low,
+            close,
+            volume,
+            ts_event.into(),
+            ts_init.into(),
+        )
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -206,14 +260,14 @@ impl Bar {
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> UnixNanos {
-        self.ts_event
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> UnixNanos {
-        self.ts_init
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 
     #[staticmethod]

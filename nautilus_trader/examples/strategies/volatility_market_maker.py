@@ -104,10 +104,10 @@ class VolatilityMarketMaker(Strategy):
         self.trade_size = Decimal(config.trade_size)
         self.emulation_trigger = TriggerType[config.emulation_trigger]
 
+        self.instrument: Instrument | None = None  # Initialized in on_start
+
         # Create the indicators for the strategy
         self.atr = AverageTrueRange(config.atr_period)
-
-        self.instrument: Instrument | None = None  # Initialized in on_start
 
         # Users order management variables
         self.buy_order: LimitOrder | None = None
@@ -133,7 +133,7 @@ class VolatilityMarketMaker(Strategy):
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.instrument_id)
 
-        # self.subscribe_trade_ticks(self.instrument_id)
+        self.subscribe_trade_ticks(self.instrument_id)
         # self.subscribe_order_book_deltas(self.instrument_id)  # For debugging
         # self.subscribe_order_book_snapshots(
         #     self.instrument_id,
@@ -234,7 +234,7 @@ class VolatilityMarketMaker(Strategy):
 
         """
         # For debugging (must add a subscription)
-        # self.log.info(repr(tick), LogColor.CYAN)
+        self.log.info(repr(tick), LogColor.CYAN)
 
     def on_bar(self, bar: Bar) -> None:
         """
@@ -255,14 +255,14 @@ class VolatilityMarketMaker(Strategy):
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(
-                f"Waiting for indicators to warm up [{self.cache.bar_count(self.bar_type)}]...",
+                f"Waiting for indicators to warm up [{self.cache.bar_count(self.bar_type)}]",
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
 
         last: QuoteTick = self.cache.quote_tick(self.instrument_id)
         if last is None:
-            self.log.info("No quotes yet...")
+            self.log.info("No quotes yet")
             return
 
         # Maintain buy orders
@@ -272,6 +272,7 @@ class VolatilityMarketMaker(Strategy):
             #     order=self.buy_order,
             #     price=self.instrument.make_price(price),
             # )
+            # return
             self.cancel_order(self.buy_order)
         self.create_buy_order(last)
 
@@ -282,6 +283,7 @@ class VolatilityMarketMaker(Strategy):
             #     order=self.sell_order,
             #     price=self.instrument.make_price(price),
             # )
+            # return
             self.cancel_order(self.sell_order)
         self.create_sell_order(last)
 
@@ -290,7 +292,7 @@ class VolatilityMarketMaker(Strategy):
         Market maker simple buy limit method (example).
         """
         if not self.instrument:
-            self.log.error("No instrument loaded.")
+            self.log.error("No instrument loaded")
             return
 
         price: Decimal = last.bid_price - (self.atr.value * self.atr_multiple)
@@ -314,7 +316,7 @@ class VolatilityMarketMaker(Strategy):
         Market maker simple sell limit method (example).
         """
         if not self.instrument:
-            self.log.error("No instrument loaded.")
+            self.log.error("No instrument loaded")
             return
 
         price: Decimal = last.ask_price + (self.atr.value * self.atr_multiple)
@@ -345,7 +347,7 @@ class VolatilityMarketMaker(Strategy):
         """
         last: QuoteTick = self.cache.quote_tick(self.instrument_id)
         if last is None:
-            self.log.info("No quotes yet...")
+            self.log.info("No quotes yet")
             return
 
         # If order filled then replace order at ATR multiple distance from the market
@@ -368,7 +370,7 @@ class VolatilityMarketMaker(Strategy):
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_quote_ticks(self.instrument_id)
-        # self.unsubscribe_trade_ticks(self.instrument_id)
+        self.unsubscribe_trade_ticks(self.instrument_id)
         # self.unsubscribe_order_book_deltas(self.instrument_id)  # For debugging
         # self.unsubscribe_order_book_snapshots(self.instrument_id)  # For debugging
 

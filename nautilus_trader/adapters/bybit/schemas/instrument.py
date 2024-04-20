@@ -19,6 +19,9 @@ from decimal import Decimal
 import msgspec
 import pandas as pd
 
+from nautilus_trader.adapters.bybit.common.enums import BybitContractType
+from nautilus_trader.adapters.bybit.common.enums import BybitOptionType
+from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
 from nautilus_trader.adapters.bybit.schemas.common import LeverageFilter
@@ -26,20 +29,14 @@ from nautilus_trader.adapters.bybit.schemas.common import LinearPriceFilter
 from nautilus_trader.adapters.bybit.schemas.common import LotSizeFilter
 from nautilus_trader.adapters.bybit.schemas.common import SpotLotSizeFilter
 from nautilus_trader.adapters.bybit.schemas.common import SpotPriceFilter
-from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
-from nautilus_trader.adapters.bybit.utils import tick_size_to_precision
-from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.core.rust.model import CurrencyType
+from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.rust.model import OptionKind
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.instruments import CryptoFuture
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import OptionsContract
-from nautilus_trader.model.objects import PRICE_MAX
-from nautilus_trader.model.objects import PRICE_MIN
-from nautilus_trader.model.objects import QUANTITY_MAX
-from nautilus_trader.model.objects import QUANTITY_MIN
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -57,57 +54,43 @@ class BybitInstrumentSpot(msgspec.Struct):
 
     def parse_to_instrument(
         self,
+        base_currency: Currency,
+        quote_currency: Currency,
         fee_rate: BybitFeeRate,
         ts_event: int,
         ts_init: int,
     ) -> CurrencyPair:
+        assert base_currency.code == self.baseCoin
+        assert quote_currency.code == self.quoteCoin
         bybit_symbol = BybitSymbol(self.symbol + "-SPOT")
-        tick_size = self.priceFilter.tickSize.rstrip("0")
-        # TODO unclear about step size
-        step_size = self.priceFilter.tickSize.rstrip("0")
         instrument_id = bybit_symbol.parse_as_nautilus()
-        price_precision = tick_size_to_precision(Decimal(self.priceFilter.tickSize))
-        price_increment = Price.from_str(tick_size)
-        size_increment = Quantity.from_str(step_size)
+        price_increment = Price.from_str(self.priceFilter.tickSize)
+        size_increment = Quantity.from_str(self.lotSizeFilter.basePrecision)
+        lot_size = Quantity.from_str(self.lotSizeFilter.basePrecision)
+        max_quantity = Quantity.from_str(self.lotSizeFilter.maxOrderQty)
+        min_quantity = Quantity.from_str(self.lotSizeFilter.minOrderQty)
+
         return CurrencyPair(
             instrument_id=instrument_id,
             raw_symbol=Symbol(bybit_symbol.raw_symbol),
-            base_currency=self.parse_to_base_currency(),
-            quote_currency=self.parse_to_quote_currency(),
-            price_precision=price_precision,
-            size_precision=size_increment,
+            base_currency=base_currency,
+            quote_currency=quote_currency,
+            price_precision=price_increment.precision,
+            size_precision=size_increment.precision,
             price_increment=price_increment,
             size_increment=size_increment,
-            margin_init=Decimal(0.1),
-            margin_maint=Decimal(0.1),
+            margin_init=Decimal("0.1"),
+            margin_maint=Decimal("0.1"),
             maker_fee=Decimal(fee_rate.makerFeeRate),
             taker_fee=Decimal(fee_rate.takerFeeRate),
             ts_event=ts_event,
             ts_init=ts_init,
-            lot_size=Quantity.from_str(self.lotSizeFilter.minOrderQty),
-            max_quantity=Quantity.from_str(self.lotSizeFilter.maxOrderQty),
-            min_quantity=Quantity.from_str(self.lotSizeFilter.minOrderQty),
+            lot_size=lot_size,
+            max_quantity=max_quantity,
+            min_quantity=min_quantity,
             min_price=None,
             max_price=None,
             info=msgspec.json.Decoder().decode(msgspec.json.Encoder().encode(self)),
-        )
-
-    def parse_to_base_currency(self) -> Currency:
-        return Currency(
-            code=self.baseCoin,
-            name=self.baseCoin,
-            currency_type=CurrencyType.CRYPTO,
-            precision=abs(int(Decimal(self.lotSizeFilter.basePrecision).as_tuple().exponent)),
-            iso4217=0,  # Currently undetermined for crypto assets
-        )
-
-    def parse_to_quote_currency(self) -> Currency:
-        return Currency(
-            code=self.quoteCoin,
-            name=self.quoteCoin,
-            currency_type=CurrencyType.CRYPTO,
-            precision=abs(int(Decimal(self.lotSizeFilter.quotePrecision).as_tuple().exponent)),
-            iso4217=0,  # Currently undetermined for crypto assets
         )
 
 
@@ -117,67 +100,9 @@ def get_strike_price_from_symbol(symbol: str) -> int:
     return int(symbol.split("-")[2])
 
 
-class BybitInstrumentOption(msgspec.Struct):
-    symbol: str
-    status: str
-    baseCoin: str
-    quoteCoin: str
-    settleCoin: str
-    optionsType: str
-    launchTime: str
-    deliveryTime: str
-    deliveryFeeRate: str
-    priceFilter: LinearPriceFilter
-    lotSizeFilter: LotSizeFilter
-
-    def parse_to_instrument(
-        self,
-    ) -> OptionsContract:
-        bybit_symbol = BybitSymbol(self.symbol + "-OPTION")
-        instrument_id = bybit_symbol.parse_as_nautilus()
-        price_precision = tick_size_to_precision(Decimal(self.priceFilter.tickSize))
-        price_increment = Price(float(self.priceFilter.minPrice), price_precision)
-        if self.optionsType == "Call":
-            option_kind = OptionKind.CALL
-        elif self.optionsType == "Put":
-            option_kind = OptionKind.PUT
-        else:
-            raise ValueError(f"Unknown Bybit option type {self.optionsType}")
-        timestamp = time.time_ns()
-        strike_price = get_strike_price_from_symbol(self.symbol)
-        activation_ns = pd.Timedelta(milliseconds=int(self.launchTime)).total_seconds() * 1e9
-        expiration_ns = pd.Timedelta(milliseconds=int(self.deliveryTime)).total_seconds() * 1e9
-        return OptionsContract(
-            instrument_id=instrument_id,
-            raw_symbol=Symbol(bybit_symbol.raw_symbol),
-            asset_class=AssetClass.CRYPTOCURRENCY,
-            currency=self.parse_to_quote_currency(),
-            price_precision=price_precision,
-            price_increment=price_increment,
-            multiplier=Quantity.from_str("1.0"),
-            lot_size=Quantity.from_str(self.lotSizeFilter.qtyStep),
-            underlying=self.baseCoin,
-            kind=option_kind,
-            activation_ns=activation_ns,
-            expiration_ns=expiration_ns,
-            strike_price=Price.from_int(strike_price),
-            ts_init=timestamp,
-            ts_event=timestamp,
-        )
-
-    def parse_to_quote_currency(self) -> Currency:
-        return Currency(
-            code=self.quoteCoin,
-            name=self.quoteCoin,
-            currency_type=CurrencyType.CRYPTO,
-            precision=1,
-            iso4217=0,  # Currently undetermined for crypto assets
-        )
-
-
 class BybitInstrumentLinear(msgspec.Struct):
     symbol: str
-    contractType: str
+    contractType: BybitContractType
     status: str
     baseCoin: str
     quoteCoin: str
@@ -194,12 +119,14 @@ class BybitInstrumentLinear(msgspec.Struct):
 
     def parse_to_instrument(
         self,
+        base_currency: Currency,
+        quote_currency: Currency,
         fee_rate: BybitFeeRate,
         ts_event: int,
         ts_init: int,
     ) -> CryptoPerpetual:
-        base_currency = self.parse_to_base_currency()
-        quote_currency = self.parse_to_quote_currency()
+        assert base_currency.code == self.baseCoin
+        assert quote_currency.code == self.quoteCoin
         bybit_symbol = BybitSymbol(self.symbol + "-LINEAR")
         instrument_id = bybit_symbol.parse_as_nautilus()
         if self.settleCoin == self.baseCoin:
@@ -209,78 +136,248 @@ class BybitInstrumentLinear(msgspec.Struct):
         else:
             raise ValueError(f"Unrecognized margin asset {self.settleCoin}")
 
-        tick_size = self.priceFilter.tickSize.rstrip("0")
-        step_size = self.lotSizeFilter.qtyStep.rstrip("0")
-        price_precision = abs(int(Decimal(tick_size).as_tuple().exponent))
-        size_precision = abs(int(Decimal(step_size).as_tuple().exponent))
-        price_increment = Price.from_str(tick_size)
-        size_increment = Quantity.from_str(step_size)
-        PyCondition.in_range(float(tick_size), PRICE_MIN, PRICE_MAX, "tick_size")
-        PyCondition.in_range(float(step_size), QUANTITY_MIN, QUANTITY_MAX, "step_size")
-        max_quantity = Quantity(
-            float(self.lotSizeFilter.maxOrderQty),
-            precision=size_precision,
-        )
-        min_quantity = Quantity(
-            float(self.lotSizeFilter.minOrderQty),
-            precision=size_precision,
-        )
-        min_notional = None
-        max_price = Price(float(self.priceFilter.maxPrice), precision=price_precision)
-        min_price = Price(float(self.priceFilter.minPrice), precision=price_precision)
+        price_increment = Price.from_str(self.priceFilter.tickSize)
+        size_increment = Quantity.from_str(self.lotSizeFilter.qtyStep)
+        max_quantity = Quantity.from_str(self.lotSizeFilter.maxOrderQty)
+        min_quantity = Quantity.from_str(self.lotSizeFilter.minOrderQty)
+        max_price = Price.from_str(self.priceFilter.maxPrice)
+        min_price = Price.from_str(self.priceFilter.minPrice)
         maker_fee = fee_rate.makerFeeRate
         taker_fee = fee_rate.takerFeeRate
-        instrument = CryptoPerpetual(
-            instrument_id=instrument_id,
-            raw_symbol=Symbol(str(bybit_symbol)),
-            base_currency=base_currency,
-            quote_currency=quote_currency,
-            settlement_currency=settlement_currency,
-            is_inverse=False,  # No inverse instruments trade on Binance
-            price_precision=price_precision,
-            size_precision=size_precision,
-            price_increment=price_increment,
-            size_increment=size_increment,
-            max_quantity=max_quantity,
-            min_quantity=min_quantity,
-            max_notional=None,
-            min_notional=min_notional,
-            max_price=max_price,
-            min_price=min_price,
-            margin_init=Decimal(0.1),
-            margin_maint=Decimal(0.1),
-            maker_fee=Decimal(maker_fee),
-            taker_fee=Decimal(taker_fee),
-            ts_event=ts_event,
-            ts_init=ts_init,
-            info=msgspec.json.Decoder().decode(msgspec.json.Encoder().encode(self)),
-        )
+
+        if self.contractType == BybitContractType.LINEAR_PERPETUAL:
+            instrument = CryptoPerpetual(
+                instrument_id=instrument_id,
+                raw_symbol=Symbol(bybit_symbol.raw_symbol),
+                base_currency=base_currency,
+                quote_currency=quote_currency,
+                settlement_currency=settlement_currency,
+                is_inverse=False,
+                price_precision=price_increment.precision,
+                size_precision=size_increment.precision,
+                price_increment=price_increment,
+                size_increment=size_increment,
+                max_quantity=max_quantity,
+                min_quantity=min_quantity,
+                max_notional=None,
+                min_notional=None,
+                max_price=max_price,
+                min_price=min_price,
+                margin_init=Decimal("0.1"),
+                margin_maint=Decimal("0.1"),
+                maker_fee=Decimal(maker_fee),
+                taker_fee=Decimal(taker_fee),
+                ts_event=ts_event,
+                ts_init=ts_init,
+                info=msgspec.json.Decoder().decode(msgspec.json.Encoder().encode(self)),
+            )
+        elif self.contractType == BybitContractType.LINEAR_FUTURE:
+            instrument = CryptoFuture(
+                instrument_id=instrument_id,
+                raw_symbol=Symbol(bybit_symbol.raw_symbol),
+                underlying=base_currency,
+                quote_currency=quote_currency,
+                settlement_currency=settlement_currency,
+                activation_ns=millis_to_nanos(int(self.launchTime)),
+                expiration_ns=millis_to_nanos(int(self.deliveryTime)),
+                is_inverse=False,
+                price_precision=price_increment.precision,
+                size_precision=size_increment.precision,
+                price_increment=price_increment,
+                size_increment=size_increment,
+                max_quantity=max_quantity,
+                min_quantity=min_quantity,
+                max_notional=None,
+                min_notional=None,
+                max_price=max_price,
+                min_price=min_price,
+                margin_init=Decimal("0.1"),
+                margin_maint=Decimal("0.1"),
+                maker_fee=Decimal(maker_fee),
+                taker_fee=Decimal(taker_fee),
+                ts_event=ts_event,
+                ts_init=ts_init,
+                info=msgspec.json.Decoder().decode(msgspec.json.Encoder().encode(self)),
+            )
+        else:
+            raise ValueError(f"Unrecognized linear contract type '{self.contractType}'")
+
         return instrument
 
-    def parse_to_base_currency(self) -> Currency:
-        return Currency(
-            code=self.baseCoin,
-            name=self.baseCoin,
-            currency_type=CurrencyType.CRYPTO,
-            precision=int(self.priceScale),
-            iso4217=0,  # Currently undetermined for crypto assets
+
+class BybitInstrumentInverse(msgspec.Struct):
+    symbol: str
+    contractType: BybitContractType
+    status: str
+    baseCoin: str
+    quoteCoin: str
+    launchTime: str
+    deliveryTime: str
+    deliveryFeeRate: str
+    priceScale: str
+    leverageFilter: LeverageFilter
+    priceFilter: LinearPriceFilter
+    lotSizeFilter: LotSizeFilter
+    unifiedMarginTrade: bool
+    fundingInterval: int
+    settleCoin: str
+
+    def parse_to_instrument(
+        self,
+        base_currency: Currency,
+        quote_currency: Currency,
+        fee_rate: BybitFeeRate,
+        ts_event: int,
+        ts_init: int,
+    ) -> CryptoPerpetual:
+        assert base_currency.code == self.baseCoin
+        assert quote_currency.code == self.quoteCoin
+        bybit_symbol = BybitSymbol(self.symbol + "-INVERSE")
+        instrument_id = bybit_symbol.parse_as_nautilus()
+        if self.settleCoin == self.baseCoin:
+            settlement_currency = base_currency
+        elif self.settleCoin == self.quoteCoin:
+            settlement_currency = quote_currency
+        else:
+            raise ValueError(f"Unrecognized margin asset {self.settleCoin}")
+
+        price_increment = Price.from_str(self.priceFilter.tickSize)
+        size_increment = Quantity.from_str(self.lotSizeFilter.qtyStep)
+        max_quantity = Quantity.from_str(self.lotSizeFilter.maxOrderQty)
+        min_quantity = Quantity.from_str(self.lotSizeFilter.minOrderQty)
+        max_price = Price.from_str(self.priceFilter.maxPrice)
+        min_price = Price.from_str(self.priceFilter.minPrice)
+        maker_fee = fee_rate.makerFeeRate
+        taker_fee = fee_rate.takerFeeRate
+
+        if self.contractType == BybitContractType.INVERSE_PERPETUAL:
+            instrument = CryptoPerpetual(
+                instrument_id=instrument_id,
+                raw_symbol=Symbol(bybit_symbol.raw_symbol),
+                base_currency=base_currency,
+                quote_currency=quote_currency,
+                settlement_currency=settlement_currency,
+                is_inverse=True,
+                price_precision=price_increment.precision,
+                size_precision=size_increment.precision,
+                price_increment=price_increment,
+                size_increment=size_increment,
+                max_quantity=max_quantity,
+                min_quantity=min_quantity,
+                max_notional=None,
+                min_notional=None,
+                max_price=max_price,
+                min_price=min_price,
+                margin_init=Decimal("0.1"),
+                margin_maint=Decimal("0.1"),
+                maker_fee=Decimal(maker_fee),
+                taker_fee=Decimal(taker_fee),
+                ts_event=ts_event,
+                ts_init=ts_init,
+                info=msgspec.json.Decoder().decode(msgspec.json.Encoder().encode(self)),
+            )
+        elif self.contractType == BybitContractType.INVERSE_FUTURE:
+            instrument = CryptoFuture(
+                instrument_id=instrument_id,
+                raw_symbol=Symbol(bybit_symbol.raw_symbol),
+                underlying=base_currency,
+                quote_currency=quote_currency,
+                settlement_currency=settlement_currency,
+                activation_ns=millis_to_nanos(int(self.launchTime)),
+                expiration_ns=millis_to_nanos(int(self.deliveryTime)),
+                is_inverse=True,
+                price_precision=price_increment.precision,
+                size_precision=size_increment.precision,
+                price_increment=price_increment,
+                size_increment=size_increment,
+                max_quantity=max_quantity,
+                min_quantity=min_quantity,
+                max_notional=None,
+                min_notional=None,
+                max_price=max_price,
+                min_price=min_price,
+                margin_init=Decimal("0.1"),
+                margin_maint=Decimal("0.1"),
+                maker_fee=Decimal(maker_fee),
+                taker_fee=Decimal(taker_fee),
+                ts_event=ts_event,
+                ts_init=ts_init,
+                info=msgspec.json.Decoder().decode(msgspec.json.Encoder().encode(self)),
+            )
+        else:
+            raise ValueError(f"Unrecognized inverse contract type '{self.contractType}'")
+        return instrument
+
+
+class BybitInstrumentOption(msgspec.Struct):
+    symbol: str
+    status: str
+    baseCoin: str
+    quoteCoin: str
+    settleCoin: str
+    optionsType: BybitOptionType
+    launchTime: str
+    deliveryTime: str
+    deliveryFeeRate: str
+    priceFilter: LinearPriceFilter
+    lotSizeFilter: LotSizeFilter
+
+    def parse_to_instrument(
+        self,
+        quote_currency: Currency,
+    ) -> OptionsContract:
+        assert quote_currency.code == self.quoteCoin
+        bybit_symbol = BybitSymbol(self.symbol + "-OPTION")
+        instrument_id = bybit_symbol.parse_as_nautilus()
+        price_increment = Price.from_str(self.priceFilter.tickSize)
+        if self.optionsType == BybitOptionType.CALL:
+            option_kind = OptionKind.CALL
+        elif self.optionsType == BybitOptionType.PUT:
+            option_kind = OptionKind.PUT
+        else:
+            raise ValueError(f"Unknown Bybit option type {self.optionsType}")
+
+        timestamp = time.time_ns()
+        strike_price = get_strike_price_from_symbol(self.symbol)
+        activation_ns = pd.Timedelta(milliseconds=int(self.launchTime)).total_seconds() * 1e9
+        expiration_ns = pd.Timedelta(milliseconds=int(self.deliveryTime)).total_seconds() * 1e9
+
+        return OptionsContract(
+            instrument_id=instrument_id,
+            raw_symbol=Symbol(bybit_symbol.raw_symbol),
+            asset_class=AssetClass.CRYPTOCURRENCY,
+            currency=quote_currency,
+            price_precision=price_increment.precision,
+            price_increment=price_increment,
+            multiplier=Quantity.from_str("1.0"),
+            lot_size=Quantity.from_str(self.lotSizeFilter.qtyStep),
+            underlying=self.baseCoin,
+            kind=option_kind,
+            activation_ns=activation_ns,
+            expiration_ns=expiration_ns,
+            strike_price=Price.from_int(strike_price),
+            ts_init=timestamp,
+            ts_event=timestamp,
         )
 
-    def parse_to_quote_currency(self) -> Currency:
-        return Currency(
-            code=self.quoteCoin,
-            name=self.quoteCoin,
-            currency_type=CurrencyType.CRYPTO,
-            precision=int(self.priceScale),
-            iso4217=0,  # Currently undetermined for crypto assets
-        )
 
-
-BybitInstrument = BybitInstrumentLinear | BybitInstrumentSpot | BybitInstrumentOption
+BybitInstrument = (
+    BybitInstrumentSpot | BybitInstrumentLinear | BybitInstrumentInverse | BybitInstrumentOption
+)
 
 BybitInstrumentList = (
-    list[BybitInstrumentLinear] | list[BybitInstrumentSpot] | list[BybitInstrumentOption]
+    list[BybitInstrumentSpot]
+    | list[BybitInstrumentLinear]
+    | list[BybitInstrumentInverse]
+    | list[BybitInstrumentOption]
 )
+
+
+class BybitInstrumentsSpotResponse(msgspec.Struct):
+    retCode: int
+    retMsg: str
+    result: BybitListResult[BybitInstrumentSpot]
+    time: int
 
 
 class BybitInstrumentsLinearResponse(msgspec.Struct):
@@ -290,10 +387,10 @@ class BybitInstrumentsLinearResponse(msgspec.Struct):
     time: int
 
 
-class BybitInstrumentsSpotResponse(msgspec.Struct):
+class BybitInstrumentsInverseResponse(msgspec.Struct):
     retCode: int
     retMsg: str
-    result: BybitListResult[BybitInstrumentSpot]
+    result: BybitListResult[BybitInstrumentInverse]
     time: int
 
 

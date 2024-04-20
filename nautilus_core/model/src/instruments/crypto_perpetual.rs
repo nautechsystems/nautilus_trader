@@ -13,18 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    any::Any,
-    hash::{Hash, Hasher},
-};
+use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     correctness::{check_equal_u8, check_positive_i64, check_positive_u64},
-    time::UnixNanos,
+    nanos::UnixNanos,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+use super::InstrumentAny;
 use crate::{
     enums::{AssetClass, InstrumentClass},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
@@ -150,6 +148,10 @@ impl Hash for CryptoPerpetual {
 }
 
 impl Instrument for CryptoPerpetual {
+    fn into_any(self) -> InstrumentAny {
+        InstrumentAny::CryptoPerpetual(self)
+    }
+
     fn id(&self) -> InstrumentId {
         self.id
     }
@@ -228,10 +230,6 @@ impl Instrument for CryptoPerpetual {
 
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn taker_fee(&self) -> Decimal {

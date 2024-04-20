@@ -392,6 +392,9 @@ class TALibIndicatorManager(Indicator):
         """
         self._log.debug("Calculating outputs.")
 
+        if self._input_deque is None:
+            return
+
         combined_output = np.zeros(1, dtype=self._output_dtypes)
         combined_output["ts_event"] = self._input_deque[-1]["ts_event"].item()
         combined_output["ts_init"] = self._input_deque[-1]["ts_init"].item()
@@ -402,6 +405,7 @@ class TALibIndicatorManager(Indicator):
         combined_output["volume"] = self._input_deque[-1]["volume"].item()
 
         input_array = np.concatenate(self._input_deque)
+        assert self._indicators  # Type checking
         for indicator in self._indicators:
             self._log.debug(f"Calculating {indicator.name} outputs.")
             inputs_dict = {name: input_array[name] for name in input_array.dtype.names}

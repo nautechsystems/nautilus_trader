@@ -23,6 +23,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import time_in_force_to_str
 
 
 def raise_error(error):
@@ -31,12 +32,55 @@ def raise_error(error):
 
 @unique
 class BybitPositionIdx(Enum):
-    # one-way mode position
+    # One-way mode position
     ONE_WAY = 0
-    # buy side of hedge-mode position
+    # Buy side of hedge-mode position
     BUY_HEDGE = 1
-    # sell side of hedge-mode position
+    # Sell side of hedge-mode position
     SELL_HEDGE = 2
+
+
+@unique
+class BybitAccountType(Enum):
+    UNIFIED = "UNIFIED"
+
+
+@unique
+class BybitProductType(Enum):
+    SPOT = "spot"
+    LINEAR = "linear"
+    INVERSE = "inverse"
+    OPTION = "option"
+
+    @property
+    def is_spot(self) -> bool:
+        return self == BybitProductType.SPOT
+
+    @property
+    def is_linear(self) -> bool:
+        return self == BybitProductType.LINEAR
+
+    @property
+    def is_inverse(self) -> bool:
+        return self == BybitProductType.INVERSE
+
+    @property
+    def is_option(self) -> bool:
+        return self == BybitProductType.OPTION
+
+
+@unique
+class BybitContractType(Enum):
+    LINEAR_PERPETUAL = "LinearPerpetual"
+    LINEAR_FUTURE = "LinearFutures"
+    INVERSE_PERPETUAL = "InversePerpetual"
+    INVERSE_FUTURE = "InverseFutures"
+
+
+@unique
+class BybitOptionType(Enum):
+    CALL = "Call"
+    PUT = "Put"
 
 
 @unique
@@ -49,6 +93,7 @@ class BybitPositionSide(Enum):
             return PositionSide.LONG
         elif self == BybitPositionSide.SELL:
             return PositionSide.SHORT
+        raise RuntimeError(f"invalid position side, was {self}")
 
 
 @unique
@@ -93,11 +138,28 @@ class BybitOrderSide(Enum):
 class BybitOrderType(Enum):
     MARKET = "Market"
     LIMIT = "Limit"
-    UNKNOWN = "Unknown"
+    UNKNOWN = "UNKNOWN"  # Used when execution type is Funding
+
+
+@unique
+class BybitStopOrderType(Enum):
+    NONE = ""  # Default
+    UNKNOWN = "UNKNOWN"  # Classic account value
+    TAKE_PROFIT = "TakeProfit"
+    STOP_LOSS = "StopLoss"
+    TRAILING_STOP = "TrailingStop"
+    STOP = "Stop"
+    PARTIAL_TAKE_PROFIT = "PartialTakeProfit"
+    PARTIAL_STOP_LOSS = "PartialStopLoss"
+    TPSL_ORDER = "tpslOrder"
+    OCO_ORDER = "OcoOrder"  # Spot only
+    MM_RATE_CLOSE = "MmRateClose"
+    BIDIRECTIONAL_TPSL_ORDER = "BidirectionalTpslOrder"
 
 
 @unique
 class BybitTriggerType(Enum):
+    NONE = ""  # Default
     LAST_PRICE = "LastPrice"
     INDEX_PRICE = "IndexPrice"
     MARK_PRICE = "MarkPrice"
@@ -112,32 +174,16 @@ class BybitTimeInForce(Enum):
 
 
 @unique
-class BybitAccountType(Enum):
-    UNIFIED = "UNIFIED"
-
-
-@unique
-class BybitInstrumentType(Enum):
-    SPOT = "spot"
-    LINEAR = "linear"
-    INVERSE = "inverse"
-    OPTION = "option"
-
-    @property
-    def is_spot_or_margin(self) -> bool:
-        return self in [BybitInstrumentType.SPOT]
-
-    @property
-    def is_spot(self) -> bool:
-        return self in [BybitInstrumentType.SPOT]
-
-
-@unique
-class BybitContractType(Enum):
-    INVERSE_PERPETUAL = "InversePerpetual"
-    LINEAR_PERPETUAL = "LinearPerpetual"
-    LINEAR_FUTURE = "LinearFutures"
-    INVERSE_FUTURE = "InverseFutures"
+class BybitExecType(Enum):
+    TRADE = "Trade"
+    ADL_TRADE = "AdlTrade"  # Auto-Deleveraging
+    FUNDING = "Funding"  # Funding fee
+    BUST_TRADE = "BustTrade"  # Liquidation
+    DELIVERY = "Delivery"  # Delivery
+    SETTLE = "Settle"  # Settle Inverse futures settlement
+    BLOCK_TRADE = "BlockTrade"
+    MOVE_POSITION = "MovePosition"
+    UNKNOWN = "UNKNOWN"  # Classic account value (cannot be used to query)
 
 
 @unique
@@ -151,6 +197,15 @@ class BybitTransactionType(Enum):
     DELIVERY = "DELIVERY"
     LIQUIDATION = "LIQUIDATION"
     AIRDROP = "AIRDRP"
+
+
+@unique
+class BybitEndpointType(Enum):
+    NONE = "NONE"
+    ASSET = "ASSET"
+    MARKET = "MARKET"
+    ACCOUNT = "ACCOUNT"
+    TRADE = "TRADE"
 
 
 def check_dict_keys(key, data):
@@ -244,6 +299,9 @@ class BybitEnumParser:
     def parse_bybit_time_in_force(self, time_in_force: BybitTimeInForce) -> TimeInForce:
         return check_dict_keys(time_in_force, self.bybit_to_nautilus_time_in_force)
 
+    def parse_nautuilus_time_in_force(self, time_in_force: TimeInForce) -> BybitTimeInForce:
+        return check_dict_keys(time_in_force, self.nautilus_to_bybit_time_in_force)
+
     def parse_bybit_order_side(self, order_side: BybitOrderSide) -> OrderSide:
         return check_dict_keys(order_side, self.bybit_to_nautilus_order_side)
 
@@ -261,7 +319,7 @@ class BybitEnumParser:
             return self.nautilus_to_bybit_time_in_force[time_in_force]
         except KeyError:
             raise RuntimeError(
-                f"unrecognized Bybit time in force, was {time_in_force}",  # pragma: no cover
+                f"unrecognized Bybit time in force, was {time_in_force_to_str(time_in_force)}",  # pragma: no cover
             )
 
     def parse_bybit_kline(self, bar_type: BarType) -> BybitKlineInterval:
@@ -279,11 +337,3 @@ class BybitEnumParser:
             raise RuntimeError(
                 f"unrecognized Bybit bar type, was {bar_type}",  # pragma: no cover
             )
-
-
-@unique
-class BybitEndpointType(Enum):
-    NONE = "NONE"
-    MARKET = "MARKET"
-    ACCOUNT = "ACCOUNT"
-    TRADE = "TRADE"

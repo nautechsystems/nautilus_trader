@@ -102,8 +102,8 @@ impl EncodeToRecordBatch for OrderBookDelta {
             order_id_builder.append_value(delta.order.order_id);
             flags_builder.append_value(delta.flags);
             sequence_builder.append_value(delta.sequence);
-            ts_event_builder.append_value(delta.ts_event);
-            ts_init_builder.append_value(delta.ts_init);
+            ts_event_builder.append_value(delta.ts_event.as_u64());
+            ts_init_builder.append_value(delta.ts_init.as_u64());
         }
 
         let action_array = action_builder.finish();
@@ -172,8 +172,8 @@ impl DecodeFromRecordBatch for OrderBookDelta {
                 let order_id = order_id_values.value(i);
                 let flags = flags_values.value(i);
                 let sequence = sequence_values.value(i);
-                let ts_event = ts_event_values.value(i);
-                let ts_init = ts_init_values.value(i);
+                let ts_event = ts_event_values.value(i).into();
+                let ts_init = ts_init_values.value(i).into();
 
                 Ok(Self {
                     instrument_id,
@@ -270,8 +270,8 @@ mod tests {
             },
             flags: 0,
             sequence: 1,
-            ts_event: 1,
-            ts_init: 3,
+            ts_event: 1.into(),
+            ts_init: 3.into(),
         };
 
         let delta2 = OrderBookDelta {
@@ -285,8 +285,8 @@ mod tests {
             },
             flags: 1,
             sequence: 2,
-            ts_event: 2,
-            ts_init: 4,
+            ts_event: 2.into(),
+            ts_init: 4.into(),
         };
 
         let data = vec![delta1, delta2];

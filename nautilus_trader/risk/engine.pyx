@@ -35,6 +35,7 @@ from nautilus_trader.common.messages cimport TradingStateChanged
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderStatus
@@ -147,7 +148,7 @@ cdef class RiskEngine(Component):
 
         self._log.info(
             f"Set MAX_ORDER_SUBMIT_RATE: "
-            f"{order_submit_rate_limit}/{str(order_submit_rate_interval).replace('0 days ', '')}.",
+            f"{order_submit_rate_limit}/{str(order_submit_rate_interval).replace('0 days ', '')}",
             color=LogColor.BLUE,
         )
 
@@ -165,7 +166,7 @@ cdef class RiskEngine(Component):
 
         self._log.info(
             f"Set MAX_ORDER_MODIFY_RATE: "
-            f"{order_modify_rate_limit}/{str(order_modify_rate_interval).replace('0 days ', '')}.",
+            f"{order_modify_rate_limit}/{str(order_modify_rate_interval).replace('0 days ', '')}",
             color=LogColor.BLUE,
         )
 
@@ -231,7 +232,7 @@ cdef class RiskEngine(Component):
         if state == self.trading_state:
             self._log.warning(
                 f"No change to trading state: "
-                f"already set to {trading_state_to_str(self.trading_state)}.",
+                f"already set to {trading_state_to_str(self.trading_state)}",
             )
             return
 
@@ -257,13 +258,13 @@ cdef class RiskEngine(Component):
         elif self.trading_state == TradingState.HALTED:
             color = LogColor.RED
         self._log.info(
-            f"TradingState is {trading_state_to_str(self.trading_state)}.",
+            f"TradingState is {trading_state_to_str(self.trading_state)}",
             color=color,
         )
 
         if self.is_bypassed:
             self._log.info(
-                "PRE-TRADE RISK CHECKS BYPASSED. This is not advisable for live trading.",
+                "PRE-TRADE RISK CHECKS BYPASSED. This is not advisable for live trading",
                 color=LogColor.RED,
             )
 
@@ -299,7 +300,7 @@ cdef class RiskEngine(Component):
 
         cdef str new_value_str = f"{new_value:,}" if new_value is not None else str(None)
         self._log.info(
-            f"Set MAX_NOTIONAL_PER_ORDER: {instrument_id} {new_value_str}.",
+            f"Set MAX_NOTIONAL_PER_ORDER: {instrument_id} {new_value_str}",
             color=LogColor.BLUE,
         )
 
@@ -389,7 +390,7 @@ cdef class RiskEngine(Component):
 
     cpdef void _execute_command(self, Command command):
         if self.debug:
-            self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
+            self._log.debug(f"{RECV}{CMD} {command}", LogColor.MAGENTA)
         self.command_count += 1
 
         if isinstance(command, SubmitOrder):
@@ -399,7 +400,7 @@ cdef class RiskEngine(Component):
         elif isinstance(command, ModifyOrder):
             self._handle_modify_order(command)
         else:
-            self._log.error(f"Cannot handle command: {command}.")
+            self._log.error(f"Cannot handle command: {command}")
 
     cpdef void _handle_submit_order(self, SubmitOrder command):
         if self.is_bypassed:
@@ -477,7 +478,7 @@ cdef class RiskEngine(Component):
         cdef Order order = self._cache.order(command.client_order_id)
         if order is None:
             self._log.error(
-                f"ModifyOrder DENIED: Order with {command.client_order_id!r} not found.",
+                f"ModifyOrder DENIED: Order with {command.client_order_id!r} not found",
             )
             return  # Denied
         elif order.is_closed_c():
@@ -602,19 +603,21 @@ cdef class RiskEngine(Component):
         cdef Money max_notional = None
         max_notional_setting: Decimal | None = self._max_notional_per_order.get(instrument.id)
         if max_notional_setting:
-            # TODO(cs): Improve efficiency of this
+            # TODO: Improve efficiency of this
             max_notional = Money(float(max_notional_setting), instrument.quote_currency)
 
         # Get account for risk checks
         cdef Account account = self._cache.account_for_venue(instrument.id.venue)
         if account is None:
-            self._log.debug(f"Cannot find account for venue {instrument.id.venue}.")
+            self._log.debug(f"Cannot find account for venue {instrument.id.venue}")
             return True  # TODO: Temporary early return until handling routing/multiple venues
 
         if account.is_margin_account:
             return True  # TODO: Determine risk controls for margin
 
         free = account.balance_free(instrument.quote_currency)
+        if self.debug:
+            self._log.debug(f"Free: {free!r}", LogColor.MAGENTA)
 
         cdef:
             Order order
@@ -643,7 +646,7 @@ cdef class RiskEngine(Component):
                             last_px = last_trade.price
                         else:
                             self._log.warning(
-                                f"Cannot check MARKET order risk: no prices for {instrument.id}.",
+                                f"Cannot check MARKET order risk: no prices for {instrument.id}",
                             )
                             continue  # Cannot check order risk
             elif order.order_type == OrderType.STOP_MARKET or order.order_type == OrderType.MARKET_IF_TOUCHED:
@@ -652,7 +655,7 @@ cdef class RiskEngine(Component):
                 if order.trigger_price is None:
                     self._log.warning(
                         f"Cannot check {order_type_to_str(order.order_type)} order risk: "
-                        f"no trigger price was set.",  # TODO(cs): Use last_trade += offset
+                        f"no trigger price was set",  # TODO: Use last_trade += offset
                     )
                     continue  # Cannot assess risk
                 else:
@@ -661,6 +664,8 @@ cdef class RiskEngine(Component):
                 last_px = order.price
 
             notional = instrument.notional_value(order.quantity, last_px, use_quote_for_inverse=True)
+            if self.debug:
+                self._log.debug(f"Notional: {order_balance_impact!r}", LogColor.MAGENTA)
 
             if max_notional and notional._mem.raw > max_notional._mem.raw:
                 self._deny_order(
@@ -694,6 +699,8 @@ cdef class RiskEngine(Component):
                 return False  # Denied
 
             order_balance_impact = account.balance_impact(instrument, order.quantity, last_px, order.side)
+            if self.debug:
+                self._log.debug(f"Balance impact: {order_balance_impact!r}", LogColor.MAGENTA)
 
             if free is not None and (free._mem.raw + order_balance_impact._mem.raw) < 0:
                 self._deny_order(
@@ -710,6 +717,9 @@ cdef class RiskEngine(Component):
                     cum_notional_buy = Money(-order_balance_impact, order_balance_impact.currency)
                 else:
                     cum_notional_buy._mem.raw += -order_balance_impact._mem.raw
+
+                if self.debug:
+                    self._log.debug(f"Cumulative notional BUY: {cum_notional_buy!r}")
                 if free is not None and cum_notional_buy._mem.raw > free._mem.raw:
                     self._deny_order(
                         order=order,
@@ -722,19 +732,27 @@ cdef class RiskEngine(Component):
                         cum_notional_sell = Money(order_balance_impact, order_balance_impact.currency)
                     else:
                         cum_notional_sell._mem.raw += order_balance_impact._mem.raw
+
+                    if self.debug:
+                        self._log.debug(f"Cumulative notional SELL: {cum_notional_sell!r}")
                     if free is not None and cum_notional_sell._mem.raw > free._mem.raw:
                         self._deny_order(
                             order=order,
                             reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free.to_str()}, cum_notional={cum_notional_sell.to_str()}",
                         )
                         return False  # Denied
-                elif base_currency is not None:
+                elif base_currency is not None and account.type == AccountType.CASH:
                     cash_value = Money(order.quantity.as_f64_c(), base_currency)
+                    self._log.debug(f"Cash value: {cash_value!r}", LogColor.MAGENTA)
                     free = account.balance_free(base_currency)
+                    self._log.debug(f"Free: {free!r}", LogColor.MAGENTA)
                     if cum_notional_sell is None:
                         cum_notional_sell = cash_value
                     else:
                         cum_notional_sell._mem.raw += cash_value._mem.raw
+
+                    if self.debug:
+                        self._log.debug(f"Cumulative notional SELL: {cum_notional_sell!r}")
                     if free is not None and cum_notional_sell._mem.raw > free._mem.raw:
                         self._deny_order(
                             order=order,
@@ -792,12 +810,12 @@ cdef class RiskEngine(Component):
     cpdef void _deny_modify_order(self, ModifyOrder command):
         cdef Order order = self._cache.order(command.client_order_id)
         if order is None:
-            self._log.error(f"Order with {command.client_order_id!r} not found.")
+            self._log.error(f"Order with {command.client_order_id!r} not found")
             return
         self._reject_modify_order(order, reason="Exceeded MAX_ORDER_MODIFY_RATE")
 
     cpdef void _deny_order(self, Order order, str reason):
-        self._log.error(f"SubmitOrder for {order.client_order_id.to_str()} DENIED: {reason}.")
+        self._log.warning(f"SubmitOrder for {order.client_order_id.to_str()} DENIED: {reason}")
 
         if order is None:
             # Nothing to deny
@@ -906,5 +924,5 @@ cdef class RiskEngine(Component):
 
     cpdef void _handle_event(self, Event event):
         if self.debug:
-            self._log.debug(f"{RECV}{EVT} {event}.", LogColor.MAGENTA)
+            self._log.debug(f"{RECV}{EVT} {event}", LogColor.MAGENTA)
         self.event_count += 1

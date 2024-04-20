@@ -219,6 +219,7 @@ class TestInstrumentProviderPyo3:
             underlying=_BTC,
             quote_currency=_USDT,
             settlement_currency=_USDT,
+            is_inverse=False,
             activation_ns=activation.value,
             expiration_ns=expiration.value,
             price_precision=2,

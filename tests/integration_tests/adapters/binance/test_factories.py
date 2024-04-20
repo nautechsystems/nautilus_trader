@@ -18,12 +18,12 @@ import asyncio
 import pytest
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.urls import get_http_base_url
+from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
-from nautilus_trader.adapters.binance.factories import _get_http_base_url
-from nautilus_trader.adapters.binance.factories import _get_ws_base_url
 from nautilus_trader.adapters.binance.futures.data import BinanceFuturesDataClient
 from nautilus_trader.adapters.binance.futures.execution import BinanceFuturesExecutionClient
 from nautilus_trader.adapters.binance.spot.data import BinanceSpotDataClient
@@ -146,7 +146,7 @@ class TestBinanceFactories:
     )
     def test_get_http_base_url(self, account_type, is_testnet, is_us, expected):
         # Arrange, Act
-        base_url = _get_http_base_url(account_type, is_testnet, is_us)
+        base_url = get_http_base_url(account_type, is_testnet, is_us)
 
         # Assert
         assert base_url == expected
@@ -242,7 +242,7 @@ class TestBinanceFactories:
     )
     def test_get_ws_base_url(self, account_type, is_testnet, is_us, expected):
         # Arrange, Act
-        base_url = _get_ws_base_url(account_type, is_testnet, is_us)
+        base_url = get_ws_base_url(account_type, is_testnet, is_us)
 
         # Assert
         assert base_url == expected

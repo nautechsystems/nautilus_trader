@@ -21,6 +21,7 @@ Functions include awareness/tz checks and conversions, as well as ISO 8601 conve
 
 import pandas as pd
 import pytz
+from pandas.api.types import is_datetime64_ns_dtype
 
 # Re-exports
 from nautilus_trader.core.nautilus_pyo3 import micros_to_nanos as micros_to_nanos
@@ -246,12 +247,17 @@ cpdef object as_utc_index(data: pd.DataFrame):
     if data.empty:
         return data
 
+    # Ensure the index is localized to UTC
     if data.index.tzinfo is None:  # tz-naive
-        return data.tz_localize(pytz.utc)
+        data = data.tz_localize(pytz.utc)
     elif data.index.tzinfo != pytz.utc:
-        return data.tz_convert(None).tz_localize(pytz.utc)
-    else:
-        return data  # Already UTC
+        data = data.tz_convert(None).tz_localize(pytz.utc)
+
+    # Check if the index is in nanosecond resolution, convert if not
+    if not is_datetime64_ns_dtype(data.index.dtype):
+        data.index = data.index.astype("datetime64[ns, UTC]")
+
+    return data
 
 
 cpdef str format_iso8601(datetime dt):

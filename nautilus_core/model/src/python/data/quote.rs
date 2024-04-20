@@ -20,9 +20,9 @@ use std::{
 };
 
 use nautilus_core::{
+    nanos::UnixNanos,
     python::{serialization::from_dict_pyo3, to_pyvalue_err},
     serialization::Serializable,
-    time::UnixNanos,
 };
 use pyo3::{
     prelude::*,
@@ -66,8 +66,8 @@ impl QuoteTick {
         let ask_size_prec: u8 = ask_size_py.getattr("precision")?.extract()?;
         let ask_size = Quantity::from_raw(ask_size_raw, ask_size_prec).map_err(to_pyvalue_err)?;
 
-        let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
-        let ts_init: UnixNanos = obj.getattr("ts_init")?.extract()?;
+        let ts_event: u64 = obj.getattr("ts_event")?.extract()?;
+        let ts_init: u64 = obj.getattr("ts_init")?.extract()?;
 
         Self::new(
             instrument_id,
@@ -75,8 +75,8 @@ impl QuoteTick {
             ask_price,
             bid_size,
             ask_size,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         )
         .map_err(to_pyvalue_err)
     }
@@ -91,8 +91,8 @@ impl QuoteTick {
         ask_price: Price,
         bid_size: Quantity,
         ask_size: Quantity,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
+        ts_event: u64,
+        ts_init: u64,
     ) -> PyResult<Self> {
         Self::new(
             instrument_id,
@@ -100,8 +100,8 @@ impl QuoteTick {
             ask_price,
             bid_size,
             ask_size,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         )
         .map_err(to_pyvalue_err)
     }
@@ -130,14 +130,16 @@ impl QuoteTick {
         let ask_size_raw = tuple.6.extract()?;
         let bid_size_prec = tuple.7.extract()?;
         let ask_size_prec = tuple.8.extract()?;
+        let ts_event: u64 = tuple.9.extract()?;
+        let ts_init: u64 = tuple.10.extract()?;
 
         self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
         self.bid_price = Price::from_raw(bid_price_raw, bid_price_prec).map_err(to_pyvalue_err)?;
         self.ask_price = Price::from_raw(ask_price_raw, ask_price_prec).map_err(to_pyvalue_err)?;
         self.bid_size = Quantity::from_raw(bid_size_raw, bid_size_prec).map_err(to_pyvalue_err)?;
         self.ask_size = Quantity::from_raw(ask_size_raw, ask_size_prec).map_err(to_pyvalue_err)?;
-        self.ts_event = tuple.9.extract()?;
-        self.ts_init = tuple.10.extract()?;
+        self.ts_event = ts_event.into();
+        self.ts_init = ts_init.into();
 
         Ok(())
     }
@@ -153,8 +155,8 @@ impl QuoteTick {
             self.ask_size.raw,
             self.bid_size.precision,
             self.ask_size.precision,
-            self.ts_event,
-            self.ts_init,
+            self.ts_event.as_u64(),
+            self.ts_init.as_u64(),
         )
             .to_object(_py))
     }
@@ -173,8 +175,8 @@ impl QuoteTick {
             Price::zero(0),
             Quantity::zero(0),
             Quantity::zero(0),
-            0,
-            0,
+            UnixNanos::default(),
+            UnixNanos::default(),
         )
         .unwrap()) // Safe default
     }
@@ -233,14 +235,14 @@ impl QuoteTick {
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> UnixNanos {
-        self.ts_event
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> UnixNanos {
-        self.ts_init
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 
     #[staticmethod]
@@ -306,8 +308,8 @@ impl QuoteTick {
         ask_size_raw: u64,
         bid_size_prec: u8,
         ask_size_prec: u8,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
+        ts_event: u64,
+        ts_init: u64,
     ) -> PyResult<Self> {
         Self::new(
             instrument_id,
@@ -315,8 +317,8 @@ impl QuoteTick {
             Price::from_raw(ask_price_raw, ask_price_prec).map_err(to_pyvalue_err)?,
             Quantity::from_raw(bid_size_raw, bid_size_prec).map_err(to_pyvalue_err)?,
             Quantity::from_raw(ask_size_raw, ask_size_prec).map_err(to_pyvalue_err)?,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         )
         .map_err(to_pyvalue_err)
     }

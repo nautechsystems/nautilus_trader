@@ -24,7 +24,7 @@ use indexmap::IndexMap;
 use nautilus_model::{
     data::Data,
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
-    instruments::InstrumentType,
+    instruments::InstrumentAny,
     types::currency::Currency,
 };
 use streaming_iterator::StreamingIterator;
@@ -43,9 +43,9 @@ use super::{
 ///
 /// # Supported schemas:
 ///  - MBO -> `OrderBookDelta`
-///  - MBP_1 -> `QuoteTick` + `TradeTick`
+///  - MBP_1 -> `(QuoteTick, Option<TradeTick>)`
 ///  - MBP_10 -> `OrderBookDepth10`
-///  - TBBO -> `QuoteTick` + `TradeTick`
+///  - TBBO -> `(QuoteTick, TradeTick)`
 ///  - TRADES -> `TradeTick`
 ///  - OHLCV_1S -> `Bar`
 ///  - OHLCV_1M -> `Bar`
@@ -148,7 +148,7 @@ impl DatabentoDataLoader {
     pub fn read_definition_records(
         &mut self,
         path: PathBuf,
-    ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<InstrumentType>> + '_> {
+    ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<InstrumentAny>> + '_> {
         let mut decoder = Decoder::from_zstd_file(path)?;
         decoder.set_upgrade_policy(dbn::VersionUpgradePolicy::Upgrade);
         let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsgV1>();
@@ -165,7 +165,7 @@ impl DatabentoDataLoader {
                         raw_ptr_to_ustr(rec.raw_symbol.as_ptr())
                             .expect("Error obtaining `raw_symbol` pointer")
                     };
-                    let symbol = Symbol { value: raw_symbol };
+                    let symbol = Symbol::from(raw_symbol);
 
                     let venue = self
                         .publisher_venue_map
@@ -173,7 +173,7 @@ impl DatabentoDataLoader {
                         .expect("`Venue` not found `publisher_id`");
                     let instrument_id = InstrumentId::new(symbol, *venue);
 
-                    match decode_instrument_def_msg_v1(rec, instrument_id, msg.ts_recv) {
+                    match decode_instrument_def_msg_v1(rec, instrument_id, msg.ts_recv.into()) {
                         Ok(data) => Some(Ok(data)),
                         Err(e) => Some(Err(e)),
                     }
@@ -261,7 +261,12 @@ impl DatabentoDataLoader {
                     let msg = record
                         .get::<dbn::ImbalanceMsg>()
                         .expect("Invalid `ImbalanceMsg`");
-                    match decode_imbalance_msg(msg, instrument_id, price_precision, msg.ts_recv) {
+                    match decode_imbalance_msg(
+                        msg,
+                        instrument_id,
+                        price_precision,
+                        msg.ts_recv.into(),
+                    ) {
                         Ok(data) => Some(Ok(data)),
                         Err(e) => Some(Err(e)),
                     }
@@ -301,7 +306,12 @@ impl DatabentoDataLoader {
                     };
 
                     let msg = record.get::<dbn::StatMsg>().expect("Invalid `StatMsg`");
-                    match decode_statistics_msg(msg, instrument_id, price_precision, msg.ts_recv) {
+                    match decode_statistics_msg(
+                        msg,
+                        instrument_id,
+                        price_precision,
+                        msg.ts_recv.into(),
+                    ) {
                         Ok(data) => Some(Ok(data)),
                         Err(e) => Some(Err(e)),
                     }

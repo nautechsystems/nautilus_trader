@@ -41,8 +41,10 @@ from nautilus_trader.backtest.data_client cimport BacktestDataClient
 from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
+from nautilus_trader.backtest.models cimport FeeModel
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.models cimport LatencyModel
+from nautilus_trader.backtest.models cimport MakerTakerFeeModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
@@ -366,6 +368,7 @@ cdef class BacktestEngine:
         leverages: dict[InstrumentId, Decimal] | None = None,
         modules: list[SimulationModule] | None = None,
         fill_model: FillModel | None = None,
+        fee_model: FeeModel | None = None,
         latency_model: LatencyModel | None = None,
         book_type: BookType = BookType.L1_MBP,
         routing: bool = False,
@@ -402,6 +405,8 @@ cdef class BacktestEngine:
             The simulation modules to load into the exchange.
         fill_model : FillModel, optional
             The fill model for the exchange.
+        fee_model : FeeModel, optional
+            The fee model for the venue.
         latency_model : LatencyModel, optional
             The latency model for the exchange.
         book_type : BookType, default ``BookType.L1_MBP``
@@ -436,11 +441,14 @@ cdef class BacktestEngine:
             modules = []
         if fill_model is None:
             fill_model = FillModel()
+        if fee_model is None:
+            fee_model = MakerTakerFeeModel()
         Condition.not_none(venue, "venue")
         Condition.not_in(venue, self._venues, "venue", "_venues")
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(modules, SimulationModule, "modules")
-        Condition.type_or_none(fill_model, FillModel, "fill_model")
+        Condition.type(fill_model, FillModel, "fill_model")
+        Condition.type(fee_model, FeeModel, "fee_model")
 
         if default_leverage is None:
             if account_type == AccountType.MARGIN:
@@ -463,6 +471,7 @@ cdef class BacktestEngine:
             msgbus=self.kernel.msgbus,
             cache=self.kernel.cache,
             fill_model=fill_model,
+            fee_model=fee_model,
             latency_model=latency_model,
             book_type=book_type,
             clock=self.kernel.clock,
@@ -491,7 +500,7 @@ cdef class BacktestEngine:
         exchange.register_client(exec_client)
         self.kernel.exec_engine.register_client(exec_client)
 
-        self._log.info(f"Added {exchange}.")
+        self._log.info(f"Added {exchange}")
 
     def change_fill_model(self, Venue venue, FillModel model) -> None:
         """
@@ -560,7 +569,7 @@ cdef class BacktestEngine:
         self.kernel.data_engine.process(instrument)  # Adds to cache
         self._venues[instrument.id.venue].add_instrument(instrument)
 
-        self._log.info(f"Added {instrument.id} Instrument.")
+        self._log.info(f"Added {instrument.id} Instrument")
 
     def add_data(
         self,
@@ -657,7 +666,7 @@ cdef class BacktestEngine:
             self._data = sorted(self._data, key=lambda x: x.ts_init)
 
         self._log.info(
-            f"Added {len(data):,} {data_added_str} element{'' if len(data) == 1 else 's'}.",
+            f"Added {len(data):,} {data_added_str} element{'' if len(data) == 1 else 's'}",
         )
 
     def dump_pickled_data(self) -> bytes:
@@ -693,7 +702,7 @@ cdef class BacktestEngine:
 
         self._log.info(
             f"Loaded {len(self._data):,} data "
-            f"element{'' if len(data) == 1 else 's'} from pickle.",
+            f"element{'' if len(data) == 1 else 's'} from pickle",
         )
 
     def add_actor(self, actor: Actor) -> None:
@@ -784,7 +793,7 @@ cdef class BacktestEngine:
         separate call to `.clear_data()` if desired.
 
         """
-        self._log.debug(f"Resetting...")
+        self._log.debug(f"Resetting")
 
         if self.kernel.trader.is_running:
             # End current backtest run
@@ -827,7 +836,7 @@ cdef class BacktestEngine:
         self._backtest_start = None
         self._backtest_end = None
 
-        self._log.info("Reset.")
+        self._log.info("Reset")
 
     def clear_data(self) -> None:
         """
@@ -1037,7 +1046,7 @@ cdef class BacktestEngine:
                     matching_engine = exchange.get_matching_engine(order.instrument_id)
                     if matching_engine is None:
                         self._log.error(
-                            f"No matching engine for {order.instrument_id} to process {order}.",
+                            f"No matching engine for {order.instrument_id} to process {order}",
                         )
                         continue
                     matching_engine.process_order(order, order.account_id)
@@ -1127,7 +1136,7 @@ cdef class BacktestEngine:
                 self._iteration += 1
         except AccountError as e:
             force_stop = True
-            self._log.error(f"Stopping backtest from {e}.")
+            self._log.error(f"Stopping backtest from {e}")
         # ---------------------------------------------------------------------#
 
         if force_stop:

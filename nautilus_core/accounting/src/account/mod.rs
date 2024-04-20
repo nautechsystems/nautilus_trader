@@ -13,59 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
-use nautilus_model::{
-    enums::{LiquiditySide, OrderSide},
-    events::{account::state::AccountState, order::filled::OrderFilled},
-    instruments::Instrument,
-    position::Position,
-    types::{
-        balance::AccountBalance, currency::Currency, money::Money, price::Price, quantity::Quantity,
-    },
-};
-
-pub trait Account {
-    fn balance_total(&self, currency: Option<Currency>) -> Option<Money>;
-    fn balances_total(&self) -> HashMap<Currency, Money>;
-    fn balance_free(&self, currency: Option<Currency>) -> Option<Money>;
-    fn balances_free(&self) -> HashMap<Currency, Money>;
-
-    fn balance_locked(&self, currency: Option<Currency>) -> Option<Money>;
-    fn balances_locked(&self) -> HashMap<Currency, Money>;
-    fn last_event(&self) -> Option<AccountState>;
-    fn events(&self) -> Vec<AccountState>;
-    fn event_count(&self) -> usize;
-    fn currencies(&self) -> Vec<Currency>;
-    fn starting_balances(&self) -> HashMap<Currency, Money>;
-    fn balances(&self) -> HashMap<Currency, AccountBalance>;
-    fn apply(&mut self, event: AccountState);
-    fn calculate_balance_locked<T: Instrument>(
-        &mut self,
-        instrument: T,
-        side: OrderSide,
-        quantity: Quantity,
-        price: Price,
-        use_quote_for_inverse: Option<bool>,
-    ) -> anyhow::Result<Money>;
-
-    fn calculate_pnls<T: Instrument>(
-        &self,
-        instrument: T,
-        fill: OrderFilled,
-        position: Option<Position>,
-    ) -> anyhow::Result<Vec<Money>>;
-
-    fn calculate_commission<T: Instrument>(
-        &self,
-        instrument: T,
-        last_qty: Quantity,
-        last_px: Price,
-        liquidity_side: LiquiditySide,
-        use_quote_for_inverse: Option<bool>,
-    ) -> anyhow::Result<Money>;
-}
-
 pub mod base;
 pub mod cash;
 pub mod margin;

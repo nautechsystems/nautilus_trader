@@ -159,7 +159,7 @@ class BetfairExecutionClient(LiveExecutionClient):
     async def _connect(self) -> None:
         self._log.info("Connecting to BetfairHttpClient...")
         await self._client.connect()
-        self._log.info("BetfairHttpClient login successful.", LogColor.GREEN)
+        self._log.info("BetfairHttpClient login successful", LogColor.GREEN)
 
         # Start scheduled account state updates
         self.create_task(self.account_state_updates())
@@ -174,21 +174,21 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def _disconnect(self) -> None:
         # Close socket
-        self._log.info("Closing streaming socket...")
+        self._log.info("Closing streaming socket")
         await self.stream.disconnect()
 
         # Ensure client closed
-        self._log.info("Closing BetfairHttpClient...")
+        self._log.info("Closing BetfairHttpClient")
         await self._client.disconnect()
 
     # -- ERROR HANDLING ---------------------------------------------------------------------------
     async def on_api_exception(self, error: BetfairError) -> None:
         if "INVALID_SESSION_INFORMATION" in error.args[0]:
             # Session is invalid, need to reconnect
-            self._log.warning("Invalid session error, reconnecting..")
+            self._log.warning("Invalid session error, reconnecting...")
             await self._client.disconnect()
             await self._connect()
-            self._log.info("Reconnected.")
+            self._log.info("Reconnected")
 
     # -- ACCOUNT HANDLERS -------------------------------------------------------------------------
 
@@ -273,7 +273,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._log.debug(f"Received {report}.")
+        self._log.debug(f"Received {report}")
         return report
 
     async def generate_order_status_reports(
@@ -353,7 +353,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> list[PositionStatusReport]:
-        self._log.warning("Cannot generate `PositionStatusReports`: not yet implemented.")
+        self._log.warning("Cannot generate `PositionStatusReports`: not yet implemented")
 
         return []
 

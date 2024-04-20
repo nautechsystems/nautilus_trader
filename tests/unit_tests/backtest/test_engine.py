@@ -221,7 +221,7 @@ class TestBacktestEngine:
             path=tmp_path,
             fs_protocol="file",
         )
-        config = TestConfigStubs.backtest_engine_config(persist=True, catalog=catalog)
+        config = TestConfigStubs.backtest_engine_config(catalog=catalog, persist=True)
         engine = TestComponentStubs.backtest_engine(
             config=config,
             instrument=self.usdjpy,
@@ -269,8 +269,8 @@ class TestBacktestEngine:
         # Assert
         msg = messages[11]
         assert msg.__class__.__name__ == "SignalCounter"
-        assert msg.ts_init == 1359676799700000000
-        assert msg.ts_event == 1359676799700000000
+        assert msg.ts_init == 1359676800000000000
+        assert msg.ts_event == 1359676800000000000
 
     def test_set_instance_id(self):
         # Arrange
@@ -433,6 +433,8 @@ class TestBacktestEngineData:
                     size=Quantity.from_str("40"),
                     order_id=0,
                 ),
+                flags=0,
+                sequence=0,
                 ts_event=0,
                 ts_init=0,
             ),
@@ -445,6 +447,8 @@ class TestBacktestEngineData:
                     size=Quantity.from_str("30"),
                     order_id=1,
                 ),
+                flags=0,
+                sequence=0,
                 ts_event=0,
                 ts_init=0,
             ),
@@ -457,6 +461,8 @@ class TestBacktestEngineData:
                     size=Quantity.from_str("20"),
                     order_id=2,
                 ),
+                flags=0,
+                sequence=0,
                 ts_event=0,
                 ts_init=0,
             ),
@@ -469,6 +475,8 @@ class TestBacktestEngineData:
                     size=Quantity.from_str("20"),
                     order_id=3,
                 ),
+                flags=0,
+                sequence=0,
                 ts_event=0,
                 ts_init=0,
             ),
@@ -481,6 +489,8 @@ class TestBacktestEngineData:
                     size=Quantity.from_str("30"),
                     order_id=4,
                 ),
+                flags=0,
+                sequence=0,
                 ts_event=0,
                 ts_init=0,
             ),
@@ -493,6 +503,8 @@ class TestBacktestEngineData:
                     size=Quantity.from_str("40"),
                     order_id=4,
                 ),
+                flags=0,
+                sequence=0,
                 ts_event=0,
                 ts_init=0,
             ),
@@ -508,6 +520,8 @@ class TestBacktestEngineData:
                     size=Quantity.from_str("45"),
                     order_id=0,
                 ),
+                flags=0,
+                sequence=0,
                 ts_event=0,
                 ts_init=0,
             ),
@@ -520,6 +534,8 @@ class TestBacktestEngineData:
                     size=Quantity.from_str("35"),
                     order_id=1,
                 ),
+                flags=0,
+                sequence=0,
                 ts_event=1000,
                 ts_init=1000,
             ),

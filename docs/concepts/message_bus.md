@@ -55,15 +55,15 @@ Most Nautilus built-in objects are serializable, dictionaries `dict[str, Any]` c
 Additional custom types can be registered by calling the following registration function from the `serialization` subpackage:
 
 ```python
-def register_serializable_object(
-    obj,
+def register_serializable_type(
+    cls,
     to_dict: Callable[[Any], dict[str, Any]],
     from_dict: Callable[[dict[str, Any]], Any],
 ):
     ...
 ```
 
-- `obj` The object to register
+- `cls` The type to register
 - `to_dict` The delegate to instantiate a dict of primitive types from the object
 - `from_dict` The delegate to instantiate the object from a dict of primitive types
 

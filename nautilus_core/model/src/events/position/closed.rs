@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::time::{TimedeltaNanos, UnixNanos};
+use nautilus_core::nanos::{TimedeltaNanos, UnixNanos};
 
 use crate::{
     enums::{OrderSide, PositionSide},

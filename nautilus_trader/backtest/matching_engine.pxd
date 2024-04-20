@@ -17,6 +17,7 @@ from libc.stdint cimport int64_t
 from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.backtest.models cimport FeeModel
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Clock
@@ -76,6 +77,7 @@ cdef class OrderMatchingEngine:
     cdef OrderBook _opening_auction_book
     cdef OrderBook _closing_auction_book
     cdef FillModel _fill_model
+    cdef FeeModel _fee_model
     # cdef object _auction_match_algo
     cdef bint _bar_execution
     cdef bint _reject_stop_orders
@@ -85,6 +87,8 @@ cdef class OrderMatchingEngine:
     cdef bint _use_random_ids
     cdef bint _use_reduce_only
     cdef dict _account_ids
+    cdef dict _execution_bar_types
+    cdef dict _execution_bar_deltas
 
     cdef readonly Venue venue
     """The venue for the matching engine.\n\n:returns: `Venue`"""

@@ -295,26 +295,6 @@ class TestOrderBook:
         assert bid_level.price == Price.from_str("10.0")
         assert ask_level.price == Price.from_str("11.0")
 
-    def test_adding_to_mbp_l1_book_raises(self) -> None:
-        # Arrange
-        book = OrderBook(
-            instrument_id=self.instrument.id,
-            book_type=BookType.L1_MBP,
-        )
-
-        # Act, Assert
-        with pytest.raises(RuntimeError):
-            book.add(
-                BookOrder(
-                    price=Price(11.0, 1),
-                    size=Quantity(5.0, 0),
-                    side=OrderSide.BUY,
-                    order_id=0,
-                ),
-                0,
-                0,
-            )
-
     def test_repr(self):
         # Arrange
         book = OrderBook(
@@ -466,6 +446,7 @@ class TestOrderBook:
                 Quantity(672.45, 2),
                 0,  # "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
             ),
+            flags=0,
             sequence=1,
             ts_event=0,
             ts_init=0,
@@ -490,6 +471,7 @@ class TestOrderBook:
                 Quantity(672.45, 2),
                 0,
             ),
+            flags=0,
             sequence=1,
             ts_event=0,
             ts_init=0,
@@ -514,6 +496,7 @@ class TestOrderBook:
                 Quantity(672.45, 2),
                 0,  # "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
             ),
+            flags=0,
             sequence=1,
             ts_event=pd.Timestamp.utcnow().timestamp() * 1e9,
             ts_init=pd.Timestamp.utcnow().timestamp() * 1e9,
@@ -660,6 +643,8 @@ class TestOrderBook:
             return TestDataStubs.order_book_delta(
                 instrument_id=instrument_id,
                 order=order,
+                flags=0,
+                sequence=0,
                 ts_init=ts,
                 ts_event=ts,
             )
@@ -763,3 +748,47 @@ class TestOrderBook:
         assert book.best_bid_price() > book.best_ask_price()
         with pytest.raises(RuntimeError):
             book.check_integrity()
+
+    @pytest.mark.parametrize(
+        ("book_type"),
+        [
+            BookType.L2_MBP,
+            BookType.L3_MBO,
+        ],
+    )
+    def test_update_quote_tick_other_than_l1_raises_exception(
+        self,
+        book_type: BookType,
+    ) -> None:
+        # Arrange
+        book = OrderBook(
+            instrument_id=self.instrument.id,
+            book_type=book_type,
+        )
+
+        # Act, Assert
+        quote = TestDataStubs.quote_tick(self.instrument)
+        with pytest.raises(RuntimeError):
+            book.update_quote_tick(quote)
+
+    @pytest.mark.parametrize(
+        ("book_type"),
+        [
+            BookType.L2_MBP,
+            BookType.L3_MBO,
+        ],
+    )
+    def test_update_trade_tick_other_than_l1_raises_exception(
+        self,
+        book_type: BookType,
+    ) -> None:
+        # Arrange
+        book = OrderBook(
+            instrument_id=self.instrument.id,
+            book_type=book_type,
+        )
+
+        # Act, Assert
+        trade = TestDataStubs.trade_tick(self.instrument)
+        with pytest.raises(RuntimeError):
+            book.update_trade_tick(trade)

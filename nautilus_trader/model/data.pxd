@@ -154,6 +154,20 @@ cdef class Bar(Data):
     cdef str to_str(self)
 
     @staticmethod
+    cdef Bar from_raw_c(
+        BarType bar_type,
+        int64_t open,
+        int64_t high,
+        int64_t low,
+        int64_t close,
+        uint8_t price_prec,
+        uint64_t volume,
+        uint8_t size_prec,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    )
+
+    @staticmethod
     cdef Bar from_mem_c(Bar_t mem)
 
     @staticmethod
@@ -228,9 +242,9 @@ cdef class OrderBookDelta(Data):
     @staticmethod
     cdef OrderBookDelta clear_c(
         InstrumentId instrument_id,
+        uint64_t sequence,
         uint64_t ts_event,
         uint64_t ts_init,
-        uint64_t sequence=*,
     )
 
     @staticmethod
@@ -353,6 +367,19 @@ cdef class QuoteTick(Data):
     )
 
     @staticmethod
+    cdef list[QuoteTick] from_raw_arrays_to_list_c(
+        InstrumentId instrument_id,
+        uint8_t price_prec,
+        uint8_t size_prec,
+        int64_t[:] bid_prices_raw,
+        int64_t[:] ask_prices_raw,
+        uint64_t[:] bid_sizes_raw,
+        uint64_t[:] ask_sizes_raw,
+        uint64_t[:] ts_events,
+        uint64_t[:] ts_inits,
+    )
+
+    @staticmethod
     cdef QuoteTick from_mem_c(QuoteTick_t mem)
 
     @staticmethod
@@ -390,6 +417,19 @@ cdef class TradeTick(Data):
         TradeId trade_id,
         uint64_t ts_event,
         uint64_t ts_init,
+    )
+
+    @staticmethod
+    cdef list[TradeTick] from_raw_arrays_to_list_c(
+        InstrumentId instrument_id,
+        uint8_t price_prec,
+        uint8_t size_prec,
+        int64_t[:] prices_raw,
+        uint64_t[:] sizes_raw,
+        uint8_t[:] aggressor_sides,
+        list[str] trade_ids,
+        uint64_t[:] ts_events,
+        uint64_t[:] ts_inits,
     )
 
     @staticmethod

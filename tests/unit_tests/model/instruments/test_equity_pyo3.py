@@ -58,6 +58,7 @@ def test_to_dict():
         "min_price": None,
         "ts_event": 0,
         "ts_init": 0,
+        "info": {},
     }
 
 

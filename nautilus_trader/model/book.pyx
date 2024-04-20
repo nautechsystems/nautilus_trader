@@ -103,6 +103,7 @@ cdef class OrderBook(Data):
         InstrumentId instrument_id not None,
         BookType book_type,
     ) -> None:
+        self._book_type = book_type
         self._mem = orderbook_new(
             instrument_id._mem,
             book_type,
@@ -130,6 +131,7 @@ cdef class OrderBook(Data):
 
     def __setstate__(self, state):
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
+        self._book_type = state[1]
         self._mem = orderbook_new(
             instrument_id._mem,
             state[1],
@@ -164,7 +166,7 @@ cdef class OrderBook(Data):
         BookType
 
         """
-        return <BookType>orderbook_book_type(&self._mem)
+        return self._book_type
 
     @property
     def sequence(self) -> int:
@@ -232,7 +234,7 @@ cdef class OrderBook(Data):
         """
         orderbook_reset(&self._mem)
 
-    cpdef void add(self, BookOrder order, uint64_t ts_event, uint64_t sequence=0):
+    cpdef void add(self, BookOrder order, uint64_t ts_event, uint8_t flags=0, uint64_t sequence=0):
         """
         Add the given order to the book.
 
@@ -240,7 +242,11 @@ cdef class OrderBook(Data):
         ----------
         order : BookOrder
             The order to add.
-        sequence : uint64, default 0
+        ts_event : uint64_t
+            The UNIX timestamp (nanoseconds) when the book event occurred.
+        flags : uint8_t, default 0
+            The record flags bit field, indicating packet end and data information.
+        sequence : uint64_t, default 0
             The unique sequence number for the update. If default 0 then will increment the `sequence`.
 
         Raises
@@ -251,12 +257,12 @@ cdef class OrderBook(Data):
         """
         Condition.not_none(order, "order")
 
-        if self.book_type == BookType.L1_MBP:
+        if self._book_type == BookType.L1_MBP:
             raise RuntimeError("Invalid book operation: cannot add order for L1_MBP book")
 
-        orderbook_add(&self._mem, order._mem, ts_event, sequence)
+        orderbook_add(&self._mem, order._mem, flags, sequence, ts_event)
 
-    cpdef void update(self, BookOrder order, uint64_t ts_event, uint64_t sequence=0):
+    cpdef void update(self, BookOrder order, uint64_t ts_event, uint8_t flags=0, uint64_t sequence=0):
         """
         Update the given order in the book.
 
@@ -264,15 +270,19 @@ cdef class OrderBook(Data):
         ----------
         order : Order
             The order to update.
-        sequence : uint64, default 0
+        ts_event : uint64_t
+            The UNIX timestamp (nanoseconds) when the book event occurred.
+        flags : uint8_t, default 0
+            The record flags bit field, indicating packet end and data information.
+        sequence : uint64_t, default 0
             The unique sequence number for the update. If default 0 then will increment the `sequence`.
 
         """
         Condition.not_none(order, "order")
 
-        orderbook_update(&self._mem, order._mem, ts_event, sequence)
+        orderbook_update(&self._mem, order._mem, flags, sequence, ts_event)
 
-    cpdef void delete(self, BookOrder order, uint64_t ts_event, uint64_t sequence=0):
+    cpdef void delete(self, BookOrder order, uint64_t ts_event, uint8_t flags=0, uint64_t sequence=0):
         """
         Cancel the given order in the book.
 
@@ -280,31 +290,35 @@ cdef class OrderBook(Data):
         ----------
         order : Order
             The order to delete.
-        sequence : uint64, default 0
+        ts_event : uint64_t
+            The UNIX timestamp (nanoseconds) when the book event occurred.
+        flags : uint8_t, default 0
+            The record flags bit field, indicating packet end and data information.
+        sequence : uint64_t, default 0
             The unique sequence number for the update. If default 0 then will increment the `sequence`.
 
         """
         Condition.not_none(order, "order")
 
-        orderbook_delete(&self._mem, order._mem, ts_event, sequence)
+        orderbook_delete(&self._mem, order._mem, flags, sequence, ts_event)
 
     cpdef void clear(self, uint64_t ts_event, uint64_t sequence=0):
         """
         Clear the entire order book.
         """
-        orderbook_clear(&self._mem, ts_event, sequence)
+        orderbook_clear(&self._mem, sequence, ts_event)
 
     cpdef void clear_bids(self, uint64_t ts_event, uint64_t sequence=0):
         """
         Clear the bids from the order book.
         """
-        orderbook_clear_bids(&self._mem, ts_event, sequence)
+        orderbook_clear_bids(&self._mem, sequence, ts_event)
 
     cpdef void clear_asks(self, uint64_t ts_event, uint64_t sequence=0):
         """
         Clear the asks from the order book.
         """
-        orderbook_clear_asks(&self._mem, ts_event, sequence)
+        orderbook_clear_asks(&self._mem, sequence, ts_event)
 
     cpdef void apply_delta(self, OrderBookDelta delta):
         """
@@ -630,24 +644,50 @@ cdef class OrderBook(Data):
         """
         Update the order book with the given quote tick.
 
+        This operation is only valid for ``L1_MBP`` books maintaining a top level.
+
         Parameters
         ----------
         tick : QuoteTick
             The quote tick to update with.
 
+        Raises
+        ------
+        RuntimeError
+            If `book_type` is not ``L1_MBP``.
+
         """
+        if self._book_type != BookType.L1_MBP:
+            raise RuntimeError(
+                "Invalid book operation: "
+                f"cannot update with tick for {book_type_to_str(self.book_type)} book",
+            )
+
         orderbook_update_quote_tick(&self._mem, &tick._mem)
 
     cpdef void update_trade_tick(self, TradeTick tick):
         """
         Update the order book with the given trade tick.
 
+        This operation is only valid for ``L1_MBP`` books maintaining a top level.
+
         Parameters
         ----------
         tick : TradeTick
             The trade tick to update with.
 
+        Raises
+        ------
+        RuntimeError
+            If `book_type` is not ``L1_MBP``.
+
         """
+        if self._book_type != BookType.L1_MBP:
+            raise RuntimeError(
+                "Invalid book operation: "
+                f"cannot update with tick for {book_type_to_str(self.book_type)} book",
+            )
+
         orderbook_update_trade_tick(&self._mem, &tick._mem)
 
     cpdef str pprint(self, int num_levels=3):

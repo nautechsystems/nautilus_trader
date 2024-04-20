@@ -92,8 +92,8 @@ impl EncodeToRecordBatch for QuoteTick {
             ask_price_builder.append_value(quote.ask_price.raw);
             bid_size_builder.append_value(quote.bid_size.raw);
             ask_size_builder.append_value(quote.ask_size.raw);
-            ts_event_builder.append_value(quote.ts_event);
-            ts_init_builder.append_value(quote.ts_init);
+            ts_event_builder.append_value(quote.ts_event.as_u64());
+            ts_init_builder.append_value(quote.ts_init.as_u64());
         }
 
         let bid_price_array = bid_price_builder.finish();
@@ -142,8 +142,8 @@ impl DecodeFromRecordBatch for QuoteTick {
                     Quantity::from_raw(bid_size_values.value(i), size_precision).unwrap();
                 let ask_size =
                     Quantity::from_raw(ask_size_values.value(i), size_precision).unwrap();
-                let ts_event = ts_event_values.value(i);
-                let ts_init = ts_init_values.value(i);
+                let ts_event = ts_event_values.value(i).into();
+                let ts_init = ts_init_values.value(i).into();
 
                 Ok(Self {
                     instrument_id,
@@ -223,8 +223,8 @@ mod tests {
             ask_price: Price::from("101.50"),
             bid_size: Quantity::from(1000),
             ask_size: Quantity::from(500),
-            ts_event: 1,
-            ts_init: 3,
+            ts_event: 1.into(),
+            ts_init: 3.into(),
         };
 
         let tick2 = QuoteTick {
@@ -233,8 +233,8 @@ mod tests {
             ask_price: Price::from("100.20"),
             bid_size: Quantity::from(750),
             ask_size: Quantity::from(300),
-            ts_event: 2,
-            ts_init: 4,
+            ts_event: 2.into(),
+            ts_init: 4.into(),
         };
 
         let data = vec![tick1, tick2];

@@ -250,7 +250,7 @@ class BetfairTestStubs:
                     ),
                 ]
                 if add_strategy
-                else None
+                else []
             ),
         )
         run_config = BacktestRunConfig(  # typing: ignore

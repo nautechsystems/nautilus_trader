@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{ffi::cvec::CVec, time::UnixNanos};
+use nautilus_core::{ffi::cvec::CVec, nanos::UnixNanos};
 
 use crate::{
     data::{
@@ -24,7 +24,7 @@ use crate::{
     identifiers::instrument_id::InstrumentId,
 };
 
-/// Creates a new `OrderBookDeltas` object from a `CVec` of `OrderBookDelta`.
+/// Creates a new `OrderBookDeltas` instance from a `CVec` of `OrderBookDelta`.
 ///
 /// # Safety
 /// - The `deltas` must be a valid pointer to a `CVec` containing `OrderBookDelta` objects

@@ -22,6 +22,7 @@ from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
+from nautilus_trader.backtest.models import MakerTakerFeeModel
 from nautilus_trader.backtest.modules import SimulationModule
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
@@ -128,6 +129,7 @@ class TestSimulatedExchangeMarginAccount:
             instruments=[_USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
             portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
@@ -2729,6 +2731,7 @@ class TestSimulatedExchangeMarginAccount:
             instruments=[_USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
             portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
@@ -2793,7 +2796,7 @@ class TestSimulatedExchangeMarginAccount:
         self.exchange.process(0)
 
         # Assert
-        # TODO(cs): Current behavior erases previous position from cache
+        # TODO: Current behavior erases previous position from cache
         position_open = self.cache.positions_open()[0]
         position_closed = self.cache.positions_closed()[0]
         assert position_open.side == PositionSide.SHORT
@@ -2953,7 +2956,7 @@ class TestSimulatedExchangeMarginAccount:
         assert entry.quantity == 200_000
 
 
-class TestSimulatedExchangeL2:
+class TestSimulatedExchangeL1:
     def setup(self) -> None:
         # Fixture Setup
         self.clock = TestClock()
@@ -3027,12 +3030,13 @@ class TestSimulatedExchangeL2:
             instruments=[_USDJPY_SIM],
             modules=[self.module],
             fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
             portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             latency_model=LatencyModel(0),
-            book_type=BookType.L2_MBP,
+            book_type=BookType.L1_MBP,
         )
 
         self.exec_client = BacktestExecClient(

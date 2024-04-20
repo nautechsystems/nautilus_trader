@@ -181,7 +181,7 @@ class InteractiveBrokersGateway:
             for _ in range(wait):
                 if self.is_logged_in(container=self._container):
                     break
-                self.log.debug("Waiting for IB Gateway to start ..")
+                self.log.debug("Waiting for IB Gateway to start")
                 sleep(1)
             else:
                 raise RuntimeError(f"Gateway `{self.CONTAINER_NAME}-{self.port}` not ready")

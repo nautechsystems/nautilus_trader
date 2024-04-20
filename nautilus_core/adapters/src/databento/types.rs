@@ -16,7 +16,7 @@
 use std::ffi::c_char;
 
 use databento::dbn;
-use nautilus_core::time::UnixNanos;
+use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     enums::OrderSide,
     identifiers::instrument_id::InstrumentId,
@@ -53,7 +53,7 @@ pub struct DatabentoPublisher {
 /// Represents an auction imbalance.
 ///
 /// This data type includes the populated data fields provided by `Databento`,
-/// except for the `publisher_id` and `instrument_id` integers.
+/// excluding `publisher_id` and `instrument_id`.
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
@@ -115,10 +115,10 @@ impl DatabentoImbalance {
     }
 }
 
-/// Represents a statistics.
+/// Represents a market statistics snapshot.
 ///
 /// This data type includes the populated data fields provided by `Databento`,
-/// except for the `publisher_id` and `instrument_id` integers.
+/// excluding `publisher_id` and `instrument_id`.
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")

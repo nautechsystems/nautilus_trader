@@ -20,11 +20,14 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{serialization::Serializable, time::UnixNanos};
+use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
 use super::order::{BookOrder, NULL_ORDER};
-use crate::{enums::BookAction, identifiers::instrument_id::InstrumentId};
+use crate::{
+    enums::{BookAction, RecordFlag},
+    identifiers::instrument_id::InstrumentId,
+};
 
 /// Represents a single change/delta in an order book.
 #[repr(C)]
@@ -42,13 +45,13 @@ pub struct OrderBookDelta {
     pub action: BookAction,
     /// The order to apply.
     pub order: BookOrder,
-    /// A combination of packet end with matching engine status.
+    /// The record flags bit field, indicating packet end and data information.
     pub flags: u8,
     /// The message sequence number assigned at the venue.
     pub sequence: u64,
-    /// The UNIX timestamp (nanoseconds) when the data event occurred.
+    /// The UNIX timestamp (nanoseconds) when the book event occurred.
     pub ts_event: UnixNanos,
-    /// The UNIX timestamp (nanoseconds) when the data object was initialized.
+    /// The UNIX timestamp (nanoseconds) when the struct was initialized.
     pub ts_init: UnixNanos,
 }
 
@@ -86,7 +89,7 @@ impl OrderBookDelta {
             instrument_id,
             action: BookAction::Clear,
             order: NULL_ORDER,
-            flags: 32, // TODO: Flags constants
+            flags: RecordFlag::F_SNAPSHOT as u8,
             sequence,
             ts_event,
             ts_init,
@@ -176,8 +179,8 @@ pub mod stubs {
             order,
             flags,
             sequence,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         )
     }
 }
@@ -218,8 +221,8 @@ mod tests {
             order,
             flags,
             sequence,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         );
 
         assert_eq!(delta.instrument_id, instrument_id);
@@ -241,7 +244,7 @@ mod tests {
         let ts_event = 2;
         let ts_init = 3;
 
-        let delta = OrderBookDelta::clear(instrument_id, sequence, ts_event, ts_init);
+        let delta = OrderBookDelta::clear(instrument_id, sequence, ts_event.into(), ts_init.into());
 
         assert_eq!(delta.instrument_id, instrument_id);
         assert_eq!(delta.action, BookAction::Clear);

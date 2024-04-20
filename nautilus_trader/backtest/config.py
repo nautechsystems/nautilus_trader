@@ -88,7 +88,7 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     use_position_ids: bool = True
     use_random_ids: bool = False
     use_reduce_only: bool = True
-    # fill_model: FillModel | None = None  # TODO(cs): Implement
+    # fill_model: FillModel | None = None  # TODO: Implement
     modules: list[ImportableActorConfig] | None = None
 
 
@@ -277,4 +277,4 @@ class FXRolloverInterestConfig(SimulationModuleConfig, frozen=True):
 
     """
 
-    rate_data: pd.DataFrame  # TODO(cs): This could probably just become JSON data
+    rate_data: pd.DataFrame  # TODO: This could probably just become JSON data

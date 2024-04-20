@@ -16,7 +16,7 @@
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickersLinearResponse
@@ -26,10 +26,10 @@ from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickersSpo
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitTickersGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
-    category: BybitInstrumentType = None
-    symbol: str = None
-    baseCoin: str = None
+class BybitTickersGetParams(msgspec.Struct, omit_defaults=True, frozen=True):
+    category: BybitProductType | None = None
+    symbol: str | None = None
+    baseCoin: str | None = None
 
 
 class BybitTickersEndpoint(BybitHttpEndpoint):
@@ -48,19 +48,19 @@ class BybitTickersEndpoint(BybitHttpEndpoint):
         self._response_decoder_option = msgspec.json.Decoder(BybitTickersOptionResponse)
         self._response_decoder_spot = msgspec.json.Decoder(BybitTickersSpotResponse)
 
-    async def get(self, params: BybitTickersGetParameters) -> BybitTickersResponse:
+    async def get(self, params: BybitTickersGetParams) -> BybitTickersResponse:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, params)
         try:
-            if params.category == BybitInstrumentType.LINEAR:
-                return self._response_decoder_linear.decode(raw)
-            elif params.category == BybitInstrumentType.OPTION:
-                return self._response_decoder_option.decode(raw)
-            elif params.category == BybitInstrumentType.SPOT:
+            if params.category == BybitProductType.SPOT:
                 return self._response_decoder_spot.decode(raw)
+            elif params.category in (BybitProductType.LINEAR, BybitProductType.INVERSE):
+                return self._response_decoder_linear.decode(raw)
+            elif params.category == BybitProductType.OPTION:
+                return self._response_decoder_option.decode(raw)
             else:
                 raise RuntimeError(
-                    f"Unsupported instrument type: {params.category}",
+                    f"Unsupported product type: {params.category}",
                 )
         except Exception as e:
             decoder_raw = raw.decode("utf-8")

@@ -23,7 +23,7 @@ use nautilus_model::{
         trade::TradeTick, Data,
     },
     identifiers::{instrument_id::InstrumentId, venue::Venue},
-    instruments::InstrumentType,
+    python::instruments::convert_instrument_any_to_pyobject,
 };
 use pyo3::{
     prelude::*,
@@ -88,7 +88,7 @@ impl DatabentoDataLoader {
         for result in iter {
             match result {
                 Ok(instrument) => {
-                    let py_object = convert_instrument_to_pyobject(py, instrument)?;
+                    let py_object = convert_instrument_any_to_pyobject(py, instrument)?;
                     data.push(py_object);
                 }
                 Err(e) => {
@@ -397,20 +397,6 @@ impl DatabentoDataLoader {
         }
 
         Ok(data)
-    }
-}
-
-pub fn convert_instrument_to_pyobject(
-    py: Python,
-    instrument: InstrumentType,
-) -> PyResult<PyObject> {
-    match instrument {
-        InstrumentType::Equity(inst) => Ok(inst.into_py(py)),
-        InstrumentType::FuturesContract(inst) => Ok(inst.into_py(py)),
-        InstrumentType::FuturesSpread(inst) => Ok(inst.into_py(py)),
-        InstrumentType::OptionsContract(inst) => Ok(inst.into_py(py)),
-        InstrumentType::OptionsSpread(inst) => Ok(inst.into_py(py)),
-        _ => Err(to_pyvalue_err("Unsupported instrument type")),
     }
 }
 

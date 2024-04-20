@@ -17,12 +17,15 @@ import pkgutil
 
 import msgspec
 
+from nautilus_trader.adapters.bybit.common.enums import BybitExecType
 from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderStatus
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitPositionIdx
+from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
+from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecution
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountOrder
@@ -36,10 +39,8 @@ from nautilus_trader.adapters.bybit.schemas.ws import BybitWsKline
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsKlineMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsLiquidation
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsLiquidationMsg
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderbookDeltaData
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderbookDeltaMsg
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderbookSnapshot
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderbookSnapshotMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderbookDepth
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderbookDepthMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerLinear
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerLinearMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerOption
@@ -103,9 +104,9 @@ class TestBybitWsDecoders:
             "ws_orderbook_delta.json",
         )
         assert item is not None
-        decoder = msgspec.json.Decoder(BybitWsOrderbookDeltaMsg)
+        decoder = msgspec.json.Decoder(BybitWsOrderbookDepthMsg)
         result = decoder.decode(item)
-        target_data = BybitWsOrderbookDeltaData(
+        target_data = BybitWsOrderbookDepth(
             s="BTCUSDT",
             b=[
                 ["30247.20", "30.028"],
@@ -123,6 +124,8 @@ class TestBybitWsDecoders:
                 ["30252.20", "0.659"],
                 ["30252.50", "4.591"],
             ],
+            u=177400507,
+            seq=66544703342,
         )
         assert result.data == target_data
         assert result.topic == "orderbook.50.BTCUSDT"
@@ -135,9 +138,9 @@ class TestBybitWsDecoders:
             "ws_orderbook_snapshot.json",
         )
         assert item is not None
-        decoder = msgspec.json.Decoder(BybitWsOrderbookSnapshotMsg)
+        decoder = msgspec.json.Decoder(BybitWsOrderbookDepthMsg)
         result = decoder.decode(item)
-        target_data = BybitWsOrderbookSnapshot(
+        target_data = BybitWsOrderbookDepth(
             s="BTCUSDT",
             b=[
                 ["16493.50", "0.006"],
@@ -294,7 +297,7 @@ class TestBybitWsDecoders:
             execId="7e2ae69c-4edf-5800-a352-893d52b446aa",
             execPrice="0.3374",
             execQty="25",
-            execType="Trade",
+            execType=BybitExecType("Trade"),
             execValue="8.435",
             isMaker=False,
             feeRate="0.0006",
@@ -310,7 +313,7 @@ class TestBybitWsDecoders:
             orderPrice="0.3207",
             orderQty="25",
             orderType=BybitOrderType.MARKET,
-            stopOrderType="UNKNOWN",
+            stopOrderType=BybitStopOrderType("UNKNOWN"),
             side=BybitOrderSide.SELL,
             execTime="1672364174443",
             isLeverage="0",
@@ -355,7 +358,7 @@ class TestBybitWsDecoders:
             createdTime="1672364262444",
             updatedTime="1672364262457",
             rejectReason="EC_NoError",
-            stopOrderType="",
+            stopOrderType=BybitStopOrderType.NONE,
             tpslMode="",
             triggerPrice="",
             takeProfit="",
@@ -365,7 +368,7 @@ class TestBybitWsDecoders:
             tpLimitPrice="",
             slLimitPrice="",
             triggerDirection=0,
-            triggerBy="",
+            triggerBy=BybitTriggerType.NONE,
             closeOnTrigger=False,
             category="option",
             placeType="price",

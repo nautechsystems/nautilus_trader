@@ -96,6 +96,7 @@ pub enum AggregationSource {
     Copy,
     Clone,
     Debug,
+    Default,
     Display,
     Hash,
     PartialEq,
@@ -115,6 +116,7 @@ pub enum AggregationSource {
 )]
 pub enum AggressorSide {
     /// There was no specific aggressor for the trade.
+    #[default]
     NoAggressor = 0,
     /// The BUY order was the aggressor for the trade.
     Buyer = 1,
@@ -174,7 +176,7 @@ pub enum AssetClass {
     Alternative = 7,
 }
 
-/// The asset type for a financial market product.
+/// The instrument class.
 #[repr(C)]
 #[derive(
     Copy,
@@ -378,6 +380,7 @@ impl FromU8 for BookType {
     Copy,
     Clone,
     Debug,
+    Default,
     Display,
     Hash,
     PartialEq,
@@ -397,7 +400,8 @@ impl FromU8 for BookType {
 )]
 pub enum ContingencyType {
     /// Not a contingent order.
-    NoContingency = 0, // Will be replaced by `Option`
+    #[default]
+    NoContingency = 0,
     /// One-Cancels-the-Other.
     Oco = 1,
     /// One-Triggers-the-Other.
@@ -468,7 +472,7 @@ pub enum InstrumentCloseType {
     ContractExpired = 2,
 }
 
-/// The liqudity side for a trade in a financial market.
+/// The liqudity side for a trade.
 #[repr(C)]
 #[derive(
     Copy,
@@ -579,6 +583,7 @@ pub enum HaltReason {
     Copy,
     Clone,
     Debug,
+    Default,
     Display,
     Hash,
     PartialEq,
@@ -597,8 +602,9 @@ pub enum HaltReason {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
 )]
 pub enum OmsType {
-    /// There is no specific type of order management specified (will defer to the venue).
-    Unspecified = 0, // Will be replaced by `Option`
+    /// There is no specific type of order management specified (will defer to the venue OMS).
+    #[default]
+    Unspecified = 0,
     /// The netting type where there is one position per instrument.
     Netting = 1,
     /// The hedging type where there can be multiple positions per instrument.
@@ -643,6 +649,7 @@ pub enum OptionKind {
     Copy,
     Clone,
     Debug,
+    Default,
     Display,
     Hash,
     PartialEq,
@@ -663,11 +670,23 @@ pub enum OptionKind {
 )]
 pub enum OrderSide {
     /// No order side is specified.
+    #[default]
     NoOrderSide = 0,
     /// The order is a BUY.
     Buy = 1,
     /// The order is a SELL.
     Sell = 2,
+}
+
+impl OrderSide {
+    #[must_use]
+    pub fn as_specified(&self) -> OrderSideSpecified {
+        match &self {
+            Self::Buy => OrderSideSpecified::Buy,
+            Self::Sell => OrderSideSpecified::Sell,
+            _ => panic!("Order invariant failed: side must be 'Buy' or 'Sell'"),
+        }
+    }
 }
 
 /// Convert the given `value` to an [`OrderSide`].
@@ -678,6 +697,24 @@ impl FromU8 for OrderSide {
             1 => Some(Self::Buy),
             2 => Some(Self::Sell),
             _ => None,
+        }
+    }
+}
+
+/// The specified order side (BUY or SELL).
+pub enum OrderSideSpecified {
+    /// The order is a BUY.
+    Buy = 1,
+    /// The order is a SELL.
+    Sell = 2,
+}
+
+impl OrderSideSpecified {
+    #[must_use]
+    pub fn as_order_side(&self) -> OrderSide {
+        match &self {
+            Self::Buy => OrderSide::Buy,
+            Self::Sell => OrderSide::Sell,
         }
     }
 }
@@ -805,6 +842,7 @@ pub enum OrderType {
     Copy,
     Clone,
     Debug,
+    Default,
     Display,
     Hash,
     PartialEq,
@@ -825,7 +863,8 @@ pub enum OrderType {
 )]
 pub enum PositionSide {
     /// No position side is specified (only valid in the context of a filter for actions involving positions).
-    NoPositionSide = 0, // Will be replaced by `Option`
+    #[default]
+    NoPositionSide = 0,
     /// A neural/flat position, where no position is currently held in the market.
     Flat = 1,
     /// A long position in the market, typically acquired through one or many BUY orders.
@@ -834,7 +873,7 @@ pub enum PositionSide {
     Short = 3,
 }
 
-/// The type of price for an instrument in a financial market.
+/// The type of price for an instrument in market.
 #[repr(C)]
 #[derive(
     Copy,
@@ -868,7 +907,54 @@ pub enum PriceType {
     Last = 4,
 }
 
-/// The 'Time in Force' instruction for an order in the financial market.
+/// A record flag bit field, indicating packet end and data information.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
+#[allow(non_camel_case_types)]
+pub enum RecordFlag {
+    /// Last message in the packet from the venue for a given `instrument_id`.
+    F_LAST = 1 << 7, // 128
+    /// Top-of-book message, not an individual order.
+    F_TOB = 1 << 6, // 64
+    /// Message sourced from a replay, such as a snapshot server.
+    F_SNAPSHOT = 1 << 5, // 32
+    /// Aggregated price level message, not an individual order.
+    F_MBP = 1 << 4, // 16
+    /// Reserved for future use.
+    RESERVED_2 = 1 << 3, // 8
+    /// Reserved for future use.
+    RESERVED_1 = 1 << 2, // 4
+}
+
+impl RecordFlag {
+    /// Checks if the flag matches a given value.
+    #[must_use]
+    pub fn matches(self, value: u8) -> bool {
+        (self as u8) & value != 0
+    }
+}
+
+/// The 'Time in Force' instruction for an order.
 #[repr(C)]
 #[derive(
     Copy,
@@ -965,7 +1051,7 @@ pub enum TradingState {
 )]
 pub enum TrailingOffsetType {
     /// No trailing offset type is specified (invalid for trailing type orders).
-    NoTrailingOffset = 0, // Will be replaced by `Option`
+    NoTrailingOffset = 0,
     /// The trailing offset is based on a market price.
     Price = 1,
     /// The trailing offset is based on a percentage represented in basis points, of a market price.
@@ -982,6 +1068,7 @@ pub enum TrailingOffsetType {
     Copy,
     Clone,
     Debug,
+    Default,
     Display,
     Hash,
     PartialEq,
@@ -1001,7 +1088,8 @@ pub enum TrailingOffsetType {
 )]
 pub enum TriggerType {
     /// No trigger type is specified (invalid for orders with a trigger).
-    NoTrigger = 0, // Will be replaced by `Option`
+    #[default]
+    NoTrigger = 0,
     /// The default trigger type set by the trading venue.
     Default = 1,
     /// Based on the top-of-book quoted prices for the instrument.
@@ -1042,6 +1130,7 @@ enum_strum_serde!(OrderStatus);
 enum_strum_serde!(OrderType);
 enum_strum_serde!(PositionSide);
 enum_strum_serde!(PriceType);
+enum_strum_serde!(RecordFlag);
 enum_strum_serde!(TimeInForce);
 enum_strum_serde!(TradingState);
 enum_strum_serde!(TrailingOffsetType);

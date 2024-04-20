@@ -23,6 +23,7 @@ from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
+from nautilus_trader.backtest.models import MakerTakerFeeModel
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -119,6 +120,7 @@ class SandboxExecutionClient(LiveExecutionClient):
             msgbus=self._msgbus,
             cache=cache,
             fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
             latency_model=LatencyModel(0),
             clock=self.test_clock,
             frozen_account=True,  # <-- Freezing account
@@ -139,7 +141,7 @@ class SandboxExecutionClient(LiveExecutionClient):
         self._msgbus.subscribe("data.*", handler=self.on_data)
         self._client._set_connected(True)
         self._set_connected(True)
-        self._log.info("Connected.")
+        self._log.info("Connected")
 
     def disconnect(self) -> None:
         """
@@ -147,7 +149,7 @@ class SandboxExecutionClient(LiveExecutionClient):
         """
         self._log.info("Disconnecting...")
         self._set_connected(False)
-        self._log.info("Disconnected.")
+        self._log.info("Disconnected")
 
     async def generate_order_status_report(
         self,

@@ -21,7 +21,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{correctness::check_equal_u8, serialization::Serializable, time::UnixNanos};
+use nautilus_core::{correctness::check_equal_u8, nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -30,7 +30,7 @@ use crate::{
     types::{fixed::FIXED_PRECISION, price::Price, quantity::Quantity},
 };
 
-/// Represents a single quote tick in a financial market.
+/// Represents a single quote tick in market.
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -50,9 +50,9 @@ pub struct QuoteTick {
     pub bid_size: Quantity,
     /// The top of book ask size.
     pub ask_size: Quantity,
-    /// The UNIX timestamp (nanoseconds) when the tick event occurred.
+    /// The UNIX timestamp (nanoseconds) when the quote event occurred.
     pub ts_event: UnixNanos,
-    /// The UNIX timestamp (nanoseconds) when the data object was initialized.
+    /// The UNIX timestamp (nanoseconds) when the struct was initialized.
     pub ts_init: UnixNanos,
 }
 
@@ -167,6 +167,7 @@ impl Serializable for QuoteTick {}
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(feature = "stubs")]
 pub mod stubs {
+    use nautilus_core::nanos::UnixNanos;
     use rstest::fixture;
 
     use crate::{
@@ -183,8 +184,8 @@ pub mod stubs {
             ask_price: Price::from("10001.0000"),
             bid_size: Quantity::from("1.00000000"),
             ask_size: Quantity::from("1.00000000"),
-            ts_event: 0,
-            ts_init: 1,
+            ts_event: UnixNanos::from(0),
+            ts_init: UnixNanos::from(1),
         }
     }
 }

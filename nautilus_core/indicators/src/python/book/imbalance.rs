@@ -14,10 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::{
-    orderbook::{book_mbo::OrderBookMbo, book_mbp::OrderBookMbp},
-    types::quantity::Quantity,
-};
+use nautilus_model::{orderbook::book::OrderBook, types::quantity::Quantity};
 use pyo3::prelude::*;
 
 use crate::{book::imbalance::BookImbalanceRatio, indicator::Indicator};
@@ -63,14 +60,9 @@ impl BookImbalanceRatio {
         self.initialized
     }
 
-    #[pyo3(name = "handle_book_mbo")]
-    fn py_handle_book_mbo(&mut self, book: &OrderBookMbo) {
-        self.handle_book_mbo(book);
-    }
-
-    #[pyo3(name = "handle_book_mbp")]
-    fn py_handle_book_mbp(&mut self, book: &OrderBookMbp) {
-        self.handle_book_mbp(book);
+    #[pyo3(name = "handle_book")]
+    fn py_handle_book(&mut self, book: &OrderBook) {
+        self.handle_book(book);
     }
 
     #[pyo3(name = "update")]

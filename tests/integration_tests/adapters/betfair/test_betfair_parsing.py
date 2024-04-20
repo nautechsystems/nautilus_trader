@@ -306,7 +306,7 @@ class TestBetfairParsingStreaming:
         result = [book.count for book in books.values()]
         assert result == book_count
 
-    def test_betfair_trade_sizes(self):  # noqa: C901
+    def test_betfair_trade_sizes(self) -> None:  # noqa: C901
         mcms = BetfairDataProvider.read_mcm("1.206064380.bz2")
         trade_ticks: dict[InstrumentId, list[TradeTick]] = defaultdict(list)
         betfair_tv: dict[int, dict[float, float]] = {}
@@ -338,7 +338,7 @@ class TestBetfairParsingStreaming:
 
 
 class TestBetfairParsing:
-    def setup(self):
+    def setup(self) -> None:
         # Fixture Setup
         self.loop = asyncio.new_event_loop()
         self.clock = LiveClock()

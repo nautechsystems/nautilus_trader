@@ -30,6 +30,7 @@ from nautilus_trader.examples.strategies.ema_cross_bracket_algo import EMACrossB
 from nautilus_trader.examples.strategies.ema_cross_bracket_algo import EMACrossBracketAlgoConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 
@@ -70,7 +71,7 @@ config_node = TradingNodeConfig(
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
-    timeout_connection=20.0,
+    timeout_connection=30.0,
     timeout_reconciliation=10.0,
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,
@@ -92,7 +93,7 @@ strat_config = EMACrossBracketAlgoConfig(
     bracket_distance_atr=1.0,
     trade_size=Decimal("0.100"),
     emulation_trigger="BID_ASK",
-    entry_exec_algorithm_id="TWAP",
+    entry_exec_algorithm_id=ExecAlgorithmId("TWAP"),
     entry_exec_algorithm_params={"horizon_secs": 5.0, "interval_secs": 0.5},
 )
 

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config import PositiveFloat
@@ -24,11 +24,24 @@ from nautilus_trader.config import PositiveInt
 class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     """
     Configuration for ``BybitDataClient`` instances.
+
+    api_key : str, optional
+        The Bybit API public key.
+        If ``None`` then will source the `BYBIT_API_KEY` or
+        `BYBIT_TESTNET_API_KEY` environment variables.
+    api_secret : str, optional
+        The Bybit API public key.
+        If ``None`` then will source the `BYBIT_API_KEY` or
+        `BYBIT_TESTNET_API_KEY` environment variables.
+    product_types : list[BybitProductType], optional
+        The Bybit product type for the client.
+        If not specified then will use all products.
+
     """
 
     api_key: str | None = None
     api_secret: str | None = None
-    instrument_types: list[BybitInstrumentType] = []
+    product_types: list[BybitProductType] | None = None
     base_url_http: str | None = None
     testnet: bool = False
 
@@ -36,15 +49,33 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
 class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     """
     Configuration for ``BybitExecutionClient`` instances.
+
+    api_key : str, optional
+        The Bybit API public key.
+        If ``None`` then will source the `BYBIT_API_KEY` or
+        `BYBIT_TESTNET_API_KEY` environment variables.
+    api_secret : str, optional
+        The Bybit API public key.
+        If ``None`` then will source the `BYBIT_API_KEY` or
+        `BYBIT_TESTNET_API_KEY` environment variables.
+    product_type : list[BybitProductType], optional
+        The Bybit product type for the client.
+        If None then will default to 'SPOT', you also cannot mix 'SPOT' with
+        any other product type for execution, and it will use a `CASH` account
+        type, vs `MARGIN` for the other derivative products.
+    use_gtd : bool, default False
+        If False then GTD time in force will be remapped to GTC
+        (this is useful if managing GTD orders locally).
+
     """
 
     api_key: str | None = None
     api_secret: str | None = None
-    instrument_types: list[BybitInstrumentType] = []
+    product_types: list[BybitProductType] | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
     testnet: bool = False
-    clock_sync_interval_secs: int = 0
+    use_gtd: bool = False  # Not supported on Bybit
     use_reduce_only: bool = True
     use_position_ids: bool = True
     treat_expired_as_canceled: bool = False

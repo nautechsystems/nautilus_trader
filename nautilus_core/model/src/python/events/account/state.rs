@@ -15,13 +15,12 @@
 
 use std::str::FromStr;
 
-use nautilus_core::{python::to_pyvalue_err, time::UnixNanos, uuid::UUID4};
+use nautilus_core::{python::to_pyvalue_err, uuid::UUID4};
 use pyo3::{
     basic::CompareOp,
     prelude::*,
     types::{PyDict, PyList},
 };
-use rust_decimal::prelude::ToPrimitive;
 
 use crate::{
     enums::AccountType,
@@ -44,8 +43,8 @@ impl AccountState {
         margins: Vec<MarginBalance>,
         is_reported: bool,
         event_id: UUID4,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
+        ts_event: u64,
+        ts_init: u64,
         base_currency: Option<Currency>,
     ) -> PyResult<Self> {
         Self::new(
@@ -55,8 +54,8 @@ impl AccountState {
             margins,
             is_reported,
             event_id,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
             base_currency,
         )
         .map_err(to_pyvalue_err)
@@ -161,8 +160,8 @@ impl AccountState {
             margins,
             reported,
             UUID4::from_str(event_id).unwrap(),
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
             Some(Currency::from_str(base_currency).map_err(to_pyvalue_err)?),
         )
         .unwrap();
@@ -185,8 +184,8 @@ impl AccountState {
         dict.set_item("reported", self.is_reported)?;
         dict.set_item("event_id", self.event_id.to_string())?;
         dict.set_item("info", PyDict::new(py))?;
-        dict.set_item("ts_event", self.ts_event.to_u64())?;
-        dict.set_item("ts_init", self.ts_init.to_u64())?;
+        dict.set_item("ts_event", self.ts_event.as_u64())?;
+        dict.set_item("ts_init", self.ts_init.as_u64())?;
         match self.base_currency {
             Some(base_currency) => {
                 dict.set_item("base_currency", base_currency.code.to_string())?;

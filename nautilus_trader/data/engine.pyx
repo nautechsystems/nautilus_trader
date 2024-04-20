@@ -271,7 +271,7 @@ cdef class DataEngine(Component):
         else:
             self._routing_map[client.venue] = client
 
-        self._log.info(f"Registered {client}{routing_log}.")
+        self._log.info(f"Registered {client}{routing_log}")
 
     cpdef void register_default_client(self, DataClient client):
         """
@@ -290,7 +290,7 @@ cdef class DataEngine(Component):
 
         self._default_client = client
 
-        self._log.info(f"Registered {client} for default routing.")
+        self._log.info(f"Registered {client} for default routing")
 
     cpdef void register_venue_routing(self, DataClient client, Venue venue):
         """
@@ -315,7 +315,7 @@ cdef class DataEngine(Component):
 
         self._routing_map[venue] = client
 
-        self._log.info(f"Registered ExecutionClient-{client} for routing to {venue}.")
+        self._log.info(f"Registered ExecutionClient-{client} for routing to {venue}")
 
     cpdef void deregister_client(self, DataClient client):
         """
@@ -331,7 +331,7 @@ cdef class DataEngine(Component):
         Condition.is_in(client.id, self._clients, "client.id", "self._clients")
 
         del self._clients[client.id]
-        self._log.info(f"Deregistered {client}.")
+        self._log.info(f"Deregistered {client}")
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
@@ -607,7 +607,7 @@ cdef class DataEngine(Component):
 
     cpdef void _execute_command(self, DataCommand command):
         if self.debug:
-            self._log.debug(f"{RECV}{CMD} {command}.")
+            self._log.debug(f"{RECV}{CMD} {command}")
         self.command_count += 1
 
         cdef Venue venue = command.venue
@@ -621,7 +621,7 @@ cdef class DataEngine(Component):
                 self._log.error(
                     f"Cannot execute command: "
                     f"no data client configured for {command.venue} or `client_id` {command.client_id}, "
-                    f"{command}."
+                    f"{command}"
                 )
                 return  # No client to handle command
 
@@ -630,7 +630,7 @@ cdef class DataEngine(Component):
         elif isinstance(command, Unsubscribe):
             self._handle_unsubscribe(client, command)
         else:
-            self._log.error(f"Cannot handle command: unrecognized {command}.")
+            self._log.error(f"Cannot handle command: unrecognized {command}")
 
     cpdef void _handle_subscribe(self, DataClient client, Subscribe command):
         if command.data_type.type == Instrument:
@@ -732,7 +732,7 @@ cdef class DataEngine(Component):
             return
 
         if instrument_id.is_synthetic():
-            self._log.error("Cannot subscribe for synthetic instrument `Instrument` data.")
+            self._log.error("Cannot subscribe for synthetic instrument `Instrument` data")
             return
 
         if instrument_id not in client.subscribed_instruments():
@@ -749,7 +749,7 @@ cdef class DataEngine(Component):
         Condition.not_none(metadata, "metadata")
 
         if instrument_id.is_synthetic():
-            self._log.error("Cannot subscribe for synthetic instrument `OrderBookDelta` data.")
+            self._log.error("Cannot subscribe for synthetic instrument `OrderBookDelta` data")
             return
 
         self._setup_order_book(
@@ -771,7 +771,7 @@ cdef class DataEngine(Component):
         Condition.not_none(metadata, "metadata")
 
         if instrument_id.is_synthetic():
-            self._log.error("Cannot subscribe for synthetic instrument `OrderBook` data.")
+            self._log.error("Cannot subscribe for synthetic instrument `OrderBook` data")
             return
 
         cdef:
@@ -797,7 +797,7 @@ cdef class DataEngine(Component):
                 stop_time_ns=0,  # No stop
                 callback=self._snapshot_order_book,
             )
-            self._log.debug(f"Set timer {timer_name}.")
+            self._log.debug(f"Set timer {timer_name}")
 
         self._setup_order_book(
             client,
@@ -825,7 +825,7 @@ cdef class DataEngine(Component):
             if instrument is None:
                 self._log.error(
                     f"Cannot subscribe to {instrument_id} <OrderBook> data: "
-                    f"no instrument found in the cache.",
+                    f"no instrument found in the cache",
                 )
                 return
             order_book = OrderBook(
@@ -834,7 +834,7 @@ cdef class DataEngine(Component):
             )
 
             self._cache.add_order_book(order_book)
-            self._log.debug(f"Created {type(order_book).__name__}.")
+            self._log.debug(f"Created {type(order_book).__name__}")
 
         # Always re-subscribe to override previous settings
         try:
@@ -900,7 +900,7 @@ cdef class DataEngine(Component):
         if synthetic is None:
             self._log.error(
                 f"Cannot subscribe to `QuoteTick` data for synthetic instrument {instrument_id}, "
-                " not found."
+                " not found"
             )
             return
 
@@ -940,7 +940,7 @@ cdef class DataEngine(Component):
         if synthetic is None:
             self._log.error(
                 f"Cannot subscribe to `TradeTick` data for synthetic instrument {instrument_id}, "
-                " not found."
+                " not found"
             )
             return
 
@@ -978,7 +978,7 @@ cdef class DataEngine(Component):
             # External aggregation
             if bar_type.instrument_id.is_synthetic():
                 self._log.error(
-                    "Cannot subscribe for externally aggregated synthetic instrument bar data.",
+                    "Cannot subscribe for externally aggregated synthetic instrument bar data",
                 )
                 return
 
@@ -999,7 +999,7 @@ cdef class DataEngine(Component):
         except NotImplementedError:
             self._log.error(
                 f"Cannot subscribe: {client.id.value} "
-                f"has not implemented {data_type} subscriptions.",
+                f"has not implemented {data_type} subscriptions",
             )
             return
 
@@ -1024,7 +1024,7 @@ cdef class DataEngine(Component):
 
         if instrument_id.is_synthetic():
             self._log.error(
-                "Cannot subscribe for synthetic instrument `InstrumentStatus` data.",
+                "Cannot subscribe for synthetic instrument `InstrumentStatus` data",
             )
             return
 
@@ -1040,7 +1040,7 @@ cdef class DataEngine(Component):
         Condition.not_none(instrument_id, "instrument_id")
 
         if instrument_id.is_synthetic():
-            self._log.error("Cannot subscribe for synthetic instrument `InstrumentClose` data.")
+            self._log.error("Cannot subscribe for synthetic instrument `InstrumentClose` data")
             return
 
         if instrument_id not in client.subscribed_instrument_close():
@@ -1059,7 +1059,7 @@ cdef class DataEngine(Component):
             return
         else:
             if instrument_id.is_synthetic():
-                self._log.error("Cannot unsubscribe from synthetic instrument `Instrument` data.")
+                self._log.error("Cannot unsubscribe from synthetic instrument `Instrument` data")
                 return
 
             if not self._msgbus.has_subscribers(
@@ -1080,7 +1080,7 @@ cdef class DataEngine(Component):
         Condition.not_none(metadata, "metadata")
 
         if instrument_id.is_synthetic():
-            self._log.error("Cannot unsubscribe from synthetic instrument `OrderBookDelta` data.")
+            self._log.error("Cannot unsubscribe from synthetic instrument `OrderBookDelta` data")
             return
 
         if not self._msgbus.has_subscribers(
@@ -1101,7 +1101,7 @@ cdef class DataEngine(Component):
         Condition.not_none(metadata, "metadata")
 
         if instrument_id.is_synthetic():
-            self._log.error("Cannot unsubscribe from synthetic instrument `OrderBook` data.")
+            self._log.error("Cannot unsubscribe from synthetic instrument `OrderBook` data")
             return
 
         if not self._msgbus.has_subscribers(
@@ -1175,7 +1175,7 @@ cdef class DataEngine(Component):
         except NotImplementedError:
             self._log.error(
                 f"Cannot unsubscribe: {client.id.value} "
-                f"has not implemented data type {data_type} subscriptions.",
+                f"has not implemented data type {data_type} subscriptions",
             )
             return
 
@@ -1183,7 +1183,7 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_request(self, DataRequest request):
         if self.debug:
-            self._log.debug(f"{RECV}{REQ} {request}.", LogColor.MAGENTA)
+            self._log.debug(f"{RECV}{REQ} {request}", LogColor.MAGENTA)
         self.request_count += 1
 
         # Query data catalog
@@ -1202,7 +1202,7 @@ cdef class DataEngine(Component):
             if client is None:
                 self._log.error(
                     f"Cannot handle request: "
-                    f"no client registered for '{request.client_id}', {request}.")
+                    f"no client registered for '{request.client_id}', {request}")
                 return  # No client to handle request
 
         if request.data_type.type == Instrument:
@@ -1253,7 +1253,7 @@ cdef class DataEngine(Component):
             try:
                 client.request(request.data_type, request.id)
             except NotImplementedError:
-                self._log.error(f"Cannot handle request: unrecognized data type {request.data_type}.")
+                self._log.error(f"Cannot handle request: unrecognized data type {request.data_type}")
 
     cpdef void _query_catalog(self, DataRequest request):
         cdef datetime start = request.data_type.metadata.get("start")
@@ -1269,7 +1269,7 @@ cdef class DataEngine(Component):
         if end is not None and ts_end > ts_now:
             self._log.warning(
                 "Cannot request data beyond current time. "
-                f"Truncating `end` to current UNIX nanoseconds {unix_nanos_to_dt(ts_now)}.",
+                f"Truncating `end` to current UNIX nanoseconds {unix_nanos_to_dt(ts_now)}",
             )
             ts_end = ts_now
 
@@ -1294,7 +1294,7 @@ cdef class DataEngine(Component):
         elif request.data_type.type == Bar:
             bar_type = request.data_type.metadata.get("bar_type")
             if bar_type is None:
-                self._log.error("No bar type provided for bars request.")
+                self._log.error("No bar type provided for bars request")
                 return
             data = self._catalog.bars(
                 instrument_ids=[str(bar_type.instrument_id)],
@@ -1362,7 +1362,7 @@ cdef class DataEngine(Component):
         elif isinstance(data, CustomData):
             self._handle_custom_data(data)
         else:
-            self._log.error(f"Cannot handle data: unrecognized type {type(data)} {data}.")
+            self._log.error(f"Cannot handle data: unrecognized type {type(data)} {data}")
 
     cpdef void _handle_instrument(self, Instrument instrument):
         self._cache.add_instrument(instrument)
@@ -1444,12 +1444,12 @@ cdef class DataEngine(Component):
             if last_bar is not None:
                 if bar.ts_event < last_bar.ts_event:
                     self._log.warning(
-                        f"Bar {bar} was prior to last bar `ts_event` {last_bar.ts_event}.",
+                        f"Bar {bar} was prior to last bar `ts_event` {last_bar.ts_event}",
                     )
                     return  # `bar` is out of sequence
                 if bar.ts_init < last_bar.ts_init:
                     self._log.warning(
-                        f"Bar {bar} was prior to last bar `ts_init` {last_bar.ts_init}.",
+                        f"Bar {bar} was prior to last bar `ts_init` {last_bar.ts_init}",
                     )
                     return  # `bar` is out of sequence
                 if bar.is_revision:
@@ -1461,7 +1461,7 @@ cdef class DataEngine(Component):
                         self._cache.add_bar(bar)
                     else:
                         self._log.warning(
-                            f"Bar revision {bar} was not at last bar `ts_event` {last_bar.ts_event}.",
+                            f"Bar revision {bar} was not at last bar `ts_event` {last_bar.ts_event}",
                         )
                         return  # Revision SHOULD be at `last_bar.ts_event`
 
@@ -1486,7 +1486,7 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_response(self, DataResponse response):
         if self.debug:
-            self._log.debug(f"{RECV}{RES} {response}.", LogColor.MAGENTA)
+            self._log.debug(f"{RECV}{RES} {response}", LogColor.MAGENTA)
         self.response_count += 1
 
         if response.data_type.type == Instrument:
@@ -1524,14 +1524,14 @@ cdef class DataEngine(Component):
             aggregator.set_await_partial(False)
 
             if aggregator:
-                self._log.debug(f"Applying partial bar {partial} for {partial.bar_type}.")
+                self._log.debug(f"Applying partial bar {partial} for {partial.bar_type}")
                 aggregator.set_partial(partial)
             else:
                 if self._fsm.state == ComponentState.RUNNING:
                     # Only log this error if the component is running, because
                     # there may have been an immediate stop called after start
                     # - with the partial bar being for a now removed aggregator.
-                    self._log.error("No aggregator for partial bar update.")
+                    self._log.error("No aggregator for partial bar update")
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
@@ -1562,7 +1562,7 @@ cdef class DataEngine(Component):
         cdef OrderBook order_book = self._cache.order_book(instrument_id)
         if order_book:
             if order_book.ts_last == 0:
-                self._log.debug("OrderBook not yet updated, skipping snapshot.")
+                self._log.debug("OrderBook not yet updated, skipping snapshot")
                 return
 
             self._msgbus.publish_c(
@@ -1576,7 +1576,7 @@ cdef class DataEngine(Component):
         else:
             self._log.error(
                 f"Cannot snapshot orderbook: "
-                f"no order book found, {snap_event}.",
+                f"no order book found, {snap_event}",
             )
 
     cpdef void _start_bar_aggregator(
@@ -1589,7 +1589,7 @@ cdef class DataEngine(Component):
         if instrument is None:
             self._log.error(
                 f"Cannot start bar aggregation: "
-                f"no instrument found for {bar_type.instrument_id}.",
+                f"no instrument found for {bar_type.instrument_id}",
             )
 
         if bar_type.spec.is_time_aggregated():
@@ -1633,7 +1633,7 @@ cdef class DataEngine(Component):
 
         # Add aggregator
         self._bar_aggregators[bar_type] = aggregator
-        self._log.debug(f"Added {aggregator} for {bar_type} bars.")
+        self._log.debug(f"Added {aggregator} for {bar_type} bars")
 
         # Subscribe to required data
         if bar_type.spec.price_type == PriceType.LAST:
@@ -1714,7 +1714,7 @@ cdef class DataEngine(Component):
             if component_quote is None:
                 self._log.warning(
                     f"Cannot calculate synthetic instrument {synthetic.id} price, "
-                    f"no quotes for {instrument_id} yet...",
+                    f"no quotes for {instrument_id} yet",
                 )
                 return
             update_bid = component_quote.bid_price
@@ -1766,7 +1766,7 @@ cdef class DataEngine(Component):
             if component_trade is None:
                 self._log.warning(
                     f"Cannot calculate synthetic instrument {synthetic.id} price, "
-                    f"no trades for {instrument_id} yet...",
+                    f"no trades for {instrument_id} yet",
                 )
                 return
             update_price = component_trade.price

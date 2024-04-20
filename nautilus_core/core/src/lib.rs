@@ -16,6 +16,7 @@
 pub mod correctness;
 pub mod datetime;
 pub mod message;
+pub mod nanos;
 pub mod parsing;
 pub mod serialization;
 pub mod time;

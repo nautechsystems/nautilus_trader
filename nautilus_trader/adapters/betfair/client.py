@@ -75,7 +75,7 @@ class BetfairHttpClient:
         username: str,
         password: str,
         app_key: str,
-    ):
+    ) -> None:
         # Config
         self.username = username
         self.password = password
@@ -93,7 +93,7 @@ class BetfairHttpClient:
         body = request.body()
         if isinstance(body, str):
             body = body.encode()
-        self._log.debug(f"[REQ] {method} {url} {body.decode()} ")
+        self._log.debug(f"[REQ] {method} {url} {body.decode()}")
         response: HttpResponse = await self._client.request(
             method,
             url,
@@ -124,7 +124,7 @@ class BetfairHttpClient:
             },
         )
 
-    def reset_headers(self):
+    def reset_headers(self) -> None:
         self._headers = {
             "Accept": "application/json",
             "Content-Type": "application/x-www-form-urlencoded",
@@ -132,9 +132,9 @@ class BetfairHttpClient:
             "X-Application": self.app_key,
         }
 
-    async def connect(self):
+    async def connect(self) -> None:
         if self.session_token is not None:
-            self._log.warning("Session token exists (already connected), skipping.")
+            self._log.warning("Session token exists (already connected), skipping")
             return
 
         self._log.info("Connecting (Betfair login)")
@@ -142,15 +142,15 @@ class BetfairHttpClient:
         resp: LoginResponse = await self._post(request)
         if resp.status != LoginStatus.SUCCESS:
             raise RuntimeError(f"Login not successful: {resp.status.value}")
-        self._log.info("Login success.", color=LogColor.GREEN)
+        self._log.info("Login success", color=LogColor.GREEN)
         self.update_headers(login_resp=resp)
 
-    async def disconnect(self):
-        self._log.info("Disconnecting..")
+    async def disconnect(self) -> None:
+        self._log.info("Disconnecting...")
         self.reset_headers()
-        self._log.info("Disconnected.", color=LogColor.GREEN)
+        self._log.info("Disconnected", color=LogColor.GREEN)
 
-    async def keep_alive(self):
+    async def keep_alive(self) -> None:
         """
         Renew authentication.
         """

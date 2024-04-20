@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import pandas as pd
 import pytest
 
 from nautilus_trader.model.enums import BookAction
@@ -20,6 +20,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.persistence.loaders import BinanceOrderBookDeltaDataLoader
 from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
+from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TEST_DATA_DIR
@@ -43,7 +44,7 @@ def test_load_binance_deltas() -> None:
     assert deltas[0].flags == 42  # Snapshot
 
 
-@pytest.mark.parametrize(
+bar_timestamp_tests_params = (
     ("timestamp_is_close", "interval_ms", "ts_event1", "ts_event2", "ts_event3", "ts_event4"),
     [
         [
@@ -58,13 +59,16 @@ def test_load_binance_deltas() -> None:
             False,
             50,
             1359676800000000000,
-            1359676800049999872,
+            1359676800050000000,
             1359676800100000000,
-            1359676800150000128,
+            1359676800150000000,
         ],
     ],
 )
-def test_bar_data_wrangler(
+
+
+@pytest.mark.parametrize(*bar_timestamp_tests_params)
+def test_quote_bar_data_wrangler(
     timestamp_is_close: bool,
     interval_ms: int,
     ts_event1: int,
@@ -90,3 +94,73 @@ def test_bar_data_wrangler(
     assert ticks[1].ts_event == ts_event2
     assert ticks[2].ts_event == ts_event3
     assert ticks[3].ts_event == ts_event4
+
+
+@pytest.mark.parametrize(*bar_timestamp_tests_params)
+def test_trade_bar_data_wrangler(
+    timestamp_is_close: bool,
+    interval_ms: int,
+    ts_event1: int,
+    ts_event2: int,
+    ts_event3: int,
+    ts_event4: int,
+) -> None:
+    # Arrange
+    usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+    wrangler = TradeTickDataWrangler(instrument=usdjpy)
+    provider = TestDataProvider()
+    data = provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv")
+    data.loc[:, "volume"] = 100_0000
+    expected_ticks_count = len(data) * 4
+
+    # Act
+    ticks = wrangler.process_bar_data(
+        data=data,
+        offset_interval_ms=interval_ms,
+        timestamp_is_close=timestamp_is_close,
+    )
+
+    # Assert
+    assert ticks[0].ts_event == ts_event1
+    assert ticks[1].ts_event == ts_event2
+    assert ticks[2].ts_event == ts_event3
+    assert ticks[3].ts_event == ts_event4
+    assert len(ticks) == expected_ticks_count
+
+
+@pytest.mark.parametrize("is_raw", [False, True])
+def test_trade_bar_data_wrangler_size_precision(is_raw: bool) -> None:
+    # Arrange
+    spy = TestInstrumentProvider.equity("SPY", "ARCA")
+    wrangler = TradeTickDataWrangler(instrument=spy)
+    factor = 1e9 if is_raw else 1
+    ts = pd.Timestamp("2024-01-05 21:00:00+0000", tz="UTC")
+    data = pd.DataFrame(
+        {
+            "open": {ts: 468.01 * factor},
+            "high": {ts: 468.08 * factor},
+            "low": {ts: 467.81 * factor},
+            "close": {ts: 467.96 * factor},
+            "volume": {ts: 18735.0 * factor},
+        },
+    )
+
+    # Calculate expected_size
+    if is_raw:
+        # For raw data, adjust precision by -9
+        expected_size = round(data["volume"].iloc[0] / 4, spy.size_precision - 9)
+    else:
+        # For non-raw data, apply standard precision and scale back up to compare with raw
+        expected_size = round(data["volume"].iloc[0] / 4, spy.size_precision) * 1e9
+
+    # Act
+    ticks = wrangler.process_bar_data(
+        data=data,
+        offset_interval_ms=0,
+        timestamp_is_close=True,
+        is_raw=is_raw,
+    )
+
+    # Assert
+    for tick in ticks:
+        assert tick.size.raw == expected_size

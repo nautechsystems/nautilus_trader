@@ -257,19 +257,19 @@ class Trader(Component):
             if actor.is_running:
                 actor.stop()
             else:
-                self._log.warning(f"{actor} already stopped.")
+                self._log.warning(f"{actor} already stopped")
 
         for strategy in self._strategies.values():
             if strategy.is_running:
                 strategy.stop()
             else:
-                self._log.warning(f"{strategy} already stopped.")
+                self._log.warning(f"{strategy} already stopped")
 
         for exec_algorithm in self._exec_algorithms.values():
             if exec_algorithm.is_running:
                 exec_algorithm.stop()
             else:
-                self._log.warning(f"{exec_algorithm} already stopped.")
+                self._log.warning(f"{exec_algorithm} already stopped")
 
     def _reset(self) -> None:
         for actor in self._actors.values():
@@ -313,7 +313,7 @@ class Trader(Component):
         PyCondition.true(not actor.is_disposed, "actor.state was DISPOSED")
 
         if self.is_running and not self._has_controller:
-            self._log.error("Cannot add an actor/component to a running trader.")
+            self._log.error("Cannot add an actor/component to a running trader")
             return
 
         if actor.id in self._actors:
@@ -335,7 +335,7 @@ class Trader(Component):
 
         self._actors[actor.id] = actor
 
-        self._log.info(f"Registered Component {actor}.")
+        self._log.info(f"Registered Component {actor}")
 
     def add_actors(self, actors: list[Actor]) -> None:
         """
@@ -379,7 +379,7 @@ class Trader(Component):
         PyCondition.true(not strategy.is_disposed, "strategy.state was DISPOSED")
 
         if self.is_running and not self._has_controller:
-            self._log.error("Cannot add a strategy to a running trader.")
+            self._log.error("Cannot add a strategy to a running trader")
             return
 
         if strategy.id in self._strategies:
@@ -420,7 +420,7 @@ class Trader(Component):
         self._exec_engine.register_external_order_claims(strategy)
         self._strategies[strategy.id] = strategy
 
-        self._log.info(f"Registered Strategy {strategy}.")
+        self._log.info(f"Registered Strategy {strategy}")
 
     def add_strategies(self, strategies: list[Strategy]) -> None:
         """
@@ -464,7 +464,7 @@ class Trader(Component):
         PyCondition.true(not exec_algorithm.is_disposed, "exec_algorithm.state was DISPOSED")
 
         if self.is_running:
-            self._log.error("Cannot add an execution algorithm to a running trader.")
+            self._log.error("Cannot add an execution algorithm to a running trader")
             return
 
         if exec_algorithm.id in self._exec_algorithms:
@@ -487,7 +487,7 @@ class Trader(Component):
 
         self._exec_algorithms[exec_algorithm.id] = exec_algorithm
 
-        self._log.info(f"Registered ExecAlgorithm {exec_algorithm}.")
+        self._log.info(f"Registered ExecAlgorithm {exec_algorithm}")
 
     def add_exec_algorithms(self, exec_algorithms: list[Any]) -> None:
         """
@@ -531,7 +531,7 @@ class Trader(Component):
             raise ValueError(f"Cannot start actor, {actor_id} not found.")
 
         if actor.is_running:
-            self._log.warning(f"Actor {actor_id} already running.")
+            self._log.warning(f"Actor {actor_id} already running")
             return
 
         actor.start()
@@ -558,7 +558,7 @@ class Trader(Component):
             raise ValueError(f"Cannot start strategy, {strategy_id} not found.")
 
         if strategy.is_running:
-            self._log.warning(f"Strategy {strategy_id} already running.")
+            self._log.warning(f"Strategy {strategy_id} already running")
             return
 
         strategy.start()
@@ -585,7 +585,7 @@ class Trader(Component):
             raise ValueError(f"Cannot stop actor, {actor_id} not found.")
 
         if not actor.is_running:
-            self._log.warning(f"Actor {actor_id} not running.")
+            self._log.warning(f"Actor {actor_id} not running")
             return
 
         actor.stop()
@@ -612,7 +612,7 @@ class Trader(Component):
             raise ValueError(f"Cannot stop strategy, {strategy_id} not found.")
 
         if not strategy.is_running:
-            self._log.warning(f"Strategy {strategy_id} not running.")
+            self._log.warning(f"Strategy {strategy_id} not running")
             return
 
         strategy.stop()
@@ -686,7 +686,7 @@ class Trader(Component):
 
         """
         if self.is_running:
-            self._log.error("Cannot clear the actors of a running trader.")
+            self._log.error("Cannot clear the actors of a running trader")
             return
 
         for actor in self._actors.values():
@@ -694,7 +694,7 @@ class Trader(Component):
             deregister_component_clock(self._instance_id, actor.clock)
 
         self._actors.clear()
-        self._log.info("Cleared all actors.")
+        self._log.info("Cleared all actors")
 
     def clear_strategies(self) -> None:
         """
@@ -707,7 +707,7 @@ class Trader(Component):
 
         """
         if self.is_running:
-            self._log.error("Cannot clear the strategies of a running trader.")
+            self._log.error("Cannot clear the strategies of a running trader")
             return
 
         for strategy in self._strategies.values():
@@ -715,7 +715,7 @@ class Trader(Component):
             deregister_component_clock(self._instance_id, strategy.clock)
 
         self._strategies.clear()
-        self._log.info("Cleared all trading strategies.")
+        self._log.info("Cleared all trading strategies")
 
     def clear_exec_algorithms(self) -> None:
         """
@@ -728,7 +728,7 @@ class Trader(Component):
 
         """
         if self.is_running:
-            self._log.error("Cannot clear the execution algorithm of a running trader.")
+            self._log.error("Cannot clear the execution algorithm of a running trader")
             return
 
         for exec_algorithm in self._exec_algorithms.values():
@@ -736,7 +736,7 @@ class Trader(Component):
             deregister_component_clock(self._instance_id, exec_algorithm.clock)
 
         self._exec_algorithms.clear()
-        self._log.info("Cleared all execution algorithms.")
+        self._log.info("Cleared all execution algorithms")
 
     def subscribe(self, topic: str, handler: Callable[[Any], None]) -> None:
         """

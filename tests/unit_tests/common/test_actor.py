@@ -1936,7 +1936,7 @@ class TestActor:
         actor.subscribe_venue_status(Venue("NYMEX"))
 
         # Assert
-        # TODO(cs): DataEngine.subscribed_venue_status()
+        # TODO: DataEngine.subscribed_venue_status()
 
     def test_request_data_sends_request_to_data_engine(self) -> None:
         # Arrange

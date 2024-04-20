@@ -84,12 +84,12 @@ cdef class BacktestExecClient(ExecutionClient):
     cpdef void _start(self):
         self._log.info(f"Connecting...")
         self.is_connected = True
-        self._log.info(f"Connected.")
+        self._log.info(f"Connected")
 
     cpdef void _stop(self):
         self._log.info(f"Disconnecting...")
         self.is_connected = False
-        self._log.info(f"Disconnected.")
+        self._log.info(f"Disconnected")
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 

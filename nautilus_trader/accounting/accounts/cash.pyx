@@ -149,7 +149,7 @@ cdef class CashAccount(Account):
     cdef void _recalculate_balance(self, Currency currency):
         cdef AccountBalance current_balance = self._balances.get(currency)
         if current_balance is None:
-            # TODO(cs): Temporary pending reimplementation of accounting
+            # TODO: Temporary pending reimplementation of accounting
             print("Cannot recalculate balance when no current balance")
             return
 

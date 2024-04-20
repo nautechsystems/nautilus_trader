@@ -56,10 +56,12 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         The instrument provider.
     base_url_ws : str
         The base URL for the WebSocket client.
-    account_type : BinanceAccountType
-        The account type for the client.
     config : BinanceDataClientConfig
         The configuration for the client.
+    account_type : BinanceAccountType, default 'SPOT'
+        The account type for the client.
+    name : str, optional
+        The custom client ID.
 
     """
 
@@ -74,6 +76,7 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         base_url_ws: str,
         config: BinanceDataClientConfig,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
+        name: str | None = None,
     ):
         PyCondition.true(
             account_type.is_spot_or_margin,
@@ -97,6 +100,7 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
             instrument_provider=instrument_provider,
             account_type=account_type,
             base_url_ws=base_url_ws,
+            name=name,
             config=config,
         )
 

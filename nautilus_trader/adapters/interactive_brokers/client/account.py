@@ -133,7 +133,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
                 positions.append(position)
         return positions
 
-    def process_account_summary(
+    async def process_account_summary(
         self,
         *,
         req_id: int,
@@ -149,7 +149,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         if handler := self._event_subscriptions.get(name, None):
             handler(tag, value, currency)
 
-    def process_managed_accounts(self, *, accounts_list: str) -> None:
+    async def process_managed_accounts(self, *, accounts_list: str) -> None:
         """
         Receive a comma-separated string with the managed account ids.
 
@@ -162,7 +162,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
             self._log.debug("`_is_ib_connected` set by `managedAccounts`.", LogColor.BLUE)
             self._is_ib_connected.set()
 
-    def process_position(
+    async def process_position(
         self,
         *,
         account_id: str,
@@ -176,7 +176,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         if request := self._requests.get(name="OpenPositions"):
             request.result.append(IBPosition(account_id, contract, position, avg_cost))
 
-    def process_position_end(self) -> None:
+    async def process_position_end(self) -> None:
         """
         Indicate that all the positions have been transmitted.
         """

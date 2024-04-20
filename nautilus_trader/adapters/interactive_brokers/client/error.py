@@ -39,7 +39,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
     CONNECTIVITY_RESTORED_CODES: Final[set[int]] = {1101, 1102}
     ORDER_REJECTION_CODES: Final[set[int]] = {201, 203, 321, 10289, 10293}
 
-    def _log_message(
+    async def _log_message(
         self,
         error_code: int,
         req_id: int,
@@ -64,7 +64,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
         msg = f"{error_string} (code: {error_code}, {req_id=})."
         self._log.warning(msg) if is_warning else self._log.error(msg)
 
-    def process_error(
+    async def process_error(
         self,
         *,
         req_id: int,
@@ -91,15 +91,15 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
         """
         is_warning = error_code in self.WARNING_CODES or 2100 <= error_code < 2200
         error_string = error_string.replace("\n", " ")
-        self._log_message(error_code, req_id, error_string, is_warning)
+        await self._log_message(error_code, req_id, error_string, is_warning)
 
         if req_id != -1:
             if self._subscriptions.get(req_id=req_id):
-                self._handle_subscription_error(req_id, error_code, error_string)
+                await self._handle_subscription_error(req_id, error_code, error_string)
             elif self._requests.get(req_id=req_id):
-                self._handle_request_error(req_id, error_code, error_string)
+                await self._handle_request_error(req_id, error_code, error_string)
             elif req_id in self._order_id_to_order_ref:
-                self._handle_order_error(req_id, error_code, error_string)
+                await self._handle_order_error(req_id, error_code, error_string)
             else:
                 self._log.warning(f"Unhandled error: {error_code} for req_id {req_id}")
         elif error_code in self.CLIENT_ERRORS or error_code in self.CONNECTIVITY_LOST_CODES:
@@ -117,7 +117,12 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
                 )
                 self._is_ib_connected.set()
 
-    def _handle_subscription_error(self, req_id: int, error_code: int, error_string: str) -> None:
+    async def _handle_subscription_error(
+        self,
+        req_id: int,
+        error_code: int,
+        error_string: str,
+    ) -> None:
         """
         Handle errors specific to data subscriptions. Processes subscription-related
         errors and takes appropriate actions, such as cancelling the subscription or
@@ -158,7 +163,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
                 f"Unknown subscription error: {error_code} for req_id {req_id}",
             )
 
-    def _handle_request_error(self, req_id: int, error_code: int, error_string: str) -> None:
+    async def _handle_request_error(self, req_id: int, error_code: int, error_string: str) -> None:
         """
         Handle errors related to general requests. Logs the error and ends the request
         associated with the given request ID.
@@ -177,7 +182,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
         self._log.warning(f"{error_code}: {error_string}, {request}")
         self._end_request(req_id, success=False)
 
-    def _handle_order_error(self, req_id: int, error_code: int, error_string: str) -> None:
+    async def _handle_order_error(self, req_id: int, error_code: int, error_string: str) -> None:
         """
         Handle errors related to orders. Manages various order-related errors, including
         rejections and cancellations, and logs or forwards them as appropriate.

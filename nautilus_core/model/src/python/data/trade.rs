@@ -20,9 +20,9 @@ use std::{
 };
 
 use nautilus_core::{
+    nanos::UnixNanos,
     python::{serialization::from_dict_pyo3, to_pyvalue_err},
     serialization::Serializable,
-    time::UnixNanos,
 };
 use pyo3::{
     prelude::*,
@@ -64,8 +64,8 @@ impl TradeTick {
         let trade_id_str = trade_id_obj.getattr("value")?.extract()?;
         let trade_id = TradeId::from_str(trade_id_str).map_err(to_pyvalue_err)?;
 
-        let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
-        let ts_init: UnixNanos = obj.getattr("ts_init")?.extract()?;
+        let ts_event: u64 = obj.getattr("ts_event")?.extract()?;
+        let ts_init: u64 = obj.getattr("ts_init")?.extract()?;
 
         Ok(Self::new(
             instrument_id,
@@ -73,8 +73,8 @@ impl TradeTick {
             size,
             aggressor_side,
             trade_id,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         ))
     }
 }
@@ -88,8 +88,8 @@ impl TradeTick {
         size: Quantity,
         aggressor_side: AggressorSide,
         trade_id: TradeId,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
+        ts_event: u64,
+        ts_init: u64,
     ) -> Self {
         Self::new(
             instrument_id,
@@ -97,8 +97,8 @@ impl TradeTick {
             size,
             aggressor_side,
             trade_id,
-            ts_event,
-            ts_init,
+            ts_event.into(),
+            ts_init.into(),
         )
     }
 
@@ -121,14 +121,16 @@ impl TradeTick {
         let size_prec = tuple.4.extract()?;
         let aggressor_side_u8 = tuple.5.extract()?;
         let trade_id_str = tuple.6.extract()?;
+        let ts_event: u64 = tuple.7.extract()?;
+        let ts_init: u64 = tuple.8.extract()?;
 
         self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
         self.price = Price::from_raw(price_raw, price_prec).map_err(to_pyvalue_err)?;
         self.size = Quantity::from_raw(size_raw, size_prec).map_err(to_pyvalue_err)?;
         self.aggressor_side = AggressorSide::from_u8(aggressor_side_u8).unwrap();
         self.trade_id = TradeId::from_str(trade_id_str).map_err(to_pyvalue_err)?;
-        self.ts_event = tuple.7.extract()?;
-        self.ts_init = tuple.8.extract()?;
+        self.ts_event = ts_event.into();
+        self.ts_init = ts_init.into();
 
         Ok(())
     }
@@ -142,8 +144,8 @@ impl TradeTick {
             self.size.precision,
             self.aggressor_side as u8,
             self.trade_id.to_string(),
-            self.ts_event,
-            self.ts_init,
+            self.ts_event.as_u64(),
+            self.ts_init.as_u64(),
         )
             .to_object(_py))
     }
@@ -162,8 +164,8 @@ impl TradeTick {
             Quantity::zero(0),
             AggressorSide::NoAggressor,
             TradeId::from("NULL"),
-            0,
-            0,
+            UnixNanos::default(),
+            UnixNanos::default(),
         ))
         // Safe default
     }
@@ -221,14 +223,14 @@ impl TradeTick {
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> UnixNanos {
-        self.ts_event
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> UnixNanos {
-        self.ts_init
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 
     #[staticmethod]

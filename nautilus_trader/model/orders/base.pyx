@@ -56,14 +56,14 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 
 
-VALID_STOP_ORDER_TYPES = {
+STOP_ORDER_TYPES = {
     OrderType.STOP_MARKET,
     OrderType.STOP_LIMIT,
     OrderType.MARKET_IF_TOUCHED,
     OrderType.LIMIT_IF_TOUCHED,
 }
 
-VALID_LIMIT_ORDER_TYPES = {
+LIMIT_ORDER_TYPES = {
     OrderType.LIMIT,
     OrderType.STOP_LIMIT,
     OrderType.LIMIT_IF_TOUCHED,

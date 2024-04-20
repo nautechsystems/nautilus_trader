@@ -15,6 +15,8 @@
 
 import pickle
 
+import numpy as np
+
 from nautilus_trader.core import nautilus_pyo3
 
 from cpython.datetime cimport timedelta
@@ -130,6 +132,7 @@ from nautilus_trader.model.functions cimport price_type_from_str
 from nautilus_trader.model.functions cimport price_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -1018,6 +1021,34 @@ cdef class Bar(Data):
         return bar_from_mem_c(mem)
 
     @staticmethod
+    cdef Bar from_raw_c(
+        BarType bar_type,
+        int64_t open,
+        int64_t high,
+        int64_t low,
+        int64_t close,
+        uint8_t price_prec,
+        uint64_t volume,
+        uint8_t size_prec,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    ):
+        cdef Bar bar = Bar.__new__(Bar)
+        bar._mem = bar_new_from_raw(
+            bar_type._mem,
+            open,
+            high,
+            low,
+            close,
+            price_prec,
+            volume,
+            size_prec,
+            ts_event,
+            ts_init,
+        )
+        return bar
+
+    @staticmethod
     cdef Bar from_dict_c(dict values):
         Condition.not_none(values, "values")
         return Bar(
@@ -1053,6 +1084,32 @@ cdef class Bar(Data):
         capsule = pyo3_bar.as_pycapsule()
         cdef Data_t* ptr = <Data_t*>PyCapsule_GetPointer(capsule, NULL)
         return bar_from_mem_c(ptr.bar)
+
+    @staticmethod
+    def from_raw(
+        BarType bar_type,
+        int64_t open,
+        int64_t high,
+        int64_t low,
+        int64_t close,
+        uint8_t price_prec,
+        uint64_t volume,
+        uint8_t size_prec,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    ) -> Bar:
+        return Bar.from_raw_c(
+            bar_type,
+            open,
+            high,
+            low,
+            close,
+            price_prec,
+            volume,
+            size_prec,
+            ts_event,
+            ts_init,
+        )
 
     @staticmethod
     def from_dict(dict values) -> Bar:
@@ -1561,14 +1618,16 @@ cdef class OrderBookDelta(Data):
         The order book delta action.
     order : BookOrder, optional with no default so ``None`` must be passed explicitly
         The book order for the delta.
+    flags : uint8_t
+        The record flags bit field, indicating packet end and data information.
+        A value of zero indicates no flags.
+    sequence : uint64_t
+        The unique sequence number for the update.
+        If no sequence number provided in the source data then use a value of zero.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
-    flags : uint8_t, default 0 (no flags)
-        A combination of packet end with matching engine status.
-    sequence : uint64_t, default 0
-        The unique sequence number for the update.
 
     """
 
@@ -1577,10 +1636,10 @@ cdef class OrderBookDelta(Data):
         InstrumentId instrument_id not None,
         BookAction action,
         BookOrder order: BookOrder | None,
+        uint8_t flags,
+        uint64_t sequence,
         uint64_t ts_event,
         uint64_t ts_init,
-        uint8_t flags=0,
-        uint64_t sequence=0,
     ) -> None:
         # Placeholder for now
         cdef BookOrder_t book_order = order._mem if order is not None else book_order_from_raw(
@@ -1875,17 +1934,18 @@ cdef class OrderBookDelta(Data):
     @staticmethod
     cdef OrderBookDelta clear_c(
         InstrumentId instrument_id,
+        uint64_t sequence,
         uint64_t ts_event,
         uint64_t ts_init,
-        uint64_t sequence=0,
     ):
         return OrderBookDelta(
             instrument_id=instrument_id,
             action=BookAction.CLEAR,
             order=None,
+            flags=0,
+            sequence=sequence,
             ts_event=ts_event,
             ts_init=ts_init,
-            sequence=sequence,
         )
 
     @staticmethod
@@ -1967,9 +2027,11 @@ cdef class OrderBookDelta(Data):
         order_id : uint64_t
             The order ID.
         flags : uint8_t
-            A combination of packet end with matching engine status.
+            The record flags bit field, indicating packet end and data information.
+            A value of zero indicates no flags.
         sequence : uint64_t
             The unique sequence number for the update.
+            If no sequence number provided in the source data then use a value of zero.
         ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the tick event occurred.
         ts_init : uint64_t
@@ -2025,7 +2087,7 @@ cdef class OrderBookDelta(Data):
         return OrderBookDelta.to_dict_c(obj)
 
     @staticmethod
-    def clear(InstrumentId instrument_id, uint64_t ts_event, uint64_t ts_init, uint64_t sequence=0):
+    def clear(InstrumentId instrument_id, uint64_t sequence, uint64_t ts_event, uint64_t ts_init):
         """
         Return an order book delta which acts as an initial ``CLEAR``.
 
@@ -2034,7 +2096,7 @@ cdef class OrderBookDelta(Data):
         OrderBookDelta
 
         """
-        return OrderBookDelta.clear_c(instrument_id, ts_event, ts_init, sequence)
+        return OrderBookDelta.clear_c(instrument_id, sequence, ts_event, ts_init)
 
     @staticmethod
     def to_pyo3_list(list[OrderBookDelta] deltas) -> list[nautilus_pyo3.OrderBookDelta]:
@@ -2419,9 +2481,11 @@ cdef class OrderBookDepth10(Data):
     ask_counts : list[uint32_t]
         The count of ask orders per level for the update. Can be zeros if data not available.
     flags : uint8_t
-        A combination of packet end with matching engine status.
+        The record flags bit field, indicating packet end and data information.
+        A value of zero indicates no flags.
     sequence : uint64_t
         The unique sequence number for the update.
+        If no sequence number provided in the source data then use a value of zero.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the tick event occurred.
     ts_init : uint64_t
@@ -3183,7 +3247,7 @@ cdef class InstrumentClose(Data):
 
 cdef class QuoteTick(Data):
     """
-    Represents a single quote tick in a financial market.
+    Represents a single quote tick in a market.
 
     Contains information about the best top of book bid and ask.
 
@@ -3438,6 +3502,70 @@ cdef class QuoteTick(Data):
             ts_init,
         )
         return quote
+
+    @staticmethod
+    cdef list[QuoteTick] from_raw_arrays_to_list_c(
+        InstrumentId instrument_id,
+        uint8_t price_prec,
+        uint8_t size_prec,
+        int64_t[:] bid_prices_raw,
+        int64_t[:] ask_prices_raw,
+        uint64_t[:] bid_sizes_raw,
+        uint64_t[:] ask_sizes_raw,
+        uint64_t[:] ts_events,
+        uint64_t[:] ts_inits,
+    ):
+        Condition.true(len(bid_prices_raw) == len(ask_prices_raw) == len(bid_sizes_raw) == len(ask_sizes_raw)
+                       == len(ts_events) == len(ts_inits), "Array lengths must be equal")
+
+        cdef int count = ts_events.shape[0]
+        cdef list[QuoteTick] ticks = []
+
+        cdef:
+            int i
+            QuoteTick quote
+        for i in range(count):
+            quote = QuoteTick.__new__(QuoteTick)
+            quote._mem = quote_tick_new(
+                instrument_id._mem,
+                bid_prices_raw[i],
+                ask_prices_raw[i],
+                price_prec,
+                price_prec,
+                bid_sizes_raw[i],
+                ask_sizes_raw[i],
+                size_prec,
+                size_prec,
+                ts_events[i],
+                ts_inits[i],
+            )
+            ticks.append(quote)
+
+        return ticks
+
+    @staticmethod
+    def from_raw_arrays_to_list(
+        instrument_id: InstrumentId,
+        price_prec: int,
+        size_prec: int,
+        bid_prices_raw: np.ndarray,
+        ask_prices_raw: np.ndarray,
+        bid_sizes_raw: np.ndarray,
+        ask_sizes_raw: np.ndarray,
+        ts_events: np.ndarray,
+        ts_inits: np.ndarray,
+    ) -> list[QuoteTick]:
+        return QuoteTick.from_raw_arrays_to_list_c(
+            instrument_id,
+            price_prec,
+            size_prec,
+            bid_prices_raw,
+            ask_prices_raw,
+            bid_sizes_raw,
+            ask_sizes_raw,
+            ts_events,
+            ts_inits,
+        )
 
     @staticmethod
     cdef list[QuoteTick] capsule_to_list_c(object capsule):
@@ -3715,7 +3843,7 @@ cdef class QuoteTick(Data):
 
 cdef class TradeTick(Data):
     """
-    Represents a single trade tick in a financial market.
+    Represents a single trade tick in a market.
 
     Contains information about a single unique trade which matched buyer and
     seller counterparties.
@@ -3929,6 +4057,72 @@ cdef class TradeTick(Data):
             ts_init,
         )
         return trade
+
+    @staticmethod
+    cdef list[TradeTick] from_raw_arrays_to_list_c(
+        InstrumentId instrument_id,
+        uint8_t price_prec,
+        uint8_t size_prec,
+        int64_t[:] prices_raw,
+        uint64_t[:] sizes_raw,
+        uint8_t[:] aggressor_sides,
+        list[str] trade_ids,
+        uint64_t[:] ts_events,
+        uint64_t[:] ts_inits,
+    ):
+        Condition.true(len(prices_raw) == len(sizes_raw) == len(aggressor_sides) == len(trade_ids) ==
+                       len(ts_events) == len(ts_inits), "Array lengths must be equal")
+
+        cdef int count = ts_events.shape[0]
+        cdef list[TradeTick] trades = []
+
+        cdef:
+            int i
+            AggressorSide aggressor_side
+            TradeId trade_id
+            TradeTick trade
+        for i in range(count):
+            aggressor_side = <AggressorSide>aggressor_sides[i]
+            trade_id = TradeId(trade_ids[i])
+            trade = TradeTick.__new__(TradeTick)
+            trade._mem = trade_tick_new(
+                instrument_id._mem,
+                prices_raw[i],
+                price_prec,
+                sizes_raw[i],
+                size_prec,
+                aggressor_side,
+                trade_id._mem,
+                ts_events[i],
+                ts_inits[i],
+            )
+            trades.append(trade)
+
+        return trades
+
+    @staticmethod
+    def from_raw_arrays_to_list(
+        InstrumentId instrument_id,
+        uint8_t price_prec,
+        uint8_t size_prec,
+        int64_t[:] prices_raw,
+        uint64_t[:] sizes_raw,
+        uint8_t[:] aggressor_sides,
+        list[str] trade_ids,
+        uint64_t[:] ts_events,
+        uint64_t[:] ts_inits,
+    ) -> list[TradeTick]:
+        return TradeTick.from_raw_arrays_to_list_c(
+            instrument_id,
+            price_prec,
+            size_prec,
+            prices_raw,
+            sizes_raw,
+            aggressor_sides,
+            trade_ids,
+            ts_events,
+            ts_inits,
+        )
 
     @staticmethod
     cdef list[TradeTick] capsule_to_list_c(capsule):

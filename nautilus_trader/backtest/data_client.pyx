@@ -77,12 +77,12 @@ cdef class BacktestDataClient(DataClient):
     cpdef void _start(self):
         self._log.info(f"Connecting...")
         self.is_connected = True
-        self._log.info(f"Connected.")
+        self._log.info(f"Connected")
 
     cpdef void _stop(self):
         self._log.info(f"Disconnecting...")
         self.is_connected = False
-        self._log.info(f"Disconnected.")
+        self._log.info(f"Disconnected")
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
@@ -141,12 +141,12 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     cpdef void _start(self):
         self._log.info(f"Connecting...")
         self.is_connected = True
-        self._log.info(f"Connected.")
+        self._log.info(f"Connected")
 
     cpdef void _stop(self):
         self._log.info(f"Disconnecting...")
         self.is_connected = False
-        self._log.info(f"Disconnected.")
+        self._log.info(f"Disconnected")
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
@@ -161,7 +161,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         if not self._cache.instrument(instrument_id):
             self._log.error(
-                f"Cannot find instrument {instrument_id} to subscribe for `Instrument` data.",
+                f"Cannot find instrument {instrument_id} to subscribe for `Instrument` data",
             )
             return
 
@@ -179,8 +179,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         if not self._cache.instrument(instrument_id):
             self._log.error(
-                f"Cannot find instrument {instrument_id} to subscribe for `OrderBookDelta` data. "
-                "No data has been loaded for this instrument.",
+                f"Cannot find instrument {instrument_id} to subscribe for `OrderBookDelta` data, "
+                "no data has been loaded for this instrument",
             )
             return
 
@@ -198,8 +198,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         if not self._cache.instrument(instrument_id):
             self._log.error(
-                f"Cannot find instrument {instrument_id} to subscribe for `OrderBook` data. "
-                "No data has been loaded for this instrument.",
+                f"Cannot find instrument {instrument_id} to subscribe for `OrderBook` data, "
+                "no data has been loaded for this instrument.",
             )
             return
 
@@ -211,8 +211,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         if not self._cache.instrument(instrument_id):
             self._log.error(
-                f"Cannot find instrument {instrument_id} to subscribe for `QuoteTick` data. "
-                "No data has been loaded for this instrument.",
+                f"Cannot find instrument {instrument_id} to subscribe for `QuoteTick` data, "
+                "No data has been loaded for this instrument",
             )
             return
 
@@ -224,8 +224,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         if not self._cache.instrument(instrument_id):
             self._log.error(
-                f"Cannot find instrument {instrument_id} to subscribe for `TradeTick` data. "
-                "No data has been loaded for this instrument.",
+                f"Cannot find instrument {instrument_id} to subscribe for `TradeTick` data, "
+                "No data has been loaded for this instrument",
             )
             return
 
@@ -237,8 +237,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         if not self._cache.instrument(bar_type.instrument_id):
             self._log.error(
-                f"Cannot find instrument {bar_type.instrument_id} to subscribe for `Bar` data. "
-                "No data has been loaded for this instrument.",
+                f"Cannot find instrument {bar_type.instrument_id} to subscribe for `Bar` data, "
+                "No data has been loaded for this instrument",
             )
             return
 
@@ -334,7 +334,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         cdef Instrument instrument = self._cache.instrument(instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot find instrument for {instrument_id}.")
+            self._log.error(f"Cannot find instrument for {instrument_id}")
             return
 
         data_type = DataType(
@@ -358,7 +358,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         cdef list instruments = self._cache.instruments(venue)
         if not instruments:
-            self._log.error(f"Cannot find instruments.")
+            self._log.error(f"Cannot find instruments")
             return
 
         self._handle_instruments(

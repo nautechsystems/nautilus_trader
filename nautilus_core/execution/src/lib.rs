@@ -13,4 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod client;
+pub mod engine;
 pub mod matching_core;
+pub mod messages;

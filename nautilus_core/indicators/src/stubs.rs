@@ -32,7 +32,7 @@ use crate::{
         sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage, wma::WeightedMovingAverage,
         MovingAverageType,
     },
-    momentum::{cmo::ChandeMomentumOscillator, rsi::RelativeStrengthIndex},
+    momentum::{bias::Bias, cmo::ChandeMomentumOscillator, rsi::RelativeStrengthIndex},
     ratio::efficiency_ratio::EfficiencyRatio,
 };
 
@@ -50,8 +50,8 @@ pub fn quote_tick(
         ask_price: Price::from(ask_price),
         bid_size: Quantity::from("1.00000000"),
         ask_size: Quantity::from("1.00000000"),
-        ts_event: 1,
-        ts_init: 0,
+        ts_event: 1.into(),
+        ts_init: 0.into(),
     }
 }
 
@@ -63,8 +63,8 @@ pub fn trade_tick() -> TradeTick {
         size: Quantity::from("1.00000000"),
         aggressor_side: AggressorSide::Buyer,
         trade_id: TradeId::from("123456789"),
-        ts_event: 1,
-        ts_init: 0,
+        ts_event: 1.into(),
+        ts_init: 0.into(),
     }
 }
 
@@ -91,8 +91,8 @@ pub fn bar_ethusdt_binance_minute_bid(#[default("1522")] close_price: &str) -> B
         low: Price::from("1495.0"),
         close: Price::from(close_price),
         volume: Quantity::from("100000"),
-        ts_event: 0,
-        ts_init: 1,
+        ts_event: 0.into(),
+        ts_init: 1.into(),
     }
 }
 
@@ -160,4 +160,9 @@ pub fn rsi_10() -> RelativeStrengthIndex {
 #[fixture]
 pub fn cmo_10() -> ChandeMomentumOscillator {
     ChandeMomentumOscillator::new(10, Some(MovingAverageType::Wilder)).unwrap()
+}
+
+#[fixture]
+pub fn bias_10() -> Bias {
+    Bias::new(10, Some(MovingAverageType::Wilder)).unwrap()
 }

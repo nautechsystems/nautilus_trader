@@ -336,8 +336,10 @@ def runner_change_to_order_book_snapshot(
             instrument_id,
             BookAction.CLEAR,
             NULL_ORDER,
-            ts_event,
-            ts_init,
+            flags=0,
+            sequence=0,
+            ts_event=ts_event,
+            ts_init=ts_init,
         ),
     ]
 
@@ -349,8 +351,10 @@ def runner_change_to_order_book_snapshot(
                 instrument_id,
                 BookAction.UPDATE if bid.volume > 0.0 else BookAction.DELETE,
                 book_order,
-                ts_event,
-                ts_init,
+                flags=0,
+                sequence=0,
+                ts_event=ts_event,
+                ts_init=ts_init,
             )
             deltas.append(delta)
 
@@ -362,8 +366,10 @@ def runner_change_to_order_book_snapshot(
                 instrument_id,
                 BookAction.UPDATE if ask.volume > 0.0 else BookAction.DELETE,
                 book_order,
-                ts_event,
-                ts_init,
+                flags=0,
+                sequence=0,
+                ts_event=ts_event,
+                ts_init=ts_init,
             )
             deltas.append(delta)
 
@@ -428,8 +434,10 @@ def runner_change_to_order_book_deltas(
                 instrument_id,
                 BookAction.UPDATE if bid.volume > 0.0 else BookAction.DELETE,
                 book_order,
-                ts_event,
-                ts_init,
+                flags=0,
+                sequence=0,
+                ts_event=ts_event,
+                ts_init=ts_init,
             )
             deltas.append(delta)
 
@@ -442,8 +450,10 @@ def runner_change_to_order_book_deltas(
                 instrument_id,
                 BookAction.UPDATE if ask.volume > 0.0 else BookAction.DELETE,
                 book_order,
-                ts_event,
-                ts_init,
+                flags=0,
+                sequence=0,
+                ts_event=ts_event,
+                ts_init=ts_init,
             )
             deltas.append(delta)
 
@@ -502,8 +512,10 @@ def runner_change_to_bsp_order_book_deltas(
                 instrument_id,
                 BookAction.DELETE if spb.volume == 0.0 else BookAction.UPDATE,
                 book_order,
-                ts_event,
-                ts_init,
+                flags=0,
+                sequence=0,
+                ts_event=ts_event,
+                ts_init=ts_init,
             )
             deltas.append(delta)
 
@@ -514,8 +526,10 @@ def runner_change_to_bsp_order_book_deltas(
                 instrument_id,
                 BookAction.DELETE if spl.volume == 0.0 else BookAction.UPDATE,
                 book_order,
-                ts_event,
-                ts_init,
+                flags=0,
+                sequence=0,
+                ts_event=ts_event,
+                ts_init=ts_init,
             )
             deltas.append(delta)
 

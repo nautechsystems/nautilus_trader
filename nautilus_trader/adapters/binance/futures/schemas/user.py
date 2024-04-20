@@ -110,7 +110,7 @@ class BinanceFuturesBalance(msgspec.Struct, frozen=True):
     def parse_to_account_balance(self) -> AccountBalance:
         currency = Currency.from_str(self.a)
         free = Decimal(self.wb)
-        locked = Decimal(0)  # TODO(cs): Pending refactoring of accounting
+        locked = Decimal(0)  # TODO: Pending refactoring of accounting
         total: Decimal = free + locked
 
         return AccountBalance(

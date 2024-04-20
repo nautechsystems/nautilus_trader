@@ -155,7 +155,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
         name : str
-            The client name.
+            The custom client ID.
         config : dict
             The configuration dictionary.
         msgbus : MessageBus
@@ -197,6 +197,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             instrument_provider=provider,
             ibg_client_id=config.ibg_client_id,
             config=config,
+            name=name,
         )
         return data_client
 
@@ -223,7 +224,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
         name : str
-            The client name.
+            The custom client ID.
         config : dict[str, object]
             The configuration for the client.
         msgbus : MessageBus
@@ -261,7 +262,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             ib_account
         ), f"Must pass `{config.__class__.__name__}.account_id` or set `TWS_ACCOUNT` env var."
 
-        account_id = AccountId(f"{IB_VENUE.value}-{ib_account}")
+        account_id = AccountId(f"{name or IB_VENUE.value}-{ib_account}")
 
         # Create client
         exec_client = InteractiveBrokersExecutionClient(
@@ -274,5 +275,6 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             instrument_provider=provider,
             ibg_client_id=config.ibg_client_id,
             config=config,
+            name=name,
         )
         return exec_client

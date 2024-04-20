@@ -16,9 +16,13 @@
 use pyo3::prelude::*;
 
 use super::to_pyvalue_err;
-use crate::datetime::{
-    is_within_last_24_hours, last_weekday_nanos, micros_to_nanos, millis_to_nanos, nanos_to_micros,
-    nanos_to_millis, nanos_to_secs, secs_to_millis, secs_to_nanos, unix_nanos_to_iso8601,
+use crate::{
+    datetime::{
+        is_within_last_24_hours, last_weekday_nanos, micros_to_nanos, millis_to_nanos,
+        nanos_to_micros, nanos_to_millis, nanos_to_secs, secs_to_millis, secs_to_nanos,
+        unix_nanos_to_iso8601,
+    },
+    nanos::UnixNanos,
 };
 
 #[must_use]
@@ -66,15 +70,17 @@ pub fn py_nanos_to_micros(nanos: u64) -> u64 {
 #[must_use]
 #[pyfunction(name = "unix_nanos_to_iso8601")]
 pub fn py_unix_nanos_to_iso8601(timestamp_ns: u64) -> String {
-    unix_nanos_to_iso8601(timestamp_ns)
+    unix_nanos_to_iso8601(timestamp_ns.into())
 }
 
 #[pyfunction(name = "last_weekday_nanos")]
 pub fn py_last_weekday_nanos(year: i32, month: u32, day: u32) -> PyResult<u64> {
-    last_weekday_nanos(year, month, day).map_err(to_pyvalue_err)
+    Ok(last_weekday_nanos(year, month, day)
+        .map_err(to_pyvalue_err)?
+        .as_u64())
 }
 
 #[pyfunction(name = "is_within_last_24_hours")]
 pub fn py_is_within_last_24_hours(timestamp_ns: u64) -> PyResult<bool> {
-    is_within_last_24_hours(timestamp_ns).map_err(to_pyvalue_err)
+    is_within_last_24_hours(UnixNanos::from(timestamp_ns)).map_err(to_pyvalue_err)
 }

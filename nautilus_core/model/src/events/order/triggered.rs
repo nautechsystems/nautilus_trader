@@ -16,7 +16,7 @@
 use std::fmt::Display;
 
 use derive_builder::Builder;
-use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
 
 use crate::identifiers::{
@@ -82,12 +82,12 @@ impl Display for OrderTriggered {
             stringify!(OrderTriggered),
             self.instrument_id,
             self.client_order_id,
-            self.venue_order_id.map_or_else(
-                || "None".to_string(),
-                |venue_order_id| format!("{venue_order_id}")
-            ),
+            self.venue_order_id
+                .map_or("None".to_string(), |venue_order_id| format!(
+                    "{venue_order_id}"
+                )),
             self.account_id
-                .map_or_else(|| "None".to_string(), |account_id| format!("{account_id}"))
+                .map_or("None".to_string(), |account_id| format!("{account_id}"))
         )
     }
 }

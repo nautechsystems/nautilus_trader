@@ -22,11 +22,12 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use nautilus_common::interface::account::Account;
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
-    identifiers::instrument_id::InstrumentId,
-    instruments::Instrument,
+    identifiers::{account_id::AccountId, instrument_id::InstrumentId},
+    instruments::{Instrument, InstrumentAny},
     position::Position,
     types::{
         balance::{AccountBalance, MarginBalance},
@@ -38,7 +39,7 @@ use nautilus_model::{
 };
 use rust_decimal::prelude::ToPrimitive;
 
-use crate::account::{base::BaseAccount, Account};
+use crate::account::base::BaseAccount;
 
 #[derive(Debug)]
 #[cfg_attr(
@@ -273,6 +274,30 @@ impl DerefMut for MarginAccount {
 }
 
 impl Account for MarginAccount {
+    fn id(&self) -> AccountId {
+        self.id
+    }
+
+    fn account_type(&self) -> AccountType {
+        self.account_type
+    }
+
+    fn base_currency(&self) -> Option<Currency> {
+        self.base_currency
+    }
+
+    fn is_cash_account(&self) -> bool {
+        self.account_type == AccountType::Cash
+    }
+
+    fn is_margin_account(&self) -> bool {
+        self.account_type == AccountType::Margin
+    }
+
+    fn calculated_account_state(&self) -> bool {
+        false // TODO (implement this logic)
+    }
+
     fn balance_total(&self, currency: Option<Currency>) -> Option<Money> {
         self.base_balance_total(currency)
     }
@@ -314,9 +339,9 @@ impl Account for MarginAccount {
     fn apply(&mut self, event: AccountState) {
         self.base_apply(event);
     }
-    fn calculate_balance_locked<T: Instrument>(
+    fn calculate_balance_locked(
         &mut self,
-        instrument: T,
+        instrument: InstrumentAny,
         side: OrderSide,
         quantity: Quantity,
         price: Price,
@@ -324,17 +349,17 @@ impl Account for MarginAccount {
     ) -> anyhow::Result<Money> {
         self.base_calculate_balance_locked(instrument, side, quantity, price, use_quote_for_inverse)
     }
-    fn calculate_pnls<T: Instrument>(
+    fn calculate_pnls(
         &self,
-        instrument: T,
+        instrument: InstrumentAny,
         fill: OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
         self.base_calculate_pnls(instrument, fill, position)
     }
-    fn calculate_commission<T: Instrument>(
+    fn calculate_commission(
         &self,
-        instrument: T,
+        instrument: InstrumentAny,
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
@@ -386,6 +411,7 @@ impl Hash for MarginAccount {
 mod tests {
     use std::collections::HashMap;
 
+    use nautilus_common::interface::account::Account;
     use nautilus_model::{
         events::account::{state::AccountState, stubs::*},
         identifiers::{instrument_id::InstrumentId, stubs::*},
@@ -394,7 +420,7 @@ mod tests {
     };
     use rstest::rstest;
 
-    use crate::account::{margin::MarginAccount, stubs::*, Account};
+    use crate::account::{margin::MarginAccount, stubs::*};
 
     #[rstest]
     fn test_display(margin_account: MarginAccount) {

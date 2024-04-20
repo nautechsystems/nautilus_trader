@@ -15,10 +15,9 @@
 
 import hashlib
 import hmac
-import urllib
 from typing import Any
+from urllib import parse
 
-import aiohttp
 import msgspec
 
 import nautilus_trader
@@ -32,22 +31,31 @@ from nautilus_trader.core.nautilus_pyo3 import HttpResponse
 from nautilus_trader.core.nautilus_pyo3 import Quota
 
 
-def create_string_from_dict(data):
-    property_strings = []
-
-    for key, value in data.items():
-        property_string = f'"{key}":"{value}"'
-        property_strings.append(property_string)
-
-    result_string = "{" + ",".join(property_strings) + "}"
-    return result_string
-
-
 class ResponseCode(msgspec.Struct):
     retCode: int
 
 
 class BybitHttpClient:
+    """
+    Provides a `Bybit` asynchronous HTTP client.
+
+    Parameters
+    ----------
+    clock : LiveClock
+        The clock for the client.
+    key : str
+        The Bybit API key for requests.
+    secret : str
+        The Bybit API secret for signed requests.
+    base_url : str, optional
+        The base endpoint URL for the client.
+    ratelimiter_quotas : list[tuple[str, Quota]], optional
+        The keyed rate limiter quotas for the client.
+    ratelimiter_quota : Quota, optional
+        The default rate limiter quota for the client.
+
+    """
+
     def __init__(
         self,
         clock: LiveClock,
@@ -61,7 +69,7 @@ class BybitHttpClient:
         self._log: Logger = Logger(name=type(self).__name__)
         self._api_key: str = api_key
         self._api_secret: str = api_secret
-        self._recv_window: int = 8000
+        self._recv_window: int = 5000
 
         self._base_url: str = base_url
         self._headers: dict[str, Any] = {
@@ -93,7 +101,7 @@ class BybitHttpClient:
         ratelimiter_keys: list[str] | None = None,
     ) -> bytes | None:
         if payload and http_method == HttpMethod.GET:
-            url_path += "?" + urllib.parse.urlencode(payload)
+            url_path += "?" + parse.urlencode(payload)
             payload = None
         url = self._base_url + url_path
         if signature is not None:
@@ -105,6 +113,10 @@ class BybitHttpClient:
             }
         else:
             headers = self._headers
+
+        # Uncomment for development
+        # self._log.info(f"{url_path=}, {payload=}", LogColor.MAGENTA)
+
         response: HttpResponse = await self._client.request(
             http_method,
             url,
@@ -112,21 +124,21 @@ class BybitHttpClient:
             msgspec.json.encode(payload) if payload else None,
             ratelimiter_keys,
         )
-        # first check for server error
+        # First check for server error
         if 400 <= response.status < 500:
             message = msgspec.json.decode(response.body) if response.body else None
-            print(str(response.body))
             raise BybitError(
                 status=response.status,
                 message=message,
                 headers=response.headers,
             )
-        # then check for error inside spot response
+        # Then check for error inside response
         response_status = self._decoder_response_code.decode(response.body)
         if response_status.retCode == 0:
             return response.body
         else:
-            raise_bybit_error(response_status.retCode)
+            message = msgspec.json.decode(response.body) if response.body else None
+            raise_bybit_error(response_status.retCode, message)
         return None
 
     async def sign_request(
@@ -138,7 +150,6 @@ class BybitHttpClient:
     ) -> Any:
         if payload is None:
             payload = {}
-        # we need to get timestamp and signature
 
         [timestamp, authed_signature] = (
             self._sign_get_request(payload)
@@ -154,29 +165,24 @@ class BybitHttpClient:
             ratelimiter_keys=ratelimiter_keys,
         )
 
-    def _handle_exception(self, error: aiohttp.ClientResponseError):
-        self._log.error(
-            f"Some exception in HTTP request status: {error.status} message:{error.message}",
-        )
-
     def _sign_post_request(self, payload: dict[str, Any]) -> list[str]:
         timestamp = str(self._clock.timestamp_ms())
-        payload_str = create_string_from_dict(payload)
+        payload_str = msgspec.json.encode(payload).decode()
         result = timestamp + self._api_key + str(self._recv_window) + payload_str
         signature = hmac.new(
-            self._api_secret.encode("utf-8"),
-            result.encode("utf-8"),
+            self._api_secret.encode(),
+            result.encode(),
             hashlib.sha256,
         ).hexdigest()
         return [timestamp, signature]
 
     def _sign_get_request(self, payload: dict[str, Any]) -> list[str]:
         timestamp = str(self._clock.timestamp_ms())
-        payload_str = urllib.parse.urlencode(payload)
+        payload_str = parse.urlencode(payload)
         result = timestamp + self._api_key + str(self._recv_window) + payload_str
         signature = hmac.new(
-            self._api_secret.encode("utf-8"),
-            result.encode("utf-8"),
+            self._api_secret.encode(),
+            result.encode(),
             hashlib.sha256,
         ).hexdigest()
         return [timestamp, signature]

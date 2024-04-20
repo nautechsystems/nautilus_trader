@@ -18,10 +18,11 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::base::{Order, OrderCore, OrderError};
+use super::base::{Order, OrderAny, OrderCore, OrderError};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
@@ -37,7 +38,7 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -92,30 +93,44 @@ impl TrailingStopLimitOrder {
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
+        let init_order = OrderInitialized::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            order_side,
+            OrderType::TrailingStopLimit,
+            quantity,
+            time_in_force,
+            post_only,
+            reduce_only,
+            quote_quantity,
+            false,
+            init_id,
+            ts_init,
+            ts_init,
+            Some(price),
+            Some(trigger_price),
+            Some(trigger_type),
+            Some(limit_offset),
+            Some(trailing_offset),
+            Some(trailing_offset_type),
+            expire_time,
+            display_qty,
+            emulation_trigger,
+            trigger_instrument_id,
+            contingency_type,
+            order_list_id,
+            linked_order_ids,
+            parent_order_id,
+            exec_algorithm_id,
+            exec_algorithm_params,
+            exec_spawn_id,
+            tags,
+        )
+        .unwrap();
         Ok(Self {
-            core: OrderCore::new(
-                trader_id,
-                strategy_id,
-                instrument_id,
-                client_order_id,
-                order_side,
-                OrderType::TrailingStopLimit,
-                quantity,
-                time_in_force,
-                reduce_only,
-                quote_quantity,
-                emulation_trigger,
-                contingency_type,
-                order_list_id,
-                linked_order_ids,
-                parent_order_id,
-                exec_algorithm_id,
-                exec_algorithm_params,
-                exec_spawn_id,
-                tags,
-                init_id,
-                ts_init,
-            ),
+            core: OrderCore::new(init_order).unwrap(),
             price,
             trigger_price,
             trigger_type,
@@ -147,6 +162,10 @@ impl DerefMut for TrailingStopLimitOrder {
 }
 
 impl Order for TrailingStopLimitOrder {
+    fn into_any(self) -> OrderAny {
+        OrderAny::TrailingStopLimit(self)
+    }
+
     fn status(&self) -> OrderStatus {
         self.status
     }

@@ -57,6 +57,8 @@ from nautilus_trader.core.rust.model cimport position_side_from_cstr
 from nautilus_trader.core.rust.model cimport position_side_to_cstr
 from nautilus_trader.core.rust.model cimport price_type_from_cstr
 from nautilus_trader.core.rust.model cimport price_type_to_cstr
+from nautilus_trader.core.rust.model cimport record_flag_from_cstr
+from nautilus_trader.core.rust.model cimport record_flag_to_cstr
 from nautilus_trader.core.rust.model cimport time_in_force_from_cstr
 from nautilus_trader.core.rust.model cimport time_in_force_to_cstr
 from nautilus_trader.core.rust.model cimport trading_state_from_cstr
@@ -219,6 +221,14 @@ cpdef OrderType order_type_from_str(str value):
 
 cpdef str order_type_to_str(OrderType value):
     return cstr_to_pystr(order_type_to_cstr(value))
+
+
+cpdef RecordFlag record_flag_from_str(str value):
+    return record_flag_from_cstr(pystr_to_cstr(value))
+
+
+cpdef str record_flag_to_str(RecordFlag value):
+    return cstr_to_pystr(record_flag_to_cstr(value))
 
 
 cpdef PositionSide position_side_from_str(str value):

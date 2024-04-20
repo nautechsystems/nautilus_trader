@@ -18,7 +18,7 @@ import pkgutil
 import msgspec
 import pytest
 
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRateResponse
@@ -51,6 +51,6 @@ class TestBybitAccountHttpApi:
 
         monkeypatch.setattr(HttpClient, "request", get_mock(response))
         fee_rate = await self.http_api.fetch_fee_rate(
-            instrument_type=BybitInstrumentType.SPOT,
+            product_type=BybitProductType.SPOT,
         )
         assert fee_rate == response_decoded.result.list

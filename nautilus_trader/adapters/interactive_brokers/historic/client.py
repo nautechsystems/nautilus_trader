@@ -66,7 +66,7 @@ class HistoricInteractiveBrokersClient:
         loop.set_debug(True)
         clock = LiveClock()
 
-        init_logging(level_stdout=log_level_from_str(log_level))
+        self._log_guard = init_logging(level_stdout=log_level_from_str(log_level))
 
         self.log = Logger(name="HistoricInteractiveBrokersClient")
         msgbus = MessageBus(
@@ -84,10 +84,11 @@ class HistoricInteractiveBrokersClient:
             port=port,
             client_id=client_id,
         )
+        self._client.start()
 
     async def _connect(self) -> None:
         # Connect client
-        self._client.start()
+        await self._client.wait_until_ready()
         self._client.registered_nautilus_clients.add(1)
 
         # Set Market Data Type
@@ -268,7 +269,7 @@ class HistoricInteractiveBrokersClient:
                         bar_type,
                         contract,
                         use_rth,
-                        segment_end_date_time.strftime("%Y%m%d-%H:%M:%S"),
+                        segment_end_date_time,
                         segment_duration,
                         timeout=timeout,
                     )
@@ -333,7 +334,7 @@ class HistoricInteractiveBrokersClient:
         if (end_date_time - start_date_time) > pd.Timedelta(days=1):
             self.log.warning(
                 "Requesting tick data for more than 1 day may take a long time, particularly for liquid instruments. "
-                "You may want to consider sourcing tick data elsewhere.",
+                "You may want to consider sourcing tick data elsewhere",
             )
 
         contracts = contracts or []

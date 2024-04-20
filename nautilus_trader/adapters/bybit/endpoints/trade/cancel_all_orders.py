@@ -16,14 +16,15 @@
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.order import BybitCancelAllOrdersResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitCancelAllOrdersPostParameters(msgspec.Struct, omit_defaults=True, frozen=False):
-    category: str
+class BybitCancelAllOrdersPostParams(msgspec.Struct, omit_defaults=True, frozen=True):
+    category: BybitProductType
     symbol: str | None = None
     baseCoin: str | None = None
     settleCoin: str | None = None
@@ -35,7 +36,7 @@ class BybitCancelAllOrdersEndpoint(BybitHttpEndpoint):
         client: BybitHttpClient,
         base_endpoint: str,
     ) -> None:
-        url_path = base_endpoint + "order/cancel-all"
+        url_path = base_endpoint + "/order/cancel-all"
         super().__init__(
             client=client,
             endpoint_type=BybitEndpointType.TRADE,
@@ -45,14 +46,13 @@ class BybitCancelAllOrdersEndpoint(BybitHttpEndpoint):
 
     async def post(
         self,
-        parameters: BybitCancelAllOrdersPostParameters,
+        params: BybitCancelAllOrdersPostParams,
     ) -> BybitCancelAllOrdersResponse:
         method_type = HttpMethod.POST
-        raw = await self._method(method_type, parameters)
+        raw = await self._method(method_type, params)
         try:
             return self._resp_decoder.decode(raw)
         except Exception as e:
-            decoded_raw = raw.decode("utf-8")  # Decoding the bytes object
             raise RuntimeError(
-                f"Failed to decode response cancel all orders response: {decoded_raw}",
+                f"Failed to decode response from {self.url_path}: {raw.decode()}",
             ) from e

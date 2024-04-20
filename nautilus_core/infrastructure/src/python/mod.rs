@@ -13,12 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
+
 use pyo3::{prelude::*, pymodule};
 
-pub mod cache;
+#[cfg(feature = "redis")]
+pub mod redis;
 
 #[pymodule]
 pub fn infrastructure(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<crate::redis::RedisCacheDatabase>()?;
+    m.add_class::<crate::redis::cache::RedisCacheDatabase>()?;
+    m.add_class::<crate::redis::msgbus::RedisMessageBusDatabase>()?;
     Ok(())
 }

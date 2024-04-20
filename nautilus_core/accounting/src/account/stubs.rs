@@ -13,15 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_common::interface::account::Account;
 use nautilus_model::{
     enums::LiquiditySide,
     events::account::{state::AccountState, stubs::*},
-    instruments::Instrument,
+    instruments::InstrumentAny,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 use rstest::fixture;
 
-use crate::account::{cash::CashAccount, margin::MarginAccount, Account};
+use crate::account::{cash::CashAccount, margin::MarginAccount};
 
 #[fixture]
 pub fn margin_account(margin_account_state: AccountState) -> MarginAccount {
@@ -43,8 +44,9 @@ pub fn cash_account_multi(cash_account_state_multi: AccountState) -> CashAccount
     CashAccount::new(cash_account_state_multi, true).unwrap()
 }
 
-pub fn calculate_commission<T: Instrument>(
-    instrument: T,
+#[must_use]
+pub fn calculate_commission(
+    instrument: InstrumentAny,
     quantity: Quantity,
     price: Price,
     currency: Option<Currency>,

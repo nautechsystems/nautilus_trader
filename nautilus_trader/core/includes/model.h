@@ -208,7 +208,7 @@ typedef enum HaltReason {
 } HaltReason;
 
 /**
- * The asset type for a financial market product.
+ * The instrument class.
  */
 typedef enum InstrumentClass {
     /**
@@ -272,7 +272,7 @@ typedef enum InstrumentCloseType {
 } InstrumentCloseType;
 
 /**
- * The liqudity side for a trade in a financial market.
+ * The liqudity side for a trade.
  */
 typedef enum LiquiditySide {
     /**
@@ -328,7 +328,7 @@ typedef enum MarketStatus {
  */
 typedef enum OmsType {
     /**
-     * There is no specific type of order management specified (will defer to the venue).
+     * There is no specific type of order management specified (will defer to the venue OMS).
      */
     UNSPECIFIED = 0,
     /**
@@ -521,7 +521,7 @@ typedef enum PositionSide {
 } PositionSide;
 
 /**
- * The type of price for an instrument in a financial market.
+ * The type of price for an instrument in market.
  */
 typedef enum PriceType {
     /**
@@ -543,7 +543,37 @@ typedef enum PriceType {
 } PriceType;
 
 /**
- * The 'Time in Force' instruction for an order in the financial market.
+ * A record flag bit field, indicating packet end and data information.
+ */
+typedef enum RecordFlag {
+    /**
+     * Last message in the packet from the venue for a given `instrument_id`.
+     */
+    F_LAST = (1 << 7),
+    /**
+     * Top-of-book message, not an individual order.
+     */
+    F_TOB = (1 << 6),
+    /**
+     * Message sourced from a replay, such as a snapshot server.
+     */
+    F_SNAPSHOT = (1 << 5),
+    /**
+     * Aggregated price level message, not an individual order.
+     */
+    F_MBP = (1 << 4),
+    /**
+     * Reserved for future use.
+     */
+    RESERVED_2 = (1 << 3),
+    /**
+     * Reserved for future use.
+     */
+    RESERVED_1 = (1 << 2),
+} RecordFlag;
+
+/**
+ * The 'Time in Force' instruction for an order.
  */
 typedef enum TimeInForce {
     /**
@@ -674,7 +704,15 @@ typedef enum TriggerType {
  */
 typedef struct Level Level;
 
-typedef struct OrderBookContainer OrderBookContainer;
+/**
+ * Provides an order book.
+ *
+ * Can handle the following granularity data:
+ * - MBO (market by order) / L3
+ * - MBP (market by price) / L2 aggregated order per level
+ * - MBP (market by price) / L1 top-of-book only
+ */
+typedef struct OrderBook OrderBook;
 
 /**
  * Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
@@ -690,23 +728,17 @@ typedef struct OrderBookDeltas_t OrderBookDeltas_t;
 typedef struct SyntheticInstrument SyntheticInstrument;
 
 /**
- * Represents a valid ticker symbol ID for a tradable financial market instrument.
+ * Represents a valid ticker symbol ID for a tradable instrument.
  */
 typedef struct Symbol_t {
-    /**
-     * The ticker symbol ID value.
-     */
-    char* value;
+    char* _0;
 } Symbol_t;
 
 /**
  * Represents a valid trading venue ID.
  */
 typedef struct Venue_t {
-    /**
-     * The venue ID value.
-     */
-    char* value;
+    char* _0;
 } Venue_t;
 
 /**
@@ -774,7 +806,7 @@ typedef struct OrderBookDelta_t {
      */
     struct BookOrder_t order;
     /**
-     * A combination of packet end with matching engine status.
+     * The record flags bit field, indicating packet end and data information.
      */
     uint8_t flags;
     /**
@@ -782,11 +814,11 @@ typedef struct OrderBookDelta_t {
      */
     uint64_t sequence;
     /**
-     * The UNIX timestamp (nanoseconds) when the data event occurred.
+     * The UNIX timestamp (nanoseconds) when the book event occurred.
      */
     uint64_t ts_event;
     /**
-     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     * The UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } OrderBookDelta_t;
@@ -838,7 +870,7 @@ typedef struct OrderBookDepth10_t {
      */
     uint32_t ask_counts[DEPTH10_LEN];
     /**
-     * A combination of packet end with matching engine status.
+     * The record flags bit field, indicating packet end and data information.
      */
     uint8_t flags;
     /**
@@ -846,17 +878,17 @@ typedef struct OrderBookDepth10_t {
      */
     uint64_t sequence;
     /**
-     * The UNIX timestamp (nanoseconds) when the data event occurred.
+     * The UNIX timestamp (nanoseconds) when the book event occurred.
      */
     uint64_t ts_event;
     /**
-     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     * The UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } OrderBookDepth10_t;
 
 /**
- * Represents a single quote tick in a financial market.
+ * Represents a single quote tick in market.
  */
 typedef struct QuoteTick_t {
     /**
@@ -880,11 +912,11 @@ typedef struct QuoteTick_t {
      */
     struct Quantity_t ask_size;
     /**
-     * The UNIX timestamp (nanoseconds) when the tick event occurred.
+     * The UNIX timestamp (nanoseconds) when the quote event occurred.
      */
     uint64_t ts_event;
     /**
-     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     * The UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } QuoteTick_t;
@@ -907,7 +939,7 @@ typedef struct TradeId_t {
 } TradeId_t;
 
 /**
- * Represents a single trade tick in a financial market.
+ * Represents a single trade tick in a market.
  */
 typedef struct TradeTick_t {
     /**
@@ -931,11 +963,11 @@ typedef struct TradeTick_t {
      */
     struct TradeId_t trade_id;
     /**
-     * The UNIX timestamp (nanoseconds) when the tick event occurred.
+     * The UNIX timestamp (nanoseconds) when the trade event occurred.
      */
     uint64_t ts_event;
     /**
-     *  The UNIX timestamp (nanoseconds) when the data object was initialized.
+     * The UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } TradeTick_t;
@@ -1011,7 +1043,7 @@ typedef struct Bar_t {
      */
     uint64_t ts_event;
     /**
-     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     * The UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } Bar_t;
@@ -1061,10 +1093,7 @@ typedef struct Data_t {
  * do not collide with those from another node instance.
  */
 typedef struct TraderId_t {
-    /**
-     * The trader ID value.
-     */
-    char* value;
+    char* _0;
 } TraderId_t;
 
 /**
@@ -1080,20 +1109,14 @@ typedef struct TraderId_t {
  * do not collide with those from another strategy within the node instance.
  */
 typedef struct StrategyId_t {
-    /**
-     * The strategy ID value.
-     */
-    char* value;
+    char* _0;
 } StrategyId_t;
 
 /**
  * Represents a valid client order ID (assigned by the Nautilus system).
  */
 typedef struct ClientOrderId_t {
-    /**
-     * The client order ID value.
-     */
-    char* value;
+    char* _0;
 } ClientOrderId_t;
 
 typedef struct OrderDenied_t {
@@ -1138,10 +1161,7 @@ typedef struct OrderReleased_t {
  * Example: "IB-D02851908".
  */
 typedef struct AccountId_t {
-    /**
-     * The account ID value.
-     */
-    char* value;
+    char* _0;
 } AccountId_t;
 
 typedef struct OrderSubmitted_t {
@@ -1159,10 +1179,7 @@ typedef struct OrderSubmitted_t {
  * Represents a valid venue order ID (assigned by a trading venue).
  */
 typedef struct VenueOrderId_t {
-    /**
-     * The venue assigned order ID value.
-     */
-    char* value;
+    char* _0;
 } VenueOrderId_t;
 
 typedef struct OrderAccepted_t {
@@ -1195,50 +1212,35 @@ typedef struct OrderRejected_t {
  * Represents a system client ID.
  */
 typedef struct ClientId_t {
-    /**
-     * The client ID value.
-     */
-    char* value;
+    char* _0;
 } ClientId_t;
 
 /**
  * Represents a valid component ID.
  */
 typedef struct ComponentId_t {
-    /**
-     * The component ID value.
-     */
-    char* value;
+    char* _0;
 } ComponentId_t;
 
 /**
  * Represents a valid execution algorithm ID.
  */
 typedef struct ExecAlgorithmId_t {
-    /**
-     * The execution algorithm ID value.
-     */
-    char* value;
+    char* _0;
 } ExecAlgorithmId_t;
 
 /**
  * Represents a valid order list ID (assigned by the Nautilus system).
  */
 typedef struct OrderListId_t {
-    /**
-     * The order list ID value.
-     */
-    char* value;
+    char* _0;
 } OrderListId_t;
 
 /**
  * Represents a valid position ID.
  */
 typedef struct PositionId_t {
-    /**
-     * The position ID value.
-     */
-    char* value;
+    char* _0;
 } PositionId_t;
 
 /**
@@ -1267,7 +1269,7 @@ typedef struct SyntheticInstrument_API {
  * having to manually access the underlying `OrderBook` instance.
  */
 typedef struct OrderBook_API {
-    struct OrderBookContainer *_0;
+    struct OrderBook *_0;
 } OrderBook_API;
 
 /**
@@ -1415,7 +1417,7 @@ uint8_t orderbook_delta_eq(const struct OrderBookDelta_t *lhs, const struct Orde
 uint64_t orderbook_delta_hash(const struct OrderBookDelta_t *delta);
 
 /**
- * Creates a new `OrderBookDeltas` object from a `CVec` of `OrderBookDelta`.
+ * Creates a new `OrderBookDeltas` instance from a `CVec` of `OrderBookDelta`.
  *
  * # Safety
  * - The `deltas` must be a valid pointer to a `CVec` containing `OrderBookDelta` objects
@@ -1769,6 +1771,17 @@ const char *price_type_to_cstr(enum PriceType value);
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum PriceType price_type_from_cstr(const char *ptr);
+
+const char *record_flag_to_cstr(enum RecordFlag value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum RecordFlag record_flag_from_cstr(const char *ptr);
 
 const char *time_in_force_to_cstr(enum TimeInForce value);
 
@@ -2142,24 +2155,27 @@ uint64_t orderbook_count(const struct OrderBook_API *book);
 
 void orderbook_add(struct OrderBook_API *book,
                    struct BookOrder_t order,
-                   uint64_t ts_event,
-                   uint64_t sequence);
+                   uint8_t flags,
+                   uint64_t sequence,
+                   uint64_t ts_event);
 
 void orderbook_update(struct OrderBook_API *book,
                       struct BookOrder_t order,
-                      uint64_t ts_event,
-                      uint64_t sequence);
+                      uint8_t flags,
+                      uint64_t sequence,
+                      uint64_t ts_event);
 
 void orderbook_delete(struct OrderBook_API *book,
                       struct BookOrder_t order,
-                      uint64_t ts_event,
-                      uint64_t sequence);
+                      uint8_t flags,
+                      uint64_t sequence,
+                      uint64_t ts_event);
 
-void orderbook_clear(struct OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
+void orderbook_clear(struct OrderBook_API *book, uint64_t sequence, uint64_t ts_event);
 
-void orderbook_clear_bids(struct OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
+void orderbook_clear_bids(struct OrderBook_API *book, uint64_t sequence, uint64_t ts_event);
 
-void orderbook_clear_asks(struct OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
+void orderbook_clear_asks(struct OrderBook_API *book, uint64_t sequence, uint64_t ts_event);
 
 void orderbook_apply_delta(struct OrderBook_API *book, struct OrderBookDelta_t delta);
 
@@ -2195,8 +2211,22 @@ double orderbook_get_quantity_for_price(struct OrderBook_API *book,
                                         struct Price_t price,
                                         enum OrderSide order_side);
 
-void orderbook_update_quote_tick(struct OrderBook_API *book, const struct QuoteTick_t *tick);
+/**
+ * Updates the order book with a quote tick.
+ *
+ * # Panics
+ *
+ * If book type is not `L1_MBP`.
+ */
+void orderbook_update_quote_tick(struct OrderBook_API *book, const struct QuoteTick_t *quote);
 
+/**
+ * Updates the order book with a trade tick.
+ *
+ * # Panics
+ *
+ * If book type is not `L1_MBP`.
+ */
 void orderbook_update_trade_tick(struct OrderBook_API *book, const struct TradeTick_t *tick);
 
 CVec orderbook_simulate_fills(const struct OrderBook_API *book, struct BookOrder_t order);

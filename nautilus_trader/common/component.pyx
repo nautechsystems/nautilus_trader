@@ -15,14 +15,10 @@
 
 import asyncio
 import copy
-import platform
 import socket
 import sys
-import time
 import traceback
 from collections import deque
-from platform import python_version
-from threading import Timer as TimerThread
 from typing import Any
 from typing import Callable
 
@@ -94,9 +90,6 @@ from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.common cimport logging_log_header
 from nautilus_trader.core.rust.common cimport logging_log_sysinfo
 from nautilus_trader.core.rust.common cimport logging_shutdown
-from nautilus_trader.core.rust.common cimport msgbus_drop
-from nautilus_trader.core.rust.common cimport msgbus_new
-from nautilus_trader.core.rust.common cimport msgbus_publish_external
 from nautilus_trader.core.rust.common cimport test_clock_advance_time
 from nautilus_trader.core.rust.common cimport test_clock_cancel_timer
 from nautilus_trader.core.rust.common cimport test_clock_cancel_timers
@@ -778,14 +771,6 @@ cdef class LiveClock(Clock):
         if callback is not None:
             callback = create_pyo3_conversion_wrapper(callback)
 
-        cdef uint64_t ts_now = self.timestamp_ns()  # Call here for greater accuracy
-
-        if start_time_ns == 0:
-            start_time_ns = ts_now
-        if stop_time_ns:
-            Condition.true(stop_time_ns > ts_now, "stop_time was < ts_now")
-            Condition.true(start_time_ns + interval_ns <= stop_time_ns, "start_time + interval was > stop_time")
-
         live_clock_set_timer(
             &self._mem,
             pystr_to_cstr(name),
@@ -1127,7 +1112,6 @@ cpdef LogGuard init_logging(
     cdef LogGuard log_guard = LogGuard.__new__(LogGuard)
     log_guard._mem = log_guard_api
     return log_guard
-
 
 
 LOGGING_PYO3 = False
@@ -1920,13 +1904,13 @@ cdef class Component:
         try:
             self._fsm.trigger(trigger)
         except InvalidStateTrigger as e:
-            self._log.error(f"{repr(e)} state {self._fsm.state_string_c()}.")
+            self._log.error(f"{repr(e)} state {self._fsm.state_string_c()}")
             return  # Guards against invalid state
 
         if is_transitory:
-            self._log.debug(f"{self._fsm.state_string_c()}...")
+            self._log.debug(f"{self._fsm.state_string_c()}")
         else:
-            self._log.info(f"{self._fsm.state_string_c()}.")
+            self._log.info(f"{self._fsm.state_string_c()}")
 
         if action is not None:
             action()
@@ -1985,6 +1969,8 @@ cdef class MessageBus:
         The custom name for the message bus.
     serializer : Serializer, optional
         The serializer for database operations.
+    database : nautilus_pyo3.RedisMessageBusDatabase, optional
+        The backing database for the message bus.
     snapshot_orders : bool, default False
         If order state snapshots should be published externally.
     snapshot_positions : bool, default False
@@ -2010,10 +1996,11 @@ cdef class MessageBus:
         UUID4 instance_id = None,
         str name = None,
         Serializer serializer = None,
+        database: nautilus_pyo3.RedisMessageBusDatabase | None = None,
         bint snapshot_orders: bool = False,
         bint snapshot_positions: bool = False,
         config: Any | None = None,
-    ):
+    ) -> None:
         # Temporary fix for import error
         from nautilus_trader.common.config import MessageBusConfig
 
@@ -2028,18 +2015,19 @@ cdef class MessageBus:
 
         self.trader_id = trader_id
         self.serializer = serializer
-        self.has_backing = config.database is not None
+        self.has_backing = database is not None
         self.snapshot_orders = snapshot_orders
         self.snapshot_positions = snapshot_positions
 
         self._clock = clock
         self._log = Logger(name)
+        self._database = database
 
         # Validate configuration
         if config.buffer_interval_ms and config.buffer_interval_ms > 1000:
             self._log.warning(
                 f"High `buffer_interval_ms` at {config.buffer_interval_ms}, "
-                "recommended range is [10, 1000] milliseconds.",
+                "recommended range is [10, 1000] milliseconds",
             )
 
         # Configuration
@@ -2059,31 +2047,20 @@ cdef class MessageBus:
         if config.types_filter is not None:
             config.types_filter.clear()
 
-        self._mem = msgbus_new(
-            pystr_to_cstr(trader_id.value),
-            pystr_to_cstr(name) if name else NULL,
-            pystr_to_cstr(instance_id.to_str()),
-            pybytes_to_cstr(msgspec.json.encode(config)),
-        )
-
         self._endpoints: dict[str, Callable[[Any], None]] = {}
         self._patterns: dict[str, Subscription[:]] = {}
         self._subscriptions: dict[Subscription, list[str]] = {}
         self._correlation_index: dict[UUID4, Callable[[Any], None]] = {}
-        self._has_backing = config.database is not None
         self._publishable_types = tuple(_EXTERNAL_PUBLISHABLE_TYPES)
         if types_filter is not None:
             self._publishable_types = tuple(o for o in _EXTERNAL_PUBLISHABLE_TYPES if o not in types_filter)
+        self._resolved = False
 
         # Counters
         self.sent_count = 0
         self.req_count = 0
         self.res_count = 0
         self.pub_count = 0
-
-    def __del__(self) -> None:
-        if self._mem._0 != NULL:
-            msgbus_drop(self._mem)
 
     cpdef list endpoints(self):
         """
@@ -2192,6 +2169,18 @@ cdef class MessageBus:
 
         return request_id in self._correlation_index
 
+    cpdef void dispose(self):
+        """
+        Dispose of the message bus which will close the internal channel and thread.
+
+        """
+        self._log.debug("Closing message bus")
+
+        if self._database is not None:
+            self._database.close()
+
+        self._log.info("Closed message bus")
+
     cpdef void register(self, str endpoint, handler: Callable[[Any], None]):
         """
         Register the given `handler` to receive messages at the `endpoint` address.
@@ -2219,7 +2208,7 @@ cdef class MessageBus:
 
         self._endpoints[endpoint] = handler
 
-        self._log.debug(f"Added endpoint '{endpoint}' {handler}.")
+        self._log.debug(f"Added endpoint '{endpoint}' {handler}")
 
     cpdef void deregister(self, str endpoint, handler: Callable[[Any], None]):
         """
@@ -2251,7 +2240,7 @@ cdef class MessageBus:
 
         del self._endpoints[endpoint]
 
-        self._log.debug(f"Removed endpoint '{endpoint}' {handler}.")
+        self._log.debug(f"Removed endpoint '{endpoint}' {handler}")
 
     cpdef void send(self, str endpoint, msg: Any):
         """
@@ -2271,7 +2260,7 @@ cdef class MessageBus:
         handler = self._endpoints.get(endpoint)
         if handler is None:
             self._log.error(
-                f"Cannot send message: no endpoint registered at '{endpoint}'.",
+                f"Cannot send message: no endpoint registered at '{endpoint}'",
             )
             return  # Cannot send
 
@@ -2298,7 +2287,7 @@ cdef class MessageBus:
         if request.id in self._correlation_index:
             self._log.error(
                 f"Cannot handle request: "
-                f"duplicate ID {request.id} found in correlation index.",
+                f"duplicate ID {request.id} found in correlation index",
             )
             return  # Do not handle duplicates
 
@@ -2307,7 +2296,7 @@ cdef class MessageBus:
         handler = self._endpoints.get(endpoint)
         if handler is None:
             self._log.error(
-                f"Cannot handle request: no endpoint registered at '{endpoint}'.",
+                f"Cannot handle request: no endpoint registered at '{endpoint}'",
             )
             return  # Cannot handle
 
@@ -2332,7 +2321,7 @@ cdef class MessageBus:
         if callback is None:
             self._log.error(
                 f"Cannot handle response: "
-                f"callback not found for correlation_id {response.correlation_id}.",
+                f"callback not found for correlation_id {response.correlation_id}",
             )
             return  # Cannot handle
 
@@ -2389,7 +2378,7 @@ cdef class MessageBus:
 
         # Check if already exists
         if sub in self._subscriptions:
-            self._log.debug(f"{sub} already exists.")
+            self._log.debug(f"{sub} already exists")
             return
 
         cdef list matches = []
@@ -2407,7 +2396,9 @@ cdef class MessageBus:
 
         self._subscriptions[sub] = sorted(matches)
 
-        self._log.debug(f"Added {sub}.")
+        self._resolved = False
+
+        self._log.debug(f"Added {sub}")
 
     cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]):
         """
@@ -2438,7 +2429,7 @@ cdef class MessageBus:
 
         # Check if exists
         if patterns is None:
-            self._log.warning(f"{sub} not found.")
+            self._log.warning(f"{sub} not found")
             return
 
         cdef str pattern
@@ -2450,7 +2441,9 @@ cdef class MessageBus:
 
         del self._subscriptions[sub]
 
-        self._log.debug(f"Removed {sub}.")
+        self._resolved = False
+
+        self._log.debug(f"Removed {sub}")
 
     cpdef void publish(self, str topic, msg: Any):
         """
@@ -2476,10 +2469,12 @@ cdef class MessageBus:
         Condition.not_none(msg, "msg")
 
         # Get all subscriptions matching topic pattern
+        # Note: cannot use truthiness on array
         cdef Subscription[:] subs = self._patterns.get(topic)
-        if subs is None or len(subs) == 0:  # Cannot use truthiness on array
+        if subs is None or (not self._resolved and len(subs) == 0):
             # Add the topic pattern and get matching subscribers
             subs = self._resolve_subscriptions(topic)
+            self._resolved = True
 
         # Send message to all matched subscribers
         cdef:
@@ -2491,16 +2486,15 @@ cdef class MessageBus:
 
         # Publish externally (if configured)
         cdef bytes payload_bytes
-        if self._has_backing and self.serializer is not None:
+        if self._database is not None and self.serializer is not None:
             if isinstance(msg, self._publishable_types):
                 if isinstance(msg, bytes):
                     payload_bytes = msg
                 else:
                     payload_bytes = self.serializer.serialize(msg)
-                msgbus_publish_external(
-                    &self._mem,
-                    pystr_to_cstr(topic),
-                    pybytes_to_cstr(payload_bytes),
+                self._database.publish(
+                    topic,
+                    payload_bytes,
                 )
 
         self.pub_count += 1
@@ -2715,7 +2709,7 @@ cdef class Throttler:
         self.recv_count = 0
         self.sent_count = 0
 
-        self._log.info("READY.")
+        self._log.info("READY")
 
     @property
     def qsize(self) -> int:
@@ -2802,12 +2796,12 @@ cdef class Throttler:
             # Buffer
             self._buffer.appendleft(msg)
             timer_target = self._process
-            self._log.warning(f"Buffering {msg}.")
+            self._log.warning(f"Buffering {msg}")
         else:
             # Drop
             self._output_drop(msg)
             timer_target = self._resume
-            self._log.warning(f"Dropped {msg}.")
+            self._log.warning(f"Dropped {msg}")
 
         if not self.is_limiting:
             self._set_timer(timer_target)

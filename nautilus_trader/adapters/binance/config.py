@@ -87,7 +87,7 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         If the client is connecting to a Binance testnet.
     use_gtd : bool, default True
         If GTD orders will use the Binance GTD TIF option.
-        If False then GTD time in force will be remapped to GTC (this is useful if manageing GTD
+        If False then GTD time in force will be remapped to GTC (this is useful if managing GTD
         orders locally).
     use_reduce_only : bool, default True
         If the `reduce_only` execution instruction on orders is sent through to the exchange.
@@ -114,7 +114,6 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws: str | None = None
     us: bool = False
     testnet: bool = False
-    clock_sync_interval_secs: int = 0
     use_gtd: bool = True
     use_reduce_only: bool = True
     use_position_ids: bool = True

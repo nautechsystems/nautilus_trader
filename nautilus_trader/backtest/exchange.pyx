@@ -24,8 +24,10 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.matching_engine cimport OrderMatchingEngine
+from nautilus_trader.backtest.models cimport FeeModel
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.models cimport LatencyModel
+from nautilus_trader.backtest.models cimport MakerTakerFeeModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Logger
@@ -62,7 +64,7 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 cdef class SimulatedExchange:
     """
-    Provides a simulated financial market exchange.
+    Provides a simulated exchange venue.
 
     Parameters
     ----------
@@ -88,6 +90,8 @@ cdef class SimulatedExchange:
         The read-only cache for the exchange.
     fill_model : FillModel
         The fill model for the exchange.
+    fee_model : FeeModel
+        The fee model for the exchange.
     latency_model : LatencyModel, optional
         The latency model for the exchange.
     clock : TestClock
@@ -144,6 +148,7 @@ cdef class SimulatedExchange:
         CacheFacade cache not None,
         TestClock clock not None,
         FillModel fill_model not None,
+        FeeModel fee_model not None,
         LatencyModel latency_model = None,
         BookType book_type = BookType.L1_MBP,
         bint frozen_account = False,
@@ -193,6 +198,7 @@ cdef class SimulatedExchange:
         self.use_random_ids = use_random_ids
         self.use_reduce_only = use_reduce_only
         self.fill_model = fill_model
+        self.fee_model = fee_model
         self.latency_model = latency_model
 
         # Load modules
@@ -207,7 +213,7 @@ cdef class SimulatedExchange:
                 clock=clock,
             )
             self.modules.append(module)
-            self._log.info(f"Loaded {module}.")
+            self._log.info(f"Loaded {module}")
 
         # Markets
         self._matching_engines: dict[InstrumentId, OrderMatchingEngine] = {}
@@ -245,7 +251,7 @@ cdef class SimulatedExchange:
 
         self.exec_client = client
 
-        self._log.info(f"Registered ExecutionClient-{client}.")
+        self._log.info(f"Registered ExecutionClient-{client}")
 
     cpdef void set_fill_model(self, FillModel fill_model):
         """
@@ -266,7 +272,7 @@ cdef class SimulatedExchange:
             matching_engine.set_fill_model(fill_model)
             self._log.info(
                 f"Changed `FillModel` for {matching_engine.venue} "
-                f"to {self.fill_model}.",
+                f"to {self.fill_model}",
             )
 
     cpdef void set_latency_model(self, LatencyModel latency_model):
@@ -283,7 +289,7 @@ cdef class SimulatedExchange:
 
         self.latency_model = latency_model
 
-        self._log.info("Changed latency model.")
+        self._log.info("Changed latency model")
 
     cpdef void initialize_account(self):
         """
@@ -328,6 +334,7 @@ cdef class SimulatedExchange:
             instrument=instrument,
             raw_id=len(self.instruments),
             fill_model=self.fill_model,
+            fee_model=self.fee_model,
             book_type=self.book_type,
             oms_type=self.oms_type,
             account_type=self.account_type,
@@ -345,7 +352,7 @@ cdef class SimulatedExchange:
 
         self._matching_engines[instrument.id] = matching_engine
 
-        self._log.info(f"Added instrument {instrument.id} and created matching engine.")
+        self._log.info(f"Added instrument {instrument.id} and created matching engine")
 
 # -- QUERIES --------------------------------------------------------------------------------------
 
@@ -850,7 +857,7 @@ cdef class SimulatedExchange:
 
         All stateful fields are reset to their initial value.
         """
-        self._log.debug(f"Resetting...")
+        self._log.debug(f"Resetting")
 
         for module in self.modules:
             module.reset()
@@ -864,7 +871,7 @@ cdef class SimulatedExchange:
         self._inflight_queue.clear()
         self._inflight_counter.clear()
 
-        self._log.info("Reset.")
+        self._log.info("Reset")
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 

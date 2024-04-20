@@ -31,5 +31,5 @@ pub unsafe extern "C" fn exec_algorithm_id_new(ptr: *const c_char) -> ExecAlgori
 
 #[no_mangle]
 pub extern "C" fn exec_algorithm_id_hash(id: &ExecAlgorithmId) -> u64 {
-    id.value.precomputed_hash()
+    id.inner().precomputed_hash()
 }

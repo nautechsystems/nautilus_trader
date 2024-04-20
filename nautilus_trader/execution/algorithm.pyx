@@ -31,11 +31,11 @@ from nautilus_trader.common.component cimport SENT
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport LogColor
 from nautilus_trader.common.component cimport MessageBus
+from nautilus_trader.common.component cimport is_logging_initialized
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.rust.common cimport ComponentState
-from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport TimeInForce
@@ -74,8 +74,8 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orders.base cimport VALID_LIMIT_ORDER_TYPES
-from nautilus_trader.model.orders.base cimport VALID_STOP_ORDER_TYPES
+from nautilus_trader.model.orders.base cimport LIMIT_ORDER_TYPES
+from nautilus_trader.model.orders.base cimport STOP_ORDER_TYPES
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.list cimport OrderList
@@ -253,7 +253,7 @@ cdef class ExecAlgorithm(Actor):
         """
         Condition.not_none(command, "command")
 
-        self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
+        self._log.debug(f"{RECV}{CMD} {command}", LogColor.MAGENTA)
 
         if self._fsm.state != ComponentState.RUNNING:
             return
@@ -265,12 +265,12 @@ cdef class ExecAlgorithm(Actor):
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(command)
         else:
-            self._log.error(f"Cannot handle command: unrecognized {command}.")
+            self._log.error(f"Cannot handle command: unrecognized {command}")
 
         if command.strategy_id in self._subscribed_strategies:
             return  # Already subscribed
 
-        self._log.info(f"Subscribing to {command.strategy_id} order events.", LogColor.BLUE)
+        self._log.info(f"Subscribing to {command.strategy_id} order events", LogColor.BLUE)
         self._msgbus.subscribe(topic=f"events.order.{command.strategy_id.to_str()}", handler=self._handle_event)
         self._msgbus.subscribe(topic=f"events.position.{command.strategy_id.to_str()}", handler=self._handle_event)
         self._subscribed_strategies.add(command.strategy_id)
@@ -299,7 +299,7 @@ cdef class ExecAlgorithm(Actor):
         cdef Order order = self.cache.order(command.client_order_id)
         if order is None:  # pragma: no cover (design-time error)
             self._log.error(
-                f"Cannot cancel order: {repr(command.client_order_id)} not found.",
+                f"Cannot cancel order: {repr(command.client_order_id)} not found",
             )
             return
 
@@ -307,7 +307,7 @@ cdef class ExecAlgorithm(Actor):
             return  # Already pending cancel locally
 
         if order.is_closed_c():
-            self._log.warning(f"Order already canceled for {command}.")
+            self._log.warning(f"Order already canceled for {command}")
             return
 
         # Generate event
@@ -1073,7 +1073,7 @@ cdef class ExecAlgorithm(Actor):
             Condition.equal(order.strategy_id, primary.strategy_id, "order.strategy_id", "primary.strategy_id")
             if primary is None:
                 self._log.error(
-                    f"Cannot submit order: cannot find primary order for {order.exec_spawn_id!r}."
+                    f"Cannot submit order: cannot find primary order for {order.exec_spawn_id!r}"
                 )
                 return
 
@@ -1082,7 +1082,7 @@ cdef class ExecAlgorithm(Actor):
 
             if self.cache.order_exists(order.client_order_id):
                 self._log.error(
-                    f"Cannot submit order: order already exists for {order.client_order_id!r}.",
+                    f"Cannot submit order: order already exists for {order.client_order_id!r}",
                 )
                 return
 
@@ -1187,7 +1187,7 @@ cdef class ExecAlgorithm(Actor):
 
         if price is not None:
             Condition.true(
-                order.order_type in VALID_LIMIT_ORDER_TYPES,
+                order.order_type in LIMIT_ORDER_TYPES,
                 fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price",
             )
             if price != order.price:
@@ -1195,7 +1195,7 @@ cdef class ExecAlgorithm(Actor):
 
         if trigger_price is not None:
             Condition.true(
-                order.order_type in VALID_STOP_ORDER_TYPES,
+                order.order_type in STOP_ORDER_TYPES,
                 fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price",
             )
             if trigger_price != order.trigger_price:
@@ -1306,7 +1306,7 @@ cdef class ExecAlgorithm(Actor):
 
         if price is not None:
             Condition.true(
-                order.order_type in VALID_LIMIT_ORDER_TYPES,
+                order.order_type in LIMIT_ORDER_TYPES,
                 fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price",
             )
             if price != order.price:
@@ -1314,7 +1314,7 @@ cdef class ExecAlgorithm(Actor):
 
         if trigger_price is not None:
             Condition.true(
-                order.order_type in VALID_STOP_ORDER_TYPES,
+                order.order_type in STOP_ORDER_TYPES,
                 fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price",
             )
             if trigger_price != order.trigger_price:
@@ -1463,16 +1463,16 @@ cdef class ExecAlgorithm(Actor):
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_emulator_command(self, TradingCommand command):
-        if logging_is_initialized():
+        if is_logging_initialized():
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
 
     cdef void _send_risk_command(self, TradingCommand command):
-        if logging_is_initialized():
+        if is_logging_initialized():
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
 
     cdef void _send_exec_command(self, TradingCommand command):
-        if logging_is_initialized():
+        if is_logging_initialized():
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)

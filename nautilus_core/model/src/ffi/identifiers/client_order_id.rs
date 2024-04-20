@@ -31,5 +31,5 @@ pub unsafe extern "C" fn client_order_id_new(ptr: *const c_char) -> ClientOrderI
 
 #[no_mangle]
 pub extern "C" fn client_order_id_hash(id: &ClientOrderId) -> u64 {
-    id.value.precomputed_hash()
+    id.inner().precomputed_hash()
 }

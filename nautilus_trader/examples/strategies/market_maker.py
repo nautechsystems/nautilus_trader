@@ -81,7 +81,7 @@ class MarketMaker(Strategy):
 
     def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         if not self._book:
-            self.log.error("No book being maintained.")
+            self.log.error("No book being maintained")
             return
 
         self._book.apply_deltas(deltas)
@@ -110,7 +110,7 @@ class MarketMaker(Strategy):
         Users simple buy method (example).
         """
         if not self.instrument:
-            self.log.error("No instrument loaded.")
+            self.log.error("No instrument loaded")
             return
 
         order = self.order_factory.limit(
@@ -127,7 +127,7 @@ class MarketMaker(Strategy):
         Users simple sell method (example).
         """
         if not self.instrument:
-            self.log.error("No instrument loaded.")
+            self.log.error("No instrument loaded")
             return
 
         order = self.order_factory.limit(

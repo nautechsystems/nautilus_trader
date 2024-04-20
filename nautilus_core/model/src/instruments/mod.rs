@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::any::Any;
 pub mod crypto_future;
 pub mod crypto_perpetual;
 pub mod currency_pair;
@@ -27,7 +26,7 @@ pub mod synthetic;
 #[cfg(feature = "stubs")]
 pub mod stubs;
 
-use nautilus_core::time::UnixNanos;
+use nautilus_core::nanos::UnixNanos;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
@@ -42,8 +41,8 @@ use crate::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
-#[derive(Debug)]
-pub enum InstrumentType {
+#[derive(Clone, Debug)]
+pub enum InstrumentAny {
     CryptoFuture(CryptoFuture),
     CryptoPerpetual(CryptoPerpetual),
     CurrencyPair(CurrencyPair),
@@ -54,7 +53,227 @@ pub enum InstrumentType {
     OptionsSpread(OptionsSpread),
 }
 
-pub trait Instrument: Any + 'static + Send {
+impl InstrumentAny {
+    #[must_use]
+    pub fn id(&self) -> InstrumentId {
+        match self {
+            Self::CryptoFuture(inst) => inst.id,
+            Self::CryptoPerpetual(inst) => inst.id,
+            Self::CurrencyPair(inst) => inst.id,
+            Self::Equity(inst) => inst.id,
+            Self::FuturesContract(inst) => inst.id,
+            Self::FuturesSpread(inst) => inst.id,
+            Self::OptionsContract(inst) => inst.id,
+            Self::OptionsSpread(inst) => inst.id,
+        }
+    }
+
+    #[must_use]
+    pub fn base_currency(&self) -> Option<Currency> {
+        match self {
+            Self::CryptoFuture(inst) => inst.base_currency(),
+            Self::CryptoPerpetual(inst) => inst.base_currency(),
+            Self::CurrencyPair(inst) => inst.base_currency(),
+            Self::Equity(inst) => inst.base_currency(),
+            Self::FuturesContract(inst) => inst.base_currency(),
+            Self::FuturesSpread(inst) => inst.base_currency(),
+            Self::OptionsContract(inst) => inst.base_currency(),
+            Self::OptionsSpread(inst) => inst.base_currency(),
+        }
+    }
+
+    #[must_use]
+    pub fn quote_currency(&self) -> Currency {
+        match self {
+            Self::CryptoFuture(inst) => inst.quote_currency(),
+            Self::CryptoPerpetual(inst) => inst.quote_currency(),
+            Self::CurrencyPair(inst) => inst.quote_currency(),
+            Self::Equity(inst) => inst.quote_currency(),
+            Self::FuturesContract(inst) => inst.quote_currency(),
+            Self::FuturesSpread(inst) => inst.quote_currency(),
+            Self::OptionsContract(inst) => inst.quote_currency(),
+            Self::OptionsSpread(inst) => inst.quote_currency(),
+        }
+    }
+
+    #[must_use]
+    pub fn settlement_currency(&self) -> Currency {
+        match self {
+            Self::CryptoFuture(inst) => inst.settlement_currency(),
+            Self::CryptoPerpetual(inst) => inst.settlement_currency(),
+            Self::CurrencyPair(inst) => inst.settlement_currency(),
+            Self::Equity(inst) => inst.settlement_currency(),
+            Self::FuturesContract(inst) => inst.settlement_currency(),
+            Self::FuturesSpread(inst) => inst.settlement_currency(),
+            Self::OptionsContract(inst) => inst.settlement_currency(),
+            Self::OptionsSpread(inst) => inst.settlement_currency(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_inverse(&self) -> bool {
+        match self {
+            Self::CryptoFuture(inst) => inst.is_inverse(),
+            Self::CryptoPerpetual(inst) => inst.is_inverse(),
+            Self::CurrencyPair(inst) => inst.is_inverse(),
+            Self::Equity(inst) => inst.is_inverse(),
+            Self::FuturesContract(inst) => inst.is_inverse(),
+            Self::FuturesSpread(inst) => inst.is_inverse(),
+            Self::OptionsContract(inst) => inst.is_inverse(),
+            Self::OptionsSpread(inst) => inst.is_inverse(),
+        }
+    }
+
+    #[must_use]
+    pub fn price_precision(&self) -> u8 {
+        match self {
+            Self::CryptoFuture(inst) => inst.price_precision(),
+            Self::CryptoPerpetual(inst) => inst.price_precision(),
+            Self::CurrencyPair(inst) => inst.price_precision(),
+            Self::Equity(inst) => inst.price_precision(),
+            Self::FuturesContract(inst) => inst.price_precision(),
+            Self::FuturesSpread(inst) => inst.price_precision(),
+            Self::OptionsContract(inst) => inst.price_precision(),
+            Self::OptionsSpread(inst) => inst.price_precision(),
+        }
+    }
+
+    #[must_use]
+    pub fn size_precision(&self) -> u8 {
+        match self {
+            Self::CryptoFuture(inst) => inst.size_precision(),
+            Self::CryptoPerpetual(inst) => inst.size_precision(),
+            Self::CurrencyPair(inst) => inst.size_precision(),
+            Self::Equity(inst) => inst.size_precision(),
+            Self::FuturesContract(inst) => inst.size_precision(),
+            Self::FuturesSpread(inst) => inst.size_precision(),
+            Self::OptionsContract(inst) => inst.size_precision(),
+            Self::OptionsSpread(inst) => inst.size_precision(),
+        }
+    }
+
+    #[must_use]
+    pub fn price_increment(&self) -> Price {
+        match self {
+            Self::CryptoFuture(inst) => inst.price_increment(),
+            Self::CryptoPerpetual(inst) => inst.price_increment(),
+            Self::CurrencyPair(inst) => inst.price_increment(),
+            Self::Equity(inst) => inst.price_increment(),
+            Self::FuturesContract(inst) => inst.price_increment(),
+            Self::FuturesSpread(inst) => inst.price_increment(),
+            Self::OptionsContract(inst) => inst.price_increment(),
+            Self::OptionsSpread(inst) => inst.price_increment(),
+        }
+    }
+
+    #[must_use]
+    pub fn size_increment(&self) -> Quantity {
+        match self {
+            Self::CryptoFuture(inst) => inst.size_increment(),
+            Self::CryptoPerpetual(inst) => inst.size_increment(),
+            Self::CurrencyPair(inst) => inst.size_increment(),
+            Self::Equity(inst) => inst.size_increment(),
+            Self::FuturesContract(inst) => inst.size_increment(),
+            Self::FuturesSpread(inst) => inst.size_increment(),
+            Self::OptionsContract(inst) => inst.size_increment(),
+            Self::OptionsSpread(inst) => inst.size_increment(),
+        }
+    }
+
+    pub fn make_price(&self, value: f64) -> anyhow::Result<Price> {
+        match self {
+            Self::CryptoFuture(inst) => inst.make_price(value),
+            Self::CryptoPerpetual(inst) => inst.make_price(value),
+            Self::CurrencyPair(inst) => inst.make_price(value),
+            Self::Equity(inst) => inst.make_price(value),
+            Self::FuturesContract(inst) => inst.make_price(value),
+            Self::FuturesSpread(inst) => inst.make_price(value),
+            Self::OptionsContract(inst) => inst.make_price(value),
+            Self::OptionsSpread(inst) => inst.make_price(value),
+        }
+    }
+
+    pub fn make_qty(&self, value: f64) -> anyhow::Result<Quantity> {
+        match self {
+            Self::CryptoFuture(inst) => inst.make_qty(value),
+            Self::CryptoPerpetual(inst) => inst.make_qty(value),
+            Self::CurrencyPair(inst) => inst.make_qty(value),
+            Self::Equity(inst) => inst.make_qty(value),
+            Self::FuturesContract(inst) => inst.make_qty(value),
+            Self::FuturesSpread(inst) => inst.make_qty(value),
+            Self::OptionsContract(inst) => inst.make_qty(value),
+            Self::OptionsSpread(inst) => inst.make_qty(value),
+        }
+    }
+
+    #[must_use]
+    pub fn calculate_notional_value(
+        &self,
+        quantity: Quantity,
+        price: Price,
+        use_quote_for_inverse: Option<bool>,
+    ) -> Money {
+        match self {
+            Self::CryptoFuture(inst) => {
+                inst.calculate_notional_value(quantity, price, use_quote_for_inverse)
+            }
+            Self::CryptoPerpetual(inst) => {
+                inst.calculate_notional_value(quantity, price, use_quote_for_inverse)
+            }
+            Self::CurrencyPair(inst) => {
+                inst.calculate_notional_value(quantity, price, use_quote_for_inverse)
+            }
+            Self::Equity(inst) => {
+                inst.calculate_notional_value(quantity, price, use_quote_for_inverse)
+            }
+            Self::FuturesContract(inst) => {
+                inst.calculate_notional_value(quantity, price, use_quote_for_inverse)
+            }
+            Self::FuturesSpread(inst) => {
+                inst.calculate_notional_value(quantity, price, use_quote_for_inverse)
+            }
+            Self::OptionsContract(inst) => {
+                inst.calculate_notional_value(quantity, price, use_quote_for_inverse)
+            }
+            Self::OptionsSpread(inst) => {
+                inst.calculate_notional_value(quantity, price, use_quote_for_inverse)
+            }
+        }
+    }
+
+    // #[deprecated(since = "0.21.0", note = "Will be removed in a future version")]
+    #[must_use]
+    pub fn maker_fee(&self) -> Decimal {
+        match self {
+            Self::CryptoFuture(inst) => inst.maker_fee(),
+            Self::CryptoPerpetual(inst) => inst.maker_fee(),
+            Self::CurrencyPair(inst) => inst.maker_fee(),
+            Self::Equity(inst) => inst.maker_fee(),
+            Self::FuturesContract(inst) => inst.maker_fee(),
+            Self::FuturesSpread(inst) => inst.maker_fee(),
+            Self::OptionsContract(inst) => inst.maker_fee(),
+            Self::OptionsSpread(inst) => inst.maker_fee(),
+        }
+    }
+
+    // #[deprecated(since = "0.21.0", note = "Will be removed in a future version")]
+    #[must_use]
+    pub fn taker_fee(&self) -> Decimal {
+        match self {
+            Self::CryptoFuture(inst) => inst.taker_fee(),
+            Self::CryptoPerpetual(inst) => inst.taker_fee(),
+            Self::CurrencyPair(inst) => inst.taker_fee(),
+            Self::Equity(inst) => inst.taker_fee(),
+            Self::FuturesContract(inst) => inst.taker_fee(),
+            Self::FuturesSpread(inst) => inst.taker_fee(),
+            Self::OptionsContract(inst) => inst.taker_fee(),
+            Self::OptionsSpread(inst) => inst.taker_fee(),
+        }
+    }
+}
+
+pub trait Instrument: 'static + Send {
+    fn into_any(self) -> InstrumentAny;
     fn id(&self) -> InstrumentId;
     fn symbol(&self) -> Symbol {
         self.id().symbol
@@ -97,12 +316,12 @@ pub trait Instrument: Any + 'static + Send {
     fn ts_event(&self) -> UnixNanos;
     fn ts_init(&self) -> UnixNanos;
 
-    /// Creates a new price from the given `value` with the correct price precision for the instrument.
+    /// Creates a new `Price` from the given `value` with the correct price precision for the instrument.
     fn make_price(&self, value: f64) -> anyhow::Result<Price> {
         Price::new(value, self.price_precision())
     }
 
-    /// Creates a new quantity from the given `value` with the correct size precision for the instrument.
+    /// Creates a new `Quantity` from the given `value` with the correct size precision for the instrument.
     fn make_qty(&self, value: f64) -> anyhow::Result<Quantity> {
         Quantity::new(value, self.size_precision())
     }
@@ -145,6 +364,4 @@ pub trait Instrument: Any + 'static + Send {
         let value = quantity.as_f64() * (1.0 / last_px.as_f64());
         Quantity::new(value, self.size_precision()).unwrap() // TODO: Handle error properly
     }
-
-    fn as_any(&self) -> &dyn Any;
 }

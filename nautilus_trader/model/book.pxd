@@ -17,6 +17,7 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport Level_API
 from nautilus_trader.core.rust.model cimport OrderBook_API
 from nautilus_trader.core.rust.model cimport OrderSide
@@ -33,11 +34,12 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class OrderBook(Data):
     cdef OrderBook_API _mem
+    cdef BookType _book_type
 
     cpdef void reset(self)
-    cpdef void add(self, BookOrder order, uint64_t ts_event, uint64_t sequence=*)
-    cpdef void update(self, BookOrder order, uint64_t ts_event, uint64_t sequence=*)
-    cpdef void delete(self, BookOrder order, uint64_t ts_event, uint64_t sequence=*)
+    cpdef void add(self, BookOrder order, uint64_t ts_event, uint8_t flags=*, uint64_t sequence=*)
+    cpdef void update(self, BookOrder order, uint64_t ts_event, uint8_t flags=*, uint64_t sequence=*)
+    cpdef void delete(self, BookOrder order, uint64_t ts_event, uint8_t flags=*, uint64_t sequence=*)
     cpdef void clear(self, uint64_t ts_event, uint64_t sequence=*)
     cpdef void clear_bids(self, uint64_t ts_event, uint64_t sequence=*)
     cpdef void clear_asks(self, uint64_t ts_event, uint64_t sequence=*)

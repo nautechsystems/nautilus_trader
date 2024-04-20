@@ -15,10 +15,7 @@
 
 use std::fmt::Display;
 
-use nautilus_model::{
-    orderbook::{book_mbo::OrderBookMbo, book_mbp::OrderBookMbp},
-    types::quantity::Quantity,
-};
+use nautilus_model::{orderbook::book::OrderBook, types::quantity::Quantity};
 
 use crate::indicator::Indicator;
 
@@ -54,11 +51,7 @@ impl Indicator for BookImbalanceRatio {
         self.initialized
     }
 
-    fn handle_book_mbo(&mut self, book: &OrderBookMbo) {
-        self.update(book.best_bid_size(), book.best_ask_size());
-    }
-
-    fn handle_book_mbp(&mut self, book: &OrderBookMbp) {
+    fn handle_book(&mut self, book: &OrderBook) {
         self.update(book.best_bid_size(), book.best_ask_size());
     }
 
@@ -112,8 +105,6 @@ mod tests {
 
     use super::*;
 
-    // TODO: Test `OrderBookMbo`: needs a good stub function
-
     #[rstest]
     fn test_initialized() {
         let imbalance = BookImbalanceRatio::new().unwrap();
@@ -129,7 +120,7 @@ mod tests {
     fn test_one_value_input_balanced() {
         let mut imbalance = BookImbalanceRatio::new().unwrap();
         let book = stub_order_book_mbp_appl_xnas();
-        imbalance.handle_book_mbp(&book);
+        imbalance.handle_book(&book);
 
         assert_eq!(imbalance.count, 1);
         assert_eq!(imbalance.value, 1.0);
@@ -141,7 +132,7 @@ mod tests {
     fn test_reset() {
         let mut imbalance = BookImbalanceRatio::new().unwrap();
         let book = stub_order_book_mbp_appl_xnas();
-        imbalance.handle_book_mbp(&book);
+        imbalance.handle_book(&book);
         imbalance.reset();
 
         assert_eq!(imbalance.count, 0);
@@ -165,7 +156,7 @@ mod tests {
             100.0,
             10,
         );
-        imbalance.handle_book_mbp(&book);
+        imbalance.handle_book(&book);
 
         assert_eq!(imbalance.count, 1);
         assert_eq!(imbalance.value, 0.5);
@@ -188,7 +179,7 @@ mod tests {
             100.0,
             10,
         );
-        imbalance.handle_book_mbp(&book);
+        imbalance.handle_book(&book);
 
         assert_eq!(imbalance.count, 1);
         assert_eq!(imbalance.value, 0.5);
@@ -211,9 +202,9 @@ mod tests {
             100.0,
             10,
         );
-        imbalance.handle_book_mbp(&book);
-        imbalance.handle_book_mbp(&book);
-        imbalance.handle_book_mbp(&book);
+        imbalance.handle_book(&book);
+        imbalance.handle_book(&book);
+        imbalance.handle_book(&book);
 
         assert_eq!(imbalance.count, 3);
         assert_eq!(imbalance.value, 0.5);

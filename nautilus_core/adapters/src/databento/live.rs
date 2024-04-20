@@ -31,15 +31,15 @@ use nautilus_model::{
         deltas::{OrderBookDeltas, OrderBookDeltas_API},
         Data,
     },
+    enums::RecordFlag,
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
-    instruments::InstrumentType,
+    instruments::InstrumentAny,
 };
 use tokio::{
     sync::mpsc::{self, error::TryRecvError},
     time::{timeout, Duration},
 };
 use tracing::{debug, error, info, trace};
-use ustr::Ustr;
 
 use super::{
     decode::{decode_imbalance_msg, decode_statistics_msg},
@@ -61,7 +61,7 @@ pub enum LiveCommand {
 #[allow(clippy::large_enum_variant)] // TODO: Optimize this (largest variant 1096 vs 80 bytes)
 pub enum LiveMessage {
     Data(Data),
-    Instrument(InstrumentType),
+    Instrument(InstrumentAny),
     Imbalance(DatabentoImbalance),
     Statistics(DatabentoStatistics),
     Error(anyhow::Error),
@@ -267,12 +267,12 @@ impl DatabentoFeedHandler {
                         );
 
                         // Check if last message in the packet
-                        if msg.flags & dbn::flags::LAST == 0 {
+                        if !RecordFlag::F_LAST.matches(msg.flags) {
                             continue; // NOT last message
                         }
 
                         // Check if snapshot
-                        if msg.flags & dbn::flags::SNAPSHOT != 0 {
+                        if RecordFlag::F_SNAPSHOT.matches(msg.flags) {
                             continue; // Buffer snapshot
                         }
 
@@ -356,9 +356,7 @@ fn update_instrument_id_map(
         .get_for_rec(record)
         .expect("Cannot resolve `raw_symbol` from `symbol_map`");
 
-    let symbol = Symbol {
-        value: Ustr::from(raw_symbol),
-    };
+    let symbol = Symbol::from_str_unchecked(raw_symbol);
 
     let publisher_id = header.publisher_id;
     let venue = publisher_venue_map
@@ -374,13 +372,10 @@ fn handle_instrument_def_msg(
     msg: &dbn::InstrumentDefMsg,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     clock: &AtomicTime,
-) -> anyhow::Result<InstrumentType> {
+) -> anyhow::Result<InstrumentAny> {
     let c_str: &CStr = unsafe { CStr::from_ptr(msg.raw_symbol.as_ptr()) };
     let raw_symbol: &str = c_str.to_str().map_err(to_pyvalue_err)?;
-
-    let symbol = Symbol {
-        value: Ustr::from(raw_symbol),
-    };
+    let symbol = Symbol::from(raw_symbol);
 
     let publisher_id = msg.header().publisher_id;
     let venue = publisher_venue_map

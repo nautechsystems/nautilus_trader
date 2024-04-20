@@ -753,6 +753,12 @@ class PriceType(Enum):
     MID = "MID"
     LAST = "LAST"
 
+class RecordFlag(Enum):
+    F_LAST = "F_LAST"
+    F_TOB = "F_TOB"
+    F_SNAPSHOT = "F_SNAPSHOT"
+    F_MBP = "F_MBP"
+
 class TimeInForce(Enum):
     GTC = "GTC"
     IOC = "IOC"
@@ -952,10 +958,41 @@ class LimitOrder:
     def is_primary(self) -> bool: ...
     @property
     def is_spawned(self) -> bool: ...
+    @classmethod
     def from_dict(cls, values: dict[str, str]) -> LimitOrder: ...
 
 
-class LimitIfTouchedOrder: ...
+class LimitIfTouchedOrder:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        trigger_price: Price,
+        trigger_type: TriggerType,
+        time_in_force: TimeInForce,
+        post_only: bool,
+        reduce_only: bool,
+        quote_quantity: bool,
+        init_id: UUID4,
+        ts_init: int,
+        expire_time: int | None = None,
+        display_qty: Quantity | None = None,
+        emulation_trigger: TriggerType | None = None,
+        trigger_instrument_id: InstrumentId | None = None,
+        contingency_type: ContingencyType | None = None,
+        order_list_id: OrderListId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
+        exec_algorithm_id: ExecAlgorithmId | None = None,
+        exec_algorithm_params: dict[str, str] | None = None,
+        exec_spawn_id: ClientOrderId | None = None,
+        tags: str | None = None,
+    ) -> None: ...
 
 class MarketOrder:
     def __init__(
@@ -968,19 +1005,21 @@ class MarketOrder:
         quantity: Quantity,
         init_id: UUID4,
         ts_init: int,
-        time_in_force: TimeInForce = ...,
-        reduce_only: bool = False,
-        quote_quantity: bool = False,
+        time_in_force: TimeInForce,
+        reduce_only: bool,
+        quote_quantity: bool,
         contingency_type: ContingencyType | None = None,
         order_list_id: OrderListId | None = None,
         linked_order_ids: list[ClientOrderId] | None = None,
-        parent_order_id: ClientOrderId | None = None,
+        parent_order_id: ClientOrderId | None  = None,
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, str] | None = None,
         exec_spawn_id: ClientOrderId | None = None,
         tags: str | None = None,
     ) -> None: ...
     def to_dict(self) -> dict[str, str]: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> MarketOrder: ...
     @staticmethod
     def opposite_side(side: OrderSide) -> OrderSide: ...
     @staticmethod
@@ -1014,11 +1053,235 @@ class MarketOrder:
     @property
     def price(self) -> Price | None: ...
 
-class MarketToLimitOrder: ...
-class StopLimitOrder: ...
-class StopMarketOrder: ...
-class TrailingStopLimitOrder: ...
-class TrailingStopMarketOrder: ...
+class MarketToLimitOrder:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        post_only: bool,
+        reduce_only: bool,
+        quote_quantity: bool,
+        init_id: UUID4,
+        ts_init: int,
+        expire_time: int | None = None,
+        display_qty: Quantity | None = None,
+        contingency_type: ContingencyType | None = None,
+        order_list_id: OrderListId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
+        exec_algorithm_id: ExecAlgorithmId | None = None,
+        exec_algorithm_params: dict[str, str] | None = None,
+        exec_spawn_id: ClientOrderId | None = None,
+        tags: str | None = None,
+    ): ...
+
+class MarketIfTouchedOrder:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        trigger_price: Price,
+        trigger_type: TriggerType,
+        time_in_force: TimeInForce,
+        reduce_only: bool,
+        quote_quantity: bool,
+        init_id: UUID4,
+        ts_init: int,
+        expire_time: int | None = None,
+        display_qty: Quantity | None = None,
+        emulation_trigger: TriggerType | None = None,
+        trigger_instrument_id: InstrumentId | None = None,
+        contingency_type: ContingencyType | None = None,
+        order_list_id: OrderListId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
+        exec_algorithm_id: ExecAlgorithmId | None = None,
+        exec_algorithm_params: dict[str, str] | None = None,
+        exec_spawn_id: ClientOrderId | None = None,
+        tags: str | None = None,
+    ): ...
+class StopLimitOrder:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        trigger_price: Price,
+        trigger_type: TriggerType,
+        time_in_force: TimeInForce,
+        post_only: bool,
+        reduce_only: bool,
+        quote_quantity: bool,
+        init_id: UUID4,
+        ts_init: int,
+        expire_time: int | None = None,
+        display_qty: Quantity | None = None,
+        emulation_trigger: TriggerType | None = None,
+        trigger_instrument_id: InstrumentId | None = None,
+        contingency_type: ContingencyType | None = None,
+        order_list_id: OrderListId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
+        exec_algorithm_id: ExecAlgorithmId | None = None,
+        exec_algorithm_params: dict[str, str] | None = None,
+        exec_spawn_id: ClientOrderId | None = None,
+        tags: str | None = None,
+    ): ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> StopLimitOrder: ...
+    def to_dict(self) -> dict[str, str]: ...
+    @property
+    def trader_id(self) -> TraderId: ...
+    @property
+    def strategy_id(self) -> StrategyId: ...
+    @property
+    def instrument_id(self) -> InstrumentId: ...
+    @property
+    def client_order_id(self) -> ClientOrderId: ...
+    @property
+    def order_type(self) -> OrderType: ...
+    @property
+    def side(self) -> OrderSide: ...
+    @property
+    def quantity(self) -> Quantity: ...
+    @property
+    def price(self) -> Price: ...
+    @property
+    def trigger_price(self) -> Price: ...
+    @property
+    def trigger_type(self) -> TriggerType: ...
+    @property
+    def time_in_force(self) -> TimeInForce: ...
+    @property
+    def is_post_only(self) -> bool: ...
+    @property
+    def is_reduce_only(self) -> bool: ...
+    @property
+    def is_quote_quantity(self) -> bool: ...
+    @property
+    def is_passive(self) -> bool: ...
+    @property
+    def is_aggressive(self) -> bool: ...
+    @property
+    def is_closed(self) -> bool: ...
+    @property
+    def is_open(self) -> bool: ...
+    @property
+    def status(self) -> OrderStatus: ...
+    @property
+    def has_price(self) -> bool: ...
+    @property
+    def has_trigger_price(self) -> bool: ...
+    @property
+    def expire_time(self) -> int | None: ...
+
+class StopMarketOrder:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        trigger_price: Price,
+        trigger_type: TriggerType,
+        time_in_force: TimeInForce,
+        reduce_only: bool,
+        quote_quantity: bool,
+        init_id: UUID4,
+        ts_init: int,
+        expire_time: int | None = None,
+        display_qty: Quantity | None = None,
+        emulation_trigger: TriggerType | None = None,
+        trigger_instrument_id: InstrumentId | None = None,
+        contingency_type: ContingencyType | None = None,
+        order_list_id: OrderListId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
+        exec_algorithm_id: ExecAlgorithmId | None = None,
+        exec_algorithm_params: dict[str, str] | None = None,
+        exec_spawn_id: ClientOrderId | None = None,
+        tags: str | None = None,
+    ): ...
+class TrailingStopLimitOrder:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        trigger_price: Price,
+        trigger_type: TriggerType,
+        limit_offset: Price,
+        trailing_offset: Price,
+        trailing_offset_type: TrailingOffsetType,
+        time_in_force: TimeInForce,
+        post_only: bool,
+        reduce_only: bool,
+        quote_quantity: bool,
+        init_id: UUID4,
+        ts_init: int,
+        expire_time: int | None = None,
+        display_qty: Quantity | None = None,
+        emulation_trigger: TriggerType | None = None,
+        trigger_instrument_id: InstrumentId | None = None,
+        contingency_type: ContingencyType | None = None,
+        order_list_id: OrderListId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
+        exec_algorithm_id: ExecAlgorithmId | None = None,
+        exec_algorithm_params: dict[str, str] | None = None,
+        exec_spawn_id: ClientOrderId | None = None,
+        tags: str | None = None,
+    ): ...
+class TrailingStopMarketOrder:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        trigger_price: Price,
+        trigger_type: TriggerType,
+        trailing_offset: Price,
+        trailing_offset_type: TrailingOffsetType,
+        time_in_force: TimeInForce,
+        reduce_only: bool,
+        quote_quantity: bool,
+        init_id: UUID4,
+        ts_init: int,
+        expire_time: int | None = None,
+        display_qty: Quantity | None = None,
+        emulation_trigger: TriggerType | None = None,
+        trigger_instrument_id: InstrumentId | None = None,
+        contingency_type: ContingencyType | None = None,
+        order_list_id: OrderListId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
+        exec_algorithm_id: ExecAlgorithmId | None = None,
+        exec_algorithm_params: dict[str, str] | None = None,
+        exec_spawn_id: ClientOrderId | None = None,
+        tags: str | None = None,
+    ): ...
 
 ### Objects
 
@@ -1126,7 +1389,7 @@ class AccountState:
         self,
         account_id: AccountId,
         account_type: AccountType,
-        base_currency: Currency,
+        base_currency: Currency | None,
         balances: list[AccountBalance],
         margins: list[MarginBalance],
         is_reported: bool,
@@ -1148,6 +1411,7 @@ class CryptoFuture:
         underlying: Currency,
         quote_currency: Currency,
         settlement_currency: Currency,
+        is_inverse: bool,
         activation_ns: int,
         expiration_ns: int,
         price_precision: int,
@@ -1867,50 +2131,11 @@ class Level:
     def first(self) -> BookOrder | None: ...
     def get_orders(self) -> list[BookOrder]: ...
 
-class OrderBookMbo:
-    def __init__(self, instrument_id: InstrumentId) -> None: ...
-    @property
-    def instrument_id(self) -> InstrumentId: ...
-    @property
-    def book_type(self) -> BookType: ...
-    @property
-    def sequence(self) -> int: ...
-    @property
-    def ts_event(self) -> int: ...
-    @property
-    def ts_init(self) -> int: ...
-    @property
-    def ts_last(self) -> int: ...
-    @property
-    def count(self) -> int: ...
-    def reset(self) -> None: ...
-    def update(self, order: BookOrder, ts_event: int, sequence: int = 0) -> None: ...
-    def delete(self, order: BookOrder, ts_event: int, sequence: int = 0) -> None: ...
-    def clear(self, ts_event: int, sequence: int = 0) -> None: ...
-    def clear_bids(self, ts_event: int, sequence: int = 0) -> None: ...
-    def clear_asks(self, ts_event: int, sequence: int = 0) -> None: ...
-    def apply_delta(self, delta: OrderBookDelta) -> None: ...
-    def apply_deltas(self, deltas: OrderBookDeltas) -> None: ...
-    def apply_depth(self, depth: OrderBookDepth10) -> None: ...
-    def check_integrity(self) -> None: ...
-    def bids(self) -> list[Level]: ...
-    def asks(self) -> list[Level]: ...
-    def best_bid_price(self) -> Price | None: ...
-    def best_ask_price(self) -> Price | None: ...
-    def best_bid_size(self) -> Quantity | None: ...
-    def best_ask_size(self) -> Quantity | None: ...
-    def spread(self) -> float | None: ...
-    def midpoint(self) -> float | None: ...
-    def get_avg_px_for_quantity(self, qty: Quantity, order_side: OrderSide) -> float: ...
-    def get_quantity_for_price(self, price: Price, order_side: OrderSide) -> float: ...
-    def simulate_fills(self, order: BookOrder) -> list[tuple[Price, Quantity]]: ...
-    def pprint(self, num_levels: int) -> str: ...
-
-class OrderBookMbp:
+class OrderBook:
     def __init__(
         self,
+        book_type: BookType,
         instrument_id: InstrumentId,
-        top_only: bool = False,
     ) -> None: ...
     @property
     def instrument_id(self) -> InstrumentId: ...
@@ -1927,17 +2152,15 @@ class OrderBookMbp:
     @property
     def count(self) -> int: ...
     def reset(self) -> None: ...
-    def update(self, order: BookOrder, ts_event: int, sequence: int = 0) -> None: ...
-    def update_quote_tick(self, quote: QuoteTick) -> None: ...
-    def update_trade_tick(self, trade: TradeTick) -> None: ...
-    def delete(self, order: BookOrder, ts_event: int, sequence: int = 0) -> None: ...
-    def clear(self, ts_event: int, sequence: int = 0) -> None: ...
-    def clear_bids(self, ts_event: int, sequence: int = 0) -> None: ...
-    def clear_asks(self, ts_event: int, sequence: int = 0) -> None: ...
+    def add(self, order: BookOrder, flags: int, sequence: int, ts_event: int) -> None: ...
+    def update(self, order: BookOrder, flags: int, sequence: int, ts_event: int) -> None: ...
+    def delete(self, order: BookOrder, flags: int, sequence: int, ts_event: int) -> None: ...
+    def clear(self, sequence: int,  ts_event: int) -> None: ...
+    def clear_bids(self, sequence: int, ts_event: int) -> None: ...
+    def clear_asks(self, sequence: int, ts_event: int) -> None: ...
     def apply_delta(self, delta: OrderBookDelta) -> None: ...
     def apply_deltas(self, deltas: OrderBookDeltas) -> None: ...
     def apply_depth(self, depth: OrderBookDepth10) -> None: ...
-    def check_integrity(self) -> None: ...
     def bids(self) -> list[Level]: ...
     def asks(self) -> list[Level]: ...
     def best_bid_price(self) -> Price | None: ...
@@ -1951,14 +2174,28 @@ class OrderBookMbp:
     def simulate_fills(self, order: BookOrder) -> list[tuple[Price, Quantity]]: ...
     def pprint(self, num_levels: int) -> str: ...
 
+def update_book_with_quote_tick(book: OrderBook, quote: QuoteTick) -> None: ...
+def update_book_with_trade_tick(book: OrderBook, trade: TradeTick) -> None: ...
+
 ###################################################################################################
 # Infrastructure
 ###################################################################################################
+
+class RedisMessageBusDatabase:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        instance_id: UUID4,
+        config_json: bytes,  # TODO: Standardize this back to `dict[str, Any]`
+    ) -> None: ...
+    def publish(self, topic: str, payload: bytes) -> None: ...
+    def close(self) -> None: ...
 
 class RedisCacheDatabase:
     def __init__(
         self,
         trader_id: TraderId,
+        instance_id: UUID4,
         config: dict[str, Any],
     ) -> None: ...
 
@@ -2369,6 +2606,28 @@ class AroonOscillator:
     def handle_bar(self, bar: Bar) -> None: ...
     def reset(self) -> None: ...
 
+class Bias:
+    def __init__(
+        self,
+        period: int,
+        ma_type: MovingAverageType = ...,
+    ) -> None: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def period(self) -> int: ...
+    @property
+    def count(self) -> int: ...
+    @property
+    def initialized(self) -> bool: ...
+    @property
+    def has_inputs(self) -> bool: ...
+    @property
+    def value(self) -> float: ...
+    def update_raw(self, close: float) -> None: ...
+    def handle_bar(self, bar: Bar) -> None: ...
+    def reset(self) -> None: ...
+
 class AverageTrueRange:
     def __init__(
         self,
@@ -2407,8 +2666,7 @@ class BookImbalanceRatio:
     def has_inputs(self) -> bool: ...
     @property
     def value(self) -> float: ...
-    def handle_book_mbo(self, book: OrderBookMbo) -> None:...
-    def handle_book_mbp(self, book: OrderBookMbp) -> None:...
+    def handle_book(self, book: OrderBook) -> None:...
     def update(self, best_bid: Quantity | None, best_ask: Quantity) -> None: ...
     def reset(self) -> None: ...
 
