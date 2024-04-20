@@ -1,6 +1,6 @@
 # NautilusTrader 1.191.0 Beta
 
-Released on TBD (UTC).
+Released on 20th April 2024 (UTC).
 
 ### Enhancements
 - Implemented `FeeModel` including `FixedFeeModel` and `MakerTakerFeeModel` (#1584), thanks @rsmb7z
