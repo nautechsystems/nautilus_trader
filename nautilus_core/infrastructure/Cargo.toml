@@ -20,6 +20,7 @@ redis = { workspace = true, optional = true }
 rmp-serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = {workspace = true }
+sqlx = { version = "0.7.4", features = ["sqlite", "postgres", "any", "runtime-tokio"] }
 
 [dev-dependencies]
 rstest = { workspace = true }

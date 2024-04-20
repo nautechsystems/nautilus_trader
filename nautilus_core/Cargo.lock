@@ -2638,6 +2638,7 @@ dependencies = [
  "rmp-serde",
  "rstest",
  "serde_json",
+ "sqlx",
  "tracing",
 ]
 
@@ -2662,7 +2663,6 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "sqlx",
  "strum",
  "tabled",
  "thiserror",
@@ -2714,7 +2714,6 @@ dependencies = [
  "quickcheck_macros",
  "rand",
  "rstest",
- "sqlx",
  "thiserror",
  "tokio",
 ]
