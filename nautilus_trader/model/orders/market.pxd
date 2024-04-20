@@ -21,7 +21,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class MarketOrder(Order):
     @staticmethod
-    cdef MarketOrder create(OrderInitialized init)
+    cdef MarketOrder create_c(OrderInitialized init)
 
     @staticmethod
     cdef MarketOrder transform(Order order, uint64_t ts_init)

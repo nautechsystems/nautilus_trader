@@ -310,7 +310,7 @@ cdef class StopMarketOrder(Order):
         }
 
     @staticmethod
-    cdef StopMarketOrder create(OrderInitialized init):
+    cdef StopMarketOrder create_c(OrderInitialized init):
         """
         Return a `Stop-Market` order from the given initialized event.
 
@@ -358,3 +358,7 @@ cdef class StopMarketOrder(Order):
             exec_spawn_id=init.exec_spawn_id,
             tags=init.tags,
         )
+
+    @staticmethod
+    def create(init):
+        return StopMarketOrder.create_c(init)

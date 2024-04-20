@@ -30,4 +30,4 @@ cdef class MarketToLimitOrder(Order):
     """The quantity of the limit order to display on the public book (iceberg).\n\n:returns: `Quantity` or ``None``"""
 
     @staticmethod
-    cdef MarketToLimitOrder create(OrderInitialized init)
+    cdef MarketToLimitOrder create_c(OrderInitialized init)

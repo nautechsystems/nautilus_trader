@@ -381,7 +381,7 @@ cdef class StopLimitOrder(Order):
         }
 
     @staticmethod
-    cdef StopLimitOrder create(OrderInitialized init):
+    cdef StopLimitOrder create_c(OrderInitialized init):
         """
         Return a `Stop-Limit` order from the given initialized event.
 
@@ -434,3 +434,7 @@ cdef class StopLimitOrder(Order):
             exec_spawn_id=init.exec_spawn_id,
             tags=init.tags,
         )
+
+    @staticmethod
+    def create(init):
+        return StopLimitOrder.create_c(init)
