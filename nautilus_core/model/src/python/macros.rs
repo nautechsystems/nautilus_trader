@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides macros.
+
 #[macro_export]
 macro_rules! identifier_for_python {
     ($ty:ty) => {

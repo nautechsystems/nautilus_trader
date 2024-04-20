@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines common serialization traits.
+
 use serde::{Deserialize, Serialize};
 
 /// Represents types which are serializable for JSON and `MsgPack` specifications.

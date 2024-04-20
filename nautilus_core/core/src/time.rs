@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides the core `AtomicTime` real-time and static clocks.
+
 use std::{
     ops::Deref,
     sync::{

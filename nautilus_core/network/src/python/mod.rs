@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides Python bindings from `pyo3`.
+
 use pyo3::prelude::*;
 
 use crate::{http, ratelimiter, socket, websocket};

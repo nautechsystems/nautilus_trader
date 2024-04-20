@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines identifiers the trading domain model.
+
 use std::str::FromStr;
 
 use nautilus_core::python::to_pyvalue_err;

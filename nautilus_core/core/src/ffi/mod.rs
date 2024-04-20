@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides a C foreign function interface (FFI) from `cbindgen`.
+
 pub mod cvec;
 pub mod datetime;
 pub mod parsing;

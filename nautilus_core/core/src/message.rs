@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines common message types.
+
 use crate::{nanos::UnixNanos, uuid::UUID4};
 
 #[derive(Debug, Clone)]
