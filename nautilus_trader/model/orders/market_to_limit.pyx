@@ -282,7 +282,7 @@ cdef class MarketToLimitOrder(Order):
         }
 
     @staticmethod
-    cdef MarketToLimitOrder create(OrderInitialized init):
+    cdef MarketToLimitOrder create_c(OrderInitialized init):
         """
         Return a `Market-To-Limit` order from the given initialized event.
 
@@ -329,3 +329,7 @@ cdef class MarketToLimitOrder(Order):
             exec_spawn_id=init.exec_spawn_id,
             tags=init.tags,
         )
+
+    @staticmethod
+    def create(init):
+        return MarketToLimitOrder.create_c(init)

@@ -305,7 +305,7 @@ cdef class MarketIfTouchedOrder(Order):
         }
 
     @staticmethod
-    cdef MarketIfTouchedOrder create(OrderInitialized init):
+    cdef MarketIfTouchedOrder create_c(OrderInitialized init):
         """
         Return a `Market-If-Touched` order from the given initialized event.
 
@@ -353,3 +353,7 @@ cdef class MarketIfTouchedOrder(Order):
             exec_spawn_id=init.exec_spawn_id,
             tags=init.tags,
         )
+
+    @staticmethod
+    def create(init):
+        return MarketIfTouchedOrder.create_c(init)

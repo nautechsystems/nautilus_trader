@@ -42,23 +42,23 @@ cdef class OrderUnpacker:
     @staticmethod
     cdef Order from_init_c(OrderInitialized init):
         if init.order_type == OrderType.MARKET:
-            return MarketOrder.create(init=init)
+            return MarketOrder.create_c(init=init)
         elif init.order_type == OrderType.LIMIT:
-            return LimitOrder.create(init=init)
+            return LimitOrder.create_c(init=init)
         elif init.order_type == OrderType.STOP_MARKET:
-            return StopMarketOrder.create(init=init)
+            return StopMarketOrder.create_c(init=init)
         elif init.order_type == OrderType.STOP_LIMIT:
-            return StopLimitOrder.create(init=init)
+            return StopLimitOrder.create_c(init=init)
         elif init.order_type == OrderType.MARKET_TO_LIMIT:
-            return MarketToLimitOrder.create(init=init)
+            return MarketToLimitOrder.create_c(init=init)
         elif init.order_type == OrderType.MARKET_IF_TOUCHED:
-            return MarketIfTouchedOrder.create(init=init)
+            return MarketIfTouchedOrder.create_c(init=init)
         elif init.order_type == OrderType.LIMIT_IF_TOUCHED:
-            return LimitIfTouchedOrder.create(init=init)
+            return LimitIfTouchedOrder.create_c(init=init)
         elif init.order_type == OrderType.TRAILING_STOP_MARKET:
-            return TrailingStopMarketOrder.create(init=init)
+            return TrailingStopMarketOrder.create_c(init=init)
         elif init.order_type == OrderType.TRAILING_STOP_LIMIT:
-            return TrailingStopLimitOrder.create(init=init)
+            return TrailingStopLimitOrder.create_c(init=init)
         else:
             raise RuntimeError("invalid `OrderType`")  # pragma: no cover (design-time error)
 

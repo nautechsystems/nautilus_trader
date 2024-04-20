@@ -319,7 +319,7 @@ cdef class TrailingStopMarketOrder(Order):
         }
 
     @staticmethod
-    cdef TrailingStopMarketOrder create(OrderInitialized init):
+    cdef TrailingStopMarketOrder create_c(OrderInitialized init):
         """
         Return a `Trailing-Stop-Market` order from the given initialized event.
 
@@ -371,3 +371,7 @@ cdef class TrailingStopMarketOrder(Order):
             exec_spawn_id=init.exec_spawn_id,
             tags=init.tags,
         )
+
+    @staticmethod
+    def create(init):
+        return TrailingStopMarketOrder.create_c(init)
