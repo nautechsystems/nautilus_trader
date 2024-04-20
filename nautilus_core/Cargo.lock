@@ -2662,6 +2662,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
+ "sqlx",
  "strum",
  "tabled",
  "thiserror",
