@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::hash::{Hash, Hasher};
+use std::{
+    hash::{Hash, Hasher},
+    str::FromStr,
+};
 
 use nautilus_core::{
     correctness::{check_equal_u8, check_positive_i64, check_positive_u64},
@@ -21,10 +24,12 @@ use nautilus_core::{
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use sqlx::{postgres::PgRow, FromRow, Row};
+use ustr::Ustr;
 
 use super::{Instrument, InstrumentAny};
 use crate::{
-    enums::{AssetClass, InstrumentClass},
+    enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
@@ -160,6 +165,9 @@ impl Instrument for CurrencyPair {
     fn instrument_class(&self) -> InstrumentClass {
         InstrumentClass::Spot
     }
+    fn underlying(&self) -> Option<Ustr> {
+        None
+    }
 
     fn quote_currency(&self) -> Currency {
         self.quote_currency
@@ -171,6 +179,9 @@ impl Instrument for CurrencyPair {
 
     fn settlement_currency(&self) -> Currency {
         self.quote_currency
+    }
+    fn isin(&self) -> Option<Ustr> {
+        None
     }
 
     fn is_inverse(&self) -> bool {
@@ -240,6 +251,129 @@ impl Instrument for CurrencyPair {
 
     fn maker_fee(&self) -> Decimal {
         self.maker_fee
+    }
+
+    fn option_kind(&self) -> Option<OptionKind> {
+        None
+    }
+
+    fn exchange(&self) -> Option<Ustr> {
+        None
+    }
+
+    fn strike_price(&self) -> Option<Price> {
+        None
+    }
+
+    fn activation_ns(&self) -> Option<UnixNanos> {
+        None
+    }
+
+    fn expiration_ns(&self) -> Option<UnixNanos> {
+        None
+    }
+
+    fn max_notional(&self) -> Option<Money> {
+        self.max_notional
+    }
+
+    fn min_notional(&self) -> Option<Money> {
+        self.min_notional
+    }
+}
+
+impl<'r> FromRow<'r, PgRow> for CurrencyPair {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let id = row
+            .try_get::<String, _>("id")
+            .map(|res| InstrumentId::from(res.as_str()))?;
+        let raw_symbol = row
+            .try_get::<String, _>("raw_symbol")
+            .map(|res| Symbol::from(res.as_str()))?;
+        let base_currency = row
+            .try_get::<String, _>("base_currency")
+            .map(|res| Currency::from(res.as_str()))?;
+        let quote_currency = row
+            .try_get::<String, _>("quote_currency")
+            .map(|res| Currency::from(res.as_str()))?;
+        let price_precision = row.try_get::<i32, _>("price_precision")?;
+        let size_precision = row.try_get::<i32, _>("size_precision")?;
+        let price_increment = row
+            .try_get::<String, _>("price_increment")
+            .map(|res| Price::from(res.as_str()))?;
+        let size_increment = row
+            .try_get::<String, _>("size_increment")
+            .map(|res| Quantity::from(res.as_str()))?;
+        let maker_fee = row
+            .try_get::<String, _>("maker_fee")
+            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
+        let taker_fee = row
+            .try_get::<String, _>("taker_fee")
+            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
+        let margin_init = row
+            .try_get::<String, _>("margin_init")
+            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
+        let margin_maint = row
+            .try_get::<String, _>("margin_maint")
+            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
+        let lot_size = row
+            .try_get::<Option<String>, _>("lot_size")
+            .ok()
+            .and_then(|res| res.map(|res| Quantity::from(res.as_str())));
+        let max_quantity = row
+            .try_get::<Option<String>, _>("max_quantity")
+            .ok()
+            .and_then(|res| res.map(|res| Quantity::from(res.as_str())));
+        let min_quantity = row
+            .try_get::<Option<String>, _>("min_quantity")
+            .ok()
+            .and_then(|res| res.map(|res| Quantity::from(res.as_str())));
+        let max_notional = row
+            .try_get::<Option<String>, _>("max_notional")
+            .ok()
+            .and_then(|res| res.map(|res| Money::from(res.as_str())));
+        let min_notional = row
+            .try_get::<Option<String>, _>("min_notional")
+            .ok()
+            .and_then(|res| res.map(|res| Money::from(res.as_str())));
+        let max_price = row
+            .try_get::<Option<String>, _>("max_price")
+            .ok()
+            .and_then(|res| res.map(|res| Price::from(res.as_str())));
+        let min_price = row
+            .try_get::<Option<String>, _>("min_price")
+            .ok()
+            .and_then(|res| res.map(|res| Price::from(res.as_str())));
+        let ts_event = row
+            .try_get::<String, _>("ts_event")
+            .map(|res| UnixNanos::from(res.as_str()))?;
+        let ts_init = row
+            .try_get::<String, _>("ts_init")
+            .map(|res| UnixNanos::from(res.as_str()))?;
+        Ok(Self::new(
+            id,
+            raw_symbol,
+            base_currency,
+            quote_currency,
+            price_precision as u8,
+            size_precision as u8,
+            price_increment,
+            size_increment,
+            taker_fee,
+            maker_fee,
+            margin_init,
+            margin_maint,
+            lot_size,
+            max_quantity,
+            min_quantity,
+            max_notional,
+            min_notional,
+            max_price,
+            min_price,
+            ts_event,
+            ts_init,
+        )
+        .unwrap())
     }
 }
 

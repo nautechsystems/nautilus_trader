@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::hash::{Hash, Hasher};
+use std::{
+    hash::{Hash, Hasher},
+    str::FromStr,
+};
 
 use nautilus_core::{
     correctness::{
@@ -23,13 +26,14 @@ use nautilus_core::{
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use sqlx::{postgres::PgRow, FromRow, Row};
 use ustr::Ustr;
 
 use super::{Instrument, InstrumentAny};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
-    types::{currency::Currency, price::Price, quantity::Quantity},
+    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
 #[repr(C)]
@@ -166,17 +170,44 @@ impl Instrument for OptionsContract {
     fn instrument_class(&self) -> InstrumentClass {
         InstrumentClass::Option
     }
-
-    fn quote_currency(&self) -> Currency {
-        self.currency
+    fn underlying(&self) -> Option<Ustr> {
+        Some(self.underlying)
     }
 
     fn base_currency(&self) -> Option<Currency> {
         None
     }
 
+    fn quote_currency(&self) -> Currency {
+        self.currency
+    }
+
     fn settlement_currency(&self) -> Currency {
         self.currency
+    }
+
+    fn isin(&self) -> Option<Ustr> {
+        None
+    }
+
+    fn option_kind(&self) -> Option<OptionKind> {
+        Some(self.option_kind)
+    }
+
+    fn exchange(&self) -> Option<Ustr> {
+        self.exchange
+    }
+
+    fn strike_price(&self) -> Option<Price> {
+        Some(self.strike_price)
+    }
+
+    fn activation_ns(&self) -> Option<UnixNanos> {
+        Some(self.activation_ns)
+    }
+
+    fn expiration_ns(&self) -> Option<UnixNanos> {
+        Some(self.expiration_ns)
     }
 
     fn is_inverse(&self) -> bool {
@@ -215,6 +246,14 @@ impl Instrument for OptionsContract {
         self.min_quantity
     }
 
+    fn max_notional(&self) -> Option<Money> {
+        None
+    }
+
+    fn min_notional(&self) -> Option<Money> {
+        None
+    }
+
     fn max_price(&self) -> Option<Price> {
         self.max_price
     }
@@ -229,6 +268,105 @@ impl Instrument for OptionsContract {
 
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
+    }
+}
+
+impl<'r> FromRow<'r, PgRow> for OptionsContract {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let id = row
+            .try_get::<String, _>("id")
+            .map(|res| InstrumentId::from(res.as_str()))?;
+        let raw_symbol = row
+            .try_get::<String, _>("raw_symbol")
+            .map(|res| Symbol::new(res.as_str()).unwrap())?;
+        let asset_class = row
+            .try_get::<String, _>("asset_class")
+            .map(|res| AssetClass::from_str(res.as_str()).unwrap())?;
+        let exchange = row
+            .try_get::<Option<String>, _>("exchange")
+            .map(|res| res.map(|s| Ustr::from(s.as_str())))?;
+        let underlying = row
+            .try_get::<String, _>("underlying")
+            .map(|res| Ustr::from(res.as_str()))?;
+        let option_kind = row
+            .try_get::<String, _>("option_kind")
+            .map(|res| OptionKind::from_str(res.as_str()).unwrap())?;
+        let activation_ns = row
+            .try_get::<String, _>("activation_ns")
+            .map(|res| UnixNanos::from(res.as_str()))?;
+        let expiration_ns = row
+            .try_get::<String, _>("expiration_ns")
+            .map(|res| UnixNanos::from(res.as_str()))?;
+        let strike_price = row
+            .try_get::<String, _>("strike_price")
+            .map(|res| Price::from_str(res.as_str()).unwrap())?;
+        let currency = row
+            .try_get::<String, _>("quote_currency")
+            .map(|res| Currency::from_str(res.as_str()).unwrap())?;
+        let price_precision = row.try_get::<i32, _>("price_precision").unwrap();
+        let price_increment = row
+            .try_get::<String, _>("price_increment")
+            .map(|res| Price::from_str(res.as_str()).unwrap())?;
+        let multiplier = row
+            .try_get::<String, _>("multiplier")
+            .map(|res| Quantity::from(res.as_str()))?;
+        let lot_size = row
+            .try_get::<String, _>("lot_size")
+            .map(|res| Quantity::from(res.as_str()))
+            .unwrap();
+        let max_quantity = row
+            .try_get::<Option<String>, _>("max_quantity")
+            .ok()
+            .and_then(|res| res.map(|s| Quantity::from(s.as_str())));
+        let min_quantity = row
+            .try_get::<Option<String>, _>("min_quantity")
+            .ok()
+            .and_then(|res| res.map(|s| Quantity::from(s.as_str())));
+        let max_price = row
+            .try_get::<Option<String>, _>("max_price")
+            .ok()
+            .and_then(|res| res.map(|s| Price::from(s.as_str())));
+        let min_price = row
+            .try_get::<Option<String>, _>("min_price")
+            .ok()
+            .and_then(|res| res.map(|s| Price::from(s.as_str())));
+        let margin_init = row
+            .try_get::<String, _>("margin_init")
+            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
+        let margin_maint = row
+            .try_get::<String, _>("margin_maint")
+            .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
+        let ts_event = row
+            .try_get::<String, _>("ts_event")
+            .map(|res| UnixNanos::from(res.as_str()))?;
+        let ts_init = row
+            .try_get::<String, _>("ts_init")
+            .map(|res| UnixNanos::from(res.as_str()))?;
+        Ok(Self::new(
+            id,
+            raw_symbol,
+            asset_class,
+            exchange,
+            underlying,
+            option_kind,
+            activation_ns,
+            expiration_ns,
+            strike_price,
+            currency,
+            price_precision as u8,
+            price_increment,
+            multiplier,
+            lot_size,
+            max_quantity,
+            min_quantity,
+            max_price,
+            min_price,
+            Some(margin_init),
+            Some(margin_maint),
+            ts_event,
+            ts_init,
+        )
+        .unwrap())
     }
 }
 
