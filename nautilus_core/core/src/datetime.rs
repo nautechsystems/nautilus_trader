@@ -95,6 +95,7 @@ pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
 }
 
 /// Floor the given UNIX nanoseconds to the nearest microsecond.
+#[must_use]
 pub fn floor_to_nearest_microsecond(unix_nanos: u64) -> u64 {
     (unix_nanos / NANOSECONDS_IN_MICROSECOND) * NANOSECONDS_IN_MICROSECOND
 }

@@ -42,6 +42,7 @@ pub struct StdoutWriter {
 }
 
 impl StdoutWriter {
+    #[must_use]
     pub fn new(level: LevelFilter, is_colored: bool) -> Self {
         Self {
             buf: BufWriter::new(io::stdout()),
@@ -79,6 +80,7 @@ pub struct StderrWriter {
 }
 
 impl StderrWriter {
+    #[must_use]
     pub fn new(is_colored: bool) -> Self {
         Self {
             buf: BufWriter::new(io::stderr()),
@@ -119,6 +121,7 @@ pub struct FileWriterConfig {
 }
 
 impl FileWriterConfig {
+    #[must_use]
     pub fn new(
         directory: Option<String>,
         file_name: Option<String>,
@@ -213,6 +216,7 @@ impl FileWriter {
         file_path
     }
 
+    #[must_use]
     pub fn should_rotate_file(&self) -> bool {
         let current_date_utc = Utc::now().date_naive();
         let metadata = self

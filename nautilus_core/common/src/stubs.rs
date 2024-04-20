@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::time::get_atomic_clock_static;
-use nautilus_model::identifiers::stubs::*;
+use nautilus_model::identifiers::stubs::{strategy_id_ema_cross, trader_id};
 use rstest::fixture;
 
 use crate::factories::OrderFactory;

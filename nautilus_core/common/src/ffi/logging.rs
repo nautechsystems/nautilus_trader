@@ -107,9 +107,9 @@ pub unsafe extern "C" fn logging_init(
         u8_as_bool(print_config),
     );
 
-    let directory = optional_cstr_to_str(directory_ptr).map(|s| s.to_string());
-    let file_name = optional_cstr_to_str(file_name_ptr).map(|s| s.to_string());
-    let file_format = optional_cstr_to_str(file_format_ptr).map(|s| s.to_string());
+    let directory = optional_cstr_to_str(directory_ptr).map(std::string::ToString::to_string);
+    let file_name = optional_cstr_to_str(file_name_ptr).map(std::string::ToString::to_string);
+    let file_format = optional_cstr_to_str(file_format_ptr).map(std::string::ToString::to_string);
     let file_config = FileWriterConfig::new(directory, file_name, file_format);
 
     if u8_as_bool(is_bypassed) {
@@ -170,11 +170,11 @@ pub unsafe extern "C" fn logging_log_header(
 #[no_mangle]
 pub unsafe extern "C" fn logging_log_sysinfo(component_ptr: *const c_char) {
     let component = cstr_to_ustr(component_ptr);
-    headers::log_sysinfo(component)
+    headers::log_sysinfo(component);
 }
 
 /// Flushes global logger buffers of any records.
 #[no_mangle]
 pub extern "C" fn logger_drop(log_guard: LogGuard_API) {
-    drop(log_guard)
+    drop(log_guard);
 }

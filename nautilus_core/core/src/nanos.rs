@@ -234,7 +234,7 @@ mod tests {
     #[rstest]
     fn test_edge_case_max_value() {
         let nanos = UnixNanos::from(u64::MAX);
-        assert_eq!(format!("{}", nanos), format!("{}", u64::MAX));
+        assert_eq!(format!("{nanos}"), format!("{}", u64::MAX));
     }
 
     #[rstest]

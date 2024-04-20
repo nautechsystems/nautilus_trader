@@ -61,6 +61,7 @@ pub struct TimeEvent {
 
 /// Assumes `name` is a valid string.
 impl TimeEvent {
+    #[must_use]
     pub fn new(name: Ustr, event_id: UUID4, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
         Self {
             name,
@@ -255,6 +256,7 @@ impl LiveTimer {
         })
     }
 
+    #[must_use]
     pub fn is_expired(&self) -> bool {
         self.is_expired.load(atomic::Ordering::SeqCst)
     }
@@ -299,7 +301,7 @@ impl LiveTimer {
                 assert!(
                     start_time_ns + interval_ns <= stop_time_ns,
                     "start_time + interval was > stop_time"
-                )
+                );
             };
 
             let mut timer = tokio::time::interval_at(start, Duration::from_nanos(interval_ns));
@@ -364,7 +366,7 @@ fn call_python_with_time_event(
             Ok(_) => {}
             Err(e) => error!("Error on callback: {:?}", e),
         };
-    })
+    });
 }
 
 #[cfg(not(feature = "python"))]
