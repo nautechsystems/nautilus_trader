@@ -82,6 +82,12 @@ macro_rules! identifier_for_python {
             fn py_value(&self) -> String {
                 self.to_string()
             }
+
+            #[staticmethod]
+            #[pyo3(name = "from_str")]
+            fn py_from_str(value: &str) -> PyResult<Self> {
+                Self::from_str(value).map_err(to_pyvalue_err)
+            }
         }
     };
 }
