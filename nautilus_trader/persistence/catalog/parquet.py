@@ -337,7 +337,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 return name, obj.instrument_id.value
             return name, None
 
-        def obj_to_type(obj) -> type:
+        def obj_to_type(obj: Data) -> type:
             return type(obj) if not isinstance(obj, CustomData) else obj.data.__class__
 
         name_to_cls = {cls.__name__: cls for cls in {obj_to_type(d) for d in data}}
