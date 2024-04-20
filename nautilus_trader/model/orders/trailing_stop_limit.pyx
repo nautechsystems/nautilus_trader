@@ -356,7 +356,7 @@ cdef class TrailingStopLimitOrder(Order):
         }
 
     @staticmethod
-    cdef TrailingStopLimitOrder create(OrderInitialized init):
+    cdef TrailingStopLimitOrder create_c(OrderInitialized init):
         """
         Return a `Trailing-Stop-Limit` order from the given initialized event.
 
@@ -414,3 +414,7 @@ cdef class TrailingStopLimitOrder(Order):
             exec_spawn_id=init.exec_spawn_id,
             tags=init.tags,
         )
+
+    @staticmethod
+    def create(init):
+        return TrailingStopLimitOrder.create_c(init)

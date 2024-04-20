@@ -266,7 +266,7 @@ cdef class MarketOrder(Order):
         }
 
     @staticmethod
-    cdef MarketOrder create(OrderInitialized init):
+    cdef MarketOrder create_c(OrderInitialized init):
         """
         Return a `market` order from the given initialized event.
 
@@ -309,6 +309,10 @@ cdef class MarketOrder(Order):
             exec_spawn_id=init.exec_spawn_id,
             tags=init.tags,
         )
+
+    @staticmethod
+    def create(init):
+        return MarketOrder.create_c(init)
 
     @staticmethod
     cdef MarketOrder transform(Order order, uint64_t ts_init):

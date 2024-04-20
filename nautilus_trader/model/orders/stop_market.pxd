@@ -30,4 +30,4 @@ cdef class StopMarketOrder(Order):
     """The order expiration (UNIX epoch nanoseconds), zero for no expiration.\n\n:returns: `uint64_t`"""
 
     @staticmethod
-    cdef StopMarketOrder create(OrderInitialized init)
+    cdef StopMarketOrder create_c(OrderInitialized init)

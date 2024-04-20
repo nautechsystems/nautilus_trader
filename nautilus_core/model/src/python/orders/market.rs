@@ -27,6 +27,7 @@ use ustr::Ustr;
 
 use crate::{
     enums::{ContingencyType, OrderSide, OrderType, PositionSide, TimeInForce},
+    events::order::initialized::OrderInitialized,
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
@@ -103,6 +104,12 @@ impl MarketOrder {
 
     fn __repr__(&self) -> String {
         self.to_string()
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "create")]
+    fn py_create(init: OrderInitialized) -> PyResult<Self> {
+        Ok(MarketOrder::from(init))
     }
 
     #[pyo3(name = "signed_decimal_qty")]

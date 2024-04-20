@@ -339,7 +339,7 @@ cdef class LimitIfTouchedOrder(Order):
         }
 
     @staticmethod
-    cdef LimitIfTouchedOrder create(OrderInitialized init):
+    cdef LimitIfTouchedOrder create_c(OrderInitialized init):
         """
         Return a `Limit-If-Touched` order from the given initialized event.
 
@@ -392,3 +392,7 @@ cdef class LimitIfTouchedOrder(Order):
             exec_spawn_id=init.exec_spawn_id,
             tags=init.tags,
         )
+
+    @staticmethod
+    def create(init):
+        return LimitIfTouchedOrder.create_c(init)

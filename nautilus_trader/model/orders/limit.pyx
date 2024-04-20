@@ -346,7 +346,7 @@ cdef class LimitOrder(Order):
         }
 
     @staticmethod
-    cdef LimitOrder create(OrderInitialized init):
+    cdef LimitOrder create_c(OrderInitialized init):
         """
         Return a `Limit` order from the given initialized event.
 
@@ -397,6 +397,10 @@ cdef class LimitOrder(Order):
             exec_spawn_id=init.exec_spawn_id,
             tags=init.tags,
         )
+
+    @staticmethod
+    def create(OrderInitialized init):
+        return LimitOrder.create_c(init)
 
     @staticmethod
     cdef LimitOrder transform(Order order, uint64_t ts_init, Price price = None):

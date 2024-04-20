@@ -30,7 +30,7 @@ cdef class LimitOrder(Order):
     """The quantity of the order to display on the public book (iceberg).\n\n:returns: `Quantity` or ``None``"""
 
     @staticmethod
-    cdef LimitOrder create(OrderInitialized init)
+    cdef LimitOrder create_c(OrderInitialized init)
 
     @staticmethod
     cdef LimitOrder transform(Order order, uint64_t ts_init, Price price=*)
