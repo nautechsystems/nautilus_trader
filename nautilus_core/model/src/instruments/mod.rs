@@ -29,6 +29,8 @@ pub mod stubs;
 use nautilus_core::nanos::UnixNanos;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use sqlx::{postgres::PgRow, Error, FromRow, Row};
+use ustr::Ustr;
 
 use self::{
     crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
@@ -36,7 +38,7 @@ use self::{
     options_contract::OptionsContract, options_spread::OptionsSpread,
 };
 use crate::{
-    enums::{AssetClass, InstrumentClass},
+    enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
@@ -272,6 +274,45 @@ impl InstrumentAny {
     }
 }
 
+impl<'r> FromRow<'r, PgRow> for InstrumentAny {
+    fn from_row(row: &'r PgRow) -> Result<Self, Error> {
+        let kind = row.get::<String, _>("kind");
+        if kind == "CRYPTO_FUTURE" {
+            Ok(InstrumentAny::CryptoFuture(
+                CryptoFuture::from_row(row).unwrap(),
+            ))
+        } else if kind == "CRYPTO_PERPETUAL" {
+            Ok(InstrumentAny::CryptoPerpetual(
+                CryptoPerpetual::from_row(row).unwrap(),
+            ))
+        } else if kind == "CURRENCY_PAIR" {
+            Ok(InstrumentAny::CurrencyPair(
+                CurrencyPair::from_row(row).unwrap(),
+            ))
+        } else if kind == "EQUITY" {
+            Ok(InstrumentAny::Equity(Equity::from_row(row).unwrap()))
+        } else if kind == "FUTURES_CONTRACT" {
+            Ok(InstrumentAny::FuturesContract(
+                FuturesContract::from_row(row).unwrap(),
+            ))
+        } else if kind == "FUTURES_SPREAD" {
+            Ok(InstrumentAny::FuturesSpread(
+                FuturesSpread::from_row(row).unwrap(),
+            ))
+        } else if kind == "OPTIONS_CONTRACT" {
+            Ok(InstrumentAny::OptionsContract(
+                OptionsContract::from_row(row).unwrap(),
+            ))
+        } else if kind == "OPTIONS_SPREAD" {
+            Ok(InstrumentAny::OptionsSpread(
+                OptionsSpread::from_row(row).unwrap(),
+            ))
+        } else {
+            panic!("Unknown instrument type")
+        }
+    }
+}
+
 pub trait Instrument: 'static + Send {
     fn into_any(self) -> InstrumentAny;
     fn id(&self) -> InstrumentId;
@@ -284,9 +325,16 @@ pub trait Instrument: 'static + Send {
     fn raw_symbol(&self) -> Symbol;
     fn asset_class(&self) -> AssetClass;
     fn instrument_class(&self) -> InstrumentClass;
+    fn underlying(&self) -> Option<Ustr>;
     fn base_currency(&self) -> Option<Currency>;
     fn quote_currency(&self) -> Currency;
     fn settlement_currency(&self) -> Currency;
+    fn isin(&self) -> Option<Ustr>;
+    fn option_kind(&self) -> Option<OptionKind>;
+    fn exchange(&self) -> Option<Ustr>;
+    fn strike_price(&self) -> Option<Price>;
+    fn activation_ns(&self) -> Option<UnixNanos>;
+    fn expiration_ns(&self) -> Option<UnixNanos>;
     fn is_inverse(&self) -> bool;
     fn price_precision(&self) -> u8;
     fn size_precision(&self) -> u8;
@@ -296,6 +344,8 @@ pub trait Instrument: 'static + Send {
     fn lot_size(&self) -> Option<Quantity>;
     fn max_quantity(&self) -> Option<Quantity>;
     fn min_quantity(&self) -> Option<Quantity>;
+    fn max_notional(&self) -> Option<Money>;
+    fn min_notional(&self) -> Option<Money>;
     fn max_price(&self) -> Option<Price>;
     fn min_price(&self) -> Option<Price>;
     fn margin_init(&self) -> Decimal {
