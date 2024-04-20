@@ -21,6 +21,7 @@ use ustr::Ustr;
 
 use crate::{
     enums::{ContingencyType, OrderSide, TimeInForce, TriggerType},
+    events::order::initialized::OrderInitialized,
     identifiers::{
         client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
@@ -90,5 +91,11 @@ impl MarketIfTouchedOrder {
             ts_init.into(),
         )
         .unwrap())
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "create")]
+    fn py_create(init: OrderInitialized) -> PyResult<Self> {
+        Ok(MarketIfTouchedOrder::from(init))
     }
 }

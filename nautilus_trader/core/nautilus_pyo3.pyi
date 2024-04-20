@@ -909,6 +909,8 @@ class LimitOrder:
         exec_spawn_id: ClientOrderId | None = None,
         tags: str | None = None,
     ): ...
+    @classmethod
+    def create(cls, init: OrderInitialized) -> LimitOrder: ...
     def to_dict(self) -> dict[str, str]: ...
     @property
     def trader_id(self) -> TraderId: ...
@@ -993,6 +995,8 @@ class LimitIfTouchedOrder:
         exec_spawn_id: ClientOrderId | None = None,
         tags: str | None = None,
     ) -> None: ...
+    @classmethod
+    def create(cls, init: OrderInitialized) -> LimitIfTouchedOrder: ...
 
 class MarketOrder:
     def __init__(
@@ -1017,6 +1021,8 @@ class MarketOrder:
         exec_spawn_id: ClientOrderId | None = None,
         tags: str | None = None,
     ) -> None: ...
+    @classmethod
+    def create(cls, init: OrderInitialized) -> MarketOrder: ...
     def to_dict(self) -> dict[str, str]: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> MarketOrder: ...
@@ -1079,6 +1085,8 @@ class MarketToLimitOrder:
         exec_spawn_id: ClientOrderId | None = None,
         tags: str | None = None,
     ): ...
+    @classmethod
+    def create(cls, init: OrderInitialized) -> MarketToLimitOrder: ...
 
 class MarketIfTouchedOrder:
     def __init__(
@@ -1109,6 +1117,9 @@ class MarketIfTouchedOrder:
         exec_spawn_id: ClientOrderId | None = None,
         tags: str | None = None,
     ): ...
+    @classmethod
+    def create(cls, init: OrderInitialized) -> MarketIfTouchedOrder: ...
+
 class StopLimitOrder:
     def __init__(
         self,
@@ -1140,6 +1151,8 @@ class StopLimitOrder:
         exec_spawn_id: ClientOrderId | None = None,
         tags: str | None = None,
     ): ...
+    @classmethod
+    def create(cls, init: OrderInitialized) -> StopLimitOrder: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> StopLimitOrder: ...
     def to_dict(self) -> dict[str, str]: ...
@@ -1217,6 +1230,8 @@ class StopMarketOrder:
         exec_spawn_id: ClientOrderId | None = None,
         tags: str | None = None,
     ): ...
+    @classmethod
+    def create(cls, init: OrderInitialized) -> StopMarketOrder: ...
 class TrailingStopLimitOrder:
     def __init__(
         self,
@@ -1251,6 +1266,8 @@ class TrailingStopLimitOrder:
         exec_spawn_id: ClientOrderId | None = None,
         tags: str | None = None,
     ): ...
+    @classmethod
+    def create(cls, init: OrderInitialized) -> TrailingStopLimitOrder: ...
 class TrailingStopMarketOrder:
     def __init__(
         self,
@@ -1282,6 +1299,8 @@ class TrailingStopMarketOrder:
         exec_spawn_id: ClientOrderId | None = None,
         tags: str | None = None,
     ): ...
+    @classmethod
+    def create(cls, init: OrderInitialized) -> TrailingStopMarketOrder: ...
 
 ### Objects
 

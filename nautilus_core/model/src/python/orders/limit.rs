@@ -28,6 +28,7 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
         TimeInForce, TriggerType,
     },
+    events::order::initialized::OrderInitialized,
     identifiers::{
         client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
@@ -116,6 +117,12 @@ impl LimitOrder {
 
     fn __repr__(&self) -> String {
         self.to_string()
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "create")]
+    fn py_create(init: OrderInitialized) -> PyResult<Self> {
+        Ok(LimitOrder::from(init))
     }
 
     #[getter]
