@@ -873,7 +873,7 @@ pub enum PositionSide {
     Short = 3,
 }
 
-/// The type of price for an instrument in market.
+/// The type of price for an instrument in a market.
 #[repr(C)]
 #[derive(
     Copy,

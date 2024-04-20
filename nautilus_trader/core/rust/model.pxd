@@ -283,7 +283,7 @@ cdef extern from "../includes/model.h":
         # A short position in the market, typically acquired through one or many SELL orders.
         SHORT # = 3,
 
-    # The type of price for an instrument in market.
+    # The type of price for an instrument in a market.
     cpdef enum PriceType:
         # A quoted order price where a buyer is willing to buy a quantity of an instrument.
         BID # = 1,
@@ -491,7 +491,7 @@ cdef extern from "../includes/model.h":
         # The UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
-    # Represents a single quote tick in market.
+    # Represents a single quote tick in a market.
     cdef struct QuoteTick_t:
         # The quotes instrument ID.
         InstrumentId_t instrument_id;
