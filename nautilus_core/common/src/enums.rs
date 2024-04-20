@@ -226,6 +226,7 @@ pub enum LogColor {
 }
 
 impl LogColor {
+    #[must_use]
     pub fn as_ansi(&self) -> &str {
         match *self {
             Self::Normal => "",

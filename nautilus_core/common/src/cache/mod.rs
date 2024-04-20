@@ -41,7 +41,7 @@ use nautilus_model::{
     orders::base::OrderAny,
     polymorphism::{
         GetClientOrderId, GetExecAlgorithmId, GetExecSpawnId, GetInstrumentId, GetOrderSide,
-        GetStrategyId, GetVenueOrderId,
+        GetStrategyId,
     },
     position::Position,
     types::currency::Currency,
@@ -64,6 +64,7 @@ pub struct CacheConfig {
 
 impl CacheConfig {
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         encoding: SerializationEncoding,
         timestamps_as_iso8601: bool,
@@ -191,6 +192,7 @@ impl Default for Cache {
 }
 
 impl Cache {
+    #[must_use]
     pub fn new(config: CacheConfig, database: Option<CacheDatabaseAdapter>) -> Self {
         let index = CacheIndex {
             venue_account: HashMap::new(),
@@ -334,6 +336,7 @@ impl Cache {
         todo!() // Needs order query methods
     }
 
+    #[must_use]
     pub fn check_integrity(&self) -> bool {
         true // TODO
     }
@@ -374,7 +377,7 @@ impl Cache {
     pub fn dispose(&self) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             // TODO: Log operations in database adapter
-            database.close()?
+            database.close()?;
         }
         Ok(())
     }
@@ -382,7 +385,7 @@ impl Cache {
     pub fn flush_db(&self) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             // TODO: Log operations in database adapter
-            database.flush()?
+            database.flush()?;
         }
         Ok(())
     }
@@ -426,7 +429,7 @@ impl Cache {
             .entry(instrument_id)
             .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
 
-        for quote in quotes.iter() {
+        for quote in quotes {
             quotes_deque.push_front(*quote);
         }
         Ok(())
@@ -452,7 +455,7 @@ impl Cache {
             .entry(instrument_id)
             .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
 
-        for trade in trades.iter() {
+        for trade in trades {
             trades_deque.push_front(*trade);
         }
         Ok(())
@@ -478,7 +481,7 @@ impl Cache {
             .entry(bar_type)
             .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
 
-        for bar in bars.iter() {
+        for bar in bars {
             bars_deque.push_front(*bar);
         }
         Ok(())
@@ -513,7 +516,7 @@ impl Cache {
             database.add_synthetic(&synthetic)?;
         }
 
-        self.synthetics.insert(synthetic.id, synthetic.clone());
+        self.synthetics.insert(synthetic.id, synthetic);
         Ok(())
     }
 
@@ -698,7 +701,7 @@ impl Cache {
                 self.index
                     .venue_orders
                     .get(&venue)
-                    .map_or(HashSet::new(), |o| o.iter().cloned().collect()),
+                    .map_or(HashSet::new(), |o| o.iter().copied().collect()),
             );
         };
 
@@ -707,12 +710,12 @@ impl Cache {
                 .index
                 .instrument_orders
                 .get(&instrument_id)
-                .map_or(HashSet::new(), |o| o.iter().cloned().collect());
+                .map_or(HashSet::new(), |o| o.iter().copied().collect());
 
             if let Some(existing_query) = &mut query {
                 *existing_query = existing_query
                     .intersection(&instrument_orders)
-                    .cloned()
+                    .copied()
                     .collect();
             } else {
                 query = Some(instrument_orders);
@@ -724,12 +727,12 @@ impl Cache {
                 .index
                 .strategy_orders
                 .get(&strategy_id)
-                .map_or(HashSet::new(), |o| o.iter().cloned().collect());
+                .map_or(HashSet::new(), |o| o.iter().copied().collect());
 
             if let Some(existing_query) = &mut query {
                 *existing_query = existing_query
                     .intersection(&strategy_orders)
-                    .cloned()
+                    .copied()
                     .collect();
             } else {
                 query = Some(strategy_orders);
@@ -752,7 +755,7 @@ impl Cache {
                 self.index
                     .venue_positions
                     .get(&venue)
-                    .map_or(HashSet::new(), |p| p.iter().cloned().collect()),
+                    .map_or(HashSet::new(), |p| p.iter().copied().collect()),
             );
         };
 
@@ -761,13 +764,13 @@ impl Cache {
                 .index
                 .instrument_positions
                 .get(&instrument_id)
-                .map_or(HashSet::new(), |p| p.iter().cloned().collect());
+                .map_or(HashSet::new(), |p| p.iter().copied().collect());
 
             if let Some(existing_query) = query {
                 query = Some(
                     existing_query
                         .intersection(&instrument_positions)
-                        .cloned()
+                        .copied()
                         .collect(),
                 );
             } else {
@@ -780,13 +783,13 @@ impl Cache {
                 .index
                 .strategy_positions
                 .get(&strategy_id)
-                .map_or(HashSet::new(), |p| p.iter().cloned().collect());
+                .map_or(HashSet::new(), |p| p.iter().copied().collect());
 
             if let Some(existing_query) = query {
                 query = Some(
                     existing_query
                         .intersection(&strategy_positions)
-                        .cloned()
+                        .copied()
                         .collect(),
                 );
             } else {
@@ -839,6 +842,7 @@ impl Cache {
         positions
     }
 
+    #[must_use]
     pub fn client_order_ids(
         &self,
         venue: Option<Venue>,
@@ -847,11 +851,12 @@ impl Cache {
     ) -> HashSet<ClientOrderId> {
         let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
         match query {
-            Some(query) => self.index.orders.intersection(&query).cloned().collect(),
+            Some(query) => self.index.orders.intersection(&query).copied().collect(),
             None => self.index.orders.clone(),
         }
     }
 
+    #[must_use]
     pub fn client_order_ids_open(
         &self,
         venue: Option<Venue>,
@@ -864,12 +869,13 @@ impl Cache {
                 .index
                 .orders_open
                 .intersection(&query)
-                .cloned()
+                .copied()
                 .collect(),
             None => self.index.orders_open.clone(),
         }
     }
 
+    #[must_use]
     pub fn client_order_ids_closed(
         &self,
         venue: Option<Venue>,
@@ -882,12 +888,13 @@ impl Cache {
                 .index
                 .orders_closed
                 .intersection(&query)
-                .cloned()
+                .copied()
                 .collect(),
             None => self.index.orders_closed.clone(),
         }
     }
 
+    #[must_use]
     pub fn client_order_ids_emulated(
         &self,
         venue: Option<Venue>,
@@ -900,12 +907,13 @@ impl Cache {
                 .index
                 .orders_emulated
                 .intersection(&query)
-                .cloned()
+                .copied()
                 .collect(),
             None => self.index.orders_emulated.clone(),
         }
     }
 
+    #[must_use]
     pub fn client_order_ids_inflight(
         &self,
         venue: Option<Venue>,
@@ -918,12 +926,13 @@ impl Cache {
                 .index
                 .orders_inflight
                 .intersection(&query)
-                .cloned()
+                .copied()
                 .collect(),
             None => self.index.orders_inflight.clone(),
         }
     }
 
+    #[must_use]
     pub fn position_ids(
         &self,
         venue: Option<Venue>,
@@ -932,11 +941,12 @@ impl Cache {
     ) -> HashSet<PositionId> {
         let query = self.build_position_query_filter_set(venue, instrument_id, strategy_id);
         match query {
-            Some(query) => self.index.positions.intersection(&query).cloned().collect(),
+            Some(query) => self.index.positions.intersection(&query).copied().collect(),
             None => self.index.positions.clone(),
         }
     }
 
+    #[must_use]
     pub fn position_open_ids(
         &self,
         venue: Option<Venue>,
@@ -949,12 +959,13 @@ impl Cache {
                 .index
                 .positions_open
                 .intersection(&query)
-                .cloned()
+                .copied()
                 .collect(),
             None => self.index.positions_open.clone(),
         }
     }
 
+    #[must_use]
     pub fn position_closed_ids(
         &self,
         venue: Option<Venue>,
@@ -967,44 +978,52 @@ impl Cache {
                 .index
                 .positions_closed
                 .intersection(&query)
-                .cloned()
+                .copied()
                 .collect(),
             None => self.index.positions_closed.clone(),
         }
     }
 
+    #[must_use]
     pub fn actor_ids(&self) -> HashSet<ComponentId> {
         self.index.actors.clone()
     }
 
+    #[must_use]
     pub fn strategy_ids(&self) -> HashSet<StrategyId> {
         self.index.strategies.clone()
     }
 
+    #[must_use]
     pub fn exec_algorithm_ids(&self) -> HashSet<ExecAlgorithmId> {
         self.index.exec_algorithms.clone()
     }
 
     // -- ORDER QUERIES -------------------------------------------------------
 
+    #[must_use]
     pub fn order(&self, client_order_id: ClientOrderId) -> Option<&OrderAny> {
         self.orders.get(&client_order_id)
     }
 
+    #[must_use]
     pub fn client_order_id(&self, venue_order_id: VenueOrderId) -> Option<&ClientOrderId> {
         self.index.order_ids.get(&venue_order_id)
     }
 
+    #[must_use]
     pub fn venue_order_id(&self, client_order_id: ClientOrderId) -> Option<VenueOrderId> {
         self.orders
             .get(&client_order_id)
-            .and_then(|o| o.venue_order_id())
+            .and_then(nautilus_model::polymorphism::GetVenueOrderId::venue_order_id)
     }
 
+    #[must_use]
     pub fn client_id(&self, client_order_id: ClientOrderId) -> Option<&ClientId> {
         self.index.order_client.get(&client_order_id)
     }
 
+    #[must_use]
     pub fn orders(
         &self,
         venue: Option<Venue>,
@@ -1016,6 +1035,7 @@ impl Cache {
         self.get_orders_for_ids(client_order_ids, side)
     }
 
+    #[must_use]
     pub fn orders_open(
         &self,
         venue: Option<Venue>,
@@ -1027,6 +1047,7 @@ impl Cache {
         self.get_orders_for_ids(client_order_ids, side)
     }
 
+    #[must_use]
     pub fn orders_closed(
         &self,
         venue: Option<Venue>,
@@ -1038,6 +1059,7 @@ impl Cache {
         self.get_orders_for_ids(client_order_ids, side)
     }
 
+    #[must_use]
     pub fn orders_emulated(
         &self,
         venue: Option<Venue>,
@@ -1049,6 +1071,7 @@ impl Cache {
         self.get_orders_for_ids(client_order_ids, side)
     }
 
+    #[must_use]
     pub fn orders_inflight(
         &self,
         venue: Option<Venue>,
@@ -1060,40 +1083,48 @@ impl Cache {
         self.get_orders_for_ids(client_order_ids, side)
     }
 
+    #[must_use]
     pub fn orders_for_position(&self, position_id: PositionId) -> Vec<&OrderAny> {
         let client_order_ids = self.index.position_orders.get(&position_id);
         match client_order_ids {
             Some(client_order_ids) => {
-                self.get_orders_for_ids(client_order_ids.iter().cloned().collect(), None)
+                self.get_orders_for_ids(client_order_ids.iter().copied().collect(), None)
             }
             None => Vec::new(),
         }
     }
 
+    #[must_use]
     pub fn order_exists(&self, client_order_id: ClientOrderId) -> bool {
         self.index.orders.contains(&client_order_id)
     }
 
+    #[must_use]
     pub fn is_order_open(&self, client_order_id: ClientOrderId) -> bool {
         self.index.orders_open.contains(&client_order_id)
     }
 
+    #[must_use]
     pub fn is_order_closed(&self, client_order_id: ClientOrderId) -> bool {
         self.index.orders_closed.contains(&client_order_id)
     }
 
+    #[must_use]
     pub fn is_order_emulated(&self, client_order_id: ClientOrderId) -> bool {
         self.index.orders_emulated.contains(&client_order_id)
     }
 
+    #[must_use]
     pub fn is_order_inflight(&self, client_order_id: ClientOrderId) -> bool {
         self.index.orders_inflight.contains(&client_order_id)
     }
 
+    #[must_use]
     pub fn is_order_pending_cancel_local(&self, client_order_id: ClientOrderId) -> bool {
         self.index.orders_pending_cancel.contains(&client_order_id)
     }
 
+    #[must_use]
     pub fn orders_open_count(
         &self,
         venue: Option<Venue>,
@@ -1105,6 +1136,7 @@ impl Cache {
             .len()
     }
 
+    #[must_use]
     pub fn orders_closed_count(
         &self,
         venue: Option<Venue>,
@@ -1116,6 +1148,7 @@ impl Cache {
             .len()
     }
 
+    #[must_use]
     pub fn orders_emulated_count(
         &self,
         venue: Option<Venue>,
@@ -1127,6 +1160,7 @@ impl Cache {
             .len()
     }
 
+    #[must_use]
     pub fn orders_inflight_count(
         &self,
         venue: Option<Venue>,
@@ -1138,6 +1172,7 @@ impl Cache {
             .len()
     }
 
+    #[must_use]
     pub fn orders_total_count(
         &self,
         venue: Option<Venue>,

@@ -67,16 +67,13 @@ pub fn get_exchange_rate(
             }
             calculation_quotes
         }
-        _ => panic!(
-            "Cannot calculate exchange rate for PriceType {:?}",
-            price_type
-        ),
+        _ => panic!("Cannot calculate exchange rate for PriceType {price_type:?}"),
     };
 
     let mut exchange_rates: HashMap<Ustr, HashMap<Ustr, Decimal>> = HashMap::new();
 
     // Build quote table
-    for (symbol, quote) in calculation_quotes.iter() {
+    for (symbol, quote) in &calculation_quotes {
         let pieces: Vec<&str> = symbol.as_str().split('/').collect();
         let code_lhs = Ustr::from(pieces[0]);
         let code_rhs = Ustr::from(pieces[1]);
@@ -149,5 +146,5 @@ pub fn get_exchange_rate(
     let empty: HashMap<Ustr, Decimal> = HashMap::new();
     let quotes = exchange_rates.get(&from_currency.code).unwrap_or(&empty);
 
-    Ok(quotes.get(&to_currency.code).cloned().unwrap_or(dec!(0.0)))
+    Ok(quotes.get(&to_currency.code).copied().unwrap_or(dec!(0.0)))
 }

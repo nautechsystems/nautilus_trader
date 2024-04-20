@@ -76,6 +76,7 @@ impl Default for LoggerConfig {
 }
 
 impl LoggerConfig {
+    #[must_use]
     pub fn new(
         stdout_level: LevelFilter,
         fileout_level: LevelFilter,
@@ -92,6 +93,7 @@ impl LoggerConfig {
         }
     }
 
+    #[must_use]
     pub fn from_spec(spec: &str) -> Self {
         let Self {
             mut stdout_level,
@@ -129,9 +131,10 @@ impl LoggerConfig {
         }
     }
 
+    #[must_use]
     pub fn from_env() -> Self {
         match env::var("NAUTILUS_LOG") {
-            Ok(spec) => LoggerConfig::from_spec(&spec),
+            Ok(spec) => Self::from_spec(&spec),
             Err(e) => panic!("Error parsing `LoggerConfig` spec: {e}"),
         }
     }
@@ -191,8 +194,9 @@ pub struct LogLineWrapper {
 }
 
 impl LogLineWrapper {
+    #[must_use]
     pub fn new(line: LogLine, trader_id: Ustr, timestamp: UnixNanos) -> Self {
-        LogLineWrapper {
+        Self {
             line,
             cache: None,
             colored: None,
@@ -228,6 +232,7 @@ impl LogLineWrapper {
         })
     }
 
+    #[must_use]
     pub fn get_json(&self) -> String {
         let json_string =
             serde_json::to_string(&self).expect("Error serializing log event to string");
@@ -267,16 +272,16 @@ impl Log for Logger {
                 .get("color".into())
                 .and_then(|v| v.to_u64().map(|v| (v as u8).into()))
                 .unwrap_or(LogColor::Normal);
-            let component = key_values
-                .get("component".into())
-                .map(|v| Ustr::from(&v.to_string()))
-                .unwrap_or_else(|| Ustr::from(record.metadata().target()));
+            let component = key_values.get("component".into()).map_or_else(
+                || Ustr::from(record.metadata().target()),
+                |v| Ustr::from(&v.to_string()),
+            );
 
             let line = LogLine {
                 level: record.level(),
                 color,
                 component,
-                message: format!("{}", record.args()).to_string(),
+                message: format!("{}", record.args()),
             };
             if let Err(SendError(LogEvent::Log(line))) = self.tx.send(LogEvent::Log(line)) {
                 eprintln!("Error sending log event: {line}");
@@ -298,7 +303,7 @@ impl Logger {
         file_config: FileWriterConfig,
     ) -> LogGuard {
         let config = LoggerConfig::from_env();
-        Logger::init_with_config(trader_id, instance_id, config, file_config)
+        Self::init_with_config(trader_id, instance_id, config, file_config)
     }
 
     #[must_use]
@@ -318,12 +323,12 @@ impl Logger {
         let print_config = config.print_config;
         if print_config {
             println!("STATIC_MAX_LEVEL={STATIC_MAX_LEVEL}");
-            println!("Logger initialized with {:?} {:?}", config, file_config);
+            println!("Logger initialized with {config:?} {file_config:?}");
         }
 
         let mut handle: Option<JoinHandle<()>> = None;
         match set_boxed_logger(Box::new(logger)) {
-            Ok(_) => {
+            Ok(()) => {
                 handle = Some(
                     thread::Builder::new()
                         .name("logging".to_string())
@@ -346,7 +351,7 @@ impl Logger {
                 }
             }
             Err(e) => {
-                eprintln!("Cannot set logger because of error: {e}")
+                eprintln!("Cannot set logger because of error: {e}");
             }
         }
 
@@ -361,7 +366,7 @@ impl Logger {
         rx: Receiver<LogEvent>,
     ) {
         if config.print_config {
-            println!("Logger thread `handle_messages` initialized")
+            println!("Logger thread `handle_messages` initialized");
         }
 
         let LoggerConfig {
@@ -380,7 +385,7 @@ impl Logger {
 
         // Conditionally create file writer based on fileout_level
         let mut file_writer_opt = if fileout_level != LevelFilter::Off {
-            FileWriter::new(trader_id.clone(), instance_id, file_config, fileout_level)
+            FileWriter::new(trader_id, instance_id, file_config, fileout_level)
         } else {
             None
         };
@@ -474,8 +479,9 @@ pub struct LogGuard {
 }
 
 impl LogGuard {
+    #[must_use]
     pub fn new(handle: Option<JoinHandle<()>>) -> Self {
-        LogGuard { handle }
+        Self { handle }
     }
 }
 
@@ -489,7 +495,7 @@ impl Drop for LogGuard {
     fn drop(&mut self) {
         log::logger().flush();
         if let Some(handle) = self.handle.take() {
-            handle.join().expect("Error joining logging handle")
+            handle.join().expect("Error joining logging handle");
         }
     }
 }
@@ -549,7 +555,7 @@ mod tests {
                 is_colored: true,
                 print_config: false,
             }
-        )
+        );
     }
 
     #[rstest]
@@ -564,7 +570,7 @@ mod tests {
                 is_colored: false,
                 print_config: true,
             }
-        )
+        );
     }
 
     #[rstest]

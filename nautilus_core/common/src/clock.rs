@@ -142,7 +142,7 @@ fn create_time_event_handler(event: TimeEvent, handler: &EventHandler) -> TimeEv
 
     TimeEventHandler {
         event,
-        callback_ptr: handler.callback.as_ptr() as *mut c_char,
+        callback_ptr: handler.callback.as_ptr().cast::<c_char>(),
     }
 }
 

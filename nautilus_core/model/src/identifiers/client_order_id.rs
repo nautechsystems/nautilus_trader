@@ -48,11 +48,13 @@ impl ClientOrderId {
     }
 
     /// Returns the inner identifier value.
+    #[must_use]
     pub fn inner(&self) -> Ustr {
         self.0
     }
 
     /// Returns the inner identifier value as a string slice.
+    #[must_use]
     pub fn as_str(&self) -> &str {
         self.0.as_str()
     }

@@ -56,6 +56,7 @@ pub struct DatabaseCommand {
 }
 
 impl DatabaseCommand {
+    #[must_use]
     pub fn new(op_type: DatabaseOperation, key: String, payload: Option<Vec<Vec<u8>>>) -> Self {
         Self {
             op_type,
@@ -65,6 +66,7 @@ impl DatabaseCommand {
     }
 
     /// Initialize a `Close` database command, this is meant to close the database cache channel.
+    #[must_use]
     pub fn close() -> Self {
         Self {
             op_type: DatabaseOperation::Close,
