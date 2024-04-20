@@ -521,7 +521,7 @@ typedef enum PositionSide {
 } PositionSide;
 
 /**
- * The type of price for an instrument in market.
+ * The type of price for an instrument in a market.
  */
 typedef enum PriceType {
     /**
@@ -888,7 +888,7 @@ typedef struct OrderBookDepth10_t {
 } OrderBookDepth10_t;
 
 /**
- * Represents a single quote tick in market.
+ * Represents a single quote tick in a market.
  */
 typedef struct QuoteTick_t {
     /**
