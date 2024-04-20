@@ -37,14 +37,6 @@ log = { version = "0.4.21", features = ["std", "kv_unstable", "serde", "release_
 pyo3 = { version = "0.20.3", features = ["rust_decimal"] }
 pyo3-asyncio = { version = "0.20.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.8.5"
-redis = { version = "0.25.3", features = [
-    "connection-manager",
-    "keep-alive",
-    "tls-rustls",
-    "tls-rustls-webpki-roots",
-    "tokio-comp",
-    "tokio-rustls-comp",
-] }
 rmp-serde = "1.2.0"
 rust_decimal = "1.35.0"
 rust_decimal_macros = "1.34.2"

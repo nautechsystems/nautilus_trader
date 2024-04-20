@@ -16,17 +16,32 @@ nautilus-core = { path = "../core" , features = ["python"] }
 nautilus-model = { path = "../model" , features = ["python"] }
 anyhow = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-redis = { workspace = true, optional = true }
 rmp-serde = { workspace = true }
+rust_decimal = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true }
 tracing = {workspace = true }
-sqlx = { version = "0.7.4", features = ["sqlite", "postgres", "any", "runtime-tokio"] }
+ustr = { workspace = true }
+redis = { version = "0.25.3", features = [
+    "connection-manager",
+    "keep-alive",
+    "tls-rustls",
+    "tls-rustls-webpki-roots",
+    "tokio-comp",
+    "tokio-rustls-comp",
+], optional = true }
+sqlx = { version = "0.7.4", features = [
+    "sqlite",
+    "postgres",
+    "any",
+    "runtime-tokio",
+], optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
 
 [features]
-default = ["redis"]
+default = ["redis"]  # redis needed by `nautilus_trader` by default for now
 extension-module = [
     "pyo3/extension-module",
     "nautilus-common/extension-module",
@@ -35,3 +50,4 @@ extension-module = [
 ]
 python = ["pyo3"]
 redis = ["dep:redis"]
+sql = ["dep:sqlx"]

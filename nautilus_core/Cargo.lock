@@ -2637,9 +2637,12 @@ dependencies = [
  "redis",
  "rmp-serde",
  "rstest",
+ "rust_decimal",
  "serde_json",
  "sqlx",
+ "tokio",
  "tracing",
+ "ustr",
 ]
 
 [[package]]
