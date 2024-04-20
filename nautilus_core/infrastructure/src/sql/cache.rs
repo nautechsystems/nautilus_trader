@@ -16,7 +16,7 @@
 use nautilus_model::identifiers::trader_id::TraderId;
 use sqlx::Error;
 
-use crate::db::{database::Database, schema::GeneralItem};
+use crate::sql::{database::Database, schema::GeneralItem};
 
 pub struct SqlCacheDatabase {
     trader_id: TraderId,
@@ -64,10 +64,8 @@ impl SqlCacheDatabase {
 mod tests {
     use nautilus_model::identifiers::stubs::trader_id;
 
-    use crate::db::{
-        database::{init_db_schema, setup_test_database},
-        sql::SqlCacheDatabase,
-    };
+    use super::SqlCacheDatabase;
+    use crate::sql::database::{init_db_schema, setup_test_database};
 
     async fn setup_sql_cache_database() -> SqlCacheDatabase {
         let db = setup_test_database().await;

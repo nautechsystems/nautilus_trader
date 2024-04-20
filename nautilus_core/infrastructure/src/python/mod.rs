@@ -15,16 +15,16 @@
 
 //! Provides Python bindings from `pyo3`.
 
-#![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
-
-use pyo3::{prelude::*, pymodule};
-
 #[cfg(feature = "redis")]
 pub mod redis;
 
+use pyo3::{prelude::*, pymodule};
+
 #[pymodule]
 pub fn infrastructure(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    #[cfg(feature = "redis")]
     m.add_class::<crate::redis::cache::RedisCacheDatabase>()?;
+    #[cfg(feature = "redis")]
     m.add_class::<crate::redis::msgbus::RedisMessageBusDatabase>()?;
     Ok(())
 }

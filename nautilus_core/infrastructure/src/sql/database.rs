@@ -147,12 +147,15 @@ pub async fn setup_test_database() -> Database {
     Database::new(Some(DatabaseEngine::SQLITE), Some("sqlite:test_db.sqlite")).await
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
 
     use sqlx::{FromRow, Row};
 
-    use crate::db::database::{setup_test_database, Database};
+    use crate::sql::database::{setup_test_database, Database};
 
     async fn init_item_table(database: &Database) {
         database

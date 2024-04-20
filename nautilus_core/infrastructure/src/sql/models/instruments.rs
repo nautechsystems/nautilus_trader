@@ -13,48 +13,79 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// Under development
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
+use std::str::FromStr;
+
+use nautilus_core::nanos::UnixNanos;
+use nautilus_model::{
+    enums::{AssetClass, OptionKind},
+    identifiers::{instrument_id::InstrumentId, symbol::Symbol},
+    instruments::{
+        crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
+        currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
+        futures_spread::FuturesSpread, options_contract::OptionsContract,
+        options_spread::OptionsSpread, InstrumentAny,
+    },
+    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+};
+use rust_decimal::Decimal;
 use sqlx::{postgres::PgRow, FromRow, Row};
+use ustr::Ustr;
 
-impl<'r> FromRow<'r, PgRow> for InstrumentAny {
-    fn from_row(row: &'r PgRow) -> Result<Self, Error> {
-        let kind = row.get::<String, _>("kind");
-        if kind == "CRYPTO_FUTURE" {
-            Ok(InstrumentAny::CryptoFuture(
-                CryptoFuture::from_row(row).unwrap(),
-            ))
-        } else if kind == "CRYPTO_PERPETUAL" {
-            Ok(InstrumentAny::CryptoPerpetual(
-                CryptoPerpetual::from_row(row).unwrap(),
-            ))
-        } else if kind == "CURRENCY_PAIR" {
-            Ok(InstrumentAny::CurrencyPair(
-                CurrencyPair::from_row(row).unwrap(),
-            ))
-        } else if kind == "EQUITY" {
-            Ok(InstrumentAny::Equity(Equity::from_row(row).unwrap()))
-        } else if kind == "FUTURES_CONTRACT" {
-            Ok(InstrumentAny::FuturesContract(
-                FuturesContract::from_row(row).unwrap(),
-            ))
-        } else if kind == "FUTURES_SPREAD" {
-            Ok(InstrumentAny::FuturesSpread(
-                FuturesSpread::from_row(row).unwrap(),
-            ))
-        } else if kind == "OPTIONS_CONTRACT" {
-            Ok(InstrumentAny::OptionsContract(
-                OptionsContract::from_row(row).unwrap(),
-            ))
-        } else if kind == "OPTIONS_SPREAD" {
-            Ok(InstrumentAny::OptionsSpread(
-                OptionsSpread::from_row(row).unwrap(),
-            ))
-        } else {
-            panic!("Unknown instrument type")
-        }
-    }
-}
+struct InstrumentAnyModel(InstrumentAny);
+struct CryptoFutureModel(CryptoFuture);
+struct CryptoPerpetualModel(CryptoPerpetual);
+struct CurrencyPairModel(CurrencyPair);
+struct EquityModel(Equity);
+struct FuturesContractModel(FuturesContract);
+struct FuturesSpreadModel(FuturesSpread);
+struct OptionsContractModel(OptionsContract);
+struct OptionsSpreadModel(OptionsSpread);
 
-impl<'r> FromRow<'r, PgRow> for CryptoFuture {
+// TBD
+// impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {
+//     fn from_row(row: &'r PgRow) -> Result<Self, Error> {
+//         let kind = row.get::<String, _>("kind");
+//         if kind == "CRYPTO_FUTURE" {
+//             Ok(InstrumentAny::CryptoFuture(
+//                 CryptoFutureModel::from_row(row).unwrap().0,
+//             ))
+//         } else if kind == "CRYPTO_PERPETUAL" {
+//             Ok(InstrumentAny::CryptoPerpetual(
+//                 CryptoPerpetual::from_row(row).unwrap(),
+//             ))
+//         } else if kind == "CURRENCY_PAIR" {
+//             Ok(InstrumentAny::CurrencyPair(
+//                 CurrencyPair::from_row(row).unwrap(),
+//             ))
+//         } else if kind == "EQUITY" {
+//             Ok(InstrumentAny::Equity(Equity::from_row(row).unwrap()))
+//         } else if kind == "FUTURES_CONTRACT" {
+//             Ok(InstrumentAny::FuturesContract(
+//                 FuturesContract::from_row(row).unwrap(),
+//             ))
+//         } else if kind == "FUTURES_SPREAD" {
+//             Ok(InstrumentAny::FuturesSpread(
+//                 FuturesSpread::from_row(row).unwrap(),
+//             ))
+//         } else if kind == "OPTIONS_CONTRACT" {
+//             Ok(InstrumentAny::OptionsContract(
+//                 OptionsContract::from_row(row).unwrap(),
+//             ))
+//         } else if kind == "OPTIONS_SPREAD" {
+//             Ok(InstrumentAny::OptionsSpread(
+//                 OptionsSpread::from_row(row).unwrap(),
+//             ))
+//         } else {
+//             panic!("Unknown instrument type")
+//         }
+//     }
+// }
+
+impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row
             .try_get::<String, _>("id")
@@ -131,7 +162,8 @@ impl<'r> FromRow<'r, PgRow> for CryptoFuture {
         let ts_init = row
             .try_get::<String, _>("ts_init")
             .map(|res| UnixNanos::from(res.as_str()))?;
-        Ok(Self::new(
+
+        let inst = CryptoFuture::new(
             id,
             raw_symbol,
             underlying,
@@ -158,11 +190,12 @@ impl<'r> FromRow<'r, PgRow> for CryptoFuture {
             ts_event,
             ts_init,
         )
-        .unwrap())
+        .unwrap();
+        Ok(CryptoFutureModel(inst))
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for CryptoPerpetual {
+impl<'r> FromRow<'r, PgRow> for CryptoPerpetualModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row
             .try_get::<String, _>("id")
@@ -233,7 +266,8 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetual {
         let ts_init = row
             .try_get::<String, _>("ts_init")
             .map(|res| UnixNanos::from(res.as_str()))?;
-        Ok(Self::new(
+
+        let inst = CryptoPerpetual::new(
             id,
             raw_symbol,
             base_currency,
@@ -258,11 +292,12 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetual {
             ts_event,
             ts_init,
         )
-        .unwrap())
+        .unwrap();
+        Ok(CryptoPerpetualModel(inst))
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for CurrencyPair {
+impl<'r> FromRow<'r, PgRow> for CurrencyPairModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row
             .try_get::<String, _>("id")
@@ -330,7 +365,8 @@ impl<'r> FromRow<'r, PgRow> for CurrencyPair {
         let ts_init = row
             .try_get::<String, _>("ts_init")
             .map(|res| UnixNanos::from(res.as_str()))?;
-        Ok(Self::new(
+
+        let inst = CurrencyPair::new(
             id,
             raw_symbol,
             base_currency,
@@ -353,11 +389,12 @@ impl<'r> FromRow<'r, PgRow> for CurrencyPair {
             ts_event,
             ts_init,
         )
-        .unwrap())
+        .unwrap();
+        Ok(CurrencyPairModel(inst))
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for Equity {
+impl<'r> FromRow<'r, PgRow> for EquityModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row
             .try_get::<String, _>("id")
@@ -412,7 +449,8 @@ impl<'r> FromRow<'r, PgRow> for Equity {
         let ts_init = row
             .try_get::<String, _>("ts_init")
             .map(|res| UnixNanos::from(res.as_str()))?;
-        Ok(Self::new(
+
+        let inst = Equity::new(
             id,
             raw_symbol,
             isin,
@@ -431,11 +469,12 @@ impl<'r> FromRow<'r, PgRow> for Equity {
             ts_event,
             ts_init,
         )
-        .unwrap())
+        .unwrap();
+        Ok(EquityModel(inst))
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for FuturesContract {
+impl<'r> FromRow<'r, PgRow> for FuturesContractModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row
             .try_get::<String, _>("id")
@@ -499,7 +538,8 @@ impl<'r> FromRow<'r, PgRow> for FuturesContract {
         let ts_init = row
             .try_get::<String, _>("ts_init")
             .map(|res| UnixNanos::from(res.as_str()))?;
-        Ok(Self::new(
+
+        let inst = FuturesContract::new(
             id,
             raw_symbol,
             asset_class,
@@ -521,17 +561,18 @@ impl<'r> FromRow<'r, PgRow> for FuturesContract {
             ts_event,
             ts_init,
         )
-        .unwrap())
+        .unwrap();
+        Ok(FuturesContractModel(inst))
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for FuturesSpread {
+impl<'r> FromRow<'r, PgRow> for FuturesSpreadModel {
     fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
         todo!("Implement FromRow for FuturesSpread")
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OptionsContract {
+impl<'r> FromRow<'r, PgRow> for OptionsContractModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row
             .try_get::<String, _>("id")
@@ -602,7 +643,8 @@ impl<'r> FromRow<'r, PgRow> for OptionsContract {
         let ts_init = row
             .try_get::<String, _>("ts_init")
             .map(|res| UnixNanos::from(res.as_str()))?;
-        Ok(Self::new(
+
+        let inst = OptionsContract::new(
             id,
             raw_symbol,
             asset_class,
@@ -626,11 +668,12 @@ impl<'r> FromRow<'r, PgRow> for OptionsContract {
             ts_event,
             ts_init,
         )
-        .unwrap())
+        .unwrap();
+        Ok(OptionsContractModel(inst))
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OptionsSpread {
+impl<'r> FromRow<'r, PgRow> for OptionsSpreadModel {
     fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
         todo!("Implement FromRow for OptionsSpread")
     }
