@@ -13,5 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines events for the trading domain model.
+
 pub mod account;
 pub mod order;

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides a C foreign function interface (FFI) from `cbindgen`.
+
 pub mod data;
 pub mod enums;
 pub mod events;

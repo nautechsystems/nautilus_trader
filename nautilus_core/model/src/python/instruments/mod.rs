@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines instrument definitions the trading domain model.
+
 use nautilus_core::python::to_pyvalue_err;
 use pyo3::{IntoPy, PyObject, PyResult, Python};
 

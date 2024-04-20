@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines data types for the trading domain model.
+
 pub mod bar;
 pub mod delta;
 pub mod deltas;

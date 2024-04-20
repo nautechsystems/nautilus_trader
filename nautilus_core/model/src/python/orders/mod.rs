@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines order types for the trading domain model.
+
 pub mod limit;
 pub mod limit_if_touched;
 pub mod market;

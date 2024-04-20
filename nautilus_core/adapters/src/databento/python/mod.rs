@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides Python bindings from `pyo3`.
+
 #![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
 
 pub mod enums;

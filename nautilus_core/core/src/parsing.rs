@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides core parsing functions.
+
 /// Returns the decimal precision inferred from the given string.
 #[must_use]
 pub fn precision_from_str(s: &str) -> u8 {

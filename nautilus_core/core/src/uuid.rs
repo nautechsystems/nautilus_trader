@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines a core `UUID4` universally unique identifier (UUID) version 4 based on a 128-bit
+//! label as specified in RFC 4122.
+
 use std::{
     ffi::{CStr, CString},
     fmt::{Debug, Display, Formatter},
