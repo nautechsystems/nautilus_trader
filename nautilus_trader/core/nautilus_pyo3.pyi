@@ -404,10 +404,15 @@ class CashAccount:
     ) -> list[Money]: ...
 
 ### Accounting transformers
-def cash_account_from_account_events(events: list[dict],calculate_account_state) -> CashAccount: ...
+def cash_account_from_account_events(
+    events: list[dict],
+    calculate_account_state: bool,
+) -> CashAccount: ...
 
-def margin_account_from_account_events(events: list[dict],calculate_account_state) -> MarginAccount: ...
-
+def margin_account_from_account_events(
+    events: list[dict],
+    calculate_account_state: bool,
+) -> MarginAccount: ...
 
 ### Data types
 
@@ -989,7 +994,6 @@ class LimitOrder:
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> LimitOrder: ...
 
-
 class LimitIfTouchedOrder:
     def __init__(
         self,
@@ -1258,6 +1262,7 @@ class StopMarketOrder:
     ): ...
     @classmethod
     def create(cls, init: OrderInitialized) -> StopMarketOrder: ...
+
 class TrailingStopLimitOrder:
     def __init__(
         self,
@@ -1294,6 +1299,7 @@ class TrailingStopLimitOrder:
     ): ...
     @classmethod
     def create(cls, init: OrderInitialized) -> TrailingStopLimitOrder: ...
+
 class TrailingStopMarketOrder:
     def __init__(
         self,
