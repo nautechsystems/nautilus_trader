@@ -386,10 +386,21 @@ fn call_python_with_time_event(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::nanos::UnixNanos;
+    use nautilus_core::{
+        datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, time::get_atomic_clock_realtime,
+    };
+    use pyo3::prelude::*;
     use rstest::*;
+    use tokio::time::Duration;
 
-    use super::{TestTimer, TimeEvent};
+    use super::{LiveTimer, TestTimer, TimeEvent};
+    use crate::{handlers::EventHandler, testing::wait_until};
+
+    #[pyfunction]
+    fn receive_event(_py: Python, _event: TimeEvent) -> PyResult<()> {
+        // TODO: Assert the length of a handler vec
+        Ok(())
+    }
 
     #[rstest]
     fn test_test_timer_pop_event() {
@@ -458,58 +469,57 @@ mod tests {
         assert!(timer.is_expired);
     }
 
-    // #[tokio::test]
-    // async fn test_live_timer_starts_and_stops() {
-    //     // Create a callback that increments a counter
-    //     let event_list = Python::with_gil(|py| PyList::empty(py));
-    //
-    //     // Create a new LiveTimer with a short interval and start immediately
-    //     let clock = get_atomic_clock_realtime();
-    //     let start_time = UnixNanos::from(clock.get_time_ns());
-    //     let interval_ns = 100_000_000; // 100 ms
-    //     let mut timer =
-    //         LiveTimer::new("TEST_TIMER", interval_ns, start_time, None, handler).unwrap();
-    //     timer.start();
-    //
-    //     // Wait for a short time to allow the timer to run
-    //     tokio::time::sleep(Duration::from_millis(250)).await;
-    //
-    //     // Stop the timer and assert that the counter has been incremented
-    //     timer.cancel().unwrap();
-    //     // let counter = counter.lock().unwrap();
-    //     // assert!(*counter > 0);
-    //     assert!(timer.is_expired())
-    // }
+    #[tokio::test]
+    async fn test_live_timer_starts_and_stops() {
+        pyo3::prepare_freethreaded_python();
 
-    // #[tokio::test]
-    // async fn test_live_timer_with_stop_time() {
-    //     // Create a callback that increments a counter
-    //     let counter = Arc::new(Mutex::new(0));
-    //     let counter_clone = Arc::clone(&counter);
-    //     let callback = move || {
-    //         let mut counter = counter_clone.lock().unwrap();
-    //         *counter += 1;
-    //     };
-    //
-    //     // Create a new LiveTimer with a short interval and stop time
-    //     let start_time = UnixNanos::now();
-    //     let interval_ns = 100_000_000; // 100 ms
-    //     let stop_time = start_time + 500_000_000; // 500 ms
-    //     let mut live_timer = LiveTimer::new(
-    //         "TEST_TIMER",
-    //         interval_ns,
-    //         start_time,
-    //         Some(stop_time),
-    //         callback,
-    //     )
-    //     .unwrap();
-    //     live_timer.start();
-    //
-    //     // Wait for a longer time than the stop time
-    //     tokio::time::sleep(Duration::from_millis(750)).await;
-    //
-    //     // Check that the counter has not been incremented beyond the stop time
-    //     let counter = counter.lock().unwrap();
-    //     assert!(*counter <= 5); // 500 ms / 100 ms = 5 increments
-    // }
+        let handler = Python::with_gil(|py| {
+            let callable = wrap_pyfunction!(receive_event, py).unwrap();
+            EventHandler::new(callable.into_py(py))
+        });
+
+        // Create a new LiveTimer with no stop time
+        let clock = get_atomic_clock_realtime();
+        let start_time = UnixNanos::from(clock.get_time_ns());
+        let interval_ns = 100 * NANOSECONDS_IN_MILLISECOND;
+        let mut timer =
+            LiveTimer::new("TEST_TIMER", interval_ns, start_time, None, handler).unwrap();
+        timer.start();
+
+        // Wait for timer to run
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        timer.cancel().unwrap();
+        wait_until(|| timer.is_expired(), Duration::from_secs(2));
+    }
+
+    #[tokio::test]
+    async fn test_live_timer_with_stop_time() {
+        pyo3::prepare_freethreaded_python();
+
+        let handler = Python::with_gil(|py| {
+            let callable = wrap_pyfunction!(receive_event, py).unwrap();
+            EventHandler::new(callable.into_py(py))
+        });
+
+        // Create a new LiveTimer with a stop time
+        let clock = get_atomic_clock_realtime();
+        let start_time = UnixNanos::from(clock.get_time_ns());
+        let interval_ns = 100 * NANOSECONDS_IN_MILLISECOND;
+        let stop_time = start_time + 500 * NANOSECONDS_IN_MILLISECOND;
+        let mut timer = LiveTimer::new(
+            "TEST_TIMER",
+            interval_ns,
+            start_time,
+            Some(stop_time),
+            handler,
+        )
+        .unwrap();
+        timer.start();
+
+        // Wait for a longer time than the stop time
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        wait_until(|| timer.is_expired(), Duration::from_secs(2));
+    }
 }
