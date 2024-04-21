@@ -72,7 +72,6 @@ pub async fn init_postgres(pg: &PgPool, database: String, password: String) -> a
             sqlx::query(sql_statement).execute(pg).await?;
         }
     }
-
     // grant connect
     match sqlx::query(format!("GRANT CONNECT ON DATABASE {0} TO {0};", database).as_str())
         .execute(pg)
@@ -84,7 +83,6 @@ pub async fn init_postgres(pg: &PgPool, database: String, password: String) -> a
             database, err
         ),
     }
-
     // grant all schema privileges to the role
     match sqlx::query(format!("GRANT ALL PRIVILEGES ON SCHEMA public TO {};", database).as_str())
         .execute(pg)
