@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added Nautilus CLI (see [docs](https://docs.nautilustrader.io/nightly/developer_guide/index.html)), many thanks @filipmacek
 
 ### Breaking Changes
 - Changed `tags` param and return type from `str` to `list[str]` (more naturally expresses multiple tags)
