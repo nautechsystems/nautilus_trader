@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Type stubs to facilitate testing.
+
 use nautilus_core::time::get_atomic_clock_static;
 use nautilus_model::identifiers::stubs::{strategy_id_ema_cross, trader_id};
 use rstest::fixture;

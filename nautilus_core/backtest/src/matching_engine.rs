@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides an `OrderMatchingEngine` for use in research, backtesting and sandbox environments.
+
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]

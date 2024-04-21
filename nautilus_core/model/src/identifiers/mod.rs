@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines identifiers for the trading domain models.
+
 use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

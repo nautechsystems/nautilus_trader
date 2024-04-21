@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! The centralized Tokio runtime for a running Nautilus system.
+
 use std::sync::OnceLock;
 
 use tokio::runtime::Runtime;

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! A common `OrderMatchingCore` for the `OrderMatchingEngine` and other components.
+
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides real-time and static test `Clock` implementations.
+
 use std::{collections::HashMap, ops::Deref};
 
 use nautilus_core::{

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides real-time and test timers for use with `Clock` implementations.
+
 use std::{
     cmp::Ordering,
     ffi::c_char,

@@ -13,4 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Interface traits to faciliate a ports and adapters style architecture.
+
 pub mod account;

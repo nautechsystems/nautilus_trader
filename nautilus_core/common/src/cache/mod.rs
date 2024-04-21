@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! A common in-memory `Cache` for market and execution related data.
+
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]

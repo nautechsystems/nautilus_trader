@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides execution client base functionality.
+
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]

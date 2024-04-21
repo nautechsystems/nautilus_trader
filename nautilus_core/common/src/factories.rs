@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides factories for constructing domain objects such as orders.
+
 use std::collections::HashMap;
 
 use nautilus_core::{time::AtomicTime, uuid::UUID4};

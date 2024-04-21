@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides the [Databento](https://databento.com) integration adapter.
+
 pub mod common;
 pub mod decode;
 pub mod enums;

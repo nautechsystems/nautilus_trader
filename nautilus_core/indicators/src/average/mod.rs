@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Moving average type indicators.
+
 use nautilus_model::enums::PriceType;
 use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 

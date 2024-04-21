@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines a `Position` for the trading domain model.
+
 use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
