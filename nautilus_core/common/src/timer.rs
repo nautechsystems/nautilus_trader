@@ -386,59 +386,77 @@ fn call_python_with_time_event(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    // use nautilus_core::nanos::UnixNanos;
-    // use rstest::*;
-    //
-    // use super::{TestTimer, TimeEvent};
-    //
-    // #[rstest]
-    // fn test_test_timer_pop_event() {
-    //     let mut timer = TestTimer::new("test_timer", 0, UnixNanos::from(1), None).unwrap();
-    //
-    //     assert!(timer.next().is_some());
-    //     assert!(timer.next().is_some());
-    //     timer.is_expired = true;
-    //     assert!(timer.next().is_none());
-    // }
-    //
-    // #[rstest]
-    // fn test_test_timer_advance_within_next_time_ns() {
-    //     let mut timer = TestTimer::new("test_timer", 5, UnixNanos::from(0), None).unwrap();
-    //     let _: Vec<TimeEvent> = timer.advance(UnixNanos::from(1)).collect();
-    //     let _: Vec<TimeEvent> = timer.advance(UnixNanos::from(2)).collect();
-    //     let _: Vec<TimeEvent> = timer.advance(UnixNanos::from(3)).collect();
-    //     assert_eq!(timer.advance(UnixNanos::from(4)).count(), 0);
-    //     assert_eq!(timer.next_time_ns, 5);
-    //     assert!(!timer.is_expired);
-    // }
+    use nautilus_core::nanos::UnixNanos;
+    use rstest::*;
 
-    // #[rstest]
-    // fn test_test_timer_advance_up_to_next_time_ns() {
-    //     let mut timer = TestTimer::new("test_timer", 1, 0, None);
-    //     assert_eq!(timer.advance(1).count(), 1);
-    //     assert!(!timer.is_expired);
-    // }
-    //
-    // #[rstest]
-    // fn test_test_timer_advance_up_to_next_time_ns_with_stop_time() {
-    //     let mut timer = TestTimer::new("test_timer", 1, 0, Some(2));
-    //     assert_eq!(timer.advance(2).count(), 2);
-    //     assert!(timer.is_expired);
-    // }
-    //
-    // #[rstest]
-    // fn test_test_timer_advance_beyond_next_time_ns() {
-    //     let mut timer = TestTimer::new("test_timer", 1, 0, Some(5));
-    //     assert_eq!(timer.advance(5).count(), 5);
-    //     assert!(timer.is_expired);
-    // }
-    //
-    // #[rstest]
-    // fn test_test_timer_advance_beyond_stop_time() {
-    //     let mut timer = TestTimer::new("test_timer", 1, 0, Some(5));
-    //     assert_eq!(timer.advance(10).count(), 5);
-    //     assert!(timer.is_expired);
-    // }
+    use super::{TestTimer, TimeEvent};
+
+    #[rstest]
+    fn test_test_timer_pop_event() {
+        let mut timer = TestTimer::new("test_timer", 1, UnixNanos::from(1), None).unwrap();
+
+        assert!(timer.next().is_some());
+        assert!(timer.next().is_some());
+        timer.is_expired = true;
+        assert!(timer.next().is_none());
+    }
+
+    #[rstest]
+    fn test_test_timer_advance_within_next_time_ns() {
+        let mut timer = TestTimer::new("test_timer", 5, UnixNanos::default(), None).unwrap();
+        let _: Vec<TimeEvent> = timer.advance(UnixNanos::from(1)).collect();
+        let _: Vec<TimeEvent> = timer.advance(UnixNanos::from(2)).collect();
+        let _: Vec<TimeEvent> = timer.advance(UnixNanos::from(3)).collect();
+        assert_eq!(timer.advance(UnixNanos::from(4)).count(), 0);
+        assert_eq!(timer.next_time_ns, 5);
+        assert!(!timer.is_expired);
+    }
+
+    #[rstest]
+    fn test_test_timer_advance_up_to_next_time_ns() {
+        let mut timer = TestTimer::new("test_timer", 1, UnixNanos::default(), None).unwrap();
+        assert_eq!(timer.advance(UnixNanos::from(1)).count(), 1);
+        assert!(!timer.is_expired);
+    }
+
+    #[rstest]
+    fn test_test_timer_advance_up_to_next_time_ns_with_stop_time() {
+        let mut timer = TestTimer::new(
+            "test_timer",
+            1,
+            UnixNanos::default(),
+            Some(UnixNanos::from(2)),
+        )
+        .unwrap();
+        assert_eq!(timer.advance(UnixNanos::from(2)).count(), 2);
+        assert!(timer.is_expired);
+    }
+
+    #[rstest]
+    fn test_test_timer_advance_beyond_next_time_ns() {
+        let mut timer = TestTimer::new(
+            "test_timer",
+            1,
+            UnixNanos::default(),
+            Some(UnixNanos::from(5)),
+        )
+        .unwrap();
+        assert_eq!(timer.advance(UnixNanos::from(5)).count(), 5);
+        assert!(timer.is_expired);
+    }
+
+    #[rstest]
+    fn test_test_timer_advance_beyond_stop_time() {
+        let mut timer = TestTimer::new(
+            "test_timer",
+            1,
+            UnixNanos::default(),
+            Some(UnixNanos::from(5)),
+        )
+        .unwrap();
+        assert_eq!(timer.advance(UnixNanos::from(10)).count(), 5);
+        assert!(timer.is_expired);
+    }
 
     // #[tokio::test]
     // async fn test_live_timer_starts_and_stops() {
