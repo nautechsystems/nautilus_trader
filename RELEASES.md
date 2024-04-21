@@ -9,7 +9,7 @@ None
 None
 
 ### Fixes
-None
+- Fixed `ParquetDataCatalog` bar queries by `instrument_id` which were no longer returning data (the intent is to use `bar_type`, however using `instrument_id` now returns all matching bars)
 
 ---
 

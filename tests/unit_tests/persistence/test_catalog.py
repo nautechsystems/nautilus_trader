@@ -241,7 +241,7 @@ def test_catalog_custom_data(catalog: ParquetDataCatalog) -> None:
     assert isinstance(data[0], CustomData)
 
 
-def test_catalog_bars(catalog: ParquetDataCatalog) -> None:
+def test_catalog_bars_querying_by_bar_type(catalog: ParquetDataCatalog) -> None:
     # Arrange
     bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()
     instrument = TestInstrumentProvider.adabtc_binance()
@@ -258,6 +258,24 @@ def test_catalog_bars(catalog: ParquetDataCatalog) -> None:
     bars = catalog.bars(bar_types=[str(bar_type)])
     all_bars = catalog.bars()
     assert len(all_bars) == 10
+    assert len(bars) == len(stub_bars) == 10
+
+
+def test_catalog_bars_querying_by_instrument_id(catalog: ParquetDataCatalog) -> None:
+    # Arrange
+    bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()
+    instrument = TestInstrumentProvider.adabtc_binance()
+    stub_bars = TestDataStubs.binance_bars_from_csv(
+        "ADABTC-1m-2021-11-27.csv",
+        bar_type,
+        instrument,
+    )
+
+    # Act
+    catalog.write_data(stub_bars)
+
+    # Assert
+    bars = catalog.bars(instrument_ids=[instrument.id.value])
     assert len(bars) == len(stub_bars) == 10
 
 
@@ -339,9 +357,11 @@ def test_catalog_multiple_bar_types(catalog: ParquetDataCatalog) -> None:
     # Assert
     bars1 = catalog.bars(bar_types=[str(bar_type1)])
     bars2 = catalog.bars(bar_types=[str(bar_type2)])
+    bars3 = catalog.bars(instrument_ids=[instrument1.id.value])
     all_bars = catalog.bars()
     assert len(bars1) == 10
     assert len(bars2) == 10
+    assert len(bars3) == 10
     assert len(all_bars) == 20
 
 

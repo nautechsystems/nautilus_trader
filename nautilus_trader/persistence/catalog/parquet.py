@@ -421,10 +421,23 @@ class ParquetDataCatalog(BaseDataCatalog):
             # Parse the parent directory which *should* be the instrument ID,
             # this prevents us matching all instrument ID substrings.
             dir = path.split("/")[-2]
-            if instrument_ids and not any(dir == urisafe_instrument_id(x) for x in instrument_ids):
-                continue
+
+            # Filter by instrument ID
+            if data_cls == Bar:
+                if instrument_ids and not any(
+                    dir.startswith(urisafe_instrument_id(x) + "-") for x in instrument_ids
+                ):
+                    continue
+            else:
+                if instrument_ids and not any(
+                    dir == urisafe_instrument_id(x) for x in instrument_ids
+                ):
+                    continue
+
+            # Filter by bar type
             if bar_types and not any(dir == urisafe_instrument_id(x) for x in bar_types):
                 continue
+
             table = f"{file_prefix}_{idx}"
             query = self._build_query(
                 table,
