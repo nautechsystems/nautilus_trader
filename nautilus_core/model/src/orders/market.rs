@@ -73,7 +73,7 @@ impl MarketOrder {
         exec_algorithm_id: Option<ExecAlgorithmId>,
         exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<Ustr>,
+        tags: Option<Vec<Ustr>>,
     ) -> anyhow::Result<Self> {
         check_quantity_positive(quantity)?;
         if time_in_force == TimeInForce::Gtd {
@@ -291,8 +291,8 @@ impl Order for MarketOrder {
         self.exec_spawn_id
     }
 
-    fn tags(&self) -> Option<Ustr> {
-        self.tags
+    fn tags(&self) -> Option<Vec<Ustr>> {
+        self.tags.clone()
     }
 
     fn filled_qty(&self) -> Quantity {

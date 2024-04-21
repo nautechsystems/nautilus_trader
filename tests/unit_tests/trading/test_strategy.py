@@ -1601,7 +1601,7 @@ class TestStrategy:
         position = self.cache.positions_open()[0]
 
         # Act
-        strategy.close_position(position, tags="EXIT")
+        strategy.close_position(position, tags=["EXIT"])
         self.exchange.process(0)
 
         # Assert
@@ -1610,7 +1610,7 @@ class TestStrategy:
         orders = self.cache.orders(instrument_id=_USDJPY_SIM.id)
         for order in orders:
             if order.side == OrderSide.SELL:
-                assert order.tags == "EXIT"
+                assert order.tags == ["EXIT"]
 
     def test_close_all_positions(self) -> None:
         # Arrange
@@ -1642,7 +1642,7 @@ class TestStrategy:
         self.exchange.process(0)
 
         # Act
-        strategy.close_all_positions(_USDJPY_SIM.id, tags="EXIT")
+        strategy.close_all_positions(_USDJPY_SIM.id, tags=["EXIT"])
         self.exchange.process(0)
 
         # Assert
@@ -1652,7 +1652,7 @@ class TestStrategy:
         orders = self.cache.orders(instrument_id=_USDJPY_SIM.id)
         for order in orders:
             if order.side == OrderSide.SELL:
-                assert order.tags == "EXIT"
+                assert order.tags == ["EXIT"]
 
     @pytest.mark.parametrize(
         ("contingency_type"),

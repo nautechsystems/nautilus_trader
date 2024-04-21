@@ -97,7 +97,7 @@ class TestOrderProviderPyo3:
         client_order_id: ClientOrderId | None = None,
         time_in_force: TimeInForce | None = None,
         exec_algorithm_id: ExecAlgorithmId | None = None,
-        tags: str | None = None,
+        tags: list[str] | None = None,
     ) -> StopLimitOrder:
         return StopLimitOrder(
             trader_id=trader_id or TestIdProviderPyo3.trader_id(),

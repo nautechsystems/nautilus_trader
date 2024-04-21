@@ -33,7 +33,7 @@ stop_limit_order = TestOrderProviderPyo3.stop_limit_order(
     quantity=Quantity.from_int(100_000),
     price=Price.from_str("1.00000"),
     trigger_price=Price.from_str("1.10010"),
-    tags="ENTRY",
+    tags=["ENTRY"],
 )
 
 

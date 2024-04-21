@@ -1189,7 +1189,7 @@ cdef class Strategy(Actor):
         self,
         Position position,
         ClientId client_id = None,
-        str tags = None,
+        list[str] tags = None,
     ):
         """
         Close the given position.
@@ -1204,7 +1204,7 @@ cdef class Strategy(Actor):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        tags : str, optional
+        tags : list[str], optional
             The tags for the market order closing the position.
 
         """
@@ -1240,7 +1240,7 @@ cdef class Strategy(Actor):
         InstrumentId instrument_id,
         PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         ClientId client_id = None,
-        str tags = None,
+        list[str] tags = None,
     ):
         """
         Close all positions for the given instrument ID for this strategy.
@@ -1254,7 +1254,7 @@ cdef class Strategy(Actor):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        tags : str, optional
+        tags : list[str], optional
             The tags for the market orders closing the positions.
 
         """

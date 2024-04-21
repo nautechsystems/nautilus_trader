@@ -108,9 +108,8 @@ cdef class LimitOrder(Order):
         The execution algorithm parameters for the order.
     exec_spawn_id : ClientOrderId, optional
         The execution algorithm spawning primary client order ID.
-    tags : str, optional
-        The custom user tags for the order. These are optional and can
-        contain any arbitrary delimiter if required.
+    tags : list[str], optional
+        The custom user tags for the order.
 
     Raises
     ------
@@ -154,7 +153,7 @@ cdef class LimitOrder(Order):
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         ClientOrderId exec_spawn_id = None,
-        str tags = None,
+        list[str] tags = None,
     ):
         Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NO_ORDER_SIDE")
         if time_in_force == TimeInForce.GTD:

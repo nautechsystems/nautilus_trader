@@ -74,7 +74,7 @@ pub struct OrderInitialized {
     pub exec_algorithm_id: Option<ExecAlgorithmId>,
     pub exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
     pub exec_spawn_id: Option<ClientOrderId>,
-    pub tags: Option<Ustr>,
+    pub tags: Option<Vec<Ustr>>,
 }
 
 impl Default for OrderInitialized {
@@ -152,7 +152,7 @@ impl OrderInitialized {
         exec_algorithm_id: Option<ExecAlgorithmId>,
         exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<Ustr>,
+        tags: Option<Vec<Ustr>>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             trader_id,
@@ -266,9 +266,11 @@ impl Display for OrderInitialized {
                 .map_or("None".to_string(), |exec_spawn_id| format!(
                     "{exec_spawn_id}"
                 )),
-            self.tags
-                .as_ref()
-                .map_or("None".to_string(), |tags| format!("{tags}")),
+            self.tags.as_ref().map_or("None".to_string(), |tags| tags
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")),
         )
     }
 }

@@ -80,7 +80,7 @@ impl StopMarketOrder {
         exec_algorithm_id: Option<ExecAlgorithmId>,
         exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<Ustr>,
+        tags: Option<Vec<Ustr>>,
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
@@ -296,8 +296,8 @@ impl Order for StopMarketOrder {
         self.exec_spawn_id
     }
 
-    fn tags(&self) -> Option<Ustr> {
-        self.tags
+    fn tags(&self) -> Option<Vec<Ustr>> {
+        self.tags.clone()
     }
 
     fn filled_qty(&self) -> Quantity {

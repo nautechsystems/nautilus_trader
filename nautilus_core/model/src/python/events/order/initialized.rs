@@ -76,7 +76,7 @@ impl OrderInitialized {
         exec_algorithm_id: Option<ExecAlgorithmId>,
         exec_algorithm_params: Option<HashMap<String, String>>,
         exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<String>,
+        tags: Option<Vec<String>>,
     ) -> PyResult<Self> {
         Self::new(
             trader_id,
@@ -111,7 +111,7 @@ impl OrderInitialized {
             exec_algorithm_id,
             exec_algorithm_params.map(str_hashmap_to_ustr),
             exec_spawn_id,
-            tags.map(|s| Ustr::from(&s)),
+            tags.map(|vec| vec.iter().map(|s| Ustr::from(&s)).collect()),
         )
         .map_err(to_pyvalue_err)
     }
@@ -201,9 +201,11 @@ impl OrderInitialized {
                 .map_or("None".to_string(), |exec_spawn_id| format!(
                     "{exec_spawn_id}"
                 )),
-            self.tags
-                .as_ref()
-                .map_or("None".to_string(), |tags| format!("{tags}")),
+            self.tags.as_ref().map_or("None".to_string(), |tags| tags
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")),
             self.event_id,
             self.ts_init
         )
@@ -338,7 +340,10 @@ impl OrderInitialized {
             None => dict.set_item("exec_spawn_id", py.None())?,
         }
         match &self.tags {
-            Some(tags) => dict.set_item("tags", tags.to_string())?,
+            Some(tags) => dict.set_item(
+                "tags",
+                tags.iter().map(|x| x.to_string()).collect::<Vec<String>>(),
+            )?,
             None => dict.set_item("tags", py.None())?,
         }
         Ok(dict.into())
