@@ -153,11 +153,8 @@ test-examples:
 install-talib:
 	bash scripts/install-talib.sh
 
-.PHONY: init-db
-init-db:
-	(cd nautilus_core && cargo run --bin init-db)
+.PHONY: install-cli
+install-cli:
+	(cd nautilus_core && cargo install --path cli  --bin nautilus)
 
-.PHONY: drop-db
-drop-db:
-	(cd nautilus_core && cargo run --bin drop-db)
 

@@ -13,12 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-/// Be careful about ordering and foreign key constraints when deleting data.
-/// We can use this list for manual truncation of tables.
-pub const NAUTILUS_TABLES: [&str; 5] =
-    ["general", "instrument", "currency", "order", "order_event"];
+use crate::{
+    database::postgres::run_database_command,
+    opt::{Commands, NautilusCli},
+};
 
-pub mod database;
-pub mod models;
-pub mod pg;
-pub mod schema;
+mod database;
+pub mod opt;
+
+pub async fn run(opt: NautilusCli) -> anyhow::Result<()> {
+    match opt.command {
+        Commands::Database(database_opt) => run_database_command(database_opt).await?,
+    }
+    Ok(())
+}

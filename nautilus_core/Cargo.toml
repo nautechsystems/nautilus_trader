@@ -14,6 +14,7 @@ members = [
     "network/tokio-tungstenite",
     "persistence",
     "pyo3",
+    "cli"
 ]
 
 [workspace.package]
@@ -49,6 +50,7 @@ tracing = "0.1.40"
 tokio = { version = "1.37.0", features = ["full"] }
 ustr = { version = "1.0.0", features = ["serde"] }
 uuid = { version = "1.8.0", features = ["v4"] }
+sqlx = { version = "0.7.4", features = ["postgres", "runtime-tokio"] }
 
 # dev-dependencies
 criterion = "0.5.1"
