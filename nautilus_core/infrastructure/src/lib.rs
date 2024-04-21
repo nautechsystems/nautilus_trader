@@ -26,6 +26,7 @@
 //!
 //! - `python`: Enables Python bindings from `pyo3`
 //! - `redis`: Enables the Redis cache database and message bus backing implementations
+//! - `sql`: Enables the SQL models and cache database
 
 #[cfg(feature = "python")]
 pub mod python;

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! A common in-memory `MessageBus` for loosely coupled message passing patterns.
+
 pub mod database;
 
 use std::{

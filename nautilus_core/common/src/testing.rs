@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Common test related helper functions.
+
 use std::{
     thread,
     time::{Duration, Instant},

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides a SQL data model and `CacheDatabase` implementation.
+
 pub mod cache;
 pub mod database;
 pub mod models;

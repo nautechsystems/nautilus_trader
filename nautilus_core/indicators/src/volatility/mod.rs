@@ -13,4 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Volatility type indicators.
+
 pub mod atr;

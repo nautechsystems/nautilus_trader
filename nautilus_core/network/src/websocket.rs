@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides a high-performance WebSocket client implementation.
+
 use std::{str::FromStr, sync::Arc, time::Duration};
 
 use futures_util::{

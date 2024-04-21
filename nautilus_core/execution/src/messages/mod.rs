@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines execution specific messages such as order commands.
+
 use nautilus_model::identifiers::{client_id::ClientId, instrument_id::InstrumentId};
 use strum::Display;
 

@@ -13,4 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Ratio type indicators.
+
 pub mod efficiency_ratio;

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides a Redis backed `CacheDatabase` and `MessageBusDatabase` implementation.
+
 pub mod cache;
 pub mod msgbus;
 

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! The logging framework for Nautilus systems.
+
 use std::{
     collections::HashMap,
     env,

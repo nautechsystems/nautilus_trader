@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! The core `BacktestEngine` for backtesting on historical data.
+
 use std::ops::{Deref, DerefMut};
 
 use nautilus_common::{clock::TestClock, ffi::clock::TestClock_API, timer::TimeEventHandler};

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides Python bindings from `pyo3`.
+//! Python bindings from `pyo3`.
 
 #[cfg(feature = "redis")]
 pub mod redis;

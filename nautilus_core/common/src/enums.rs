@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines common enumerations.
+
 use std::fmt::Debug;
 
 use serde::{Deserialize, Serialize};

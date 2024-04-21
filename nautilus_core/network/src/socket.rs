@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides a high-performance raw TCP client implementation with TLS capability.
+
 use std::{sync::Arc, time::Duration};
 
 use nautilus_core::python::to_pyruntime_err;

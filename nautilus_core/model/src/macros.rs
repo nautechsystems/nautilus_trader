@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Model specific macros.
+
 #[macro_export]
 macro_rules! enum_strum_serde {
     ($type:ty) => {

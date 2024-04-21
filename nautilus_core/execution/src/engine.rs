@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides a generic `ExecutionEngine` for backtesting and live environments.
+
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]

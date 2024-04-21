@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides common message handlers.
+
 #[cfg(not(feature = "python"))]
 use std::ffi::c_char;
 use std::{fmt, sync::Arc};
