@@ -13,12 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-/// Be careful about ordering and foreign key constraints when deleting data.
-/// We can use this list for manual truncation of tables.
-pub const NAUTILUS_TABLES: [&str; 5] =
-    ["general", "instrument", "currency", "order", "order_event"];
+use clap::Parser;
+use log::{error, LevelFilter};
+use nautilus_cli::opt::NautilusCli;
 
-pub mod database;
-pub mod models;
-pub mod pg;
-pub mod schema;
+#[tokio::main]
+async fn main() {
+    dotenvy::dotenv().ok();
+    simple_logger::SimpleLogger::new()
+        .with_module_level("sqlx", LevelFilter::Off)
+        .init()
+        .unwrap();
+    if let Err(err) = nautilus_cli::run(NautilusCli::parse()).await {
+        error!("Error executing Nautilus CLI: {}", err);
+    }
+}
