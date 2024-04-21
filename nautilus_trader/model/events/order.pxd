@@ -93,8 +93,8 @@ cdef class OrderInitialized(OrderEvent):
     """The execution algorithm parameters for the order.\n\n:returns: `dict[str, Any]` or ``None``"""
     cdef readonly ClientOrderId exec_spawn_id
     """The execution algorithm spawning client order ID.\n\n:returns: `ClientOrderId` or ``None``"""
-    cdef readonly str tags
-    """The order custom user tags.\n\n:returns: `str` or ``None``"""
+    cdef readonly list[str] tags
+    """The order custom user tags.\n\n:returns: `list[str]` or ``None``"""
 
     @staticmethod
     cdef OrderInitialized from_dict_c(dict values)

@@ -248,9 +248,8 @@ cdef class OrderInitialized(OrderEvent):
         The execution algorithm parameters for the order.
     exec_spawn_id : ClientOrderId, optional with no default so ``None`` must be passed explicitly
         The execution algorithm spawning primary client order ID.
-    tags : str, optional with no default so ``None`` must be passed explicitly
-        The custom user tags for the order. These are optional and can
-        contain any arbitrary delimiter if required.
+    tags : list[str], optional with no default so ``None`` must be passed explicitly
+        The custom user tags for the order.
     event_id : UUID4
         The event ID.
     ts_init : uint64_t
@@ -279,17 +278,17 @@ cdef class OrderInitialized(OrderEvent):
         bint post_only,
         bint reduce_only,
         bint quote_quantity,
-        dict options not None,
+        dict[str, object] options not None,
         TriggerType emulation_trigger,
         InstrumentId trigger_instrument_id: InstrumentId | None,
         ContingencyType contingency_type,
         OrderListId order_list_id: OrderListId | None,
-        list linked_order_ids: list[ClientOrderId] | None,
+        list[ClientOrderId] linked_order_ids: list[ClientOrderId] | None,
         ClientOrderId parent_order_id: ClientOrderId | None,
         ExecAlgorithmId exec_algorithm_id: ExecAlgorithmId | None,
-        dict exec_algorithm_params: dict[str, Any] | None,
+        dict[str, object] exec_algorithm_params: dict[str, object] | None,
         ClientOrderId exec_spawn_id: ClientOrderId | None,
-        str tags: str | None,
+        list[str] tags: list[str] | None,
         UUID4 event_id not None,
         uint64_t ts_init,
         bint reconciliation=False,
@@ -526,6 +525,7 @@ cdef class OrderInitialized(OrderEvent):
         cdef str parent_order_id_str = values["parent_order_id"]
         cdef str exec_algorithm_id_str = values["exec_algorithm_id"]
         cdef str exec_spawn_id_str = values["exec_spawn_id"]
+        tags = values["tags"]
         return OrderInitialized(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -548,7 +548,7 @@ cdef class OrderInitialized(OrderEvent):
             exec_algorithm_id=ExecAlgorithmId(exec_algorithm_id_str) if exec_algorithm_id_str is not None else None,
             exec_algorithm_params=values["exec_algorithm_params"],
             exec_spawn_id=ClientOrderId(exec_spawn_id_str) if exec_spawn_id_str is not None else None,
-            tags=values["tags"],
+            tags=tags.split(",") if isinstance(tags, str) else tags,
             event_id=UUID4(values["event_id"]),
             ts_init=values["ts_init"],
             reconciliation=values.get("reconciliation", False),

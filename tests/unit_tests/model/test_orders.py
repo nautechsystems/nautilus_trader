@@ -360,18 +360,18 @@ class TestOrders:
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            tags="ENTRY",
+            tags=["ENTRY"],
         )
 
         # Act, Assert
         assert isinstance(hash(order), int)
         assert (
             str(order)
-            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, tags=ENTRY)"  # noqa
+            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, tags=['ENTRY'])"  # noqa
         )
         assert (
             repr(order)
-            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, tags=ENTRY)"  # noqa
+            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, tags=['ENTRY'])"  # noqa
         )
 
     def test_market_order_to_dict(self):
@@ -635,7 +635,7 @@ class TestOrders:
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
             Price.from_str("1.10010"),
-            tags="ENTRY",
+            tags=["ENTRY"],
         )
 
         # Assert
@@ -651,11 +651,11 @@ class TestOrders:
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "StopLimitOrder(BUY 100_000 AUD/USD.SIM STOP_LIMIT @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, tags=ENTRY)"  # noqa
+            == "StopLimitOrder(BUY 100_000 AUD/USD.SIM STOP_LIMIT @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, tags=['ENTRY'])"  # noqa
         )
         assert (
             repr(order)
-            == "StopLimitOrder(BUY 100_000 AUD/USD.SIM STOP_LIMIT @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, tags=ENTRY)"  # noqa
+            == "StopLimitOrder(BUY 100_000 AUD/USD.SIM STOP_LIMIT @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, tags=['ENTRY'])"  # noqa
         )
 
     def test_stop_limit_order_to_dict(self):
@@ -667,7 +667,7 @@ class TestOrders:
             Price.from_str("1.00000"),
             Price.from_str("1.10010"),
             trigger_type=TriggerType.MARK_PRICE,
-            tags="STOP_LOSS",
+            tags=["STOP_LOSS"],
         )
 
         # Act
@@ -712,7 +712,7 @@ class TestOrders:
             "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
-            "tags": "STOP_LOSS",
+            "tags": ["STOP_LOSS"],
             "ts_init": 0,
             "ts_last": 0,
         }
@@ -890,7 +890,7 @@ class TestOrders:
             Price.from_str("1.00000"),
             Price.from_str("1.10010"),
             emulation_trigger=TriggerType.LAST_TRADE,
-            tags="ENTRY",
+            tags=["ENTRY"],
         )
 
         # Assert
@@ -908,11 +908,11 @@ class TestOrders:
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST_TRADE], status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, tags=ENTRY)"  # noqa
+            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST_TRADE], status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, tags=['ENTRY'])"  # noqa
         )
         assert (
             repr(order)
-            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST_TRADE], status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, tags=ENTRY)"  # noqa
+            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST_TRADE], status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, tags=['ENTRY'])"  # noqa
         )
 
     def test_limit_if_touched_order_to_dict(self):
@@ -926,7 +926,7 @@ class TestOrders:
             trigger_type=TriggerType.MARK_PRICE,
             emulation_trigger=TriggerType.LAST_TRADE,
             trigger_instrument_id=TestIdStubs.usdjpy_id(),
-            tags="STOP_LOSS",
+            tags=["STOP_LOSS"],
         )
 
         # Act
@@ -969,7 +969,7 @@ class TestOrders:
             "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
-            "tags": "STOP_LOSS",
+            "tags": ["STOP_LOSS"],
             "ts_init": 0,
             "ts_last": 0,
         }
@@ -1516,17 +1516,17 @@ class TestOrders:
             Quantity.from_int(100_000),
             sl_trigger_price=Price.from_str("0.99990"),
             tp_price=Price.from_str("1.00010"),
-            entry_tags="ENTRY",
-            tp_tags="TAKE_PROFIT",
-            sl_tags="STOP_LOSS",
+            entry_tags=["ENTRY"],
+            tp_tags=["TAKE_PROFIT"],
+            sl_tags=["STOP_LOSS"],
         )
 
         # Assert
         assert str(bracket) == (
-            "OrderList(id=OL-19700101-0000-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-0000-000-001-2, O-19700101-0000-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 0.99990[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-2, venue_order_id=None, position_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-0000-000-001-3], parent_order_id=O-19700101-0000-000-001-1, tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00010 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-3, venue_order_id=None, position_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-0000-000-001-2], parent_order_id=O-19700101-0000-000-001-1, tags=TAKE_PROFIT)])"  # noqa
+            "OrderList(id=OL-19700101-0000-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-0000-000-001-2, O-19700101-0000-000-001-3], tags=['ENTRY']), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 0.99990[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-2, venue_order_id=None, position_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-0000-000-001-3], parent_order_id=O-19700101-0000-000-001-1, tags=['STOP_LOSS']), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00010 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-3, venue_order_id=None, position_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-0000-000-001-2], parent_order_id=O-19700101-0000-000-001-1, tags=['TAKE_PROFIT'])])"  # noqa
         )
         assert repr(bracket) == (
-            "OrderList(id=OL-19700101-0000-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-0000-000-001-2, O-19700101-0000-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 0.99990[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-2, venue_order_id=None, position_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-0000-000-001-3], parent_order_id=O-19700101-0000-000-001-1, tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00010 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-3, venue_order_id=None, position_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-0000-000-001-2], parent_order_id=O-19700101-0000-000-001-1, tags=TAKE_PROFIT)])"  # noqa
+            "OrderList(id=OL-19700101-0000-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-0000-000-001-2, O-19700101-0000-000-001-3], tags=['ENTRY']), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 0.99990[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-2, venue_order_id=None, position_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-0000-000-001-3], parent_order_id=O-19700101-0000-000-001-1, tags=['STOP_LOSS']), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00010 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-3, venue_order_id=None, position_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-0000-000-001-2], parent_order_id=O-19700101-0000-000-001-1, tags=['TAKE_PROFIT'])])"  # noqa
         )
 
     def test_apply_order_denied_event(self):

@@ -84,7 +84,7 @@ impl StopLimitOrder {
         exec_algorithm_id: Option<ExecAlgorithmId>,
         exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<Ustr>,
+        tags: Option<Vec<Ustr>>,
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
@@ -308,8 +308,8 @@ impl Order for StopLimitOrder {
         self.exec_spawn_id
     }
 
-    fn tags(&self) -> Option<Ustr> {
-        self.tags
+    fn tags(&self) -> Option<Vec<Ustr>> {
+        self.tags.clone()
     }
 
     fn filled_qty(&self) -> Quantity {
@@ -439,9 +439,9 @@ impl Display for StopLimitOrder {
             self.time_in_force,
             self.status,
             self.client_order_id,
-            self.venue_order_id.map_or_else(|| "None".to_string(), |venue_order_id| format!("{venue_order_id}") ),
-            self.position_id.map_or_else(|| "None".to_string(), |position_id| format!("{position_id}")),
-            self.tags.map_or_else(|| "None".to_string(), |tags| format!("{tags}"))
+            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
+            self.position_id.map_or("None".to_string(), |position_id| format!("{position_id}")),
+            self.tags.clone().map_or("None".to_string(), |tags| tags.iter().map(|s| s.to_string()).collect::<Vec<String>>().join(", ")),
         )
     }
 }

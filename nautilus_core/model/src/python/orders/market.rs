@@ -63,7 +63,7 @@ impl MarketOrder {
         exec_algorithm_id: Option<ExecAlgorithmId>,
         exec_algorithm_params: Option<HashMap<String, String>>,
         exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<String>,
+        tags: Option<Vec<String>>,
     ) -> PyResult<Self> {
         let exec_algorithm_params = exec_algorithm_params.map(str_hashmap_to_ustr);
         Self::new(
@@ -85,7 +85,7 @@ impl MarketOrder {
             exec_algorithm_id,
             exec_algorithm_params,
             exec_spawn_id,
-            tags.map(|s| Ustr::from(&s)),
+            tags.map(|vec| vec.into_iter().map(|s| Ustr::from(s.as_str())).collect()),
         )
         .map_err(to_pyvalue_err)
     }
@@ -264,8 +264,10 @@ impl MarketOrder {
 
     #[getter]
     #[pyo3(name = "tags")]
-    fn py_tags(&self) -> Option<String> {
-        self.tags.map(|x| x.to_string())
+    fn py_tags(&self) -> Option<Vec<String>> {
+        self.tags
+            .clone()
+            .map(|vec| vec.iter().map(|s| s.to_string()).collect())
     }
 
     #[staticmethod]
@@ -353,9 +355,14 @@ impl MarketOrder {
             || dict.set_item("exec_spawn_id", py.None()),
             |x| dict.set_item("exec_spawn_id", x.to_string()),
         )?;
-        self.tags.map_or_else(
+        self.tags.clone().map_or_else(
             || dict.set_item("tags", py.None()),
-            |x| dict.set_item("tags", x.to_string()),
+            |x| {
+                dict.set_item(
+                    "tags",
+                    x.iter().map(|x| x.to_string()).collect::<Vec<String>>(),
+                )
+            },
         )?;
         self.account_id.map_or_else(
             || dict.set_item("account_id", py.None()),
@@ -493,9 +500,9 @@ impl MarketOrder {
         })?;
         let tags = dict.get_item("tags").map(|x| {
             x.and_then(|inner| {
-                let extracted_str = inner.extract::<&str>();
+                let extracted_str = inner.extract::<Vec<String>>();
                 match extracted_str {
-                    Ok(item) => Some(Ustr::from(item)),
+                    Ok(item) => Some(item.iter().map(|s| Ustr::from(&s)).collect()),
                     Err(_) => None,
                 }
             })

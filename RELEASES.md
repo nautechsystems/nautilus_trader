@@ -6,7 +6,7 @@ Released on TBD (UTC).
 None
 
 ### Breaking Changes
-None
+- Changed `tags` param and return type from `str` to `list[str]` (more naturally expresses multiple tags)
 
 ### Fixes
 - Fixed `ParquetDataCatalog` bar queries by `instrument_id` which were no longer returning data (the intent is to use `bar_type`, however using `instrument_id` now returns all matching bars)

@@ -938,7 +938,7 @@ class LimitOrder:
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, str] | None = None,
         exec_spawn_id: ClientOrderId | None = None,
-        tags: str | None = None,
+        tags: list[str] | None = None,
     ): ...
     @classmethod
     def create(cls, init: OrderInitialized) -> LimitOrder: ...
@@ -1023,7 +1023,7 @@ class LimitIfTouchedOrder:
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, str] | None = None,
         exec_spawn_id: ClientOrderId | None = None,
-        tags: str | None = None,
+        tags: list[str] | None = None,
     ) -> None: ...
     @classmethod
     def create(cls, init: OrderInitialized) -> LimitIfTouchedOrder: ...
@@ -1049,7 +1049,7 @@ class MarketOrder:
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, str] | None = None,
         exec_spawn_id: ClientOrderId | None = None,
-        tags: str | None = None,
+        tags: list[str] | None = None,
     ) -> None: ...
     @classmethod
     def create(cls, init: OrderInitialized) -> MarketOrder: ...
@@ -1113,7 +1113,7 @@ class MarketToLimitOrder:
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, str] | None = None,
         exec_spawn_id: ClientOrderId | None = None,
-        tags: str | None = None,
+        tags: list[str] | None = None,
     ): ...
     @classmethod
     def create(cls, init: OrderInitialized) -> MarketToLimitOrder: ...
@@ -1145,7 +1145,7 @@ class MarketIfTouchedOrder:
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, str] | None = None,
         exec_spawn_id: ClientOrderId | None = None,
-        tags: str | None = None,
+        tags: list[str] | None = None,
     ): ...
     @classmethod
     def create(cls, init: OrderInitialized) -> MarketIfTouchedOrder: ...
@@ -1179,7 +1179,7 @@ class StopLimitOrder:
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, str] | None = None,
         exec_spawn_id: ClientOrderId | None = None,
-        tags: str | None = None,
+        tags: list[str] | None = None,
     ): ...
     @classmethod
     def create(cls, init: OrderInitialized) -> StopLimitOrder: ...
@@ -1258,7 +1258,7 @@ class StopMarketOrder:
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, str] | None = None,
         exec_spawn_id: ClientOrderId | None = None,
-        tags: str | None = None,
+        tags: list[str] | None = None,
     ): ...
     @classmethod
     def create(cls, init: OrderInitialized) -> StopMarketOrder: ...
@@ -1295,7 +1295,7 @@ class TrailingStopLimitOrder:
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, str] | None = None,
         exec_spawn_id: ClientOrderId | None = None,
-        tags: str | None = None,
+        tags: list[str] | None = None,
     ): ...
     @classmethod
     def create(cls, init: OrderInitialized) -> TrailingStopLimitOrder: ...
@@ -1329,7 +1329,7 @@ class TrailingStopMarketOrder:
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, str] | None = None,
         exec_spawn_id: ClientOrderId | None = None,
-        tags: str | None = None,
+        tags: list[str] | None = None,
     ): ...
     @classmethod
     def create(cls, init: OrderInitialized) -> TrailingStopMarketOrder: ...
@@ -1966,7 +1966,7 @@ class OrderInitialized:
         exec_algorithm_id: ExecAlgorithmId | None = None,
         exec_algorithm_params: dict[str, str] | None = None,
         exec_spawn_id: ClientOrderId | None = None,
-        tags: str | None = None,
+        tags: list[str] | None = None,
     ) -> None: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> OrderInitialized: ...

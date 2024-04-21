@@ -170,7 +170,7 @@ order: MarketOrder = self.order_factory.market(
     quantity=Quantity.from_int(100_000),
     time_in_force=TimeInForce.IOC,  # <-- optional (default GTC)
     reduce_only=False,  # <-- optional (default False)
-    tags="ENTRY",  # <-- optional (default None)
+    tags=["ENTRY"],  # <-- optional (default None)
 )
 ```
 [API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.market)
@@ -324,7 +324,7 @@ order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
     time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
     expire_time=None,  # <-- optional (default None)
     reduce_only=False,  # <-- optional (default False)
-    tags="ENTRY",  # <-- optional (default None)
+    tags=["ENTRY"],  # <-- optional (default None)
 )
 ```
 
@@ -359,7 +359,7 @@ order: StopLimitOrder = self.order_factory.limit_if_touched(
     expire_time=pd.Timestamp("2022-06-06T12:00"),
     post_only=True,  # <-- optional (default False)
     reduce_only=False,  # <-- optional (default False)
-    tags="TAKE_PROFIT",  # <-- optional (default None)
+    tags=["TAKE_PROFIT"],  # <-- optional (default None)
 )
 ```
 
@@ -396,7 +396,7 @@ order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
     time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
     expire_time=None,  # <-- optional (default None)
     reduce_only=True,  # <-- optional (default False)
-    tags="TRAILING_STOP-1",  # <-- optional (default None)
+    tags=["TRAILING_STOP-1"],  # <-- optional (default None)
 )
 ```
 
@@ -436,7 +436,7 @@ order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
     time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
     expire_time=None,  # <-- optional (default None)
     reduce_only=True,  # <-- optional (default False)
-    tags="TRAILING_STOP",  # <-- optional (default None)
+    tags=["TRAILING_STOP"],  # <-- optional (default None)
 )
 ```
 

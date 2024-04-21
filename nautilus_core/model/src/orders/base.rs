@@ -629,7 +629,7 @@ pub trait Order {
     fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId>;
     fn exec_algorithm_params(&self) -> Option<HashMap<Ustr, Ustr>>;
     fn exec_spawn_id(&self) -> Option<ClientOrderId>;
-    fn tags(&self) -> Option<Ustr>;
+    fn tags(&self) -> Option<Vec<Ustr>>;
     fn filled_qty(&self) -> Quantity;
     fn leaves_qty(&self) -> Quantity;
     fn avg_px(&self) -> Option<f64>;
@@ -832,7 +832,7 @@ pub struct OrderCore {
     pub exec_algorithm_id: Option<ExecAlgorithmId>,
     pub exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
     pub exec_spawn_id: Option<ClientOrderId>,
-    pub tags: Option<Ustr>,
+    pub tags: Option<Vec<Ustr>>,
     pub filled_qty: Quantity,
     pub leaves_qty: Quantity,
     pub avg_px: Option<f64>,

@@ -785,7 +785,7 @@ cdef class ExecAlgorithm(Actor):
         Quantity quantity,
         TimeInForce time_in_force = TimeInForce.GTC,
         bint reduce_only = False,
-        str tags = None,
+        list[str] tags = None,
         bint reduce_primary = True,
     ):
         """
@@ -801,9 +801,8 @@ cdef class ExecAlgorithm(Actor):
             The spawned orders time in force. Often not applicable for market orders.
         reduce_only : bool, default False
             If the spawned order carries the 'reduce-only' execution instruction.
-        tags : str, optional
-            The custom user tags for the order. These are optional and can
-            contain any arbitrary delimiter if required.
+        tags : list[str], optional
+            The custom user tags for the order.
         reduce_primary : bool, default True
             If the primary order quantity should be reduced by the given `quantity`.
 
@@ -859,7 +858,7 @@ cdef class ExecAlgorithm(Actor):
         bint reduce_only = False,
         Quantity display_qty = None,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
-        str tags = None,
+        list[str] tags = None,
         bint reduce_primary = True,
     ):
         """
@@ -885,9 +884,8 @@ cdef class ExecAlgorithm(Actor):
             The quantity of the spawned order to display on the public book (iceberg).
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
             The spawned orders emulation trigger.
-        tags : str, optional
-            The custom user tags for the order. These are optional and can
-            contain any arbitrary delimiter if required.
+        tags : list[str], optional
+            The custom user tags for the order.
         reduce_primary : bool, default True
             If the primary order quantity should be reduced by the given `quantity`.
 
@@ -948,7 +946,7 @@ cdef class ExecAlgorithm(Actor):
         bint reduce_only = False,
         Quantity display_qty = None,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
-        str tags = None,
+        list[str] tags = None,
         bint reduce_primary = True,
     ):
         """
@@ -970,9 +968,8 @@ cdef class ExecAlgorithm(Actor):
             The quantity of the spawned order to display on the public book (iceberg).
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
             The spawned orders emulation trigger.
-        tags : str, optional
-            The custom user tags for the order. These are optional and can
-            contain any arbitrary delimiter if required.
+        tags : list[str], optional
+            The custom user tags for the order.
         reduce_primary : bool, default True
             If the primary order quantity should be reduced by the given `quantity`.
 

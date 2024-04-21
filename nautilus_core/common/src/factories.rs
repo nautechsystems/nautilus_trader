@@ -104,7 +104,7 @@ impl OrderFactory {
         quote_quantity: Option<bool>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
         exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
-        tags: Option<Ustr>,
+        tags: Option<Vec<Ustr>>,
     ) -> MarketOrder {
         let client_order_id = self.generate_client_order_id();
         let exec_spawn_id: Option<ClientOrderId> = if exec_algorithm_id.is_none() {
