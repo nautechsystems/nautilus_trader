@@ -1,0 +1,25 @@
+[package]
+name = "nautilus-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description.workspace = true
+documentation.workspace = true
+
+[[bin]]
+name = "nautilus"
+path = "src/bin/cli.rs"
+
+[dependencies]
+nautilus-common = { path = "../common"}
+nautilus-model = { path = "../model" }
+nautilus-core = { path = "../core" }
+nautilus-infrastructure = { path = "../infrastructure" , features = ['sql']}
+anyhow = { workspace = true }
+tokio = {workspace = true}
+log = { workspace = true }
+clap = { version = "4.5.4", features = ["derive", "env"] }
+clap_derive = { version = "4.5.4" }
+dotenvy = { version = "0.15.7" }
+sqlx = {workspace = true }
+simple_logger = "4.3.3"
