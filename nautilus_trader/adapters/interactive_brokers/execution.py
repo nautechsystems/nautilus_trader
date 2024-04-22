@@ -530,25 +530,20 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             return ib_order
 
     def _attach_order_tags(self, ib_order: IBOrder, order: Order) -> IBOrder:
-        try:
-            tags: dict = {}
-            for ot in order.tags:
-                if ot.startswith("IBOrderTags:"):
-                    tags = IBOrderTags.parse(ot.replace("IBOrderTags:", ""))
-                    break
+        tags: dict = {}
+        for ot in order.tags:
+            if ot.startswith("IBOrderTags:"):
+                tags = IBOrderTags.parse(ot.replace("IBOrderTags:", "")).dict()
+                break
 
-            for tag in tags:
-                if tag == "conditions":
-                    for condition in tags[tag]:
-                        pass  # TODO:
-                else:
-                    setattr(ib_order, tag, tags[tag])
-            return ib_order
-        except (json.JSONDecodeError, TypeError):
-            self._log.warning(
-                f"{order.client_order_id} {order.tags=} ignored, must be valid IBOrderTags.value",
-            )
-            return ib_order
+        for tag in tags:
+            if tag == "conditions":
+                for condition in tags[tag]:
+                    pass  # TODO:
+            else:
+                setattr(ib_order, tag, tags[tag])
+
+        return ib_order
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         PyCondition.type(command, SubmitOrder, "command")
