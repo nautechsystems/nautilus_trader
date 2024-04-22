@@ -167,7 +167,7 @@ class IBOrderTags(NautilusConfig, frozen=True, repr_omit_defaults=True):
 
     @property
     def value(self):
-        return self.json().decode()
+        return f"IBOrderTags:{self.json().decode()}"
 
     def __str__(self):
         return self.value

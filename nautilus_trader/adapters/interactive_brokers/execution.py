@@ -30,6 +30,7 @@ from ibapi.order_state import OrderState as IBOrderState
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.client.common import IBPosition
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
+from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_ORDER_ACTION
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_ORDER_FIELDS
@@ -530,7 +531,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     def _attach_order_tags(self, ib_order: IBOrder, order: Order) -> IBOrder:
         try:
-            tags: dict = json.loads(order.tags)
+            tags: dict = {}
+            for ot in order.tags:
+                if ot.startswith("IBOrderTags:"):
+                    tags = IBOrderTags.parse(ot.replace("IBOrderTags:", ""))
+
             for tag in tags:
                 if tag == "conditions":
                     for condition in tags[tag]:
