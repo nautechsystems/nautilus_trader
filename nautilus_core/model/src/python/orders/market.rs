@@ -200,10 +200,10 @@ impl MarketOrder {
 
     #[getter]
     #[pyo3(name = "exec_algorithm_params")]
-    fn py_exec_algorithm_params(&self) -> Option<HashMap<String, String>> {
-        self.exec_algorithm_params.clone().map(|x| {
+    fn py_exec_algorithm_params(&self) -> Option<HashMap<&str, &str>> {
+        self.exec_algorithm_params.as_ref().map(|x| {
             x.into_iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .map(|(k, v)| (k.as_str(), v.as_str()))
                 .collect()
         })
     }
@@ -264,10 +264,10 @@ impl MarketOrder {
 
     #[getter]
     #[pyo3(name = "tags")]
-    fn py_tags(&self) -> Option<Vec<String>> {
+    fn py_tags(&self) -> Option<Vec<&str>> {
         self.tags
-            .clone()
-            .map(|vec| vec.iter().map(|s| s.to_string()).collect())
+            .as_ref()
+            .map(|vec| vec.iter().map(|s| s.as_str()).collect())
     }
 
     #[staticmethod]

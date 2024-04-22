@@ -624,12 +624,12 @@ pub trait Order {
     fn trigger_instrument_id(&self) -> Option<InstrumentId>;
     fn contingency_type(&self) -> Option<ContingencyType>;
     fn order_list_id(&self) -> Option<OrderListId>;
-    fn linked_order_ids(&self) -> Option<Vec<ClientOrderId>>;
+    fn linked_order_ids(&self) -> Option<&[ClientOrderId]>;
     fn parent_order_id(&self) -> Option<ClientOrderId>;
     fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId>;
-    fn exec_algorithm_params(&self) -> Option<HashMap<Ustr, Ustr>>;
+    fn exec_algorithm_params(&self) -> Option<&HashMap<Ustr, Ustr>>;
     fn exec_spawn_id(&self) -> Option<ClientOrderId>;
-    fn tags(&self) -> Option<Vec<Ustr>>;
+    fn tags(&self) -> Option<&[Ustr]>;
     fn filled_qty(&self) -> Quantity;
     fn leaves_qty(&self) -> Quantity;
     fn avg_px(&self) -> Option<f64>;
@@ -787,12 +787,12 @@ where
             trigger_instrument_id: order.trigger_instrument_id(),
             contingency_type: order.contingency_type(),
             order_list_id: order.order_list_id(),
-            linked_order_ids: order.linked_order_ids(),
+            linked_order_ids: order.linked_order_ids().map(|x| x.to_vec()),
             parent_order_id: order.parent_order_id(),
             exec_algorithm_id: order.exec_algorithm_id(),
-            exec_algorithm_params: order.exec_algorithm_params(),
+            exec_algorithm_params: order.exec_algorithm_params().map(|x| x.to_owned()),
             exec_spawn_id: order.exec_spawn_id(),
-            tags: order.tags(),
+            tags: order.tags().map(|x| x.to_vec()),
             event_id: order.init_id(),
             ts_event: order.ts_init(),
             ts_init: order.ts_init(),
