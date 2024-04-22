@@ -267,8 +267,8 @@ impl Order for MarketToLimitOrder {
         self.order_list_id
     }
 
-    fn linked_order_ids(&self) -> Option<Vec<ClientOrderId>> {
-        self.linked_order_ids.clone()
+    fn linked_order_ids(&self) -> Option<&[ClientOrderId]> {
+        self.linked_order_ids.as_deref()
     }
 
     fn parent_order_id(&self) -> Option<ClientOrderId> {
@@ -279,16 +279,16 @@ impl Order for MarketToLimitOrder {
         self.exec_algorithm_id
     }
 
-    fn exec_algorithm_params(&self) -> Option<HashMap<Ustr, Ustr>> {
-        self.exec_algorithm_params.clone()
+    fn exec_algorithm_params(&self) -> Option<&HashMap<Ustr, Ustr>> {
+        self.exec_algorithm_params.as_ref()
     }
 
     fn exec_spawn_id(&self) -> Option<ClientOrderId> {
         self.exec_spawn_id
     }
 
-    fn tags(&self) -> Option<Vec<Ustr>> {
-        self.tags.clone()
+    fn tags(&self) -> Option<&[Ustr]> {
+        self.tags.as_deref()
     }
 
     fn filled_qty(&self) -> Quantity {
