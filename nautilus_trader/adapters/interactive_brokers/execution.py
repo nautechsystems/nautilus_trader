@@ -535,6 +535,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             for ot in order.tags:
                 if ot.startswith("IBOrderTags:"):
                     tags = IBOrderTags.parse(ot.replace("IBOrderTags:", ""))
+                    break
 
             for tag in tags:
                 if tag == "conditions":
