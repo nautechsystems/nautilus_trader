@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! An `OrderBookDeltas` container type to carry a bulk of `OrderBookDelta` records.
+
 use std::{
     fmt::{Display, Formatter},
     hash::{Hash, Hasher},

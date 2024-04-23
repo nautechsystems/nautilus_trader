@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Bar aggregate structures, data types and functionality.
+
 use std::{
     collections::HashMap,
     fmt::{Debug, Display, Formatter},
