@@ -12,10 +12,13 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
 nautilus-core = { path = "../core" }
-nautilus-model = { path = "../model" }
+nautilus-model = { path = "../model", features = ["stubs"] }
+nautilus-common = { path = "../common" }
+nautilus-accounting = { path = "../accounting" }
 anyhow = { workspace = true }
 futures = { workspace = true }
 pyo3 = { workspace = true, optional = true }
+pyo3-asyncio = { workspace = true, optional = true }
 rand = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
@@ -23,6 +26,7 @@ binary-heap-plus = "0.5.0"
 compare = "0.1.0"
 datafusion = { version = "37.1.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions", "pyarrow"] }
 dotenv = "0.15.0"
+sqlx = { workspace = true}
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -35,12 +39,12 @@ procfs = "0.16.0"
 [features]
 default = ["ffi", "python"]
 extension-module = [
-  "pyo3/extension-module", 
-  "nautilus-core/extension-module", 
+  "pyo3/extension-module",
+  "nautilus-core/extension-module",
   "nautilus-model/extension-module",
 ]
 ffi = ["nautilus-core/ffi", "nautilus-model/ffi"]
-python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]
+python = ["pyo3", "nautilus-core/python", "nautilus-model/python", "nautilus-accounting/python"]
 
 [[bench]]
 name = "bench_persistence"

@@ -13,8 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#[derive(sqlx::FromRow)]
-pub struct GeneralItem {
-    pub key: String,
-    pub value: String,
-}
+pub mod cache_database;

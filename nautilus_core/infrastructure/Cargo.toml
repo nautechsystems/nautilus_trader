@@ -50,4 +50,4 @@ extension-module = [
 ]
 python = ["pyo3"]
 redis = ["dep:redis"]
-sql = ["dep:sqlx"]
+postgres = ["dep:sqlx"]

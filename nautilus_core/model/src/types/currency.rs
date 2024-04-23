@@ -142,26 +142,6 @@ impl<'de> Deserialize<'de> for Currency {
     }
 }
 
-impl <'r> FromRow<'r, PgRow> for Currency {
-    fn from_row(row: &'r PgRow) -> Result<Self, Error> {
-        let code = row.try_get::<String,_>("code")?;
-        let precision = row.try_get::<i32,_>("precision")?;
-        let iso4217 = row.try_get::<i32,_>("iso4217")?;
-        let name = row.try_get::<String,_>("name")?;
-        let currency_type = row.try_get::<String,_>("currency_type")
-            .map(|res| CurrencyType::from_str(res.as_str()).unwrap())?;
-
-        Ok(
-            Currency::new(
-                code.as_str(),
-                precision as u8,
-                iso4217 as u16,
-                name.as_str(),
-                currency_type,
-        ).unwrap())
-    }
-}
-
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
