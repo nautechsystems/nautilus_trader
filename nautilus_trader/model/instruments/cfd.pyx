@@ -19,10 +19,10 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AssetClass
-from nautilus_trader.model.functions cimport asset_class_from_str
-from nautilus_trader.model.functions cimport asset_class_to_str
 from nautilus_trader.core.rust.model cimport CurrencyType
 from nautilus_trader.core.rust.model cimport InstrumentClass
+from nautilus_trader.model.functions cimport asset_class_from_str
+from nautilus_trader.model.functions cimport asset_class_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -148,7 +148,7 @@ cdef class Cfd(Instrument):
         str tick_scheme_name = None,
         dict info = None,
     ):
-        
+
         super().__init__(
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
@@ -198,7 +198,7 @@ cdef class Cfd(Instrument):
             size_precision=values["size_precision"],
             price_increment=Price.from_str_c(values["price_increment"]),
             size_increment=Quantity.from_str_c(values["size_increment"]),
-            base_currency=Currency.from_str_c(values["base_currency"]) if base_c is not None else None,            
+            base_currency=Currency.from_str_c(values["base_currency"]) if base_c is not None else None,
             lot_size=Quantity.from_str_c(lot_s) if lot_s is not None else None,
             max_quantity=Quantity.from_str_c(max_q) if max_q is not None else None,
             min_quantity=Quantity.from_str_c(min_q) if min_q is not None else None,

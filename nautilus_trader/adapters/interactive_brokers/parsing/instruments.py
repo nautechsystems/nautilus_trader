@@ -78,9 +78,6 @@ VENUES_FUT = [
 ]
 VENUES_CFD = [
     "IBCFD",  # self named, in fact mapping to "SMART" when parsing
-    "IBUSCFD",  # US
-    "IBCFD",  # EU
-    "IBAPCFD",  # Asia-Pacific
 ]
 VENUES_CMDTY = ["IBCMDTY"]  # self named, in fact mapping to "SMART" when parsing
 

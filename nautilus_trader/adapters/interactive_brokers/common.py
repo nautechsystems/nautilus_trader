@@ -102,7 +102,16 @@ class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
     """
 
     secType: Literal[
-        "CASH", "STK", "OPT", "FUT", "FOP", "CONTFUT", "CRYPTO", "CFD", "CMDTY", ""
+        "CASH",
+        "STK",
+        "OPT",
+        "FUT",
+        "FOP",
+        "CONTFUT",
+        "CRYPTO",
+        "CFD",
+        "CMDTY",
+        "",
     ] = ""
     conId: int = 0
     exchange: str = ""
