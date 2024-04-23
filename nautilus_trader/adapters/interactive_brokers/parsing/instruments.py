@@ -454,7 +454,7 @@ def ib_contract_to_instrument_id_strict_symbology(contract: IBContract) -> Instr
         venue = "IBCMDTY"
     else:
         symbol = f"{contract.localSymbol}={contract.secType}"
-        venue = (contract.primaryExchange or contract.exchange).replace("/", ".")
+        venue = (contract.primaryExchange or contract.exchange).replace(".", "/")
     return InstrumentId.from_str(f"{symbol}.{venue}")
 
 
