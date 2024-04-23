@@ -34,7 +34,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class Cfd(Instrument):
     """
-    Represents a generic currency pair instrument in a spot/cash market.
+    Represents a Contract for Difference (CFD) instrument.
 
     Can represent both Fiat FX and Cryptocurrency pairs.
 
@@ -45,7 +45,7 @@ cdef class Cfd(Instrument):
     raw_symbol : Symbol
         The raw/local/native symbol for the instrument, assigned by the venue.
     asset_class : AssetClass
-        The cfd contract asset class.
+        The CFD contract asset class.
     base_currency : Currency, optional
         The base currency.
     quote_currency : Currency
@@ -119,6 +119,11 @@ cdef class Cfd(Instrument):
         If `max_price` is not positive (> 0).
     ValueError
         If `min_price` is negative (< 0).
+
+    References
+    ----------
+    https://en.wikipedia.org/wiki/Contract_for_difference
+
     """
 
     def __init__(

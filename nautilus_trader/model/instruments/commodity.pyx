@@ -34,9 +34,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class Commodity(Instrument):
     """
-    Represents a generic currency pair instrument in a spot/cash market.
-
-    Can represent both Fiat FX and Cryptocurrency pairs.
+    Represents a commodity instrument in a spot/cash market.
 
     Parameters
     ----------
