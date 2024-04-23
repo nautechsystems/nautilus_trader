@@ -458,9 +458,9 @@ def ib_contract_to_instrument_id_strict_symbology(contract: IBContract) -> Instr
     return InstrumentId.from_str(f"{symbol}.{venue}")
 
 
-def ib_contract_to_instrument_id_simplified_symbology(
+def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too complex)
     contract: IBContract,
-) -> InstrumentId: # noqa: C901 (too complex)
+) -> InstrumentId:
     security_type = contract.secType
     if security_type == "STK":
         symbol = (contract.localSymbol or contract.symbol).replace(" ", "-")
@@ -549,9 +549,9 @@ def instrument_id_to_ib_contract_strict_symbology(instrument_id: InstrumentId) -
         )
 
 
-def instrument_id_to_ib_contract_simplified_symbology(
+def instrument_id_to_ib_contract_simplified_symbology(  # noqa: C901 (too complex)
     instrument_id: InstrumentId,
-) -> IBContract: # noqa: C901 (too complex)
+) -> IBContract:
     if instrument_id.venue.value in VENUES_CASH and (
         m := RE_CASH.match(instrument_id.symbol.value)
     ):
