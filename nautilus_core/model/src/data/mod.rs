@@ -37,13 +37,17 @@ use self::{
 };
 use crate::polymorphism::GetTsInit;
 
+/// A built-in Nautilus data type.
+///
+/// Not recommended for storing large amounts of data, as the largest variant is significantly
+/// larger (10x) than the smallest.
 #[repr(C)]
 #[derive(Clone, Debug)]
-#[allow(clippy::large_enum_variant)] // TODO: Optimize this (largest variant 1008 vs 136 bytes)
+#[allow(clippy::large_enum_variant)]
 pub enum Data {
     Delta(OrderBookDelta),
     Deltas(OrderBookDeltas_API),
-    Depth10(OrderBookDepth10),
+    Depth10(OrderBookDepth10), // This variant is significantly larger
     Quote(QuoteTick),
     Trade(TradeTick),
     Bar(Bar),

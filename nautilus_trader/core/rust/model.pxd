@@ -576,6 +576,10 @@ cdef extern from "../includes/model.h":
         # The UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
+    # A built-in Nautilus data type.
+    #
+    # Not recommended for storing large amounts of data, as the largest variant is significantly
+    # larger (10x) than the smallest.
     cpdef enum Data_t_Tag:
         DELTA,
         DELTAS,

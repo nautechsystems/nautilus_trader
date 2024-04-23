@@ -1048,6 +1048,12 @@ typedef struct Bar_t {
     uint64_t ts_init;
 } Bar_t;
 
+/**
+ * A built-in Nautilus data type.
+ *
+ * Not recommended for storing large amounts of data, as the largest variant is significantly
+ * larger (10x) than the smallest.
+ */
 typedef enum Data_t_Tag {
     DELTA,
     DELTAS,
