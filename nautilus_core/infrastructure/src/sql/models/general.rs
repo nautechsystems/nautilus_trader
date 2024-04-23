@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-
 #[derive(Debug, sqlx::FromRow)]
 pub struct GeneralRow {
     pub key: String,

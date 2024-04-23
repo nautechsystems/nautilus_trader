@@ -24,8 +24,8 @@ from nautilus_trader.model.objects import Currency
 class CachePostgresAdapter(CacheDatabaseFacade):
 
     def __init__(
-            self,
-            config: CacheConfig = None,
+        self,
+        config: CacheConfig | None = None,
     ):
         if config:
             config = CacheConfig()
@@ -46,14 +46,12 @@ class CachePostgresAdapter(CacheDatabaseFacade):
         currency_pyo3 = transform_currency_to_pyo3(currency)
         self._backing.add_currency(currency_pyo3)
 
-    def load_currencies(self) -> dict[str,Currency]:
-        currencies =  self._backing.load_currencies()
-        return { currency.code: transform_currency_from_pyo3(currency) for currency in currencies}
+    def load_currencies(self) -> dict[str, Currency]:
+        currencies = self._backing.load_currencies()
+        return {currency.code: transform_currency_from_pyo3(currency) for currency in currencies}
 
     def load_currency(self, code: str) -> Currency | None:
         currency_pyo3 = self._backing.load_currency(code)
         if currency_pyo3:
             return transform_currency_from_pyo3(currency_pyo3)
         return None
-
-

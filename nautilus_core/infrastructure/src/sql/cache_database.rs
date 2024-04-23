@@ -13,18 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::{HashMap, VecDeque};
-use tokio::sync::mpsc::{Receiver,Sender,channel};
-use std::time::{Duration, Instant};
-use sqlx::{PgPool};
-use sqlx::postgres::PgConnectOptions;
-use tokio::sync::mpsc::error::TryRecvError;
-use tokio::time::sleep;
-use nautilus_model::types::currency::Currency;
-use crate::sql::models::general::GeneralRow;
-use crate::sql::pg::{connect_pg, get_postgres_connect_options};
-use crate::sql::queries::DatabaseQueries;
+use std::{
+    collections::{HashMap, VecDeque},
+    time::{Duration, Instant},
+};
 
+use nautilus_model::types::currency::Currency;
+use sqlx::{postgres::PgConnectOptions, PgPool};
+use tokio::{
+    sync::mpsc::{channel, error::TryRecvError, Receiver, Sender},
+    time::sleep,
+};
+
+use crate::sql::{
+    models::general::GeneralRow,
+    pg::{connect_pg, get_postgres_connect_options},
+    queries::DatabaseQueries,
+};
 
 #[derive(Debug)]
 #[cfg_attr(
@@ -36,14 +41,11 @@ pub struct PostgresCacheDatabase {
     tx: Sender<DatabaseQuery>,
 }
 
-
 #[derive(Debug, Clone)]
-pub enum DatabaseQuery{
-    Add(String,Vec<u8>),
+pub enum DatabaseQuery {
+    Add(String, Vec<u8>),
     AddCurrency(Currency),
 }
-
-
 
 fn get_buffer_interval() -> Duration {
     Duration::from_millis(0)
@@ -52,12 +54,12 @@ fn get_buffer_interval() -> Duration {
 async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
     for cmd in buffer.drain(..) {
         match cmd {
-            DatabaseQuery::Add(key,value) => {
-               DatabaseQueries ::add(pool,key,value).await.unwrap();
-            },
+            DatabaseQuery::Add(key, value) => {
+                DatabaseQueries::add(pool, key, value).await.unwrap();
+            }
             DatabaseQuery::AddCurrency(currency) => {
-                DatabaseQueries::add_currency(pool,currency).await.unwrap();
-            },
+                DatabaseQueries::add_currency(pool, currency).await.unwrap();
+            }
         }
     }
 }
@@ -68,9 +70,10 @@ impl PostgresCacheDatabase {
         port: Option<u16>,
         username: Option<String>,
         password: Option<String>,
-        database: Option<String>
-    ) -> Result<Self,sqlx::Error> {
-        let pg_connect_options = get_postgres_connect_options(host,port,username,password,database).unwrap();
+        database: Option<String>,
+    ) -> Result<Self, sqlx::Error> {
+        let pg_connect_options =
+            get_postgres_connect_options(host, port, username, password, database).unwrap();
         let pool = connect_pg(pg_connect_options.clone().into()).await.unwrap();
         let (tx, rx) = channel::<DatabaseQuery>(1000);
         // spawn a thread to handle messages
@@ -80,10 +83,7 @@ impl PostgresCacheDatabase {
         Ok(PostgresCacheDatabase { pool, tx })
     }
 
-    async fn handle_message(
-        mut rx: Receiver<DatabaseQuery>,
-        pg_connect_options: PgConnectOptions
-    ){
+    async fn handle_message(mut rx: Receiver<DatabaseQuery>, pg_connect_options: PgConnectOptions) {
         let pool = connect_pg(pg_connect_options).await.unwrap();
         // Buffering
         let mut buffer: VecDeque<DatabaseQuery> = VecDeque::new();
@@ -106,13 +106,13 @@ impl PostgresCacheDatabase {
             }
         }
         // rain any remaining message
-        if !buffer.is_empty(){
-            drain_buffer(&pool,&mut buffer).await;
+        if !buffer.is_empty() {
+            drain_buffer(&pool, &mut buffer).await;
         }
     }
 
-   pub async fn load(&self) -> Result<HashMap<String, Vec<u8>>,sqlx::Error> {
-        let query = sqlx::query_as::<_,GeneralRow>("SELECT * FROM general");
+    pub async fn load(&self) -> Result<HashMap<String, Vec<u8>>, sqlx::Error> {
+        let query = sqlx::query_as::<_, GeneralRow>("SELECT * FROM general");
         let result = query.fetch_all(&self.pool).await;
         match result {
             Ok(rows) => {
@@ -127,20 +127,18 @@ impl PostgresCacheDatabase {
             }
         }
     }
-    
-
 
     pub async fn add(&self, key: String, value: Vec<u8>) -> anyhow::Result<()> {
-        let query = DatabaseQuery::Add(key,value);
-        self.tx.send(query)
-            .await
-            .map_err(|err| anyhow::anyhow!("Failed to send query to database message handler: {err}"))
+        let query = DatabaseQuery::Add(key, value);
+        self.tx.send(query).await.map_err(|err| {
+            anyhow::anyhow!("Failed to send query to database message handler: {err}")
+        })
     }
 
     pub async fn add_currency(&self, currency: Currency) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddCurrency(currency);
-        self.tx.send(query)
-            .await
-            .map_err(|err| anyhow::anyhow!("Failed to query add_currency to database message handler: {err}"))
+        self.tx.send(query).await.map_err(|err| {
+            anyhow::anyhow!("Failed to query add_currency to database message handler: {err}")
+        })
     }
 }

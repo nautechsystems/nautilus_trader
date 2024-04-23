@@ -167,7 +167,7 @@ pub async fn init_postgres(pg: &PgPool, database: String, password: String) -> a
             let result = sqlx::query(sql_statement).execute(pg).await;
             match result {
                 Ok(_) => info!("Executed statement successfully"),
-                Err(err) =>{
+                Err(err) => {
                     if err.to_string().contains("already exists") {
                         info!("Already exists error on statement, skipping");
                     } else {
@@ -205,10 +205,10 @@ pub async fn init_postgres(pg: &PgPool, database: String, password: String) -> a
             "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {};",
             database
         )
-            .as_str(),
+        .as_str(),
     )
-        .execute(pg)
-        .await
+    .execute(pg)
+    .await
     {
         Ok(_) => info!("All tables privileges granted to role {}", database),
         Err(err) => error!(
@@ -222,10 +222,10 @@ pub async fn init_postgres(pg: &PgPool, database: String, password: String) -> a
             "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {};",
             database
         )
-            .as_str(),
+        .as_str(),
     )
-        .execute(pg)
-        .await
+    .execute(pg)
+    .await
     {
         Ok(_) => info!("All sequences privileges granted to role {}", database),
         Err(err) => error!(
@@ -239,10 +239,10 @@ pub async fn init_postgres(pg: &PgPool, database: String, password: String) -> a
             "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO {};",
             database
         )
-            .as_str(),
+        .as_str(),
     )
-        .execute(pg)
-        .await
+    .execute(pg)
+    .await
     {
         Ok(_) => info!("All functions privileges granted to role {}", database),
         Err(err) => error!(

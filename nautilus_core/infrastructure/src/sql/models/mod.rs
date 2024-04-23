@@ -13,6 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod instruments;
 pub mod general;
+pub mod instruments;
 pub mod types;

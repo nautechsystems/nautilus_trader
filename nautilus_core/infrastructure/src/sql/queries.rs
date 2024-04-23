@@ -13,16 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-
 use std::collections::HashMap;
-use sqlx::{PgPool};
+
 use nautilus_model::types::currency::Currency;
-use crate::sql::models::general::GeneralRow;
-use crate::sql::models::types::CurrencyModel;
+use sqlx::PgPool;
+
+use crate::sql::models::{general::GeneralRow, types::CurrencyModel};
 
 pub struct DatabaseQueries;
 
-impl DatabaseQueries{
+impl DatabaseQueries {
     pub async fn add(pool: &PgPool, key: String, value: Vec<u8>) -> anyhow::Result<()> {
         sqlx::query("INSERT INTO general (key, value) VALUES ($1, $2)")
             .bind(key)
@@ -33,9 +33,8 @@ impl DatabaseQueries{
             .map_err(|err| anyhow::anyhow!("Failed to insert into general table: {err}"))
     }
 
-
     pub async fn load(pool: &PgPool) -> anyhow::Result<HashMap<String, Vec<u8>>> {
-        sqlx::query_as::<_,GeneralRow>("SELECT * FROM general")
+        sqlx::query_as::<_, GeneralRow>("SELECT * FROM general")
             .fetch_all(pool)
             .await
             .map(|rows| {
@@ -47,9 +46,8 @@ impl DatabaseQueries{
             })
             .map_err(|err| anyhow::anyhow!("Failed to load general table: {err}"))
     }
-    
 
-    pub async fn add_currency(pool: &PgPool, currency: Currency) -> anyhow::Result<()> { 
+    pub async fn add_currency(pool: &PgPool, currency: Currency) -> anyhow::Result<()> {
         sqlx::query(
             "INSERT INTO currency (code, precision, iso4217, name, currency_type) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (code) DO NOTHING"
         )
@@ -64,7 +62,7 @@ impl DatabaseQueries{
             .map_err(|err| anyhow::anyhow!("Failed to insert into currency table: {err}"))
     }
 
-    pub async fn load_currencies(pool: &PgPool) -> anyhow::Result<Vec<Currency>> { 
+    pub async fn load_currencies(pool: &PgPool) -> anyhow::Result<Vec<Currency>> {
         sqlx::query_as::<_, CurrencyModel>("SELECT * FROM currency ORDER BY code ASC")
             .fetch_all(pool)
             .await
@@ -72,18 +70,17 @@ impl DatabaseQueries{
             .map_err(|err| anyhow::anyhow!("Failed to load currencies: {err}"))
     }
 
-
     pub async fn load_currency(pool: &PgPool, code: &str) -> anyhow::Result<Option<Currency>> {
         sqlx::query_as::<_, CurrencyModel>("SELECT * FROM currency WHERE code = $1")
             .bind(code)
             .fetch_optional(pool)
             .await
-            .map(|currency| currency.map(|row| {row.0}) )
+            .map(|currency| currency.map(|row| row.0))
             .map_err(|err| anyhow::anyhow!("Failed to load currency: {err}"))
     }
 
-    pub async fn truncate(pool: &PgPool, table: String) -> anyhow::Result<()>{
-        sqlx::query(format!("TRUNCATE TABLE {} CASCADE",table).as_str())
+    pub async fn truncate(pool: &PgPool, table: String) -> anyhow::Result<()> {
+        sqlx::query(format!("TRUNCATE TABLE {} CASCADE", table).as_str())
             .execute(pool)
             .await
             .map(|_| ())

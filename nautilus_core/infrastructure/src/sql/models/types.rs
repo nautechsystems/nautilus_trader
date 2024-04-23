@@ -14,29 +14,30 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::str::FromStr;
-use sqlx::{FromRow, Row};
-use sqlx::postgres::PgRow;
-use nautilus_model::enums::CurrencyType;
-use nautilus_model::types::currency::Currency;
+
+use nautilus_model::{enums::CurrencyType, types::currency::Currency};
+use sqlx::{postgres::PgRow, FromRow, Row};
 
 pub struct CurrencyModel(pub Currency);
 
-impl <'r> FromRow<'r, PgRow> for CurrencyModel {
+impl<'r> FromRow<'r, PgRow> for CurrencyModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let code = row.try_get::<String,_>("code")?;
-        let precision = row.try_get::<i32,_>("precision")?;
-        let iso4217 = row.try_get::<i32,_>("iso4217")?;
-        let name = row.try_get::<String,_>("name")?;
-        let currency_type = row.try_get::<String,_>("currency_type")
+        let code = row.try_get::<String, _>("code")?;
+        let precision = row.try_get::<i32, _>("precision")?;
+        let iso4217 = row.try_get::<i32, _>("iso4217")?;
+        let name = row.try_get::<String, _>("name")?;
+        let currency_type = row
+            .try_get::<String, _>("currency_type")
             .map(|res| CurrencyType::from_str(res.as_str()).unwrap())?;
-        
+
         let currency = Currency::new(
-                code.as_str(),
-                precision as u8,
-                iso4217 as u16,
-                name.as_str(),
-                currency_type,
-            ).unwrap();
+            code.as_str(),
+            precision as u8,
+            iso4217 as u16,
+            name.as_str(),
+            currency_type,
+        )
+        .unwrap();
         Ok(CurrencyModel(currency))
     }
 }

@@ -13,32 +13,29 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.objects import Currency
-from nautilus_trader.core import nautilus_pyo3
 
 
 ################################################################################
 # Currency
 ################################################################################
-def transform_currency_from_pyo3(currency: nautilus_pyo3.Currency)-> Currency:
+def transform_currency_from_pyo3(currency: nautilus_pyo3.Currency) -> Currency:
     return Currency(
         code=currency.code,
         precision=currency.precision,
         iso4217=currency.iso4217,
         name=currency.name,
-        currency_type=CurrencyType(currency.currency_type.value)
+        currency_type=CurrencyType(currency.currency_type.value),
     )
 
 
-def transform_currency_to_pyo3(currency: Currency)-> nautilus_pyo3.Currency:
+def transform_currency_to_pyo3(currency: Currency) -> nautilus_pyo3.Currency:
     return nautilus_pyo3.Currency(
         code=currency.code,
         precision=currency.precision,
         iso4217=currency.iso4217,
         name=currency.name,
-        currency_type=nautilus_pyo3.CurrencyType.from_str(currency.currency_type.name)
+        currency_type=nautilus_pyo3.CurrencyType.from_str(currency.currency_type.name),
     )
-
-
-

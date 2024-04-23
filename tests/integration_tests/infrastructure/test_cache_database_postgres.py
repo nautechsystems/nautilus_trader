@@ -13,12 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import os
 
-from nautilus_trader.cache.postgres.adapter import CachePostgresAdapter
 import pytest
 
+from nautilus_trader.cache.postgres.adapter import CachePostgresAdapter
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.model.enums import CurrencyType
@@ -30,6 +29,7 @@ from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
+
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
@@ -69,7 +69,6 @@ class TestCachePostgresAdapter:
             cache=self.cache,
             clock=self.clock,
         )
-
 
     def teardown(self):
         self.database.flush()

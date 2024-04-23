@@ -13,12 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use log::{error, info};
-use nautilus_infrastructure::sql::pg::{connect_pg, get_postgres_connect_options};
-use sqlx::PgPool;
+use nautilus_infrastructure::sql::pg::{
+    connect_pg, drop_postgres, get_postgres_connect_options, init_postgres,
+};
 
 use crate::opt::{DatabaseCommand, DatabaseOpt};
-
 
 pub async fn run_database_command(opt: DatabaseOpt) -> anyhow::Result<()> {
     let command = opt.command.clone();
