@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides a `Cache` database backing.
+
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]

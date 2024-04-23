@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Type stubs to facilitate testing.
+
 use rstest::fixture;
 
 use super::OrderBookDelta;
