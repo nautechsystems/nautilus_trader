@@ -99,8 +99,9 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         # These fee rates assume USD-M Futures Trading without the 10% off for using BNB or BUSD.
         # The next step is to enable users to pass their own fee rates map via the config.
         # In the future, we aim to represent this fee model with greater accuracy for backtesting.
+        # https://www.binance.com/en/fee/futureFee
         self._fee_rates = {
-            0: BinanceFuturesFeeRates(feeTier=0, maker="0.000200", taker="0.000400"),
+            0: BinanceFuturesFeeRates(feeTier=0, maker="0.000200", taker="0.000500"),
             1: BinanceFuturesFeeRates(feeTier=1, maker="0.000160", taker="0.000400"),
             2: BinanceFuturesFeeRates(feeTier=2, maker="0.000140", taker="0.000350"),
             3: BinanceFuturesFeeRates(feeTier=3, maker="0.000120", taker="0.000320"),
