@@ -31,28 +31,29 @@ use nautilus_model::{
         quote::QuoteTick,
         trade::TradeTick,
     },
-    enums::{OrderSide, PositionSide},
+    enums::{OrderSide, PositionSide, PriceType},
     identifiers::{
         account_id::AccountId, client_id::ClientId, client_order_id::ClientOrderId,
         component_id::ComponentId, exec_algorithm_id::ExecAlgorithmId, instrument_id::InstrumentId,
-        position_id::PositionId, strategy_id::StrategyId, venue::Venue,
+        order_list_id::OrderListId, position_id::PositionId, strategy_id::StrategyId, venue::Venue,
         venue_order_id::VenueOrderId,
     },
     instruments::{synthetic::SyntheticInstrument, InstrumentAny},
     orderbook::book::OrderBook,
-    orders::base::OrderAny,
+    orders::{base::OrderAny, list::OrderList},
     polymorphism::{
         GetClientOrderId, GetExecAlgorithmId, GetExecSpawnId, GetInstrumentId, GetOrderSide,
         GetStrategyId,
     },
     position::Position,
-    types::currency::Currency,
+    types::{currency::Currency, price::Price},
 };
 use ustr::Ustr;
 
 use self::database::CacheDatabaseAdapter;
 use crate::{enums::SerializationEncoding, interface::account::Account};
 
+/// The configuration for `Cache` instances.
 pub struct CacheConfig {
     pub encoding: SerializationEncoding,
     pub timestamps_as_iso8601: bool,
@@ -105,6 +106,7 @@ impl Default for CacheConfig {
     }
 }
 
+/// A key-value lookup index for a `Cache`.
 pub struct CacheIndex {
     venue_account: HashMap<Venue, AccountId>,
     venue_orders: HashMap<Venue, HashSet<ClientOrderId>>,
@@ -168,6 +170,7 @@ impl CacheIndex {
     }
 }
 
+/// A common in-memory `Cache` for market and execution related data.
 pub struct Cache {
     config: CacheConfig,
     index: CacheIndex,
@@ -182,7 +185,7 @@ pub struct Cache {
     synthetics: HashMap<InstrumentId, SyntheticInstrument>,
     accounts: HashMap<AccountId, Box<dyn Account>>,
     orders: HashMap<ClientOrderId, OrderAny>,
-    // order_lists: HashMap<OrderListId, VecDeque<OrderList>>,  TODO: Need `OrderList`
+    order_lists: HashMap<OrderListId, VecDeque<OrderList>>,
     positions: HashMap<PositionId, Position>,
     position_snapshots: HashMap<PositionId, Vec<u8>>,
 }
@@ -240,7 +243,7 @@ impl Cache {
             synthetics: HashMap::new(),
             accounts: HashMap::new(),
             orders: HashMap::new(),
-            // order_lists: HashMap<OrderListId, VecDeque<OrderList>>,  TODO: Need `OrderList`
+            order_lists: HashMap::new(),
             positions: HashMap::new(),
             position_snapshots: HashMap::new(),
         }
@@ -316,13 +319,6 @@ impl Cache {
         info!("Cached {} orders from database", self.general.len());
         Ok(())
     }
-
-    // pub fn cache_order_lists(&mut self) -> anyhow::Result<()> {
-    //
-    //
-    //     info!("Cached {} order lists from database", self.general.len());
-    //     Ok(())
-    // }
 
     pub fn cache_positions(&mut self) -> anyhow::Result<()> {
         self.positions = match &self.database {
@@ -1185,12 +1181,78 @@ impl Cache {
         self.orders(venue, instrument_id, strategy_id, side).len()
     }
 
-    // -- DATA QUERIES --------------------------------------------------------
+    // -- GENERAL -------------------------------------------------------------
 
-    pub fn get(&self, key: &str) -> anyhow::Result<Option<&Vec<u8>>> {
+    pub fn get(&self, key: &str) -> anyhow::Result<Option<&[u8]>> {
         check_valid_string(key, stringify!(key))?;
 
-        Ok(self.general.get(key))
+        Ok(self.general.get(key).map(|x| x.as_slice()))
+    }
+
+    // -- DATA QUERIES --------------------------------------------------------
+
+    pub fn price(&self, instrument_id: &InstrumentId, price_type: PriceType) -> Option<Price> {
+        match price_type {
+            PriceType::Bid => self
+                .quotes
+                .get(instrument_id)
+                .and_then(|quotes| quotes.front().map(|quote| quote.bid_price)),
+            PriceType::Ask => self
+                .quotes
+                .get(instrument_id)
+                .and_then(|quotes| quotes.front().map(|quote| quote.ask_price)),
+            PriceType::Mid => self.quotes.get(instrument_id).and_then(|quotes| {
+                quotes.front().map(|quote| {
+                    Price::new(
+                        (quote.ask_price.as_f64() + quote.bid_price.as_f64()) / 2.0,
+                        quote.bid_price.precision + 1,
+                    )
+                    .expect("Error calculating mid price")
+                })
+            }),
+            PriceType::Last => self
+                .trades
+                .get(instrument_id)
+                .and_then(|trades| trades.front().map(|trade| trade.price)),
+        }
+    }
+
+    pub fn quote_ticks(&self, instrument_id: &InstrumentId) -> Option<Vec<QuoteTick>> {
+        self.quotes
+            .get(instrument_id)
+            .map(|quotes| quotes.iter().cloned().collect())
+    }
+
+    pub fn trade_ticks(&self, instrument_id: &InstrumentId) -> Option<Vec<TradeTick>> {
+        self.trades
+            .get(instrument_id)
+            .map(|trades| trades.iter().cloned().collect())
+    }
+
+    pub fn bars(&self, bar_type: &BarType) -> Option<Vec<Bar>> {
+        self.bars
+            .get(bar_type)
+            .map(|bars| bars.iter().cloned().collect())
+    }
+
+    pub fn order_book(&self, instrument_id: &InstrumentId) -> Option<&OrderBook> {
+        self.books.get(instrument_id)
+    }
+
+    pub fn quote_tick(&self, instrument_id: &InstrumentId) -> Option<&QuoteTick> {
+        self.quotes
+            .get(instrument_id)
+            .and_then(|quotes| quotes.front())
+    }
+
+    pub fn trade_tick(&self, instrument_id: &InstrumentId) -> Option<&TradeTick> {
+        self.trades
+            .get(instrument_id)
+            .and_then(|trades| trades.front())
+    }
+
+    pub fn bar(&self, bar_type: &BarType) -> Option<&Bar> {
+        self.bars.get(bar_type).and_then(|bars| bars.front())
     }
 }
 
@@ -1245,6 +1307,6 @@ mod tests {
         cache.add(key, value.clone()).unwrap();
 
         let result = cache.get(key).unwrap();
-        assert_eq!(result, Some(&value));
+        assert_eq!(result, Some(&value.as_slice()).copied());
     }
 }
