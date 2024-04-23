@@ -480,7 +480,7 @@ mod tests {
 
         // Create a new LiveTimer with no stop time
         let clock = get_atomic_clock_realtime();
-        let start_time = UnixNanos::from(clock.get_time_ns());
+        let start_time = clock.get_time_ns();
         let interval_ns = 100 * NANOSECONDS_IN_MILLISECOND;
         let mut timer =
             LiveTimer::new("TEST_TIMER", interval_ns, start_time, None, handler).unwrap();
@@ -504,7 +504,7 @@ mod tests {
 
         // Create a new LiveTimer with a stop time
         let clock = get_atomic_clock_realtime();
-        let start_time = UnixNanos::from(clock.get_time_ns());
+        let start_time = clock.get_time_ns();
         let interval_ns = 100 * NANOSECONDS_IN_MILLISECOND;
         let stop_time = start_time + 500 * NANOSECONDS_IN_MILLISECOND;
         let mut timer = LiveTimer::new(

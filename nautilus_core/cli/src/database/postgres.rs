@@ -19,7 +19,7 @@ use sqlx::PgPool;
 
 use crate::opt::{DatabaseCommand, DatabaseOpt};
 
-/// Scans current path with keyword nautilus_trader and build schema dir
+/// Scans current path with keyword `nautilus_trader` and build schema dir
 fn get_schema_dir() -> anyhow::Result<String> {
     std::env::var("SCHEMA_DIR").or_else(|_| {
         let nautilus_git_repo_name = "nautilus_trader";
@@ -46,7 +46,7 @@ pub async fn init_postgres(pg: &PgPool, database: String, password: String) -> a
         Err(err) => error!("Error creating schema public: {:?}", err),
     }
     // create role if not exists
-    match sqlx::query(format!("CREATE ROLE {} PASSWORD '{}' LOGIN;", database, password).as_str())
+    match sqlx::query(format!("CREATE ROLE {database} PASSWORD '{password}' LOGIN;").as_str())
         .execute(pg)
         .await
     {
@@ -73,7 +73,7 @@ pub async fn init_postgres(pg: &PgPool, database: String, password: String) -> a
         }
     }
     // grant connect
-    match sqlx::query(format!("GRANT CONNECT ON DATABASE {0} TO {0};", database).as_str())
+    match sqlx::query(format!("GRANT CONNECT ON DATABASE {database} TO {database};").as_str())
         .execute(pg)
         .await
     {
@@ -84,7 +84,7 @@ pub async fn init_postgres(pg: &PgPool, database: String, password: String) -> a
         ),
     }
     // grant all schema privileges to the role
-    match sqlx::query(format!("GRANT ALL PRIVILEGES ON SCHEMA public TO {};", database).as_str())
+    match sqlx::query(format!("GRANT ALL PRIVILEGES ON SCHEMA public TO {database};").as_str())
         .execute(pg)
         .await
     {
@@ -96,11 +96,7 @@ pub async fn init_postgres(pg: &PgPool, database: String, password: String) -> a
     }
     // grant all table privileges to the role
     match sqlx::query(
-        format!(
-            "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {};",
-            database
-        )
-        .as_str(),
+        format!("GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {database};").as_str(),
     )
     .execute(pg)
     .await
@@ -113,11 +109,7 @@ pub async fn init_postgres(pg: &PgPool, database: String, password: String) -> a
     }
     // grant all sequence privileges to the role
     match sqlx::query(
-        format!(
-            "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {};",
-            database
-        )
-        .as_str(),
+        format!("GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {database};").as_str(),
     )
     .execute(pg)
     .await
@@ -130,11 +122,7 @@ pub async fn init_postgres(pg: &PgPool, database: String, password: String) -> a
     }
     // grant all function privileges to the role
     match sqlx::query(
-        format!(
-            "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO {};",
-            database
-        )
-        .as_str(),
+        format!("GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO {database};").as_str(),
     )
     .execute(pg)
     .await
@@ -151,7 +139,7 @@ pub async fn init_postgres(pg: &PgPool, database: String, password: String) -> a
 
 pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> {
     // execute drop owned
-    match sqlx::query(format!("DROP OWNED BY {}", database).as_str())
+    match sqlx::query(format!("DROP OWNED BY {database}").as_str())
         .execute(pg)
         .await
     {
@@ -159,7 +147,7 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
         Err(err) => error!("Error dropping owned by role {}: {:?}", database, err),
     }
     // revoke connect
-    match sqlx::query(format!("REVOKE CONNECT ON DATABASE {0} FROM {0};", database).as_str())
+    match sqlx::query(format!("REVOKE CONNECT ON DATABASE {database} FROM {database};").as_str())
         .execute(pg)
         .await
     {
@@ -170,9 +158,11 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
         ),
     }
     // revoke privileges
-    match sqlx::query(format!("REVOKE ALL PRIVILEGES ON DATABASE {0} FROM {0};", database).as_str())
-        .execute(pg)
-        .await
+    match sqlx::query(
+        format!("REVOKE ALL PRIVILEGES ON DATABASE {database} FROM {database};").as_str(),
+    )
+    .execute(pg)
+    .await
     {
         Ok(_) => info!("Revoked all privileges from role {}", database),
         Err(err) => error!(
@@ -189,7 +179,7 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
         Err(err) => error!("Error dropping schema public: {:?}", err),
     }
     // drop role
-    match sqlx::query(format!("DROP ROLE IF EXISTS {};", database).as_str())
+    match sqlx::query(format!("DROP ROLE IF EXISTS {database};").as_str())
         .execute(pg)
         .await
     {
@@ -218,7 +208,7 @@ pub async fn run_database_command(opt: DatabaseOpt) -> anyhow::Result<()> {
                 pg_connect_options.database,
                 pg_connect_options.password,
             )
-            .await?
+            .await?;
         }
         DatabaseCommand::Drop(config) => {
             let pg_connect_options = get_postgres_connect_options(
@@ -230,7 +220,7 @@ pub async fn run_database_command(opt: DatabaseOpt) -> anyhow::Result<()> {
             )
             .unwrap();
             let pg = connect_pg(pg_connect_options.clone().into()).await?;
-            drop_postgres(&pg, pg_connect_options.database).await?
+            drop_postgres(&pg, pg_connect_options.database).await?;
         }
     }
     Ok(())
