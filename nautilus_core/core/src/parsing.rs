@@ -29,7 +29,7 @@ pub fn precision_from_str(s: &str) -> u8 {
     return lower_s.split('.').last().unwrap().len() as u8;
 }
 
-/// Returns a usize from the given bytes.
+/// Returns a `usize` from the given bytes.
 pub fn bytes_to_usize(bytes: &[u8]) -> anyhow::Result<usize> {
     // Check bytes width
     if bytes.len() >= std::mem::size_of::<usize>() {

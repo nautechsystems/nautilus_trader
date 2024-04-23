@@ -100,6 +100,7 @@ pub fn floor_to_nearest_microsecond(unix_nanos: u64) -> u64 {
     (unix_nanos / NANOSECONDS_IN_MICROSECOND) * NANOSECONDS_IN_MICROSECOND
 }
 
+/// Calculates the last weekday (Mon-Fri) from the given `year`, `month` and `day`.
 pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> anyhow::Result<UnixNanos> {
     let date =
         NaiveDate::from_ymd_opt(year, month, day).ok_or_else(|| anyhow::anyhow!("Invalid date"))?;
@@ -128,6 +129,7 @@ pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> anyhow::Result<Uni
     ))
 }
 
+/// Check whether the given UNIX nanoseconds timestamp is within the last 24 hours.
 pub fn is_within_last_24_hours(timestamp_ns: UnixNanos) -> anyhow::Result<bool> {
     let timestamp_ns = timestamp_ns.as_u64();
     let seconds = timestamp_ns / NANOSECONDS_IN_SECOND;

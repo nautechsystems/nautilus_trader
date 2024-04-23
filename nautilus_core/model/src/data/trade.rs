@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! A `TradeTick` data type representing a single trade in a market.
+
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter},

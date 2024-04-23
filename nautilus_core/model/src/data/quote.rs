@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! A `QuoteTick` data type representing a top-of-book quote state.
+
 use std::{
     cmp,
     collections::HashMap,

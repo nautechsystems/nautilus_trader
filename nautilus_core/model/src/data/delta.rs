@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! An `OrderBookDelta` data type intended to carry book state information.
+
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter},

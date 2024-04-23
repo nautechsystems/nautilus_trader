@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! A `BookOrder` for use with the `OrderBookDelta` data type.
+
 use std::{
     fmt::{Display, Formatter},
     hash::{Hash, Hasher},
