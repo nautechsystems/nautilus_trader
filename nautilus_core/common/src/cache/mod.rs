@@ -1186,11 +1186,12 @@ impl Cache {
     pub fn get(&self, key: &str) -> anyhow::Result<Option<&[u8]>> {
         check_valid_string(key, stringify!(key))?;
 
-        Ok(self.general.get(key).map(|x| x.as_slice()))
+        Ok(self.general.get(key).map(std::vec::Vec::as_slice))
     }
 
     // -- DATA QUERIES --------------------------------------------------------
 
+    #[must_use]
     pub fn price(&self, instrument_id: &InstrumentId, price_type: PriceType) -> Option<Price> {
         match price_type {
             PriceType::Bid => self
@@ -1217,40 +1218,47 @@ impl Cache {
         }
     }
 
+    #[must_use]
     pub fn quote_ticks(&self, instrument_id: &InstrumentId) -> Option<Vec<QuoteTick>> {
         self.quotes
             .get(instrument_id)
-            .map(|quotes| quotes.iter().cloned().collect())
+            .map(|quotes| quotes.iter().copied().collect())
     }
 
+    #[must_use]
     pub fn trade_ticks(&self, instrument_id: &InstrumentId) -> Option<Vec<TradeTick>> {
         self.trades
             .get(instrument_id)
-            .map(|trades| trades.iter().cloned().collect())
+            .map(|trades| trades.iter().copied().collect())
     }
 
+    #[must_use]
     pub fn bars(&self, bar_type: &BarType) -> Option<Vec<Bar>> {
         self.bars
             .get(bar_type)
-            .map(|bars| bars.iter().cloned().collect())
+            .map(|bars| bars.iter().copied().collect())
     }
 
+    #[must_use]
     pub fn order_book(&self, instrument_id: &InstrumentId) -> Option<&OrderBook> {
         self.books.get(instrument_id)
     }
 
+    #[must_use]
     pub fn quote_tick(&self, instrument_id: &InstrumentId) -> Option<&QuoteTick> {
         self.quotes
             .get(instrument_id)
             .and_then(|quotes| quotes.front())
     }
 
+    #[must_use]
     pub fn trade_tick(&self, instrument_id: &InstrumentId) -> Option<&TradeTick> {
         self.trades
             .get(instrument_id)
             .and_then(|trades| trades.front())
     }
 
+    #[must_use]
     pub fn bar(&self, bar_type: &BarType) -> Option<&Bar> {
         self.bars.get(bar_type).and_then(|bars| bars.front())
     }
