@@ -37,6 +37,14 @@ from nautilus_trader.model.tick_scheme.base cimport TICK_SCHEMES
 from nautilus_trader.model.tick_scheme.base cimport get_tick_scheme
 
 
+EXPIRING_INSTRUMENT_TYPES = {
+    InstrumentClass.FUTURE,
+    InstrumentClass.FUTURE_SPREAD,
+    InstrumentClass.OPTION,
+    InstrumentClass.OPTION_SPREAD,
+}
+
+
 cdef class Instrument(Data):
     """
     The base class for all instruments.

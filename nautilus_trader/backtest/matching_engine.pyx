@@ -31,6 +31,8 @@ from nautilus_trader.common.component cimport TestClock
 from nautilus_trader.common.component cimport is_logging_initialized
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport BookType
@@ -81,6 +83,7 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport VenueOrderId
+from nautilus_trader.model.instruments.base cimport EXPIRING_INSTRUMENT_TYPES
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.equity cimport Equity
 from nautilus_trader.model.objects cimport Money
@@ -674,6 +677,23 @@ cdef class OrderMatchingEngine:
 
         # Index identifiers
         self._account_ids[order.trader_id] = account_id
+
+        cdef uint64_t now_ns = self._clock.timestamp_ns()
+        if self.instrument.instrument_class in EXPIRING_INSTRUMENT_TYPES:
+            if now_ns < self.instrument.activation_ns:
+                self._generate_order_rejected(
+                    order,
+                    f"Contract {self.instrument.id} not yet active, "
+                    f"activation {format_iso8601(unix_nanos_to_dt(self.instrument.activation_ns))}"
+                )
+                return
+            elif now_ns > self.instrument.expiration_ns:
+                self._generate_order_rejected(
+                    order,
+                    f"Contract {self.instrument.id} has expired, "
+                    f"expiration {format_iso8601(unix_nanos_to_dt(self.instrument.expiration_ns))}"
+                )
+                return
 
         cdef:
             Order parent
