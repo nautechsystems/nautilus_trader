@@ -50,9 +50,9 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef set STOP_ORDER_TYPES
-cdef set LIMIT_ORDER_TYPES
-cdef set LOCAL_ACTIVE_ORDER_STATUS
+cdef set[OrderType] STOP_ORDER_TYPES
+cdef set[OrderType] LIMIT_ORDER_TYPES
+cdef set[OrderStatus] LOCAL_ACTIVE_ORDER_STATUS
 
 
 cdef class Order:
