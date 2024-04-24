@@ -602,7 +602,9 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.info("Loading venue_id mapping from cache")
         raw = self._cache.get("betfair_execution_client.venue_order_id_to_client_order_id") or b"{}"
         self._log.info(f"venue_id_mapping: {raw.decode()=}")
-        self.venue_order_id_to_client_order_id = msgspec.json.decode(raw)
+        self.venue_order_id_to_client_order_id = {
+            VenueOrderId(k): ClientOrderId(v) for k, v in msgspec.json.decode(raw).items()
+        }
 
     def set_venue_id_mapping(
         self,
