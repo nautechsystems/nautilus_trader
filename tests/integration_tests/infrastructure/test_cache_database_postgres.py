@@ -43,6 +43,8 @@ class TestCachePostgresAdapter:
         os.environ["POSTGRES_PASSWORD"] = "pass"
         os.environ["POSTGRES_DATABASE"] = "nautilus"
         self.database: CachePostgresAdapter = CachePostgresAdapter()
+        # reset database
+        self.database.flush()
         self.clock = TestClock()
 
         self.trader_id = TestIdStubs.trader_id()
