@@ -78,7 +78,7 @@ ib = ["nautilus_ibapi", "async-timeout", "defusedxml"]
 optional = true
 
 [tool.poetry.group.dev.dependencies]
-black = "^24.4.0"
+black = "^24.4.1"
 docformatter = "^1.7.5"
 mypy = "^1.9.0"
 pandas-stubs = "^2.2.1"
@@ -92,7 +92,7 @@ types-toml = "^0.10.2"
 optional = true
 
 [tool.poetry.group.test.dependencies]
-coverage = "^7.4.4"
+coverage = "^7.5.0"
 pytest = "^7.4.4"
 pytest-aiohttp = "^1.0.5"
 pytest-asyncio = "==0.21.1"  # Pinned due Cython: cannot set '__pytest_asyncio_scoped_event_loop' attribute of immutable type
