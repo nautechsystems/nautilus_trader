@@ -164,17 +164,20 @@ pub async fn init_postgres(pg: &PgPool, database: String, password: String) -> a
         let file_path = file.path();
         let sql_content = std::fs::read_to_string(file_path.clone())?;
         for sql_statement in sql_content.split(';').filter(|s| !s.trim().is_empty()) {
-            let result = sqlx::query(sql_statement).execute(pg).await;
-            match result {
-                Ok(_) => info!("Executed statement successfully"),
-                Err(err) => {
+            sqlx::query(sql_statement)
+                .execute(pg)
+                .await
+                .map_err(|err| {
                     if err.to_string().contains("already exists") {
                         info!("Already exists error on statement, skipping");
                     } else {
-                        panic!("Error executing statement: {:?}", err)
+                        panic!(
+                            "Error executing statement {} with error: {:?}",
+                            sql_statement, err
+                        )
                     }
-                }
-            }
+                })
+                .unwrap();
         }
     }
     // grant connect
