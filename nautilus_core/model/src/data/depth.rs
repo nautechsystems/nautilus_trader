@@ -56,7 +56,7 @@ pub struct OrderBookDepth10 {
     pub bid_counts: [u32; DEPTH10_LEN],
     /// The count of ask orders per level for the depth update.
     pub ask_counts: [u32; DEPTH10_LEN],
-    /// The record flags bit field, indicating packet end and data information.
+    /// The record flags bit field, indicating event end and data information.
     pub flags: u8,
     /// The message sequence number assigned at the venue.
     pub sequence: u64,

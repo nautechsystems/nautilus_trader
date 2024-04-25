@@ -39,7 +39,7 @@ pub struct OrderBookDeltas {
     pub instrument_id: InstrumentId,
     /// The order book deltas.
     pub deltas: Vec<OrderBookDelta>,
-    /// The record flags bit field, indicating packet end and data information.
+    /// The record flags bit field, indicating event end and data information.
     pub flags: u8,
     /// The message sequence number assigned at the venue.
     pub sequence: u64,

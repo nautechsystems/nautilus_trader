@@ -1619,7 +1619,7 @@ cdef class OrderBookDelta(Data):
     order : BookOrder, optional with no default so ``None`` must be passed explicitly
         The book order for the delta.
     flags : uint8_t
-        The record flags bit field, indicating packet end and data information.
+        The record flags bit field, indicating event end and data information.
         A value of zero indicates no flags.
     sequence : uint64_t
         The unique sequence number for the update.
@@ -2027,7 +2027,7 @@ cdef class OrderBookDelta(Data):
         order_id : uint64_t
             The order ID.
         flags : uint8_t
-            The record flags bit field, indicating packet end and data information.
+            The record flags bit field, indicating event end and data information.
             A value of zero indicates no flags.
         sequence : uint64_t
             The unique sequence number for the update.
@@ -2481,7 +2481,7 @@ cdef class OrderBookDepth10(Data):
     ask_counts : list[uint32_t]
         The count of ask orders per level for the update. Can be zeros if data not available.
     flags : uint8_t
-        The record flags bit field, indicating packet end and data information.
+        The record flags bit field, indicating event end and data information.
         A value of zero indicates no flags.
     sequence : uint64_t
         The unique sequence number for the update.
