@@ -578,19 +578,11 @@ def instrument_id_to_ib_contract_simplified_symbology(  # noqa: C901 (too comple
         )
     elif instrument_id.venue.value in VENUES_FUT:
         if m := RE_FUT.match(instrument_id.symbol.value):
-            if instrument_id.venue.value == "CBOT":
-                # IB still using old symbology after merger of CBOT with CME
-                return IBContract(
-                    secType="FUT",
-                    exchange=instrument_id.venue.value,
-                    localSymbol=f"{m['symbol'].ljust(4)} {FUTURES_CODE_TO_MONTH[m['month']]} {m['year']}",
-                )
-            else:
-                return IBContract(
-                    secType="FUT",
-                    exchange=instrument_id.venue.value,
-                    localSymbol=f"{m['symbol']}{m['month']}{m['year'][-1]}",
-                )
+            return IBContract(
+                secType="FUT",
+                exchange=instrument_id.venue.value,
+                localSymbol=f"{m['symbol']}{m['month']}{m['year'][-1]}",
+            )
         elif m := RE_IND.match(instrument_id.symbol.value):
             return IBContract(
                 secType="CONTFUT",
