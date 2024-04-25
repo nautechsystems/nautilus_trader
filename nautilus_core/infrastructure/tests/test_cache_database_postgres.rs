@@ -15,10 +15,7 @@
 
 use nautilus_infrastructure::sql::{
     cache_database::PostgresCacheDatabase,
-    pg::{
-        connect_pg, delete_nautilus_postgres_tables, drop_postgres, init_postgres,
-        PostgresConnectOptions,
-    },
+    pg::{connect_pg, delete_nautilus_postgres_tables, PostgresConnectOptions},
 };
 use sqlx::PgPool;
 

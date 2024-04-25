@@ -125,7 +125,7 @@ jobs:
       - name: Install Nautilus CLI and run init postgres
         run: |
           make install-cli
-          nautilus database init --host localhost --port 5432 --user postgres --password pass --database nautilus
+          nautilus database init --host localhost --port 5432 --username postgres --password pass --database nautilus
 
       - name: Run nautilus_core cargo tests (Linux)
         run: |
