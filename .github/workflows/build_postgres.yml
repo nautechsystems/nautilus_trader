@@ -34,7 +34,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
-          POSTGRES_DB: postgres
+          POSTGRES_DB: nautilus
         ports:
           - 5432:5432
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
@@ -121,6 +121,11 @@ jobs:
         run: |
           # pre-commit run --hook-stage manual gitlint-ci
           pre-commit run --all-files
+
+      - name: Install Nautilus CLI and run init postgres
+        run: |
+          make install-cli
+          nautilus database init --host localhost --port 5432 --user postgres --password pass --database nautilus
 
       - name: Run nautilus_core cargo tests (Linux)
         run: |
