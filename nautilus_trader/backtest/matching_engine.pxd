@@ -79,6 +79,7 @@ cdef class OrderMatchingEngine:
     cdef FillModel _fill_model
     cdef FeeModel _fee_model
     # cdef object _auction_match_algo
+    cdef bint _instrument_has_expiration
     cdef bint _bar_execution
     cdef bint _reject_stop_orders
     cdef bint _support_gtd_orders

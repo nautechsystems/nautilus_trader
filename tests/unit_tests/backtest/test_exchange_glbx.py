@@ -228,3 +228,62 @@ class TestSimulatedExchangeGlbx:
             order.last_event.reason
             == "Contract ESH4.GLBX has expired, expiration 2024-03-15T14:30:00.000Z"
         )
+
+    def test_process_exchange_past_instrument_expiration_cancels_open_order(self) -> None:
+        # Arrange: Prepare market
+        one_nano_past_activation = _ESH4_GLBX.activation_ns + 1
+        tick = TestDataStubs.quote_tick(
+            instrument=_ESH4_GLBX,
+            bid_price=4010.00,
+            ask_price=4011.00,
+            ts_init=one_nano_past_activation,
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.limit(
+            _ESH4_GLBX.id,
+            OrderSide.BUY,
+            Quantity.from_int(10),
+            Price.from_str("4000.00"),
+        )
+
+        self.strategy.submit_order(order)
+        self.exchange.process(one_nano_past_activation)
+
+        # Act
+        self.exchange.get_matching_engine(_ESH4_GLBX.id).iterate(_ESH4_GLBX.expiration_ns)
+
+        # Assert
+        assert self.clock.timestamp_ns() == _ESH4_GLBX.expiration_ns == 1_710_513_000_000_000_000
+        assert order.status == OrderStatus.CANCELED
+
+    def test_process_exchange_past_instrument_expiration_closed_open_position(self) -> None:
+        # Arrange: Prepare market
+        one_nano_past_activation = _ESH4_GLBX.activation_ns + 1
+        tick = TestDataStubs.quote_tick(
+            instrument=_ESH4_GLBX,
+            bid_price=4010.00,
+            ask_price=4011.00,
+            ts_init=one_nano_past_activation,
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.market(
+            _ESH4_GLBX.id,
+            OrderSide.BUY,
+            Quantity.from_int(10),
+        )
+
+        self.strategy.submit_order(order)
+        self.exchange.process(one_nano_past_activation)
+
+        # Act
+        self.exchange.get_matching_engine(_ESH4_GLBX.id).iterate(_ESH4_GLBX.expiration_ns)
+
+        # Assert
+        assert self.clock.timestamp_ns() == _ESH4_GLBX.expiration_ns == 1_710_513_000_000_000_000
+        assert order.status == OrderStatus.FILLED
+        position = self.cache.positions()[0]
+        assert position.is_closed
