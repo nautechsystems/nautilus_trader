@@ -21,48 +21,32 @@ use nautilus_infrastructure::sql::{
     },
 };
 use sqlx::PgPool;
-use tokio::sync::Mutex;
 
-static INIT: Mutex<bool> = Mutex::const_new(false);
-
-pub fn get_test_pg_connect_options() -> PostgresConnectOptions {
+pub fn get_test_pg_connect_options(username: &str) -> PostgresConnectOptions {
     PostgresConnectOptions::new(
         "localhost".to_string(),
         5432,
-        "nautilus".to_string(),
+        username.to_string(),
         "pass".to_string(),
         "nautilus".to_string(),
     )
 }
-pub async fn get_pg() -> PgPool {
-    let pg_connect_options = get_test_pg_connect_options();
+pub async fn get_pg(username: &str) -> PgPool {
+    let pg_connect_options = get_test_pg_connect_options(username);
     connect_pg(pg_connect_options.into()).await.unwrap()
 }
 
 pub async fn initialize() -> anyhow::Result<()> {
-    let pg_pool = get_pg().await;
-    let mut initialized = INIT.lock().await;
-    // 1. check if we need to init schema
-    if !*initialized {
-        // drop and init postgres commands dont throw, they just log
-        // se we can use them here in init login in this order
-        drop_postgres(&pg_pool, "nautilus".to_string())
-            .await
-            .unwrap();
-        init_postgres(&pg_pool, "nautilus".to_string(), "pass".to_string())
-            .await
-            .unwrap();
-        *initialized = true;
-    }
-    // truncate all table
-    println!("deleting all tables");
+    // get pg pool with root postgres user to drop & create schema
+    let pg_pool = get_pg("postgres").await;
     delete_nautilus_postgres_tables(&pg_pool).await.unwrap();
     Ok(())
 }
 
 pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
     initialize().await.unwrap();
-    let connect_options = get_test_pg_connect_options();
+    // run tests as nautilus user
+    let connect_options = get_test_pg_connect_options("nautilus");
     Ok(PostgresCacheDatabase::connect(
         Some(connect_options.host),
         Some(connect_options.port),
@@ -80,7 +64,6 @@ mod tests {
 
     use crate::get_pg_cache_database;
 
-    /// ----------------------------------- General -----------------------------------
     #[tokio::test]
     async fn test_load_general_objects_when_nothing_in_cache_returns_empty_hashmap() {
         let pg_cache = get_pg_cache_database().await.unwrap();
