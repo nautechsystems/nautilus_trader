@@ -245,7 +245,7 @@ cdef class OrderBook(Data):
         ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the book event occurred.
         flags : uint8_t, default 0
-            The record flags bit field, indicating packet end and data information.
+            The record flags bit field, indicating event end and data information.
         sequence : uint64_t, default 0
             The unique sequence number for the update. If default 0 then will increment the `sequence`.
 
@@ -273,7 +273,7 @@ cdef class OrderBook(Data):
         ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the book event occurred.
         flags : uint8_t, default 0
-            The record flags bit field, indicating packet end and data information.
+            The record flags bit field, indicating event end and data information.
         sequence : uint64_t, default 0
             The unique sequence number for the update. If default 0 then will increment the `sequence`.
 
@@ -293,7 +293,7 @@ cdef class OrderBook(Data):
         ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the book event occurred.
         flags : uint8_t, default 0
-            The record flags bit field, indicating packet end and data information.
+            The record flags bit field, indicating event end and data information.
         sequence : uint64_t, default 0
             The unique sequence number for the update. If default 0 then will increment the `sequence`.
 

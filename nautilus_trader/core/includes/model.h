@@ -543,7 +543,7 @@ typedef enum PriceType {
 } PriceType;
 
 /**
- * A record flag bit field, indicating packet end and data information.
+ * A record flag bit field, indicating event end and data information.
  */
 typedef enum RecordFlag {
     /**
@@ -806,7 +806,7 @@ typedef struct OrderBookDelta_t {
      */
     struct BookOrder_t order;
     /**
-     * The record flags bit field, indicating packet end and data information.
+     * The record flags bit field, indicating event end and data information.
      */
     uint8_t flags;
     /**
@@ -870,7 +870,7 @@ typedef struct OrderBookDepth10_t {
      */
     uint32_t ask_counts[DEPTH10_LEN];
     /**
-     * The record flags bit field, indicating packet end and data information.
+     * The record flags bit field, indicating event end and data information.
      */
     uint8_t flags;
     /**

@@ -294,7 +294,7 @@ cdef extern from "../includes/model.h":
         # The last price at which a trade was made for an instrument.
         LAST # = 4,
 
-    # A record flag bit field, indicating packet end and data information.
+    # A record flag bit field, indicating event end and data information.
     cpdef enum RecordFlag:
         # Last message in the packet from the venue for a given `instrument_id`.
         F_LAST # = (1 << 7),
@@ -442,7 +442,7 @@ cdef extern from "../includes/model.h":
         BookAction action;
         # The order to apply.
         BookOrder_t order;
-        # The record flags bit field, indicating packet end and data information.
+        # The record flags bit field, indicating event end and data information.
         uint8_t flags;
         # The message sequence number assigned at the venue.
         uint64_t sequence;
@@ -482,7 +482,7 @@ cdef extern from "../includes/model.h":
         uint32_t bid_counts[DEPTH10_LEN];
         # The count of ask orders per level for the depth update.
         uint32_t ask_counts[DEPTH10_LEN];
-        # The record flags bit field, indicating packet end and data information.
+        # The record flags bit field, indicating event end and data information.
         uint8_t flags;
         # The message sequence number assigned at the venue.
         uint64_t sequence;

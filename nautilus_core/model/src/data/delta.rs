@@ -47,7 +47,7 @@ pub struct OrderBookDelta {
     pub action: BookAction,
     /// The order to apply.
     pub order: BookOrder,
-    /// The record flags bit field, indicating packet end and data information.
+    /// The record flags bit field, indicating event end and data information.
     pub flags: u8,
     /// The message sequence number assigned at the venue.
     pub sequence: u64,
