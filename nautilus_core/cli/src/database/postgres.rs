@@ -37,6 +37,7 @@ pub async fn run_database_command(opt: DatabaseOpt) -> anyhow::Result<()> {
                 &pg,
                 pg_connect_options.database,
                 pg_connect_options.password,
+                config.schema,
             )
             .await?;
         }

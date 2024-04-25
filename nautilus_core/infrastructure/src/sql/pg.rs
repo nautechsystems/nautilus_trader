@@ -130,7 +130,12 @@ fn get_schema_dir() -> anyhow::Result<String> {
     })
 }
 
-pub async fn init_postgres(pg: &PgPool, database: String, password: String) -> anyhow::Result<()> {
+pub async fn init_postgres(
+    pg: &PgPool,
+    database: String,
+    password: String,
+    schema_dir: Option<String>,
+) -> anyhow::Result<()> {
     info!("Initializing Postgres database with target permissions and schema");
     // create public schema
     match sqlx::query("CREATE SCHEMA IF NOT EXISTS public;")
@@ -155,7 +160,7 @@ pub async fn init_postgres(pg: &PgPool, database: String, password: String) -> a
         }
     }
     // execute all the sql files in schema dir
-    let schema_dir = get_schema_dir()?;
+    let schema_dir = schema_dir.unwrap_or_else(|| get_schema_dir().unwrap());
     let mut sql_files =
         std::fs::read_dir(schema_dir)?.collect::<Result<Vec<_>, std::io::Error>>()?;
     for file in &mut sql_files {
