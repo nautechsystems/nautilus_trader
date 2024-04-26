@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added Nautilus CLI (see [docs](https://docs.nautilustrader.io/nightly/developer_guide/index.html)), many thanks @filipmacek
+- Added `Cfd` and `Commodity` instruments with Interactive Brokers support, thanks @DracheShiki
 - Added futures and options contract activation and expiration simulation
 
 ### Breaking Changes
