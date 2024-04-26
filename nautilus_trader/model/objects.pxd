@@ -147,6 +147,7 @@ cdef class Money:
     cdef void sub_assign(self, Money other)
 
     cpdef str to_str(self)
+    cpdef str to_raw_str(self)
     cpdef object as_decimal(self)
     cpdef double as_double(self)
 

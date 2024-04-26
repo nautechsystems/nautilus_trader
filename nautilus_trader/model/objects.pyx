@@ -1234,6 +1234,17 @@ cdef class Money:
         """
         return f"{self.as_f64_c():,.{self._mem.currency.precision}f} {self.currency_code_c()}".replace(",", "_")
 
+    cpdef str to_raw_str(self):
+        """
+        Return the raw string representation of the money.
+
+        Returns
+        -------
+        str
+
+        """
+        return f"{self.as_f64_c():.{self._mem.currency.precision}f} {self.currency_code_c()}"
+
 
 cdef class Currency:
     """
