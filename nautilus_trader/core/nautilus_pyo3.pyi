@@ -682,6 +682,8 @@ class CurrencyType(Enum):
     CRYPTO = "CRYPTO"
     FIAT = "FIAT"
     COMMODITY_BACKED = "COMMODITY_BACKED"
+    @classmethod
+    def from_str(cls, value: str) -> CurrencyType: ...
 
 class InstrumentCloseType(Enum):
     END_OF_SESSION = "END_OF_SESSION"
@@ -2249,6 +2251,24 @@ class RedisCacheDatabase:
         instance_id: UUID4,
         config: dict[str, Any],
     ) -> None: ...
+
+class PostgresCacheDatabase:
+    @classmethod
+    def connect(
+        cls,
+        host: str | None = None,
+        port: str |  None = None,
+        username: str | None = None,
+        password: str | None = None,
+        database: str | None = None,
+    )-> PostgresCacheDatabase: ...
+    def load(self) -> dict[str,str]: ...
+    def add(self, key: str, value: bytes) -> None: ...
+    def add_currency(self,currency: Currency) -> None: ...
+    def load_currency(self, code: str) -> Currency | None: ...
+    def load_currencies(self) -> list[Currency]: ...
+    def flush_db(self) -> None: ...
+    def truncate(self, table: str) -> None: ...
 
 ###################################################################################################
 # Network
