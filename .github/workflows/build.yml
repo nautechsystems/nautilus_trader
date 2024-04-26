@@ -22,6 +22,25 @@ jobs:
     env:
       BUILD_MODE: debug
       RUST_BACKTRACE: 1
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: nautilus
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
       - name: Free disk space (Ubuntu)
@@ -105,10 +124,16 @@ jobs:
           # pre-commit run --hook-stage manual gitlint-ci
           pre-commit run --all-files
 
-      - name: Install Redis (Linux)
+      - name: Install Nautilus CLI and run init postgres
         run: |
-          sudo apt-get install redis-server
-          redis-server --daemonize yes
+          make install-cli
+          nautilus database init --schema ${{ github.workspace }}/schema
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USERNAME: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DATABASE: nautilus
 
       - name: Run nautilus_core cargo tests (Linux)
         run: |
@@ -224,6 +249,25 @@ jobs:
     env:
       BUILD_MODE: debug
       RUST_BACKTRACE: 1
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: nautilus
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
       - name: Checkout repository
@@ -290,10 +334,16 @@ jobs:
           # pre-commit run --hook-stage manual gitlint-ci
           pre-commit run --all-files
 
-      - name: Install Redis (macOS)
+      - name: Install Nautilus CLI and run init postgres
         run: |
-          brew install redis
-          redis-server --daemonize yes
+          make install-cli
+          nautilus database init --schema ${{ github.workspace }}/schema
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USERNAME: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DATABASE: nautilus
 
       - name: Run nautilus_core cargo tests (macOS)
         run: |

@@ -13,12 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-/// Be careful about ordering and foreign key constraints when deleting data.
-/// We can use this list for manual truncation of tables.
-pub const NAUTILUS_TABLES: [&str; 5] =
-    ["general", "instrument", "currency", "order", "order_event"];
+// Be careful about ordering and foreign key constraints when deleting data.
+pub const NAUTILUS_TABLES: [&str; 2] = ["general", "currency"];
 
-pub mod database;
+pub mod cache_database;
 pub mod models;
 pub mod pg;
-pub mod schema;
+pub mod queries;

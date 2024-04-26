@@ -51,6 +51,9 @@ pub struct DatabaseConfig {
     /// Password for connecting to the database
     #[arg(long)]
     pub password: Option<String>,
+    /// Directory path to the schema files
+    #[arg(long)]
+    pub schema: Option<String>,
 }
 
 #[derive(Parser, Debug, Clone)]

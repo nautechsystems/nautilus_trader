@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod general;
-pub mod instruments;
-pub mod types;
+#[derive(Debug, sqlx::FromRow)]
+pub struct GeneralRow {
+    pub key: String,
+    pub value: Vec<u8>,
+}

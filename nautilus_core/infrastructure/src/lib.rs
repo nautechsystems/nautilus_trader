@@ -34,5 +34,5 @@ pub mod python;
 #[cfg(feature = "redis")]
 pub mod redis;
 
-#[cfg(feature = "sql")]
+#[cfg(feature = "postgres")]
 pub mod sql;
