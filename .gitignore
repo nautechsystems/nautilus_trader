@@ -17,6 +17,7 @@
 *.env
 *.tar.gz*
 *.zip
+*.iml
 
 *.dbz
 *.dbn
