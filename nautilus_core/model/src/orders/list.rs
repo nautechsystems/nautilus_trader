@@ -13,12 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::nanos::UnixNanos;
+use std::fmt::Display;
+
+use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos};
 use serde::{Deserialize, Serialize};
 
 use super::base::OrderAny;
-use crate::identifiers::{
-    instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
+use crate::{
+    identifiers::{
+        instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
+    },
+    polymorphism::{GetInstrumentId, GetStrategyId},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -34,8 +39,112 @@ pub struct OrderList {
     pub ts_init: UnixNanos,
 }
 
+impl OrderList {
+    pub fn new(
+        order_list_id: OrderListId,
+        instrument_id: InstrumentId,
+        strategy_id: StrategyId,
+        orders: Vec<OrderAny>,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<Self> {
+        check_slice_not_empty(orders.as_slice(), stringify!(orders))?;
+        for order in &orders {
+            assert_eq!(instrument_id, order.instrument_id());
+            assert_eq!(strategy_id, order.strategy_id());
+        }
+
+        Ok(Self {
+            id: order_list_id,
+            instrument_id,
+            strategy_id,
+            orders,
+            ts_init,
+        })
+    }
+}
+
 impl PartialEq for OrderList {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
+    }
+}
+
+impl Display for OrderList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "OrderList(\
+            id={}, \
+            instrument_id={}, \
+            strategy_id={}, \
+            orders={:?}, \
+            ts_init={}, \
+            )",
+            self.id, self.instrument_id, self.strategy_id, self.orders, self.ts_init,
+        )
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::{
+        enums::OrderSide,
+        identifiers::{order_list_id::OrderListId, strategy_id::StrategyId},
+        instruments::{currency_pair::CurrencyPair, stubs::*},
+        orders::stubs::TestOrderStubs,
+        types::{price::Price, quantity::Quantity},
+    };
+
+    #[rstest]
+    fn test_display(audusd_sim: CurrencyPair) {
+        let order1 = TestOrderStubs::limit_order(
+            audusd_sim.id,
+            OrderSide::Buy,
+            Price::from("1.00000"),
+            Quantity::from(100_000),
+            None,
+            None,
+        );
+        let order2 = TestOrderStubs::limit_order(
+            audusd_sim.id,
+            OrderSide::Buy,
+            Price::from("1.00000"),
+            Quantity::from(100_000),
+            None,
+            None,
+        );
+        let order3 = TestOrderStubs::limit_order(
+            audusd_sim.id,
+            OrderSide::Buy,
+            Price::from("1.00000"),
+            Quantity::from(100_000),
+            None,
+            None,
+        );
+
+        let orders = vec![
+            OrderAny::Limit(order1),
+            OrderAny::Limit(order2),
+            OrderAny::Limit(order3),
+        ];
+
+        let order_list = OrderList::new(
+            OrderListId::from("OL-001"),
+            audusd_sim.id,
+            StrategyId::from("EMACross-001"),
+            orders,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert!(order_list.to_string().starts_with(
+            "OrderList(id=OL-001, instrument_id=AUD/USD.SIM, strategy_id=EMACross-001, orders="
+        ));
     }
 }
