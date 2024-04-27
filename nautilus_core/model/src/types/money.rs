@@ -96,7 +96,7 @@ impl FromStr for Money {
         // Ensure we have both the amount and currency
         if parts.len() != 2 {
             return Err(format!(
-                "Invalid input format: '{input}'. Expected '<amount> <currency>'"
+                "Error invalid input format '{input}'. Expected '<amount> <currency>'"
             ));
         }
 
@@ -104,7 +104,7 @@ impl FromStr for Money {
         let amount = parts[0]
             .replace('_', "")
             .parse::<f64>()
-            .map_err(|e| format!("Cannot parse amount '{}' as `f64`: {:?}", parts[0], e))?;
+            .map_err(|e| format!("Error parsing amount '{}' as `f64`: {:?}", parts[0], e))?;
 
         // Parse currency
         let currency = Currency::from_str(parts[1]).map_err(|e: anyhow::Error| e.to_string())?;
