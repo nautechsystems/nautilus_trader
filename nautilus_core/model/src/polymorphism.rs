@@ -21,7 +21,8 @@ use crate::{
     enums::{OrderSide, OrderSideSpecified, TriggerType},
     identifiers::{
         client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
-        instrument_id::InstrumentId, strategy_id::StrategyId, venue_order_id::VenueOrderId,
+        instrument_id::InstrumentId, position_id::PositionId, strategy_id::StrategyId,
+        venue_order_id::VenueOrderId,
     },
     types::{price::Price, quantity::Quantity},
 };
@@ -44,6 +45,10 @@ pub trait GetVenueOrderId {
 
 pub trait GetStrategyId {
     fn strategy_id(&self) -> StrategyId;
+}
+
+pub trait GetPositionId {
+    fn position_id(&self) -> Option<PositionId>;
 }
 
 pub trait GetExecAlgorithmId {
@@ -92,4 +97,8 @@ pub trait IsOpen {
 
 pub trait IsClosed {
     fn is_closed(&self) -> bool;
+}
+
+pub trait IsInflight {
+    fn is_inflight(&self) -> bool;
 }
