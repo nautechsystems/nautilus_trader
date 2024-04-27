@@ -18,7 +18,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use nautilus_model::types::currency::Currency;
+use nautilus_model::{
+    identifiers::instrument_id::InstrumentId, instruments::InstrumentAny, types::currency::Currency,
+};
 use sqlx::{postgres::PgConnectOptions, PgPool};
 use tokio::{
     sync::mpsc::{channel, error::TryRecvError, Receiver, Sender},
@@ -34,17 +36,19 @@ use crate::sql::{
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.persistence")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
 )]
 pub struct PostgresCacheDatabase {
     pub pool: PgPool,
     tx: Sender<DatabaseQuery>,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum DatabaseQuery {
     Add(String, Vec<u8>),
     AddCurrency(Currency),
+    AddInstrument(InstrumentAny),
 }
 
 fn get_buffer_interval() -> Duration {
@@ -60,6 +64,64 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
             DatabaseQuery::AddCurrency(currency) => {
                 DatabaseQueries::add_currency(pool, currency).await.unwrap();
             }
+            DatabaseQuery::AddInstrument(instrument) => match instrument {
+                InstrumentAny::CryptoFuture(crypto_future) => {
+                    DatabaseQueries::add_instrument(pool, "CRYPTO_FUTURE", Box::new(crypto_future))
+                        .await
+                        .unwrap()
+                }
+                InstrumentAny::CryptoPerpetual(crypto_perpetual) => {
+                    DatabaseQueries::add_instrument(
+                        pool,
+                        "CRYPTO_PERPETUAL",
+                        Box::new(crypto_perpetual),
+                    )
+                    .await
+                    .unwrap()
+                }
+                InstrumentAny::CurrencyPair(currency_pair) => {
+                    DatabaseQueries::add_instrument(pool, "CURRENCY_PAIR", Box::new(currency_pair))
+                        .await
+                        .unwrap()
+                }
+                InstrumentAny::Equity(equity) => {
+                    DatabaseQueries::add_instrument(pool, "EQUITY", Box::new(equity))
+                        .await
+                        .unwrap()
+                }
+                InstrumentAny::FuturesContract(futures_contract) => {
+                    DatabaseQueries::add_instrument(
+                        pool,
+                        "FUTURES_CONTRACT",
+                        Box::new(futures_contract),
+                    )
+                    .await
+                    .unwrap()
+                }
+                InstrumentAny::FuturesSpread(futures_spread) => DatabaseQueries::add_instrument(
+                    pool,
+                    "FUTURES_SPREAD",
+                    Box::new(futures_spread),
+                )
+                .await
+                .unwrap(),
+                InstrumentAny::OptionsContract(options_contract) => {
+                    DatabaseQueries::add_instrument(
+                        pool,
+                        "OPTIONS_CONTRACT",
+                        Box::new(options_contract),
+                    )
+                    .await
+                    .unwrap()
+                }
+                InstrumentAny::OptionsSpread(options_spread) => DatabaseQueries::add_instrument(
+                    pool,
+                    "OPTIONS_SPREAD",
+                    Box::new(options_spread),
+                )
+                .await
+                .unwrap(),
+            },
         }
     }
 }
@@ -140,5 +202,33 @@ impl PostgresCacheDatabase {
         self.tx.send(query).await.map_err(|err| {
             anyhow::anyhow!("Failed to query add_currency to database message handler: {err}")
         })
+    }
+
+    pub async fn load_currencies(&self) -> anyhow::Result<Vec<Currency>> {
+        DatabaseQueries::load_currencies(&self.pool).await
+    }
+
+    pub async fn load_currency(&self, code: &str) -> anyhow::Result<Option<Currency>> {
+        DatabaseQueries::load_currency(&self.pool, code).await
+    }
+
+    pub async fn add_instrument(&self, instrument: InstrumentAny) -> anyhow::Result<()> {
+        let query = DatabaseQuery::AddInstrument(instrument);
+        self.tx.send(query).await.map_err(|err| {
+            anyhow::anyhow!(
+                "Failed to send query add_instrument to database message handler: {err}"
+            )
+        })
+    }
+
+    pub async fn load_instrument(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<Option<InstrumentAny>> {
+        DatabaseQueries::load_instrument(&self.pool, instrument_id).await
+    }
+
+    pub async fn load_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
+        DatabaseQueries::load_instruments(&self.pool).await
     }
 }

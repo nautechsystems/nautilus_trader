@@ -275,6 +275,12 @@ impl InstrumentAny {
     }
 }
 
+impl PartialEq for InstrumentAny {
+    fn eq(&self, other: &Self) -> bool {
+        self.id() == other.id()
+    }
+}
+
 pub trait Instrument: 'static + Send {
     fn into_any(self) -> InstrumentAny;
     fn id(&self) -> InstrumentId;

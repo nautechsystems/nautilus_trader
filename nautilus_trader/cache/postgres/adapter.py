@@ -17,7 +17,12 @@ from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.cache.facade import CacheDatabaseFacade
 from nautilus_trader.cache.postgres.transformers import transform_currency_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_currency_to_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_instrument_from_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_instrument_to_pyo3
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import PostgresCacheDatabase
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Currency
 
 
@@ -55,3 +60,12 @@ class CachePostgresAdapter(CacheDatabaseFacade):
         if currency_pyo3:
             return transform_currency_from_pyo3(currency_pyo3)
         return None
+
+    def add_instrument(self, instrument: Instrument):
+        instrument_pyo3 = transform_instrument_to_pyo3(instrument)
+        self._backing.add_instrument(instrument_pyo3)
+
+    def load_instrument(self, instrument_id: InstrumentId) -> Instrument:
+        instrument_id_pyo3 = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
+        instrument_pyo3 = self._backing.load_instrument(instrument_id_pyo3)
+        return transform_instrument_from_pyo3(instrument_pyo3)

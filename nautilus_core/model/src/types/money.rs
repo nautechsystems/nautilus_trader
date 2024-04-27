@@ -279,23 +279,8 @@ impl<'de> Deserialize<'de> for Money {
         D: Deserializer<'de>,
     {
         let money_str: &str = Deserialize::deserialize(deserializer)?;
-
-        let parts: Vec<&str> = money_str.splitn(2, ' ').collect();
-        if parts.len() != 2 {
-            return Err(serde::de::Error::custom("Invalid Money format"));
-        }
-
-        let amount_str = parts[0];
-        let currency_str = parts[1];
-
-        let amount = amount_str
-            .parse::<f64>()
-            .map_err(|_| serde::de::Error::custom("Failed to parse Money amount"))?;
-
-        let currency = Currency::from_str(currency_str)
-            .map_err(|_| serde::de::Error::custom("Invalid currency"))?;
-
-        Ok(Self::new(amount, currency).unwrap()) // TODO: Properly handle the error
+        Money::from_str(money_str)
+            .map_err(|_| serde::de::Error::custom("Failed to parse Money amount"))
     }
 }
 
