@@ -1196,7 +1196,7 @@ impl Cache {
         let mut order_lists = self.order_lists.values().collect::<Vec<&OrderList>>();
 
         if let Some(venue) = venue {
-            order_lists.retain(|ol| ol.instrument_id.venue == *venue);
+            order_lists.retain(|ol| &ol.instrument_id.venue == venue);
         }
 
         if let Some(instrument_id) = instrument_id {
