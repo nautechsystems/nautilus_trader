@@ -35,55 +35,57 @@ use rust_decimal::Decimal;
 use sqlx::{postgres::PgRow, FromRow, Row};
 use ustr::Ustr;
 
-struct InstrumentAnyModel(InstrumentAny);
-struct CryptoFutureModel(CryptoFuture);
-struct CryptoPerpetualModel(CryptoPerpetual);
-struct CurrencyPairModel(CurrencyPair);
-struct EquityModel(Equity);
-struct FuturesContractModel(FuturesContract);
-struct FuturesSpreadModel(FuturesSpread);
-struct OptionsContractModel(OptionsContract);
-struct OptionsSpreadModel(OptionsSpread);
+pub struct InstrumentAnyModel(pub InstrumentAny);
+pub struct CryptoFutureModel(pub CryptoFuture);
+pub struct CryptoPerpetualModel(pub CryptoPerpetual);
+pub struct CurrencyPairModel(pub CurrencyPair);
+pub struct EquityModel(pub Equity);
+pub struct FuturesContractModel(pub FuturesContract);
+pub struct FuturesSpreadModel(pub FuturesSpread);
+pub struct OptionsContractModel(pub OptionsContract);
+pub struct OptionsSpreadModel(pub OptionsSpread);
 
 // TBD
-// impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {
-//     fn from_row(row: &'r PgRow) -> Result<Self, Error> {
-//         let kind = row.get::<String, _>("kind");
-//         if kind == "CRYPTO_FUTURE" {
-//             Ok(InstrumentAny::CryptoFuture(
-//                 CryptoFutureModel::from_row(row).unwrap().0,
-//             ))
-//         } else if kind == "CRYPTO_PERPETUAL" {
-//             Ok(InstrumentAny::CryptoPerpetual(
-//                 CryptoPerpetual::from_row(row).unwrap(),
-//             ))
-//         } else if kind == "CURRENCY_PAIR" {
-//             Ok(InstrumentAny::CurrencyPair(
-//                 CurrencyPair::from_row(row).unwrap(),
-//             ))
-//         } else if kind == "EQUITY" {
-//             Ok(InstrumentAny::Equity(Equity::from_row(row).unwrap()))
-//         } else if kind == "FUTURES_CONTRACT" {
-//             Ok(InstrumentAny::FuturesContract(
-//                 FuturesContract::from_row(row).unwrap(),
-//             ))
-//         } else if kind == "FUTURES_SPREAD" {
-//             Ok(InstrumentAny::FuturesSpread(
-//                 FuturesSpread::from_row(row).unwrap(),
-//             ))
-//         } else if kind == "OPTIONS_CONTRACT" {
-//             Ok(InstrumentAny::OptionsContract(
-//                 OptionsContract::from_row(row).unwrap(),
-//             ))
-//         } else if kind == "OPTIONS_SPREAD" {
-//             Ok(InstrumentAny::OptionsSpread(
-//                 OptionsSpread::from_row(row).unwrap(),
-//             ))
-//         } else {
-//             panic!("Unknown instrument type")
-//         }
-//     }
-// }
+impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let kind = row.get::<String, _>("kind");
+        if kind == "CRYPTO_FUTURE" {
+            Ok(InstrumentAnyModel(InstrumentAny::CryptoFuture(
+                CryptoFutureModel::from_row(row).unwrap().0,
+            )))
+        } else if kind == "CRYPTO_PERPETUAL" {
+            Ok(InstrumentAnyModel(InstrumentAny::CryptoPerpetual(
+                CryptoPerpetualModel::from_row(row).unwrap().0,
+            )))
+        } else if kind == "CURRENCY_PAIR" {
+            Ok(InstrumentAnyModel(InstrumentAny::CurrencyPair(
+                CurrencyPairModel::from_row(row).unwrap().0,
+            )))
+        } else if kind == "EQUITY" {
+            Ok(InstrumentAnyModel(InstrumentAny::Equity(
+                EquityModel::from_row(row).unwrap().0,
+            )))
+        } else if kind == "FUTURES_CONTRACT" {
+            Ok(InstrumentAnyModel(InstrumentAny::FuturesContract(
+                FuturesContractModel::from_row(row).unwrap().0,
+            )))
+        } else if kind == "FUTURES_SPREAD" {
+            Ok(InstrumentAnyModel(InstrumentAny::FuturesSpread(
+                FuturesSpreadModel::from_row(row).unwrap().0,
+            )))
+        } else if kind == "OPTIONS_CONTRACT" {
+            Ok(InstrumentAnyModel(InstrumentAny::OptionsContract(
+                OptionsContractModel::from_row(row).unwrap().0,
+            )))
+        } else if kind == "OPTIONS_SPREAD" {
+            Ok(InstrumentAnyModel(InstrumentAny::OptionsSpread(
+                OptionsSpreadModel::from_row(row).unwrap().0,
+            )))
+        } else {
+            panic!("Unknown instrument type")
+        }
+    }
+}
 
 impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {

@@ -13,7 +13,7 @@ crate-type = ["rlib", "cdylib"]
 [dependencies]
 nautilus-common = { path = "../common", features = ["python"] }
 nautilus-core = { path = "../core" , features = ["python"] }
-nautilus-model = { path = "../model" , features = ["python"] }
+nautilus-model = { path = "../model" , features = ["python", "stubs"] }
 anyhow = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rmp-serde = { workspace = true }

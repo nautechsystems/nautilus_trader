@@ -17,7 +17,11 @@ use std::collections::HashMap;
 
 use nautilus_common::runtime::get_runtime;
 use nautilus_core::python::to_pyruntime_err;
-use nautilus_model::types::currency::Currency;
+use nautilus_model::{
+    identifiers::instrument_id::InstrumentId,
+    python::instruments::{convert_instrument_any_to_pyobject, convert_pyobject_to_instrument_any},
+    types::currency::Currency,
+};
 use pyo3::prelude::*;
 
 use crate::sql::{
@@ -71,6 +75,50 @@ impl PostgresCacheDatabase {
     #[pyo3(name = "add_currency")]
     fn py_add_currency(slf: PyRef<'_, Self>, currency: Currency) -> PyResult<()> {
         let result = get_runtime().block_on(async { slf.add_currency(currency).await });
+        result.map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "load_instrument")]
+    fn py_load_instrument(
+        slf: PyRef<'_, Self>,
+        instrument_id: InstrumentId,
+        py: Python<'_>,
+    ) -> PyResult<Option<PyObject>> {
+        get_runtime().block_on(async {
+            let result = DatabaseQueries::load_instrument(&slf.pool, instrument_id)
+                .await
+                .unwrap();
+            match result {
+                Some(instrument) => {
+                    let py_object = convert_instrument_any_to_pyobject(py, instrument)?;
+                    Ok(Some(py_object))
+                }
+                None => Ok(None),
+            }
+        })
+    }
+
+    #[pyo3(name = "load_instruments")]
+    fn py_load_instruments(slf: PyRef<'_, Self>, py: Python<'_>) -> PyResult<Vec<PyObject>> {
+        get_runtime().block_on(async {
+            let result = DatabaseQueries::load_instruments(&slf.pool).await.unwrap();
+            let mut instruments = Vec::new();
+            for instrument in result {
+                let py_object = convert_instrument_any_to_pyobject(py, instrument)?;
+                instruments.push(py_object);
+            }
+            Ok(instruments)
+        })
+    }
+
+    #[pyo3(name = "add_instrument")]
+    fn py_add_instrument(
+        slf: PyRef<'_, Self>,
+        instrument: PyObject,
+        py: Python<'_>,
+    ) -> PyResult<()> {
+        let instrument_any = convert_pyobject_to_instrument_any(py, instrument)?;
+        let result = get_runtime().block_on(async { slf.add_instrument(instrument_any).await });
         result.map_err(to_pyruntime_err)
     }
 

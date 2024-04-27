@@ -60,13 +60,25 @@ pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
 mod tests {
     use std::time::Duration;
 
+    use nautilus_model::{
+        enums::CurrencyType,
+        identifiers::instrument_id::InstrumentId,
+        instruments::{
+            stubs::{
+                crypto_future_btcusdt, crypto_perpetual_ethusdt, currency_pair_ethusdt,
+                equity_aapl, futures_contract_es, options_contract_appl,
+            },
+            Instrument, InstrumentAny,
+        },
+        types::{currency::Currency, price::Price, quantity::Quantity},
+    };
+
     use crate::get_pg_cache_database;
 
     #[tokio::test]
     async fn test_load_general_objects_when_nothing_in_cache_returns_empty_hashmap() {
         let pg_cache = get_pg_cache_database().await.unwrap();
         let result = pg_cache.load().await.unwrap();
-        println!("1: {result:?}");
         assert_eq!(result.len(), 0);
     }
 
@@ -78,15 +90,148 @@ mod tests {
             .add(String::from("test_id"), test_id_value.clone())
             .await
             .unwrap();
-        // sleep with tokio
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
         let result = pg_cache.load().await.unwrap();
-        println!("2: {result:?}");
         assert_eq!(result.keys().len(), 1);
         assert_eq!(
             result.keys().cloned().collect::<Vec<String>>(),
             vec![String::from("test_id")]
-        ); // assert_eq!(result.get(&test_id_key).unwrap().to_owned(),&test_id_value.clone());
+        );
         assert_eq!(result.get("test_id").unwrap().to_owned(), test_id_value);
+    }
+
+    #[tokio::test]
+    async fn test_add_currency_and_instruments() {
+        // 1. first define and add currencies as they are contain foreign keys for instruments
+        let pg_cache = get_pg_cache_database().await.unwrap();
+        // Define currencies
+        let btc = Currency::new("BTC", 8, 0, "BTC", CurrencyType::Crypto).unwrap();
+        let eth = Currency::new("ETH", 2, 0, "ETH", CurrencyType::Crypto).unwrap();
+        let usd = Currency::new("USD", 2, 0, "USD", CurrencyType::Fiat).unwrap();
+        let usdt = Currency::new("USDT", 2, 0, "USDT", CurrencyType::Crypto).unwrap();
+        // Insert all the currencies
+        pg_cache.add_currency(btc).await.unwrap();
+        pg_cache.add_currency(eth).await.unwrap();
+        pg_cache.add_currency(usd).await.unwrap();
+        pg_cache.add_currency(usdt).await.unwrap();
+        // Define all the instruments
+        let crypto_future =
+            crypto_future_btcusdt(2, 6, Price::from("0.01"), Quantity::from("0.000001"));
+        let crypto_perpetual = crypto_perpetual_ethusdt();
+        let currency_pair = currency_pair_ethusdt();
+        let equity = equity_aapl();
+        let futures_contract = futures_contract_es();
+        let options_contract = options_contract_appl();
+        // Insert all the instruments
+        pg_cache
+            .add_instrument(InstrumentAny::CryptoFuture(crypto_future))
+            .await
+            .unwrap();
+        pg_cache
+            .add_instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual))
+            .await
+            .unwrap();
+        pg_cache
+            .add_instrument(InstrumentAny::CurrencyPair(currency_pair))
+            .await
+            .unwrap();
+        pg_cache
+            .add_instrument(InstrumentAny::Equity(equity))
+            .await
+            .unwrap();
+        pg_cache
+            .add_instrument(InstrumentAny::FuturesContract(futures_contract))
+            .await
+            .unwrap();
+        pg_cache
+            .add_instrument(InstrumentAny::OptionsContract(options_contract))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        // Check that currency list is correct
+        let currencies = pg_cache.load_currencies().await.unwrap();
+        assert_eq!(currencies.len(), 4);
+        assert_eq!(
+            currencies
+                .into_iter()
+                .map(|c| c.code.to_string())
+                .collect::<Vec<String>>(),
+            vec![
+                String::from("BTC"),
+                String::from("ETH"),
+                String::from("USD"),
+                String::from("USDT")
+            ]
+        );
+        // Check individual currencies
+        assert_eq!(pg_cache.load_currency("BTC").await.unwrap().unwrap(), btc);
+        assert_eq!(pg_cache.load_currency("ETH").await.unwrap().unwrap(), eth);
+        assert_eq!(pg_cache.load_currency("USDT").await.unwrap().unwrap(), usdt);
+        // Check individual instruments
+        assert_eq!(
+            pg_cache
+                .load_instrument(crypto_future.id())
+                .await
+                .unwrap()
+                .unwrap(),
+            InstrumentAny::CryptoFuture(crypto_future)
+        );
+        assert_eq!(
+            pg_cache
+                .load_instrument(crypto_perpetual.id())
+                .await
+                .unwrap()
+                .unwrap(),
+            InstrumentAny::CryptoPerpetual(crypto_perpetual)
+        );
+        assert_eq!(
+            pg_cache
+                .load_instrument(currency_pair.id())
+                .await
+                .unwrap()
+                .unwrap(),
+            InstrumentAny::CurrencyPair(currency_pair)
+        );
+        assert_eq!(
+            pg_cache
+                .load_instrument(equity.id())
+                .await
+                .unwrap()
+                .unwrap(),
+            InstrumentAny::Equity(equity)
+        );
+        assert_eq!(
+            pg_cache
+                .load_instrument(futures_contract.id())
+                .await
+                .unwrap()
+                .unwrap(),
+            InstrumentAny::FuturesContract(futures_contract)
+        );
+        assert_eq!(
+            pg_cache
+                .load_instrument(options_contract.id())
+                .await
+                .unwrap()
+                .unwrap(),
+            InstrumentAny::OptionsContract(options_contract)
+        );
+        // Check that instrument list is correct
+        let instruments = pg_cache.load_instruments().await.unwrap();
+        assert_eq!(instruments.len(), 6);
+        assert_eq!(
+            instruments
+                .into_iter()
+                .map(|i| i.id())
+                .collect::<Vec<InstrumentId>>(),
+            vec![
+                crypto_future.id(),
+                crypto_perpetual.id(),
+                currency_pair.id(),
+                equity.id(),
+                futures_contract.id(),
+                options_contract.id()
+            ]
+        );
     }
 }
