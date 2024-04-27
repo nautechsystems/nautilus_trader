@@ -261,7 +261,7 @@ impl CacheDatabaseAdapter {
         todo!() // TODO
     }
 
-    pub fn update_account(&self) -> anyhow::Result<()> {
+    pub fn update_account(&self, account: &dyn Account) -> anyhow::Result<()> {
         todo!() // TODO
     }
 
