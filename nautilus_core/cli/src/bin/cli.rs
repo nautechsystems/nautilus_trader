@@ -24,7 +24,7 @@ async fn main() {
         .with_module_level("sqlx", LevelFilter::Off)
         .init()
         .unwrap();
-    if let Err(err) = nautilus_cli::run(NautilusCli::parse()).await {
-        error!("Error executing Nautilus CLI: {}", err);
+    if let Err(e) = nautilus_cli::run(NautilusCli::parse()).await {
+        error!("Error executing Nautilus CLI: {}", e);
     }
 }

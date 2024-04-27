@@ -184,8 +184,8 @@ impl PostgresCacheDatabase {
                 }
                 Ok(cache)
             }
-            Err(err) => {
-                panic!("Failed to load general table: {err}")
+            Err(e) => {
+                panic!("Failed to load general table: {e}")
             }
         }
     }

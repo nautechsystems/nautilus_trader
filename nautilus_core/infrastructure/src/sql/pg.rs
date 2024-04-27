@@ -100,7 +100,7 @@ pub fn get_postgres_connect_options(
 }
 
 pub async fn delete_nautilus_postgres_tables(db: &PgPool) -> anyhow::Result<()> {
-    // iterate over NAUTILUS_TABLES and delete all rows
+    // Iterate over NAUTILUS_TABLES and delete all rows
     for table in NAUTILUS_TABLES {
         query(format!("DELETE FROM \"{}\" WHERE true", table).as_str())
             .execute(db)
@@ -137,29 +137,32 @@ pub async fn init_postgres(
     schema_dir: Option<String>,
 ) -> anyhow::Result<()> {
     info!("Initializing Postgres database with target permissions and schema");
-    // create public schema
+
+    // Create public schema
     match sqlx::query("CREATE SCHEMA IF NOT EXISTS public;")
         .execute(pg)
         .await
     {
         Ok(_) => info!("Schema public created successfully"),
-        Err(err) => error!("Error creating schema public: {:?}", err),
+        Err(e) => error!("Error creating schema public: {:?}", e),
     }
-    // create role if not exists
+
+    // Create role if not exists
     match sqlx::query(format!("CREATE ROLE {} PASSWORD '{}' LOGIN;", database, password).as_str())
         .execute(pg)
         .await
     {
         Ok(_) => info!("Role {} created successfully", database),
-        Err(err) => {
-            if err.to_string().contains("already exists") {
+        Err(e) => {
+            if e.to_string().contains("already exists") {
                 info!("Role {} already exists", database);
             } else {
-                error!("Error creating role {}: {:?}", database, err);
+                error!("Error creating role {}: {:?}", database, e);
             }
         }
     }
-    // execute all the sql files in schema dir
+
+    // Execute all the sql files in schema dir
     let schema_dir = schema_dir.unwrap_or_else(|| get_schema_dir().unwrap());
     let mut sql_files =
         std::fs::read_dir(schema_dir)?.collect::<Result<Vec<_>, std::io::Error>>()?;
@@ -185,29 +188,32 @@ pub async fn init_postgres(
                 .unwrap();
         }
     }
-    // grant connect
+
+    // Grant connect
     match sqlx::query(format!("GRANT CONNECT ON DATABASE {0} TO {0};", database).as_str())
         .execute(pg)
         .await
     {
         Ok(_) => info!("Connect privileges granted to role {}", database),
-        Err(err) => error!(
+        Err(e) => error!(
             "Error granting connect privileges to role {}: {:?}",
-            database, err
+            database, e
         ),
     }
-    // grant all schema privileges to the role
+
+    // Grant all schema privileges to the role
     match sqlx::query(format!("GRANT ALL PRIVILEGES ON SCHEMA public TO {};", database).as_str())
         .execute(pg)
         .await
     {
         Ok(_) => info!("All schema privileges granted to role {}", database),
-        Err(err) => error!(
+        Err(e) => error!(
             "Error granting all privileges to role {}: {:?}",
-            database, err
+            database, e
         ),
     }
-    // grant all table privileges to the role
+
+    // Grant all table privileges to the role
     match sqlx::query(
         format!(
             "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {};",
@@ -219,12 +225,13 @@ pub async fn init_postgres(
     .await
     {
         Ok(_) => info!("All tables privileges granted to role {}", database),
-        Err(err) => error!(
+        Err(e) => error!(
             "Error granting all privileges to role {}: {:?}",
-            database, err
+            database, e
         ),
     }
-    // grant all sequence privileges to the role
+
+    // Grant all sequence privileges to the role
     match sqlx::query(
         format!(
             "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {};",
@@ -236,12 +243,13 @@ pub async fn init_postgres(
     .await
     {
         Ok(_) => info!("All sequences privileges granted to role {}", database),
-        Err(err) => error!(
+        Err(e) => error!(
             "Error granting all privileges to role {}: {:?}",
-            database, err
+            database, e
         ),
     }
-    // grant all function privileges to the role
+
+    // Grant all function privileges to the role
     match sqlx::query(
         format!(
             "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO {};",
@@ -253,9 +261,9 @@ pub async fn init_postgres(
     .await
     {
         Ok(_) => info!("All functions privileges granted to role {}", database),
-        Err(err) => error!(
+        Err(e) => error!(
             "Error granting all privileges to role {}: {:?}",
-            database, err
+            database, e
         ),
     }
 
@@ -263,51 +271,55 @@ pub async fn init_postgres(
 }
 
 pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> {
-    // execute drop owned
+    // Execute drop owned
     match sqlx::query(format!("DROP OWNED BY {}", database).as_str())
         .execute(pg)
         .await
     {
         Ok(_) => info!("Dropped owned objects by role {}", database),
-        Err(err) => error!("Error dropping owned by role {}: {:?}", database, err),
+        Err(e) => error!("Error dropping owned by role {}: {:?}", database, e),
     }
-    // revoke connect
+
+    // Revoke connect
     match sqlx::query(format!("REVOKE CONNECT ON DATABASE {0} FROM {0};", database).as_str())
         .execute(pg)
         .await
     {
         Ok(_) => info!("Revoked connect privileges from role {}", database),
-        Err(err) => error!(
+        Err(e) => error!(
             "Error revoking connect privileges from role {}: {:?}",
-            database, err
+            database, e
         ),
     }
-    // revoke privileges
+
+    // Revoke privileges
     match sqlx::query(format!("REVOKE ALL PRIVILEGES ON DATABASE {0} FROM {0};", database).as_str())
         .execute(pg)
         .await
     {
         Ok(_) => info!("Revoked all privileges from role {}", database),
-        Err(err) => error!(
+        Err(e) => error!(
             "Error revoking all privileges from role {}: {:?}",
-            database, err
+            database, e
         ),
     }
-    // execute drop schema
+
+    // Execute drop schema
     match sqlx::query("DROP SCHEMA IF EXISTS public CASCADE")
         .execute(pg)
         .await
     {
         Ok(_) => info!("Dropped schema public"),
-        Err(err) => error!("Error dropping schema public: {:?}", err),
+        Err(e) => error!("Error dropping schema public: {:?}", e),
     }
-    // drop role
+
+    // Drop role
     match sqlx::query(format!("DROP ROLE IF EXISTS {};", database).as_str())
         .execute(pg)
         .await
     {
         Ok(_) => info!("Dropped role {}", database),
-        Err(err) => error!("Error dropping role {}: {:?}", database, err),
+        Err(e) => error!("Error dropping role {}: {:?}", database, e),
     }
     Ok(())
 }
