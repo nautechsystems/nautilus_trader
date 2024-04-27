@@ -13,9 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import pytest
 
 from nautilus_trader.adapters.sandbox.execution import SandboxExecutionClient
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
@@ -48,6 +51,8 @@ def exec_client(
         venue=venue.value,
         currency="USD",
         balance=100_000,
+        account_type=AccountType.CASH,
+        default_leverage=Decimal(1),
     )
 
 
