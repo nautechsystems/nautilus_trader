@@ -86,6 +86,7 @@ class SandboxExecutionClient(LiveExecutionClient):
         balance: int,
         oms_type: OmsType = OmsType.NETTING,
         account_type: AccountType = AccountType.MARGIN,
+        default_leverage: Decimal = Decimal(10),
     ) -> None:
         self._currency = Currency.from_str(currency)
         money = Money(value=balance, currency=self._currency)
@@ -112,7 +113,7 @@ class SandboxExecutionClient(LiveExecutionClient):
             account_type=self._account_type,
             base_currency=self._currency,
             starting_balances=[self.balance.free],
-            default_leverage=Decimal(10),
+            default_leverage=default_leverage,
             leverages={},
             instruments=self.INSTRUMENTS,
             modules=[],
@@ -132,6 +133,7 @@ class SandboxExecutionClient(LiveExecutionClient):
             clock=self.test_clock,
         )
         self.exchange.register_client(self._client)
+        self.exchange.initialize_account()
 
     def connect(self) -> None:
         """
