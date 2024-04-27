@@ -47,8 +47,8 @@ use crate::{
     },
     polymorphism::{
         GetClientOrderId, GetEmulationTrigger, GetExecAlgorithmId, GetExecSpawnId, GetInstrumentId,
-        GetLimitPrice, GetOrderSide, GetOrderSideSpecified, GetStopPrice, GetStrategyId,
-        GetVenueOrderId,
+        GetLimitPrice, GetOrderFilledQty, GetOrderLeavesQty, GetOrderQuantity, GetOrderSide,
+        GetOrderSideSpecified, GetStopPrice, GetStrategyId, GetVenueOrderId, IsClosed, IsOpen,
     },
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
@@ -261,6 +261,54 @@ impl GetOrderSide for OrderAny {
     }
 }
 
+impl GetOrderQuantity for OrderAny {
+    fn quantity(&self) -> Quantity {
+        match self {
+            Self::Limit(order) => order.quantity,
+            Self::LimitIfTouched(order) => order.quantity,
+            Self::Market(order) => order.quantity,
+            Self::MarketIfTouched(order) => order.quantity,
+            Self::MarketToLimit(order) => order.quantity,
+            Self::StopLimit(order) => order.quantity,
+            Self::StopMarket(order) => order.quantity,
+            Self::TrailingStopLimit(order) => order.quantity,
+            Self::TrailingStopMarket(order) => order.quantity,
+        }
+    }
+}
+
+impl GetOrderFilledQty for OrderAny {
+    fn filled_qty(&self) -> Quantity {
+        match self {
+            Self::Limit(order) => order.filled_qty(),
+            Self::LimitIfTouched(order) => order.filled_qty(),
+            Self::Market(order) => order.filled_qty(),
+            Self::MarketIfTouched(order) => order.filled_qty(),
+            Self::MarketToLimit(order) => order.filled_qty(),
+            Self::StopLimit(order) => order.filled_qty(),
+            Self::StopMarket(order) => order.filled_qty(),
+            Self::TrailingStopLimit(order) => order.filled_qty(),
+            Self::TrailingStopMarket(order) => order.filled_qty(),
+        }
+    }
+}
+
+impl GetOrderLeavesQty for OrderAny {
+    fn leaves_qty(&self) -> Quantity {
+        match self {
+            Self::Limit(order) => order.leaves_qty(),
+            Self::LimitIfTouched(order) => order.leaves_qty(),
+            Self::Market(order) => order.leaves_qty(),
+            Self::MarketIfTouched(order) => order.leaves_qty(),
+            Self::MarketToLimit(order) => order.leaves_qty(),
+            Self::StopLimit(order) => order.leaves_qty(),
+            Self::StopMarket(order) => order.leaves_qty(),
+            Self::TrailingStopLimit(order) => order.leaves_qty(),
+            Self::TrailingStopMarket(order) => order.leaves_qty(),
+        }
+    }
+}
+
 impl GetOrderSideSpecified for OrderAny {
     fn order_side_specified(&self) -> OrderSideSpecified {
         match self {
@@ -289,6 +337,38 @@ impl GetEmulationTrigger for OrderAny {
             Self::StopMarket(order) => order.emulation_trigger,
             Self::TrailingStopLimit(order) => order.emulation_trigger,
             Self::TrailingStopMarket(order) => order.emulation_trigger,
+        }
+    }
+}
+
+impl IsOpen for OrderAny {
+    fn is_open(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_open(),
+            Self::LimitIfTouched(order) => order.is_open(),
+            Self::Market(order) => order.is_open(),
+            Self::MarketIfTouched(order) => order.is_open(),
+            Self::MarketToLimit(order) => order.is_open(),
+            Self::StopLimit(order) => order.is_open(),
+            Self::StopMarket(order) => order.is_open(),
+            Self::TrailingStopLimit(order) => order.is_open(),
+            Self::TrailingStopMarket(order) => order.is_open(),
+        }
+    }
+}
+
+impl IsClosed for OrderAny {
+    fn is_closed(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_closed(),
+            Self::LimitIfTouched(order) => order.is_closed(),
+            Self::Market(order) => order.is_closed(),
+            Self::MarketIfTouched(order) => order.is_closed(),
+            Self::MarketToLimit(order) => order.is_closed(),
+            Self::StopLimit(order) => order.is_closed(),
+            Self::StopMarket(order) => order.is_closed(),
+            Self::TrailingStopLimit(order) => order.is_closed(),
+            Self::TrailingStopMarket(order) => order.is_closed(),
         }
     }
 }
