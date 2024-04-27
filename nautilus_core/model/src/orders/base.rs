@@ -48,7 +48,8 @@ use crate::{
     polymorphism::{
         GetClientOrderId, GetEmulationTrigger, GetExecAlgorithmId, GetExecSpawnId, GetInstrumentId,
         GetLimitPrice, GetOrderFilledQty, GetOrderLeavesQty, GetOrderQuantity, GetOrderSide,
-        GetOrderSideSpecified, GetStopPrice, GetStrategyId, GetVenueOrderId, IsClosed, IsOpen,
+        GetOrderSideSpecified, GetPositionId, GetStopPrice, GetStrategyId, GetVenueOrderId,
+        IsClosed, IsInflight, IsOpen,
     },
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
@@ -213,6 +214,22 @@ impl GetStrategyId for OrderAny {
     }
 }
 
+impl GetPositionId for OrderAny {
+    fn position_id(&self) -> Option<PositionId> {
+        match self {
+            Self::Limit(order) => order.position_id,
+            Self::LimitIfTouched(order) => order.position_id,
+            Self::Market(order) => order.position_id,
+            Self::MarketIfTouched(order) => order.position_id,
+            Self::MarketToLimit(order) => order.position_id,
+            Self::StopLimit(order) => order.position_id,
+            Self::StopMarket(order) => order.position_id,
+            Self::TrailingStopLimit(order) => order.position_id,
+            Self::TrailingStopMarket(order) => order.position_id,
+        }
+    }
+}
+
 impl GetExecAlgorithmId for OrderAny {
     fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId> {
         match self {
@@ -369,6 +386,22 @@ impl IsClosed for OrderAny {
             Self::StopMarket(order) => order.is_closed(),
             Self::TrailingStopLimit(order) => order.is_closed(),
             Self::TrailingStopMarket(order) => order.is_closed(),
+        }
+    }
+}
+
+impl IsInflight for OrderAny {
+    fn is_inflight(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_inflight(),
+            Self::LimitIfTouched(order) => order.is_inflight(),
+            Self::Market(order) => order.is_inflight(),
+            Self::MarketIfTouched(order) => order.is_inflight(),
+            Self::MarketToLimit(order) => order.is_inflight(),
+            Self::StopLimit(order) => order.is_inflight(),
+            Self::StopMarket(order) => order.is_inflight(),
+            Self::TrailingStopLimit(order) => order.is_inflight(),
+            Self::TrailingStopMarket(order) => order.is_inflight(),
         }
     }
 }
