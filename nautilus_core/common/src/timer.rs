@@ -28,7 +28,7 @@ use std::{
 use nautilus_core::{
     correctness::{check_positive_u64, check_valid_string},
     datetime::floor_to_nearest_microsecond,
-    nanos::{TimedeltaNanos, UnixNanos},
+    nanos::{DurationNanos, UnixNanos},
     time::get_atomic_clock_realtime,
     uuid::UUID4,
 };
@@ -123,7 +123,7 @@ impl Ord for TimeEventHandler {
 pub trait Timer {
     fn new(
         name: Ustr,
-        interval_ns: TimedeltaNanos,
+        interval_ns: DurationNanos,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
     ) -> Self;
