@@ -102,7 +102,7 @@ mod tests {
     };
 
     #[rstest]
-    fn test_display(audusd_sim: CurrencyPair) {
+    fn test_new_and_display(audusd_sim: CurrencyPair) {
         let order1 = TestOrderStubs::limit_order(
             audusd_sim.id,
             OrderSide::Buy,
