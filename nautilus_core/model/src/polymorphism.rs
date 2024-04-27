@@ -23,7 +23,7 @@ use crate::{
         client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, strategy_id::StrategyId, venue_order_id::VenueOrderId,
     },
-    types::price::Price,
+    types::{price::Price, quantity::Quantity},
 };
 
 pub trait GetTsInit {
@@ -58,6 +58,18 @@ pub trait GetOrderSide {
     fn order_side(&self) -> OrderSide;
 }
 
+pub trait GetOrderQuantity {
+    fn quantity(&self) -> Quantity;
+}
+
+pub trait GetOrderFilledQty {
+    fn filled_qty(&self) -> Quantity;
+}
+
+pub trait GetOrderLeavesQty {
+    fn leaves_qty(&self) -> Quantity;
+}
+
 pub trait GetOrderSideSpecified {
     fn order_side_specified(&self) -> OrderSideSpecified;
 }
@@ -72,4 +84,12 @@ pub trait GetLimitPrice {
 
 pub trait GetStopPrice {
     fn stop_px(&self) -> Price;
+}
+
+pub trait IsOpen {
+    fn is_open(&self) -> bool;
+}
+
+pub trait IsClosed {
+    fn is_closed(&self) -> bool;
 }

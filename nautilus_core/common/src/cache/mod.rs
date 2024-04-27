@@ -31,7 +31,7 @@ use nautilus_model::{
         quote::QuoteTick,
         trade::TradeTick,
     },
-    enums::{OrderSide, PositionSide, PriceType},
+    enums::{AggregationSource, OrderSide, PositionSide, PriceType},
     identifiers::{
         account_id::AccountId, client_id::ClientId, client_order_id::ClientOrderId,
         component_id::ComponentId, exec_algorithm_id::ExecAlgorithmId, instrument_id::InstrumentId,
@@ -42,11 +42,11 @@ use nautilus_model::{
     orderbook::book::OrderBook,
     orders::{base::OrderAny, list::OrderList},
     polymorphism::{
-        GetClientOrderId, GetExecAlgorithmId, GetExecSpawnId, GetInstrumentId, GetOrderSide,
-        GetStrategyId,
+        GetClientOrderId, GetExecAlgorithmId, GetExecSpawnId, GetInstrumentId, GetOrderFilledQty,
+        GetOrderLeavesQty, GetOrderQuantity, GetOrderSide, GetStrategyId, IsClosed,
     },
     position::Position,
-    types::{currency::Currency, price::Price},
+    types::{currency::Currency, price::Price, quantity::Quantity},
 };
 use ustr::Ustr;
 
@@ -122,7 +122,7 @@ pub struct CacheIndex {
     strategy_orders: HashMap<StrategyId, HashSet<ClientOrderId>>,
     strategy_positions: HashMap<StrategyId, HashSet<PositionId>>,
     exec_algorithm_orders: HashMap<ExecAlgorithmId, HashSet<ClientOrderId>>,
-    exec_spawn_orders: HashMap<ExecAlgorithmId, HashSet<ClientOrderId>>,
+    exec_spawn_orders: HashMap<ClientOrderId, HashSet<ClientOrderId>>,
     orders: HashSet<ClientOrderId>,
     orders_open: HashSet<ClientOrderId>,
     orders_closed: HashSet<ClientOrderId>,
@@ -185,7 +185,7 @@ pub struct Cache {
     synthetics: HashMap<InstrumentId, SyntheticInstrument>,
     accounts: HashMap<AccountId, Box<dyn Account>>,
     orders: HashMap<ClientOrderId, OrderAny>,
-    order_lists: HashMap<OrderListId, VecDeque<OrderList>>,
+    order_lists: HashMap<OrderListId, OrderList>,
     positions: HashMap<PositionId, Position>,
     position_snapshots: HashMap<PositionId, Vec<u8>>,
 }
@@ -249,7 +249,7 @@ impl Cache {
         }
     }
 
-    // -- COMMANDS ------------------------------------------------------------
+    // -- COMMANDS --------------------------------------------------------------------------------
 
     pub fn cache_general(&mut self) -> anyhow::Result<()> {
         self.general = match &self.database {
@@ -684,13 +684,13 @@ impl Cache {
         Ok(())
     }
 
-    // -- IDENTIFIER QUERIES --------------------------------------------------
+    // -- IDENTIFIER QUERIES ----------------------------------------------------------------------
 
     fn build_order_query_filter_set(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
     ) -> Option<HashSet<ClientOrderId>> {
         let mut query: Option<HashSet<ClientOrderId>> = None;
 
@@ -698,7 +698,7 @@ impl Cache {
             query = Some(
                 self.index
                     .venue_orders
-                    .get(&venue)
+                    .get(venue)
                     .map_or(HashSet::new(), |o| o.iter().copied().collect()),
             );
         };
@@ -707,7 +707,7 @@ impl Cache {
             let instrument_orders = self
                 .index
                 .instrument_orders
-                .get(&instrument_id)
+                .get(instrument_id)
                 .map_or(HashSet::new(), |o| o.iter().copied().collect());
 
             if let Some(existing_query) = &mut query {
@@ -724,7 +724,7 @@ impl Cache {
             let strategy_orders = self
                 .index
                 .strategy_orders
-                .get(&strategy_id)
+                .get(strategy_id)
                 .map_or(HashSet::new(), |o| o.iter().copied().collect());
 
             if let Some(existing_query) = &mut query {
@@ -742,9 +742,9 @@ impl Cache {
 
     fn build_position_query_filter_set(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
     ) -> Option<HashSet<PositionId>> {
         let mut query: Option<HashSet<PositionId>> = None;
 
@@ -752,7 +752,7 @@ impl Cache {
             query = Some(
                 self.index
                     .venue_positions
-                    .get(&venue)
+                    .get(venue)
                     .map_or(HashSet::new(), |p| p.iter().copied().collect()),
             );
         };
@@ -761,7 +761,7 @@ impl Cache {
             let instrument_positions = self
                 .index
                 .instrument_positions
-                .get(&instrument_id)
+                .get(instrument_id)
                 .map_or(HashSet::new(), |p| p.iter().copied().collect());
 
             if let Some(existing_query) = query {
@@ -780,7 +780,7 @@ impl Cache {
             let strategy_positions = self
                 .index
                 .strategy_positions
-                .get(&strategy_id)
+                .get(strategy_id)
                 .map_or(HashSet::new(), |p| p.iter().copied().collect());
 
             if let Some(existing_query) = query {
@@ -800,7 +800,7 @@ impl Cache {
 
     fn get_orders_for_ids(
         &self,
-        client_order_ids: HashSet<ClientOrderId>,
+        client_order_ids: &HashSet<ClientOrderId>,
         side: Option<OrderSide>,
     ) -> Vec<&OrderAny> {
         let side = side.unwrap_or(OrderSide::NoOrderSide);
@@ -809,7 +809,7 @@ impl Cache {
         for client_order_id in client_order_ids {
             let order = self
                 .orders
-                .get(&client_order_id)
+                .get(client_order_id)
                 .unwrap_or_else(|| panic!("Order {client_order_id} not found"));
             if side == OrderSide::NoOrderSide || side == order.order_side() {
                 orders.push(order);
@@ -821,7 +821,7 @@ impl Cache {
 
     fn get_positions_for_ids(
         &self,
-        position_ids: HashSet<&PositionId>,
+        position_ids: &HashSet<PositionId>,
         side: Option<PositionSide>,
     ) -> Vec<&Position> {
         let side = side.unwrap_or(PositionSide::NoPositionSide);
@@ -843,9 +843,9 @@ impl Cache {
     #[must_use]
     pub fn client_order_ids(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
     ) -> HashSet<ClientOrderId> {
         let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
         match query {
@@ -857,9 +857,9 @@ impl Cache {
     #[must_use]
     pub fn client_order_ids_open(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
     ) -> HashSet<ClientOrderId> {
         let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
         match query {
@@ -876,9 +876,9 @@ impl Cache {
     #[must_use]
     pub fn client_order_ids_closed(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
     ) -> HashSet<ClientOrderId> {
         let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
         match query {
@@ -895,9 +895,9 @@ impl Cache {
     #[must_use]
     pub fn client_order_ids_emulated(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
     ) -> HashSet<ClientOrderId> {
         let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
         match query {
@@ -914,9 +914,9 @@ impl Cache {
     #[must_use]
     pub fn client_order_ids_inflight(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
     ) -> HashSet<ClientOrderId> {
         let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
         match query {
@@ -933,9 +933,9 @@ impl Cache {
     #[must_use]
     pub fn position_ids(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
     ) -> HashSet<PositionId> {
         let query = self.build_position_query_filter_set(venue, instrument_id, strategy_id);
         match query {
@@ -947,9 +947,9 @@ impl Cache {
     #[must_use]
     pub fn position_open_ids(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
     ) -> HashSet<PositionId> {
         let query = self.build_position_query_filter_set(venue, instrument_id, strategy_id);
         match query {
@@ -966,9 +966,9 @@ impl Cache {
     #[must_use]
     pub fn position_closed_ids(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
     ) -> HashSet<PositionId> {
         let query = self.build_position_query_filter_set(venue, instrument_id, strategy_id);
         match query {
@@ -997,88 +997,88 @@ impl Cache {
         self.index.exec_algorithms.clone()
     }
 
-    // -- ORDER QUERIES -------------------------------------------------------
+    // -- ORDER QUERIES ---------------------------------------------------------------------------
 
     #[must_use]
-    pub fn order(&self, client_order_id: ClientOrderId) -> Option<&OrderAny> {
-        self.orders.get(&client_order_id)
+    pub fn order(&self, client_order_id: &ClientOrderId) -> Option<&OrderAny> {
+        self.orders.get(client_order_id)
     }
 
     #[must_use]
-    pub fn client_order_id(&self, venue_order_id: VenueOrderId) -> Option<&ClientOrderId> {
-        self.index.order_ids.get(&venue_order_id)
+    pub fn client_order_id(&self, venue_order_id: &VenueOrderId) -> Option<&ClientOrderId> {
+        self.index.order_ids.get(venue_order_id)
     }
 
     #[must_use]
-    pub fn venue_order_id(&self, client_order_id: ClientOrderId) -> Option<VenueOrderId> {
+    pub fn venue_order_id(&self, client_order_id: &ClientOrderId) -> Option<VenueOrderId> {
         self.orders
-            .get(&client_order_id)
+            .get(client_order_id)
             .and_then(nautilus_model::polymorphism::GetVenueOrderId::venue_order_id)
     }
 
     #[must_use]
-    pub fn client_id(&self, client_order_id: ClientOrderId) -> Option<&ClientId> {
-        self.index.order_client.get(&client_order_id)
+    pub fn client_id(&self, client_order_id: &ClientOrderId) -> Option<&ClientId> {
+        self.index.order_client.get(client_order_id)
     }
 
     #[must_use]
     pub fn orders(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
         side: Option<OrderSide>,
     ) -> Vec<&OrderAny> {
         let client_order_ids = self.client_order_ids(venue, instrument_id, strategy_id);
-        self.get_orders_for_ids(client_order_ids, side)
+        self.get_orders_for_ids(&client_order_ids, side)
     }
 
     #[must_use]
     pub fn orders_open(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
         side: Option<OrderSide>,
     ) -> Vec<&OrderAny> {
         let client_order_ids = self.client_order_ids_open(venue, instrument_id, strategy_id);
-        self.get_orders_for_ids(client_order_ids, side)
+        self.get_orders_for_ids(&client_order_ids, side)
     }
 
     #[must_use]
     pub fn orders_closed(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
         side: Option<OrderSide>,
     ) -> Vec<&OrderAny> {
         let client_order_ids = self.client_order_ids_closed(venue, instrument_id, strategy_id);
-        self.get_orders_for_ids(client_order_ids, side)
+        self.get_orders_for_ids(&client_order_ids, side)
     }
 
     #[must_use]
     pub fn orders_emulated(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
         side: Option<OrderSide>,
     ) -> Vec<&OrderAny> {
         let client_order_ids = self.client_order_ids_emulated(venue, instrument_id, strategy_id);
-        self.get_orders_for_ids(client_order_ids, side)
+        self.get_orders_for_ids(&client_order_ids, side)
     }
 
     #[must_use]
     pub fn orders_inflight(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
         side: Option<OrderSide>,
     ) -> Vec<&OrderAny> {
         let client_order_ids = self.client_order_ids_inflight(venue, instrument_id, strategy_id);
-        self.get_orders_for_ids(client_order_ids, side)
+        self.get_orders_for_ids(&client_order_ids, side)
     }
 
     #[must_use]
@@ -1086,48 +1086,48 @@ impl Cache {
         let client_order_ids = self.index.position_orders.get(&position_id);
         match client_order_ids {
             Some(client_order_ids) => {
-                self.get_orders_for_ids(client_order_ids.iter().copied().collect(), None)
+                self.get_orders_for_ids(&client_order_ids.iter().cloned().collect(), None)
             }
             None => Vec::new(),
         }
     }
 
     #[must_use]
-    pub fn order_exists(&self, client_order_id: ClientOrderId) -> bool {
-        self.index.orders.contains(&client_order_id)
+    pub fn order_exists(&self, client_order_id: &ClientOrderId) -> bool {
+        self.index.orders.contains(client_order_id)
     }
 
     #[must_use]
-    pub fn is_order_open(&self, client_order_id: ClientOrderId) -> bool {
-        self.index.orders_open.contains(&client_order_id)
+    pub fn is_order_open(&self, client_order_id: &ClientOrderId) -> bool {
+        self.index.orders_open.contains(client_order_id)
     }
 
     #[must_use]
-    pub fn is_order_closed(&self, client_order_id: ClientOrderId) -> bool {
-        self.index.orders_closed.contains(&client_order_id)
+    pub fn is_order_closed(&self, client_order_id: &ClientOrderId) -> bool {
+        self.index.orders_closed.contains(client_order_id)
     }
 
     #[must_use]
-    pub fn is_order_emulated(&self, client_order_id: ClientOrderId) -> bool {
-        self.index.orders_emulated.contains(&client_order_id)
+    pub fn is_order_emulated(&self, client_order_id: &ClientOrderId) -> bool {
+        self.index.orders_emulated.contains(client_order_id)
     }
 
     #[must_use]
-    pub fn is_order_inflight(&self, client_order_id: ClientOrderId) -> bool {
-        self.index.orders_inflight.contains(&client_order_id)
+    pub fn is_order_inflight(&self, client_order_id: &ClientOrderId) -> bool {
+        self.index.orders_inflight.contains(client_order_id)
     }
 
     #[must_use]
-    pub fn is_order_pending_cancel_local(&self, client_order_id: ClientOrderId) -> bool {
-        self.index.orders_pending_cancel.contains(&client_order_id)
+    pub fn is_order_pending_cancel_local(&self, client_order_id: &ClientOrderId) -> bool {
+        self.index.orders_pending_cancel.contains(client_order_id)
     }
 
     #[must_use]
     pub fn orders_open_count(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
         side: Option<OrderSide>,
     ) -> usize {
         self.orders_open(venue, instrument_id, strategy_id, side)
@@ -1137,9 +1137,9 @@ impl Cache {
     #[must_use]
     pub fn orders_closed_count(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
         side: Option<OrderSide>,
     ) -> usize {
         self.orders_closed(venue, instrument_id, strategy_id, side)
@@ -1149,9 +1149,9 @@ impl Cache {
     #[must_use]
     pub fn orders_emulated_count(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
         side: Option<OrderSide>,
     ) -> usize {
         self.orders_emulated(venue, instrument_id, strategy_id, side)
@@ -1161,9 +1161,9 @@ impl Cache {
     #[must_use]
     pub fn orders_inflight_count(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
         side: Option<OrderSide>,
     ) -> usize {
         self.orders_inflight(venue, instrument_id, strategy_id, side)
@@ -1173,15 +1173,275 @@ impl Cache {
     #[must_use]
     pub fn orders_total_count(
         &self,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
         side: Option<OrderSide>,
     ) -> usize {
         self.orders(venue, instrument_id, strategy_id, side).len()
     }
 
-    // -- GENERAL -------------------------------------------------------------
+    #[must_use]
+    pub fn order_list(&self, order_list_id: &OrderListId) -> Option<&OrderList> {
+        self.order_lists.get(order_list_id)
+    }
+
+    #[must_use]
+    pub fn order_lists(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+    ) -> Vec<&OrderList> {
+        let mut order_lists = self.order_lists.values().collect::<Vec<&OrderList>>();
+
+        if let Some(venue) = venue {
+            order_lists.retain(|ol| ol.instrument_id.venue == *venue);
+        }
+
+        if let Some(instrument_id) = instrument_id {
+            order_lists.retain(|ol| &ol.instrument_id == instrument_id);
+        }
+
+        if let Some(strategy_id) = strategy_id {
+            order_lists.retain(|ol| &ol.strategy_id == strategy_id);
+        }
+
+        order_lists
+    }
+
+    #[must_use]
+    pub fn order_list_exists(&self, order_list_id: &OrderListId) -> bool {
+        self.order_lists.contains_key(order_list_id)
+    }
+
+    // -- EXEC ALGORITHM QUERIES ------------------------------------------------------------------
+
+    #[must_use]
+    pub fn orders_for_exec_algorithm(
+        &self,
+        exec_algorithm_id: &ExecAlgorithmId,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        side: Option<OrderSide>,
+    ) -> Vec<&OrderAny> {
+        let query = self.build_order_query_filter_set(venue, instrument_id, strategy_id);
+        let exec_algorithm_order_ids = self.index.exec_algorithm_orders.get(exec_algorithm_id);
+
+        if let Some(query) = query {
+            if let Some(exec_algorithm_order_ids) = exec_algorithm_order_ids {
+                let exec_algorithm_order_ids = exec_algorithm_order_ids.intersection(&query);
+            }
+        }
+
+        if let Some(exec_algorithm_order_ids) = exec_algorithm_order_ids {
+            self.get_orders_for_ids(exec_algorithm_order_ids, side)
+        } else {
+            Vec::new()
+        }
+    }
+
+    #[must_use]
+    pub fn orders_for_exec_spawn(&self, exec_spawn_id: &ClientOrderId) -> Vec<&OrderAny> {
+        self.get_orders_for_ids(
+            self.index
+                .exec_spawn_orders
+                .get(exec_spawn_id)
+                .unwrap_or(&HashSet::new()),
+            None,
+        )
+    }
+
+    #[must_use]
+    pub fn exec_spawn_total_quantity(
+        &self,
+        exec_spawn_id: &ClientOrderId,
+        active_only: bool,
+    ) -> Option<Quantity> {
+        let exec_spawn_orders = self.orders_for_exec_spawn(exec_spawn_id);
+
+        let mut total_quantity: Option<Quantity> = None;
+
+        for spawn_order in exec_spawn_orders {
+            if !active_only || !spawn_order.is_closed() {
+                if let Some(mut total_quantity) = total_quantity {
+                    total_quantity += spawn_order.quantity()
+                }
+            } else {
+                total_quantity = Some(spawn_order.quantity())
+            }
+        }
+
+        total_quantity
+    }
+
+    #[must_use]
+    pub fn exec_spawn_total_filled_qty(
+        &self,
+        exec_spawn_id: &ClientOrderId,
+        active_only: bool,
+    ) -> Option<Quantity> {
+        let exec_spawn_orders = self.orders_for_exec_spawn(exec_spawn_id);
+
+        let mut total_quantity: Option<Quantity> = None;
+
+        for spawn_order in exec_spawn_orders {
+            if !active_only || !spawn_order.is_closed() {
+                if let Some(mut total_quantity) = total_quantity {
+                    total_quantity += spawn_order.filled_qty()
+                }
+            } else {
+                total_quantity = Some(spawn_order.filled_qty())
+            }
+        }
+
+        total_quantity
+    }
+
+    #[must_use]
+    pub fn exec_spawn_total_leaves_qty(
+        &self,
+        exec_spawn_id: &ClientOrderId,
+        active_only: bool,
+    ) -> Option<Quantity> {
+        let exec_spawn_orders = self.orders_for_exec_spawn(exec_spawn_id);
+
+        let mut total_quantity: Option<Quantity> = None;
+
+        for spawn_order in exec_spawn_orders {
+            if !active_only || !spawn_order.is_closed() {
+                if let Some(mut total_quantity) = total_quantity {
+                    total_quantity += spawn_order.leaves_qty()
+                }
+            } else {
+                total_quantity = Some(spawn_order.leaves_qty())
+            }
+        }
+
+        total_quantity
+    }
+
+    // -- POSITION QUERIES ------------------------------------------------------------------------
+
+    #[must_use]
+    pub fn position(&self, position_id: &PositionId) -> Option<&Position> {
+        self.positions.get(position_id)
+    }
+
+    #[must_use]
+    pub fn position_for_order(&self, client_order_id: &ClientOrderId) -> Option<&Position> {
+        self.index
+            .order_position
+            .get(client_order_id)
+            .and_then(|position_id| self.positions.get(position_id))
+    }
+
+    #[must_use]
+    pub fn position_id(&self, client_order_id: &ClientOrderId) -> Option<&PositionId> {
+        self.index.order_position.get(client_order_id)
+    }
+
+    #[must_use]
+    pub fn positions(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        side: Option<PositionSide>,
+    ) -> Vec<&Position> {
+        let position_ids = self.position_ids(venue, instrument_id, strategy_id);
+        self.get_positions_for_ids(&position_ids, side)
+    }
+
+    #[must_use]
+    pub fn positions_open(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        side: Option<PositionSide>,
+    ) -> Vec<&Position> {
+        let position_ids = self.position_open_ids(venue, instrument_id, strategy_id);
+        self.get_positions_for_ids(&position_ids, side)
+    }
+
+    #[must_use]
+    pub fn positions_closed(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        side: Option<PositionSide>,
+    ) -> Vec<&Position> {
+        let position_ids = self.position_closed_ids(venue, instrument_id, strategy_id);
+        self.get_positions_for_ids(&position_ids, side)
+    }
+
+    #[must_use]
+    pub fn position_exists(&self, position_id: &PositionId) -> bool {
+        self.index.positions.contains(position_id)
+    }
+
+    #[must_use]
+    pub fn is_position_open(&self, position_id: &PositionId) -> bool {
+        self.index.positions_open.contains(position_id)
+    }
+
+    #[must_use]
+    pub fn is_position_closed(&self, position_id: &PositionId) -> bool {
+        self.index.positions_closed.contains(position_id)
+    }
+
+    #[must_use]
+    pub fn positions_open_count(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        side: Option<PositionSide>,
+    ) -> u64 {
+        self.positions_open(venue, instrument_id, strategy_id, side)
+            .len() as u64
+    }
+
+    #[must_use]
+    pub fn positions_closed_count(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        side: Option<PositionSide>,
+    ) -> u64 {
+        self.positions_closed(venue, instrument_id, strategy_id, side)
+            .len() as u64
+    }
+
+    #[must_use]
+    pub fn positions_total_count(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        side: Option<PositionSide>,
+    ) -> u64 {
+        self.positions(venue, instrument_id, strategy_id, side)
+            .len() as u64
+    }
+
+    // -- STRATEGY QUERIES ------------------------------------------------------------------------
+
+    #[must_use]
+    pub fn strategy_id_for_order(&self, client_order_id: &ClientOrderId) -> Option<&StrategyId> {
+        self.index.order_strategy.get(client_order_id)
+    }
+
+    #[must_use]
+    pub fn strategy_id_for_position(&self, position_id: &PositionId) -> Option<&StrategyId> {
+        self.index.position_strategy.get(position_id)
+    }
+
+    // -- GENERAL ---------------------------------------------------------------------------------
 
     pub fn get(&self, key: &str) -> anyhow::Result<Option<&[u8]>> {
         check_valid_string(key, stringify!(key))?;
@@ -1189,7 +1449,7 @@ impl Cache {
         Ok(self.general.get(key).map(std::vec::Vec::as_slice))
     }
 
-    // -- DATA QUERIES --------------------------------------------------------
+    // -- DATA QUERIES ----------------------------------------------------------------------------
 
     #[must_use]
     pub fn price(&self, instrument_id: &InstrumentId, price_type: PriceType) -> Option<Price> {
@@ -1261,6 +1521,150 @@ impl Cache {
     #[must_use]
     pub fn bar(&self, bar_type: &BarType) -> Option<&Bar> {
         self.bars.get(bar_type).and_then(|bars| bars.front())
+    }
+
+    #[must_use]
+    pub fn book_update_count(&self, instrument_id: &InstrumentId) -> u64 {
+        self.books
+            .get(instrument_id)
+            .map(|book| book.count)
+            .unwrap_or(0)
+    }
+
+    #[must_use]
+    pub fn quote_tick_count(&self, instrument_id: &InstrumentId) -> u64 {
+        self.quotes
+            .get(instrument_id)
+            .map(|quotes| quotes.len())
+            .unwrap_or(0) as u64
+    }
+
+    #[must_use]
+    pub fn trade_tick_count(&self, instrument_id: &InstrumentId) -> u64 {
+        self.trades
+            .get(instrument_id)
+            .map(|trades| trades.len())
+            .unwrap_or(0) as u64
+    }
+
+    #[must_use]
+    pub fn bar_count(&self, bar_type: &BarType) -> u64 {
+        self.bars.get(bar_type).map(|bars| bars.len()).unwrap_or(0) as u64
+    }
+
+    #[must_use]
+    pub fn has_order_book(&self, instrument_id: &InstrumentId) -> bool {
+        self.books.contains_key(instrument_id)
+    }
+
+    #[must_use]
+    pub fn has_quote_ticks(&self, instrument_id: &InstrumentId) -> bool {
+        self.quote_tick_count(instrument_id) > 0
+    }
+
+    #[must_use]
+    pub fn has_trade_ticks(&self, instrument_id: &InstrumentId) -> bool {
+        self.trade_tick_count(instrument_id) > 0
+    }
+
+    #[must_use]
+    pub fn has_bars(&self, bar_type: &BarType) -> bool {
+        self.bar_count(bar_type) > 0
+    }
+
+    // -- INSTRUMENT QUERIES ----------------------------------------------------------------------
+
+    #[must_use]
+    pub fn instrument(&self, instrument_id: &InstrumentId) -> Option<&InstrumentAny> {
+        self.instruments.get(instrument_id)
+    }
+
+    #[must_use]
+    pub fn instrument_ids(&self, venue: &Venue) -> Vec<&InstrumentId> {
+        self.instruments
+            .keys()
+            .filter(|i| &i.venue == venue)
+            .collect()
+    }
+
+    #[must_use]
+    pub fn instruments(&self, venue: &Venue) -> Vec<&InstrumentAny> {
+        self.instruments
+            .values()
+            .filter(|i| &i.id().venue == venue)
+            .collect()
+    }
+
+    #[must_use]
+    pub fn bar_types(
+        &self,
+        instrument_id: Option<&InstrumentId>,
+        price_type: Option<&PriceType>,
+        aggregation_source: AggregationSource,
+    ) -> Vec<&BarType> {
+        let mut bar_types = self
+            .bars
+            .keys()
+            .filter(|bar_type| bar_type.aggregation_source == aggregation_source)
+            .collect::<Vec<&BarType>>();
+
+        if let Some(instrument_id) = instrument_id {
+            bar_types.retain(|bar_type| &bar_type.instrument_id == instrument_id);
+        }
+
+        if let Some(price_type) = price_type {
+            bar_types.retain(|bar_type| &bar_type.spec.price_type == price_type);
+        }
+
+        bar_types
+    }
+
+    // -- SYNTHETIC QUERIES -----------------------------------------------------------------------
+
+    #[must_use]
+    pub fn synthetic(&self, instrument_id: &InstrumentId) -> Option<&SyntheticInstrument> {
+        self.synthetics.get(instrument_id)
+    }
+
+    #[must_use]
+    pub fn synthetic_ids(&self) -> Vec<&InstrumentId> {
+        self.synthetics.keys().collect()
+    }
+
+    #[must_use]
+    pub fn synthetics(&self) -> Vec<&SyntheticInstrument> {
+        self.synthetics.values().collect()
+    }
+
+    // -- ACCOUNT QUERIES -----------------------------------------------------------------------
+
+    #[must_use]
+    pub fn account(&self, account_id: &AccountId) -> Option<&dyn Account> {
+        self.accounts
+            .get(account_id)
+            .map(|box_account| box_account.as_ref())
+    }
+
+    #[must_use]
+    pub fn account_for_venue(&self, venue: &Venue) -> Option<&dyn Account> {
+        self.index
+            .venue_account
+            .get(venue)
+            .and_then(|account_id| self.accounts.get(account_id))
+            .map(|box_account| box_account.as_ref())
+    }
+
+    #[must_use]
+    pub fn account_id(&self, venue: &Venue) -> Option<&AccountId> {
+        self.index.venue_account.get(venue)
+    }
+
+    #[must_use]
+    pub fn accounts(&self, account_id: &AccountId) -> Vec<&dyn Account> {
+        self.accounts
+            .values()
+            .map(|box_account| box_account.as_ref())
+            .collect()
     }
 }
 
