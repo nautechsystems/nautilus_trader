@@ -343,198 +343,156 @@ impl Cache {
         }
 
         // Index orders
-        for (client_order_id, order) in &self.orders {
+        for (client_order_id, order) in self.orders.iter() {
             let instrument_id = order.instrument_id();
             let venue = instrument_id.venue;
             let strategy_id = order.strategy_id();
 
-            // 1: Build _index_venue_orders -> {Venue, {ClientOrderId}}
-            if let Some(venue_orders) = self.index.venue_orders.get_mut(&venue) {
-                venue_orders.insert(*client_order_id);
-            } else {
-                let mut venue_orders = HashSet::new();
-                venue_orders.insert(*client_order_id);
-                self.index.venue_orders.insert(venue, venue_orders);
-            }
+            // 1: Build index.venue_orders -> {Venue, {ClientOrderId}}
+            self.index
+                .venue_orders
+                .entry(venue)
+                .or_default()
+                .insert(*client_order_id);
 
-            // 2: Build _index_order_ids -> {VenueOrderId, ClientOrderId}
+            // 2: Build index.order_ids -> {VenueOrderId, ClientOrderId}
             if let Some(venue_order_id) = order.venue_order_id() {
                 self.index
                     .order_ids
                     .insert(venue_order_id, *client_order_id);
             }
 
-            // 3: Build _index_order_position -> {ClientOrderId, PositionId}
+            // 3: Build index.order_position -> {ClientOrderId, PositionId}
             if let Some(position_id) = order.position_id() {
                 self.index
                     .order_position
                     .insert(*client_order_id, position_id);
             }
 
-            // 4: Build _index_order_strategy -> {ClientOrderId, StrategyId}
+            // 4: Build index.order_strategy -> {ClientOrderId, StrategyId}
             self.index
                 .order_strategy
                 .insert(*client_order_id, order.strategy_id());
 
-            // 5: Build _index_instrument_orders -> {InstrumentId, {ClientOrderId}}
-            if let Some(instrument_orders) = self.index.instrument_orders.get_mut(&instrument_id) {
-                instrument_orders.insert(*client_order_id);
-            } else {
-                let mut instrument_orders = HashSet::new();
-                instrument_orders.insert(*client_order_id);
-                self.index
-                    .instrument_orders
-                    .insert(instrument_id, instrument_orders);
-            }
+            // 5: Build index.instrument_orders -> {InstrumentId, {ClientOrderId}}
+            self.index
+                .instrument_orders
+                .entry(instrument_id)
+                .or_default()
+                .insert(*client_order_id);
 
-            // 6: Build _index_strategy_orders -> {StrategyId, {ClientOrderId}}
-            if let Some(strategy_orders) = self.index.strategy_orders.get_mut(&strategy_id) {
-                strategy_orders.insert(*client_order_id);
-            } else {
-                let mut strategy_orders = HashSet::new();
-                strategy_orders.insert(*client_order_id);
-                self.index
-                    .strategy_orders
-                    .insert(strategy_id, strategy_orders);
-            }
+            // 6: Build index.strategy_orders -> {StrategyId, {ClientOrderId}}
+            self.index
+                .strategy_orders
+                .entry(strategy_id)
+                .or_default()
+                .insert(*client_order_id);
 
-            // 7: Build _index_exec_algorithm_orders -> {ExecAlgorithmId, {ClientOrderId}}
+            // 7: Build index.exec_algorithm_orders -> {ExecAlgorithmId, {ClientOrderId}}
             if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
-                if let Some(exec_algorithm_orders) =
-                    self.index.exec_algorithm_orders.get_mut(&exec_algorithm_id)
-                {
-                    exec_algorithm_orders.insert(*client_order_id);
-                } else {
-                    let mut exec_algorithm_orders = HashSet::new();
-                    exec_algorithm_orders.insert(*client_order_id);
-                    self.index
-                        .exec_algorithm_orders
-                        .insert(exec_algorithm_id, exec_algorithm_orders);
-                }
+                self.index
+                    .exec_algorithm_orders
+                    .entry(exec_algorithm_id)
+                    .or_default()
+                    .insert(*client_order_id);
             }
 
-            // 8: Build _index_exec_spawn_orders -> {ClientOrderId, {ClientOrderId}}
+            // 8: Build index.exec_spawn_orders -> {ClientOrderId, {ClientOrderId}}
             if let Some(exec_spawn_id) = order.exec_spawn_id() {
-                if let Some(exec_spawn_orders) =
-                    self.index.exec_spawn_orders.get_mut(&exec_spawn_id)
-                {
-                    exec_spawn_orders.insert(*client_order_id);
-                } else {
-                    let mut exec_spawn_orders = HashSet::new();
-                    exec_spawn_orders.insert(*client_order_id);
-                    self.index
-                        .exec_spawn_orders
-                        .insert(exec_spawn_id, exec_spawn_orders);
-                }
+                self.index
+                    .exec_spawn_orders
+                    .entry(exec_spawn_id)
+                    .or_default()
+                    .insert(*client_order_id);
             }
 
-            // 9: Build _index_orders -> {ClientOrderId}
+            // 9: Build index.orders -> {ClientOrderId}
             self.index.orders.insert(*client_order_id);
 
-            // 10: Build _index_orders_open -> {ClientOrderId}
+            // 10: Build index.orders_open -> {ClientOrderId}
             if order.is_open() {
                 self.index.orders_open.insert(*client_order_id);
             }
 
-            // 11: Build _index_orders_closed -> {ClientOrderId}
+            // 11: Build index.orders_closed -> {ClientOrderId}
             if order.is_closed() {
                 self.index.orders_closed.insert(*client_order_id);
             }
 
-            // 12: Build _index_orders_emulated -> {ClientOrderId}
+            // 12: Build index.orders_emulated -> {ClientOrderId}
             if let Some(emulation_trigger) = order.emulation_trigger() {
                 if emulation_trigger != TriggerType::NoTrigger && !order.is_closed() {
                     self.index.orders_emulated.insert(*client_order_id);
                 }
             }
 
-            // 13: Build _index_orders_inflight -> {ClientOrderId}
+            // 13: Build index.orders_inflight -> {ClientOrderId}
             if order.is_inflight() {
                 self.index.orders_inflight.insert(*client_order_id);
             }
 
-            // 14: Build _index_strategies -> {StrategyId}
+            // 14: Build index.strategies -> {StrategyId}
             self.index.strategies.insert(strategy_id);
 
-            // 15: Build _index_strategies -> {ExecAlgorithmId}
+            // 15: Build index.strategies -> {ExecAlgorithmId}
             if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
                 self.index.exec_algorithms.insert(exec_algorithm_id);
             }
         }
 
         // Index positions
-        for (position_id, position) in &self.positions {
+        for (position_id, position) in self.positions.iter() {
             let instrument_id = position.instrument_id;
             let venue = instrument_id.venue;
             let strategy_id = position.strategy_id;
 
-            // 1: Build _index_venue_positions -> {Venue, {PositionId}}
-            if let Some(venue_positions) = self.index.venue_positions.get_mut(&venue) {
-                venue_positions.insert(*position_id);
-            } else {
-                let mut venue_positions = HashSet::new();
-                venue_positions.insert(*position_id);
-                self.index.venue_positions.insert(venue, venue_positions);
-            }
+            // 1: Build index.venue_positions -> {Venue, {PositionId}}
+            self.index
+                .venue_positions
+                .entry(venue)
+                .or_default()
+                .insert(*position_id);
 
-            // 2: Build _index_position_strategy -> {PositionId, StrategyId}
+            // 2: Build index.position_strategy -> {PositionId, StrategyId}
             self.index
                 .position_strategy
                 .insert(*position_id, position.strategy_id);
 
-            // 3: Build _index_position_orders -> {PositionId, {ClientOrderId}}
-            if let Some(position_orders) = self.index.position_orders.get_mut(position_id) {
-                for client_order_id in position.client_order_ids() {
-                    position_orders.insert(client_order_id);
-                }
-            } else {
-                let mut position_orders = HashSet::new();
-                for client_order_id in position.client_order_ids() {
-                    position_orders.insert(client_order_id);
-                }
-                self.index
-                    .position_orders
-                    .insert(*position_id, position_orders);
-            }
+            // 3: Build index.position_orders -> {PositionId, {ClientOrderId}}
+            self.index
+                .position_orders
+                .entry(*position_id)
+                .or_default()
+                .extend(position.client_order_ids().into_iter());
 
-            // 4: Build _index_instrument_positions -> {InstrumentId, {PositionId}}
-            if let Some(instrument_positions) =
-                self.index.instrument_positions.get_mut(&instrument_id)
-            {
-                instrument_positions.insert(*position_id);
-            } else {
-                let mut instrument_positions = HashSet::new();
-                instrument_positions.insert(*position_id);
-                self.index
-                    .instrument_positions
-                    .insert(instrument_id, instrument_positions);
-            }
+            // 4: Build index.instrument_positions -> {InstrumentId, {PositionId}}
+            self.index
+                .instrument_positions
+                .entry(instrument_id)
+                .or_default()
+                .insert(*position_id);
 
-            // 5: Build _index_strategy_positions -> {StrategyId, {PositionId}}
-            if let Some(strategy_positions) = self.index.strategy_positions.get_mut(&strategy_id) {
-                strategy_positions.insert(*position_id);
-            } else {
-                let mut strategy_positions = HashSet::new();
-                strategy_positions.insert(*position_id);
-                self.index
-                    .strategy_positions
-                    .insert(strategy_id, strategy_positions);
-            }
+            // 5: Build index.strategy_positions -> {StrategyId, {PositionId}}
+            self.index
+                .strategy_positions
+                .entry(strategy_id)
+                .or_default()
+                .insert(*position_id);
 
-            // 6: Build _index_positions -> {PositionId}
+            // 6: Build index.positions -> {PositionId}
             self.index.positions.insert(*position_id);
 
-            // 7: Build _index_positions_open -> {PositionId}
+            // 7: Build index.positions_open -> {PositionId}
             if position.is_open() {
                 self.index.positions_open.insert(*position_id);
             }
 
-            // 8: Build _index_positions_closed -> {PositionId}
+            // 8: Build index.positions_closed -> {PositionId}
             if position.is_closed() {
                 self.index.positions_closed.insert(*position_id);
             }
 
-            // 9: Build _index_strategies -> {StrategyId}
+            // 9: Build index.strategies -> {StrategyId}
             self.index.strategies.insert(strategy_id);
         }
     }
