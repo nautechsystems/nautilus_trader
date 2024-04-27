@@ -1701,14 +1701,50 @@ mod tests {
     }
 
     #[rstest]
-    fn test_general_when_no_value() {
+    fn test_cache_general_load_when_no_database() {
+        let mut cache = Cache::default();
+        assert!(cache.cache_general().is_ok());
+    }
+
+    #[rstest]
+    fn test_cache_currencies_load_when_no_database() {
+        let mut cache = Cache::default();
+        assert!(cache.cache_currencies().is_ok());
+    }
+
+    #[rstest]
+    fn test_cache_instruments_load_when_no_database() {
+        let mut cache = Cache::default();
+        assert!(cache.cache_instruments().is_ok());
+    }
+
+    #[rstest]
+    fn test_cache_synthetics_when_no_database() {
+        let mut cache = Cache::default();
+        assert!(cache.cache_synthetics().is_ok());
+    }
+
+    #[rstest]
+    fn test_cache_orders_when_no_database() {
+        let mut cache = Cache::default();
+        assert!(cache.cache_orders().is_ok());
+    }
+
+    #[rstest]
+    fn test_cache_positions_when_no_database() {
+        let mut cache = Cache::default();
+        assert!(cache.cache_positions().is_ok());
+    }
+
+    #[rstest]
+    fn test_get_general_when_no_value() {
         let cache = Cache::default();
         let result = cache.get("A").unwrap();
         assert_eq!(result, None);
     }
 
     #[rstest]
-    fn test_general_when_value() {
+    fn test_add_general_when_value() {
         let mut cache = Cache::default();
 
         let key = "A";
