@@ -132,6 +132,7 @@ class SandboxExecutionClient(LiveExecutionClient):
             clock=self.test_clock,
         )
         self.exchange.register_client(self._client)
+        self.exchange.initialize_account()
 
     def connect(self) -> None:
         """
