@@ -175,14 +175,8 @@ impl Display for UnixNanos {
     }
 }
 
-/// Represents an event timestamp in nanoseconds since UNIX epoch.
-pub type TsEvent = UnixNanos;
-
-/// Represents an initialization timestamp in nanoseconds since UNIX epoch.
-pub type TsInit = UnixNanos;
-
-/// Represents a timedelta in nanoseconds.
-pub type TimedeltaNanos = i64;
+/// Represents a duration in nanoseconds.
+pub type DurationNanos = u64;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests

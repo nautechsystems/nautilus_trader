@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::nanos::{TimedeltaNanos, UnixNanos};
+use nautilus_core::nanos::{DurationNanos, UnixNanos};
 
 use crate::{
     enums::{OrderSide, PositionSide},
@@ -46,7 +46,7 @@ pub struct PositionClosed {
     pub realized_return: f64,
     pub realized_pnl: Money,
     pub unrealized_pnl: Money,
-    pub duration: TimedeltaNanos,
+    pub duration: DurationNanos,
     pub ts_opened: UnixNanos,
     pub ts_closed: UnixNanos,
     pub ts_event: UnixNanos,

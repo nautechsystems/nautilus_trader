@@ -21,6 +21,8 @@ use std::{
 use nautilus_core::correctness::{check_string_contains, check_valid_string};
 use ustr::Ustr;
 
+use super::venue::Venue;
+
 /// Represents a valid account ID.
 ///
 /// Must be correctly formatted with two valid strings either side of a hyphen '-'.
@@ -64,6 +66,20 @@ impl AccountId {
     #[must_use]
     pub fn as_str(&self) -> &str {
         self.0.as_str()
+    }
+
+    /// Returns the account issuer for this identifier.
+    #[must_use]
+    pub fn get_issuer(&self) -> Venue {
+        // SAFETY: Account ID is guaranteed to have chars either side of a hyphen
+        Venue::from_str_unchecked(self.0.split('-').collect::<Vec<&str>>().first().unwrap())
+    }
+
+    /// Returns the account ID assigned by the issuer.
+    #[must_use]
+    pub fn get_issuers_id(&self) -> &str {
+        // SAFETY: Account ID is guaranteed to have chars either side of a hyphen
+        self.0.split('-').collect::<Vec<&str>>().last().unwrap()
     }
 }
 
@@ -127,5 +143,15 @@ mod tests {
     #[rstest]
     fn test_string_reprs(account_ib: AccountId) {
         assert_eq!(account_ib.as_str(), "IB-1234567890");
+    }
+
+    #[rstest]
+    fn test_get_issuer(account_ib: AccountId) {
+        assert_eq!(account_ib.get_issuer(), Venue::new("IB").unwrap());
+    }
+
+    #[rstest]
+    fn test_get_issuers_id(account_ib: AccountId) {
+        assert_eq!(account_ib.get_issuers_id(), "1234567890");
     }
 }
