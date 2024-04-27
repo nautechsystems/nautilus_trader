@@ -91,7 +91,7 @@ class TestInstrumentProviderPyo3:
     def ethusdt_perp_binance() -> CryptoPerpetual:
         return CryptoPerpetual(
             id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
-            symbol=Symbol("ETHUSDT-PERP"),
+            raw_symbol=Symbol("ETHUSDT-PERP"),
             base_currency=_ETH,
             quote_currency=_USDT,
             settlement_currency=_USDT,
@@ -149,7 +149,7 @@ class TestInstrumentProviderPyo3:
                 symbol=Symbol("BTC/USD"),
                 venue=Venue("BITMEX"),
             ),
-            symbol=Symbol("XBTUSD"),
+            raw_symbol=Symbol("XBTUSD"),
             base_currency=_BTC,
             quote_currency=_USD,
             settlement_currency=_BTC,
@@ -179,7 +179,7 @@ class TestInstrumentProviderPyo3:
                 symbol=Symbol("ETH/USD"),
                 venue=Venue("BITMEX"),
             ),
-            symbol=Symbol("ETHUSD"),
+            raw_symbol=Symbol("ETHUSD"),
             base_currency=_ETH,
             quote_currency=_USD,
             settlement_currency=_ETH,

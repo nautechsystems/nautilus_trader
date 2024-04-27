@@ -105,7 +105,7 @@ pub async fn delete_nautilus_postgres_tables(db: &PgPool) -> anyhow::Result<()> 
         query(format!("DELETE FROM \"{}\" WHERE true", table).as_str())
             .execute(db)
             .await
-            .unwrap_or_else(|_| panic!("Failed to delete table {}", table));
+            .unwrap_or_else(|err| panic!("Failed to delete table {} because: {}", table, err));
     }
     Ok(())
 }

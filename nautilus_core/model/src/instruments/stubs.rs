@@ -15,7 +15,7 @@
 
 use chrono::{TimeZone, Utc};
 use nautilus_core::nanos::UnixNanos;
-use rstest::fixture;
+use rstest::*;
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
@@ -36,7 +36,12 @@ use crate::{
 ////////////////////////////////////////////////////////////////////////////////
 
 #[fixture]
-pub fn crypto_future_btcusdt() -> CryptoFuture {
+pub fn crypto_future_btcusdt(
+    #[default(2)] price_precision: u8,
+    #[default(6)] size_precision: u8,
+    #[default(Price::from("0.01"))] price_increment: Price,
+    #[default(Quantity::from("0.000001"))] size_increment: Quantity,
+) -> CryptoFuture {
     let activation = Utc.with_ymd_and_hms(2014, 4, 8, 0, 0, 0).unwrap();
     let expiration = Utc.with_ymd_and_hms(2014, 7, 8, 0, 0, 0).unwrap();
     CryptoFuture::new(
@@ -48,10 +53,10 @@ pub fn crypto_future_btcusdt() -> CryptoFuture {
         false,
         UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
         UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
-        2,
-        6,
-        Price::from("0.01"),
-        Quantity::from("0.000001"),
+        price_precision,
+        size_precision,
+        price_increment,
+        size_increment,
         dec!(0),
         dec!(0),
         dec!(0),
