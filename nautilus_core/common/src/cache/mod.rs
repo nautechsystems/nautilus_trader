@@ -1086,7 +1086,7 @@ impl Cache {
         let client_order_ids = self.index.position_orders.get(&position_id);
         match client_order_ids {
             Some(client_order_ids) => {
-                self.get_orders_for_ids(&client_order_ids.iter().cloned().collect(), None)
+                self.get_orders_for_ids(&client_order_ids.iter().copied().collect(), None)
             }
             None => Vec::new(),
         }
@@ -1266,10 +1266,10 @@ impl Cache {
         for spawn_order in exec_spawn_orders {
             if !active_only || !spawn_order.is_closed() {
                 if let Some(mut total_quantity) = total_quantity {
-                    total_quantity += spawn_order.quantity()
+                    total_quantity += spawn_order.quantity();
                 }
             } else {
-                total_quantity = Some(spawn_order.quantity())
+                total_quantity = Some(spawn_order.quantity());
             }
         }
 
@@ -1289,10 +1289,10 @@ impl Cache {
         for spawn_order in exec_spawn_orders {
             if !active_only || !spawn_order.is_closed() {
                 if let Some(mut total_quantity) = total_quantity {
-                    total_quantity += spawn_order.filled_qty()
+                    total_quantity += spawn_order.filled_qty();
                 }
             } else {
-                total_quantity = Some(spawn_order.filled_qty())
+                total_quantity = Some(spawn_order.filled_qty());
             }
         }
 
@@ -1312,10 +1312,10 @@ impl Cache {
         for spawn_order in exec_spawn_orders {
             if !active_only || !spawn_order.is_closed() {
                 if let Some(mut total_quantity) = total_quantity {
-                    total_quantity += spawn_order.leaves_qty()
+                    total_quantity += spawn_order.leaves_qty();
                 }
             } else {
-                total_quantity = Some(spawn_order.leaves_qty())
+                total_quantity = Some(spawn_order.leaves_qty());
             }
         }
 
@@ -1525,31 +1525,28 @@ impl Cache {
 
     #[must_use]
     pub fn book_update_count(&self, instrument_id: &InstrumentId) -> u64 {
-        self.books
-            .get(instrument_id)
-            .map(|book| book.count)
-            .unwrap_or(0)
+        self.books.get(instrument_id).map_or(0, |book| book.count)
     }
 
     #[must_use]
     pub fn quote_tick_count(&self, instrument_id: &InstrumentId) -> u64 {
         self.quotes
             .get(instrument_id)
-            .map(|quotes| quotes.len())
-            .unwrap_or(0) as u64
+            .map_or(0, std::collections::VecDeque::len) as u64
     }
 
     #[must_use]
     pub fn trade_tick_count(&self, instrument_id: &InstrumentId) -> u64 {
         self.trades
             .get(instrument_id)
-            .map(|trades| trades.len())
-            .unwrap_or(0) as u64
+            .map_or(0, std::collections::VecDeque::len) as u64
     }
 
     #[must_use]
     pub fn bar_count(&self, bar_type: &BarType) -> u64 {
-        self.bars.get(bar_type).map(|bars| bars.len()).unwrap_or(0) as u64
+        self.bars
+            .get(bar_type)
+            .map_or(0, std::collections::VecDeque::len) as u64
     }
 
     #[must_use]
@@ -1642,7 +1639,7 @@ impl Cache {
     pub fn account(&self, account_id: &AccountId) -> Option<&dyn Account> {
         self.accounts
             .get(account_id)
-            .map(|box_account| box_account.as_ref())
+            .map(std::convert::AsRef::as_ref)
     }
 
     #[must_use]
@@ -1651,7 +1648,7 @@ impl Cache {
             .venue_account
             .get(venue)
             .and_then(|account_id| self.accounts.get(account_id))
-            .map(|box_account| box_account.as_ref())
+            .map(std::convert::AsRef::as_ref)
     }
 
     #[must_use]
@@ -1663,7 +1660,7 @@ impl Cache {
     pub fn accounts(&self, account_id: &AccountId) -> Vec<&dyn Account> {
         self.accounts
             .values()
-            .map(|box_account| box_account.as_ref())
+            .map(std::convert::AsRef::as_ref)
             .collect()
     }
 }

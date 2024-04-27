@@ -19,6 +19,7 @@ use nautilus_infrastructure::sql::{
 };
 use sqlx::PgPool;
 
+#[must_use]
 pub fn get_test_pg_connect_options(username: &str) -> PostgresConnectOptions {
     PostgresConnectOptions::new(
         "localhost".to_string(),
@@ -65,7 +66,7 @@ mod tests {
     async fn test_load_general_objects_when_nothing_in_cache_returns_empty_hashmap() {
         let pg_cache = get_pg_cache_database().await.unwrap();
         let result = pg_cache.load().await.unwrap();
-        println!("1: {:?}", result);
+        println!("1: {result:?}");
         assert_eq!(result.len(), 0);
     }
 
@@ -80,7 +81,7 @@ mod tests {
         // sleep with tokio
         tokio::time::sleep(Duration::from_secs(1)).await;
         let result = pg_cache.load().await.unwrap();
-        println!("2: {:?}", result);
+        println!("2: {result:?}");
         assert_eq!(result.keys().len(), 1);
         assert_eq!(
             result.keys().cloned().collect::<Vec<String>>(),
