@@ -78,7 +78,7 @@ impl Display for OrderList {
             instrument_id={}, \
             strategy_id={}, \
             orders={:?}, \
-            ts_init={}, \
+            ts_init={}\
             )",
             self.id, self.instrument_id, self.strategy_id, self.orders, self.ts_init,
         )
