@@ -200,6 +200,7 @@ class TestMoney:
             ["1.00 USDT", Money(1.00, USDT)],
             ["1.00 USD", Money(1.00, USD)],
             ["1.001 AUD", Money(1.00, AUD)],
+            ["10_001.01 AUD", Money(10001.01, AUD)],
         ],
     )
     def test_from_str_given_valid_strings_returns_expected_result(

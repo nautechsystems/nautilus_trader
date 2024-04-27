@@ -102,6 +102,7 @@ impl FromStr for Money {
 
         // Parse amount
         let amount = parts[0]
+            .replace('_', "")
             .parse::<f64>()
             .map_err(|e| format!("Cannot parse amount '{}' as `f64`: {:?}", parts[0], e))?;
 
@@ -388,6 +389,7 @@ mod tests {
     #[case("0 USD", Currency::USD(), dec!(0.00))]
     #[case("1.1 AUD", Currency::AUD(), dec!(1.10))]
     #[case("1.12345678 BTC", Currency::BTC(), dec!(1.12345678))]
+    #[case("10_000.10 USD", Currency::USD(), dec!(10000.10))]
     fn test_from_str_valid_input(
         #[case] input: &str,
         #[case] expected_currency: Currency,
