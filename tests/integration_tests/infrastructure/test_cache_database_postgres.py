@@ -15,6 +15,7 @@
 
 import asyncio
 import os
+import sys
 
 import pytest
 
@@ -34,7 +35,15 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
 
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+_AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+
+# Requirements:
+# - A Postgres service listening on the default port 5432
+
+pytestmark = pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="databases only supported on Linux",
+)
 
 
 class TestCachePostgresAdapter:
@@ -192,8 +201,8 @@ class TestCachePostgresAdapter:
 
     @pytest.mark.asyncio
     async def test_add_instrument_currency_pair(self):
-        self.database.add_currency(AUDUSD_SIM.base_currency)
-        self.database.add_currency(AUDUSD_SIM.quote_currency)
+        self.database.add_currency(_AUDUSD_SIM.base_currency)
+        self.database.add_currency(_AUDUSD_SIM.quote_currency)
         await asyncio.sleep(0.6)
 
         # Check that we have added target currencies, because of foreign key constraints
@@ -201,36 +210,36 @@ class TestCachePostgresAdapter:
         currencies = self.database.load_currencies()
         assert list(currencies.keys()) == ["AUD", "USD"]
 
-        self.database.add_instrument(AUDUSD_SIM)
+        self.database.add_instrument(_AUDUSD_SIM)
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_instrument(AUDUSD_SIM.id))
+        await eventually(lambda: self.database.load_instrument(_AUDUSD_SIM.id))
 
         # Assert
-        assert AUDUSD_SIM == self.database.load_instrument(AUDUSD_SIM.id)
+        assert _AUDUSD_SIM == self.database.load_instrument(_AUDUSD_SIM.id)
 
         # Update some fields, to check that add_instrument is idempotent
         aud_usd_currency_pair_updated = CurrencyPair(
-            instrument_id=AUDUSD_SIM.id,
-            raw_symbol=AUDUSD_SIM.raw_symbol,
-            base_currency=AUDUSD_SIM.base_currency,
-            quote_currency=AUDUSD_SIM.quote_currency,
-            price_precision=AUDUSD_SIM.price_precision,
-            size_precision=AUDUSD_SIM.size_precision,
-            price_increment=AUDUSD_SIM.price_increment,
-            size_increment=AUDUSD_SIM.size_increment,
-            lot_size=AUDUSD_SIM.lot_size,
-            max_quantity=AUDUSD_SIM.max_quantity,
-            min_quantity=AUDUSD_SIM.min_quantity,
-            max_price=AUDUSD_SIM.max_price,
+            instrument_id=_AUDUSD_SIM.id,
+            raw_symbol=_AUDUSD_SIM.raw_symbol,
+            base_currency=_AUDUSD_SIM.base_currency,
+            quote_currency=_AUDUSD_SIM.quote_currency,
+            price_precision=_AUDUSD_SIM.price_precision,
+            size_precision=_AUDUSD_SIM.size_precision,
+            price_increment=_AUDUSD_SIM.price_increment,
+            size_increment=_AUDUSD_SIM.size_increment,
+            lot_size=_AUDUSD_SIM.lot_size,
+            max_quantity=_AUDUSD_SIM.max_quantity,
+            min_quantity=_AUDUSD_SIM.min_quantity,
+            max_price=_AUDUSD_SIM.max_price,
             min_price=Price.from_str("111"),  # <-- changed this
-            max_notional=AUDUSD_SIM.max_notional,
-            min_notional=AUDUSD_SIM.min_notional,
-            margin_init=AUDUSD_SIM.margin_init,
-            margin_maint=AUDUSD_SIM.margin_maint,
-            maker_fee=AUDUSD_SIM.maker_fee,
-            taker_fee=AUDUSD_SIM.taker_fee,
-            tick_scheme_name=AUDUSD_SIM.tick_scheme_name,
+            max_notional=_AUDUSD_SIM.max_notional,
+            min_notional=_AUDUSD_SIM.min_notional,
+            margin_init=_AUDUSD_SIM.margin_init,
+            margin_maint=_AUDUSD_SIM.margin_maint,
+            maker_fee=_AUDUSD_SIM.maker_fee,
+            taker_fee=_AUDUSD_SIM.taker_fee,
+            tick_scheme_name=_AUDUSD_SIM.tick_scheme_name,
             ts_event=123,  # <-- changed this
             ts_init=456,  # <-- changed this
         )
@@ -241,8 +250,8 @@ class TestCachePostgresAdapter:
         await asyncio.sleep(0.5)
 
         # Assert
-        result = self.database.load_instrument(AUDUSD_SIM.id)
-        assert result.id == AUDUSD_SIM.id
+        result = self.database.load_instrument(_AUDUSD_SIM.id)
+        assert result.id == _AUDUSD_SIM.id
         assert result.ts_event == 123
         assert result.ts_init == 456
         assert result.min_price == Price.from_str("111")
