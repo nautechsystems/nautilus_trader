@@ -3,15 +3,18 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Added Nautilus CLI (see [docs](https://docs.nautilustrader.io/nightly/developer_guide/index.html)), many thanks @filipmacek
-- Added `Cfd` and `Commodity` instruments with Interactive Brokers support, thanks @DracheShiki
-- Added futures and options contract activation and expiration simulation
+- Added Nautilus CLI (see [docs](https://docs.nautilustrader.io/nightly/developer_guide/index.html)) (#1602), many thanks @filipmacek
+- Added `Cfd` and `Commodity` instruments with Interactive Brokers support (#1604), thanks @DracheShiki
+- Added `OrderMatchingEngine` futures and options contract activation and expiration simulation
 
 ### Breaking Changes
 - Changed `tags` param and return type from `str` to `list[str]` (more naturally expresses multiple tags)
 
 ### Fixes
 - Fixed `ParquetDataCatalog` bar queries by `instrument_id` which were no longer returning data (the intent is to use `bar_type`, however using `instrument_id` now returns all matching bars)
+- Fixed Interactive Brokers contract details parsing (#1615), thanks @rsmb7z
+- Fixed Interactive Brokers portfolio registration (#1616), thanks @rsmb7z
+- Fixed `from_str` for `Price`, `Quantity` and `Money` when input string contains underscores in Rust, thanks for reporting @filipmacek
 
 ---
 
