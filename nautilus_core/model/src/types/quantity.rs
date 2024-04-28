@@ -110,8 +110,9 @@ impl FromStr for Quantity {
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         let float_from_input = input
+            .replace('_', "")
             .parse::<f64>()
-            .map_err(|e| format!("Cannot parse `input` string '{input}' as f64: {e}"))?;
+            .map_err(|e| format!("Error parsing `input` string '{input}' as f64: {e}"))?;
 
         Self::new(float_from_input, precision_from_str(input))
             .map_err(|e: anyhow::Error| e.to_string())

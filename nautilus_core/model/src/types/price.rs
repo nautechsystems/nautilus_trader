@@ -117,8 +117,9 @@ impl FromStr for Price {
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         let float_from_input = input
+            .replace('_', "")
             .parse::<f64>()
-            .map_err(|err| format!("Cannot parse `input` string '{input}' as f64: {err}"))?;
+            .map_err(|err| format!("Error parsing `input` string '{input}' as f64: {err}"))?;
 
         Self::new(float_from_input, precision_from_str(input))
             .map_err(|e: anyhow::Error| e.to_string())
