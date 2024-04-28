@@ -2392,31 +2392,47 @@ impl Cache {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use nautilus_model::data::quote::stubs::*;
+    use nautilus_model::data::quote::QuoteTick;
+    use nautilus_model::instruments::{currency_pair::CurrencyPair, stubs::*};
     use rstest::*;
 
     use super::Cache;
 
     #[rstest]
-    fn test_reset_index() {
+    fn test_build_index_when_empty() {
+        let mut cache = Cache::default();
+        cache.build_index();
+    }
+
+    #[rstest]
+    fn test_clear_index_when_empty() {
         let mut cache = Cache::default();
         cache.clear_index();
     }
 
     #[rstest]
-    fn test_reset() {
+    fn test_reset_when_empty() {
         let mut cache = Cache::default();
         cache.reset();
     }
 
     #[rstest]
-    fn test_dispose() {
+    fn test_dispose_when_empty() {
         let cache = Cache::default();
         let result = cache.dispose();
         assert!(result.is_ok());
     }
 
     #[rstest]
-    fn test_flushdb() {
+    fn test_flush_db_when_empty() {
+        let cache = Cache::default();
+        let result = cache.flush_db();
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_check_residuals_when_empty() {
         let cache = Cache::default();
         let result = cache.flush_db();
         assert!(result.is_ok());
@@ -2459,8 +2475,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_get_general_when_no_value() {
+    fn test_get_general_when_empty() {
         let cache = Cache::default();
+
         let result = cache.get("A").unwrap();
         assert_eq!(result, None);
     }
@@ -2475,5 +2492,44 @@ mod tests {
 
         let result = cache.get(key).unwrap();
         assert_eq!(result, Some(&value.as_slice()).copied());
+    }
+
+    #[rstest]
+    fn test_quote_tick_when_empty(audusd_sim: CurrencyPair) {
+        let cache = Cache::default();
+
+        let result = cache.quote_tick(&audusd_sim.id);
+        assert_eq!(result, None);
+    }
+
+    #[rstest]
+    fn test_quote_tick_when_some(quote_tick_audusd_sim: QuoteTick) {
+        let mut cache = Cache::default();
+        cache.add_quote(quote_tick_audusd_sim).unwrap();
+
+        let result = cache.quote_tick(&quote_tick_audusd_sim.instrument_id);
+        assert_eq!(result, Some(&quote_tick_audusd_sim));
+    }
+
+    #[rstest]
+    fn test_quote_ticks_when_empty(audusd_sim: CurrencyPair) {
+        let cache = Cache::default();
+
+        let result = cache.quote_ticks(&audusd_sim.id);
+        assert_eq!(result, None);
+    }
+
+    #[rstest]
+    fn test_quote_ticks_when_some(quote_tick_audusd_sim: QuoteTick) {
+        let mut cache = Cache::default();
+        let quotes = vec![
+            quote_tick_audusd_sim,
+            quote_tick_audusd_sim,
+            quote_tick_audusd_sim,
+        ];
+        cache.add_quotes(&quotes).unwrap();
+
+        let result = cache.quote_ticks(&quote_tick_audusd_sim.instrument_id);
+        assert_eq!(result, Some(quotes));
     }
 }
