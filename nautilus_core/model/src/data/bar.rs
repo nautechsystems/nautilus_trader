@@ -333,7 +333,7 @@ pub mod stubs {
             low: Price::from("1.00002"),
             close: Price::from("1.00003"),
             volume: Quantity::from("100000"),
-            ts_event: UnixNanos::from(0),
+            ts_event: UnixNanos::default(),
             ts_init: UnixNanos::from(1),
         }
     }
@@ -544,8 +544,8 @@ mod tests {
             low: Price::from("1.00002"),
             close: Price::from("1.00003"),
             volume: Quantity::from("100000"),
-            ts_event: UnixNanos::from(0),
-            ts_init: UnixNanos::from(0),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::from(1),
         };
 
         let bar2 = Bar {
@@ -555,8 +555,8 @@ mod tests {
             low: Price::from("1.00002"),
             close: Price::from("1.00003"),
             volume: Quantity::from("100000"),
-            ts_event: UnixNanos::from(0),
-            ts_init: UnixNanos::from(0),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::from(1),
         };
         assert_eq!(bar1, bar1);
         assert_ne!(bar1, bar2);

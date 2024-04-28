@@ -296,13 +296,13 @@ mod tests {
     #[rstest]
     #[should_panic(expected = "Error subtracting with underflow")]
     fn test_overflow_sub() {
-        let _ = UnixNanos::from(0) - UnixNanos::from(1); // This should panic due to underflow
+        let _ = UnixNanos::default() - UnixNanos::from(1); // This should panic due to underflow
     }
 
     #[rstest]
     #[should_panic(expected = "Error subtracting with underflow")]
     fn test_overflow_sub_u64() {
-        let _ = UnixNanos::from(0) - 1_u64; // This should panic due to underflow
+        let _ = UnixNanos::default() - 1_u64; // This should panic due to underflow
     }
 
     #[rstest]
