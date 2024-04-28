@@ -164,7 +164,7 @@ def parse_instrument(
 def contract_details_to_dict(details: IBContractDetails) -> dict:
     dict_details = details.dict().copy()
     dict_details["contract"] = details.contract.dict().copy()
-    if "secIdList" in dict_details and dict_details["secIdList"] is not None:
+    if dict_details.get("secIdList"):
         dict_details["secIdList"] = {
             tag_value.tag: tag_value.value for tag_value in dict_details["secIdList"]
         }
