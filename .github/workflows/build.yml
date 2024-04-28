@@ -315,17 +315,6 @@ jobs:
           # pre-commit run --hook-stage manual gitlint-ci
           pre-commit run --all-files
 
-      - name: Install Nautilus CLI and run init postgres
-        run: |
-          make install-cli
-          nautilus database init --schema ${{ github.workspace }}/schema
-        env:
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5432
-          POSTGRES_USERNAME: postgres
-          POSTGRES_PASSWORD: pass
-          POSTGRES_DATABASE: nautilus
-
       - name: Run nautilus_core cargo tests (macOS)
         run: |
           cargo install cargo-nextest
