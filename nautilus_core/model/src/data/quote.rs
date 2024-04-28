@@ -175,8 +175,22 @@ pub mod stubs {
     use crate::{
         data::quote::QuoteTick,
         identifiers::instrument_id::InstrumentId,
+        instruments::{currency_pair::CurrencyPair, stubs::*},
         types::{price::Price, quantity::Quantity},
     };
+
+    #[fixture]
+    pub fn quote_tick_audusd_sim(audusd_sim: CurrencyPair) -> QuoteTick {
+        QuoteTick {
+            instrument_id: audusd_sim.id,
+            bid_price: Price::from("1.00000"),
+            ask_price: Price::from("1.00000"),
+            bid_size: Quantity::from(100_000),
+            ask_size: Quantity::from(100_000),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::from(1),
+        }
+    }
 
     #[fixture]
     pub fn quote_tick_ethusdt_binance() -> QuoteTick {
@@ -186,7 +200,7 @@ pub mod stubs {
             ask_price: Price::from("10001.0000"),
             bid_size: Quantity::from("1.00000000"),
             ask_size: Quantity::from("1.00000000"),
-            ts_event: UnixNanos::from(0),
+            ts_event: UnixNanos::default(),
             ts_init: UnixNanos::from(1),
         }
     }
