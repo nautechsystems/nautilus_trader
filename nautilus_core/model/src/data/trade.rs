@@ -147,7 +147,7 @@ pub mod stubs {
             size: Quantity::from("1.00000000"),
             aggressor_side: AggressorSide::Buyer,
             trade_id: TradeId::new("123456789").unwrap(),
-            ts_event: UnixNanos::from(0),
+            ts_event: UnixNanos::default(),
             ts_init: UnixNanos::from(1),
         }
     }
