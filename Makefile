@@ -137,6 +137,14 @@ docker-build-jupyter:
 docker-push-jupyter:
 	docker push ${IMAGE}:jupyter
 
+.PHONY: start-services
+start-services:
+	docker-compose -f .docker/docker-compose.yml up -d
+
+.PHONY: stop-services
+stop-services:
+	docker-compose -f .docker/docker-compose.yml down
+
 .PHONY: pytest
 pytest:
 	bash scripts/test.sh
@@ -156,5 +164,3 @@ install-talib:
 .PHONY: install-cli
 install-cli:
 	(cd nautilus_core && cargo install --path cli  --bin nautilus)
-
-
