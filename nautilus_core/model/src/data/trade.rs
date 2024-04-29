@@ -125,21 +125,6 @@ impl Display for TradeTick {
 
 impl Serializable for TradeTick {}
 
-#[cfg(feature = "stubs")]
-impl Default for TradeTick {
-    fn default() -> Self {
-        TradeTick {
-            instrument_id: InstrumentId::from("AUDUSD.SIM"),
-            price: Price::from("1.00000"),
-            size: Quantity::from(100_000),
-            aggressor_side: AggressorSide::Buyer,
-            trade_id: TradeId::new("123456789").unwrap(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-        }
-    }
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Stubs
 ////////////////////////////////////////////////////////////////////////////////
@@ -154,6 +139,25 @@ pub mod stubs {
         identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
         types::{price::Price, quantity::Quantity},
     };
+
+    impl Default for TradeTick {
+        fn default() -> Self {
+            TradeTick {
+                instrument_id: InstrumentId::from("AUDUSD.SIM"),
+                price: Price::from("1.00000"),
+                size: Quantity::from(100_000),
+                aggressor_side: AggressorSide::Buyer,
+                trade_id: TradeId::new("123456789").unwrap(),
+                ts_event: UnixNanos::default(),
+                ts_init: UnixNanos::default(),
+            }
+        }
+    }
+
+    #[fixture]
+    pub fn trade_tick_audusd_sim() -> TradeTick {
+        TradeTick::default()
+    }
 
     #[fixture]
     pub fn stub_trade_tick_ethusdt_buyer() -> TradeTick {
