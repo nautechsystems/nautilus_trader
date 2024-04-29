@@ -99,7 +99,7 @@ pytest-asyncio = "==0.21.1"  # Pinned due Cython: cannot set '__pytest_asyncio_s
 pytest-benchmark = "^4.0.0"
 pytest-cov = "^4.1.0"
 pytest-mock = "^3.14.0"
-pytest-xdist = { version = "^3.5.0", extras = ["psutil"] }
+pytest-xdist = { version = "^3.6.1", extras = ["psutil"] }
 
 [tool.poetry.group.docs]
 optional = true
