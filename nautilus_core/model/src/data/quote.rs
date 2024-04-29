@@ -165,21 +165,6 @@ impl Display for QuoteTick {
 
 impl Serializable for QuoteTick {}
 
-#[cfg(feature = "stubs")]
-impl Default for QuoteTick {
-    fn default() -> Self {
-        Self {
-            instrument_id: InstrumentId::from("AUDUSD.SIM"),
-            bid_price: Price::from("1.00000"),
-            ask_price: Price::from("1.00000"),
-            bid_size: Quantity::from(100_000),
-            ask_size: Quantity::from(100_000),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-        }
-    }
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Stubs
 ////////////////////////////////////////////////////////////////////////////////
@@ -193,6 +178,25 @@ pub mod stubs {
         identifiers::instrument_id::InstrumentId,
         types::{price::Price, quantity::Quantity},
     };
+
+    impl Default for QuoteTick {
+        fn default() -> Self {
+            Self {
+                instrument_id: InstrumentId::from("AUDUSD.SIM"),
+                bid_price: Price::from("1.00000"),
+                ask_price: Price::from("1.00000"),
+                bid_size: Quantity::from(100_000),
+                ask_size: Quantity::from(100_000),
+                ts_event: UnixNanos::default(),
+                ts_init: UnixNanos::default(),
+            }
+        }
+    }
+
+    #[fixture]
+    pub fn quote_tick_audusd_sim() -> QuoteTick {
+        QuoteTick::default()
+    }
 
     #[fixture]
     pub fn quote_tick_ethusdt_binance() -> QuoteTick {
