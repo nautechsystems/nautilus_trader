@@ -234,7 +234,8 @@ jobs:
           PARALLEL_BUILD: false
 
   build-macos:
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/nightly'
+    if: github.ref == 'refs/heads/master'
+    # if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/nightly'
     strategy:
       fail-fast: false
       matrix:
