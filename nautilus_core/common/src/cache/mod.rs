@@ -2392,9 +2392,10 @@ impl Cache {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::data::quote::stubs::*;
-    use nautilus_model::data::quote::QuoteTick;
-    use nautilus_model::instruments::{currency_pair::CurrencyPair, stubs::*};
+    use nautilus_model::{
+        data::{quote::QuoteTick, trade::TradeTick},
+        instruments::{currency_pair::CurrencyPair, stubs::*},
+    };
     use rstest::*;
 
     use super::Cache;
@@ -2477,7 +2478,6 @@ mod tests {
     #[rstest]
     fn test_get_general_when_empty() {
         let cache = Cache::default();
-
         let result = cache.get("A").unwrap();
         assert_eq!(result, None);
     }
@@ -2485,7 +2485,6 @@ mod tests {
     #[rstest]
     fn test_add_general_when_value() {
         let mut cache = Cache::default();
-
         let key = "A";
         let value = vec![0_u8];
         cache.add(key, value.clone()).unwrap();
@@ -2497,39 +2496,76 @@ mod tests {
     #[rstest]
     fn test_quote_tick_when_empty(audusd_sim: CurrencyPair) {
         let cache = Cache::default();
-
         let result = cache.quote_tick(&audusd_sim.id);
         assert_eq!(result, None);
     }
 
     #[rstest]
-    fn test_quote_tick_when_some(quote_tick_audusd_sim: QuoteTick) {
+    fn test_quote_tick_when_some() {
         let mut cache = Cache::default();
-        cache.add_quote(quote_tick_audusd_sim).unwrap();
+        let quote = QuoteTick::default();
+        cache.add_quote(quote).unwrap();
 
-        let result = cache.quote_tick(&quote_tick_audusd_sim.instrument_id);
-        assert_eq!(result, Some(&quote_tick_audusd_sim));
+        let result = cache.quote_tick(&quote.instrument_id);
+        assert_eq!(result, Some(&quote));
     }
 
     #[rstest]
     fn test_quote_ticks_when_empty(audusd_sim: CurrencyPair) {
         let cache = Cache::default();
-
         let result = cache.quote_ticks(&audusd_sim.id);
         assert_eq!(result, None);
     }
 
     #[rstest]
-    fn test_quote_ticks_when_some(quote_tick_audusd_sim: QuoteTick) {
+    fn test_quote_ticks_when_some() {
         let mut cache = Cache::default();
         let quotes = vec![
-            quote_tick_audusd_sim,
-            quote_tick_audusd_sim,
-            quote_tick_audusd_sim,
+            QuoteTick::default(),
+            QuoteTick::default(),
+            QuoteTick::default(),
         ];
         cache.add_quotes(&quotes).unwrap();
 
-        let result = cache.quote_ticks(&quote_tick_audusd_sim.instrument_id);
+        let result = cache.quote_ticks(&quotes[0].instrument_id);
         assert_eq!(result, Some(quotes));
+    }
+
+    #[rstest]
+    fn test_trade_tick_when_empty(audusd_sim: CurrencyPair) {
+        let cache = Cache::default();
+        let result = cache.trade_tick(&audusd_sim.id);
+        assert_eq!(result, None);
+    }
+
+    #[rstest]
+    fn test_trade_tick_when_some() {
+        let mut cache = Cache::default();
+        let trade = TradeTick::default();
+        cache.add_trade(trade).unwrap();
+
+        let result = cache.trade_tick(&trade.instrument_id);
+        assert_eq!(result, Some(&trade));
+    }
+
+    #[rstest]
+    fn test_trade_ticks_when_empty(audusd_sim: CurrencyPair) {
+        let cache = Cache::default();
+        let result = cache.trade_ticks(&audusd_sim.id);
+        assert_eq!(result, None);
+    }
+
+    #[rstest]
+    fn test_trade_ticks_when_some() {
+        let mut cache = Cache::default();
+        let trades = vec![
+            TradeTick::default(),
+            TradeTick::default(),
+            TradeTick::default(),
+        ];
+        cache.add_trades(&trades).unwrap();
+
+        let result = cache.trade_ticks(&trades[0].instrument_id);
+        assert_eq!(result, Some(trades));
     }
 }
