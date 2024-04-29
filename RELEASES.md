@@ -6,6 +6,7 @@ Released on TBD (UTC).
 - Added Nautilus CLI (see [docs](https://docs.nautilustrader.io/nightly/developer_guide/index.html)) (#1602), many thanks @filipmacek
 - Added `Cfd` and `Commodity` instruments with Interactive Brokers support (#1604), thanks @DracheShiki
 - Added `OrderMatchingEngine` futures and options contract activation and expiration simulation
+- Added Sandbox example with Interactive Brokers (#1618), thanks @rsmb7z
 
 ### Breaking Changes
 - Changed `tags` param and return type from `str` to `list[str]` (more naturally expresses multiple tags)
