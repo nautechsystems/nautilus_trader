@@ -32,7 +32,7 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
         TrailingOffsetType, TriggerType,
     },
-    events::order::{event::OrderEvent, initialized::OrderInitialized, updated::OrderUpdated},
+    events::order::{event::OrderEventAny, initialized::OrderInitialized, updated::OrderUpdated},
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
@@ -326,20 +326,8 @@ impl Order for MarketOrder {
         self.ts_last
     }
 
-    fn events(&self) -> Vec<&OrderEvent> {
-        self.events.iter().collect()
-    }
-
-    fn venue_order_ids(&self) -> Vec<&VenueOrderId> {
-        self.venue_order_ids.iter().collect()
-    }
-
-    fn trade_ids(&self) -> Vec<&TradeId> {
-        self.trade_ids.iter().collect()
-    }
-
-    fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
-        if let OrderEvent::Updated(ref event) = event {
+    fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
+        if let OrderEventAny::Updated(ref event) = event {
             self.update(event);
         };
 
@@ -358,6 +346,18 @@ impl Order for MarketOrder {
 
         self.quantity = event.quantity;
         self.leaves_qty = self.quantity - self.filled_qty;
+    }
+
+    fn events(&self) -> Vec<&OrderEventAny> {
+        self.events.iter().collect()
+    }
+
+    fn venue_order_ids(&self) -> Vec<&VenueOrderId> {
+        self.venue_order_ids.iter().collect()
+    }
+
+    fn trade_ids(&self) -> Vec<&TradeId> {
+        self.trade_ids.iter().collect()
     }
 }
 

@@ -19,7 +19,7 @@ use nautilus_core::nanos::UnixNanos;
 
 use crate::{
     enums::{OrderSide, OrderSideSpecified, TriggerType},
-    events::order::event::OrderEvent,
+    events::order::event::OrderEventAny,
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, position_id::PositionId, strategy_id::StrategyId,
@@ -113,6 +113,6 @@ pub trait IsInflight {
     fn is_inflight(&self) -> bool;
 }
 
-pub trait ApplyOrderEvent {
-    fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError>;
+pub trait ApplyOrderEventAny {
+    fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError>;
 }

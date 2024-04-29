@@ -19,11 +19,15 @@ from nautilus_trader.cache.postgres.transformers import transform_currency_from_
 from nautilus_trader.cache.postgres.transformers import transform_currency_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_instrument_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_instrument_to_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_order_from_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_order_to_pyo3
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import PostgresCacheDatabase
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.orders import Order
 
 
 class CachePostgresAdapter(CacheDatabaseFacade):
@@ -69,3 +73,18 @@ class CachePostgresAdapter(CacheDatabaseFacade):
         instrument_id_pyo3 = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
         instrument_pyo3 = self._backing.load_instrument(instrument_id_pyo3)
         return transform_instrument_from_pyo3(instrument_pyo3)
+
+    def add_order(self, order: Order):
+        order_pyo3 = transform_order_to_pyo3(order)
+        self._backing.add_order(order_pyo3)
+
+    def load_order(self, client_order_id: ClientOrderId):
+        order_id_pyo3 = nautilus_pyo3.ClientOrderId.from_str(str(client_order_id))
+        order_pyo3 = self._backing.load_order(order_id_pyo3)
+        if order_pyo3:
+            return transform_order_from_pyo3(order_pyo3)
+        return None
+
+    def load_orders(self):
+        orders = self._backing.load_orders()
+        return [transform_order_from_pyo3(order) for order in orders]

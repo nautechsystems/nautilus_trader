@@ -330,7 +330,6 @@ cdef class StopMarketOrder(Order):
         """
         Condition.not_none(init, "init")
         Condition.equal(init.order_type, OrderType.STOP_MARKET, "init.order_type", "OrderType")
-
         return StopMarketOrder(
             trader_id=init.trader_id,
             strategy_id=init.strategy_id,

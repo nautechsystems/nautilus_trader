@@ -133,9 +133,9 @@ impl OrderInitialized {
     }
 
     #[getter]
-    #[pyo3(name = "order_event_type")]
-    fn py_order_event_type(&self) -> &str {
-        stringify!(OrderInitialized)
+    #[pyo3(name = "order_type")]
+    fn py_order_type(&self) -> OrderType {
+        self.order_type
     }
 
     #[staticmethod]
@@ -159,6 +159,8 @@ impl OrderInitialized {
         dict.set_item("reduce_only", self.reduce_only)?;
         dict.set_item("quote_quantity", self.quote_quantity)?;
         dict.set_item("reconciliation", self.reconciliation)?;
+        // TODO remove options as in legacy cython only
+        dict.set_item("options", PyDict::new(py))?;
         dict.set_item("event_id", self.event_id.to_string())?;
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;

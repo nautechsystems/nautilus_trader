@@ -19,7 +19,9 @@ use std::{
 };
 
 use nautilus_model::{
-    identifiers::instrument_id::InstrumentId, instruments::any::InstrumentAny,
+    identifiers::{client_order_id::ClientOrderId, instrument_id::InstrumentId},
+    instruments::any::InstrumentAny,
+    orders::any::OrderAny,
     types::currency::Currency,
 };
 use sqlx::{postgres::PgConnectOptions, PgPool};
@@ -50,6 +52,7 @@ pub enum DatabaseQuery {
     Add(String, Vec<u8>),
     AddCurrency(Currency),
     AddInstrument(InstrumentAny),
+    AddOrder(OrderAny),
 }
 
 fn get_buffer_interval() -> Duration {
@@ -65,23 +68,19 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
             DatabaseQuery::AddCurrency(currency) => {
                 DatabaseQueries::add_currency(pool, currency).await.unwrap();
             }
-            DatabaseQuery::AddInstrument(instrument) => match instrument {
-                InstrumentAny::CryptoFuture(crypto_future) => {
-                    DatabaseQueries::add_instrument(pool, "CRYPTO_FUTURE", Box::new(crypto_future))
+            DatabaseQuery::AddInstrument(instrument_any) => match instrument_any {
+                InstrumentAny::CryptoFuture(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "CRYPTO_FUTURE", Box::new(instrument))
                         .await
                         .unwrap()
                 }
-                InstrumentAny::CryptoPerpetual(crypto_perpetual) => {
-                    DatabaseQueries::add_instrument(
-                        pool,
-                        "CRYPTO_PERPETUAL",
-                        Box::new(crypto_perpetual),
-                    )
-                    .await
-                    .unwrap()
+                InstrumentAny::CryptoPerpetual(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "CRYPTO_PERPETUAL", Box::new(instrument))
+                        .await
+                        .unwrap()
                 }
-                InstrumentAny::CurrencyPair(currency_pair) => {
-                    DatabaseQueries::add_instrument(pool, "CURRENCY_PAIR", Box::new(currency_pair))
+                InstrumentAny::CurrencyPair(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "CURRENCY_PAIR", Box::new(instrument))
                         .await
                         .unwrap()
                 }
@@ -90,38 +89,73 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                         .await
                         .unwrap()
                 }
-                InstrumentAny::FuturesContract(futures_contract) => {
-                    DatabaseQueries::add_instrument(
-                        pool,
-                        "FUTURES_CONTRACT",
-                        Box::new(futures_contract),
-                    )
-                    .await
-                    .unwrap()
+                InstrumentAny::FuturesContract(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "FUTURES_CONTRACT", Box::new(instrument))
+                        .await
+                        .unwrap()
                 }
-                InstrumentAny::FuturesSpread(futures_spread) => DatabaseQueries::add_instrument(
-                    pool,
-                    "FUTURES_SPREAD",
-                    Box::new(futures_spread),
-                )
-                .await
-                .unwrap(),
-                InstrumentAny::OptionsContract(options_contract) => {
-                    DatabaseQueries::add_instrument(
-                        pool,
-                        "OPTIONS_CONTRACT",
-                        Box::new(options_contract),
-                    )
-                    .await
-                    .unwrap()
+                InstrumentAny::FuturesSpread(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "FUTURES_SPREAD", Box::new(instrument))
+                        .await
+                        .unwrap()
                 }
-                InstrumentAny::OptionsSpread(options_spread) => DatabaseQueries::add_instrument(
-                    pool,
-                    "OPTIONS_SPREAD",
-                    Box::new(options_spread),
-                )
-                .await
-                .unwrap(),
+                InstrumentAny::OptionsContract(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "OPTIONS_CONTRACT", Box::new(instrument))
+                        .await
+                        .unwrap()
+                }
+                InstrumentAny::OptionsSpread(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "OPTIONS_SPREAD", Box::new(instrument))
+                        .await
+                        .unwrap()
+                }
+            },
+            DatabaseQuery::AddOrder(order_any) => match order_any {
+                OrderAny::Limit(order) => {
+                    DatabaseQueries::add_order(pool, "LIMIT", false, Box::new(order))
+                        .await
+                        .unwrap()
+                }
+                OrderAny::LimitIfTouched(order) => {
+                    DatabaseQueries::add_order(pool, "LIMIT_IF_TOUCHED", false, Box::new(order))
+                        .await
+                        .unwrap()
+                }
+                OrderAny::Market(order) => {
+                    DatabaseQueries::add_order(pool, "MARKET", false, Box::new(order))
+                        .await
+                        .unwrap()
+                }
+                OrderAny::MarketIfTouched(order) => {
+                    DatabaseQueries::add_order(pool, "MARKET_IF_TOUCHED", false, Box::new(order))
+                        .await
+                        .unwrap()
+                }
+                OrderAny::MarketToLimit(order) => {
+                    DatabaseQueries::add_order(pool, "MARKET_TO_LIMIT", false, Box::new(order))
+                        .await
+                        .unwrap()
+                }
+                OrderAny::StopLimit(order) => {
+                    DatabaseQueries::add_order(pool, "STOP_LIMIT", false, Box::new(order))
+                        .await
+                        .unwrap()
+                }
+                OrderAny::StopMarket(order) => {
+                    DatabaseQueries::add_order(pool, "STOP_MARKET", false, Box::new(order))
+                        .await
+                        .unwrap()
+                }
+                OrderAny::TrailingStopLimit(order) => {
+                    DatabaseQueries::add_order(pool, "TRAILING_STOP_LIMIT", false, Box::new(order))
+                        .await
+                        .unwrap()
+                }
+                OrderAny::TrailingStopMarket(order) => {
+                    DatabaseQueries::add_order(pool, "TRAILING_STOP_MARKET", false, Box::new(order))
+                        .await
+                        .unwrap()
+                }
             },
         }
     }
@@ -231,5 +265,19 @@ impl PostgresCacheDatabase {
 
     pub async fn load_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
         DatabaseQueries::load_instruments(&self.pool).await
+    }
+
+    pub async fn add_order(&self, order: OrderAny) -> anyhow::Result<()> {
+        let query = DatabaseQuery::AddOrder(order);
+        self.tx.send(query).await.map_err(|err| {
+            anyhow::anyhow!("Failed to send query add_order to database message handler: {err}")
+        })
+    }
+
+    pub async fn load_order(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<Option<OrderAny>> {
+        DatabaseQueries::load_order(&self.pool, client_order_id).await
     }
 }

@@ -14,7 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.rust.model import OrderType
 from nautilus_trader.model.enums import CurrencyType
+from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.instruments import CryptoFuture
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
@@ -25,6 +27,8 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.instruments import OptionsSpread
 from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model.orders import Order
 
 
 ################################################################################
@@ -94,3 +98,61 @@ def transform_instrument_from_pyo3(instrument_pyo3) -> Instrument | None:
         return OptionsSpread.from_pyo3(instrument_pyo3)
     else:
         raise ValueError(f"Unknown instrument type: {instrument_pyo3}")
+
+
+################################################################################
+# Orders
+################################################################################
+def transform_order_event_to_pyo3(order_event):
+    order_event_dict = OrderInitialized.to_dict(order_event)
+    # in options field there are some properties we need to attach to dict
+    for key, value in order_event.options.items():
+        order_event_dict[key] = value
+    order_event_pyo3 = nautilus_pyo3.OrderInitialized.from_dict(order_event_dict)
+    if order_event_pyo3.order_type == nautilus_pyo3.OrderType.MARKET:
+        return nautilus_pyo3.MarketOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.LIMIT:
+        return nautilus_pyo3.LimitOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.STOP_MARKET:
+        return nautilus_pyo3.StopMarketOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.STOP_LIMIT:
+        return nautilus_pyo3.StopLimitOrder.create(order_event_pyo3)
+    else:
+        raise ValueError(f"Unknown order type: {order_event_pyo3.event_type}")
+
+
+def transform_order_event_from_pyo3(order_event_pyo3):
+    order_event_dict = order_event_pyo3.to_dict()
+    order_event_cython = OrderInitialized.from_dict(order_event_dict)
+    if order_event_pyo3.order_type == OrderType.MARKET:
+        return MarketOrder.create(order_event_cython)
+
+
+def transform_order_to_pyo3(order: Order):
+    events = order.events
+    if len(events) == 0:
+        raise ValueError("Missing events in order")
+    init_event = events.pop(0)
+    if not isinstance(init_event, OrderInitialized):
+        raise KeyError("init event should be of type OrderInitialized")
+    order_py3: nautilus_pyo3.OrderInitialized = transform_order_event_to_pyo3(init_event)
+    for event_cython in events:
+        raise NotImplementedError("Not implemented")
+        # event_pyo3 = transform_order_event_to_pyo3(event_cython)
+        # order_py3.apply(event_pyo3)
+    return order_py3
+
+
+def transform_order_from_pyo3(order_pyo3):
+    events_pyo3 = order_pyo3.events
+    if len(events_pyo3) == 0:
+        raise ValueError("Missing events in order")
+    init_event = events_pyo3.pop(0)
+    if not isinstance(init_event, nautilus_pyo3.OrderInitialized):
+        raise KeyError("init event should be of type OrderInitialized")
+    order_cython = transform_order_event_from_pyo3(init_event)
+    for event_pyo3 in events_pyo3:
+        raise NotImplementedError("Not implemented")
+        # event_cython = transform_order_event_from_pyo3(event_pyo3)
+        # order_cython.apply(event_cython)
+    return order_cython

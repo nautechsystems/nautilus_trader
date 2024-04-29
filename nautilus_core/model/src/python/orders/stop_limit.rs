@@ -347,6 +347,15 @@ impl StopLimitOrder {
             .map(|vec| vec.iter().map(|s| s.as_str()).collect())
     }
 
+    #[getter]
+    #[pyo3(name = "events")]
+    fn py_events(&self, py: Python<'_>) -> PyResult<Vec<PyObject>> {
+        self.events()
+            .into_iter()
+            .map(|order_event| convert_order_event_to_pyobject(py, order_event.clone()))
+            .collect()
+    }
+
     #[pyo3(name = "to_dict")]
     fn to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);

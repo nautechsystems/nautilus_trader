@@ -18,8 +18,11 @@ use std::collections::HashMap;
 use nautilus_common::runtime::get_runtime;
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
-    identifiers::instrument_id::InstrumentId,
-    python::instruments::{convert_instrument_any_to_pyobject, convert_pyobject_to_instrument_any},
+    identifiers::{client_order_id::ClientOrderId, instrument_id::InstrumentId},
+    python::{
+        instruments::{convert_instrument_any_to_pyobject, convert_pyobject_to_instrument_any},
+        orders::{convert_order_any_to_pyobject, convert_pyobject_to_order_any},
+    },
     types::currency::Currency,
 };
 use pyo3::prelude::*;
@@ -120,6 +123,33 @@ impl PostgresCacheDatabase {
         let instrument_any = convert_pyobject_to_instrument_any(py, instrument)?;
         let result = get_runtime().block_on(async { slf.add_instrument(instrument_any).await });
         result.map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "add_order")]
+    fn py_add_order(slf: PyRef<'_, Self>, order: PyObject, py: Python<'_>) -> PyResult<()> {
+        let order_any = convert_pyobject_to_order_any(py, order)?;
+        let result = get_runtime().block_on(async { slf.add_order(order_any).await });
+        result.map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "load_order")]
+    fn py_load_order(
+        slf: PyRef<'_, Self>,
+        order_id: ClientOrderId,
+        py: Python<'_>,
+    ) -> PyResult<Option<PyObject>> {
+        get_runtime().block_on(async {
+            let result = DatabaseQueries::load_order(&slf.pool, &order_id)
+                .await
+                .unwrap();
+            match result {
+                Some(order) => {
+                    let py_object = convert_order_any_to_pyobject(py, order)?;
+                    Ok(Some(py_object))
+                }
+                None => Ok(None),
+            }
+        })
     }
 
     #[pyo3(name = "flush_db")]

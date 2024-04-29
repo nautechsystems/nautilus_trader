@@ -30,17 +30,17 @@ use super::{
 };
 use crate::{
     enums::{OrderSide, OrderSideSpecified, TriggerType},
-    events::order::event::OrderEvent,
+    events::order::event::OrderEventAny,
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, position_id::PositionId, strategy_id::StrategyId,
         trader_id::TraderId, venue_order_id::VenueOrderId,
     },
     polymorphism::{
-        ApplyOrderEvent, GetAccountId, GetClientOrderId, GetEmulationTrigger, GetExecAlgorithmId,
-        GetExecSpawnId, GetInstrumentId, GetLimitPrice, GetOrderFilledQty, GetOrderLeavesQty,
-        GetOrderQuantity, GetOrderSide, GetOrderSideSpecified, GetPositionId, GetStopPrice,
-        GetStrategyId, GetTraderId, GetVenueOrderId, IsClosed, IsInflight, IsOpen,
+        ApplyOrderEventAny, GetAccountId, GetClientOrderId, GetEmulationTrigger,
+        GetExecAlgorithmId, GetExecSpawnId, GetInstrumentId, GetLimitPrice, GetOrderFilledQty,
+        GetOrderLeavesQty, GetOrderQuantity, GetOrderSide, GetOrderSideSpecified, GetPositionId,
+        GetStopPrice, GetStrategyId, GetTraderId, GetVenueOrderId, IsClosed, IsInflight, IsOpen,
     },
     types::{price::Price, quantity::Quantity},
 };
@@ -102,6 +102,22 @@ impl OrderAny {
     #[must_use]
     pub fn from_trailing_stop_market(order: StopMarketOrder) -> Self {
         Self::StopMarket(order)
+    }
+
+    pub fn from_events(events: Vec<OrderEventAny>) -> anyhow::Result<Self> {
+        if events.is_empty() {
+            anyhow::bail!("No events provided");
+        } else if events.len() == 1 {
+            let init_event = events.first().unwrap();
+            match init_event {
+                OrderEventAny::Initialized(init) => Ok(init.to_owned().into()),
+                _ => {
+                    anyhow::bail!("First event must be OrderInitialized");
+                }
+            }
+        } else {
+            anyhow::bail!("Only one event can be provided");
+        }
     }
 }
 
@@ -399,8 +415,8 @@ impl IsInflight for OrderAny {
     }
 }
 
-impl ApplyOrderEvent for OrderAny {
-    fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
+impl ApplyOrderEventAny for OrderAny {
+    fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
         match self {
             Self::Limit(order) => order.apply(event),
             Self::LimitIfTouched(order) => order.apply(event),

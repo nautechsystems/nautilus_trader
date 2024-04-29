@@ -13,7 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod general;
-pub mod instruments;
-pub mod orders;
-pub mod types;
+use pretty_assertions::assert_eq;
+use serde::Serialize;
+
+pub fn entirely_equal<T: Serialize>(a: T, b: T) {
+    let a_serialized = serde_json::to_string(&a).unwrap();
+    let b_serialized = serde_json::to_string(&b).unwrap();
+
+    assert_eq!(a_serialized, b_serialized);
+}
