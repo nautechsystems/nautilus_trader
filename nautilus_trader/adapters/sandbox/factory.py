@@ -21,7 +21,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.live.factories import LiveExecClientFactory
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.portfolio import PortfolioFacade
 
 
@@ -75,5 +74,4 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
             balance=config.balance,
             currency=config.currency,
         )
-        portfolio.set_specific_venue(Venue(name or config.venue))
         return exec_client
