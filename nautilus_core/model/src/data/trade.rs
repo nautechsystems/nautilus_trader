@@ -21,6 +21,7 @@ use std::{
     hash::Hash,
 };
 
+use derive_builder::Builder;
 use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
@@ -33,7 +34,7 @@ use crate::{
 
 /// Represents a single trade tick in a market.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Builder)]
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
@@ -123,6 +124,21 @@ impl Display for TradeTick {
 }
 
 impl Serializable for TradeTick {}
+
+#[cfg(feature = "stubs")]
+impl Default for TradeTick {
+    fn default() -> Self {
+        TradeTick {
+            instrument_id: InstrumentId::from("AUDUSD.SIM"),
+            price: Price::from("1.00000"),
+            size: Quantity::from(100_000),
+            aggressor_side: AggressorSide::Buyer,
+            trade_id: TradeId::new("123456789").unwrap(),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
+        }
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Stubs

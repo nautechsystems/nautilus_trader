@@ -22,6 +22,7 @@ use std::{
     hash::Hash,
 };
 
+use derive_builder::Builder;
 use indexmap::IndexMap;
 use nautilus_core::{correctness::check_equal_u8, nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
@@ -34,7 +35,7 @@ use crate::{
 
 /// Represents a single quote tick in a market.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Builder)]
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
@@ -164,6 +165,21 @@ impl Display for QuoteTick {
 
 impl Serializable for QuoteTick {}
 
+#[cfg(feature = "stubs")]
+impl Default for QuoteTick {
+    fn default() -> Self {
+        Self {
+            instrument_id: InstrumentId::from("AUDUSD.SIM"),
+            bid_price: Price::from("1.00000"),
+            ask_price: Price::from("1.00000"),
+            bid_size: Quantity::from(100_000),
+            ask_size: Quantity::from(100_000),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Stubs
 ////////////////////////////////////////////////////////////////////////////////
@@ -175,22 +191,8 @@ pub mod stubs {
     use crate::{
         data::quote::QuoteTick,
         identifiers::instrument_id::InstrumentId,
-        instruments::{currency_pair::CurrencyPair, stubs::*},
         types::{price::Price, quantity::Quantity},
     };
-
-    #[fixture]
-    pub fn quote_tick_audusd_sim(audusd_sim: CurrencyPair) -> QuoteTick {
-        QuoteTick {
-            instrument_id: audusd_sim.id,
-            bid_price: Price::from("1.00000"),
-            ask_price: Price::from("1.00000"),
-            bid_size: Quantity::from(100_000),
-            ask_size: Quantity::from(100_000),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::from(1),
-        }
-    }
 
     #[fixture]
     pub fn quote_tick_ethusdt_binance() -> QuoteTick {
