@@ -57,6 +57,7 @@ pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
 }
 
 #[cfg(test)]
+#[cfg(target_os = "linux")] // Databases only supported on Linux
 mod tests {
     use std::time::Duration;
 

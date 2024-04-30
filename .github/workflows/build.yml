@@ -234,7 +234,8 @@ jobs:
           PARALLEL_BUILD: false
 
   build-macos:
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/nightly'
+    if: github.ref == 'refs/heads/master'
+    # if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/nightly'
     strategy:
       fail-fast: false
       matrix:
@@ -249,25 +250,6 @@ jobs:
     env:
       BUILD_MODE: debug
       RUST_BACKTRACE: 1
-    services:
-      redis:
-        image: redis
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      postgres:
-        image: postgres
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: pass
-          POSTGRES_DB: nautilus
-        ports:
-          - 5432:5432
-        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
       - name: Checkout repository
@@ -333,17 +315,6 @@ jobs:
         run: |
           # pre-commit run --hook-stage manual gitlint-ci
           pre-commit run --all-files
-
-      - name: Install Nautilus CLI and run init postgres
-        run: |
-          make install-cli
-          nautilus database init --schema ${{ github.workspace }}/schema
-        env:
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5432
-          POSTGRES_USERNAME: postgres
-          POSTGRES_PASSWORD: pass
-          POSTGRES_DATABASE: nautilus
 
       - name: Run nautilus_core cargo tests (macOS)
         run: |
