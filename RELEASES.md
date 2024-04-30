@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added `Cfd` and `Commodity` instruments with Interactive Brokers support (#1604), thanks @DracheShiki
 - Added `OrderMatchingEngine` futures and options contract activation and expiration simulation
 - Added Sandbox example with Interactive Brokers (#1618), thanks @rsmb7z
+- Added `ParquetDataCatalog` S3 support (#1620), thanks benjaminsingleton
 
 ### Breaking Changes
 - Changed `tags` param and return type from `str` to `list[str]` (more naturally expresses multiple tags)
