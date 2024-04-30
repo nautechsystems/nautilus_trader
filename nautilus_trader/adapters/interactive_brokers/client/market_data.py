@@ -326,7 +326,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         end_date_time: pd.Timestamp,
         duration: str,
         timeout: int = 60,
-    ) -> list[Bar] | None:
+    ) -> list[Bar]:
         """
         Request and retrieve historical bar data for a specified bar type.
 
@@ -347,7 +347,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         Returns
         -------
-        list[Bar] | ``None``
+        list[Bar]
 
         """
         # Ensure the requested `end_date_time` is in UTC and set formatDate=2 to ensure returned dates are in UTC.
@@ -379,13 +379,13 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
                 cancel=functools.partial(self._eclient.cancelHistoricalData, reqId=req_id),
             )
             if not request:
-                return None
+                return []
             self._log.debug(f"reqHistoricalData: {request.req_id=}, {contract=}")
             request.handle()
-            return await self._await_request(request, timeout)
+            return await self._await_request(request, timeout, default_value=[])
         else:
             self._log.info(f"Request already exist for {request}")
-            return None
+            return []
 
     async def get_historical_ticks(
         self,
