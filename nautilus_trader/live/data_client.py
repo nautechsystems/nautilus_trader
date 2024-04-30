@@ -455,7 +455,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._subscribe_instruments(),
             log_msg=f"subscribe: instruments {self.venue}",
-            success_msg=f"Subscribed instruments {self.venue}",
+            success_msg=f"Subscribed {self.venue} instruments",
             success_color=LogColor.BLUE,
         )
 
@@ -464,7 +464,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._subscribe_instrument(instrument_id),
             log_msg=f"subscribe: instrument {instrument_id}",
-            success_msg=f"Subscribed instrument {instrument_id}",
+            success_msg=f"Subscribed {instrument_id} instrument",
             success_color=LogColor.BLUE,
         )
 
@@ -484,7 +484,7 @@ class LiveMarketDataClient(MarketDataClient):
                 kwargs=kwargs,
             ),
             log_msg=f"subscribe: order_book_deltas {instrument_id}",
-            success_msg=f"Subscribed order book deltas {instrument_id} depth={depth}",
+            success_msg=f"Subscribed {instrument_id} order book deltas depth={depth}",
             success_color=LogColor.BLUE,
         )
 
@@ -504,7 +504,7 @@ class LiveMarketDataClient(MarketDataClient):
                 kwargs=kwargs,
             ),
             log_msg=f"subscribe: order_book_snapshots {instrument_id}",
-            success_msg=f"Subscribed order book snapshots {instrument_id} depth={depth}",
+            success_msg=f"Subscribed {instrument_id} order book snapshots depth={depth}",
             success_color=LogColor.BLUE,
         )
 
@@ -513,7 +513,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._subscribe_quote_ticks(instrument_id),
             log_msg=f"subscribe: quote_ticks {instrument_id}",
-            success_msg=f"Subscribed quotes {instrument_id}",
+            success_msg=f"Subscribed {instrument_id} quotes",
             success_color=LogColor.BLUE,
         )
 
@@ -522,7 +522,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._subscribe_trade_ticks(instrument_id),
             log_msg=f"subscribe: trade_ticks {instrument_id}",
-            success_msg=f"Subscribed trades {instrument_id}",
+            success_msg=f"Subscribed {instrument_id} trades",
             success_color=LogColor.BLUE,
         )
 
@@ -533,7 +533,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._subscribe_bars(bar_type),
             log_msg=f"subscribe: bars {bar_type}",
-            success_msg=f"Subscribed bars {bar_type}",
+            success_msg=f"Subscribed {bar_type} bars",
             success_color=LogColor.BLUE,
         )
 
@@ -542,7 +542,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._subscribe_instrument_status(instrument_id),
             log_msg=f"subscribe: instrument_status {instrument_id}",
-            success_msg=f"Subscribed instrument status {instrument_id}",
+            success_msg=f"Subscribed {instrument_id} instrument status ",
             success_color=LogColor.BLUE,
         )
 
@@ -551,7 +551,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._subscribe_instrument_close(instrument_id),
             log_msg=f"subscribe: instrument_close {instrument_id}",
-            success_msg=f"Subscribed instrument close {instrument_id}",
+            success_msg=f"Subscribed {instrument_id} instrument close",
             success_color=LogColor.BLUE,
         )
 
@@ -570,7 +570,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._unsubscribe_instruments(),
             log_msg=f"unsubscribe: instruments {self.venue}",
-            success_msg=f"Unsubscribed instruments {self.venue}",
+            success_msg=f"Unsubscribed {self.venue} instruments",
             success_color=LogColor.BLUE,
         )
 
@@ -579,7 +579,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._unsubscribe_instrument(instrument_id),
             log_msg=f"unsubscribe: instrument {instrument_id}",
-            success_msg=f"Unsubscribed instrument {instrument_id}",
+            success_msg=f"Unsubscribed {instrument_id} instrument",
             success_color=LogColor.BLUE,
         )
 
@@ -588,7 +588,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._unsubscribe_order_book_deltas(instrument_id),
             log_msg=f"unsubscribe: order_book_deltas {instrument_id}",
-            success_msg=f"Unsubscribed order book deltas {instrument_id}",
+            success_msg=f"Unsubscribed {instrument_id} order book deltas",
             success_color=LogColor.BLUE,
         )
 
@@ -597,7 +597,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._unsubscribe_order_book_snapshots(instrument_id),
             log_msg=f"unsubscribe: order_book_snapshots {instrument_id}",
-            success_msg=f"Unsubscribed order book snapshots {instrument_id}",
+            success_msg=f"Unsubscribed {instrument_id} order book snapshots",
             success_color=LogColor.BLUE,
         )
 
@@ -606,7 +606,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._unsubscribe_quote_ticks(instrument_id),
             log_msg=f"unsubscribe: quote_ticks {instrument_id}",
-            success_msg=f"Unsubscribed quotes {instrument_id}",
+            success_msg=f"Unsubscribed {instrument_id} quotes",
             success_color=LogColor.BLUE,
         )
 
@@ -615,7 +615,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._unsubscribe_trade_ticks(instrument_id),
             log_msg=f"unsubscribe: trade_ticks {instrument_id}",
-            success_msg=f"Unsubscribed trades {instrument_id}",
+            success_msg=f"Unsubscribed {instrument_id} trades",
             success_color=LogColor.BLUE,
         )
 
@@ -624,7 +624,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._unsubscribe_bars(bar_type),
             log_msg=f"unsubscribe: bars {bar_type}",
-            success_msg=f"Unsubscribed bars {bar_type}",
+            success_msg=f"Unsubscribed {bar_type} bars",
             success_color=LogColor.BLUE,
         )
 
@@ -633,7 +633,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._unsubscribe_instrument_status(instrument_id),
             log_msg=f"unsubscribe: instrument_status {instrument_id}",
-            success_msg=f"Unsubscribed instrument status {instrument_id}",
+            success_msg=f"Unsubscribed {instrument_id} instrument status",
             success_color=LogColor.BLUE,
         )
 
@@ -642,7 +642,7 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._unsubscribe_instrument_close(instrument_id),
             log_msg=f"unsubscribe: instrument_close {instrument_id}",
-            success_msg=f"Unsubscribed instrument close {instrument_id}",
+            success_msg=f"Unsubscribed {instrument_id} instrument close",
             success_color=LogColor.BLUE,
         )
 
@@ -663,7 +663,7 @@ class LiveMarketDataClient(MarketDataClient):
         end: pd.Timestamp | None = None,
     ) -> None:
         time_range = f" {start} to {end}" if (start or end) else ""
-        self._log.info(f"Request instrument {instrument_id}{time_range}", LogColor.BLUE)
+        self._log.info(f"Request {instrument_id} instrument{time_range}", LogColor.BLUE)
         self.create_task(
             self._request_instrument(
                 instrument_id=instrument_id,
@@ -683,7 +683,7 @@ class LiveMarketDataClient(MarketDataClient):
     ) -> None:
         time_range = f" {start} to {end}" if (start or end) else ""
         self._log.info(
-            f"Request instruments for {venue}{time_range}",
+            f"Request {venue} instruments for{time_range}",
             LogColor.BLUE,
         )
         self.create_task(
@@ -706,7 +706,7 @@ class LiveMarketDataClient(MarketDataClient):
     ) -> None:
         time_range = f" {start} to {end}" if (start or end) else ""
         limit_str = f" limit={limit}" if limit else ""
-        self._log.info(f"Request quote ticks {instrument_id}{time_range}{limit_str}", LogColor.BLUE)
+        self._log.info(f"Request {instrument_id} quote ticks{time_range}{limit_str}", LogColor.BLUE)
         self.create_task(
             self._request_quote_ticks(
                 instrument_id=instrument_id,
@@ -728,7 +728,7 @@ class LiveMarketDataClient(MarketDataClient):
     ) -> None:
         time_range = f" {start} to {end}" if (start or end) else ""
         limit_str = f" limit={limit}" if limit else ""
-        self._log.info(f"Request trade ticks {instrument_id}{time_range}{limit_str}", LogColor.BLUE)
+        self._log.info(f"Request {instrument_id} trade ticks{time_range}{limit_str}", LogColor.BLUE)
         self.create_task(
             self._request_trade_ticks(
                 instrument_id=instrument_id,
@@ -750,7 +750,7 @@ class LiveMarketDataClient(MarketDataClient):
     ) -> None:
         time_range = f" {start} to {end}" if (start or end) else ""
         limit_str = f" limit={limit}" if limit else ""
-        self._log.info(f"Request bars {bar_type}{time_range}{limit_str}", LogColor.BLUE)
+        self._log.info(f"Request {bar_type} bars{time_range}{limit_str}", LogColor.BLUE)
         self.create_task(
             self._request_bars(
                 bar_type=bar_type,
