@@ -138,7 +138,10 @@ class ParquetDataCatalog(BaseDataCatalog):
         self.max_rows_per_group = max_rows_per_group
         self.show_query_paths = show_query_paths
 
-        final_path = str(make_path_posix(str(path)))
+        if self.fs_protocol == "file":
+            final_path = str(make_path_posix(str(path)))
+        else:
+            final_path = str(path)
 
         if (
             isinstance(self.fs, MemoryFileSystem)
@@ -363,7 +366,13 @@ class ParquetDataCatalog(BaseDataCatalog):
         where: str | None = None,
         **kwargs: Any,
     ) -> list[Data | CustomData]:
-        if data_cls in (OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick, Bar):
+        if self.fs_protocol == "file" and data_cls in (
+            OrderBookDelta,
+            OrderBookDepth10,
+            QuoteTick,
+            TradeTick,
+            Bar,
+        ):
             data = self.query_rust(
                 data_cls=data_cls,
                 instrument_ids=instrument_ids,
@@ -377,6 +386,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             data = self.query_pyarrow(
                 data_cls=data_cls,
                 instrument_ids=instrument_ids,
+                bar_types=bar_types,
                 start=start,
                 end=end,
                 where=where,
@@ -484,6 +494,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         self,
         data_cls: type,
         instrument_ids: list[str] | None = None,
+        bar_types: list[str] | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         filter_expr: str | None = None,
@@ -497,6 +508,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             path=dataset_path,
             filter_expr=filter_expr,
             instrument_ids=instrument_ids,
+            bar_types=bar_types,
             start=start,
             end=end,
         )
@@ -515,6 +527,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         path: str,
         filter_expr: str | None = None,
         instrument_ids: list[str] | None = None,
+        bar_types: list[str] | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         ts_column: str = "ts_init",
@@ -530,6 +543,14 @@ class ParquetDataCatalog(BaseDataCatalog):
                 fn
                 for fn in dataset.files
                 if any(urisafe_instrument_id(x) in fn for x in instrument_ids)
+            ]
+            dataset = pds.dataset(valid_files, filesystem=self.fs)
+
+        if bar_types is not None:
+            if not isinstance(bar_types, list):
+                bar_types = [bar_types]
+            valid_files = [
+                fn for fn in dataset.files if any(x.replace("/", "") in fn for x in bar_types)
             ]
             dataset = pds.dataset(valid_files, filesystem=self.fs)
 
@@ -591,7 +612,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         data = ArrowSerializer.deserialize(data_cls=data_cls, batch=table)
         # TODO (bm/cs) remove when pyo3 objects are used everywhere.
         module = data[0].__class__.__module__
-        if "builtins" in module:
+        if "nautilus_pyo3" in module:
             cython_cls = {
                 "OrderBookDelta": OrderBookDelta,
                 "OrderBookDeltas": OrderBookDelta,
@@ -600,7 +621,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 "TradeTick": TradeTick,
                 "Bar": Bar,
             }.get(data_cls.__name__, data_cls.__name__)
-            data = cython_cls.from_pyo3(data)
+            data = cython_cls.from_pyo3_list(data)
         return data
 
     def _query_subclasses(
