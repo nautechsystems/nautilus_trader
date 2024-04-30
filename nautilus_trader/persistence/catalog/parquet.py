@@ -366,7 +366,13 @@ class ParquetDataCatalog(BaseDataCatalog):
         where: str | None = None,
         **kwargs: Any,
     ) -> list[Data | CustomData]:
-        if self.fs_protocol == "file" and data_cls in (OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick, Bar):
+        if self.fs_protocol == "file" and data_cls in (
+            OrderBookDelta,
+            OrderBookDepth10,
+            QuoteTick,
+            TradeTick,
+            Bar,
+        ):
             data = self.query_rust(
                 data_cls=data_cls,
                 instrument_ids=instrument_ids,
@@ -544,9 +550,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             if not isinstance(bar_types, list):
                 bar_types = [bar_types]
             valid_files = [
-                fn
-                for fn in dataset.files
-                if any(x.replace("/", "") in fn for x in bar_types)
+                fn for fn in dataset.files if any(x.replace("/", "") in fn for x in bar_types)
             ]
             dataset = pds.dataset(valid_files, filesystem=self.fs)
 
