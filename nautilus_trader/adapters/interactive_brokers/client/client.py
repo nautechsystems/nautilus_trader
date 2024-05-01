@@ -437,7 +437,12 @@ class InteractiveBrokersClient(
         """
         self._event_subscriptions.pop(name)
 
-    async def _await_request(self, request: Request, timeout: int) -> Any | None:
+    async def _await_request(
+        self,
+        request: Request,
+        timeout: int,
+        default_value: Any | None = None,
+    ) -> Any:
         """
         Await the completion of a request within a specified timeout.
 
@@ -447,11 +452,13 @@ class InteractiveBrokersClient(
             The request object to await.
         timeout : int
             The maximum time to wait for the request to complete, in seconds.
+        default_value : Any, optional
+            The default value to return if the request times out or fails. Defaults to None.
 
         Returns
         -------
-        Any | ``None``
-            The result of the request, or None if the request timed out.
+        Any
+            The result of the request, or default_value if the request times out or fails.
 
         """
         try:
@@ -459,11 +466,11 @@ class InteractiveBrokersClient(
         except asyncio.TimeoutError as e:
             self._log.warning(f"Request timed out for {request}. Ending request.")
             self._end_request(request.req_id, success=False, exception=e)
-            return None
+            return default_value
         except ConnectionError as e:
             self._log.error(f"Connection error during {request}. Ending request.")
             self._end_request(request.req_id, success=False, exception=e)
-            return None
+            return default_value
 
     def _end_request(
         self,
