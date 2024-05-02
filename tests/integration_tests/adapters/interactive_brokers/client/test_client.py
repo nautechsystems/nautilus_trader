@@ -27,9 +27,9 @@ from nautilus_trader.test_kit.functions import eventually
 
 def test_start(ib_client):
     # Arrange
-    ib_client._is_ib_connected.set()
     ib_client._connect = AsyncMock()
     ib_client._eclient = MagicMock()
+    ib_client._eclient.startApi = MagicMock(side_effect=ib_client._is_ib_connected.set)
 
     # Act
     ib_client.start()
@@ -59,9 +59,9 @@ def test_start_tasks(ib_client):
 
 def test_stop(ib_client):
     # Arrange
-    ib_client._is_ib_connected.set()
     ib_client._connect = AsyncMock()
     ib_client._eclient = MagicMock()
+    ib_client._eclient.startApi = MagicMock(side_effect=ib_client._is_ib_connected.set)
     ib_client.start()
 
     # Act

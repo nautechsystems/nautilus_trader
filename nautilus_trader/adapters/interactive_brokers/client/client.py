@@ -134,9 +134,9 @@ class InteractiveBrokersClient(
         self._account_ids: set[str] = set()
 
         # ConnectionMixin
-        self._reconnect_attempts: int = 0
-        self._max_reconnect_attempts: int = int(os.getenv("IB_MAX_RECONNECT_ATTEMPTS", 0))
-        self._indefinite_reconnect: bool = False if self._max_reconnect_attempts else True
+        self._connection_attempts: int = 0
+        self._max_connection_attempts: int = int(os.getenv("IB_MAX_CONNECTION_ATTEMPTS", 0))
+        self._indefinite_reconnect: bool = False if self._max_connection_attempts else True
         self._reconnect_delay: int = 5  # seconds
 
         # MarketDataMixin
@@ -170,24 +170,38 @@ class InteractiveBrokersClient(
             self._create_task(self._startup())
 
     async def _startup(self):
-        try:
-            self._log.info(f"Starting InteractiveBrokersClient ({self._client_id})...")
-            await self._connect()
-            self._start_tws_incoming_msg_reader()
-            self._start_internal_msg_queue_processor()
-            self._eclient.startApi()
-            # TWS/Gateway will send a managedAccounts message upon successful connection,
-            # which will set the `_is_ib_connected` event. This typically takes a few
-            # seconds, so we wait for it here.
-            await asyncio.wait_for(self._is_ib_connected.wait(), 15)
-            self._start_connection_watchdog()
-            self._is_client_ready.set()
-        except asyncio.TimeoutError:
-            self._log.error("Client failed to initialize. Connection timeout.")
-            self._stop()
-        except Exception as e:
-            self._log.exception("Unhandled exception in client startup", e)
-            self._stop()
+        while not self._is_ib_connected.is_set():
+            try:
+                self._connection_attempts += 1
+                if (
+                    not self._indefinite_reconnect
+                    and self._connection_attempts > self._max_connection_attempts
+                ):
+                    self._log.error("Max connection attempts reached. Connection failed.")
+                    self._stop()
+                    break
+                if self._connection_attempts > 1:
+                    self._log.info(
+                        f"Attempt {self._connection_attempts}: Attempting to reconnect in {self._reconnect_delay} seconds...",
+                    )
+                    await asyncio.sleep(self._reconnect_delay)
+                self._log.info(f"Starting InteractiveBrokersClient ({self._client_id})...")
+                await self._connect()
+                self._start_tws_incoming_msg_reader()
+                self._start_internal_msg_queue_processor()
+                self._eclient.startApi()
+                # TWS/Gateway will send a managedAccounts message upon successful connection,
+                # which will set the `_is_ib_connected` event. This typically takes a few
+                # seconds, so we wait for it here.
+                await asyncio.wait_for(self._is_ib_connected.wait(), 15)
+                self._start_connection_watchdog()
+            except asyncio.TimeoutError:
+                self._log.error("Client failed to initialize. Connection timeout.")
+            except Exception as e:
+                self._log.exception("Unhandled exception in client startup", e)
+                self._stop()
+        self._is_client_ready.set()
+        self._connection_attempts = 0
 
     def _start_tws_incoming_msg_reader(self) -> None:
         """
