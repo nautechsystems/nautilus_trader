@@ -16,6 +16,7 @@ Released on TBD (UTC).
 - Fixed `ParquetDataCatalog` bar queries by `instrument_id` which were no longer returning data (the intent is to use `bar_type`, however using `instrument_id` now returns all matching bars)
 - Fixed Interactive Brokers contract details parsing (#1615), thanks @rsmb7z
 - Fixed Interactive Brokers portfolio registration (#1616), thanks @rsmb7z
+- Fixed IBKR reconnection after gateway/TWS disconnection (#1622), thanks @benjaminsingleton
 - Fixed `from_str` for `Price`, `Quantity` and `Money` when input string contains underscores in Rust, thanks for reporting @filipmacek
 - Fixed Binance Futures account balance calculation (was over stating `free` balance with margin collateral, which could result in a negative `locked` balance)
 
