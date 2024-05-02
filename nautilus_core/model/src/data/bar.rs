@@ -22,6 +22,7 @@ use std::{
     str::FromStr,
 };
 
+use derive_builder::Builder;
 use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -35,7 +36,7 @@ use crate::{
 /// Represents a bar aggregation specification including a step, aggregation
 /// method/rule and price type.
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -309,6 +310,21 @@ pub mod stubs {
         identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
         types::{price::Price, quantity::Quantity},
     };
+
+    impl Default for Bar {
+        fn default() -> Self {
+            Self {
+                bar_type: BarType::from("AUDUSD.SIM-1-MINUTE-LAST-INTERNAL"),
+                open: Price::from("1.00010"),
+                high: Price::from("1.00020"),
+                low: Price::from("1.00000"),
+                close: Price::from("1.00010"),
+                volume: Quantity::from(100_000),
+                ts_event: UnixNanos::default(),
+                ts_init: UnixNanos::default(),
+            }
+        }
+    }
 
     #[fixture]
     pub fn stub_bar() -> Bar {
