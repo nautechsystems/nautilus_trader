@@ -2393,7 +2393,7 @@ impl Cache {
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        data::{quote::QuoteTick, trade::TradeTick},
+        data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
         instruments::{currency_pair::CurrencyPair, stubs::*},
     };
     use rstest::*;
@@ -2567,5 +2567,41 @@ mod tests {
 
         let result = cache.trade_ticks(&trades[0].instrument_id);
         assert_eq!(result, Some(trades));
+    }
+
+    #[rstest]
+    fn test_bar_when_empty() {
+        let cache = Cache::default();
+        let bar = Bar::default();
+        let result = cache.bar(&bar.bar_type);
+        assert_eq!(result, None);
+    }
+
+    #[rstest]
+    fn test_bar_when_some() {
+        let mut cache = Cache::default();
+        let bar = Bar::default();
+        cache.add_bar(bar).unwrap();
+
+        let result = cache.bar(&bar.bar_type);
+        assert_eq!(result, Some(bar).as_ref());
+    }
+
+    #[rstest]
+    fn test_bars_when_empty() {
+        let cache = Cache::default();
+        let bar = Bar::default();
+        let result = cache.bars(&bar.bar_type);
+        assert_eq!(result, None);
+    }
+
+    #[rstest]
+    fn test_bars_when_some() {
+        let mut cache = Cache::default();
+        let bars = vec![Bar::default(), Bar::default(), Bar::default()];
+        cache.add_bars(&bars).unwrap();
+
+        let result = cache.bars(&bars[0].bar_type);
+        assert_eq!(result, Some(bars));
     }
 }
