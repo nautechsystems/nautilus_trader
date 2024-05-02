@@ -92,23 +92,9 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         """
         Attempt to reconnect to TWS/Gateway.
         """
-        while not self._is_ib_connected.is_set():
-            if (
-                not self._indefinite_reconnect
-                and self._reconnect_attempts > self._max_reconnect_attempts
-            ):
-                self._log.error("Max reconnection attempts reached. Connection failed.")
-                self._stop()
-                break
-            self._reconnect_attempts += 1
-            self._log.info(
-                f"Attempt {self._reconnect_attempts}: Attempting to reconnect in {self._reconnect_delay} seconds...",
-            )
-            await asyncio.sleep(self._reconnect_delay)
-            await self._startup()
-
+        await self._startup()
         self._log.info("Reconnection successful.")
-        self._reconnect_attempts = 0
+        self._connection_attempts = 0
         await self._resubscribe_all()
         self._resume()
 
