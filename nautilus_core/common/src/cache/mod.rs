@@ -2402,109 +2402,97 @@ mod tests {
 
     use super::Cache;
 
+    #[fixture]
+    fn cache() -> Cache {
+        Cache::default()
+    }
+
     #[rstest]
-    fn test_build_index_when_empty() {
-        let mut cache = Cache::default();
+    fn test_build_index_when_empty(mut cache: Cache) {
         cache.build_index();
     }
 
     #[rstest]
-    fn test_clear_index_when_empty() {
-        let mut cache = Cache::default();
+    fn test_clear_index_when_empty(mut cache: Cache) {
         cache.clear_index();
     }
 
     #[rstest]
-    fn test_reset_when_empty() {
-        let mut cache = Cache::default();
+    fn test_reset_when_empty(mut cache: Cache) {
         cache.reset();
     }
 
     #[rstest]
-    fn test_dispose_when_empty() {
-        let cache = Cache::default();
+    fn test_dispose_when_empty(cache: Cache) {
         let result = cache.dispose();
         assert!(result.is_ok());
     }
 
     #[rstest]
-    fn test_flush_db_when_empty() {
-        let cache = Cache::default();
+    fn test_flush_db_when_empty(cache: Cache) {
         let result = cache.flush_db();
         assert!(result.is_ok());
     }
 
     #[rstest]
-    fn test_check_residuals_when_empty() {
-        let cache = Cache::default();
+    fn test_check_residuals_when_empty(cache: Cache) {
         let result = cache.flush_db();
         assert!(result.is_ok());
     }
 
     #[rstest]
-    fn test_cache_general_load_when_no_database() {
-        let mut cache = Cache::default();
+    fn test_cache_general_load_when_no_database(mut cache: Cache) {
         assert!(cache.cache_general().is_ok());
     }
 
     #[rstest]
-    fn test_cache_currencies_load_when_no_database() {
-        let mut cache = Cache::default();
+    fn test_cache_currencies_load_when_no_database(mut cache: Cache) {
         assert!(cache.cache_currencies().is_ok());
     }
 
     #[rstest]
-    fn test_cache_instruments_load_when_no_database() {
-        let mut cache = Cache::default();
+    fn test_cache_instruments_load_when_no_database(mut cache: Cache) {
         assert!(cache.cache_instruments().is_ok());
     }
 
     #[rstest]
-    fn test_cache_synthetics_when_no_database() {
-        let mut cache = Cache::default();
+    fn test_cache_synthetics_when_no_database(mut cache: Cache) {
         assert!(cache.cache_synthetics().is_ok());
     }
 
     #[rstest]
-    fn test_cache_orders_when_no_database() {
-        let mut cache = Cache::default();
+    fn test_cache_orders_when_no_database(mut cache: Cache) {
         assert!(cache.cache_orders().is_ok());
     }
 
     #[rstest]
-    fn test_cache_positions_when_no_database() {
-        let mut cache = Cache::default();
+    fn test_cache_positions_when_no_database(mut cache: Cache) {
         assert!(cache.cache_positions().is_ok());
     }
 
     #[rstest]
-    fn test_get_general_when_empty() {
-        let cache = Cache::default();
+    fn test_get_general_when_empty(cache: Cache) {
         let result = cache.get("A").unwrap();
         assert_eq!(result, None);
     }
 
     #[rstest]
-    fn test_add_general_when_value() {
-        let mut cache = Cache::default();
+    fn test_add_general_when_value(mut cache: Cache) {
         let key = "A";
         let value = vec![0_u8];
         cache.add(key, value.clone()).unwrap();
-
         let result = cache.get(key).unwrap();
         assert_eq!(result, Some(&value.as_slice()).copied());
     }
 
     #[rstest]
-    fn test_instrument_when_empty(audusd_sim: CurrencyPair) {
-        let cache = Cache::default();
+    fn test_instrument_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
         let result = cache.instrument(&audusd_sim.id);
         assert_eq!(result, None);
     }
 
     #[rstest]
-    fn test_instrument_when_some(audusd_sim: CurrencyPair) {
-        let mut cache = Cache::default();
+    fn test_instrument_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
         cache
             .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
             .unwrap();
@@ -2517,131 +2505,111 @@ mod tests {
     }
 
     #[rstest]
-    fn test_synthetic_when_empty() {
-        let cache = Cache::default();
+    fn test_synthetic_when_empty(cache: Cache) {
         let synth = SyntheticInstrument::default();
         let result = cache.synthetic(&synth.id);
         assert_eq!(result, None);
     }
 
     #[rstest]
-    fn test_synthetic_when_some() {
+    fn test_synthetic_when_some(cache: Cache) {
         let mut cache = Cache::default();
         let synth = SyntheticInstrument::default();
         cache.add_synthetic(synth.clone()).unwrap();
-
         let result = cache.synthetic(&synth.id);
         assert_eq!(result, Some(synth).as_ref());
     }
 
     #[rstest]
-    fn test_quote_tick_when_empty(audusd_sim: CurrencyPair) {
-        let cache = Cache::default();
+    fn test_quote_tick_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
         let result = cache.quote_tick(&audusd_sim.id);
         assert_eq!(result, None);
     }
 
     #[rstest]
-    fn test_quote_tick_when_some() {
-        let mut cache = Cache::default();
+    fn test_quote_tick_when_some(mut cache: Cache) {
         let quote = QuoteTick::default();
         cache.add_quote(quote).unwrap();
-
         let result = cache.quote_tick(&quote.instrument_id);
         assert_eq!(result, Some(&quote));
     }
 
     #[rstest]
-    fn test_quote_ticks_when_empty(audusd_sim: CurrencyPair) {
-        let cache = Cache::default();
+    fn test_quote_ticks_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
         let result = cache.quote_ticks(&audusd_sim.id);
         assert_eq!(result, None);
     }
 
     #[rstest]
-    fn test_quote_ticks_when_some() {
-        let mut cache = Cache::default();
+    fn test_quote_ticks_when_some(mut cache: Cache) {
         let quotes = vec![
             QuoteTick::default(),
             QuoteTick::default(),
             QuoteTick::default(),
         ];
         cache.add_quotes(&quotes).unwrap();
-
         let result = cache.quote_ticks(&quotes[0].instrument_id);
         assert_eq!(result, Some(quotes));
     }
 
     #[rstest]
-    fn test_trade_tick_when_empty(audusd_sim: CurrencyPair) {
-        let cache = Cache::default();
+    fn test_trade_tick_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
         let result = cache.trade_tick(&audusd_sim.id);
         assert_eq!(result, None);
     }
 
     #[rstest]
-    fn test_trade_tick_when_some() {
-        let mut cache = Cache::default();
+    fn test_trade_tick_when_some(mut cache: Cache) {
         let trade = TradeTick::default();
         cache.add_trade(trade).unwrap();
-
         let result = cache.trade_tick(&trade.instrument_id);
         assert_eq!(result, Some(&trade));
     }
 
     #[rstest]
-    fn test_trade_ticks_when_empty(audusd_sim: CurrencyPair) {
-        let cache = Cache::default();
+    fn test_trade_ticks_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
         let result = cache.trade_ticks(&audusd_sim.id);
         assert_eq!(result, None);
     }
 
     #[rstest]
-    fn test_trade_ticks_when_some() {
-        let mut cache = Cache::default();
+    fn test_trade_ticks_when_some(mut cache: Cache) {
         let trades = vec![
             TradeTick::default(),
             TradeTick::default(),
             TradeTick::default(),
         ];
         cache.add_trades(&trades).unwrap();
-
         let result = cache.trade_ticks(&trades[0].instrument_id);
         assert_eq!(result, Some(trades));
     }
 
     #[rstest]
-    fn test_bar_when_empty() {
-        let cache = Cache::default();
+    fn test_bar_when_empty(cache: Cache) {
         let bar = Bar::default();
         let result = cache.bar(&bar.bar_type);
         assert_eq!(result, None);
     }
 
     #[rstest]
-    fn test_bar_when_some() {
-        let mut cache = Cache::default();
+    fn test_bar_when_some(mut cache: Cache) {
         let bar = Bar::default();
         cache.add_bar(bar).unwrap();
-
         let result = cache.bar(&bar.bar_type);
         assert_eq!(result, Some(bar).as_ref());
     }
 
     #[rstest]
-    fn test_bars_when_empty() {
-        let cache = Cache::default();
+    fn test_bars_when_empty(cache: Cache) {
         let bar = Bar::default();
         let result = cache.bars(&bar.bar_type);
         assert_eq!(result, None);
     }
 
     #[rstest]
-    fn test_bars_when_some() {
-        let mut cache = Cache::default();
+    fn test_bars_when_some(mut cache: Cache) {
         let bars = vec![Bar::default(), Bar::default(), Bar::default()];
         cache.add_bars(&bars).unwrap();
-
         let result = cache.bars(&bars[0].bar_type);
         assert_eq!(result, Some(bars));
     }
