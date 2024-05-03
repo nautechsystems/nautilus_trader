@@ -18,6 +18,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use derive_builder::Builder;
 use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
 use nautilus_core::nanos::UnixNanos;
 
@@ -28,7 +29,7 @@ use crate::{
 
 /// Represents a synthetic instrument with prices derived from component instruments using a
 /// formula.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -147,82 +148,72 @@ impl Hash for SyntheticInstrument {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Stubs
+///////////////////////////////////////////////////////////////////////////////
+#[cfg(feature = "stubs")]
+pub mod stubs {
+    use super::*;
+
+    impl Default for SyntheticInstrument {
+        fn default() -> Self {
+            let btc_binance = InstrumentId::from("BTC.BINANCE");
+            let ltc_binance = InstrumentId::from("LTC.BINANCE");
+            let formula = "(BTC.BINANCE + LTC.BINANCE) / 2.0".to_string();
+            SyntheticInstrument::new(
+                Symbol::new("BTC-LTC").unwrap(),
+                2,
+                vec![btc_binance, ltc_binance],
+                formula.clone(),
+                0.into(),
+                0.into(),
+            )
+            .unwrap()
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+///////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::identifiers::{instrument_id::InstrumentId, symbol::Symbol};
 
     #[rstest]
     fn test_calculate_from_map() {
-        let btc_binance = InstrumentId::from("BTC.BINANCE");
-        let ltc_binance = InstrumentId::from("LTC.BINANCE");
-        let formula = "(BTC.BINANCE + LTC.BINANCE) / 2".to_string();
-        let mut synth = SyntheticInstrument::new(
-            Symbol::new("BTC-LTC").unwrap(),
-            2,
-            vec![btc_binance, ltc_binance],
-            formula.clone(),
-            0.into(),
-            0.into(),
-        )
-        .unwrap();
-
+        let mut synth = SyntheticInstrument::default();
         let mut inputs = HashMap::new();
         inputs.insert("BTC.BINANCE".to_string(), 100.0);
         inputs.insert("LTC.BINANCE".to_string(), 200.0);
-
         let price = synth.calculate_from_map(&inputs).unwrap();
 
         assert_eq!(price.as_f64(), 150.0);
-        assert_eq!(synth.formula, formula);
+        assert_eq!(
+            synth.formula,
+            "(BTC.BINANCE + LTC.BINANCE) / 2.0".to_string()
+        );
     }
 
     #[rstest]
     fn test_calculate() {
-        let btc_binance = InstrumentId::from("BTC.BINANCE");
-        let ltc_binance = InstrumentId::from("LTC.BINANCE");
-        let formula = "(BTC.BINANCE + LTC.BINANCE) / 2.0".to_string();
-        let mut synth = SyntheticInstrument::new(
-            Symbol::new("BTC-LTC").unwrap(),
-            2,
-            vec![btc_binance, ltc_binance],
-            formula.clone(),
-            0.into(),
-            0.into(),
-        )
-        .unwrap();
-
+        let mut synth = SyntheticInstrument::default();
         let inputs = vec![100.0, 200.0];
         let price = synth.calculate(&inputs).unwrap();
-
         assert_eq!(price.as_f64(), 150.0);
-        assert_eq!(synth.formula, formula);
     }
 
     #[rstest]
     fn test_change_formula() {
-        let btc_binance = InstrumentId::from("BTC.BINANCE");
-        let ltc_binance = InstrumentId::from("LTC.BINANCE");
-        let formula = "(BTC.BINANCE + LTC.BINANCE) / 2".to_string();
-        let mut synth = SyntheticInstrument::new(
-            Symbol::new("BTC-LTC").unwrap(),
-            2,
-            vec![btc_binance, ltc_binance],
-            formula,
-            0.into(),
-            0.into(),
-        )
-        .unwrap();
-
+        let mut synth = SyntheticInstrument::default();
         let new_formula = "(BTC.BINANCE + LTC.BINANCE) / 4".to_string();
         synth.change_formula(new_formula.clone()).unwrap();
 
         let mut inputs = HashMap::new();
         inputs.insert("BTC.BINANCE".to_string(), 100.0);
         inputs.insert("LTC.BINANCE".to_string(), 200.0);
-
         let price = synth.calculate_from_map(&inputs).unwrap();
 
         assert_eq!(price.as_f64(), 75.0);
