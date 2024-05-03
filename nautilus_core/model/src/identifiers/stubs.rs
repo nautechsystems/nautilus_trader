@@ -37,7 +37,7 @@ impl Default for ClientId {
 
 impl Default for ClientOrderId {
     fn default() -> Self {
-        Self::from("O-123456789")
+        Self::from("O-19700101-0000-000-001-1")
     }
 }
 
@@ -111,7 +111,7 @@ pub fn client_id_dydx() -> ClientId {
 
 #[fixture]
 pub fn client_order_id() -> ClientOrderId {
-    ClientOrderId::from("O-20200814-102234-001-001-1")
+    ClientOrderId::from("O-19700101-0000-000-001-1")
 }
 
 // ---- ComponentId ----

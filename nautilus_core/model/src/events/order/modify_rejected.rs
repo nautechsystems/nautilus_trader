@@ -107,7 +107,7 @@ mod tests {
         let display = format!("{order_modify_rejected}");
         assert_eq!(
             display,
-            "OrderModifyRejected(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, \
+            "OrderModifyRejected(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, \
             venue_order_id=001, account_id=SIM-001,reason=ORDER_DOES_NOT_EXIST, ts_event=0)"
         );
     }
