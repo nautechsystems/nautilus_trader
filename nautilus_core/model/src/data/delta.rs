@@ -29,6 +29,7 @@ use super::order::{BookOrder, NULL_ORDER};
 use crate::{
     enums::{BookAction, RecordFlag},
     identifiers::instrument_id::InstrumentId,
+    polymorphism::GetTsInit,
 };
 
 /// Represents a single change/delta in an order book.
@@ -146,6 +147,12 @@ impl Display for OrderBookDelta {
 }
 
 impl Serializable for OrderBookDelta {}
+
+impl GetTsInit for OrderBookDelta {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests

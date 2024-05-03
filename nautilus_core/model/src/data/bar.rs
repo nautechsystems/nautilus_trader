@@ -30,6 +30,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::{
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::instrument_id::InstrumentId,
+    polymorphism::GetTsInit,
     types::{price::Price, quantity::Quantity},
 };
 
@@ -284,8 +285,6 @@ impl Bar {
     }
 }
 
-impl Serializable for Bar {}
-
 impl Display for Bar {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -293,6 +292,14 @@ impl Display for Bar {
             "{},{},{},{},{},{},{}",
             self.bar_type, self.open, self.high, self.low, self.close, self.volume, self.ts_event
         )
+    }
+}
+
+impl Serializable for Bar {}
+
+impl GetTsInit for Bar {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }
 

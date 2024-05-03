@@ -24,7 +24,7 @@ use std::{
 use nautilus_core::nanos::UnixNanos;
 
 use super::delta::OrderBookDelta;
-use crate::identifiers::instrument_id::InstrumentId;
+use crate::{identifiers::instrument_id::InstrumentId, polymorphism::GetTsInit};
 
 /// Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
 ///
@@ -102,6 +102,12 @@ impl Display for OrderBookDeltas {
             self.ts_event,
             self.ts_init
         )
+    }
+}
+
+impl GetTsInit for OrderBookDeltas {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }
 
