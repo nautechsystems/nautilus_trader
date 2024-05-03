@@ -23,7 +23,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{Instrument, InstrumentAny};
+use super::{any::InstrumentAny, Instrument};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},

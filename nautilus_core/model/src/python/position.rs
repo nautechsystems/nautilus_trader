@@ -29,7 +29,7 @@ use crate::{
         strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
         venue::Venue, venue_order_id::VenueOrderId,
     },
-    instruments::InstrumentAny,
+    instruments::any::InstrumentAny,
     position::Position,
     python::instruments::convert_pyobject_to_instrument_any,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},

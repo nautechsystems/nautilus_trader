@@ -17,7 +17,7 @@ use nautilus_common::interface::account::Account;
 use nautilus_model::{
     enums::LiquiditySide,
     events::account::{state::AccountState, stubs::*},
-    instruments::InstrumentAny,
+    instruments::any::InstrumentAny,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 use rstest::fixture;

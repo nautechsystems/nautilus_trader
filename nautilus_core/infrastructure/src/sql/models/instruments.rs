@@ -24,10 +24,10 @@ use nautilus_model::{
     enums::{AssetClass, OptionKind},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     instruments::{
-        crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
+        any::InstrumentAny, crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
         currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
         futures_spread::FuturesSpread, options_contract::OptionsContract,
-        options_spread::OptionsSpread, InstrumentAny,
+        options_spread::OptionsSpread,
     },
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };

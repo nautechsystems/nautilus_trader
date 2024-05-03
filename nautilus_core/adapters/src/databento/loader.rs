@@ -24,7 +24,7 @@ use indexmap::IndexMap;
 use nautilus_model::{
     data::Data,
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
-    instruments::InstrumentAny,
+    instruments::any::InstrumentAny,
     types::currency::Currency,
 };
 use streaming_iterator::StreamingIterator;

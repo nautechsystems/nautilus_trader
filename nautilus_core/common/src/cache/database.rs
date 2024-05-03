@@ -28,9 +28,8 @@ use nautilus_model::{
         component_id::ComponentId, instrument_id::InstrumentId, position_id::PositionId,
         strategy_id::StrategyId, trader_id::TraderId, venue_order_id::VenueOrderId,
     },
-    instruments::{synthetic::SyntheticInstrument, InstrumentAny},
-    orders::any::OrderAny,
-    orders::base::Order,
+    instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
+    orders::{any::OrderAny, base::Order},
     position::Position,
     types::currency::Currency,
 };

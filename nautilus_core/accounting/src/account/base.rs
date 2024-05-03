@@ -19,7 +19,7 @@ use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
     identifiers::account_id::AccountId,
-    instruments::InstrumentAny,
+    instruments::any::InstrumentAny,
     position::Position,
     types::{
         balance::AccountBalance, currency::Currency, money::Money, price::Price, quantity::Quantity,

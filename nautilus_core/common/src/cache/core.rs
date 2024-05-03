@@ -33,7 +33,7 @@ use nautilus_model::{
         order_list_id::OrderListId, position_id::PositionId, strategy_id::StrategyId, venue::Venue,
         venue_order_id::VenueOrderId,
     },
-    instruments::{synthetic::SyntheticInstrument, InstrumentAny},
+    instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
     orderbook::book::OrderBook,
     orders::{any::OrderAny, list::OrderList},
     polymorphism::{
@@ -2387,7 +2387,8 @@ mod tests {
     use nautilus_model::{
         data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
         instruments::{
-            currency_pair::CurrencyPair, stubs::*, synthetic::SyntheticInstrument, InstrumentAny,
+            any::InstrumentAny, currency_pair::CurrencyPair, stubs::*,
+            synthetic::SyntheticInstrument,
         },
     };
     use rstest::*;

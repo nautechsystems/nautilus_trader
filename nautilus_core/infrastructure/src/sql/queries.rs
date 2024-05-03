@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use nautilus_model::{
     identifiers::instrument_id::InstrumentId,
-    instruments::{Instrument, InstrumentAny},
+    instruments::{any::InstrumentAny, Instrument},
     types::currency::Currency,
 };
 use sqlx::PgPool;
