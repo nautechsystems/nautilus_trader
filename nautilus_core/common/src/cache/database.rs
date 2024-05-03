@@ -29,7 +29,8 @@ use nautilus_model::{
         strategy_id::StrategyId, trader_id::TraderId, venue_order_id::VenueOrderId,
     },
     instruments::{synthetic::SyntheticInstrument, InstrumentAny},
-    orders::base::{Order, OrderAny},
+    orders::any::OrderAny,
+    orders::base::Order,
     position::Position,
     types::currency::Currency,
 };
