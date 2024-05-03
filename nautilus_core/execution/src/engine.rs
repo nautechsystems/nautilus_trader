@@ -29,7 +29,7 @@ use nautilus_model::{
     identifiers::{
         client_id::ClientId, instrument_id::InstrumentId, strategy_id::StrategyId, venue::Venue,
     },
-    instruments::InstrumentAny,
+    instruments::any::InstrumentAny,
     orders::any::OrderAny,
     position::Position,
     types::quantity::Quantity,

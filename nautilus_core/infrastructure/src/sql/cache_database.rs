@@ -19,7 +19,8 @@ use std::{
 };
 
 use nautilus_model::{
-    identifiers::instrument_id::InstrumentId, instruments::InstrumentAny, types::currency::Currency,
+    identifiers::instrument_id::InstrumentId, instruments::any::InstrumentAny,
+    types::currency::Currency,
 };
 use sqlx::{postgres::PgConnectOptions, PgPool};
 use tokio::{

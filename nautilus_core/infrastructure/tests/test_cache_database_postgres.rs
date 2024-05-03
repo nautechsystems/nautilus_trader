@@ -65,11 +65,12 @@ mod tests {
         enums::CurrencyType,
         identifiers::instrument_id::InstrumentId,
         instruments::{
+            any::InstrumentAny,
             stubs::{
                 crypto_future_btcusdt, crypto_perpetual_ethusdt, currency_pair_ethusdt,
                 equity_aapl, futures_contract_es, options_contract_appl,
             },
-            Instrument, InstrumentAny,
+            Instrument,
         },
         types::{currency::Currency, price::Price, quantity::Quantity},
     };

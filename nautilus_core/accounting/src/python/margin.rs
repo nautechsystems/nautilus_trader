@@ -17,7 +17,7 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     events::account::state::AccountState,
     identifiers::{account_id::AccountId, instrument_id::InstrumentId},
-    instruments::InstrumentAny,
+    instruments::any::InstrumentAny,
     python::instruments::convert_pyobject_to_instrument_any,
     types::{money::Money, price::Price, quantity::Quantity},
 };
