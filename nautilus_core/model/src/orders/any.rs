@@ -98,6 +98,12 @@ impl OrderAny {
     }
 }
 
+impl PartialEq for OrderAny {
+    fn eq(&self, other: &Self) -> bool {
+        self.client_order_id() == other.client_order_id()
+    }
+}
+
 impl GetInstrumentId for OrderAny {
     fn instrument_id(&self) -> InstrumentId {
         match self {

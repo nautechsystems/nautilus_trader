@@ -104,7 +104,7 @@ mod tests {
     #[rstest]
     fn test_order_triggered_display(order_triggered: OrderTriggered) {
         let display = format!("{order_triggered}");
-        assert_eq!(display, "OrderTriggered(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, \
+        assert_eq!(display, "OrderTriggered(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, \
         venue_order_id=001, account_id=SIM-001)");
     }
 }

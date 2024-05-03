@@ -90,7 +90,7 @@ impl Display for OrderUpdated {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "OrderUpdated(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={},quantity={}, price={}, trigger_price={}, ts_event={})",
+            "OrderUpdated(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, quantity={}, price={}, trigger_price={}, ts_event={})",
             self.instrument_id,
             self.client_order_id,
             self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
@@ -117,7 +117,7 @@ mod tests {
         let display = format!("{order_updated}");
         assert_eq!(
             display,
-            "OrderUpdated(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, venue_order_id=001, account_id=SIM-001,quantity=100, price=22000, trigger_price=None, ts_event=0)"
+            "OrderUpdated(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, venue_order_id=001, account_id=SIM-001, quantity=100, price=22000, trigger_price=None, ts_event=0)"
         );
     }
 }

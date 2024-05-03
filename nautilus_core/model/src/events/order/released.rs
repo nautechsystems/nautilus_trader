@@ -75,7 +75,7 @@ impl Display for OrderReleased {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "OrderReleased({}, {}, {})",
+            "OrderReleased(instrument_id={}, client_order_id={}, released_price={})",
             self.instrument_id, self.client_order_id, self.released_price,
         )
     }
@@ -94,7 +94,7 @@ mod tests {
         let display = format!("{order_released}");
         assert_eq!(
             display,
-            "OrderReleased(BTCUSDT.COINBASE, O-20200814-102234-001-001-1, 22000)"
+            "OrderReleased(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, released_price=22000)"
         );
     }
 }
