@@ -14,21 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use crate::clock::TestClock;
-
-    #[fixture]
-    pub fn test_clock() -> TestClock {
-        TestClock::new()
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
@@ -36,13 +21,17 @@ mod tests {
     use nautilus_core::nanos::UnixNanos;
     use pyo3::{prelude::*, types::PyList};
     use rstest::*;
-    use stubs::*;
 
     use super::*;
     use crate::{
         clock::{Clock, TestClock},
         handlers::EventHandler,
     };
+
+    #[fixture]
+    pub fn test_clock() -> TestClock {
+        TestClock::new()
+    }
 
     #[rstest]
     fn test_set_timer_ns_py(mut test_clock: TestClock) {

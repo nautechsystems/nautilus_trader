@@ -148,46 +148,6 @@ impl Display for OrderBookDelta {
 impl Serializable for OrderBookDelta {}
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "stubs")]
-pub mod stubs {
-    use rstest::fixture;
-
-    use super::{BookAction, BookOrder, OrderBookDelta};
-    use crate::{
-        enums::OrderSide,
-        identifiers::instrument_id::InstrumentId,
-        types::{price::Price, quantity::Quantity},
-    };
-
-    #[fixture]
-    pub fn stub_delta() -> OrderBookDelta {
-        let instrument_id = InstrumentId::from("AAPL.XNAS");
-        let action = BookAction::Add;
-        let price = Price::from("100.00");
-        let size = Quantity::from("10");
-        let side = OrderSide::Buy;
-        let order_id = 123_456;
-        let flags = 0;
-        let sequence = 1;
-        let ts_event = 1;
-        let ts_init = 2;
-
-        let order = BookOrder::new(side, price, size, order_id);
-        OrderBookDelta::new(
-            instrument_id,
-            action,
-            order,
-            flags,
-            sequence,
-            ts_event.into(),
-            ts_init.into(),
-        )
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]

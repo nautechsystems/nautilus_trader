@@ -193,97 +193,14 @@ impl Display for OrderBookDepth10 {
 impl Serializable for OrderBookDepth10 {}
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "stubs")]
-#[allow(clippy::needless_range_loop)] // False positive?
-pub mod stubs {
-    use rstest::fixture;
-
-    use super::{OrderBookDepth10, DEPTH10_LEN};
-    use crate::{
-        data::order::BookOrder,
-        enums::OrderSide,
-        identifiers::instrument_id::InstrumentId,
-        types::{price::Price, quantity::Quantity},
-    };
-
-    #[fixture]
-    pub fn stub_depth10() -> OrderBookDepth10 {
-        let instrument_id = InstrumentId::from("AAPL.XNAS");
-        let flags = 0;
-        let sequence = 0;
-        let ts_event = 1;
-        let ts_init = 2;
-
-        let mut bids: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
-        let mut asks: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
-
-        // Create bids
-        let mut price = 99.00;
-        let mut quantity = 100.0;
-        let mut order_id = 1;
-
-        for i in 0..DEPTH10_LEN {
-            let order = BookOrder::new(
-                OrderSide::Buy,
-                Price::new(price, 2).unwrap(),
-                Quantity::new(quantity, 0).unwrap(),
-                order_id,
-            );
-
-            bids[i] = order;
-
-            price -= 1.0;
-            quantity += 100.0;
-            order_id += 1;
-        }
-
-        // Create asks
-        let mut price = 100.00;
-        let mut quantity = 100.0;
-        let mut order_id = 11;
-
-        for i in 0..DEPTH10_LEN {
-            let order = BookOrder::new(
-                OrderSide::Sell,
-                Price::new(price, 2).unwrap(),
-                Quantity::new(quantity, 0).unwrap(),
-                order_id,
-            );
-
-            asks[i] = order;
-
-            price += 1.0;
-            quantity += 100.0;
-            order_id += 1;
-        }
-
-        let bid_counts: [u32; DEPTH10_LEN] = [1; DEPTH10_LEN];
-        let ask_counts: [u32; DEPTH10_LEN] = [1; DEPTH10_LEN];
-
-        OrderBookDepth10::new(
-            instrument_id,
-            bids,
-            asks,
-            bid_counts,
-            ask_counts,
-            flags,
-            sequence,
-            ts_event.into(),
-            ts_init.into(),
-        )
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::{stubs::*, *};
+    use super::*;
+    use crate::data::stubs::*;
 
     #[rstest]
     fn test_new(stub_depth10: OrderBookDepth10) {

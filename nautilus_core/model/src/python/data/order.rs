@@ -154,7 +154,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::data::order::stubs::stub_book_order;
+    use crate::data::stubs::stub_book_order;
 
     #[rstest]
     fn test_as_dict(stub_book_order: BookOrder) {

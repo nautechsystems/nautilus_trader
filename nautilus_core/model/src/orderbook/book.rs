@@ -263,10 +263,7 @@ mod tests {
 
     use crate::{
         data::{
-            depth::{stubs::stub_depth10, OrderBookDepth10},
-            order::BookOrder,
-            quote::QuoteTick,
-            trade::TradeTick,
+            depth::OrderBookDepth10, order::BookOrder, quote::QuoteTick, stubs::*, trade::TradeTick,
         },
         enums::{AggressorSide, BookType, OrderSide},
         identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
