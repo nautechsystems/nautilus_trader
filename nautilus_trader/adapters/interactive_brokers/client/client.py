@@ -533,7 +533,7 @@ class InteractiveBrokersClient(
                     self._log.debug(f"Msg buffer received: {buf!s}")
                     if msg:
                         # Place msg in the internal queue for processing
-                        self._internal_msg_queue.put_nowait(msg)
+                        self._loop.call_soon_threadsafe(self._internal_msg_queue.put_nowait, msg)
                     else:
                         self._log.debug("More incoming packets are needed.")
                         break
