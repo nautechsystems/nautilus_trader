@@ -76,15 +76,14 @@ impl DatabentoDataLoader {
         };
 
         // Load publishers
-        let publishers_path = match path {
-            Some(p) => p,
-            None => {
-                // Use built-in publishers path
-                let mut exe_path = env::current_exe()?;
-                exe_path.pop();
-                exe_path.push("publishers.json");
-                exe_path
-            }
+        let publishers_path = if let Some(p) = path {
+            p
+        } else {
+            // Use built-in publishers path
+            let mut exe_path = env::current_exe()?;
+            exe_path.pop();
+            exe_path.push("publishers.json");
+            exe_path
         };
 
         loader.load_publishers(publishers_path)?;

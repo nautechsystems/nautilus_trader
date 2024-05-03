@@ -124,13 +124,12 @@ impl DatabentoFeedHandler {
         .await?;
         info!("Connected");
 
-        let mut client = match result {
-            Ok(client) => client,
-            Err(_) => {
-                self.msg_tx.send(LiveMessage::Close).await?;
-                self.cmd_rx.close();
-                return Err(anyhow::anyhow!("Timeout connecting to LSG"));
-            }
+        let mut client = if let Ok(client) = result {
+            client
+        } else {
+            self.msg_tx.send(LiveMessage::Close).await?;
+            self.cmd_rx.close();
+            return Err(anyhow::anyhow!("Timeout connecting to LSG"));
         };
 
         // Timeout awaiting the next record before checking for a command
