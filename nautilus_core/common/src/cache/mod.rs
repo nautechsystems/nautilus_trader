@@ -2394,7 +2394,9 @@ impl Cache {
 mod tests {
     use nautilus_model::{
         data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
-        instruments::{currency_pair::CurrencyPair, stubs::*},
+        instruments::{
+            currency_pair::CurrencyPair, stubs::*, synthetic::SyntheticInstrument, InstrumentAny,
+        },
     };
     use rstest::*;
 
@@ -2491,6 +2493,45 @@ mod tests {
 
         let result = cache.get(key).unwrap();
         assert_eq!(result, Some(&value.as_slice()).copied());
+    }
+
+    #[rstest]
+    fn test_instrument_when_empty(audusd_sim: CurrencyPair) {
+        let cache = Cache::default();
+        let result = cache.instrument(&audusd_sim.id);
+        assert_eq!(result, None);
+    }
+
+    #[rstest]
+    fn test_instrument_when_some(audusd_sim: CurrencyPair) {
+        let mut cache = Cache::default();
+        cache
+            .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+            .unwrap();
+
+        let result = cache.instrument(&audusd_sim.id);
+        assert_eq!(
+            result,
+            Some(InstrumentAny::CurrencyPair(audusd_sim)).as_ref()
+        );
+    }
+
+    #[rstest]
+    fn test_synthetic_when_empty() {
+        let cache = Cache::default();
+        let synth = SyntheticInstrument::default();
+        let result = cache.synthetic(&synth.id);
+        assert_eq!(result, None);
+    }
+
+    #[rstest]
+    fn test_synthetic_when_some() {
+        let mut cache = Cache::default();
+        let synth = SyntheticInstrument::default();
+        cache.add_synthetic(synth.clone()).unwrap();
+
+        let result = cache.synthetic(&synth.id);
+        assert_eq!(result, Some(synth).as_ref());
     }
 
     #[rstest]
