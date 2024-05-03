@@ -1410,7 +1410,7 @@ cdef class Actor(Component):
             If ``None`` then will be inferred from the venue in the instrument ID.
         await_partial : bool, default False
             If the bar aggregator should await the arrival of a historical partial bar prior
-            to activaely aggregating new bars.
+            to actively aggregating new bars.
 
         """
         Condition.not_none(bar_type, "bar_type")
