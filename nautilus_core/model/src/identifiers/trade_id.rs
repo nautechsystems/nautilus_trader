@@ -74,12 +74,6 @@ impl TradeId {
     }
 }
 
-impl Default for TradeId {
-    fn default() -> Self {
-        Self::from("1")
-    }
-}
-
 impl Display for TradeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_cstr().to_str().unwrap())

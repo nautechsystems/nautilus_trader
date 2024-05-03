@@ -90,13 +90,6 @@ impl Venue {
     }
 }
 
-impl Default for Venue {
-    fn default() -> Self {
-        // SAFETY: Default value is safe
-        Self::new("SIM").unwrap()
-    }
-}
-
 impl Debug for Venue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.0)

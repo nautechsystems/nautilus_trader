@@ -73,13 +73,6 @@ impl TraderId {
     }
 }
 
-impl Default for TraderId {
-    fn default() -> Self {
-        // SAFETY: Default value is safe
-        Self(Ustr::from("TRADER-000"))
-    }
-}
-
 impl Debug for TraderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.0)
