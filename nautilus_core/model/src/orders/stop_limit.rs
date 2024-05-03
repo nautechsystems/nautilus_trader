@@ -23,7 +23,10 @@ use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::base::{Order, OrderAny, OrderCore, OrderError};
+use super::{
+    any::OrderAny,
+    base::{Order, OrderCore, OrderError},
+};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
