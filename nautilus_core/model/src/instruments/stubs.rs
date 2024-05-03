@@ -19,7 +19,9 @@ use rstest::*;
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
-use super::{futures_spread::FuturesSpread, options_spread::OptionsSpread};
+use super::{
+    futures_spread::FuturesSpread, options_spread::OptionsSpread, synthetic::SyntheticInstrument,
+};
 use crate::{
     enums::{AssetClass, OptionKind},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
@@ -30,6 +32,23 @@ use crate::{
     },
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
+
+impl Default for SyntheticInstrument {
+    fn default() -> Self {
+        let btc_binance = InstrumentId::from("BTC.BINANCE");
+        let ltc_binance = InstrumentId::from("LTC.BINANCE");
+        let formula = "(BTC.BINANCE + LTC.BINANCE) / 2.0".to_string();
+        SyntheticInstrument::new(
+            Symbol::new("BTC-LTC").unwrap(),
+            2,
+            vec![btc_binance, ltc_binance],
+            formula.clone(),
+            0.into(),
+            0.into(),
+        )
+        .unwrap()
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // CryptoFuture

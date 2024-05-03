@@ -297,72 +297,13 @@ impl Display for Bar {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "stubs")]
-pub mod stubs {
-    use nautilus_core::nanos::UnixNanos;
-    use rstest::fixture;
-
-    use crate::{
-        data::bar::{Bar, BarSpecification, BarType},
-        enums::{AggregationSource, BarAggregation, PriceType},
-        identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
-        types::{price::Price, quantity::Quantity},
-    };
-
-    impl Default for Bar {
-        fn default() -> Self {
-            Self {
-                bar_type: BarType::from("AUDUSD.SIM-1-MINUTE-LAST-INTERNAL"),
-                open: Price::from("1.00010"),
-                high: Price::from("1.00020"),
-                low: Price::from("1.00000"),
-                close: Price::from("1.00010"),
-                volume: Quantity::from(100_000),
-                ts_event: UnixNanos::default(),
-                ts_init: UnixNanos::default(),
-            }
-        }
-    }
-
-    #[fixture]
-    pub fn stub_bar() -> Bar {
-        let instrument_id = InstrumentId {
-            symbol: Symbol::new("AUDUSD").unwrap(),
-            venue: Venue::new("SIM").unwrap(),
-        };
-        let bar_spec = BarSpecification {
-            step: 1,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Bid,
-        };
-        let bar_type = BarType {
-            instrument_id,
-            spec: bar_spec,
-            aggregation_source: AggregationSource::External,
-        };
-        Bar {
-            bar_type,
-            open: Price::from("1.00001"),
-            high: Price::from("1.00004"),
-            low: Price::from("1.00002"),
-            close: Price::from("1.00003"),
-            volume: Quantity::from("100000"),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::from(1),
-        }
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::{stubs::*, *};
+    use super::*;
     use crate::{
         enums::BarAggregation,
         identifiers::{symbol::Symbol, venue::Venue},
@@ -579,16 +520,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_json_serialization(stub_bar: Bar) {
-        let bar = stub_bar;
+    fn test_json_serialization() {
+        let bar = Bar::default();
         let serialized = bar.as_json_bytes().unwrap();
         let deserialized = Bar::from_json_bytes(serialized).unwrap();
         assert_eq!(deserialized, bar);
     }
 
     #[rstest]
-    fn test_msgpack_serialization(stub_bar: Bar) {
-        let bar = stub_bar;
+    fn test_msgpack_serialization() {
+        let bar = Bar::default();
         let serialized = bar.as_msgpack_bytes().unwrap();
         let deserialized = Bar::from_msgpack_bytes(serialized).unwrap();
         assert_eq!(deserialized, bar);

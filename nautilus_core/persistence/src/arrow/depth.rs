@@ -426,7 +426,7 @@ impl DecodeDataFromRecordBatch for OrderBookDepth10 {
 mod tests {
 
     use datafusion::arrow::datatypes::{DataType, Field, Schema};
-    use nautilus_model::data::depth::stubs::stub_depth10;
+    use nautilus_model::data::stubs::stub_depth10;
     use rstest::rstest;
 
     use super::*;

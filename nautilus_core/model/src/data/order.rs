@@ -125,27 +125,6 @@ impl Display for BookOrder {
 impl Serializable for BookOrder {}
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "stubs")]
-pub mod stubs {
-    use rstest::fixture;
-
-    use super::{BookOrder, OrderSide};
-    use crate::types::{price::Price, quantity::Quantity};
-
-    #[fixture]
-    pub fn stub_book_order() -> BookOrder {
-        let price = Price::from("100.00");
-        let size = Quantity::from("10");
-        let side = OrderSide::Buy;
-        let order_id = 123_456;
-
-        BookOrder::new(side, price, size, order_id)
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]

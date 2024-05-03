@@ -126,54 +126,6 @@ impl Display for TradeTick {
 impl Serializable for TradeTick {}
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "stubs")]
-pub mod stubs {
-    use nautilus_core::nanos::UnixNanos;
-    use rstest::fixture;
-
-    use crate::{
-        data::trade::TradeTick,
-        enums::AggressorSide,
-        identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
-        types::{price::Price, quantity::Quantity},
-    };
-
-    impl Default for TradeTick {
-        fn default() -> Self {
-            TradeTick {
-                instrument_id: InstrumentId::from("AUDUSD.SIM"),
-                price: Price::from("1.00000"),
-                size: Quantity::from(100_000),
-                aggressor_side: AggressorSide::Buyer,
-                trade_id: TradeId::new("123456789").unwrap(),
-                ts_event: UnixNanos::default(),
-                ts_init: UnixNanos::default(),
-            }
-        }
-    }
-
-    #[fixture]
-    pub fn trade_tick_audusd_sim() -> TradeTick {
-        TradeTick::default()
-    }
-
-    #[fixture]
-    pub fn stub_trade_tick_ethusdt_buyer() -> TradeTick {
-        TradeTick {
-            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            price: Price::from("10000.0000"),
-            size: Quantity::from("1.00000000"),
-            aggressor_side: AggressorSide::Buyer,
-            trade_id: TradeId::new("123456789").unwrap(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::from(1),
-        }
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
@@ -182,8 +134,10 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use super::stubs::*;
-    use crate::{data::trade::TradeTick, enums::AggressorSide};
+    use crate::{
+        data::{stubs::stub_trade_tick_ethusdt_buyer, trade::TradeTick},
+        enums::AggressorSide,
+    };
 
     #[rstest]
     fn test_to_string(stub_trade_tick_ethusdt_buyer: TradeTick) {

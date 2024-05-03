@@ -376,24 +376,24 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::data::bar::{stubs::stub_bar, Bar};
+    use crate::data::bar::Bar;
 
     #[rstest]
-    fn test_as_dict(stub_bar: Bar) {
+    fn test_as_dict() {
         pyo3::prepare_freethreaded_python();
-        let bar = stub_bar;
+        let bar = Bar::default();
 
         Python::with_gil(|py| {
             let dict_string = bar.py_as_dict(py).unwrap().to_string();
-            let expected_string = r"{'type': 'Bar', 'bar_type': 'AUDUSD.SIM-1-MINUTE-BID-EXTERNAL', 'open': '1.00001', 'high': '1.00004', 'low': '1.00002', 'close': '1.00003', 'volume': '100000', 'ts_event': 0, 'ts_init': 1}";
+            let expected_string = r"{'type': 'Bar', 'bar_type': 'AUDUSD.SIM-1-MINUTE-LAST-INTERNAL', 'open': '1.00010', 'high': '1.00020', 'low': '1.00000', 'close': '1.00010', 'volume': '100000', 'ts_event': 0, 'ts_init': 0}";
             assert_eq!(dict_string, expected_string);
         });
     }
 
     #[rstest]
-    fn test_as_from_dict(stub_bar: Bar) {
+    fn test_as_from_dict() {
         pyo3::prepare_freethreaded_python();
-        let bar = stub_bar;
+        let bar = Bar::default();
 
         Python::with_gil(|py| {
             let dict = bar.py_as_dict(py).unwrap();
@@ -403,9 +403,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_pyobject(stub_bar: Bar) {
+    fn test_from_pyobject() {
         pyo3::prepare_freethreaded_python();
-        let bar = stub_bar;
+        let bar = Bar::default();
 
         Python::with_gil(|py| {
             let bar_pyobject = bar.into_py(py);

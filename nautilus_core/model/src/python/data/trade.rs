@@ -339,7 +339,7 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::data::trade::{stubs::*, TradeTick};
+    use crate::data::{stubs::stub_trade_tick_ethusdt_buyer, trade::TradeTick};
 
     #[rstest]
     fn test_as_dict(stub_trade_tick_ethusdt_buyer: TradeTick) {

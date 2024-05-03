@@ -166,53 +166,6 @@ impl Display for QuoteTick {
 impl Serializable for QuoteTick {}
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "stubs")]
-pub mod stubs {
-    use nautilus_core::nanos::UnixNanos;
-    use rstest::fixture;
-
-    use crate::{
-        data::quote::QuoteTick,
-        identifiers::instrument_id::InstrumentId,
-        types::{price::Price, quantity::Quantity},
-    };
-
-    impl Default for QuoteTick {
-        fn default() -> Self {
-            Self {
-                instrument_id: InstrumentId::from("AUDUSD.SIM"),
-                bid_price: Price::from("1.00000"),
-                ask_price: Price::from("1.00000"),
-                bid_size: Quantity::from(100_000),
-                ask_size: Quantity::from(100_000),
-                ts_event: UnixNanos::default(),
-                ts_init: UnixNanos::default(),
-            }
-        }
-    }
-
-    #[fixture]
-    pub fn quote_tick_audusd_sim() -> QuoteTick {
-        QuoteTick::default()
-    }
-
-    #[fixture]
-    pub fn quote_tick_ethusdt_binance() -> QuoteTick {
-        QuoteTick {
-            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            bid_price: Price::from("10000.0000"),
-            ask_price: Price::from("10001.0000"),
-            bid_size: Quantity::from("1.00000000"),
-            ask_size: Quantity::from("1.00000000"),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::from(1),
-        }
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
@@ -221,8 +174,10 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use super::stubs::*;
-    use crate::{data::quote::QuoteTick, enums::PriceType};
+    use crate::{
+        data::{quote::QuoteTick, stubs::quote_tick_ethusdt_binance},
+        enums::PriceType,
+    };
 
     #[rstest]
     fn test_to_string(quote_tick_ethusdt_binance: QuoteTick) {
