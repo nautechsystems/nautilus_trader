@@ -20,7 +20,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use nautilus_common::msgbus::{database::MessageBusDatabaseAdapter, BusMessage, CLOSE_TOPIC};
+use nautilus_common::msgbus::{core::CLOSE_TOPIC, database::MessageBusDatabaseAdapter, BusMessage};
 use nautilus_core::{time::duration_since_unix_epoch, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
 use redis::*;
