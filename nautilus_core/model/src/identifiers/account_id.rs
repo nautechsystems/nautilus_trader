@@ -83,13 +83,6 @@ impl AccountId {
     }
 }
 
-impl Default for AccountId {
-    fn default() -> Self {
-        // SAFETY: Default value is safe
-        Self::new("SIM-001").unwrap()
-    }
-}
-
 impl Debug for AccountId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.0)

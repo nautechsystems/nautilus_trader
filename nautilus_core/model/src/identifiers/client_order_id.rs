@@ -60,13 +60,6 @@ impl ClientOrderId {
     }
 }
 
-impl Default for ClientOrderId {
-    fn default() -> Self {
-        // SAFETY: Default value is safe
-        Self::new("O-123456789").unwrap()
-    }
-}
-
 impl Debug for ClientOrderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.0)

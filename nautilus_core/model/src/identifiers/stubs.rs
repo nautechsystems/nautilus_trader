@@ -23,6 +23,66 @@ use crate::identifiers::{
     trade_id::TradeId, trader_id::TraderId, venue::Venue, venue_order_id::VenueOrderId,
 };
 
+impl Default for AccountId {
+    fn default() -> Self {
+        Self::from("SIM-001")
+    }
+}
+
+impl Default for ClientId {
+    fn default() -> Self {
+        Self::from("SIM")
+    }
+}
+
+impl Default for ClientOrderId {
+    fn default() -> Self {
+        Self::from("O-123456789")
+    }
+}
+
+impl Default for PositionId {
+    fn default() -> Self {
+        Self::from("P-001")
+    }
+}
+
+impl Default for StrategyId {
+    fn default() -> Self {
+        Self::from("S-001")
+    }
+}
+
+impl Default for Symbol {
+    fn default() -> Self {
+        Self::from("AUD/USD")
+    }
+}
+
+impl Default for TradeId {
+    fn default() -> Self {
+        Self::from("1")
+    }
+}
+
+impl Default for TraderId {
+    fn default() -> Self {
+        Self::from("TRADER-000")
+    }
+}
+
+impl Default for Venue {
+    fn default() -> Self {
+        Self::from("SIM")
+    }
+}
+
+impl Default for VenueOrderId {
+    fn default() -> Self {
+        Self::from("001")
+    }
+}
+
 // ---- AccountId ----
 
 #[fixture]
