@@ -25,7 +25,7 @@ use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
 use super::order::BookOrder;
-use crate::identifiers::instrument_id::InstrumentId;
+use crate::{identifiers::instrument_id::InstrumentId, polymorphism::GetTsInit};
 
 pub const DEPTH10_LEN: usize = 10;
 
@@ -191,6 +191,12 @@ impl Display for OrderBookDepth10 {
 }
 
 impl Serializable for OrderBookDepth10 {}
+
+impl GetTsInit for OrderBookDepth10 {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests

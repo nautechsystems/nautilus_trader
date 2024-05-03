@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     enums::AggressorSide,
     identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    polymorphism::GetTsInit,
     types::{price::Price, quantity::Quantity},
 };
 
@@ -124,6 +125,12 @@ impl Display for TradeTick {
 }
 
 impl Serializable for TradeTick {}
+
+impl GetTsInit for TradeTick {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests

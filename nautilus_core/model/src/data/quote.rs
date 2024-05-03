@@ -30,6 +30,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     enums::PriceType,
     identifiers::instrument_id::InstrumentId,
+    polymorphism::GetTsInit,
     types::{fixed::FIXED_PRECISION, price::Price, quantity::Quantity},
 };
 
@@ -164,6 +165,12 @@ impl Display for QuoteTick {
 }
 
 impl Serializable for QuoteTick {}
+
+impl GetTsInit for QuoteTick {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests

@@ -28,12 +28,8 @@ pub mod trade;
 use nautilus_core::nanos::UnixNanos;
 
 use self::{
-    bar::Bar,
-    delta::OrderBookDelta,
-    deltas::{OrderBookDeltas, OrderBookDeltas_API},
-    depth::OrderBookDepth10,
-    quote::QuoteTick,
-    trade::TradeTick,
+    bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas_API, depth::OrderBookDepth10,
+    quote::QuoteTick, trade::TradeTick,
 };
 use crate::polymorphism::GetTsInit;
 
@@ -63,42 +59,6 @@ impl GetTsInit for Data {
             Self::Trade(t) => t.ts_init,
             Self::Bar(b) => b.ts_init,
         }
-    }
-}
-
-impl GetTsInit for OrderBookDelta {
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-}
-
-impl GetTsInit for OrderBookDeltas {
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-}
-
-impl GetTsInit for OrderBookDepth10 {
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-}
-
-impl GetTsInit for QuoteTick {
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-}
-
-impl GetTsInit for TradeTick {
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-}
-
-impl GetTsInit for Bar {
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
     }
 }
 
