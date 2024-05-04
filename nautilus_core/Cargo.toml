@@ -78,7 +78,6 @@ debug = true
 debug-assertions = true  # Fails Cython build if true (OK for cargo test)
 overflow-checks = true
 lto = false
-panic = "unwind"
 incremental = true
 codegen-units = 256
 
