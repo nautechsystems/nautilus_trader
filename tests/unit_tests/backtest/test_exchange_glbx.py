@@ -287,3 +287,38 @@ class TestSimulatedExchangeGlbx:
         assert order.status == OrderStatus.FILLED
         position = self.cache.positions()[0]
         assert position.is_closed
+
+    def test_process_exchange_after_expiration_not_raise_exception_when_no_open_position(
+        self,
+    ) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=_ESH4_GLBX,
+            bid_price=4010.00,
+            ask_price=4011.00,
+            ts_init=_ESH4_GLBX.expiration_ns,
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.market(
+            _ESH4_GLBX.id,
+            OrderSide.BUY,
+            Quantity.from_int(10),
+        )
+        self.strategy.submit_order(order)
+        self.exchange.process(_ESH4_GLBX.expiration_ns)
+        self.strategy.close_all_positions(instrument_id=_ESH4_GLBX.id)  # <- Close position for test
+        self.exchange.process(_ESH4_GLBX.expiration_ns)
+
+        # Assert test prerequisite
+        assert self.cache.positions_open_count() == 0
+        assert self.cache.positions_total_count() == 1
+
+        # Act
+        one_nano_past_expiration = _ESH4_GLBX.expiration_ns + 1
+        self.exchange.process(one_nano_past_expiration)
+        self.exchange.get_matching_engine(_ESH4_GLBX.id).iterate(_ESH4_GLBX.expiration_ns)
+
+        # Assert
+        assert self.clock.timestamp_ns() == _ESH4_GLBX.expiration_ns == 1_710_513_000_000_000_000
