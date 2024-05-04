@@ -1106,7 +1106,7 @@ impl Cache {
     pub fn add_order(
         &mut self,
         order: OrderAny,
-        _position_id: Option<PositionId>,
+        position_id: Option<PositionId>,
         client_id: Option<ClientId>,
         replace_existing: bool,
     ) -> anyhow::Result<()> {
@@ -1191,19 +1191,18 @@ impl Cache {
                 .insert(client_order_id);
         }
 
-        // TODO: Change emulation trigger setup
         // Update emulation index
-        // match order.emulation_trigger() {
-        //     TriggerType::NoTrigger => {
-        //         self.index.orders_emulated.remove(&client_order_id);
-        //     }
-        //     _ => {
-        //         self.index.orders_emulated.insert(client_order_id.clone());
-        //     }
-        // }
+        match order.emulation_trigger() {
+            Some(_) => {
+                self.index.orders_emulated.remove(&client_order_id);
+            }
+            None => {
+                self.index.orders_emulated.insert(client_order_id);
+            }
+        }
 
         // Index position ID if provided
-        if let Some(position_id) = order.position_id() {
+        if let Some(position_id) = position_id {
             self.add_position_id(
                 &position_id,
                 &order.instrument_id().venue,
@@ -1796,8 +1795,8 @@ impl Cache {
     }
 
     #[must_use]
-    pub fn orders_for_position(&self, position_id: PositionId) -> Vec<&OrderAny> {
-        let client_order_ids = self.index.position_orders.get(&position_id);
+    pub fn orders_for_position(&self, position_id: &PositionId) -> Vec<&OrderAny> {
+        let client_order_ids = self.index.position_orders.get(position_id);
         match client_order_ids {
             Some(client_order_ids) => {
                 self.get_orders_for_ids(&client_order_ids.iter().copied().collect(), None)
@@ -2384,12 +2383,25 @@ impl Cache {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
     use nautilus_model::{
         data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
+        enums::OrderSide,
+        events::order::{accepted::OrderAccepted, event::OrderEvent, submitted::OrderSubmitted},
+        identifiers::{
+            account_id::AccountId, client_order_id::ClientOrderId, position_id::PositionId,
+            venue_order_id::VenueOrderId,
+        },
         instruments::{
             any::InstrumentAny, currency_pair::CurrencyPair, stubs::*,
             synthetic::SyntheticInstrument,
         },
+        orders::{any::OrderAny, stubs::TestOrderStubs},
+        polymorphism::{
+            ApplyOrderEvent, GetAccountId, GetClientOrderId, GetInstrumentId, GetStrategyId,
+            GetTraderId, IsOpen,
+        },
+        types::{price::Price, quantity::Quantity},
     };
     use rstest::*;
 
@@ -2466,7 +2478,7 @@ mod tests {
     #[rstest]
     fn test_get_general_when_empty(cache: Cache) {
         let result = cache.get("A").unwrap();
-        assert_eq!(result, None);
+        assert!(result.is_none());
     }
 
     #[rstest]
@@ -2479,9 +2491,182 @@ mod tests {
     }
 
     #[rstest]
+    fn test_order_when_empty(cache: Cache) {
+        let client_order_id = ClientOrderId::default();
+        let result = cache.order(&client_order_id);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_order_when_initialized(mut cache: Cache, audusd_sim: CurrencyPair) {
+        let order = TestOrderStubs::limit_order(
+            audusd_sim.id,
+            OrderSide::Buy,
+            Price::from("1.00000"),
+            Quantity::from(100_000),
+            None,
+            None,
+        );
+        let order = OrderAny::Limit(order);
+        cache.add_order(order.clone(), None, None, false).unwrap();
+        let result = cache.order(&order.client_order_id()).unwrap();
+
+        assert_eq!(result, &order);
+        assert_eq!(cache.orders(None, None, None, None), vec![&order]);
+        assert!(cache.orders_open(None, None, None, None).is_empty());
+        assert!(cache.orders_closed(None, None, None, None).is_empty());
+        assert!(cache.orders_emulated(None, None, None, None).is_empty());
+        assert!(cache.orders_inflight(None, None, None, None).is_empty());
+        assert!(cache.order_exists(&order.client_order_id()));
+        assert!(!cache.is_order_open(&order.client_order_id()));
+        assert!(!cache.is_order_closed(&order.client_order_id()));
+        assert!(!cache.is_order_emulated(&order.client_order_id()));
+        assert!(!cache.is_order_inflight(&order.client_order_id()));
+        assert!(!cache.is_order_pending_cancel_local(&order.client_order_id()));
+        assert_eq!(cache.orders_open_count(None, None, None, None), 0);
+        assert_eq!(cache.orders_closed_count(None, None, None, None), 0);
+        assert_eq!(cache.orders_emulated_count(None, None, None, None), 0);
+        assert_eq!(cache.orders_inflight_count(None, None, None, None), 0);
+        assert_eq!(cache.orders_total_count(None, None, None, None), 1);
+    }
+
+    #[rstest]
+    fn test_order_when_submitted(mut cache: Cache, audusd_sim: CurrencyPair) {
+        let order = TestOrderStubs::limit_order(
+            audusd_sim.id,
+            OrderSide::Buy,
+            Price::from("1.00000"),
+            Quantity::from(100_000),
+            None,
+            None,
+        );
+        let mut order = OrderAny::Limit(order);
+        cache.add_order(order.clone(), None, None, false).unwrap();
+
+        let submitted = OrderSubmitted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            AccountId::default(),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap(); // TODO: Should event generation be fallible?
+        order.apply(OrderEvent::Submitted(submitted)).unwrap();
+        cache.update_order(&order).unwrap();
+
+        let result = cache.order(&order.client_order_id()).unwrap();
+
+        assert_eq!(result, &order);
+        assert_eq!(cache.orders(None, None, None, None), vec![&order]);
+        assert!(cache.orders_open(None, None, None, None).is_empty());
+        assert!(cache.orders_closed(None, None, None, None).is_empty());
+        assert!(cache.orders_emulated(None, None, None, None).is_empty());
+        assert!(cache.orders_inflight(None, None, None, None).is_empty());
+        assert!(cache.order_exists(&order.client_order_id()));
+        assert!(!cache.is_order_open(&order.client_order_id()));
+        assert!(!cache.is_order_closed(&order.client_order_id()));
+        assert!(!cache.is_order_emulated(&order.client_order_id()));
+        assert!(!cache.is_order_inflight(&order.client_order_id()));
+        assert!(!cache.is_order_pending_cancel_local(&order.client_order_id()));
+        assert_eq!(cache.orders_open_count(None, None, None, None), 0);
+        assert_eq!(cache.orders_closed_count(None, None, None, None), 0);
+        assert_eq!(cache.orders_emulated_count(None, None, None, None), 0);
+        assert_eq!(cache.orders_inflight_count(None, None, None, None), 0);
+        assert_eq!(cache.orders_total_count(None, None, None, None), 1);
+    }
+
+    #[rstest]
+    fn test_order_when_accepted_open(mut cache: Cache, audusd_sim: CurrencyPair) {
+        let order = TestOrderStubs::limit_order(
+            audusd_sim.id,
+            OrderSide::Buy,
+            Price::from("1.00000"),
+            Quantity::from(100_000),
+            None,
+            None,
+        );
+        let mut order = OrderAny::Limit(order);
+        cache.add_order(order.clone(), None, None, false).unwrap();
+
+        let submitted = OrderSubmitted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            AccountId::default(),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap(); // TODO: Should event generation be fallible?
+        order.apply(OrderEvent::Submitted(submitted)).unwrap();
+        cache.update_order(&order).unwrap();
+
+        let accepted = OrderAccepted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            VenueOrderId::default(),
+            order.account_id().unwrap(),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+        )
+        .unwrap();
+        order.apply(OrderEvent::Accepted(accepted)).unwrap();
+        cache.update_order(&order).unwrap();
+
+        let result = cache.order(&order.client_order_id()).unwrap();
+
+        assert!(order.is_open());
+        assert_eq!(result, &order);
+        assert_eq!(cache.orders(None, None, None, None), vec![&order]);
+        assert_eq!(cache.orders_open(None, None, None, None), vec![&order]);
+        assert!(cache.orders_closed(None, None, None, None).is_empty());
+        assert!(cache.orders_emulated(None, None, None, None).is_empty());
+        assert!(cache.orders_inflight(None, None, None, None).is_empty());
+        assert!(cache.order_exists(&order.client_order_id()));
+        assert!(cache.is_order_open(&order.client_order_id()));
+        assert!(!cache.is_order_closed(&order.client_order_id()));
+        assert!(!cache.is_order_emulated(&order.client_order_id()));
+        assert!(!cache.is_order_inflight(&order.client_order_id()));
+        assert!(!cache.is_order_pending_cancel_local(&order.client_order_id()));
+        assert_eq!(cache.orders_open_count(None, None, None, None), 1);
+        assert_eq!(cache.orders_closed_count(None, None, None, None), 0);
+        assert_eq!(cache.orders_emulated_count(None, None, None, None), 0);
+        assert_eq!(cache.orders_inflight_count(None, None, None, None), 0);
+        assert_eq!(cache.orders_total_count(None, None, None, None), 1);
+    }
+
+    #[rstest]
+    fn test_orders_for_position(mut cache: Cache, audusd_sim: CurrencyPair) {
+        let order = TestOrderStubs::limit_order(
+            audusd_sim.id,
+            OrderSide::Buy,
+            Price::from("1.00000"),
+            Quantity::from(100_000),
+            None,
+            None,
+        );
+        let order = OrderAny::Limit(order);
+        let position_id = PositionId::default();
+        cache
+            .add_order(order.clone(), Some(position_id), None, false)
+            .unwrap();
+        let result = cache.order(&order.client_order_id()).unwrap();
+        assert_eq!(result, &order);
+        assert_eq!(cache.orders_for_position(&position_id), vec![&order]);
+    }
+
+    #[rstest]
     fn test_instrument_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
         let result = cache.instrument(&audusd_sim.id);
-        assert_eq!(result, None);
+        assert!(result.is_none());
     }
 
     #[rstest]
@@ -2501,7 +2686,7 @@ mod tests {
     fn test_synthetic_when_empty(cache: Cache) {
         let synth = SyntheticInstrument::default();
         let result = cache.synthetic(&synth.id);
-        assert_eq!(result, None);
+        assert!(result.is_none());
     }
 
     #[rstest]
@@ -2516,7 +2701,7 @@ mod tests {
     #[rstest]
     fn test_quote_tick_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
         let result = cache.quote_tick(&audusd_sim.id);
-        assert_eq!(result, None);
+        assert!(result.is_none());
     }
 
     #[rstest]
@@ -2530,7 +2715,7 @@ mod tests {
     #[rstest]
     fn test_quote_ticks_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
         let result = cache.quote_ticks(&audusd_sim.id);
-        assert_eq!(result, None);
+        assert!(result.is_none());
     }
 
     #[rstest]
@@ -2548,7 +2733,7 @@ mod tests {
     #[rstest]
     fn test_trade_tick_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
         let result = cache.trade_tick(&audusd_sim.id);
-        assert_eq!(result, None);
+        assert!(result.is_none());
     }
 
     #[rstest]
@@ -2562,7 +2747,7 @@ mod tests {
     #[rstest]
     fn test_trade_ticks_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
         let result = cache.trade_ticks(&audusd_sim.id);
-        assert_eq!(result, None);
+        assert!(result.is_none());
     }
 
     #[rstest]
@@ -2581,7 +2766,7 @@ mod tests {
     fn test_bar_when_empty(cache: Cache) {
         let bar = Bar::default();
         let result = cache.bar(&bar.bar_type);
-        assert_eq!(result, None);
+        assert!(result.is_none());
     }
 
     #[rstest]
@@ -2596,7 +2781,7 @@ mod tests {
     fn test_bars_when_empty(cache: Cache) {
         let bar = Bar::default();
         let result = cache.bars(&bar.bar_type);
-        assert_eq!(result, None);
+        assert!(result.is_none());
     }
 
     #[rstest]
