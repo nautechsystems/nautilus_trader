@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
+    fmt::{Debug, Display, Formatter},
     hash::{Hash, Hasher},
     str::FromStr,
 };
@@ -26,7 +27,7 @@ use super::fixed::check_fixed_precision;
 use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq)]
+#[derive(Clone, Copy, Eq)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -103,6 +104,27 @@ impl Hash for Currency {
     }
 }
 
+impl Debug for Currency {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}(code=\"{}\", precision={}, iso4217={}, name=\"{}\", currency_type={})",
+            stringify!(Currency),
+            self.code,
+            self.precision,
+            self.iso4217,
+            self.name,
+            self.currency_type,
+        )
+    }
+}
+
+impl Display for Currency {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.code)
+    }
+}
+
 impl FromStr for Currency {
     type Err = anyhow::Error;
 
@@ -150,6 +172,23 @@ mod tests {
     use rstest::rstest;
 
     use crate::{enums::CurrencyType, types::currency::Currency};
+
+    #[rstest]
+    fn test_uuid4_debug() {
+        let currency = Currency::AUD();
+        assert_eq!(
+            format!("{:?}", currency),
+            format!(
+                r#"Currency(code="AUD", precision=2, iso4217=36, name="Australian dollar", currency_type=FIAT)"#
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_uuid4_display() {
+        let currency = Currency::AUD();
+        assert_eq!(format!("{currency}"), "AUD");
+    }
 
     #[rstest]
     #[should_panic(expected = "code")]

@@ -259,7 +259,7 @@ impl Display for Money {
             "{:.*} {}",
             self.currency.precision as usize,
             self.as_f64(),
-            self.currency.code
+            self.currency
         )
     }
 }
