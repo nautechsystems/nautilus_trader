@@ -365,7 +365,7 @@ class InteractiveBrokersClient(
         """
         if self.is_running:
             self._degrade()
-        if not self._is_ib_connected.is_set():
+        if self._is_ib_connected.is_set():
             self._log.debug("`_is_ib_connected` unset by `_handle_disconnection`.", LogColor.BLUE)
             self._is_ib_connected.clear()
         await asyncio.sleep(5)
