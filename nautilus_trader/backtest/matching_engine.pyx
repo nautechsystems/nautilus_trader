@@ -1322,7 +1322,7 @@ cdef class OrderMatchingEngine:
                 self.cancel_order(order)
 
             # Close all open positions
-            for position in self.cache.positions(None, self.instrument.id):
+            for position in self.cache.positions_open(None, self.instrument.id):
                 order = MarketOrder(
                     trader_id=position.trader_id,
                     strategy_id=position.strategy_id,
