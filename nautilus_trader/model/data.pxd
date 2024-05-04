@@ -168,6 +168,20 @@ cdef class Bar(Data):
     )
 
     @staticmethod
+    cdef list[Bar] from_raw_arrays_to_list_c(
+        BarType bar_type,
+        uint8_t price_prec,
+        uint8_t size_prec,
+        int64_t[:] opens,
+        int64_t[:] highs,
+        int64_t[:] lows,
+        int64_t[:] closes,
+        uint64_t[:] volumes,
+        uint64_t[:] ts_events,
+        uint64_t[:] ts_inits,
+    )
+
+    @staticmethod
     cdef Bar from_mem_c(Bar_t mem)
 
     @staticmethod
