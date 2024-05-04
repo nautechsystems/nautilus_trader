@@ -97,67 +97,67 @@ impl OrderStatus {
     #[rustfmt::skip]
     pub fn transition(&mut self, event: &OrderEvent) -> Result<Self, OrderError> {
         let new_state = match (self, event) {
-            (Self::Initialized, OrderEvent::OrderDenied(_)) => Self::Denied,
-            (Self::Initialized, OrderEvent::OrderEmulated(_)) => Self::Emulated,  // Emulated orders
-            (Self::Initialized, OrderEvent::OrderReleased(_)) => Self::Released,  // Emulated orders
-            (Self::Initialized, OrderEvent::OrderSubmitted(_)) => Self::Submitted,
-            (Self::Initialized, OrderEvent::OrderRejected(_)) => Self::Rejected,  // External orders
-            (Self::Initialized, OrderEvent::OrderAccepted(_)) => Self::Accepted,  // External orders
-            (Self::Initialized, OrderEvent::OrderCanceled(_)) => Self::Canceled,  // External orders
-            (Self::Initialized, OrderEvent::OrderExpired(_)) => Self::Expired,  // External orders
-            (Self::Initialized, OrderEvent::OrderTriggered(_)) => Self::Triggered, // External orders
-            (Self::Emulated, OrderEvent::OrderCanceled(_)) => Self::Canceled,  // Emulated orders
-            (Self::Emulated, OrderEvent::OrderExpired(_)) => Self::Expired,  // Emulated orders
-            (Self::Emulated, OrderEvent::OrderReleased(_)) => Self::Released,  // Emulated orders
-            (Self::Released, OrderEvent::OrderSubmitted(_)) => Self::Submitted,  // Emulated orders
-            (Self::Released, OrderEvent::OrderDenied(_)) => Self::Denied,  // Emulated orders
-            (Self::Released, OrderEvent::OrderCanceled(_)) => Self::Canceled,  // Execution algo
-            (Self::Submitted, OrderEvent::OrderPendingUpdate(_)) => Self::PendingUpdate,
-            (Self::Submitted, OrderEvent::OrderPendingCancel(_)) => Self::PendingCancel,
-            (Self::Submitted, OrderEvent::OrderRejected(_)) => Self::Rejected,
-            (Self::Submitted, OrderEvent::OrderCanceled(_)) => Self::Canceled,  // FOK and IOC cases
-            (Self::Submitted, OrderEvent::OrderAccepted(_)) => Self::Accepted,
-            (Self::Submitted, OrderEvent::OrderPartiallyFilled(_)) => Self::PartiallyFilled,
-            (Self::Submitted, OrderEvent::OrderFilled(_)) => Self::Filled,
-            (Self::Accepted, OrderEvent::OrderRejected(_)) => Self::Rejected,  // StopLimit order
-            (Self::Accepted, OrderEvent::OrderPendingUpdate(_)) => Self::PendingUpdate,
-            (Self::Accepted, OrderEvent::OrderPendingCancel(_)) => Self::PendingCancel,
-            (Self::Accepted, OrderEvent::OrderCanceled(_)) => Self::Canceled,
-            (Self::Accepted, OrderEvent::OrderTriggered(_)) => Self::Triggered,
-            (Self::Accepted, OrderEvent::OrderExpired(_)) => Self::Expired,
-            (Self::Accepted, OrderEvent::OrderPartiallyFilled(_)) => Self::PartiallyFilled,
-            (Self::Accepted, OrderEvent::OrderFilled(_)) => Self::Filled,
-            (Self::Canceled, OrderEvent::OrderPartiallyFilled(_)) => Self::PartiallyFilled,  // Real world possibility
-            (Self::Canceled, OrderEvent::OrderFilled(_)) => Self::Filled,  // Real world possibility
-            (Self::PendingUpdate, OrderEvent::OrderRejected(_)) => Self::Rejected,
-            (Self::PendingUpdate, OrderEvent::OrderAccepted(_)) => Self::Accepted,
-            (Self::PendingUpdate, OrderEvent::OrderCanceled(_)) => Self::Canceled,
-            (Self::PendingUpdate, OrderEvent::OrderExpired(_)) => Self::Expired,
-            (Self::PendingUpdate, OrderEvent::OrderTriggered(_)) => Self::Triggered,
-            (Self::PendingUpdate, OrderEvent::OrderPendingUpdate(_)) => Self::PendingUpdate,  // Allow multiple requests
-            (Self::PendingUpdate, OrderEvent::OrderPendingCancel(_)) => Self::PendingCancel,
-            (Self::PendingUpdate, OrderEvent::OrderPartiallyFilled(_)) => Self::PartiallyFilled,
-            (Self::PendingUpdate, OrderEvent::OrderFilled(_)) => Self::Filled,
-            (Self::PendingCancel, OrderEvent::OrderRejected(_)) => Self::Rejected,
-            (Self::PendingCancel, OrderEvent::OrderPendingCancel(_)) => Self::PendingCancel,  // Allow multiple requests
-            (Self::PendingCancel, OrderEvent::OrderCanceled(_)) => Self::Canceled,
-            (Self::PendingCancel, OrderEvent::OrderExpired(_)) => Self::Expired,
-            (Self::PendingCancel, OrderEvent::OrderAccepted(_)) => Self::Accepted,  // Allow failed cancel requests
-            (Self::PendingCancel, OrderEvent::OrderPartiallyFilled(_)) => Self::PartiallyFilled,
-            (Self::PendingCancel, OrderEvent::OrderFilled(_)) => Self::Filled,
-            (Self::Triggered, OrderEvent::OrderRejected(_)) => Self::Rejected,
-            (Self::Triggered, OrderEvent::OrderPendingUpdate(_)) => Self::PendingUpdate,
-            (Self::Triggered, OrderEvent::OrderPendingCancel(_)) => Self::PendingCancel,
-            (Self::Triggered, OrderEvent::OrderCanceled(_)) => Self::Canceled,
-            (Self::Triggered, OrderEvent::OrderExpired(_)) => Self::Expired,
-            (Self::Triggered, OrderEvent::OrderPartiallyFilled(_)) => Self::PartiallyFilled,
-            (Self::Triggered, OrderEvent::OrderFilled(_)) => Self::Filled,
-            (Self::PartiallyFilled, OrderEvent::OrderPendingUpdate(_)) => Self::PendingUpdate,
-            (Self::PartiallyFilled, OrderEvent::OrderPendingCancel(_)) => Self::PendingCancel,
-            (Self::PartiallyFilled, OrderEvent::OrderCanceled(_)) => Self::Canceled,
-            (Self::PartiallyFilled, OrderEvent::OrderExpired(_)) => Self::Expired,
-            (Self::PartiallyFilled, OrderEvent::OrderPartiallyFilled(_)) => Self::PartiallyFilled,
-            (Self::PartiallyFilled, OrderEvent::OrderFilled(_)) => Self::Filled,
+            (Self::Initialized, OrderEvent::Denied(_)) => Self::Denied,
+            (Self::Initialized, OrderEvent::Emulated(_)) => Self::Emulated,  // Emulated orders
+            (Self::Initialized, OrderEvent::Released(_)) => Self::Released,  // Emulated orders
+            (Self::Initialized, OrderEvent::Submitted(_)) => Self::Submitted,
+            (Self::Initialized, OrderEvent::Rejected(_)) => Self::Rejected,  // External orders
+            (Self::Initialized, OrderEvent::Accepted(_)) => Self::Accepted,  // External orders
+            (Self::Initialized, OrderEvent::Canceled(_)) => Self::Canceled,  // External orders
+            (Self::Initialized, OrderEvent::Expired(_)) => Self::Expired,  // External orders
+            (Self::Initialized, OrderEvent::Triggered(_)) => Self::Triggered, // External orders
+            (Self::Emulated, OrderEvent::Canceled(_)) => Self::Canceled,  // Emulated orders
+            (Self::Emulated, OrderEvent::Expired(_)) => Self::Expired,  // Emulated orders
+            (Self::Emulated, OrderEvent::Released(_)) => Self::Released,  // Emulated orders
+            (Self::Released, OrderEvent::Submitted(_)) => Self::Submitted,  // Emulated orders
+            (Self::Released, OrderEvent::Denied(_)) => Self::Denied,  // Emulated orders
+            (Self::Released, OrderEvent::Canceled(_)) => Self::Canceled,  // Execution algo
+            (Self::Submitted, OrderEvent::PendingUpdate(_)) => Self::PendingUpdate,
+            (Self::Submitted, OrderEvent::PendingCancel(_)) => Self::PendingCancel,
+            (Self::Submitted, OrderEvent::Rejected(_)) => Self::Rejected,
+            (Self::Submitted, OrderEvent::Canceled(_)) => Self::Canceled,  // FOK and IOC cases
+            (Self::Submitted, OrderEvent::Accepted(_)) => Self::Accepted,
+            (Self::Submitted, OrderEvent::PartiallyFilled(_)) => Self::PartiallyFilled,
+            (Self::Submitted, OrderEvent::Filled(_)) => Self::Filled,
+            (Self::Accepted, OrderEvent::Rejected(_)) => Self::Rejected,  // StopLimit order
+            (Self::Accepted, OrderEvent::PendingUpdate(_)) => Self::PendingUpdate,
+            (Self::Accepted, OrderEvent::PendingCancel(_)) => Self::PendingCancel,
+            (Self::Accepted, OrderEvent::Canceled(_)) => Self::Canceled,
+            (Self::Accepted, OrderEvent::Triggered(_)) => Self::Triggered,
+            (Self::Accepted, OrderEvent::Expired(_)) => Self::Expired,
+            (Self::Accepted, OrderEvent::PartiallyFilled(_)) => Self::PartiallyFilled,
+            (Self::Accepted, OrderEvent::Filled(_)) => Self::Filled,
+            (Self::Canceled, OrderEvent::PartiallyFilled(_)) => Self::PartiallyFilled,  // Real world possibility
+            (Self::Canceled, OrderEvent::Filled(_)) => Self::Filled,  // Real world possibility
+            (Self::PendingUpdate, OrderEvent::Rejected(_)) => Self::Rejected,
+            (Self::PendingUpdate, OrderEvent::Accepted(_)) => Self::Accepted,
+            (Self::PendingUpdate, OrderEvent::Canceled(_)) => Self::Canceled,
+            (Self::PendingUpdate, OrderEvent::Expired(_)) => Self::Expired,
+            (Self::PendingUpdate, OrderEvent::Triggered(_)) => Self::Triggered,
+            (Self::PendingUpdate, OrderEvent::PendingUpdate(_)) => Self::PendingUpdate,  // Allow multiple requests
+            (Self::PendingUpdate, OrderEvent::PendingCancel(_)) => Self::PendingCancel,
+            (Self::PendingUpdate, OrderEvent::PartiallyFilled(_)) => Self::PartiallyFilled,
+            (Self::PendingUpdate, OrderEvent::Filled(_)) => Self::Filled,
+            (Self::PendingCancel, OrderEvent::Rejected(_)) => Self::Rejected,
+            (Self::PendingCancel, OrderEvent::PendingCancel(_)) => Self::PendingCancel,  // Allow multiple requests
+            (Self::PendingCancel, OrderEvent::Canceled(_)) => Self::Canceled,
+            (Self::PendingCancel, OrderEvent::Expired(_)) => Self::Expired,
+            (Self::PendingCancel, OrderEvent::Accepted(_)) => Self::Accepted,  // Allow failed cancel requests
+            (Self::PendingCancel, OrderEvent::PartiallyFilled(_)) => Self::PartiallyFilled,
+            (Self::PendingCancel, OrderEvent::Filled(_)) => Self::Filled,
+            (Self::Triggered, OrderEvent::Rejected(_)) => Self::Rejected,
+            (Self::Triggered, OrderEvent::PendingUpdate(_)) => Self::PendingUpdate,
+            (Self::Triggered, OrderEvent::PendingCancel(_)) => Self::PendingCancel,
+            (Self::Triggered, OrderEvent::Canceled(_)) => Self::Canceled,
+            (Self::Triggered, OrderEvent::Expired(_)) => Self::Expired,
+            (Self::Triggered, OrderEvent::PartiallyFilled(_)) => Self::PartiallyFilled,
+            (Self::Triggered, OrderEvent::Filled(_)) => Self::Filled,
+            (Self::PartiallyFilled, OrderEvent::PendingUpdate(_)) => Self::PendingUpdate,
+            (Self::PartiallyFilled, OrderEvent::PendingCancel(_)) => Self::PendingCancel,
+            (Self::PartiallyFilled, OrderEvent::Canceled(_)) => Self::Canceled,
+            (Self::PartiallyFilled, OrderEvent::Expired(_)) => Self::Expired,
+            (Self::PartiallyFilled, OrderEvent::PartiallyFilled(_)) => Self::PartiallyFilled,
+            (Self::PartiallyFilled, OrderEvent::Filled(_)) => Self::Filled,
             _ => return Err(OrderError::InvalidStateTransition),
         };
         Ok(new_state)
@@ -417,7 +417,7 @@ pub struct OrderCore {
 
 impl OrderCore {
     pub fn new(init: OrderInitialized) -> anyhow::Result<Self> {
-        let events: Vec<OrderEvent> = vec![OrderEvent::OrderInitialized(init.clone())];
+        let events: Vec<OrderEvent> = vec![OrderEvent::Initialized(init.clone())];
         Ok(Self {
             events,
             commissions: HashMap::new(),
@@ -470,23 +470,23 @@ impl OrderCore {
         self.status = new_status;
 
         match &event {
-            OrderEvent::OrderInitialized(_) => return Err(OrderError::AlreadyInitialized),
-            OrderEvent::OrderDenied(event) => self.denied(event),
-            OrderEvent::OrderEmulated(event) => self.emulated(event),
-            OrderEvent::OrderReleased(event) => self.released(event),
-            OrderEvent::OrderSubmitted(event) => self.submitted(event),
-            OrderEvent::OrderRejected(event) => self.rejected(event),
-            OrderEvent::OrderAccepted(event) => self.accepted(event),
-            OrderEvent::OrderPendingUpdate(event) => self.pending_update(event),
-            OrderEvent::OrderPendingCancel(event) => self.pending_cancel(event),
-            OrderEvent::OrderModifyRejected(event) => self.modify_rejected(event),
-            OrderEvent::OrderCancelRejected(event) => self.cancel_rejected(event),
-            OrderEvent::OrderUpdated(event) => self.updated(event),
-            OrderEvent::OrderTriggered(event) => self.triggered(event),
-            OrderEvent::OrderCanceled(event) => self.canceled(event),
-            OrderEvent::OrderExpired(event) => self.expired(event),
-            OrderEvent::OrderPartiallyFilled(event) => self.filled(event),
-            OrderEvent::OrderFilled(event) => self.filled(event),
+            OrderEvent::Initialized(_) => return Err(OrderError::AlreadyInitialized),
+            OrderEvent::Denied(event) => self.denied(event),
+            OrderEvent::Emulated(event) => self.emulated(event),
+            OrderEvent::Released(event) => self.released(event),
+            OrderEvent::Submitted(event) => self.submitted(event),
+            OrderEvent::Rejected(event) => self.rejected(event),
+            OrderEvent::Accepted(event) => self.accepted(event),
+            OrderEvent::PendingUpdate(event) => self.pending_update(event),
+            OrderEvent::PendingCancel(event) => self.pending_cancel(event),
+            OrderEvent::ModifyRejected(event) => self.modify_rejected(event),
+            OrderEvent::CancelRejected(event) => self.cancel_rejected(event),
+            OrderEvent::Updated(event) => self.updated(event),
+            OrderEvent::Triggered(event) => self.triggered(event),
+            OrderEvent::Canceled(event) => self.canceled(event),
+            OrderEvent::Expired(event) => self.expired(event),
+            OrderEvent::PartiallyFilled(event) => self.filled(event),
+            OrderEvent::Filled(event) => self.filled(event),
         }
 
         self.ts_last = event.ts_event();
@@ -747,7 +747,7 @@ mod tests {
     fn test_order_state_transition_denied() {
         let mut order: MarketOrder = OrderInitializedBuilder::default().build().unwrap().into();
         let denied = OrderDeniedBuilder::default().build().unwrap();
-        let event = OrderEvent::OrderDenied(denied);
+        let event = OrderEvent::Denied(denied);
 
         order.apply(event.clone()).unwrap();
 
@@ -766,9 +766,9 @@ mod tests {
         let filled = OrderFilledBuilder::default().build().unwrap();
 
         let mut order: MarketOrder = init.clone().into();
-        order.apply(OrderEvent::OrderSubmitted(submitted)).unwrap();
-        order.apply(OrderEvent::OrderAccepted(accepted)).unwrap();
-        order.apply(OrderEvent::OrderFilled(filled)).unwrap();
+        order.apply(OrderEvent::Submitted(submitted)).unwrap();
+        order.apply(OrderEvent::Accepted(accepted)).unwrap();
+        order.apply(OrderEvent::Filled(filled)).unwrap();
 
         assert_eq!(order.client_order_id, init.client_order_id);
         assert_eq!(order.status(), OrderStatus::Filled);

@@ -358,10 +358,10 @@ impl Order for TrailingStopLimitOrder {
     }
 
     fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
-        if let OrderEvent::OrderUpdated(ref event) = event {
+        if let OrderEvent::Updated(ref event) = event {
             self.update(event);
         };
-        let is_order_filled = matches!(event, OrderEvent::OrderFilled(_));
+        let is_order_filled = matches!(event, OrderEvent::Filled(_));
 
         self.core.apply(event)?;
 
