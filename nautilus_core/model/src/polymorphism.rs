@@ -19,16 +19,26 @@ use nautilus_core::nanos::UnixNanos;
 
 use crate::{
     enums::{OrderSide, OrderSideSpecified, TriggerType},
+    events::order::event::OrderEvent,
     identifiers::{
-        client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
+        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, position_id::PositionId, strategy_id::StrategyId,
-        venue_order_id::VenueOrderId,
+        trader_id::TraderId, venue_order_id::VenueOrderId,
     },
+    orders::base::OrderError,
     types::{price::Price, quantity::Quantity},
 };
 
 pub trait GetTsInit {
     fn ts_init(&self) -> UnixNanos;
+}
+
+pub trait GetTraderId {
+    fn trader_id(&self) -> TraderId;
+}
+
+pub trait GetStrategyId {
+    fn strategy_id(&self) -> StrategyId;
 }
 
 pub trait GetInstrumentId {
@@ -39,12 +49,12 @@ pub trait GetClientOrderId {
     fn client_order_id(&self) -> ClientOrderId;
 }
 
-pub trait GetVenueOrderId {
-    fn venue_order_id(&self) -> Option<VenueOrderId>;
+pub trait GetAccountId {
+    fn account_id(&self) -> Option<AccountId>;
 }
 
-pub trait GetStrategyId {
-    fn strategy_id(&self) -> StrategyId;
+pub trait GetVenueOrderId {
+    fn venue_order_id(&self) -> Option<VenueOrderId>;
 }
 
 pub trait GetPositionId {
@@ -101,4 +111,8 @@ pub trait IsClosed {
 
 pub trait IsInflight {
     fn is_inflight(&self) -> bool;
+}
+
+pub trait ApplyOrderEvent {
+    fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError>;
 }
