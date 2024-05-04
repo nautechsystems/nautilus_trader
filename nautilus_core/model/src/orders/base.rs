@@ -283,15 +283,20 @@ pub trait Order {
     }
 
     fn is_open(&self) -> bool {
-        self.emulation_trigger().is_none()
-            && matches!(
-                self.status(),
-                OrderStatus::Accepted
-                    | OrderStatus::Triggered
-                    | OrderStatus::PendingCancel
-                    | OrderStatus::PendingUpdate
-                    | OrderStatus::PartiallyFilled
-            )
+        if let Some(emulation_trigger) = self.emulation_trigger() {
+            if emulation_trigger != TriggerType::NoTrigger {
+                return false;
+            }
+        }
+
+        matches!(
+            self.status(),
+            OrderStatus::Accepted
+                | OrderStatus::Triggered
+                | OrderStatus::PendingCancel
+                | OrderStatus::PendingUpdate
+                | OrderStatus::PartiallyFilled
+        )
     }
 
     fn is_canceled(&self) -> bool {
