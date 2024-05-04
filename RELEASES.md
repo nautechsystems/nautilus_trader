@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added `OrderMatchingEngine` futures and options contract activation and expiration simulation
 - Added Sandbox example with Interactive Brokers (#1618), thanks @rsmb7z
 - Added `ParquetDataCatalog` S3 support (#1620), thanks benjaminsingleton
+- Added `Bar.from_raw_arrays_to_list` (#1623), thanks rsmb7z
 
 ### Breaking Changes
 - Changed `tags` param and return type from `str` to `list[str]` (more naturally expresses multiple tags)

@@ -1061,8 +1061,11 @@ cdef class Bar(Data):
         uint64_t[:] ts_events,
         uint64_t[:] ts_inits,
     ):
-        Condition.true(len(opens) == len(highs) == len(lows) == len(lows) == len(closes) == len(volumes)
-                       == len(ts_events) == len(ts_inits), "Array lengths must be equal")
+        Condition.true(
+            len(opens) == len(highs) == len(lows) == len(lows) ==
+            len(closes) == len(volumes) == len(ts_events) == len(ts_inits),
+            "Array lengths must be equal",
+        )
 
         cdef int count = ts_events.shape[0]
         cdef list[Bar] bars = []
