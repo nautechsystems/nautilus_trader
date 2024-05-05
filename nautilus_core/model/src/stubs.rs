@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Type stubs to facilitate testing.
-
 use rstest::fixture;
 use rust_decimal::prelude::ToPrimitive;
 
@@ -53,7 +52,7 @@ pub fn calculate_commission<T: Instrument>(
     } else if liquidity_side == LiquiditySide::Taker {
         notional * instrument.taker_fee().to_f64().unwrap()
     } else {
-        panic!("Invalid liquid side {liquidity_side}")
+        panic!("Invalid liquidity side {liquidity_side}")
     };
     if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false) {
         Ok(Money::new(commission, instrument.base_currency().unwrap()).unwrap())
