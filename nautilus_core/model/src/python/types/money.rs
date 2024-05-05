@@ -311,14 +311,14 @@ impl Money {
         h.finish() as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         let amount_str = format!("{:.*}", self.currency.precision as usize, self.as_f64());
         let code = self.currency.code.as_str();
         format!("Money('{amount_str}', {code})")
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]

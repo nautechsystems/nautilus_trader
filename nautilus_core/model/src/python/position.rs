@@ -60,11 +60,11 @@ impl Position {
         }
     }
 
-    fn __str__(&self) -> String {
+    fn __repr__(&self) -> String {
         self.to_string()
     }
 
-    fn __repr__(&self) -> String {
+    fn __str__(&self) -> String {
         self.to_string()
     }
 

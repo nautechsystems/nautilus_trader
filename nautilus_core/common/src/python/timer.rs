@@ -79,12 +79,12 @@ impl TimeEvent {
         }
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!("{}('{}')", stringify!(TimeEvent), self)
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]

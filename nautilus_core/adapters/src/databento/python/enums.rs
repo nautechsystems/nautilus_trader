@@ -32,10 +32,6 @@ impl DatabentoStatisticType {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -43,6 +39,10 @@ impl DatabentoStatisticType {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -160,10 +160,6 @@ impl DatabentoStatisticUpdateAction {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -171,6 +167,10 @@ impl DatabentoStatisticUpdateAction {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
