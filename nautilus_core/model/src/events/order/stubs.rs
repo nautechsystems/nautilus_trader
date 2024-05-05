@@ -403,7 +403,7 @@ pub fn order_cancel_rejected(
         strategy_id_ema_cross,
         instrument_id_btc_usdt,
         client_order_id,
-        Ustr::from("ORDER_DOES_NOT_EXISTS"),
+        Ustr::from("ORDER_DOES_NOT_EXIST"),
         uuid4,
         UnixNanos::default(),
         UnixNanos::default(),
