@@ -164,11 +164,11 @@ class InteractiveBrokersClient(
         """
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
-            self._loop.run_until_complete(self._async_start())
+            self._loop.run_until_complete(self._start_async())
         else:
-            self._create_task(self._async_start())
+            self._create_task(self._start_async())
 
-    async def _async_start(self):
+    async def _start_async(self):
         self._log.info(f"Starting InteractiveBrokersClient ({self._client_id})...")
         while not self._is_ib_connected.is_set():
             try:
@@ -200,7 +200,7 @@ class InteractiveBrokersClient(
                 self._log.exception("Unhandled exception in client startup", e)
                 self._stop()
         self._is_client_ready.set()
-        self._log.debug("`_is_client_ready` set by `_async_start`.", LogColor.BLUE)
+        self._log.debug("`_is_client_ready` set by `_start_async`.", LogColor.BLUE)
         self._connection_attempts = 0
 
     def _start_tws_incoming_msg_reader(self) -> None:
@@ -242,14 +242,14 @@ class InteractiveBrokersClient(
         """
         Stop the client and cancel running tasks.
         """
-        self._create_task(self._async_stop())
+        self._create_task(self._stop_async())
 
-    async def _async_stop(self) -> None:
+    async def _stop_async(self) -> None:
         self._log.info(f"Stopping InteractiveBrokersClient ({self._client_id})...")
 
         if self._is_client_ready.is_set():
             self._is_client_ready.clear()
-            self._log.debug("`_is_client_ready` unset by `_async_stop`.", LogColor.BLUE)
+            self._log.debug("`_is_client_ready` unset by `_stop_async`.", LogColor.BLUE)
 
         # Cancel tasks
         tasks = [
@@ -277,24 +277,24 @@ class InteractiveBrokersClient(
         Restart the client.
         """
 
-        async def _async_reset():
+        async def _reset_async():
             self._log.info(f"Resetting InteractiveBrokersClient ({self._client_id})...")
-            await self._async_stop()
-            await self._async_start()
+            await self._stop_async()
+            await self._start_async()
 
-        self._create_task(_async_reset())
+        self._create_task(_reset_async())
 
     def _resume(self) -> None:
         """
         Resume the client and resubscribe to all subscriptions.
         """
 
-        async def _async_resume():
+        async def _resume_async():
             await self._is_client_ready.wait()
             self._log.info(f"Resuming InteractiveBrokersClient ({self._client_id})...")
             await self._resubscribe_all()
 
-        self._create_task(_async_resume())
+        self._create_task(_resume_async())
 
     def _degrade(self) -> None:
         """

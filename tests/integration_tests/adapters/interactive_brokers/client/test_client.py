@@ -76,16 +76,16 @@ async def test_stop(ib_client_running):
 @pytest.mark.asyncio
 async def test_reset(ib_client_running):
     # Arrange
-    ib_client_running._async_start = AsyncMock()
-    ib_client_running._async_stop = AsyncMock()
+    ib_client_running._start_async = AsyncMock()
+    ib_client_running._stop_async = AsyncMock()
 
     # Act
     ib_client_running._reset()
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(0.1)
 
     # Assert
-    ib_client_running._async_start.assert_awaited_once()
-    ib_client_running._async_stop.assert_awaited_once()
+    ib_client_running._start_async.assert_awaited_once()
+    ib_client_running._stop_async.assert_awaited_once()
 
 
 @pytest.mark.asyncio
