@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
@@ -25,7 +25,7 @@ use crate::identifiers::{
 };
 
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 #[cfg_attr(
@@ -65,12 +65,30 @@ impl OrderEmulated {
     }
 }
 
-impl Display for OrderEmulated {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl Debug for OrderEmulated {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "OrderEmulated(instrument_id={}, client_order_id={})",
-            self.instrument_id, self.client_order_id
+            "{}(trader_id={}, strategy_id={}, instrument_id={}, client_order_id={}, event_id={}, ts_init={})",
+            stringify!(OrderEmulated),
+            self.trader_id,
+            self.strategy_id,
+            self.instrument_id,
+            self.client_order_id,
+            self.event_id,
+            self.ts_init,
+        )
+    }
+}
+
+impl Display for OrderEmulated {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}(instrument_id={}, client_order_id={})",
+            stringify!(OrderEmulated),
+            self.instrument_id,
+            self.client_order_id,
         )
     }
 }

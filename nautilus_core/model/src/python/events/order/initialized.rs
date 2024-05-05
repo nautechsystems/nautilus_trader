@@ -115,6 +115,7 @@ impl OrderInitialized {
         )
         .map_err(to_pyvalue_err)
     }
+
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
             CompareOp::Eq => self.eq(other).into_py(py),
@@ -124,95 +125,11 @@ impl OrderInitialized {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "OrderInitialized(\
-            trader_id={}, \
-            strategy_id={}, \
-            instrument_id={}, \
-            client_order_id={}, \
-            side={}, \
-            type={}, \
-            quantity={}, \
-            time_in_force={}, \
-            post_only={}, \
-            reduce_only={}, \
-            quote_quantity={}, \
-            price={}, \
-            emulation_trigger={}, \
-            trigger_instrument_id={}, \
-            contingency_type={}, \
-            order_list_id={}, \
-            linked_order_ids=[{}], \
-            parent_order_id={}, \
-            exec_algorithm_id={}, \
-            exec_algorithm_params={}, \
-            exec_spawn_id={}, \
-            tags={}, \
-            event_id={}, \
-            ts_init={})",
-            self.trader_id,
-            self.strategy_id,
-            self.instrument_id,
-            self.client_order_id,
-            self.order_side,
-            self.order_type,
-            self.quantity,
-            self.time_in_force,
-            self.post_only,
-            self.reduce_only,
-            self.quote_quantity,
-            self.price
-                .map_or("None".to_string(), |price| format!("{price}")),
-            self.emulation_trigger
-                .map_or("None".to_string(), |trigger| format!("{trigger}")),
-            self.trigger_instrument_id
-                .map_or("None".to_string(), |instrument_id| format!(
-                    "{instrument_id}"
-                )),
-            self.contingency_type
-                .map_or("None".to_string(), |contingency_type| format!(
-                    "{contingency_type}"
-                )),
-            self.order_list_id
-                .map_or("None".to_string(), |order_list_id| format!(
-                    "{order_list_id}"
-                )),
-            self.linked_order_ids
-                .as_ref()
-                .map_or("None".to_string(), |linked_order_ids| linked_order_ids
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")),
-            self.parent_order_id
-                .map_or("None".to_string(), |parent_order_id| format!(
-                    "{parent_order_id}"
-                )),
-            self.exec_algorithm_id
-                .map_or("None".to_string(), |exec_algorithm_id| format!(
-                    "{exec_algorithm_id}"
-                )),
-            self.exec_algorithm_params
-                .as_ref()
-                .map_or("None".to_string(), |exec_algorithm_params| format!(
-                    "{exec_algorithm_params:?}"
-                )),
-            self.exec_spawn_id
-                .map_or("None".to_string(), |exec_spawn_id| format!(
-                    "{exec_spawn_id}"
-                )),
-            self.tags.as_ref().map_or("None".to_string(), |tags| tags
-                .iter()
-                .map(|x| x.to_string())
-                .collect::<Vec<String>>()
-                .join(", ")),
-            self.event_id,
-            self.ts_init
-        )
+        format!("{:?}", self)
     }
 
     fn __str__(&self) -> String {
-        format!("{self}")
+        self.to_string()
     }
 
     #[getter]

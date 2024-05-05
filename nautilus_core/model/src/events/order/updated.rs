@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
@@ -28,7 +28,7 @@ use crate::{
 };
 
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 #[cfg_attr(
@@ -86,11 +86,34 @@ impl OrderUpdated {
     }
 }
 
+impl Debug for OrderUpdated {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f,
+            "{}(trader_id={}, strategy_id={}, instrument_id={}, client_order_id={}, \
+            venue_order_id={}, account_id={}, quantity={}, price={}, trigger_price={}, event_id={}, ts_event={}, ts_init={})",
+            stringify!(OrderUpdated),
+            self.trader_id,
+            self.strategy_id,
+            self.instrument_id,
+            self.client_order_id,
+            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
+            self.account_id.map_or("None".to_string(), |account_id| format!("{account_id}")),
+            self.quantity,
+            self.price.map_or("None".to_string(), |price| format!("{price}")),
+            self.trigger_price.map_or("None".to_string(), |trigger_price| format!("{trigger_price}")),
+            self.event_id,
+            self.ts_event,
+            self.ts_init
+        )
+    }
+}
+
 impl Display for OrderUpdated {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "OrderUpdated(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, quantity={}, price={}, trigger_price={}, ts_event={})",
+            "{}(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, quantity={}, price={}, trigger_price={}, ts_event={})",
+            stringify!(OrderUpdated),
             self.instrument_id,
             self.client_order_id,
             self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),

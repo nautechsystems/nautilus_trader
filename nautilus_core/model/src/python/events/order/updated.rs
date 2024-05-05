@@ -73,39 +73,12 @@ impl OrderUpdated {
         }
     }
 
-    fn __str__(&self) -> String {
-        format!(
-            "{}(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, quantity={}, price={}, trigger_price={}, ts_event={})",
-            stringify!(OrderUpdated),
-            self.instrument_id,
-            self.client_order_id,
-            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
-            self.account_id.map_or("None".to_string(), |account_id| format!("{account_id}")),
-            self.quantity,
-            self.price.map_or("None".to_string(), |price| format!("{price}")),
-            self.trigger_price.map_or("None".to_string(), |trigger_price| format!("{trigger_price}")),
-            self.ts_event,
-        )
+    fn __repr__(&self) -> String {
+        format!("{:?}", self)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "{}(trader_id={}, strategy_id={}, instrument_id={}, client_order_id={}, \
-            venue_order_id={}, account_id={}, quantity={}, price={}, trigger_price={}, event_id={}, ts_event={}, ts_init={})",
-            stringify!(OrderUpdated),
-            self.trader_id,
-            self.strategy_id,
-            self.instrument_id,
-            self.client_order_id,
-            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
-            self.account_id.map_or("None".to_string(), |account_id| format!("{account_id}")),
-            self.quantity,
-            self.price.map_or("None".to_string(), |price| format!("{price}")),
-            self.trigger_price.map_or("None".to_string(), |trigger_price| format!("{trigger_price}")),
-            self.event_id,
-            self.ts_event,
-            self.ts_init
-        )
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
@@ -30,7 +30,7 @@ use crate::{
 };
 
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 #[cfg_attr(
@@ -142,11 +142,21 @@ impl Default for OrderFilled {
     }
 }
 
-impl Display for OrderFilled {
+impl Debug for OrderFilled {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let position_id_str = match self.position_id {
+            Some(position_id) => position_id.to_string(),
+            None => "None".to_string(),
+        };
+        let commission_str = match self.commission {
+            Some(commission) => commission.to_string(),
+            None => "None".to_string(),
+        };
         write!(
             f,
-            "OrderFilled(\
+            "{}(\
+            trader_id={}, \
+            strategy_id={}, \
             instrument_id={}, \
             client_order_id={}, \
             venue_order_id={}, \
@@ -156,10 +166,54 @@ impl Display for OrderFilled {
             order_side={}, \
             order_type={}, \
             last_qty={}, \
-            last_px={}, \
-            commission={} ,\
+            last_px={} {}, \
+            commission={}, \
+            liquidity_side={}, \
+            event_id={}, \
+            ts_event={}, \
+            ts_init={})",
+            stringify!(OrderFilled),
+            self.trader_id,
+            self.strategy_id,
+            self.instrument_id,
+            self.client_order_id,
+            self.venue_order_id,
+            self.account_id,
+            self.trade_id,
+            position_id_str,
+            self.order_side,
+            self.order_type,
+            self.last_qty,
+            self.last_px,
+            self.currency,
+            commission_str,
+            self.liquidity_side,
+            self.event_id,
+            self.ts_event,
+            self.ts_init
+        )
+    }
+}
+
+impl Display for OrderFilled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}(\
+            instrument_id={}, \
+            client_order_id={}, \
+            venue_order_id={}, \
+            account_id={}, \
+            trade_id={}, \
+            position_id={}, \
+            order_side={}, \
+            order_type={}, \
+            last_qty={}, \
+            last_px={} {}, \
+            commission={}, \
             liquidity_side={}, \
             ts_event={})",
+            stringify!(OrderFilled),
             self.instrument_id,
             self.client_order_id,
             self.venue_order_id,
@@ -170,6 +224,7 @@ impl Display for OrderFilled {
             self.order_type,
             self.last_qty,
             self.last_px,
+            self.currency,
             self.commission.unwrap_or(Money::from("0.0 USD")),
             self.liquidity_side,
             self.ts_event
@@ -193,8 +248,8 @@ mod tests {
             display,
             "OrderFilled(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, \
             venue_order_id=123456, account_id=SIM-001, trade_id=1, position_id=P-001, \
-            order_side=BUY, order_type=LIMIT, last_qty=0.561, last_px=22000, \
-            commission=12.20000000 USDT ,liquidity_side=TAKER, ts_event=0)");
+            order_side=BUY, order_type=LIMIT, last_qty=0.561, last_px=22000 USDT, \
+            commission=12.20000000 USDT, liquidity_side=TAKER, ts_event=0)");
     }
 
     #[rstest]
