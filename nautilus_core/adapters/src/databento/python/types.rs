@@ -47,10 +47,6 @@ impl DatabentoImbalance {
         hasher.finish() as isize
     }
 
-    fn __str__(&self) -> String {
-        self.__repr__()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "{}(instrument_id={}, ref_price={}, cont_book_clr_price={}, auct_interest_clr_price={}, paired_qty={}, total_imbalance_qty={}, side={}, significant_imbalance={}, ts_event={}, ts_recv={}, ts_init={})",
@@ -67,6 +63,10 @@ impl DatabentoImbalance {
             self.ts_recv,
             self.ts_init,
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.__repr__()
     }
 
     #[getter]
@@ -166,10 +166,6 @@ impl DatabentoStatistics {
         hasher.finish() as isize
     }
 
-    fn __str__(&self) -> String {
-        self.__repr__()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "{}(instrument_id={}, stat_type={}, update_action={}, price={}, quantity={}, channel_id={}, stat_flags={}, sequence={}, ts_ref={}, ts_in_delta={}, ts_event={}, ts_recv={}, ts_init={})",
@@ -188,6 +184,10 @@ impl DatabentoStatistics {
             self.ts_recv,
             self.ts_init,
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.__repr__()
     }
 
     #[getter]

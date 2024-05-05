@@ -43,7 +43,7 @@ pub struct OrderRejected {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: u8,
+    pub reconciliation: u8, // TODO: Change to bool once Cython removed
 }
 
 impl OrderRejected {

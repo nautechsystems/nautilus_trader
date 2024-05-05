@@ -50,19 +50,6 @@ impl MarginAccount {
         self.default_leverage
     }
 
-    fn __str__(&self) -> String {
-        format!(
-            "{}(id={}, type={}, base={})",
-            stringify!(MarginAccount),
-            self.id,
-            self.account_type,
-            self.base_currency.map_or_else(
-                || "None".to_string(),
-                |base_currency| format!("{}", base_currency.code)
-            )
-        )
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "{}(id={}, type={}, base={})",

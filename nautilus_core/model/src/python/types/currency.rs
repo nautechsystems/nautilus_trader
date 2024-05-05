@@ -83,12 +83,12 @@ impl Currency {
         self.code.precomputed_hash() as isize
     }
 
-    fn __str__(&self) -> &'static str {
-        self.code.as_str()
-    }
-
     fn __repr__(&self) -> String {
         format!("{self:?}")
+    }
+
+    fn __str__(&self) -> &'static str {
+        self.code.as_str()
     }
 
     #[getter]

@@ -83,12 +83,12 @@ impl TradeId {
         h.finish() as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!("{}('{}')", stringify!(TradeId), self)
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]

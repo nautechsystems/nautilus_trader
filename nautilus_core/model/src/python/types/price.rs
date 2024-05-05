@@ -311,12 +311,12 @@ impl Price {
         h.finish() as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!("Price('{self:?}')")
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]

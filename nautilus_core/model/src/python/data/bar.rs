@@ -62,12 +62,12 @@ impl BarSpecification {
         h.finish() as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!("{self:?}")
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[staticmethod]
@@ -107,12 +107,12 @@ impl BarType {
         h.finish() as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!("{self:?}")
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[staticmethod]
@@ -214,12 +214,12 @@ impl Bar {
         h.finish() as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!("{self:?}")
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]

@@ -39,12 +39,12 @@ impl OrderBook {
         Self::new(book_type, instrument_id)
     }
 
-    fn __str__(&self) -> String {
-        // TODO: Return debug string for now
+    fn __repr__(&self) -> String {
         format!("{self:?}")
     }
 
-    fn __repr__(&self) -> String {
+    fn __str__(&self) -> String {
+        // TODO: Return debug string for now
         format!("{self:?}")
     }
 

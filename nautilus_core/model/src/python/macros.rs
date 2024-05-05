@@ -65,16 +65,16 @@ macro_rules! identifier_for_python {
                 self.inner().precomputed_hash() as isize
             }
 
-            fn __str__(&self) -> &'static str {
-                self.inner().as_str()
-            }
-
             fn __repr__(&self) -> String {
                 format!(
                     "{}('{}')",
                     stringify!($ty).split("::").last().unwrap_or(""),
                     self.as_str()
                 )
+            }
+
+            fn __str__(&self) -> &'static str {
+                self.inner().as_str()
             }
 
             #[getter]
