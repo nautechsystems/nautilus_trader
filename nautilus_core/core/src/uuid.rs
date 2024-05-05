@@ -130,7 +130,7 @@ mod tests {
     use super::*;
 
     #[rstest]
-    fn test_uuid4_new() {
+    fn test_new() {
         let uuid = UUID4::new();
         let uuid_string = uuid.to_string();
         let uuid_parsed = Uuid::parse_str(&uuid_string).expect("Uuid::parse_str failed");
@@ -139,7 +139,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_uuid4_default() {
+    fn test_default() {
         let uuid: UUID4 = UUID4::default();
         let uuid_string = uuid.to_string();
         let uuid_parsed = Uuid::parse_str(&uuid_string).expect("Uuid::parse_str failed");
@@ -147,7 +147,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_uuid4_from_str() {
+    fn test_from_str() {
         let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
         let uuid = UUID4::from(uuid_string);
         let result_string = uuid.to_string();
@@ -165,14 +165,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_uuid4_debug() {
+    fn test_debug() {
         let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
         let uuid = UUID4::from(uuid_string);
         assert_eq!(format!("{:?}", uuid), format!("UUID4('{uuid_string}')"));
     }
 
     #[rstest]
-    fn test_uuid4_display() {
+    fn test_display() {
         let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
         let uuid = UUID4::from(uuid_string);
         assert_eq!(format!("{uuid}"), uuid_string);
