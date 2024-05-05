@@ -44,8 +44,8 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Features
 
-- **Fast** - C-level speed through Rust and Cython. Asynchronous networking with [uvloop](https://github.com/MagicStack/uvloop)
-- **Reliable** - Type safety through Rust and Cython. Redis backed performant state persistence
+- **Fast** - Core written in Rust with asynchronous networking using [tokio](https://crates.io/crates/tokio)
+- **Reliable** - Type-safety and thread-safety through Rust. Redis backed performant state persistence
 - **Portable** - OS independent, runs on Linux, macOS, Windows. Deploy using Docker
 - **Flexible** - Modular adapters mean any REST, WebSocket, or FIX API can be integrated
 - **Advanced** - Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`
@@ -76,7 +76,8 @@ express the granular time and event dependent complexity of real-time trading, w
 proven to be more suitable due to their inherently higher performance, and type safety.
 
 One of the key advantages of NautilusTrader here, is that this reimplementation step is now circumvented - as the critical core components of the platform
-have all been written entirely in Rust or Cython. This means we're using the right tools for the job, where systems programming languages compile performant binaries,
+have all been written entirely in [Rust](https://www.rust-lang.org/) or [Cython](https://cython.org/).
+This means we're using the right tools for the job, where systems programming languages compile performant binaries,
 with CPython C extension modules then able to offer a Python native environment, suitable for professional quantitative traders and trading firms.
 
 ## Why Python?
@@ -91,16 +92,6 @@ implementing large performance-critical systems. Cython has addressed a lot of t
 of a statically typed language, embedded into Pythons rich ecosystem of software libraries and
 developer/user communities.
 
-## What is Cython?
-
-[Cython](https://cython.org) is a compiled programming language which aims to be a superset of the Python programming
-language, designed to give C-like performance with code that is written in Python - with
-optional C-inspired syntax.
-
-The project heavily utilizes Cython to provide static type safety and increased performance
-for Python through [C extension modules](https://docs.python.org/3/extending/extending.html). The vast majority of the production code is actually
-written in Cython, however the libraries can be accessed from both Python and Cython.
-
 ## What is Rust?
 
 [Rust](https://www.rust-lang.org/) is a multi-paradigm programming language designed for performance and safety, especially safe
@@ -111,9 +102,8 @@ Rust’s rich type system and ownership model guarantees memory-safety and threa
 eliminating many classes of bugs at compile-time.
 
 The project increasingly utilizes Rust for core performance-critical components. Python language binding is handled through
-Cython, with static libraries linked at compile-time before the wheel binaries are packaged, so a user
-does not need to have Rust installed to run NautilusTrader. In the future as more Rust code is introduced,
-[PyO3](https://pyo3.rs/latest) will be leveraged for easier Python bindings.
+Cython and [PyO3](https://pyo3.rs/latest), with static libraries linked at compile-time before the wheel binaries are packaged, so a user
+does not need to have Rust installed to run NautilusTrader.
 
 This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/01/18/soundness-pledge.html):
 
@@ -123,15 +113,6 @@ This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/
 ## Architecture (data flow)
 
 ![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/architecture-overview.png?raw=true "architecture")
-
-## Quality Attributes
-
-- Reliability
-- Performance
-- Modularity
-- Testability
-- Maintainability
-- Deployability
 
 ## Integrations
 
@@ -238,8 +219,8 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 - `make install-debug` -- Same as `make install` but with `debug` build mode
 - `make install-just-deps` -- Installs just the `main`, `dev` and `test` dependencies (does not install package)
 - `make install-just-deps-all` -- Same as `make install-just-deps` and additionally installs `docs` dependencies
-- `make build` -- Runs the Cython build script in `release` build mode (default)
-- `make build-debug` -- Runs the Cython build script in `debug` build mode
+- `make build` -- Runs the build script in `release` build mode (default)
+- `make build-debug` -- Runs the build script in `debug` build mode
 - `make build-wheel` -- Runs the Poetry build with a wheel format in `release` mode
 - `make build-wheel-debug` -- Runs the Poetry build with a wheel format in `debug` mode
 - `make clean` -- **CAUTION** Cleans all non-source artifacts from the repository
