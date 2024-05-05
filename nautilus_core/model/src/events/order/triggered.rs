@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
@@ -25,7 +25,7 @@ use crate::identifiers::{
 };
 
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 #[cfg_attr(
@@ -74,11 +74,29 @@ impl OrderTriggered {
     }
 }
 
+impl Debug for OrderTriggered {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f,
+            "{}(trader_id={}, strategy_id={}, instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, event_id={}, ts_event={}, ts_init={})",
+            stringify!(OrderTriggered),
+            self.trader_id,
+            self.strategy_id,
+            self.instrument_id,
+            self.client_order_id,
+            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
+            self.account_id.map_or("None".to_string(), |account_id| format!("{account_id}")),
+            self.event_id,
+            self.ts_event,
+            self.ts_init
+        )
+    }
+}
+
 impl Display for OrderTriggered {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={})",
+            "{}(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, ts_event={})",
             stringify!(OrderTriggered),
             self.instrument_id,
             self.client_order_id,
@@ -87,7 +105,8 @@ impl Display for OrderTriggered {
                     "{venue_order_id}"
                 )),
             self.account_id
-                .map_or("None".to_string(), |account_id| format!("{account_id}"))
+                .map_or("None".to_string(), |account_id| format!("{account_id}")),
+            self.ts_event,
         )
     }
 }
@@ -105,6 +124,6 @@ mod tests {
     fn test_order_triggered_display(order_triggered: OrderTriggered) {
         let display = format!("{order_triggered}");
         assert_eq!(display, "OrderTriggered(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, \
-        venue_order_id=001, account_id=SIM-001)");
+        venue_order_id=001, account_id=SIM-001, ts_event=0)");
     }
 }

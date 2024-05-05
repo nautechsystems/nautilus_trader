@@ -60,23 +60,12 @@ impl OrderEmulated {
         }
     }
 
-    fn __str__(&self) -> String {
-        format!(
-            "OrderEmulated(instrument_id={}, client_order_id={})",
-            self.instrument_id, self.client_order_id,
-        )
+    fn __repr__(&self) -> String {
+        format!("{:?}", self)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "OrderEmulated(trader_id={}, strategy_id={}, instrument_id={}, client_order_id={}, event_id={}, ts_init={})",
-            self.trader_id,
-            self.strategy_id,
-            self.instrument_id,
-            self.client_order_id,
-            self.event_id,
-            self.ts_init,
-        )
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]

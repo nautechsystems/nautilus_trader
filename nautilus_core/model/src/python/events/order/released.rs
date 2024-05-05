@@ -64,27 +64,11 @@ impl OrderReleased {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "{}(trader_id={}, strategy_id={}, instrument_id={}, client_order_id={}, released_price={}, event_id={}, ts_init={})",
-            stringify!(OrderReleased),
-            self.trader_id,
-            self.strategy_id,
-            self.instrument_id,
-            self.client_order_id,
-            self.released_price,
-            self.event_id,
-            self.ts_init
-        )
+        format!("{:?}", self)
     }
 
     fn __str__(&self) -> String {
-        format!(
-            "{}(instrument_id={}, client_order_id={}, released_price={})",
-            stringify!(OrderReleased),
-            self.instrument_id,
-            self.client_order_id,
-            self.released_price
-        )
+        self.to_string()
     }
 
     #[getter]

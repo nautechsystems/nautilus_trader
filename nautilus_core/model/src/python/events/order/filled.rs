@@ -79,96 +79,20 @@ impl OrderFilled {
         .map_err(to_pyvalue_err)
     }
 
-    fn __str__(&self) -> String {
-        let position_id_str = match self.position_id {
-            Some(position_id) => position_id.to_string(),
-            None => "None".to_string(),
-        };
-        let commission_str = match self.commission {
-            Some(commission) => commission.to_string(),
-            None => "None".to_string(),
-        };
-        format!(
-            "{}(\
-            instrument_id={}, \
-            client_order_id={}, \
-            venue_order_id={}, \
-            account_id={}, \
-            trade_id={}, \
-            position_id={}, \
-            order_side={}, \
-            order_type={}, \
-            last_qty={}, \
-            last_px={} {}, \
-            commission={}, \
-            liquidity_side={}, \
-            ts_event={})",
-            stringify!(OrderFilled),
-            self.instrument_id,
-            self.client_order_id,
-            self.venue_order_id,
-            self.account_id,
-            self.trade_id,
-            position_id_str,
-            self.order_side,
-            self.order_type,
-            self.last_qty,
-            self.last_px,
-            self.currency.code,
-            commission_str,
-            self.liquidity_side,
-            self.ts_event
-        )
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+        match op {
+            CompareOp::Eq => self.eq(other).into_py(py),
+            CompareOp::Ne => self.ne(other).into_py(py),
+            _ => py.NotImplemented(),
+        }
     }
 
     fn __repr__(&self) -> String {
-        let position_id_str = match self.position_id {
-            Some(position_id) => position_id.to_string(),
-            None => "None".to_string(),
-        };
-        let commission_str = match self.commission {
-            Some(commission) => commission.to_string(),
-            None => "None".to_string(),
-        };
-        format!(
-            "{}(\
-            trader_id={}, \
-            strategy_id={}, \
-            instrument_id={}, \
-            client_order_id={}, \
-            venue_order_id={}, \
-            account_id={}, \
-            trade_id={}, \
-            position_id={}, \
-            order_side={}, \
-            order_type={}, \
-            last_qty={}, \
-            last_px={} {}, \
-            commission={}, \
-            liquidity_side={}, \
-            event_id={}, \
-            ts_event={}, \
-            ts_init={})",
-            stringify!(OrderFilled),
-            self.trader_id,
-            self.strategy_id,
-            self.instrument_id,
-            self.client_order_id,
-            self.venue_order_id,
-            self.account_id,
-            self.trade_id,
-            position_id_str,
-            self.order_side,
-            self.order_type,
-            self.last_qty,
-            self.last_px,
-            self.currency.code,
-            commission_str,
-            self.liquidity_side,
-            self.event_id,
-            self.ts_event,
-            self.ts_init
-        )
+        format!("{:?}", self)
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -187,14 +111,6 @@ impl OrderFilled {
     #[pyo3(name = "is_sell")]
     fn py_is_sell(&self) -> bool {
         self.is_sell()
-    }
-
-    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
-        match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
-            _ => py.NotImplemented(),
-        }
     }
 
     #[getter]

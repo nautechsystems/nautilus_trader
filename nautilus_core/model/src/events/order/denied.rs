@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
@@ -26,7 +26,7 @@ use crate::identifiers::{
 };
 
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 #[cfg_attr(
@@ -69,12 +69,31 @@ impl OrderDenied {
     }
 }
 
+impl Debug for OrderDenied {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f,
+            "{}(trader_id={}, strategy_id={}, instrument_id={}, client_order_id={}, reason='{}', event_id={}, ts_init={})",
+            stringify!(OrderDenied),
+            self.trader_id,
+            self.strategy_id,
+            self.instrument_id,
+            self.client_order_id,
+            self.reason,
+            self.event_id,
+            self.ts_init
+        )
+    }
+}
+
 impl Display for OrderDenied {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "OrderDenied(instrument_id={}, client_order_id={}, reason='{}')",
-            self.instrument_id, self.client_order_id, self.reason
+            "{}(instrument_id={}, client_order_id={}, reason='{}')",
+            stringify!(OrderDenied),
+            self.instrument_id,
+            self.client_order_id,
+            self.reason
         )
     }
 }

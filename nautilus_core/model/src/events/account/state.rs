@@ -76,7 +76,8 @@ impl Display for AccountState {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "AccountState(account_id={}, account_type={}, base_currency={}, is_reported={}, balances=[{}], margins=[{}], event_id={})",
+            "{}(account_id={}, account_type={}, base_currency={}, is_reported={}, balances=[{}], margins=[{}], event_id={})",
+            stringify!(AccountState),
             self.account_id,
             self.account_type,
             self.base_currency.map_or_else(|| "None".to_string(), |base_currency | format!("{}", base_currency.code)),

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
@@ -25,7 +25,7 @@ use crate::identifiers::{
 };
 
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 #[cfg_attr(
@@ -68,12 +68,33 @@ impl OrderSubmitted {
     }
 }
 
+impl Debug for OrderSubmitted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f,
+            "{}(trader_id={}, strategy_id={}, instrument_id={}, client_order_id={}, account_id={}, event_id={}, ts_event={}, ts_init={})",
+            stringify!(OrderSubmitted),
+            self.trader_id,
+            self.strategy_id,
+            self.instrument_id,
+            self.client_order_id,
+            self.account_id,
+            self.event_id,
+            self.ts_event,
+            self.ts_init
+        )
+    }
+}
+
 impl Display for OrderSubmitted {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "OrderSubmitted(instrument_id={}, client_order_id={}, account_id={}, ts_event={})",
-            self.instrument_id, self.client_order_id, self.account_id, self.ts_event
+            "{}(instrument_id={}, client_order_id={}, account_id={}, ts_event={})",
+            stringify!(OrderSubmitted),
+            self.instrument_id,
+            self.client_order_id,
+            self.account_id,
+            self.ts_event
         )
     }
 }
