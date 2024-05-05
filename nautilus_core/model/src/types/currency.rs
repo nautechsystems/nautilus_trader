@@ -108,7 +108,7 @@ impl Debug for Currency {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}(code=\"{}\", precision={}, iso4217={}, name=\"{}\", currency_type={})",
+            "{}(code='{}', precision={}, iso4217={}, name='{}', currency_type={})",
             stringify!(Currency),
             self.code,
             self.precision,
@@ -174,18 +174,18 @@ mod tests {
     use crate::{enums::CurrencyType, types::currency::Currency};
 
     #[rstest]
-    fn test_uuid4_debug() {
+    fn test_debug() {
         let currency = Currency::AUD();
         assert_eq!(
             format!("{:?}", currency),
             format!(
-                r#"Currency(code="AUD", precision=2, iso4217=36, name="Australian dollar", currency_type=FIAT)"#
+                "Currency(code='AUD', precision=2, iso4217=36, name='Australian dollar', currency_type=FIAT)"
             )
         );
     }
 
     #[rstest]
-    fn test_uuid4_display() {
+    fn test_display() {
         let currency = Currency::AUD();
         assert_eq!(format!("{currency}"), "AUD");
     }
