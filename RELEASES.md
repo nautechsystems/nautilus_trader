@@ -12,6 +12,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Changed `tags` param and return type from `str` to `list[str]` (more naturally expresses multiple tags)
+- Removed `allow_cash_positions` config (simplify to the most common use case, spot trading should track positions)
 
 ### Fixes
 - Fixed `ParquetDataCatalog` bar queries by `instrument_id` which were no longer returning data (the intent is to use `bar_type`, however using `instrument_id` now returns all matching bars)
