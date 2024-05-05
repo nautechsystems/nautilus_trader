@@ -82,7 +82,7 @@ impl Display for OrderModifyRejected {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "OrderModifyRejected(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={},reason={}, ts_event={})",
+            "OrderModifyRejected(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, reason='{}', ts_event={})",
             self.instrument_id,
             self.client_order_id,
             self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
@@ -108,7 +108,7 @@ mod tests {
         assert_eq!(
             display,
             "OrderModifyRejected(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, \
-            venue_order_id=001, account_id=SIM-001,reason=ORDER_DOES_NOT_EXIST, ts_event=0)"
+            venue_order_id=001, account_id=SIM-001, reason='ORDER_DOES_NOT_EXIST', ts_event=0)"
         );
     }
 }

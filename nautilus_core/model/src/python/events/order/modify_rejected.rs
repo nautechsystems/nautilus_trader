@@ -72,9 +72,22 @@ impl OrderModifyRejected {
         }
     }
 
+    fn __str__(&self) -> String {
+        format!(
+            "{}(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, reason='{}', ts_event={})",
+            stringify!(OrderModifyRejected),
+            self.instrument_id,
+            self.client_order_id,
+            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
+            self.account_id.map_or("None".to_string(), |account_id| format!("{account_id}")),
+            self.reason,
+            self.ts_event,
+        )
+    }
+
     fn __repr__(&self) -> String {
         format!(
-            "{}(trader_id={}, strategy_id={}, instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, reason={}, event_id={}, ts_event={}, ts_init={})",
+            "{}(trader_id={}, strategy_id={}, instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, reason='{}', event_id={}, ts_event={}, ts_init={})",
             stringify!(OrderModifyRejected),
             self.trader_id,
             self.strategy_id,
@@ -87,19 +100,6 @@ impl OrderModifyRejected {
             self.ts_event,
             self.ts_init
 
-        )
-    }
-
-    fn __str__(&self) -> String {
-        format!(
-            "{}(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, reason={}, ts_event={})",
-            stringify!(OrderModifyRejected),
-            self.instrument_id,
-            self.client_order_id,
-            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
-            self.account_id.map_or("None".to_string(), |account_id| format!("{account_id}")),
-            self.reason,
-            self.ts_event,
         )
     }
 

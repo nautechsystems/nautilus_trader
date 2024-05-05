@@ -79,7 +79,7 @@ impl Display for OrderRejected {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "OrderRejected(instrument_id={}, client_order_id={}, reason={}, ts_event={})",
+            "OrderRejected(instrument_id={}, client_order_id={}, reason='{}', ts_event={})",
             self.instrument_id, self.client_order_id, self.reason, self.ts_event
         )
     }
@@ -99,6 +99,6 @@ mod tests {
     fn test_order_rejected_display(order_rejected_insufficient_margin: OrderRejected) {
         let display = format!("{order_rejected_insufficient_margin}");
         assert_eq!(display, "OrderRejected(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, \
-        reason=INSUFFICIENT_MARGIN, ts_event=0)");
+        reason='INSUFFICIENT_MARGIN', ts_event=0)");
     }
 }

@@ -40,13 +40,13 @@ def test_order_denied():
     assert (
         str(event)
         == "OrderDenied(instrument_id=AUD/USD.SIM, client_order_id=O-20210410-022422-001-001-1, "
-        + "reason=Exceeded MAX_ORDER_SUBMIT_RATE)"
+        + "reason='Exceeded MAX_ORDER_SUBMIT_RATE')"
     )
     assert (
         repr(event)
         == "OrderDenied(trader_id=TESTER-001, strategy_id=S-001, "
         + "instrument_id=AUD/USD.SIM, client_order_id=O-20210410-022422-001-001-1, "
-        + "reason=Exceeded MAX_ORDER_SUBMIT_RATE, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_init=0)"
+        + "reason='Exceeded MAX_ORDER_SUBMIT_RATE', event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_init=0)"
     )
 
 
@@ -105,13 +105,13 @@ def test_order_rejected():
     assert (
         str(event)
         == "OrderRejected(instrument_id=AUD/USD.SIM, client_order_id=O-20210410-022422-001-001-1, "
-        + "account_id=SIM-000, reason=INSUFFICIENT_MARGIN, ts_event=0)"
+        + "account_id=SIM-000, reason='INSUFFICIENT_MARGIN', ts_event=0)"
     )
     assert (
         repr(event)
         == "OrderRejected(trader_id=TESTER-001, strategy_id=S-001, "
         + "instrument_id=AUD/USD.SIM, client_order_id=O-20210410-022422-001-001-1, account_id=SIM-000, "
-        + "reason=INSUFFICIENT_MARGIN, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+        + "reason='INSUFFICIENT_MARGIN', event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
     )
 
 
@@ -243,13 +243,13 @@ def test_order_modified_rejected():
     assert (
         str(event)
         == "OrderModifyRejected(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, venue_order_id=123456, "
-        + "account_id=SIM-000, reason=ORDER_DOES_NOT_EXIST, ts_event=0)"
+        + "account_id=SIM-000, reason='ORDER_DOES_NOT_EXIST', ts_event=0)"
     )
     assert (
         repr(event)
         == "OrderModifyRejected(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
         + "client_order_id=O-20210410-022422-001-001-1, venue_order_id=123456, account_id=SIM-000, "
-        + "reason=ORDER_DOES_NOT_EXIST, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+        + "reason='ORDER_DOES_NOT_EXIST', event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
     )
 
 
@@ -278,13 +278,13 @@ def test_order_cancel_rejected():
     assert (
         str(event)
         == "OrderCancelRejected(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, venue_order_id=123456, "
-        + "account_id=SIM-000, reason=ORDER_DOES_NOT_EXIST, ts_event=0)"
+        + "account_id=SIM-000, reason='ORDER_DOES_NOT_EXIST', ts_event=0)"
     )
     assert (
         repr(event)
         == "OrderCancelRejected(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
         + "client_order_id=O-20210410-022422-001-001-1, venue_order_id=123456, account_id=SIM-000, "
-        + "reason=ORDER_DOES_NOT_EXIST, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+        + "reason='ORDER_DOES_NOT_EXIST', event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
     )
 
 
