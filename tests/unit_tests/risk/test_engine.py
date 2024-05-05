@@ -32,6 +32,7 @@ from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.messages import TradingCommand
 from nautilus_trader.model.currencies import ADA
+from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
@@ -72,6 +73,7 @@ _AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 _GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 _XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 _ADAUSDT_BINANCE = TestInstrumentProvider.adausdt_binance()
+_ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class TestRiskEngineWithCashAccount:
@@ -2142,6 +2144,11 @@ class TestRiskEngineWithCryptoCashAccount:
                 Money(0, USDT),
                 Money(268.84000000, USDT),
             ),
+            AccountBalance(
+                Money(0.00000000, ETH),
+                Money(0, ETH),
+                Money(0.00000000, ETH),
+            ),
         ]
 
         account_state = AccountState(
@@ -2213,3 +2220,81 @@ class TestRiskEngineWithCryptoCashAccount:
         # Assert
         assert order.status == OrderStatus.INITIALIZED
         assert self.exec_engine.command_count == 1
+
+    def test_partial_fill_and_full_fill_account_balance_correct(self):
+        # Arrange
+        self.cache.add_instrument(_ETHUSDT_BINANCE)
+        quote = TestDataStubs.quote_tick(
+            instrument=_ETHUSDT_BINANCE,
+            bid_price=10_000.00,
+            ask_price=10_000.10,
+        )
+        self.cache.add_quote_tick(quote)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order1 = strategy.order_factory.market(
+            _ETHUSDT_BINANCE.id,
+            OrderSide.BUY,
+            _ETHUSDT_BINANCE.make_qty(0.02),
+        )
+
+        order2 = strategy.order_factory.market(
+            _ETHUSDT_BINANCE.id,
+            OrderSide.BUY,
+            _ETHUSDT_BINANCE.make_qty(0.02),
+        )
+
+        submit_order1 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order1,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_order1)
+        self.exec_engine.process(TestEventStubs.order_submitted(order1, account_id=self.account_id))
+        self.exec_engine.process(TestEventStubs.order_accepted(order1))
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                order1,
+                _ETHUSDT_BINANCE,
+                account_id=self.account_id,
+                last_qty=_ETHUSDT_BINANCE.make_qty(0.0005),
+            ),
+        )
+
+        submit_order2 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=PositionId("P-19700101-0000-000-None-1"),
+            order=order2,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order2)
+        self.exec_engine.process(TestEventStubs.order_submitted(order2, account_id=self.account_id))
+        self.exec_engine.process(TestEventStubs.order_accepted(order2))
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                order2,
+                _ETHUSDT_BINANCE,
+                account_id=self.account_id,
+            ),
+        )
+
+        # Assert
+        account = self.cache.account(self.account_id)
+        assert account.balance(_ETHUSDT_BINANCE.base_currency).total == Money(0.00000000, ETH)
+        assert self.portfolio.net_position(_ETHUSDT_BINANCE.id) == Decimal("0.02050")
