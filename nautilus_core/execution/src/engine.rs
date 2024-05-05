@@ -46,7 +46,6 @@ use crate::{
 
 pub struct ExecutionEngineConfig {
     pub debug: bool,
-    pub allow_cash_positions: bool,
 }
 
 pub struct ExecutionEngine {

@@ -145,7 +145,6 @@ cdef class ExecutionEngine(Component):
 
         # Settings
         self.debug: bool = config.debug
-        self.allow_cash_positions: bool = config.allow_cash_positions
 
         # Counters
         self.command_count: int = 0
@@ -1039,10 +1038,6 @@ cdef class ExecutionEngine(Component):
                 f"no account found for {fill.instrument_id.venue}, {fill}"
             )
             return
-
-        if not self.allow_cash_positions and isinstance(instrument, CurrencyPair):
-            if account.is_unleveraged(instrument.id):
-                return  # No spot cash positions
 
         cdef Position position = self._cache.position(fill.position_id)
         if position is None or position.is_closed_c():
