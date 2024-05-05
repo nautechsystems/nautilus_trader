@@ -342,9 +342,11 @@ impl LiveTimer {
     /// Cancels the timer (the timer will not generate an event).
     pub fn cancel(&mut self) -> anyhow::Result<()> {
         debug!("Cancel timer '{}'", self.name);
-        if let Some(sender) = self.canceler.take() {
-            // Send cancellation signal
-            sender.send(()).map_err(|e| anyhow::anyhow!("{:?}", e))?;
+        if !self.is_expired.load(atomic::Ordering::SeqCst) {
+            if let Some(sender) = self.canceler.take() {
+                // Send cancellation signal
+                sender.send(()).map_err(|e| anyhow::anyhow!("{:?}", e))?;
+            }
         }
         Ok(())
     }
