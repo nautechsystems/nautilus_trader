@@ -66,6 +66,18 @@ impl OrderAccepted {
         }
     }
 
+    fn __str__(&self) -> String {
+        format!(
+            "{}(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, ts_event={})",
+            stringify!(OrderAccepted),
+            self.instrument_id,
+            self.client_order_id,
+            self.venue_order_id,
+            self.account_id,
+            self.ts_event,
+        )
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "{}(trader_id={}, strategy_id={}, instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, event_id={}, ts_event={}, ts_init={})",
@@ -79,18 +91,6 @@ impl OrderAccepted {
             self.event_id,
             self.ts_event,
             self.ts_init
-        )
-    }
-
-    fn __str__(&self) -> String {
-        format!(
-            "{}(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, ts_event={})",
-            stringify!(OrderAccepted),
-            self.instrument_id,
-            self.client_order_id,
-            self.venue_order_id,
-            self.account_id,
-            self.ts_event,
         )
     }
 

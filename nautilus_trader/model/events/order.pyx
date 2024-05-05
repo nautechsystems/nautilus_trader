@@ -681,7 +681,7 @@ cdef class OrderDenied(OrderEvent):
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id}, "
             f"client_order_id={self.client_order_id}, "
-            f"reason={self.reason})"
+            f"reason='{self.reason}')"
         )
 
     def __repr__(self) -> str:
@@ -691,7 +691,7 @@ cdef class OrderDenied(OrderEvent):
             f"strategy_id={self.strategy_id}, "
             f"instrument_id={self.instrument_id}, "
             f"client_order_id={self.client_order_id}, "
-            f"reason={self.reason}, "
+            f"reason='{self.reason}', "
             f"event_id={self.id}, "
             f"ts_init={self.ts_init})"
         )
@@ -3648,7 +3648,7 @@ cdef class OrderModifyRejected(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
-            f"reason={self.reason}, "
+            f"reason='{self.reason}', "
             f"ts_event={self.ts_event})"
         )
 
@@ -3661,7 +3661,7 @@ cdef class OrderModifyRejected(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
-            f"reason={self.reason}, "
+            f"reason='{self.reason}', "
             f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
@@ -3946,7 +3946,7 @@ cdef class OrderCancelRejected(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
-            f"reason={self.reason}, "
+            f"reason='{self.reason}', "
             f"ts_event={self.ts_event})"
         )
 
@@ -3959,7 +3959,7 @@ cdef class OrderCancelRejected(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
-            f"reason={self.reason}, "
+            f"reason='{self.reason}', "
             f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
