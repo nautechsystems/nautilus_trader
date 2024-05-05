@@ -109,7 +109,7 @@ class SandboxExecutionClient(LiveExecutionClient):
         )
         self.exchange = SimulatedExchange(
             venue=sandbox_venue,
-            oms_type=oms_type,
+            oms_type=OmsType.HEDGING if oms_type == OmsType.NETTING else OmsType.NETTING,
             account_type=self._account_type,
             base_currency=self._currency,
             starting_balances=[self.balance.free],
