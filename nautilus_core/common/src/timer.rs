@@ -20,7 +20,7 @@ use std::{
     ffi::c_char,
     fmt::{Display, Formatter},
     sync::{
-        atomic::{self, AtomicBool},
+        atomic::{self, AtomicBool, AtomicU64},
         Arc,
     },
 };
@@ -139,8 +139,8 @@ pub struct TestTimer {
     pub interval_ns: u64,
     pub start_time_ns: UnixNanos,
     pub stop_time_ns: Option<UnixNanos>,
-    pub next_time_ns: UnixNanos,
-    pub is_expired: bool,
+    next_time_ns: UnixNanos,
+    is_expired: bool,
 }
 
 impl TestTimer {
@@ -161,6 +161,16 @@ impl TestTimer {
             next_time_ns: start_time_ns + interval_ns,
             is_expired: false,
         })
+    }
+
+    #[must_use]
+    pub fn next_time_ns(&self) -> UnixNanos {
+        self.next_time_ns
+    }
+
+    #[must_use]
+    pub fn is_expired(&self) -> bool {
+        self.is_expired
     }
 
     #[must_use]
@@ -220,15 +230,12 @@ impl Iterator for TestTimer {
 }
 
 /// Provides a live timer for use with a `LiveClock`.
-///
-/// Note: `next_time_ns` is only accurate when initially starting the timer
-/// and will not incrementally update as the timer runs.
 pub struct LiveTimer {
     pub name: Ustr,
     pub interval_ns: u64,
     pub start_time_ns: UnixNanos,
     pub stop_time_ns: Option<UnixNanos>,
-    pub next_time_ns: UnixNanos,
+    next_time_ns: Arc<AtomicU64>,
     is_expired: Arc<AtomicBool>,
     callback: EventHandler,
     canceler: Option<oneshot::Sender<()>>,
@@ -251,11 +258,16 @@ impl LiveTimer {
             interval_ns,
             start_time_ns,
             stop_time_ns,
-            next_time_ns: start_time_ns + interval_ns,
+            next_time_ns: Arc::new(AtomicU64::new(start_time_ns.as_u64() + interval_ns)),
             is_expired: Arc::new(AtomicBool::new(false)),
             callback,
             canceler: None,
         })
+    }
+
+    #[must_use]
+    pub fn next_time_ns(&self) -> UnixNanos {
+        UnixNanos::from(self.next_time_ns.load(atomic::Ordering::SeqCst))
     }
 
     #[must_use]
@@ -267,13 +279,14 @@ impl LiveTimer {
         let event_name = self.name;
         let stop_time_ns = self.stop_time_ns;
         let mut start_time_ns = self.start_time_ns;
-        let next_time_ns = self.next_time_ns;
+        let next_time_ns = self.next_time_ns.load(atomic::Ordering::SeqCst);
+        let next_time_atomic = self.next_time_ns.clone();
         let interval_ns = self.interval_ns;
         let is_expired = self.is_expired.clone();
         let callback = self.callback.clone();
 
         // Floor the next time to the nearest microsecond which is within the timers accuracy
-        let mut next_time_ns = UnixNanos::from(floor_to_nearest_microsecond(next_time_ns.into()));
+        let mut next_time_ns = UnixNanos::from(floor_to_nearest_microsecond(next_time_ns));
 
         // Setup oneshot channel for cancelling timer task
         let (cancel_tx, mut cancel_rx) = oneshot::channel();
@@ -318,6 +331,7 @@ impl LiveTimer {
 
                         // Prepare next time interval
                         next_time_ns += interval_ns;
+                        next_time_atomic.store(next_time_ns.as_u64(), atomic::Ordering::SeqCst);
 
                         // Check if expired
                         if let Some(stop_time_ns) = stop_time_ns {
@@ -339,7 +353,7 @@ impl LiveTimer {
         });
     }
 
-    /// Cancels the timer (the timer will not generate an event).
+    /// Cancels the timer (the timer will not generate a final event).
     pub fn cancel(&mut self) -> anyhow::Result<()> {
         debug!("Cancel timer '{}'", self.name);
         if !self.is_expired.load(atomic::Ordering::SeqCst) {
@@ -486,6 +500,7 @@ mod tests {
         let interval_ns = 100 * NANOSECONDS_IN_MILLISECOND;
         let mut timer =
             LiveTimer::new("TEST_TIMER", interval_ns, start_time, None, handler).unwrap();
+        let next_time_ns = timer.next_time_ns();
         timer.start();
 
         // Wait for timer to run
@@ -493,6 +508,7 @@ mod tests {
 
         timer.cancel().unwrap();
         wait_until(|| timer.is_expired(), Duration::from_secs(2));
+        assert!(timer.next_time_ns() > next_time_ns);
     }
 
     #[tokio::test]
@@ -517,11 +533,13 @@ mod tests {
             handler,
         )
         .unwrap();
+        let next_time_ns = timer.next_time_ns();
         timer.start();
 
         // Wait for a longer time than the stop time
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         wait_until(|| timer.is_expired(), Duration::from_secs(2));
+        assert!(timer.next_time_ns() > next_time_ns);
     }
 }

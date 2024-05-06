@@ -108,7 +108,7 @@ impl TestClock {
         let mut timers: Vec<TimeEvent> = self
             .timers
             .iter_mut()
-            .filter(|(_, timer)| !timer.is_expired)
+            .filter(|(_, timer)| !timer.is_expired())
             .flat_map(|(_, timer)| timer.advance(to_time_ns))
             .collect();
 
@@ -166,7 +166,7 @@ impl Clock for TestClock {
     fn timer_names(&self) -> Vec<&str> {
         self.timers
             .iter()
-            .filter(|(_, timer)| !timer.is_expired)
+            .filter(|(_, timer)| !timer.is_expired())
             .map(|(k, _)| k.as_str())
             .collect()
     }
@@ -174,7 +174,7 @@ impl Clock for TestClock {
     fn timer_count(&self) -> usize {
         self.timers
             .iter()
-            .filter(|(_, timer)| !timer.is_expired)
+            .filter(|(_, timer)| !timer.is_expired())
             .count()
     }
 
@@ -241,7 +241,7 @@ impl Clock for TestClock {
         let timer = self.timers.get(&Ustr::from(name));
         match timer {
             None => 0.into(),
-            Some(timer) => timer.next_time_ns,
+            Some(timer) => timer.next_time_ns(),
         }
     }
 
@@ -374,7 +374,7 @@ impl Clock for LiveClock {
         let timer = self.timers.get(&Ustr::from(name));
         match timer {
             None => 0.into(),
-            Some(timer) => timer.next_time_ns,
+            Some(timer) => timer.next_time_ns(),
         }
     }
 
