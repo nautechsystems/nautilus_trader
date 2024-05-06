@@ -41,7 +41,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
         amongst all running strategies for a particular trader ID.
     oms_type : OmsType, optional
         The order management system type for the strategy. This will determine
-        how the `ExecutionEngine` handles position IDs (see docs).
+        how the `ExecutionEngine` handles position IDs.
     external_order_claims : list[InstrumentId], optional
         The external order claim instrument IDs.
         External orders for matching instrument IDs will be associated with (claimed by) the strategy.

@@ -65,8 +65,8 @@ class EMACrossTrailingStopConfig(StrategyConfig, frozen=True):
         The trailing offset type (interpreted as `TrailingOffsetType`).
     trigger_type : str
         The trailing stop trigger type (interpreted as `TriggerType`).
-    trade_size : str
-        The position size per trade (interpreted as Decimal).
+    trade_size : Decimal
+        The position size per trade.
     fast_ema_period : PositiveInt, default 10
         The fast EMA period.
     slow_ema_period : PositiveInt, default 20
@@ -74,12 +74,6 @@ class EMACrossTrailingStopConfig(StrategyConfig, frozen=True):
     emulation_trigger : str, default 'NO_TRIGGER'
         The emulation trigger for submitting emulated orders.
         If 'NONE' then orders will not be emulated.
-    order_id_tag : str
-        The unique order ID tag for the strategy. Must be unique
-        amongst all running strategies for a particular trader ID.
-    oms_type : OmsType
-        The order management system type for the strategy. This will determine
-        how the `ExecutionEngine` handles position IDs (see docs).
 
     """
 

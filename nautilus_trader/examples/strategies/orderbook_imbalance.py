@@ -45,7 +45,7 @@ class OrderBookImbalanceConfig(StrategyConfig, frozen=True):
     ----------
     instrument_id : InstrumentId
         The instrument ID for the strategy.
-    max_trade_size : str
+    max_trade_size : Decimal
         The max position size per trade (volume on the level can be less).
     trigger_min_size : PositiveFloat, default 100.0
         The minimum size on the larger side to trigger an order.
@@ -62,12 +62,6 @@ class OrderBookImbalanceConfig(StrategyConfig, frozen=True):
         If quote ticks should be used.
     subscribe_ticker : bool, default False
         If tickers should be subscribed to.
-    order_id_tag : str
-        The unique order ID tag for the strategy. Must be unique
-        amongst all running strategies for a particular trader ID.
-    oms_type : OmsType
-        The order management system type for the strategy. This will determine
-        how the `ExecutionEngine` handles position IDs (see docs).
 
     """
 

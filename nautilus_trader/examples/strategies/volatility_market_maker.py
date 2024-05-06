@@ -66,9 +66,6 @@ class VolatilityMarketMakerConfig(StrategyConfig, frozen=True):
     emulation_trigger : str, default 'NO_TRIGGER'
         The emulation trigger for submitting emulated orders.
         If ``None`` then orders will not be emulated.
-    oms_type : OmsType
-        The order management system type for the strategy. This will determine
-        how the `ExecutionEngine` handles position IDs (see docs).
 
     """
 
