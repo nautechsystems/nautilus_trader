@@ -15,7 +15,7 @@
 
 use std::{
     cmp::Ordering,
-    fmt::{Debug, Display, Formatter},
+    fmt::{Debug, Display},
     hash::{Hash, Hasher},
     ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign},
     str::FromStr,
@@ -247,13 +247,19 @@ impl<T: Into<u64>> MulAssign<T> for Quantity {
 }
 
 impl Debug for Quantity {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:.*}", self.precision as usize, self.as_f64())
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}({:.*})",
+            stringify!(Quantity),
+            self.precision as usize,
+            self.as_f64(),
+        )
     }
 }
 
 impl Display for Quantity {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:.*}", self.precision as usize, self.as_f64())
     }
 }
@@ -492,13 +498,16 @@ mod tests {
     }
 
     #[rstest]
+    fn test_debug() {
+        let quantity = Quantity::from_str("44.12").unwrap();
+        let result = format!("{quantity:?}");
+        assert_eq!(result, "Quantity(44.12)");
+    }
+
+    #[rstest]
     fn test_display() {
-        use std::fmt::Write as FmtWrite;
-        let input_string = "44.12";
-        let qty = Quantity::from_str(input_string).unwrap();
-        let mut res = String::new();
-        write!(&mut res, "{qty}").unwrap();
-        assert_eq!(res, input_string);
-        assert_eq!(qty.to_string(), input_string);
+        let quantity = Quantity::from_str("44.12").unwrap();
+        let result = format!("{quantity}");
+        assert_eq!(result, "44.12");
     }
 }

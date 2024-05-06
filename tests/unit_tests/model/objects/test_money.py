@@ -164,7 +164,7 @@ class TestMoney:
         result = repr(money)
 
         # Assert
-        assert result == "Money('1.00', USD)"
+        assert result == "Money(1.00, USD)"
 
     def test_from_str_when_malformed_raises_value_error(self) -> None:
         # Arrange

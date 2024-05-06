@@ -15,7 +15,7 @@
 
 use std::{
     cmp::Ordering,
-    fmt::{Debug, Display, Formatter},
+    fmt::{Debug, Display},
     hash::{Hash, Hasher},
     ops::{Add, AddAssign, Deref, Mul, Neg, Sub, SubAssign},
     str::FromStr,
@@ -256,13 +256,19 @@ impl Mul<f64> for Price {
 }
 
 impl Debug for Price {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:.*}", self.precision as usize, self.as_f64())
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}({:.*})",
+            stringify!(Price),
+            self.precision as usize,
+            self.as_f64()
+        )
     }
 }
 
 impl Display for Price {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:.*}", self.precision as usize, self.as_f64())
     }
 }
@@ -498,12 +504,16 @@ mod tests {
     }
 
     #[rstest]
+    fn test_debug() {
+        let price = Price::from_str("44.12").unwrap();
+        let result = format!("{price:?}");
+        assert_eq!(result, "Price(44.12)");
+    }
+
+    #[rstest]
     fn test_display() {
-        use std::fmt::Write as FmtWrite;
-        let input_string = "44.12";
-        let price = Price::from_str(input_string).unwrap();
-        let mut res = String::new();
-        write!(&mut res, "{price}").unwrap();
-        assert_eq!(res, input_string);
+        let price = Price::from_str("44.12").unwrap();
+        let result = format!("{price}");
+        assert_eq!(result, "44.12");
     }
 }

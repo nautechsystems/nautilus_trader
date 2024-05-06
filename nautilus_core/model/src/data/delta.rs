@@ -232,7 +232,7 @@ mod tests {
         let delta = stub_delta;
         assert_eq!(
             format!("{delta}"),
-            "AAPL.XNAS,ADD,100.00,10,BUY,123456,0,1,1,2".to_string()
+            "AAPL.XNAS,ADD,BUY,100.00,10,123456,0,1,1,2".to_string()
         );
     }
 

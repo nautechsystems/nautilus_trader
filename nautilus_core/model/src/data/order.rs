@@ -13,10 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A `BookOrder` for use with the `OrderBookDelta` data type.
+//! A `BookOrder` for use with the `OrderBook` and `OrderBookDelta` data type.
 
 use std::{
-    fmt::{Display, Formatter},
+    fmt::{Debug, Display},
     hash::{Hash, Hasher},
 };
 
@@ -46,7 +46,7 @@ pub const NULL_ORDER: BookOrder = BookOrder {
 
 /// Represents an order in a book.
 #[repr(C)]
-#[derive(Clone, Eq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Eq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -112,12 +112,26 @@ impl Hash for BookOrder {
     }
 }
 
+impl Debug for BookOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}(side={}, price={}, size={}, order_id={})",
+            stringify!(BookOrder),
+            self.side,
+            self.price,
+            self.size,
+            self.order_id,
+        )
+    }
+}
+
 impl Display for BookOrder {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{},{},{},{}",
-            self.price, self.size, self.side, self.order_id,
+            self.side, self.price, self.size, self.order_id,
         )
     }
 }
@@ -191,16 +205,26 @@ mod tests {
     }
 
     #[rstest]
+    fn test_debug() {
+        let price = Price::from("100.00");
+        let size = Quantity::from(10);
+        let side = OrderSide::Buy;
+        let order_id = 123_456;
+        let order = BookOrder::new(side, price, size, order_id);
+        let result = format!("{order:?}");
+        let expected = "BookOrder(side=BUY, price=100.00, size=10, order_id=123456)";
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
     fn test_display() {
         let price = Price::from("100.00");
         let size = Quantity::from(10);
         let side = OrderSide::Buy;
         let order_id = 123_456;
-
         let order = BookOrder::new(side, price, size, order_id);
-        let display = format!("{order}");
-
-        let expected = format!("{price},{size},{side},{order_id}");
-        assert_eq!(display, expected);
+        let result = format!("{order}");
+        let expected = "BUY,100.00,10,123456";
+        assert_eq!(result, expected);
     }
 }

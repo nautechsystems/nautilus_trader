@@ -569,7 +569,7 @@ class TestPrice:
         result = repr(Price(1.1, 1))
 
         # Assert
-        assert result == "Price('1.1')"
+        assert result == "Price(1.1)"
 
     @pytest.mark.parametrize(
         ("value", "precision", "expected"),
@@ -663,7 +663,7 @@ class TestPrice:
 
         # Assert
         assert str(price) == "1.00000"
-        assert repr(price) == "Price('1.00000')"
+        assert repr(price) == "Price(1.00000)"
 
     def test_pickle_dumps_and_loads(self):
         # Arrange
