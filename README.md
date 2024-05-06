@@ -45,7 +45,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 ## Features
 
 - **Fast** - Core written in Rust with asynchronous networking using [tokio](https://crates.io/crates/tokio)
-- **Reliable** - Type-safety and thread-safety through Rust. Redis backed performant state persistence
+- **Reliable** - Type safety and thread safety through Rust. Redis backed performant state persistence
 - **Portable** - OS independent, runs on Linux, macOS, Windows. Deploy using Docker
 - **Flexible** - Modular adapters mean any REST, WebSocket, or FIX API can be integrated
 - **Advanced** - Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`
