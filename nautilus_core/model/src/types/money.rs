@@ -15,7 +15,7 @@
 
 use std::{
     cmp::Ordering,
-    fmt::{Display, Formatter, Result as FmtResult},
+    fmt::{Debug, Display},
     hash::{Hash, Hasher},
     ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign},
     str::FromStr,
@@ -36,7 +36,7 @@ pub const MONEY_MAX: f64 = 9_223_372_036.0;
 pub const MONEY_MIN: f64 = -9_223_372_036.0;
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq)]
+#[derive(Clone, Copy, Eq)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -252,8 +252,21 @@ impl Div<f64> for Money {
     }
 }
 
+impl Debug for Money {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}({:.*}, currency={})",
+            stringify!(Money),
+            self.currency.precision as usize,
+            self.as_f64(),
+            self.currency,
+        )
+    }
+}
+
 impl Display for Money {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{:.*} {}",
@@ -294,6 +307,21 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+
+    #[rstest]
+    fn test_debug() {
+        let money = Money::new(1010.12, Currency::USD()).unwrap();
+        assert_eq!(
+            format!("{:?}", money),
+            format!("Money(1010.12, currency=USD)")
+        );
+    }
+
+    #[rstest]
+    fn test_display() {
+        let money = Money::new(1010.12, Currency::USD()).unwrap();
+        assert_eq!(format!("{money}"), "1010.12 USD");
+    }
 
     #[rstest]
     #[should_panic]
