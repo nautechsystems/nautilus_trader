@@ -52,8 +52,8 @@ class EMACrossLongOnlyConfig(StrategyConfig, frozen=True):
         The instrument ID for the strategy.
     bar_type : BarType
         The bar type for the strategy.
-    trade_size : str
-        The position size per trade (interpreted as Decimal).
+    trade_size : Decimal
+        The position size per trade.
     fast_ema_period : int, default 10
         The fast EMA period.
     slow_ema_period : int, default 20
@@ -62,12 +62,6 @@ class EMACrossLongOnlyConfig(StrategyConfig, frozen=True):
         If historical bars should be requested on start.
     close_positions_on_stop : bool, default True
         If all open positions should be closed on strategy stop.
-    order_id_tag : str
-        The unique order ID tag for the strategy. Must be unique
-        amongst all running strategies for a particular trader ID.
-    oms_type : OmsType
-        The order management system type for the strategy. This will determine
-        how the `ExecutionEngine` handles position IDs (see docs).
 
     """
 
