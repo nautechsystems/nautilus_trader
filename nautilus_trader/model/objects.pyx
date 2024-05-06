@@ -232,7 +232,7 @@ cdef class Quantity:
         return f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.precision}f}"
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self}')"
+        return f"{type(self).__name__}({self})"
 
     @property
     def raw(self) -> uint64_t:
@@ -674,7 +674,7 @@ cdef class Price:
         return f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.precision}f}"
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self}')"
+        return f"{type(self).__name__}({self})"
 
     @property
     def raw(self) -> int64_t:
@@ -1054,7 +1054,7 @@ cdef class Money:
         return f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.currency.precision}f}"
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}('{str(self)}', {self.currency_code_c()})"
+        return f"{type(self).__name__}({str(self)}, {self.currency_code_c()})"
 
     @property
     def raw(self) -> int64_t:

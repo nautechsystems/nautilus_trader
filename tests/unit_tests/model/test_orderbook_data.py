@@ -109,8 +109,8 @@ def test_hash_str_and_repr():
 
     # Act, Assert
     assert isinstance(hash(order), int)
-    assert str(order) == r"BookOrder { side: Buy, price: 100.0, size: 5, order_id: 1 }"
-    assert repr(order) == r"BookOrder { side: Buy, price: 100.0, size: 5, order_id: 1 }"
+    assert str(order) == "BookOrder(side=BUY, price=100.0, size=5, order_id=1)"
+    assert repr(order) == "BookOrder(side=BUY, price=100.0, size=5, order_id=1)"
 
 
 def test_to_dict_returns_expected_dict():
@@ -163,7 +163,7 @@ def test_book_order_from_raw() -> None:
     )
 
     # Assert
-    assert str(order) == "BookOrder { side: Buy, price: 10.0, size: 5, order_id: 1 }"
+    assert str(order) == "BookOrder(side=BUY, price=10.0, size=5, order_id=1)"
 
 
 def test_delta_fully_qualified_name() -> None:
@@ -191,7 +191,7 @@ def test_delta_from_raw() -> None:
     # Assert
     assert (
         str(delta)
-        == "OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder { side: Buy, price: 10.0, size: 5, order_id: 1 }, flags=0, sequence=123456789, ts_event=5000000, ts_init=1000000000)"  # noqa
+        == "OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder(side=BUY, price=10.0, size=5, order_id=1), flags=0, sequence=123456789, ts_event=5000000, ts_init=1000000000)"  # noqa
     )
 
 
@@ -245,11 +245,11 @@ def test_delta_hash_str_and_repr() -> None:
     assert isinstance(hash(delta), int)
     assert (
         str(delta)
-        == "OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder { side: Buy, price: 10.0, size: 5, order_id: 1 }, flags=0, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
+        == "OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder(side=BUY, price=10.0, size=5, order_id=1), flags=0, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
     )
     assert (
         repr(delta)
-        == "OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder { side: Buy, price: 10.0, size: 5, order_id: 1 }, flags=0, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
+        == "OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder(side=BUY, price=10.0, size=5, order_id=1), flags=0, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
     )
 
 
@@ -269,11 +269,11 @@ def test_delta_with_null_book_order() -> None:
     assert isinstance(hash(delta), int)
     assert (
         str(delta)
-        == "OrderBookDelta(instrument_id=AUD/USD.SIM, action=CLEAR, order=BookOrder { side: NoOrderSide, price: 0, size: 0, order_id: 0 }, flags=32, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
+        == "OrderBookDelta(instrument_id=AUD/USD.SIM, action=CLEAR, order=BookOrder(side=NO_ORDER_SIDE, price=0, size=0, order_id=0), flags=32, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
     )
     assert (
         repr(delta)
-        == "OrderBookDelta(instrument_id=AUD/USD.SIM, action=CLEAR, order=BookOrder { side: NoOrderSide, price: 0, size: 0, order_id: 0 }, flags=32, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
+        == "OrderBookDelta(instrument_id=AUD/USD.SIM, action=CLEAR, order=BookOrder(side=NO_ORDER_SIDE, price=0, size=0, order_id=0), flags=32, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
     )
 
 
@@ -467,11 +467,11 @@ def test_deltas_hash_str_and_repr() -> None:
     assert isinstance(hash(deltas), int)
     assert (
         str(deltas)
-        == "OrderBookDeltas(instrument_id=AUD/USD.SIM, [OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder { side: Buy, price: 10.0, size: 5, order_id: 1 }, flags=0, sequence=0, ts_event=0, ts_init=0), OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder { side: Buy, price: 10.0, size: 15, order_id: 2 }, flags=0, sequence=1, ts_event=0, ts_init=0)], is_snapshot=False, sequence=1, ts_event=0, ts_init=0)"  # noqa
+        == "OrderBookDeltas(instrument_id=AUD/USD.SIM, [OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder(side=BUY, price=10.0, size=5, order_id=1), flags=0, sequence=0, ts_event=0, ts_init=0), OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder(side=BUY, price=10.0, size=15, order_id=2), flags=0, sequence=1, ts_event=0, ts_init=0)], is_snapshot=False, sequence=1, ts_event=0, ts_init=0)"  # noqa
     )
     assert (
         repr(deltas)
-        == "OrderBookDeltas(instrument_id=AUD/USD.SIM, [OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder { side: Buy, price: 10.0, size: 5, order_id: 1 }, flags=0, sequence=0, ts_event=0, ts_init=0), OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder { side: Buy, price: 10.0, size: 15, order_id: 2 }, flags=0, sequence=1, ts_event=0, ts_init=0)], is_snapshot=False, sequence=1, ts_event=0, ts_init=0)"  # noqa
+        == "OrderBookDeltas(instrument_id=AUD/USD.SIM, [OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder(side=BUY, price=10.0, size=5, order_id=1), flags=0, sequence=0, ts_event=0, ts_init=0), OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder(side=BUY, price=10.0, size=15, order_id=2), flags=0, sequence=1, ts_event=0, ts_init=0)], is_snapshot=False, sequence=1, ts_event=0, ts_init=0)"  # noqa
     )
 
 
@@ -671,11 +671,11 @@ def test_depth10_hash_str_repr() -> None:
     assert isinstance(hash(depth), int)
     assert (
         str(depth)
-        == "OrderBookDepth10(instrument_id=AAPL.XNAS, bids=[BookOrder { side: Buy, price: 99.00, size: 100, order_id: 1 }, BookOrder { side: Buy, price: 98.00, size: 200, order_id: 2 }, BookOrder { side: Buy, price: 97.00, size: 300, order_id: 3 }, BookOrder { side: Buy, price: 96.00, size: 400, order_id: 4 }, BookOrder { side: Buy, price: 95.00, size: 500, order_id: 5 }, BookOrder { side: Buy, price: 94.00, size: 600, order_id: 6 }, BookOrder { side: Buy, price: 93.00, size: 700, order_id: 7 }, BookOrder { side: Buy, price: 92.00, size: 800, order_id: 8 }, BookOrder { side: Buy, price: 91.00, size: 900, order_id: 9 }, BookOrder { side: Buy, price: 90.00, size: 1000, order_id: 10 }], asks=[BookOrder { side: Sell, price: 100.00, size: 100, order_id: 11 }, BookOrder { side: Sell, price: 101.00, size: 200, order_id: 12 }, BookOrder { side: Sell, price: 102.00, size: 300, order_id: 13 }, BookOrder { side: Sell, price: 103.00, size: 400, order_id: 14 }, BookOrder { side: Sell, price: 104.00, size: 500, order_id: 15 }, BookOrder { side: Sell, price: 105.00, size: 600, order_id: 16 }, BookOrder { side: Sell, price: 106.00, size: 700, order_id: 17 }, BookOrder { side: Sell, price: 107.00, size: 800, order_id: 18 }, BookOrder { side: Sell, price: 108.00, size: 900, order_id: 19 }, BookOrder { side: Sell, price: 109.00, size: 1000, order_id: 20 }], bid_counts=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1], ask_counts=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1], flags=0, sequence=1, ts_event=2, ts_init=3)"  # noqa
+        == "OrderBookDepth10(instrument_id=AAPL.XNAS, bids=[BookOrder(side=BUY, price=99.00, size=100, order_id=1), BookOrder(side=BUY, price=98.00, size=200, order_id=2), BookOrder(side=BUY, price=97.00, size=300, order_id=3), BookOrder(side=BUY, price=96.00, size=400, order_id=4), BookOrder(side=BUY, price=95.00, size=500, order_id=5), BookOrder(side=BUY, price=94.00, size=600, order_id=6), BookOrder(side=BUY, price=93.00, size=700, order_id=7), BookOrder(side=BUY, price=92.00, size=800, order_id=8), BookOrder(side=BUY, price=91.00, size=900, order_id=9), BookOrder(side=BUY, price=90.00, size=1000, order_id=10)], asks=[BookOrder(side=SELL, price=100.00, size=100, order_id=11), BookOrder(side=SELL, price=101.00, size=200, order_id=12), BookOrder(side=SELL, price=102.00, size=300, order_id=13), BookOrder(side=SELL, price=103.00, size=400, order_id=14), BookOrder(side=SELL, price=104.00, size=500, order_id=15), BookOrder(side=SELL, price=105.00, size=600, order_id=16), BookOrder(side=SELL, price=106.00, size=700, order_id=17), BookOrder(side=SELL, price=107.00, size=800, order_id=18), BookOrder(side=SELL, price=108.00, size=900, order_id=19), BookOrder(side=SELL, price=109.00, size=1000, order_id=20)], bid_counts=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1], ask_counts=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1], flags=0, sequence=1, ts_event=2, ts_init=3)"  # noqa
     )
     assert (
         repr(depth)
-        == "OrderBookDepth10(instrument_id=AAPL.XNAS, bids=[BookOrder { side: Buy, price: 99.00, size: 100, order_id: 1 }, BookOrder { side: Buy, price: 98.00, size: 200, order_id: 2 }, BookOrder { side: Buy, price: 97.00, size: 300, order_id: 3 }, BookOrder { side: Buy, price: 96.00, size: 400, order_id: 4 }, BookOrder { side: Buy, price: 95.00, size: 500, order_id: 5 }, BookOrder { side: Buy, price: 94.00, size: 600, order_id: 6 }, BookOrder { side: Buy, price: 93.00, size: 700, order_id: 7 }, BookOrder { side: Buy, price: 92.00, size: 800, order_id: 8 }, BookOrder { side: Buy, price: 91.00, size: 900, order_id: 9 }, BookOrder { side: Buy, price: 90.00, size: 1000, order_id: 10 }], asks=[BookOrder { side: Sell, price: 100.00, size: 100, order_id: 11 }, BookOrder { side: Sell, price: 101.00, size: 200, order_id: 12 }, BookOrder { side: Sell, price: 102.00, size: 300, order_id: 13 }, BookOrder { side: Sell, price: 103.00, size: 400, order_id: 14 }, BookOrder { side: Sell, price: 104.00, size: 500, order_id: 15 }, BookOrder { side: Sell, price: 105.00, size: 600, order_id: 16 }, BookOrder { side: Sell, price: 106.00, size: 700, order_id: 17 }, BookOrder { side: Sell, price: 107.00, size: 800, order_id: 18 }, BookOrder { side: Sell, price: 108.00, size: 900, order_id: 19 }, BookOrder { side: Sell, price: 109.00, size: 1000, order_id: 20 }], bid_counts=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1], ask_counts=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1], flags=0, sequence=1, ts_event=2, ts_init=3)"  # noqa
+        == "OrderBookDepth10(instrument_id=AAPL.XNAS, bids=[BookOrder(side=BUY, price=99.00, size=100, order_id=1), BookOrder(side=BUY, price=98.00, size=200, order_id=2), BookOrder(side=BUY, price=97.00, size=300, order_id=3), BookOrder(side=BUY, price=96.00, size=400, order_id=4), BookOrder(side=BUY, price=95.00, size=500, order_id=5), BookOrder(side=BUY, price=94.00, size=600, order_id=6), BookOrder(side=BUY, price=93.00, size=700, order_id=7), BookOrder(side=BUY, price=92.00, size=800, order_id=8), BookOrder(side=BUY, price=91.00, size=900, order_id=9), BookOrder(side=BUY, price=90.00, size=1000, order_id=10)], asks=[BookOrder(side=SELL, price=100.00, size=100, order_id=11), BookOrder(side=SELL, price=101.00, size=200, order_id=12), BookOrder(side=SELL, price=102.00, size=300, order_id=13), BookOrder(side=SELL, price=103.00, size=400, order_id=14), BookOrder(side=SELL, price=104.00, size=500, order_id=15), BookOrder(side=SELL, price=105.00, size=600, order_id=16), BookOrder(side=SELL, price=106.00, size=700, order_id=17), BookOrder(side=SELL, price=107.00, size=800, order_id=18), BookOrder(side=SELL, price=108.00, size=900, order_id=19), BookOrder(side=SELL, price=109.00, size=1000, order_id=20)], bid_counts=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1], ask_counts=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1], flags=0, sequence=1, ts_event=2, ts_init=3)"  # noqa
     )
 
 

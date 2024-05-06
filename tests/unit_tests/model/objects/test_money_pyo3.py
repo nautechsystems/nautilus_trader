@@ -153,7 +153,7 @@ class TestMoney:
         result = repr(money)
 
         # Assert
-        assert result == "Money('1.00', USD)"
+        assert result == "Money(1.00, USD)"
 
     @pytest.mark.parametrize(
         ("value", "currency", "expected"),

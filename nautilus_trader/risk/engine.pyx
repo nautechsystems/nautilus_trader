@@ -743,9 +743,15 @@ cdef class RiskEngine(Component):
                         return False  # Denied
                 elif base_currency is not None and account.type == AccountType.CASH:
                     cash_value = Money(order.quantity.as_f64_c(), base_currency)
-                    self._log.debug(f"Cash value: {cash_value!r}", LogColor.MAGENTA)
-                    free = account.balance_free(base_currency)
-                    self._log.debug(f"Free: {free!r}", LogColor.MAGENTA)
+                    if self.debug:
+                        total = account.balance_total(base_currency)
+                        locked = account.balance_locked(base_currency)
+                        free = account.balance_free(base_currency)
+                        self._log.debug(f"Cash value: {cash_value!r}", LogColor.MAGENTA)
+                        self._log.debug(f"Total: {total!r}", LogColor.MAGENTA)
+                        self._log.debug(f"Locked: {locked!r}", LogColor.MAGENTA)
+                        self._log.debug(f"Free: {free!r}", LogColor.MAGENTA)
+
                     if cum_notional_sell is None:
                         cum_notional_sell = cash_value
                     else:

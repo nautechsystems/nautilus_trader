@@ -781,7 +781,7 @@ class TestQuantity:
         result = repr(Quantity(1.1, 1))
 
         # Assert
-        assert result == "Quantity('1.1')"
+        assert result == "Quantity(1.1)"
 
     @pytest.mark.parametrize(
         ("value", "precision", "expected"),
@@ -878,7 +878,7 @@ class TestQuantity:
 
         # Act, Assert
         assert str(quantity) == "2100.166667"
-        assert repr(quantity) == "Quantity('2100.166667')"
+        assert repr(quantity) == "Quantity(2100.166667)"
 
     def test_pickle_dumps_and_loads(self):
         # Arrange

@@ -312,7 +312,7 @@ impl Quantity {
     }
 
     fn __repr__(&self) -> String {
-        format!("Quantity('{self:?}')")
+        format!("{self:?}")
     }
 
     fn __str__(&self) -> String {

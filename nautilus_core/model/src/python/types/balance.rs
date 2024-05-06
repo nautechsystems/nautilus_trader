@@ -43,23 +43,11 @@ impl AccountBalance {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "{}(total={},locked={},free={})",
-            stringify!(AccountBalance),
-            self.total,
-            self.locked,
-            self.free
-        )
+        format!("{self:?}")
     }
 
     fn __str__(&self) -> String {
-        format!(
-            "{}(total={},locked={},free={})",
-            stringify!(AccountBalance),
-            self.total,
-            self.locked,
-            self.free
-        )
+        self.to_string()
     }
 
     #[staticmethod]
@@ -131,23 +119,11 @@ impl MarginBalance {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "{}(initial={},maintenance={},instrument_id={})",
-            stringify!(MarginBalance),
-            self.initial,
-            self.maintenance,
-            self.instrument_id,
-        )
+        format!("{self:?}")
     }
 
     fn __str__(&self) -> String {
-        format!(
-            "{}(initial={},maintenance={},instrument_id={})",
-            stringify!(MarginBalance),
-            self.initial,
-            self.maintenance,
-            self.instrument_id,
-        )
+        self.to_string()
     }
 
     #[staticmethod]

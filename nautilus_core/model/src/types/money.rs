@@ -256,7 +256,7 @@ impl Debug for Money {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}({:.*}, currency={})",
+            "{}({:.*}, {})",
             stringify!(Money),
             self.currency.precision as usize,
             self.as_f64(),
@@ -311,16 +311,17 @@ mod tests {
     #[rstest]
     fn test_debug() {
         let money = Money::new(1010.12, Currency::USD()).unwrap();
-        assert_eq!(
-            format!("{:?}", money),
-            format!("Money(1010.12, currency=USD)")
-        );
+        let result = format!("{:?}", money);
+        let expected = "Money(1010.12, USD)";
+        assert_eq!(result, expected);
     }
 
     #[rstest]
     fn test_display() {
         let money = Money::new(1010.12, Currency::USD()).unwrap();
-        assert_eq!(format!("{money}"), "1010.12 USD");
+        let result = format!("{money}");
+        let expected = "1010.12 USD";
+        assert_eq!(result, expected);
     }
 
     #[rstest]

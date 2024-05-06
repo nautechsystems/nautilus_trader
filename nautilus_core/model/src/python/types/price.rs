@@ -312,7 +312,7 @@ impl Price {
     }
 
     fn __repr__(&self) -> String {
-        format!("Price('{self:?}')")
+        format!("{self:?}")
     }
 
     fn __str__(&self) -> String {
