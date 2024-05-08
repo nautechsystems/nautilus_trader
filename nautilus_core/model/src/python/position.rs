@@ -21,6 +21,7 @@ use pyo3::{
 };
 use rust_decimal::prelude::ToPrimitive;
 
+use super::common::{commissions_from_hashmap, commissions_from_vec};
 use crate::{
     enums::{OrderSide, PositionSide},
     events::order::filled::OrderFilled,
@@ -413,11 +414,7 @@ impl Position {
         dict.set_item("trade_ids", trade_ids_list)?;
         dict.set_item("buy_qty", self.buy_qty.to_string())?;
         dict.set_item("sell_qty", self.sell_qty.to_string())?;
-        let commissions_dict = PyDict::new(py);
-        for (key, value) in &self.commissions {
-            commissions_dict.set_item(key.code.to_string(), value.to_string())?;
-        }
-        dict.set_item("commissions", commissions_dict)?;
+        dict.set_item("commissions", commissions_from_vec(py, self.commissions())?)?;
         Ok(dict.into())
     }
 }

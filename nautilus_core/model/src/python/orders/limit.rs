@@ -38,6 +38,7 @@ use crate::{
         base::{str_hashmap_to_ustr, Order, OrderCore},
         limit::LimitOrder,
     },
+    python::common::commissions_from_hashmap,
     types::{price::Price, quantity::Quantity},
 };
 
@@ -575,11 +576,10 @@ impl LimitOrder {
         dict.set_item("init_id", self.init_id.to_string())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
         dict.set_item("ts_last", self.ts_last.as_u64())?;
-        let commissions_dict = PyDict::new(py);
-        for (key, value) in &self.commissions {
-            commissions_dict.set_item(key.code.to_string(), value.to_string())?;
-        }
-        dict.set_item("commissions", commissions_dict)?;
+        dict.set_item(
+            "commissions",
+            commissions_from_hashmap(py, self.commissions())?,
+        )?;
         self.venue_order_id.map_or_else(
             || dict.set_item("venue_order_id", py.None()),
             |x| dict.set_item("venue_order_id", x.to_string()),

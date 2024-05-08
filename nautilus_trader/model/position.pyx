@@ -153,7 +153,7 @@ cdef class Position:
             "quote_currency": self.quote_currency.code,
             "base_currency": self.base_currency.code if self.base_currency is not None else None,
             "settlement_currency": self.settlement_currency.code,
-            "commissions": str([str(c) for c in self.commissions()]) if self._commissions else {},
+            "commissions": str([str(c) for c in self.commissions()]) if self._commissions else None,
             "realized_return": str(round(self.realized_return, 5)),
             "realized_pnl": str(self.realized_pnl),
         }
