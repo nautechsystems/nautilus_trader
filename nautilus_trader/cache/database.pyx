@@ -1104,7 +1104,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         cdef dict position_state = position.to_dict()
 
         if unrealized_pnl is not None:
-            position_state["unrealized_pnl"] = unrealized_pnl.to_str()
+            position_state["unrealized_pnl"] = str(unrealized_pnl)
 
         position_state["ts_snapshot"] = ts_snapshot
 

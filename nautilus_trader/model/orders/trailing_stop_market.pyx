@@ -259,9 +259,9 @@ cdef class TrailingStopMarketOrder(Order):
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
         cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NO_TRIGGER else f" EMULATED[{trigger_type_to_str(self.emulation_trigger)}]"
         return (
-            f"{order_side_to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
+            f"{order_side_to_str(self.side)} {self.quantity.to_formatted_str()} {self.instrument_id} "
             f"{order_type_to_str(self.order_type)}[{trigger_type_to_str(self.trigger_type)}] "
-            f"{'@ ' + str(self.trigger_price) + '-STOP ' if self.trigger_price else ''}"
+            f"{'@ ' + str(self.trigger_price.to_formatted_str()) + '-STOP ' if self.trigger_price else ''}"
             f"{self.trailing_offset}-TRAILING_OFFSET[{trailing_offset_type_to_str(self.trailing_offset_type)}] "
             f"{time_in_force_to_str(self.time_in_force)}{expiration_str}"
             f"{emulation_str}"
@@ -299,7 +299,7 @@ cdef class TrailingStopMarketOrder(Order):
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
             "avg_px": str(self.avg_px) if self.filled_qty.as_f64_c() > 0.0 else None,
             "slippage": str(self.slippage) if self.filled_qty.as_f64_c() > 0.0 else None,
-            "commissions": str([c.to_str() for c in self.commissions()]) if self._commissions else None,
+            "commissions": str([str(c) for c in self.commissions()]) if self._commissions else {},
             "status": self._fsm.state_string_c(),
             "is_reduce_only": self.is_reduce_only,
             "is_quote_quantity": self.is_quote_quantity,

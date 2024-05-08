@@ -243,7 +243,7 @@ cdef class AccountsManager:
         cdef Money locked_money = Money(total_locked, currency)
         account.update_balance_locked(instrument.id, locked_money)
 
-        self._log.info(f"{instrument.id} balance_locked={locked_money.to_str()}")
+        self._log.info(f"{instrument.id} balance_locked={locked_money.to_formatted_str()}")
 
         return self._generate_account_state(
             account=account,
@@ -334,7 +334,7 @@ cdef class AccountsManager:
         else:
             account.update_margin_init(instrument.id, margin_init_money)
 
-        self._log.info(f"{instrument.id} margin_init={margin_init_money.to_str()}")
+        self._log.info(f"{instrument.id} margin_init={margin_init_money.to_formatted_str()}")
 
         return self._generate_account_state(
             account=account,
@@ -425,7 +425,7 @@ cdef class AccountsManager:
         else:
             account.update_margin_maint(instrument.id, margin_maint_money)
 
-        self._log.info(f"{instrument.id} margin_maint={margin_maint_money.to_str()}")
+        self._log.info(f"{instrument.id} margin_maint={margin_maint_money.to_formatted_str()}")
 
         return self._generate_account_state(
             account=account,
@@ -523,7 +523,7 @@ cdef class AccountsManager:
                     if commission._mem.raw > 0:
                         self._log.error(
                             f"Cannot complete transaction: no {commission.currency} "
-                            f"balance to deduct a {commission.to_str()} commission from"
+                            f"balance to deduct a {commission.to_formatted_str()} commission from"
                         )
                         return
                     else:
@@ -546,7 +546,7 @@ cdef class AccountsManager:
                 if pnl._mem.raw < 0:
                     self._log.error(
                         "Cannot complete transaction: "
-                        f"no {pnl.currency} to deduct a {pnl.to_str()} realized PnL from"
+                        f"no {pnl.currency} to deduct a {pnl.to_formatted_str()} realized PnL from"
                     )
                     return
                 new_balance = AccountBalance(

@@ -119,7 +119,7 @@ cdef class Position:
         str
 
         """
-        cdef str quantity = " " if self.quantity._mem.raw == 0 else f" {self.quantity.to_str()} "
+        cdef str quantity = " " if self.quantity._mem.raw == 0 else f" {self.quantity.to_formatted_str()} "
         return f"{position_side_to_str(self.side)}{quantity}{self.instrument_id}"
 
     cpdef dict to_dict(self):
@@ -153,9 +153,9 @@ cdef class Position:
             "quote_currency": self.quote_currency.code,
             "base_currency": self.base_currency.code if self.base_currency is not None else None,
             "settlement_currency": self.settlement_currency.code,
-            "commissions": str([c.to_str() for c in self.commissions()]) if self._commissions else None,
+            "commissions": str([str(c) for c in self.commissions()]) if self._commissions else {},
             "realized_return": str(round(self.realized_return, 5)),
-            "realized_pnl": self.realized_pnl.to_str(),
+            "realized_pnl": str(self.realized_pnl),
         }
 
     cdef list client_order_ids_c(self):

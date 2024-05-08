@@ -284,9 +284,9 @@ cdef class StopLimitOrder(Order):
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
         cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NO_TRIGGER else f" EMULATED[{trigger_type_to_str(self.emulation_trigger)}]"
         return (
-            f"{order_side_to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{order_type_to_str(self.order_type)} @ {self.trigger_price}-STOP"
-            f"[{trigger_type_to_str(self.trigger_type)}] {self.price}-LIMIT "
+            f"{order_side_to_str(self.side)} {self.quantity.to_formatted_str()} {self.instrument_id} "
+            f"{order_type_to_str(self.order_type)} @ {self.trigger_price.to_formatted_str()}-STOP"
+            f"[{trigger_type_to_str(self.trigger_type)}] {self.price.to_formatted_str()}-LIMIT "
             f"{time_in_force_to_str(self.time_in_force)}{expiration_str}"
             f"{emulation_str}"
         )
@@ -359,7 +359,7 @@ cdef class StopLimitOrder(Order):
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
             "avg_px": str(self.avg_px) if self.filled_qty.as_f64_c() > 0.0 else None,
             "slippage": str(self.slippage) if self.filled_qty.as_f64_c() > 0.0 else None,
-            "commissions": str([c.to_str() for c in self.commissions()]) if self._commissions else {},
+            "commissions": str([str(c) for c in self.commissions()]) if self._commissions else {},
             "status": self._fsm.state_string_c(),
             "is_post_only": self.is_post_only,
             "is_reduce_only": self.is_reduce_only,

@@ -80,7 +80,7 @@ impl Debug for OrderReleased {
             self.strategy_id,
             self.instrument_id,
             self.client_order_id,
-            self.released_price,
+            self.released_price.to_formatted_string(),
             self.event_id,
             self.ts_init
         )
@@ -95,7 +95,7 @@ impl Display for OrderReleased {
             stringify!(OrderReleased),
             self.instrument_id,
             self.client_order_id,
-            self.released_price,
+            self.released_price.to_formatted_string(),
         )
     }
 }
@@ -113,7 +113,7 @@ mod tests {
         let display = format!("{order_released}");
         assert_eq!(
             display,
-            "OrderReleased(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, released_price=22000)"
+            "OrderReleased(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, released_price=22_000)"
         );
     }
 }

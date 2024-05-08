@@ -229,8 +229,8 @@ cdef class MarketToLimitOrder(Order):
         """
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
         return (
-            f"{order_side_to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{order_type_to_str(self.order_type)} @ {self.price} "
+            f"{order_side_to_str(self.side)} {self.quantity.to_formatted_str()} {self.instrument_id} "
+            f"{order_type_to_str(self.order_type)} @ {self.price.to_formatted_str() if self.price else None} "
             f"{time_in_force_to_str(self.time_in_force)}{expiration_str}"
         )
 
@@ -266,7 +266,7 @@ cdef class MarketToLimitOrder(Order):
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
             "avg_px": str(self.avg_px) if self.filled_qty.as_f64_c() > 0.0 else None,
             "slippage": str(self.slippage) if self.filled_qty.as_f64_c() > 0.0 else None,
-            "commissions": str([c.to_str() for c in self.commissions()]) if self._commissions else None,
+            "commissions": str([str(c) for c in self.commissions()]) if self._commissions else {},
             "status": self._fsm.state_string_c(),
             "contingency_type": contingency_type_to_str(self.contingency_type),
             "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,

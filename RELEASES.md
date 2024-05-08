@@ -21,6 +21,7 @@ Released on TBD (UTC).
 - Fixed IBKR reconnection after gateway/TWS disconnection (#1622), thanks @benjaminsingleton
 - Fixed `from_str` for `Price`, `Quantity` and `Money` when input string contains underscores in Rust, thanks for reporting @filipmacek
 - Fixed Binance Futures account balance calculation (was over stating `free` balance with margin collateral, which could result in a negative `locked` balance)
+- Fixed `Money` string parsing where the value from `str(money)` can now be passed to `Money.from_str`
 
 ---
 

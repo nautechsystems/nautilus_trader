@@ -413,9 +413,9 @@ cdef class ModifyOrder(TradingCommand):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"quantity={self.quantity.to_str() if self.quantity is not None else None}, "
-            f"price={self.price}, "
-            f"trigger_price={self.trigger_price})"
+            f"quantity={self.quantity.to_formatted_str() if self.quantity is not None else None}, "
+            f"price={self.price.to_formatted_str() if self.price is not None else None}, "
+            f"trigger_price={self.trigger_price.to_formatted_str() if self.trigger_price is not None else None})"
         )
 
     def __repr__(self) -> str:
@@ -427,9 +427,9 @@ cdef class ModifyOrder(TradingCommand):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"quantity={self.quantity.to_str() if self.quantity is not None else None}, "
-            f"price={self.price}, "
-            f"trigger_price={self.trigger_price}, "
+            f"quantity={self.quantity.to_formatted_str() if self.quantity is not None else None}, "
+            f"price={self.price.to_formatted_str() if self.price is not None else None}, "
+            f"trigger_price={self.trigger_price.to_formatted_str() if self.trigger_price is not None else None}, "
             f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )

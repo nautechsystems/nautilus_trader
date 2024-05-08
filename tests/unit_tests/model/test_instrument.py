@@ -175,7 +175,7 @@ class TestInstrument:
             "size_increment": "1",
             "max_quantity": None,
             "min_quantity": None,
-            "max_notional": "10_000_000.00 USD",
+            "max_notional": "10000000.00 USD",
             "min_notional": "1.00 USD",
             "max_price": "1000000.0",
             "min_price": "0.5",

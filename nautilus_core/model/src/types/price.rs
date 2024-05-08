@@ -381,6 +381,7 @@ mod tests {
         assert_eq!(price.raw, -9_223_372_036_000_000_000);
         assert_eq!(price.as_decimal(), dec!(-9223372036));
         assert_eq!(price.to_string(), "-9223372036.000000000");
+        assert_eq!(price.to_formatted_string(), "-9_223_372_036.000000000");
     }
 
     #[rstest]
@@ -389,6 +390,7 @@ mod tests {
         assert_eq!(price.raw, 9_223_372_036_000_000_000);
         assert_eq!(price.as_decimal(), dec!(9223372036));
         assert_eq!(price.to_string(), "9223372036.000000000");
+        assert_eq!(price.to_formatted_string(), "9_223_372_036.000000000");
     }
 
     #[rstest]
