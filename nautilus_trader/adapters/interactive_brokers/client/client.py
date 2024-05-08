@@ -162,14 +162,14 @@ class InteractiveBrokersClient(
         message reader, and internal message queue processing tasks.
 
         """
-        self._log.info(f"Starting InteractiveBrokersClient ({self._client_id})...")
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
-            self._loop.run_until_complete(self._startup())
+            self._loop.run_until_complete(self._start_async())
         else:
-            self._create_task(self._startup())
+            self._create_task(self._start_async())
 
-    async def _startup(self):
+    async def _start_async(self):
+        self._log.info(f"Starting InteractiveBrokersClient ({self._client_id})...")
         while not self._is_ib_connected.is_set():
             try:
                 self._connection_attempts += 1
@@ -185,7 +185,6 @@ class InteractiveBrokersClient(
                         f"Attempt {self._connection_attempts}: Attempting to reconnect in {self._reconnect_delay} seconds...",
                     )
                     await asyncio.sleep(self._reconnect_delay)
-                self._log.info(f"Starting InteractiveBrokersClient ({self._client_id})...")
                 await self._connect()
                 self._start_tws_incoming_msg_reader()
                 self._start_internal_msg_queue_processor()
@@ -201,6 +200,7 @@ class InteractiveBrokersClient(
                 self._log.exception("Unhandled exception in client startup", e)
                 self._stop()
         self._is_client_ready.set()
+        self._log.debug("`_is_client_ready` set by `_start_async`.", LogColor.BLUE)
         self._connection_attempts = 0
 
     def _start_tws_incoming_msg_reader(self) -> None:
@@ -242,7 +242,15 @@ class InteractiveBrokersClient(
         """
         Stop the client and cancel running tasks.
         """
+        self._create_task(self._stop_async())
+
+    async def _stop_async(self) -> None:
         self._log.info(f"Stopping InteractiveBrokersClient ({self._client_id})...")
+
+        if self._is_client_ready.is_set():
+            self._is_client_ready.clear()
+            self._log.debug("`_is_client_ready` unset by `_stop_async`.", LogColor.BLUE)
+
         # Cancel tasks
         tasks = [
             self._connection_watchdog_task,
@@ -254,44 +262,60 @@ class InteractiveBrokersClient(
             if task and not task.cancelled():
                 task.cancel()
 
+        try:
+            await asyncio.gather(*tasks, return_exceptions=True)
+            self._log.info("All tasks canceled successfully.")
+        except Exception as e:
+            self._log.exception(f"Error occurred while canceling tasks: {e}", e)
+
         self._eclient.disconnect()
-        self._is_client_ready.clear()
         self._account_ids = set()
-        for client in self.registered_nautilus_clients:
-            self._log.warning(f"Client {client} disconnected.")
         self.registered_nautilus_clients = set()
 
     def _reset(self) -> None:
         """
         Restart the client.
         """
-        self._log.info(f"Resetting InteractiveBrokersClient ({self._client_id})...")
-        self._stop()
-        self._start()
+
+        async def _reset_async():
+            self._log.info(f"Resetting InteractiveBrokersClient ({self._client_id})...")
+            await self._stop_async()
+            await self._start_async()
+
+        self._create_task(_reset_async())
 
     def _resume(self) -> None:
         """
         Resume the client and resubscribe to all subscriptions.
         """
-        self._log.info(f"Resuming InteractiveBrokersClient ({self._client_id})...")
-        self._is_client_ready.set()
+
+        async def _resume_async():
+            await self._is_client_ready.wait()
+            self._log.info(f"Resuming InteractiveBrokersClient ({self._client_id})...")
+            await self._resubscribe_all()
+
+        self._create_task(_resume_async())
 
     def _degrade(self) -> None:
         """
         Degrade the client when connectivity is lost.
         """
-        self._log.info(f"Degrading InteractiveBrokersClient ({self._client_id})...")
-        self._is_client_ready.clear()
-        self._account_ids = set()
+        if not self.is_degraded:
+            self._log.info(f"Degrading InteractiveBrokersClient ({self._client_id})...")
+            self._is_client_ready.clear()
+            self._account_ids = set()
 
     async def _resubscribe_all(self) -> None:
         """
         Cancel and restart all subscriptions.
         """
-        self._log.debug("Resubscribing all subscriptions...")
+        subscriptions = self._subscriptions.get_all()
+        subscription_names = ", ".join([str(subscription.name) for subscription in subscriptions])
+        self._log.info(f"Resubscribing to {len(subscriptions)} subscriptions: {subscription_names}")
+
         for subscription in self._subscriptions.get_all():
+            self._log.info(f"Resubscribing to {subscription.name} subscription...")
             try:
-                subscription.cancel()
                 if iscoroutinefunction(subscription.handle):
                     await subscription.handle()
                 else:
@@ -341,13 +365,11 @@ class InteractiveBrokersClient(
         """
         if self.is_running:
             self._degrade()
-        if not self._is_ib_connected.is_set():
+        if self._is_ib_connected.is_set():
             self._log.debug("`_is_ib_connected` unset by `_handle_disconnection`.", LogColor.BLUE)
             self._is_ib_connected.clear()
         await asyncio.sleep(5)
         await self._handle_reconnect()
-
-        self._resume()
 
     def _create_task(
         self,
@@ -568,7 +590,7 @@ class InteractiveBrokersClient(
                     break
                 self._internal_msg_queue.task_done()
         except asyncio.CancelledError:
-            log_msg = f"Internal message queue processing stopped. (qsize={self._internal_msg_queue.qsize()})."
+            log_msg = f"Internal message queue processing was cancelled. (qsize={self._internal_msg_queue.qsize()})."
             (
                 self._log.warning(log_msg)
                 if not self._internal_msg_queue.empty()
@@ -630,9 +652,7 @@ class InteractiveBrokersClient(
                 await handler_task()
                 self._msg_handler_task_queue.task_done()
         except asyncio.CancelledError:
-            log_msg = (
-                f"Handler task processing stopped. (qsize={self._msg_handler_task_queue.qsize()})."
-            )
+            log_msg = f"Handler task processing was cancelled. (qsize={self._msg_handler_task_queue.qsize()})."
             (
                 self._log.warning(log_msg)
                 if not self._internal_msg_queue.empty()
