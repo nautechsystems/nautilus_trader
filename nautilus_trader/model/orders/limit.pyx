@@ -255,7 +255,7 @@ cdef class LimitOrder(Order):
         cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NO_TRIGGER else f" EMULATED[{trigger_type_to_str(self.emulation_trigger)}]"
         return (
             f"{order_side_to_str(self.side)} {self.quantity.to_formatted_str()} {self.instrument_id} "
-            f"{order_type_to_str(self.order_type)} @ {self.price} "
+            f"{order_type_to_str(self.order_type)} @ {self.price.to_formatted_str()} "
             f"{time_in_force_to_str(self.time_in_force)}{expiration_str}"
             f"{emulation_str}"
         )
