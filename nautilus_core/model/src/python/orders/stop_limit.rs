@@ -31,7 +31,7 @@ use crate::{
         base::{str_hashmap_to_ustr, Order},
         stop_limit::StopLimitOrder,
     },
-    python::events::order::convert_order_event_to_pyobject,
+    python::{common::commissions_from_hashmap, events::order::convert_order_event_to_pyobject},
     types::{price::Price, quantity::Quantity},
 };
 
@@ -374,11 +374,10 @@ impl StopLimitOrder {
         )?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
         dict.set_item("ts_last", self.ts_last.as_u64())?;
-        let commissions_dict = PyDict::new(py);
-        for (key, value) in &self.commissions {
-            commissions_dict.set_item(key.code.to_string(), value.to_string())?;
-        }
-        dict.set_item("commissions", commissions_dict)?;
+        dict.set_item(
+            "commissions",
+            commissions_from_hashmap(py, self.commissions())?,
+        )?;
         self.last_trade_id.map_or_else(
             || dict.set_item("last_trade_id", py.None()),
             |x| dict.set_item("last_trade_id", x.to_string()),
