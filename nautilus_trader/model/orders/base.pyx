@@ -917,7 +917,7 @@ cdef class Order:
         list[Money]
 
         """
-        return list(self._commissions.values())
+        return sorted(self._commissions.values())
 
     cpdef void apply(self, OrderEvent event):
         """
