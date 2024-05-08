@@ -369,6 +369,7 @@ mod tests {
         assert_eq!(qty.raw, 18_446_744_073_000_000_000);
         assert_eq!(qty.as_decimal(), dec!(18_446_744_073));
         assert_eq!(qty.to_string(), "18446744073.00000000");
+        assert_eq!(qty.to_formatted_string(), "18_446_744_073.00000000");
     }
 
     #[rstest]

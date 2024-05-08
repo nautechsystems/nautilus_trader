@@ -104,7 +104,7 @@ class TestMoney:
         # Assert
         assert money.as_double() == 1.0
         assert money.raw == 1_000_000_000
-        assert str(money) == "1.00"
+        assert str(money) == "1.00 USD"
 
     def test_initialized_with_many_decimals_rounds_to_currency_precision(self) -> None:
         # Arrange, Act
@@ -114,8 +114,8 @@ class TestMoney:
         # Assert
         assert result1.raw == 1_000_330_000_000
         assert result2.raw == 5_005_560_000_000
-        assert result1.to_str() == "1_000.33 USD"
-        assert result2.to_str() == "5_005.56 USD"
+        assert result1.to_formatted_str() == "1_000.33 USD"
+        assert result2.to_formatted_str() == "5_005.56 USD"
 
     def test_equality_with_different_currencies_raises_value_error(self) -> None:
         # Arrange
@@ -151,10 +151,10 @@ class TestMoney:
         money2 = Money(1_000_000, USD)
 
         # Act, Assert
-        assert str(money0) == "0.00"
-        assert str(money1) == "1.00"
-        assert str(money2) == "1000000.00"
-        assert money2.to_str() == "1_000_000.00 USD"
+        assert str(money0) == "0.00 USD"
+        assert str(money1) == "1.00 USD"
+        assert str(money2) == "1000000.00 USD"
+        assert money2.to_formatted_str() == "1_000_000.00 USD"
 
     def test_repr(self) -> None:
         # Arrange

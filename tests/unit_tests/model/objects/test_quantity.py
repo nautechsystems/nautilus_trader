@@ -621,7 +621,7 @@ class TestQuantity:
     )
     def test_str_and_to_str(self, value, expected):
         # Arrange, Act, Assert
-        assert Quantity.from_str(value).to_str() == expected
+        assert Quantity.from_str(value).to_formatted_str() == expected
 
     def test_str_repr(self):
         # Arrange

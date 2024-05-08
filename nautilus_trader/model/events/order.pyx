@@ -342,7 +342,7 @@ cdef class OrderInitialized(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"side={order_side_to_str(self.side)}, "
             f"type={order_type_to_str(self.order_type)}, "
-            f"quantity={self.quantity.to_str()}, "
+            f"quantity={self.quantity.to_formatted_str()}, "
             f"time_in_force={time_in_force_to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
@@ -373,7 +373,7 @@ cdef class OrderInitialized(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"side={order_side_to_str(self.side)}, "
             f"type={order_type_to_str(self.order_type)}, "
-            f"quantity={self.quantity.to_str()}, "
+            f"quantity={self.quantity.to_formatted_str()}, "
             f"time_in_force={time_in_force_to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
@@ -4252,9 +4252,9 @@ cdef class OrderUpdated(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
-            f"quantity={self.quantity.to_str()}, "
-            f"price={self.price}, "
-            f"trigger_price={self.trigger_price}, "
+            f"quantity={self.quantity.to_formatted_str() if self.quantity else None}, "
+            f"price={self.price.to_formatted_str() if self.price else None}, "
+            f"trigger_price={self.trigger_price.to_formatted_str() if self.trigger_price else None}, "
             f"ts_event={self.ts_event})"
         )
 
@@ -4267,9 +4267,9 @@ cdef class OrderUpdated(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
-            f"quantity={self.quantity.to_str()}, "
-            f"price={self.price}, "
-            f"trigger_price={self.trigger_price}, "
+            f"quantity={self.quantity.to_formatted_str() if self.quantity else None}, "
+            f"price={self.price.to_formatted_str() if self.price else None}, "
+            f"trigger_price={self.trigger_price.to_formatted_str() if self.trigger_price else None}, "
             f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
@@ -4594,9 +4594,9 @@ cdef class OrderFilled(OrderEvent):
             f"position_id={self.position_id}, "
             f"order_side={order_side_to_str(self.order_side)}, "
             f"order_type={order_type_to_str(self.order_type)}, "
-            f"last_qty={self.last_qty}, "
-            f"last_px={self.last_px} {self.currency.code}, "
-            f"commission={self.commission.to_str()}, "
+            f"last_qty={self.last_qty.to_formatted_str()}, "
+            f"last_px={self.last_px.to_formatted_str()} {self.currency.code}, "
+            f"commission={self.commission.to_formatted_str()}, "
             f"liquidity_side={liquidity_side_to_str(self.liquidity_side)}, "
             f"ts_event={self.ts_event})"
         )
@@ -4614,9 +4614,9 @@ cdef class OrderFilled(OrderEvent):
             f"position_id={self.position_id}, "
             f"order_side={order_side_to_str(self.order_side)}, "
             f"order_type={order_type_to_str(self.order_type)}, "
-            f"last_qty={self.last_qty}, "
-            f"last_px={self.last_px} {self.currency.code}, "
-            f"commission={self.commission.to_str()}, "
+            f"last_qty={self.last_qty.to_formatted_str()}, "
+            f"last_px={self.last_px.to_formatted_str()} {self.currency.code}, "
+            f"commission={self.commission.to_formatted_str()}, "
             f"liquidity_side={liquidity_side_to_str(self.liquidity_side)}, "
             f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
@@ -4791,7 +4791,7 @@ cdef class OrderFilled(OrderEvent):
             "last_qty": str(obj.last_qty),
             "last_px": str(obj.last_px),
             "currency": obj.currency.code,
-            "commission": obj.commission.to_str(),
+            "commission": str(obj.commission),
             "liquidity_side": liquidity_side_to_str(obj.liquidity_side),
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,

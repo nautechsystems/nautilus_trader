@@ -69,7 +69,7 @@ cdef class Quantity:
     @staticmethod
     cdef Quantity from_int_c(int value)
 
-    cpdef str to_str(self)
+    cpdef str to_formatted_str(self)
     cpdef object as_decimal(self)
     cpdef double as_double(self)
 
@@ -115,6 +115,7 @@ cdef class Price:
     @staticmethod
     cdef Price from_int_c(int value)
 
+    cpdef str to_formatted_str(self)
     cpdef object as_decimal(self)
     cpdef double as_double(self)
 
@@ -146,7 +147,7 @@ cdef class Money:
     cdef void add_assign(self, Money other)
     cdef void sub_assign(self, Money other)
 
-    cpdef str to_str(self)
+    cpdef str to_formatted_str(self)
     cpdef object as_decimal(self)
     cpdef double as_double(self)
 

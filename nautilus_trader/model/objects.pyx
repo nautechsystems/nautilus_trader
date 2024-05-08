@@ -479,7 +479,7 @@ cdef class Quantity:
 
         return Quantity.from_int_c(value)
 
-    cpdef str to_str(self):
+    cpdef str to_formatted_str(self):
         """
         Return the formatted string representation of the quantity.
 
@@ -879,6 +879,17 @@ cdef class Price:
 
         return Price.from_int_c(value)
 
+    cpdef str to_formatted_str(self):
+        """
+        Return the formatted string representation of the price.
+
+        Returns
+        -------
+        str
+
+        """
+        return f"{self.as_f64_c():,.{self._mem.precision}f}".replace(",", "_")
+
     cpdef object as_decimal(self):
         """
         Return the value as a built-in `Decimal`.
@@ -1051,10 +1062,11 @@ cdef class Money:
         return hash((self._mem.raw, self.currency_code_c()))
 
     def __str__(self) -> str:
-        return f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.currency.precision}f}"
+        return f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.currency.precision}f} {self.currency_code_c()}"
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({str(self)}, {self.currency_code_c()})"
+        cdef str amount = f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.currency.precision}f}"
+        return f"{type(self).__name__}({amount}, {self.currency_code_c()})"
 
     @property
     def raw(self) -> int64_t:
@@ -1201,6 +1213,17 @@ cdef class Money:
 
         return Money.from_str_c(value)
 
+    cpdef str to_formatted_str(self):
+        """
+        Return the formatted string representation of the money.
+
+        Returns
+        -------
+        str
+
+        """
+        return f"{self.as_f64_c():,.{self._mem.currency.precision}f} {self.currency_code_c()}".replace(",", "_")
+
     cpdef object as_decimal(self):
         """
         Return the value as a built-in `Decimal`.
@@ -1222,17 +1245,6 @@ cdef class Money:
 
         """
         return self.as_f64_c()
-
-    cpdef str to_str(self):
-        """
-        Return the formatted string representation of the money.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"{self.as_f64_c():,.{self._mem.currency.precision}f} {self.currency_code_c()}".replace(",", "_")
 
 
 cdef class Currency:
@@ -1596,9 +1608,9 @@ cdef class AccountBalance:
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"total={self.total.to_str()}, "
-            f"locked={self.locked.to_str()}, "
-            f"free={self.free.to_str()})"
+            f"total={self.total.to_formatted_str()}, "
+            f"locked={self.locked.to_formatted_str()}, "
+            f"free={self.free.to_formatted_str()})"
         )
 
     @staticmethod
@@ -1639,9 +1651,9 @@ cdef class AccountBalance:
         """
         return {
             "type": type(self).__name__,
-            "total": str(self.total),
-            "locked": str(self.locked),
-            "free": str(self.free),
+            "total": str(self.total.as_decimal()),
+            "locked": str(self.locked.as_decimal()),
+            "free": str(self.free.as_decimal()),
             "currency": self.currency.code,
         }
 
@@ -1694,8 +1706,8 @@ cdef class MarginBalance:
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"initial={self.initial.to_str()}, "
-            f"maintenance={self.maintenance.to_str()}, "
+            f"initial={self.initial.to_formatted_str()}, "
+            f"maintenance={self.maintenance.to_formatted_str()}, "
             f"instrument_id={self.instrument_id.to_str() if self.instrument_id is not None else None})"
         )
 
@@ -1738,8 +1750,8 @@ cdef class MarginBalance:
         """
         return {
             "type": type(self).__name__,
-            "initial": str(self.initial),
-            "maintenance": str(self.maintenance),
+            "initial": str(self.initial.as_decimal()),
+            "maintenance": str(self.maintenance.as_decimal()),
             "currency": self.currency.code,
             "instrument_id": self.instrument_id.to_str() if self.instrument_id is not None else None,
         }

@@ -186,7 +186,7 @@ cdef class MarketOrder(Order):
 
         """
         return (
-            f"{order_side_to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
+            f"{order_side_to_str(self.side)} {self.quantity.to_formatted_str()} {self.instrument_id} "
             f"{order_type_to_str(self.order_type)} "
             f"{time_in_force_to_str(self.time_in_force)}"
         )
@@ -248,7 +248,7 @@ cdef class MarketOrder(Order):
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
             "avg_px": str(self.avg_px) if self.filled_qty.as_f64_c() > 0.0 else None,
             "slippage": str(self.slippage) if self.filled_qty.as_f64_c() > 0.0 else None,
-            "commissions": str([c.to_str() for c in self.commissions()]) if self._commissions else {},
+            "commissions": str([str(c) for c in self.commissions()]) if self._commissions else {},
             "emulation_trigger": trigger_type_to_str(self.emulation_trigger),
             "status": self._fsm.state_string_c(),
             "contingency_type": contingency_type_to_str(self.contingency_type),

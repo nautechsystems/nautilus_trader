@@ -1231,7 +1231,7 @@ cdef class ExecutionEngine(Component):
         cdef dict position_state = position.to_dict()
         cdef Money unrealized_pnl = self._cache.calculate_unrealized_pnl(position)
         if unrealized_pnl is not None:
-            position_state["unrealized_pnl"] = unrealized_pnl.to_str()
+            position_state["unrealized_pnl"] = str(unrealized_pnl)
         if self._msgbus.serializer is not None:
             self._msgbus.publish(
                 topic=f"snapshots:positions:{position.id}",

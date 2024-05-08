@@ -99,8 +99,8 @@ impl Debug for OrderUpdated {
             self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
             self.account_id.map_or("None".to_string(), |account_id| format!("{account_id}")),
             self.quantity,
-            self.price.map_or("None".to_string(), |price| format!("{price}")),
-            self.trigger_price.map_or("None".to_string(), |trigger_price| format!("{trigger_price}")),
+            self.price.map_or("None".to_string(), |price| price.to_formatted_string()),
+            self.trigger_price.map_or("None".to_string(), |trigger_price| trigger_price.to_formatted_string()),
             self.event_id,
             self.ts_event,
             self.ts_init
@@ -118,9 +118,9 @@ impl Display for OrderUpdated {
             self.client_order_id,
             self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
             self.account_id.map_or("None".to_string(), |account_id| format!("{account_id}")),
-            self.quantity,
-            self.price.map_or("None".to_string(), |price| format!("{price}")),
-            self.trigger_price.map_or("None".to_string(), |trigger_price| format!("{trigger_price}")),
+            self.quantity.to_formatted_string(),
+            self.price.map_or("None".to_string(), |price| price.to_formatted_string()),
+            self.trigger_price.map_or("None".to_string(), |trigger_price| trigger_price.to_formatted_string()),
             self.ts_event
         )
     }
@@ -140,7 +140,7 @@ mod tests {
         let display = format!("{order_updated}");
         assert_eq!(
             display,
-            "OrderUpdated(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, venue_order_id=001, account_id=SIM-001, quantity=100, price=22000, trigger_price=None, ts_event=0)"
+            "OrderUpdated(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, venue_order_id=001, account_id=SIM-001, quantity=100, price=22_000, trigger_price=None, ts_event=0)"
         );
     }
 }

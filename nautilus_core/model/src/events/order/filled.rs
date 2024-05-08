@@ -183,8 +183,8 @@ impl Debug for OrderFilled {
             position_id_str,
             self.order_side,
             self.order_type,
-            self.last_qty,
-            self.last_px,
+            self.last_qty.to_formatted_string(),
+            self.last_px.to_formatted_string(),
             self.currency,
             commission_str,
             self.liquidity_side,
@@ -222,8 +222,8 @@ impl Display for OrderFilled {
             self.position_id.unwrap_or_default(),
             self.order_side,
             self.order_type,
-            self.last_qty,
-            self.last_px,
+            self.last_qty.to_formatted_string(),
+            self.last_px.to_formatted_string(),
             self.currency,
             self.commission.unwrap_or(Money::from("0.0 USD")),
             self.liquidity_side,
@@ -248,7 +248,7 @@ mod tests {
             display,
             "OrderFilled(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, \
             venue_order_id=123456, account_id=SIM-001, trade_id=1, position_id=P-001, \
-            order_side=BUY, order_type=LIMIT, last_qty=0.561, last_px=22000 USDT, \
+            order_side=BUY, order_type=LIMIT, last_qty=0.561, last_px=22_000 USDT, \
             commission=12.20000000 USDT, liquidity_side=TAKER, ts_event=0)");
     }
 

@@ -670,7 +670,7 @@ cdef class RiskEngine(Component):
             if max_notional and notional._mem.raw > max_notional._mem.raw:
                 self._deny_order(
                     order=order,
-                    reason=f"NOTIONAL_EXCEEDS_MAX_PER_ORDER: max_notional={max_notional.to_str()}, notional={notional.to_str()}",
+                    reason=f"NOTIONAL_EXCEEDS_MAX_PER_ORDER: max_notional={max_notional}, notional={notional}",
                 )
                 return False  # Denied
 
@@ -682,7 +682,7 @@ cdef class RiskEngine(Component):
             ):
                 self._deny_order(
                     order=order,
-                    reason=f"NOTIONAL_LESS_THAN_MIN_FOR_INSTRUMENT: min_notional={instrument.min_notional.to_str()} , notional={notional.to_str()}",
+                    reason=f"NOTIONAL_LESS_THAN_MIN_FOR_INSTRUMENT: min_notional={instrument.min_notional} , notional={notional}",
                 )
                 return False  # Denied
 
@@ -694,7 +694,7 @@ cdef class RiskEngine(Component):
             ):
                 self._deny_order(
                     order=order,
-                    reason=f"NOTIONAL_GREATER_THAN_MAX_FOR_INSTRUMENT: max_notional={instrument.max_notional.to_str()}, notional={notional.to_str()}",
+                    reason=f"NOTIONAL_GREATER_THAN_MAX_FOR_INSTRUMENT: max_notional={instrument.max_notional}, notional={notional}",
                 )
                 return False  # Denied
 
@@ -705,7 +705,7 @@ cdef class RiskEngine(Component):
             if free is not None and (free._mem.raw + order_balance_impact._mem.raw) < 0:
                 self._deny_order(
                     order=order,
-                    reason=f"NOTIONAL_EXCEEDS_FREE_BALANCE: free={free.to_str()}, notional={order_balance_impact.to_str()}",
+                    reason=f"NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, notional={order_balance_impact}",
                 )
                 return False  # Denied
 
@@ -723,7 +723,7 @@ cdef class RiskEngine(Component):
                 if free is not None and cum_notional_buy._mem.raw > free._mem.raw:
                     self._deny_order(
                         order=order,
-                        reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free.to_str()}, cum_notional={cum_notional_buy.to_str()}",
+                        reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_buy}",
                     )
                     return False  # Denied
             elif order.is_sell_c():
@@ -738,7 +738,7 @@ cdef class RiskEngine(Component):
                     if free is not None and cum_notional_sell._mem.raw > free._mem.raw:
                         self._deny_order(
                             order=order,
-                            reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free.to_str()}, cum_notional={cum_notional_sell.to_str()}",
+                            reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}",
                         )
                         return False  # Denied
                 elif base_currency is not None and account.type == AccountType.CASH:
@@ -762,7 +762,7 @@ cdef class RiskEngine(Component):
                     if free is not None and cum_notional_sell._mem.raw > free._mem.raw:
                         self._deny_order(
                             order=order,
-                            reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free.to_str()}, cum_notional={cum_notional_sell.to_str()}",
+                            reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}",
                         )
                         return False  # Denied
 
@@ -787,13 +787,13 @@ cdef class RiskEngine(Component):
             return None
         if quantity._mem.precision > instrument.size_precision:
             # Check failed
-            return f"quantity {quantity.to_str()} invalid (precision {quantity._mem.precision} > {instrument.size_precision})"
+            return f"quantity {quantity} invalid (precision {quantity._mem.precision} > {instrument.size_precision})"
         if instrument.max_quantity and quantity > instrument.max_quantity:
             # Check failed
-            return f"quantity {quantity.to_str()} invalid (> maximum trade size of {instrument.max_quantity})"
+            return f"quantity {quantity} invalid (> maximum trade size of {instrument.max_quantity})"
         if instrument.min_quantity and quantity < instrument.min_quantity:
             # Check failed
-            return f"quantity {quantity.to_str()} invalid (< minimum trade size of {instrument.min_quantity})"
+            return f"quantity {quantity} invalid (< minimum trade size of {instrument.min_quantity})"
 
 # -- DENIALS --------------------------------------------------------------------------------------
 

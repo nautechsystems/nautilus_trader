@@ -209,9 +209,9 @@ cdef class FXRolloverInterestModule(SimulationModule):
             The logger to log to.
 
         """
-        account_balances_starting = ', '.join([b.to_str() for b in self.exchange.starting_balances])
+        account_balances_starting = ', '.join([b.to_formatted_str() for b in self.exchange.starting_balances])
         account_starting_length = len(account_balances_starting)
-        rollover_totals = ', '.join([b.to_str() for b in self._rollover_totals.values()])
+        rollover_totals = ', '.join([b.to_formatted_str() for b in self._rollover_totals.values()])
         logger.info(f"Rollover interest (totals): {rollover_totals}")
 
     cpdef void reset(self):

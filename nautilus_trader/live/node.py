@@ -376,7 +376,7 @@ class TradingNode:
                         position_state = position.to_dict()
                         unrealized_pnl = self.kernel.cache.calculate_unrealized_pnl(position)
                         if unrealized_pnl is not None:
-                            position_state["unrealized_pnl"] = unrealized_pnl.to_str()
+                            position_state["unrealized_pnl"] = str(unrealized_pnl)
                         self.kernel.msgbus.publish(
                             topic=f"snapshots:positions:{position.id}",
                             msg=self.kernel.msgbus.serializer.serialize(position_state),
