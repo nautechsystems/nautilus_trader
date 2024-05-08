@@ -21,7 +21,6 @@ from unittest.mock import patch
 
 import pytest
 
-from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
 from nautilus_trader.test_kit.functions import eventually
 
 
@@ -32,7 +31,7 @@ def test_start(ib_client):
     ib_client._eclient.startApi = MagicMock(side_effect=ib_client._is_ib_connected.set)
 
     # Act
-    ib_client.start()
+    ib_client._start()
 
     # Assert
     assert ib_client._is_client_ready.is_set()
@@ -57,48 +56,49 @@ def test_start_tasks(ib_client):
     assert not ib_client._connection_watchdog_task.done()
 
 
-def test_stop(ib_client):
+@pytest.mark.asyncio
+async def test_stop(ib_client_running):
     # Arrange
-    ib_client._connect = AsyncMock()
-    ib_client._eclient = MagicMock()
-    ib_client._eclient.startApi = MagicMock(side_effect=ib_client._is_ib_connected.set)
-    ib_client.start()
 
     # Act
-    ib_client.stop()
-    ensure_all_tasks_completed()
+    ib_client_running.stop()
+    await asyncio.sleep(0.1)
 
     # Assert
-    assert ib_client.is_stopped
-    assert ib_client._connection_watchdog_task.done()
-    assert ib_client._tws_incoming_msg_reader_task.done()
-    assert ib_client._internal_msg_queue_processor_task.done()
-    assert not ib_client._is_client_ready.is_set()
-    assert len(ib_client.registered_nautilus_clients) == 0
+    assert ib_client_running.is_stopped
+    assert ib_client_running._connection_watchdog_task.done()
+    assert ib_client_running._tws_incoming_msg_reader_task.done()
+    assert ib_client_running._internal_msg_queue_processor_task.done()
+    assert not ib_client_running._is_client_ready.is_set()
+    assert len(ib_client_running.registered_nautilus_clients) == 0
 
 
-def test_reset(ib_client):
+@pytest.mark.asyncio
+async def test_reset(ib_client_running):
     # Arrange
-    ib_client._stop = Mock()
-    ib_client._start = Mock()
+    ib_client_running._start_async = AsyncMock()
+    ib_client_running._stop_async = AsyncMock()
 
     # Act
-    ib_client.reset()
+    ib_client_running._reset()
+    await asyncio.sleep(0.1)
 
     # Assert
-    assert ib_client._stop.called
-    assert ib_client._start.called
+    ib_client_running._start_async.assert_awaited_once()
+    ib_client_running._stop_async.assert_awaited_once()
 
 
-def test_resume(ib_client_running):
+@pytest.mark.asyncio
+async def test_resume(ib_client_running):
     # Arrange, Act, Assert
-    ib_client_running._degrade()
+    ib_client_running._resubscribe_all = MagicMock()
 
     # Act
     ib_client_running._resume()
+    await asyncio.sleep(0.1)
 
     # Assert
-    assert ib_client_running._is_client_ready.is_set()
+    ib_client_running._resubscribe_all.assert_called_once()
 
 
 def test_degrade(ib_client_running):

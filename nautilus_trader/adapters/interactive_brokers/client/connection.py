@@ -92,10 +92,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         """
         Attempt to reconnect to TWS/Gateway.
         """
-        await self._startup()
-        self._log.info("Reconnection successful.")
-        self._connection_attempts = 0
-        await self._resubscribe_all()
+        self._reset()
         self._resume()
 
     def _initialize_connection_params(self) -> None:
