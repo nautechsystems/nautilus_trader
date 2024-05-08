@@ -11,17 +11,18 @@ Released on TBD (UTC).
 - Added `Bar.from_raw_arrays_to_list` (#1623), thanks rsmb7z
 
 ### Breaking Changes
-- Changed `tags` param and return type from `str` to `list[str]` (more naturally expresses multiple tags)
 - Removed `allow_cash_positions` config (simplify to the most common use case, spot trading should track positions)
+- Changed `tags` param and return type from `str` to `list[str]` (more naturally expresses multiple tags)
+- Changed `Order.to_dict()` `commission` and `linked_order_id` fields to lists of strings rather than comma separated strings
 
 ### Fixes
+- Fixed `Money` string parsing where the value from `str(money)` can now be passed to `Money.from_str`
 - Fixed `ParquetDataCatalog` bar queries by `instrument_id` which were no longer returning data (the intent is to use `bar_type`, however using `instrument_id` now returns all matching bars)
 - Fixed Interactive Brokers contract details parsing (#1615), thanks @rsmb7z
 - Fixed Interactive Brokers portfolio registration (#1616), thanks @rsmb7z
 - Fixed IBKR reconnection after gateway/TWS disconnection (#1622), thanks @benjaminsingleton
 - Fixed `from_str` for `Price`, `Quantity` and `Money` when input string contains underscores in Rust, thanks for reporting @filipmacek
 - Fixed Binance Futures account balance calculation (was over stating `free` balance with margin collateral, which could result in a negative `locked` balance)
-- Fixed `Money` string parsing where the value from `str(money)` can now be passed to `Money.from_str`
 
 ---
 
