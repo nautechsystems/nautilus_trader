@@ -22,6 +22,7 @@ from unittest.mock import Mock
 import pytest
 
 from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
+from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
 
@@ -131,6 +132,33 @@ async def test_openOrder(ib_client):
     assert ib_client._order_id_to_order_ref[order.orderId]
     assert mock_request.result == [order]
     handler_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_process_open_order_when_request_not_present(ib_client):
+    # Arrange
+    handler_mock = Mock()
+    ib_client._event_subscriptions = Mock()
+    ib_client._event_subscriptions.get = Mock(return_value=handler_mock)
+
+    order_id = 1
+    contract = IBTestContractStubs.aapl_equity_contract()
+    order = IBTestExecStubs.aapl_buy_ib_order(order_id=order_id)
+    order_state = IBTestExecStubs.ib_order_state(state="PreSubmitted")
+
+    # Act
+    await ib_client.process_open_order(
+        order_id=order_id,
+        contract=contract,
+        order=order,
+        order_state=order_state,
+    )
+
+    # Assert
+    kwargs = handler_mock.call_args_list[-1].kwargs
+    assert kwargs["order_ref"] == "O-20240102-1754-001-000-1"
+    assert kwargs["order"].contract == IBContract(**contract.__dict__)
+    assert kwargs["order"].order_state == order_state
 
 
 @pytest.mark.asyncio

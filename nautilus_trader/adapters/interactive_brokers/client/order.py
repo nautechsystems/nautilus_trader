@@ -167,11 +167,12 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         """
         Feed in currently open orders.
         """
+        order.contract = IBContract(**contract.__dict__)
+        order.order_state = order_state
+        order.orderRef = order.orderRef.rsplit(":", 1)[0]
+
         # Handle response to on-demand request
         if request := self._requests.get(name="OpenOrders"):
-            order.contract = IBContract(**contract.__dict__)
-            order.order_state = order_state
-            order.orderRef = order.orderRef.rsplit(":", 1)[0]
             request.result.append(order)
             # Validate and add reverse mapping, if not exists
             if order_ref := self._order_id_to_order_ref.get(order.orderId):
