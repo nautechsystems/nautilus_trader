@@ -23,7 +23,7 @@ use nautilus_common::cache::Cache;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
-    events::{account::state::AccountState, order::event::OrderEvent},
+    events::{account::state::AccountState, order::event::OrderEventAny},
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
         position_id::PositionId, strategy_id::StrategyId, trade_id::TradeId, venue::Venue,
@@ -228,7 +228,7 @@ impl ExecutionClient {
         todo!()
     }
 
-    fn send_order_event(&self, event: OrderEvent) {
+    fn send_order_event(&self, event: OrderEventAny) {
         todo!()
     }
 

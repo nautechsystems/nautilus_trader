@@ -2387,7 +2387,7 @@ mod tests {
     use nautilus_model::{
         data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
         enums::OrderSide,
-        events::order::{accepted::OrderAccepted, event::OrderEvent, submitted::OrderSubmitted},
+        events::order::{accepted::OrderAccepted, event::OrderEventAny, submitted::OrderSubmitted},
         identifiers::{
             account_id::AccountId, client_order_id::ClientOrderId, position_id::PositionId,
             venue_order_id::VenueOrderId,
@@ -2398,7 +2398,7 @@ mod tests {
         },
         orders::{any::OrderAny, stubs::TestOrderStubs},
         polymorphism::{
-            ApplyOrderEvent, GetAccountId, GetClientOrderId, GetInstrumentId, GetStrategyId,
+            ApplyOrderEventAny, GetAccountId, GetClientOrderId, GetInstrumentId, GetStrategyId,
             GetTraderId, IsOpen,
         },
         types::{price::Price, quantity::Quantity},
@@ -2554,7 +2554,7 @@ mod tests {
             UnixNanos::default(),
         )
         .unwrap(); // TODO: Should event generation be fallible?
-        order.apply(OrderEvent::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         cache.update_order(&order).unwrap();
 
         let result = cache.order(&order.client_order_id()).unwrap();
@@ -2602,7 +2602,7 @@ mod tests {
             UnixNanos::default(),
         )
         .unwrap(); // TODO: Should event generation be fallible?
-        order.apply(OrderEvent::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         cache.update_order(&order).unwrap();
 
         let accepted = OrderAccepted::new(
@@ -2618,7 +2618,7 @@ mod tests {
             false,
         )
         .unwrap();
-        order.apply(OrderEvent::Accepted(accepted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
         cache.update_order(&order).unwrap();
 
         let result = cache.order(&order.client_order_id()).unwrap();

@@ -25,11 +25,13 @@ use ustr::Ustr;
 
 use crate::{
     enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
+    events::order::OrderEvent,
     identifiers::{
-        client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
+        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
-        trader_id::TraderId,
+        trader_id::TraderId, venue_order_id::VenueOrderId,
     },
+    orders::any::OrderAny,
     types::{price::Price, quantity::Quantity},
 };
 
@@ -365,6 +367,164 @@ impl Display for OrderInitialized {
                 .collect::<Vec<String>>()
                 .join(", ")),
         )
+    }
+}
+
+impl OrderEvent for OrderInitialized {
+    fn id(&self) -> UUID4 {
+        self.event_id
+    }
+
+    fn kind(&self) -> &str {
+        stringify!(OrderInitialized)
+    }
+
+    fn order_type(&self) -> Option<OrderType> {
+        Some(self.order_type)
+    }
+
+    fn order_side(&self) -> Option<OrderSide> {
+        Some(self.order_side)
+    }
+
+    fn trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    fn strategy_id(&self) -> StrategyId {
+        self.strategy_id
+    }
+
+    fn instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    fn client_order_id(&self) -> ClientOrderId {
+        self.client_order_id
+    }
+
+    fn reason(&self) -> Option<Ustr> {
+        None
+    }
+
+    fn quantity(&self) -> Option<Quantity> {
+        Some(self.quantity)
+    }
+
+    fn time_in_force(&self) -> Option<TimeInForce> {
+        Some(self.time_in_force)
+    }
+
+    fn post_only(&self) -> Option<bool> {
+        Some(self.post_only)
+    }
+
+    fn reduce_only(&self) -> Option<bool> {
+        Some(self.reduce_only)
+    }
+
+    fn quote_quantity(&self) -> Option<bool> {
+        Some(self.quote_quantity)
+    }
+
+    fn reconciliation(&self) -> bool {
+        false
+    }
+
+    fn price(&self) -> Option<Price> {
+        self.price
+    }
+
+    fn trigger_price(&self) -> Option<Price> {
+        self.trigger_price
+    }
+
+    fn trigger_type(&self) -> Option<TriggerType> {
+        self.trigger_type
+    }
+
+    fn limit_offset(&self) -> Option<Price> {
+        self.limit_offset
+    }
+
+    fn trailing_offset(&self) -> Option<Price> {
+        self.trailing_offset
+    }
+
+    fn trailing_offset_type(&self) -> Option<TrailingOffsetType> {
+        self.trailing_offset_type
+    }
+
+    fn expire_time(&self) -> Option<UnixNanos> {
+        self.expire_time
+    }
+
+    fn display_qty(&self) -> Option<Quantity> {
+        self.display_qty
+    }
+
+    fn emulation_trigger(&self) -> Option<TriggerType> {
+        self.emulation_trigger
+    }
+
+    fn trigger_instrument_id(&self) -> Option<InstrumentId> {
+        self.trigger_instrument_id
+    }
+
+    fn contingency_type(&self) -> Option<ContingencyType> {
+        self.contingency_type
+    }
+
+    fn order_list_id(&self) -> Option<OrderListId> {
+        self.order_list_id
+    }
+
+    fn linked_order_ids(&self) -> Option<Vec<ClientOrderId>> {
+        self.linked_order_ids.clone()
+    }
+
+    fn parent_order_id(&self) -> Option<ClientOrderId> {
+        self.parent_order_id
+    }
+
+    fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId> {
+        self.exec_algorithm_id
+    }
+
+    fn exec_spawn_id(&self) -> Option<ClientOrderId> {
+        self.exec_spawn_id
+    }
+
+    fn venue_order_id(&self) -> Option<VenueOrderId> {
+        None
+    }
+
+    fn account_id(&self) -> Option<AccountId> {
+        None
+    }
+
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl From<OrderInitialized> for OrderAny {
+    fn from(order: OrderInitialized) -> Self {
+        match order.order_type {
+            OrderType::Limit => OrderAny::Limit(order.into()),
+            OrderType::Market => OrderAny::Market(order.into()),
+            OrderType::StopMarket => OrderAny::StopMarket(order.into()),
+            OrderType::StopLimit => OrderAny::StopLimit(order.into()),
+            OrderType::LimitIfTouched => OrderAny::LimitIfTouched(order.into()),
+            OrderType::TrailingStopLimit => OrderAny::TrailingStopLimit(order.into()),
+            OrderType::TrailingStopMarket => OrderAny::TrailingStopMarket(order.into()),
+            OrderType::MarketToLimit => OrderAny::MarketToLimit(order.into()),
+            OrderType::MarketIfTouched => OrderAny::MarketIfTouched(order.into()),
+        }
     }
 }
 

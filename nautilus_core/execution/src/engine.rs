@@ -25,7 +25,7 @@ use log::debug;
 use nautilus_common::{cache::Cache, generators::position_id::PositionIdGenerator};
 use nautilus_model::{
     enums::{OmsType, OrderSide},
-    events::order::{event::OrderEvent, filled::OrderFilled},
+    events::order::{event::OrderEventAny, filled::OrderFilled},
     identifiers::{
         client_id::ClientId, instrument_id::InstrumentId, strategy_id::StrategyId, venue::Venue,
     },
@@ -134,7 +134,7 @@ impl ExecutionEngine {
         self.execute_command(command);
     }
 
-    pub fn process(&self, event: &OrderEvent) {
+    pub fn process(&self, event: &OrderEventAny) {
         todo!();
     }
 
@@ -198,7 +198,7 @@ impl ExecutionEngine {
 
     // -- EVENT HANDLERS ----------------------------------------------------
 
-    fn handle_event(&self, event: OrderEvent) {
+    fn handle_event(&self, event: OrderEventAny) {
         todo!();
     }
 
@@ -218,7 +218,7 @@ impl ExecutionEngine {
         todo!();
     }
 
-    fn apply_event_to_order(&self, order: &OrderAny, event: OrderEvent) {
+    fn apply_event_to_order(&self, order: &OrderAny, event: OrderEventAny) {
         todo!();
     }
 
