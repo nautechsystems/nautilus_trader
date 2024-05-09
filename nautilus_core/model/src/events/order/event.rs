@@ -30,7 +30,7 @@ use crate::{
 };
 
 #[derive(Clone, PartialEq, Eq, Display, Debug, Serialize, Deserialize)]
-pub enum OrderEvent {
+pub enum OrderEventAny {
     Initialized(OrderInitialized),
     Denied(OrderDenied),
     Emulated(OrderEmulated),
@@ -50,7 +50,7 @@ pub enum OrderEvent {
     Filled(OrderFilled),
 }
 
-impl OrderEvent {
+impl OrderEventAny {
     #[must_use]
     pub fn client_order_id(&self) -> ClientOrderId {
         match self {

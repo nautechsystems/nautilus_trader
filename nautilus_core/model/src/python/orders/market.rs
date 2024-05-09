@@ -34,10 +34,10 @@ use crate::{
         trader_id::TraderId,
     },
     orders::{
-        base::{str_hashmap_to_ustr, OrderCore},
+        base::{str_hashmap_to_ustr, Order, OrderCore},
         market::MarketOrder,
     },
-    python::common::commissions_from_hashmap,
+    python::{common::commissions_from_hashmap, events::order::convert_order_event_to_pyobject},
     types::{currency::Currency, money::Money, quantity::Quantity},
 };
 
@@ -281,6 +281,15 @@ impl MarketOrder {
     #[pyo3(name = "closing_side")]
     fn py_closing_side(side: PositionSide) -> OrderSide {
         OrderCore::closing_side(side)
+    }
+
+    #[getter]
+    #[pyo3(name = "events")]
+    fn py_events(&self, py: Python<'_>) -> PyResult<Vec<PyObject>> {
+        self.events()
+            .into_iter()
+            .map(|order_event| convert_order_event_to_pyobject(py, order_event.clone()))
+            .collect()
     }
 
     #[pyo3(name = "to_dict")]

@@ -35,6 +35,7 @@ sqlx = { version = "0.7.4", features = [
     "postgres",
     "any",
     "runtime-tokio",
+    "json"
 ], optional = true }
 
 [dev-dependencies]

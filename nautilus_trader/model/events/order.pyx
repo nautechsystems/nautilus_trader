@@ -539,7 +539,7 @@ cdef class OrderInitialized(OrderEvent):
             reduce_only=values["reduce_only"],
             quote_quantity=values["quote_quantity"],
             options=values["options"],
-            emulation_trigger=trigger_type_from_str(values["emulation_trigger"]),
+            emulation_trigger=trigger_type_from_str(values["emulation_trigger"]) if values["emulation_trigger"] is not None else TriggerType.NO_TRIGGER,
             trigger_instrument_id=InstrumentId.from_str_c(trigger_instrument_id) if trigger_instrument_id is not None else None,
             contingency_type=contingency_type_from_str(values["contingency_type"]),
             order_list_id=OrderListId(order_list_id_str) if order_list_id_str is not None else None,
@@ -584,6 +584,7 @@ cdef class OrderInitialized(OrderEvent):
             "tags": obj.tags,
             "event_id": obj.id.value,
             "ts_init": obj.ts_init,
+            "ts_event": obj.ts_init,
             "reconciliation": obj.reconciliation,
         }
 
@@ -855,7 +856,7 @@ cdef class OrderDenied(OrderEvent):
             "client_order_id": obj.client_order_id.value,
             "reason": obj.reason,
             "event_id": obj.id.value,
-            "ts_event": obj.ts_init,
+            "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
 

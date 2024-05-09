@@ -20,14 +20,18 @@ use pyo3::prelude::*;
 use ustr::Ustr;
 
 use crate::{
-    enums::{ContingencyType, OrderSide, TimeInForce, TriggerType},
+    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TriggerType},
     events::order::initialized::OrderInitialized,
     identifiers::{
         client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
         trader_id::TraderId,
     },
-    orders::{base::str_hashmap_to_ustr, market_if_touched::MarketIfTouchedOrder},
+    orders::{
+        base::{str_hashmap_to_ustr, Order},
+        market_if_touched::MarketIfTouchedOrder,
+    },
+    python::events::order::convert_order_event_to_pyobject,
     types::{price::Price, quantity::Quantity},
 };
 
@@ -91,6 +95,21 @@ impl MarketIfTouchedOrder {
             ts_init.into(),
         )
         .unwrap())
+    }
+
+    #[getter]
+    #[pyo3(name = "order_type")]
+    fn py_order_type(&self) -> OrderType {
+        self.order_type
+    }
+
+    #[getter]
+    #[pyo3(name = "events")]
+    fn py_events(&self, py: Python<'_>) -> PyResult<Vec<PyObject>> {
+        self.events()
+            .into_iter()
+            .map(|order_event| convert_order_event_to_pyobject(py, order_event.clone()))
+            .collect()
     }
 
     #[staticmethod]

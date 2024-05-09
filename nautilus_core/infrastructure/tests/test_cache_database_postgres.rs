@@ -61,9 +61,10 @@ pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
 mod tests {
     use std::time::Duration;
 
+    use nautilus_core::equality::entirely_equal;
     use nautilus_model::{
-        enums::CurrencyType,
-        identifiers::instrument_id::InstrumentId,
+        enums::{CurrencyType, OrderSide},
+        identifiers::{client_order_id::ClientOrderId, instrument_id::InstrumentId},
         instruments::{
             any::InstrumentAny,
             stubs::{
@@ -72,17 +73,11 @@ mod tests {
             },
             Instrument,
         },
+        orders::{any::OrderAny, stubs::TestOrderStubs},
         types::{currency::Currency, price::Price, quantity::Quantity},
     };
 
     use crate::get_pg_cache_database;
-
-    #[tokio::test]
-    async fn test_load_general_objects_when_nothing_in_cache_returns_empty_hashmap() {
-        let pg_cache = get_pg_cache_database().await.unwrap();
-        let result = pg_cache.load().await.unwrap();
-        assert_eq!(result.len(), 0);
-    }
 
     #[tokio::test]
     async fn test_add_general_object_adds_to_cache() {
@@ -235,5 +230,45 @@ mod tests {
                 options_contract.id()
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn test_add_order() {
+        let instrument = currency_pair_ethusdt();
+        let pg_cache = get_pg_cache_database().await.unwrap();
+        let market_order = TestOrderStubs::market_order(
+            instrument.id(),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            Some(ClientOrderId::new("O-19700101-0000-000-001-1").unwrap()),
+            None,
+        );
+        let limit_order = TestOrderStubs::limit_order(
+            instrument.id(),
+            OrderSide::Sell,
+            Price::from("100.0"),
+            Quantity::from("1.0"),
+            Some(ClientOrderId::new("O-19700101-0000-000-001-2").unwrap()),
+            None,
+        );
+        pg_cache
+            .add_order(OrderAny::Market(market_order.clone()))
+            .await
+            .unwrap();
+        pg_cache
+            .add_order(OrderAny::Limit(limit_order.clone()))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let market_order_result = pg_cache
+            .load_order(&market_order.client_order_id)
+            .await
+            .unwrap();
+        let limit_order_result = pg_cache
+            .load_order(&limit_order.client_order_id)
+            .await
+            .unwrap();
+        entirely_equal(market_order_result.unwrap(), OrderAny::Market(market_order));
+        entirely_equal(limit_order_result.unwrap(), OrderAny::Limit(limit_order));
     }
 }

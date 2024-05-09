@@ -23,9 +23,11 @@ from nautilus_trader.cache.postgres.adapter import CachePostgresAdapter
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.model.enums import CurrencyType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -326,3 +328,26 @@ class TestCachePostgresAdapter:
 
         # Assert
         assert aapl_option == self.database.load_instrument(aapl_option.id)
+
+    ################################################################################
+    # Orders
+    ################################################################################
+    @pytest.mark.asyncio
+    async def test_add_order(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        # Act
+        self.database.add_order(order)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_order(order.client_order_id))
+
+        # Assert
+        result = self.database.load_order(order.client_order_id)
+        assert result == order
+        assert order.to_dict() == result.to_dict()
