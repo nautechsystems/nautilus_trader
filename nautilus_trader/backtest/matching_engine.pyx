@@ -564,6 +564,7 @@ cdef class OrderMatchingEngine:
         #         venue_position_id = self._get_position_id(real_order)
         #         self._generate_order_filled(
         #             real_order,
+        #             self._get_venue_order_id(real_order),
         #             venue_position_id,
         #             Quantity(order.size, self.instrument.size_precision),
         #             Price(order.price, self.instrument.price_precision),
@@ -1826,6 +1827,7 @@ cdef class OrderMatchingEngine:
 
         self._generate_order_filled(
             order=order,
+            venue_order_id=self._get_venue_order_id(order),
             venue_position_id=venue_position_id,
             last_qty=last_qty,
             last_px=last_px,
@@ -1917,6 +1919,22 @@ cdef class OrderMatchingEngine:
 
 # -- IDENTIFIER GENERATORS ------------------------------------------------------------------------
 
+    cdef VenueOrderId _get_venue_order_id(self, Order order):
+        # Check existing on order
+        cdef VenueOrderId venue_order_id = order.venue_order_id
+        if venue_order_id is not None:
+            return venue_order_id
+
+        # Check exiting in cache
+        venue_order_id = self.cache.venue_order_id(order.client_order_id)
+        if venue_order_id is not None:
+            return venue_order_id
+
+        venue_order_id = self._generate_venue_order_id()
+        self.cache.add_venue_order_id(order.client_order_id, venue_order_id)
+
+        return venue_order_id
+
     cdef PositionId _get_position_id(self, Order order, bint generate=True):
         cdef PositionId position_id
         if OmsType.HEDGING:
@@ -1973,7 +1991,7 @@ cdef class OrderMatchingEngine:
 
         # Check if order already accepted (being added back into the matching engine)
         if not order.status_c() == OrderStatus.ACCEPTED:
-            self._generate_order_accepted(order)
+            self._generate_order_accepted(order, venue_order_id=self._get_venue_order_id(order))
 
             if (
                 order.order_type == OrderType.TRAILING_STOP_MARKET
@@ -1997,12 +2015,9 @@ cdef class OrderMatchingEngine:
             )
             return
 
-        if order.venue_order_id is None:
-            order.venue_order_id = self._generate_venue_order_id()
-
         self._core.delete_order(order)
 
-        self._generate_order_canceled(order)
+        self._generate_order_canceled(order, venue_order_id=self._get_venue_order_id(order))
 
         if self._support_contingent_orders and order.contingency_type != ContingencyType.NO_CONTINGENCY and cancel_contingencies:
             self._cancel_contingent_orders(order)
@@ -2149,7 +2164,7 @@ cdef class OrderMatchingEngine:
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
-    cdef void _generate_order_accepted(self, Order order):
+    cdef void _generate_order_accepted(self, Order order, VenueOrderId venue_order_id):
         # Generate event
         cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderAccepted event = OrderAccepted(
@@ -2157,7 +2172,7 @@ cdef class OrderMatchingEngine:
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id or self._generate_venue_order_id(),
+            venue_order_id=venue_order_id,
             account_id=order.account_id or self._account_ids[order.trader_id],
             event_id=UUID4(),
             ts_event=ts_now,
@@ -2224,20 +2239,6 @@ cdef class OrderMatchingEngine:
         Price price,
         Price trigger_price,
     ):
-        cdef VenueOrderId venue_order_id = order.venue_order_id
-        cdef bint venue_order_id_modified = False
-        if venue_order_id is None:
-            venue_order_id = self._generate_venue_order_id()
-            venue_order_id_modified = True
-
-        # Check venue_order_id against cache, only allow modification when `venue_order_id_modified=True`
-        if not venue_order_id_modified:
-            existing = self.cache.venue_order_id(order.client_order_id)
-            if existing is not None:
-                Condition.equal(existing, order.venue_order_id, "existing", "order.venue_order_id")
-            else:
-                self._log.warning(f"{order.venue_order_id} does not match existing {repr(existing)}")
-
         # Generate event
         cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderUpdated event = OrderUpdated(
@@ -2245,7 +2246,7 @@ cdef class OrderMatchingEngine:
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            venue_order_id=venue_order_id,
+            venue_order_id=order.venue_order_id,
             account_id=order.account_id or self._account_ids[order.trader_id],
             quantity=quantity,
             price=price,
@@ -2256,7 +2257,7 @@ cdef class OrderMatchingEngine:
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
-    cdef void _generate_order_canceled(self, Order order):
+    cdef void _generate_order_canceled(self, Order order, VenueOrderId venue_order_id):
         # Generate event
         cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderCanceled event = OrderCanceled(
@@ -2264,7 +2265,7 @@ cdef class OrderMatchingEngine:
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id,
+            venue_order_id=venue_order_id,
             account_id=order.account_id or self._account_ids[order.trader_id],
             event_id=UUID4(),
             ts_event=ts_now,
@@ -2307,6 +2308,7 @@ cdef class OrderMatchingEngine:
     cdef void _generate_order_filled(
         self,
         Order order,
+        VenueOrderId venue_order_id,
         PositionId venue_position_id,
         Quantity last_qty,
         Price last_px,
@@ -2321,7 +2323,7 @@ cdef class OrderMatchingEngine:
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id or self._generate_venue_order_id(),
+            venue_order_id=venue_order_id,
             account_id=order.account_id or self._account_ids[order.trader_id],
             trade_id=self._generate_trade_id(),
             position_id=venue_position_id,

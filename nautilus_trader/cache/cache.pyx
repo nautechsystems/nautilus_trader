@@ -1397,6 +1397,42 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.add_account(account)
 
+    cpdef void add_venue_order_id(self, ClientOrderId client_order_id, VenueOrderId venue_order_id):
+        """
+        Index the given venue order ID with the given client order ID.
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID to index.
+        venue_order_id : VenueOrderId
+            The venue order ID to index.
+
+        Raises
+        ------
+        ValueError
+            If the `client_order_id` is already indexed with a different `venue_order_id`.
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+        Condition.not_none(venue_order_id, "venue_order_id")
+
+        # TODO: Also consider checking the reverse index here
+        cdef ClientOrderId existing_client_order_id = self._index_order_ids.get(venue_order_id)
+        if existing_client_order_id is not None and client_order_id != existing_client_order_id:
+            raise ValueError(
+                f"Existing {existing_client_order_id!r} for {venue_order_id!r} "
+                f"did not match the given {client_order_id!r}. "
+                "If you are writing a test then try a different `venue_order_id`, "
+                "otherwise this is probably a bug."
+            )
+
+        self._index_order_ids[venue_order_id] = client_order_id
+
+        self._log.debug(
+            f"Indexed client_order_id={client_order_id}, venue_order_id={venue_order_id})",
+        )
+
     cpdef void add_order(
         self,
         Order order,
@@ -1769,8 +1805,7 @@ cdef class Cache(CacheFacade):
 
         # Update venue order ID
         if order.venue_order_id is not None:
-            # Assumes order_id does not change
-            self._index_order_ids[order.venue_order_id] = order.client_order_id
+            self.add_venue_order_id(order.client_order_id, order.venue_order_id)
 
         # Update in-flight state
         if order.is_inflight_c():

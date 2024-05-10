@@ -398,7 +398,9 @@ class TestRiskEngineWithCashAccount:
 
         self.risk_engine.execute(submit_order2)
         self.exec_engine.process(TestEventStubs.order_submitted(order2))
-        self.exec_engine.process(TestEventStubs.order_accepted(order2))
+        self.exec_engine.process(
+            TestEventStubs.order_accepted(order2, venue_order_id=VenueOrderId("2")),
+        )
         self.exec_engine.process(TestEventStubs.order_filled(order2, _AUDUSD_SIM))
 
         submit_order3 = SubmitOrder(
@@ -472,7 +474,9 @@ class TestRiskEngineWithCashAccount:
         # Act
         self.risk_engine.execute(submit_order2)
         self.exec_engine.process(TestEventStubs.order_submitted(order2))
-        self.exec_engine.process(TestEventStubs.order_accepted(order2))
+        self.exec_engine.process(
+            TestEventStubs.order_accepted(order2, venue_order_id=VenueOrderId("2")),
+        )
         self.exec_engine.process(TestEventStubs.order_filled(order2, _AUDUSD_SIM))
 
         # Assert
