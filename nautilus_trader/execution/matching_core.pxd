@@ -21,6 +21,7 @@ from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 
@@ -43,6 +44,7 @@ cdef class MatchingCore:
     cdef dict _orders
     cdef list _orders_bid
     cdef list _orders_ask
+    cdef dict _client_order_id_to_venue_id
 
 # -- QUERIES --------------------------------------------------------------------------------------
 
@@ -60,6 +62,9 @@ cdef class MatchingCore:
 
     cpdef void reset(self)
     cpdef void add_order(self, Order order)
+    cpdef void set_venue_order_id(self, Order order, VenueOrderId venue_order_id)
+    cpdef bint has_venue_order_id(self, Order order)
+    cpdef VenueOrderId get_venue_order_id(self, Order order)
     cdef void _add_order(self, Order order)
     cdef void sort_bid_orders(self)
     cdef void sort_ask_orders(self)

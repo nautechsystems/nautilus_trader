@@ -23,6 +23,7 @@ from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.model.functions cimport order_type_to_str
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 
@@ -74,6 +75,7 @@ cdef class MatchingCore:
         self._orders: dict[ClientOrderId, Order] = {}
         self._orders_bid: list[Order] = []
         self._orders_ask: list[Order] = []
+        self._client_order_id_to_venue_id: dict[ClientOrderId, VenueOrderId] = {}
 
     @property
     def instrument_id(self) -> InstrumentId:
@@ -193,6 +195,7 @@ cdef class MatchingCore:
         self._orders.clear()
         self._orders_bid.clear()
         self._orders_ask.clear()
+        self._client_order_id_to_venue_id.clear()
         self.bid_raw = 0
         self.ask_raw = 0
         self.last_raw = 0
@@ -206,9 +209,28 @@ cdef class MatchingCore:
         # Needed as closures not supported in cpdef functions
         self._add_order(order)
 
+    cpdef void set_venue_order_id(self, Order order, VenueOrderId venue_order_id):
+        Condition.not_none(order, "order")
+        Condition.not_none(venue_order_id, "venue_order_id")
+
+        self._orders[order.client_order_id] = order.venue_order_id
+
+    cpdef VenueOrderId get_venue_order_id(self, Order order):
+        Condition.not_none(order, "order")
+
+        return self._client_order_id_to_venue_id.get(order.client_order_id, None)
+
+    cpdef bint has_venue_order_id(self, Order order):
+        Condition.not_none(order, "order")
+
+        return order.client_order_id in self._client_order_id_to_venue_id
+
     cdef void _add_order(self, Order order):
         # Index order
         self._orders[order.client_order_id] = order
+
+        if order.venue_order_id is not None:
+            self._orders[order.client_order_id] = order.venue_order_id
 
         if order.side == OrderSide.BUY:
             self._orders_bid.append(order)
@@ -229,6 +251,7 @@ cdef class MatchingCore:
         Condition.not_none(order, "order")
 
         self._orders.pop(order.client_order_id, None)
+        self._client_order_id_to_venue_id.pop(order.client_order_id, None)
 
         if order.side == OrderSide.BUY:
             if order in self._orders_bid:

@@ -1997,8 +1997,11 @@ cdef class OrderMatchingEngine:
             )
             return
 
-        if order.venue_order_id is None:
+        if order.venue_order_id is None and not self._core.has_venue_order_id(order):
             order.venue_order_id = self._generate_venue_order_id()
+            self._core.set_venue_order_id(order, order.venue_order_id)
+        elif order.venue_order_id is None and self._core.has_venue_order_id(order):
+            order.venue_order_id = self._core.get_venue_order_id(order)
 
         self._core.delete_order(order)
 
@@ -2152,12 +2155,21 @@ cdef class OrderMatchingEngine:
     cdef void _generate_order_accepted(self, Order order):
         # Generate event
         cdef uint64_t ts_now = self._clock.timestamp_ns()
+
+        cdef VenueOrderId venue_order_id = order.venue_order_id
+
+        if order.venue_order_id is None and not self._core.has_venue_order_id(order):
+            venue_order_id = self._generate_venue_order_id()
+            self._core.set_venue_order_id(order, venue_order_id)
+        elif order.venue_order_id is None and self._core.has_venue_order_id(order):
+            venue_order_id = self._core.get_venue_order_id(order)
+
         cdef OrderAccepted event = OrderAccepted(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id or self._generate_venue_order_id(),
+            venue_order_id=venue_order_id,
             account_id=order.account_id or self._account_ids[order.trader_id],
             event_id=UUID4(),
             ts_event=ts_now,
@@ -2226,8 +2238,13 @@ cdef class OrderMatchingEngine:
     ):
         cdef VenueOrderId venue_order_id = order.venue_order_id
         cdef bint venue_order_id_modified = False
-        if venue_order_id is None:
+
+        if order.venue_order_id is None and not self._core.has_venue_order_id(order):
             venue_order_id = self._generate_venue_order_id()
+            venue_order_id_modified = True
+            self._core.set_venue_order_id(order, venue_order_id)
+        elif order.venue_order_id is None and self._core.has_venue_order_id(order):
+            venue_order_id = self._core.get_venue_order_id(order)
             venue_order_id_modified = True
 
         # Check venue_order_id against cache, only allow modification when `venue_order_id_modified=True`
@@ -2316,12 +2333,21 @@ cdef class OrderMatchingEngine:
     ):
         # Generate event
         cdef uint64_t ts_now = self._clock.timestamp_ns()
+
+        cdef VenueOrderId venue_order_id = order.venue_order_id
+
+        if order.venue_order_id is None and not self._core.has_venue_order_id(order):
+            venue_order_id = self._generate_venue_order_id()
+            self._core.set_venue_order_id(order, venue_order_id)
+        elif order.venue_order_id is None and self._core.has_venue_order_id(order):
+            venue_order_id = self._core.get_venue_order_id(order)
+
         cdef OrderFilled event = OrderFilled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id or self._generate_venue_order_id(),
+            venue_order_id=venue_order_id,
             account_id=order.account_id or self._account_ids[order.trader_id],
             trade_id=self._generate_trade_id(),
             position_id=venue_position_id,
