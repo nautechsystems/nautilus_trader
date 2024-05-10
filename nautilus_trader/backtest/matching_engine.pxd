@@ -201,6 +201,7 @@ cdef class OrderMatchingEngine:
 
 # -- IDENTIFIER GENERATORS ------------------------------------------------------------------------
 
+    cdef VenueOrderId _get_venue_order_id(self, Order order)
     cdef PositionId _get_position_id(self, Order order, bint generate=*)
     cdef PositionId _generate_venue_position_id(self)
     cdef VenueOrderId _generate_venue_order_id(self)
@@ -220,7 +221,7 @@ cdef class OrderMatchingEngine:
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 
     cdef void _generate_order_rejected(self, Order order, str reason)
-    cdef void _generate_order_accepted(self, Order order)
+    cdef void _generate_order_accepted(self, Order order, VenueOrderId venue_order_id)
     cdef void _generate_order_modify_rejected(
         self,
         TraderId trader_id,
@@ -242,12 +243,13 @@ cdef class OrderMatchingEngine:
         str reason,
     )
     cpdef void _generate_order_updated(self, Order order, Quantity qty, Price price, Price trigger_price)
-    cdef void _generate_order_canceled(self, Order order)
+    cdef void _generate_order_canceled(self, Order order, VenueOrderId venue_order_id)
     cdef void _generate_order_triggered(self, Order order)
     cdef void _generate_order_expired(self, Order order)
     cdef void _generate_order_filled(
         self,
         Order order,
+        VenueOrderId venue_order_id,
         PositionId venue_position_id,
         Quantity last_qty,
         Price last_px,

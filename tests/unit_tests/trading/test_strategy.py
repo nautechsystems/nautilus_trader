@@ -51,6 +51,7 @@ from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -1838,7 +1839,9 @@ class TestStrategy:
         strategy.submit_order_list(bracket)
 
         self.exec_engine.process(TestEventStubs.order_filled(entry_order, _USDJPY_SIM))
-        self.exec_engine.process(TestEventStubs.order_filled(sl_order, _USDJPY_SIM))
+        self.exec_engine.process(
+            TestEventStubs.order_filled(sl_order, _USDJPY_SIM, venue_order_id=VenueOrderId("2")),
+        )
         self.exchange.process(0)
 
         # Assert
@@ -1891,7 +1894,9 @@ class TestStrategy:
         strategy.submit_order_list(bracket)
 
         self.exec_engine.process(TestEventStubs.order_filled(entry_order, _USDJPY_SIM))
-        self.exec_engine.process(TestEventStubs.order_filled(tp_order, _USDJPY_SIM))
+        self.exec_engine.process(
+            TestEventStubs.order_filled(tp_order, _USDJPY_SIM, venue_order_id=VenueOrderId("2")),
+        )
         self.exchange.process(0)
 
         # Assert

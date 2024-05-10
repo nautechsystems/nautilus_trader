@@ -42,6 +42,7 @@ from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Currency
@@ -160,6 +161,7 @@ cdef class Cache(CacheFacade):
     cpdef void add_instrument(self, Instrument instrument)
     cpdef void add_synthetic(self, SyntheticInstrument synthetic)
     cpdef void add_account(self, Account account)
+    cpdef void add_venue_order_id(self, ClientOrderId client_order_id, VenueOrderId venue_order_id)
     cpdef void add_order(self, Order order, PositionId position_id=*, ClientId client_id=*, bint override=*)
     cpdef void add_order_list(self, OrderList order_list)
     cpdef void add_position_id(self, PositionId position_id, Venue venue, ClientOrderId client_order_id, StrategyId strategy_id)

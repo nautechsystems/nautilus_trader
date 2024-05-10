@@ -9,6 +9,7 @@ Released on TBD (UTC).
 - Added Sandbox example with Interactive Brokers (#1618), thanks @rsmb7z
 - Added `ParquetDataCatalog` S3 support (#1620), thanks benjaminsingleton
 - Added `Bar.from_raw_arrays_to_list` (#1623), thanks rsmb7z
+- Improved venue order ID generation and assignment (it was previously possible for the `OrderMatchingEngine` to generate multiple IDs for the same order)
 
 ### Breaking Changes
 - Removed `allow_cash_positions` config (simplify to the most common use case, spot trading should track positions)
