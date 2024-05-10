@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pass}
-      POSTGRES_DATABASE: ${POSTGRES_DATABASE:-postgres}
+      POSTGRES_DATABASE: nautilus
       PGDATA: /data/postgres
     volumes:
       - nautilus-database:/data/postgres
