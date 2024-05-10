@@ -17,6 +17,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed `Money` string parsing where the value from `str(money)` can now be passed to `Money.from_str`
+- Fixed `TimeEvent` equality (now based on then event `id` rather than the event `name`)
 - Fixed `ParquetDataCatalog` bar queries by `instrument_id` which were no longer returning data (the intent is to use `bar_type`, however using `instrument_id` now returns all matching bars)
 - Fixed Interactive Brokers contract details parsing (#1615), thanks @rsmb7z
 - Fixed Interactive Brokers portfolio registration (#1616), thanks @rsmb7z

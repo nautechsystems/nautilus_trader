@@ -857,10 +857,10 @@ cdef class TimeEvent(Event):
         return ustr_to_pystr(self._mem.name)
 
     def __eq__(self, TimeEvent other) -> bool:
-        return self.to_str() == other.to_str()
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        return hash(self.id)
 
     def __str__(self) -> str:
         return self.to_str()

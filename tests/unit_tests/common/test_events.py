@@ -29,6 +29,37 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestCommonEvents:
+    def test_time_event_equality(self):
+        # Arrange
+        event_id = UUID4()
+
+        event1 = TimeEvent(
+            "TEST_EVENT",
+            event_id,
+            1,
+            2,
+        )
+
+        event2 = TimeEvent(
+            "TEST_EVENT",
+            event_id,
+            1,
+            2,
+        )
+
+        event3 = TimeEvent(
+            "TEST_EVENT",
+            UUID4(),
+            1,
+            2,
+        )
+
+        # Act, Assert
+        assert event1.name == event2.name == event3.name
+        assert event1 == event2
+        assert event3 != event1
+        assert event3 != event2
+
     def test_time_event_picking(self):
         # Arrange
         event = TimeEvent(

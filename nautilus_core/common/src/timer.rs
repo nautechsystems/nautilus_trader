@@ -86,7 +86,7 @@ impl Display for TimeEvent {
 
 impl PartialEq for TimeEvent {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.ts_event == other.ts_event
+        self.event_id == other.event_id
     }
 }
 
