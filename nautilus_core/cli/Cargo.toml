@@ -14,11 +14,11 @@ path = "src/bin/cli.rs"
 nautilus-common = { path = "../common"}
 nautilus-model = { path = "../model" }
 nautilus-core = { path = "../core" }
-nautilus-infrastructure = { path = "../infrastructure" , features = ['postgres']}
+nautilus-infrastructure = { path = "../infrastructure" , features = ["postgres"] }
 anyhow = { workspace = true }
 tokio = {workspace = true}
 log = { workspace = true }
 clap = { version = "4.5.4", features = ["derive", "env"] }
 clap_derive = { version = "4.5.4" }
 dotenvy = { version = "0.15.7" }
-simple_logger = "4.3.3"
+simple_logger = "5.0.0"
