@@ -28,7 +28,7 @@ use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick, Data},
     enums::BarAggregation,
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
-    python::instruments::convert_instrument_any_to_pyobject,
+    python::instruments::instrument_any_to_pyobject,
     types::currency::Currency,
 };
 use pyo3::{
@@ -169,7 +169,7 @@ impl DatabentoHistoricalClient {
             Python::with_gil(|py| {
                 let py_results: PyResult<Vec<PyObject>> = instruments
                     .into_iter()
-                    .map(|result| convert_instrument_any_to_pyobject(py, result))
+                    .map(|result| instrument_any_to_pyobject(py, result))
                     .collect();
 
                 py_results.map(|objs| PyList::new(py, &objs).to_object(py))

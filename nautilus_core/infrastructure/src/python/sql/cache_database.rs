@@ -20,7 +20,7 @@ use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
     identifiers::{client_order_id::ClientOrderId, instrument_id::InstrumentId},
     python::{
-        instruments::{convert_instrument_any_to_pyobject, convert_pyobject_to_instrument_any},
+        instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
         orders::{convert_order_any_to_pyobject, convert_pyobject_to_order_any},
     },
     types::currency::Currency,
@@ -93,7 +93,7 @@ impl PostgresCacheDatabase {
                 .unwrap();
             match result {
                 Some(instrument) => {
-                    let py_object = convert_instrument_any_to_pyobject(py, instrument)?;
+                    let py_object = instrument_any_to_pyobject(py, instrument)?;
                     Ok(Some(py_object))
                 }
                 None => Ok(None),
@@ -107,7 +107,7 @@ impl PostgresCacheDatabase {
             let result = DatabaseQueries::load_instruments(&slf.pool).await.unwrap();
             let mut instruments = Vec::new();
             for instrument in result {
-                let py_object = convert_instrument_any_to_pyobject(py, instrument)?;
+                let py_object = instrument_any_to_pyobject(py, instrument)?;
                 instruments.push(py_object);
             }
             Ok(instruments)
@@ -120,7 +120,7 @@ impl PostgresCacheDatabase {
         instrument: PyObject,
         py: Python<'_>,
     ) -> PyResult<()> {
-        let instrument_any = convert_pyobject_to_instrument_any(py, instrument)?;
+        let instrument_any = pyobject_to_instrument_any(py, instrument)?;
         let result = get_runtime().block_on(async { slf.add_instrument(instrument_any).await });
         result.map_err(to_pyruntime_err)
     }
