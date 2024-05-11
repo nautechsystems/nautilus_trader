@@ -40,6 +40,7 @@ sqlx = { version = "0.7.4", features = [
 
 [dev-dependencies]
 rstest = { workspace = true }
+serial_test = { version = "3.1.1" }
 
 [features]
 default = ["redis"]  # redis needed by `nautilus_trader` by default for now
