@@ -76,11 +76,12 @@ mod tests {
         orders::{any::OrderAny, stubs::TestOrderStubs},
         types::{currency::Currency, price::Price, quantity::Quantity},
     };
+    use serial_test::serial;
 
     use crate::get_pg_cache_database;
 
-    #[ignore]
     #[tokio::test]
+    #[serial]
     async fn test_add_general_object_adds_to_cache() {
         let pg_cache = get_pg_cache_database().await.unwrap();
         let test_id_value = String::from("test_value").into_bytes();
@@ -98,8 +99,8 @@ mod tests {
         assert_eq!(result.get("test_id").unwrap().to_owned(), test_id_value);
     }
 
-    #[ignore]
     #[tokio::test]
+    #[serial]
     async fn test_add_currency_and_instruments() {
         // 1. first define and add currencies as they are contain foreign keys for instruments
         let pg_cache = get_pg_cache_database().await.unwrap();
@@ -234,8 +235,8 @@ mod tests {
         );
     }
 
-    #[ignore]
     #[tokio::test]
+    #[serial]
     async fn test_add_order() {
         let instrument = currency_pair_ethusdt();
         let pg_cache = get_pg_cache_database().await.unwrap();
