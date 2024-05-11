@@ -32,7 +32,7 @@ use crate::{
     },
     instruments::any::InstrumentAny,
     position::Position,
-    python::instruments::convert_pyobject_to_instrument_any,
+    python::instruments::pyobject_to_instrument_any,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
@@ -40,7 +40,7 @@ use crate::{
 impl Position {
     #[new]
     fn py_new(py: Python, instrument: PyObject, fill: OrderFilled) -> PyResult<Self> {
-        let instrument_type = convert_pyobject_to_instrument_any(py, instrument)?;
+        let instrument_type = pyobject_to_instrument_any(py, instrument)?;
         match instrument_type {
             InstrumentAny::CryptoFuture(inst) => Ok(Self::new(inst, fill).unwrap()),
             InstrumentAny::CryptoPerpetual(inst) => Ok(Self::new(inst, fill).unwrap()),

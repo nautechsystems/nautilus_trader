@@ -95,8 +95,7 @@ impl FuturesContract {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_type")]
-    fn py_instrument_type(&self) -> &str {
+    fn type_str(&self) -> &str {
         stringify!(FuturesContract)
     }
 
