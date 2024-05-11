@@ -25,10 +25,24 @@ use crate::events::order::{
     triggered::OrderTriggered, updated::OrderUpdated,
 };
 
-pub fn convert_order_event_to_pyobject(
-    py: Python,
-    order_event: OrderEventAny,
-) -> PyResult<PyObject> {
+pub mod accepted;
+pub mod cancel_rejected;
+pub mod canceled;
+pub mod denied;
+pub mod emulated;
+pub mod expired;
+pub mod filled;
+pub mod initialized;
+pub mod modify_rejected;
+pub mod pending_cancel;
+pub mod pending_update;
+pub mod rejected;
+pub mod released;
+pub mod submitted;
+pub mod triggered;
+pub mod updated;
+
+pub fn order_event_to_pyobject(py: Python, order_event: OrderEventAny) -> PyResult<PyObject> {
     match order_event {
         OrderEventAny::Initialized(event) => Ok(event.into_py(py)),
         OrderEventAny::Denied(event) => Ok(event.into_py(py)),
@@ -50,81 +64,58 @@ pub fn convert_order_event_to_pyobject(
     }
 }
 
-pub fn convert_pyobject_to_order_event(
-    py: Python,
-    order_event: PyObject,
-) -> PyResult<OrderEventAny> {
-    let order_event_type = order_event
-        .getattr(py, "order_event_type")?
-        .extract::<String>(py)?;
-    if order_event_type == "OrderAccepted" {
-        let order_accepted = order_event.extract::<OrderAccepted>(py)?;
-        Ok(OrderEventAny::Accepted(order_accepted))
-    } else if order_event_type == "OrderCanceled" {
-        let order_canceled = order_event.extract::<OrderCanceled>(py)?;
-        Ok(OrderEventAny::Canceled(order_canceled))
-    } else if order_event_type == "OrderCancelRejected" {
-        let order_cancel_rejected = order_event.extract::<OrderCancelRejected>(py)?;
-        Ok(OrderEventAny::CancelRejected(order_cancel_rejected))
-    } else if order_event_type == "OrderDenied" {
-        let order_denied = order_event.extract::<OrderDenied>(py)?;
-        Ok(OrderEventAny::Denied(order_denied))
-    } else if order_event_type == "OrderEmulated" {
-        let order_emulated = order_event.extract::<OrderEmulated>(py)?;
-        Ok(OrderEventAny::Emulated(order_emulated))
-    } else if order_event_type == "OrderExpired" {
-        let order_expired = order_event.extract::<OrderExpired>(py)?;
-        Ok(OrderEventAny::Expired(order_expired))
-    } else if order_event_type == "OrderFilled" {
-        let order_filled = order_event.extract::<OrderFilled>(py)?;
-        Ok(OrderEventAny::Filled(order_filled))
-    } else if order_event_type == "OrderInitialized" {
-        let order_initialized = order_event.extract::<OrderInitialized>(py)?;
-        Ok(OrderEventAny::Initialized(order_initialized))
-    } else if order_event_type == "OrderModifyRejected" {
-        let order_modify_rejected = order_event.extract::<OrderModifyRejected>(py)?;
-        Ok(OrderEventAny::ModifyRejected(order_modify_rejected))
-    } else if order_event_type == "OrderPendingCancel" {
-        let order_pending_cancel = order_event.extract::<OrderPendingCancel>(py)?;
-        Ok(OrderEventAny::PendingCancel(order_pending_cancel))
-    } else if order_event_type == "OrderPendingUpdate" {
-        let order_pending_update = order_event.extract::<OrderPendingUpdate>(py)?;
-        Ok(OrderEventAny::PendingUpdate(order_pending_update))
-    } else if order_event_type == "OrderRejected" {
-        let order_rejected = order_event.extract::<OrderRejected>(py)?;
-        Ok(OrderEventAny::Rejected(order_rejected))
-    } else if order_event_type == "OrderReleased" {
-        let order_released = order_event.extract::<OrderReleased>(py)?;
-        Ok(OrderEventAny::Released(order_released))
-    } else if order_event_type == "OrderSubmitted" {
-        let order_submitted = order_event.extract::<OrderSubmitted>(py)?;
-        Ok(OrderEventAny::Submitted(order_submitted))
-    } else if order_event_type == "OrderTriggered" {
-        let order_triggered = order_event.extract::<OrderTriggered>(py)?;
-        Ok(OrderEventAny::Triggered(order_triggered))
-    } else if order_event_type == "OrderUpdated" {
-        let order_updated = order_event.extract::<OrderUpdated>(py)?;
-        Ok(OrderEventAny::Updated(order_updated))
-    } else {
-        Err(to_pyvalue_err(
-            "Error in conversion from pyobject to order event",
-        ))
+pub fn pyobject_to_order_event(py: Python, order_event: PyObject) -> PyResult<OrderEventAny> {
+    match order_event.getattr(py, "type_str")?.extract::<&str>(py)? {
+        stringify!(OrderAccepted) => Ok(OrderEventAny::Accepted(
+            order_event.extract::<OrderAccepted>(py)?,
+        )),
+        stringify!(OrderCancelRejected) => Ok(OrderEventAny::CancelRejected(
+            order_event.extract::<OrderCancelRejected>(py)?,
+        )),
+        stringify!(OrderCanceled) => Ok(OrderEventAny::Canceled(
+            order_event.extract::<OrderCanceled>(py)?,
+        )),
+        stringify!(OrderDenied) => Ok(OrderEventAny::Denied(
+            order_event.extract::<OrderDenied>(py)?,
+        )),
+        stringify!(OrderEmulated) => Ok(OrderEventAny::Emulated(
+            order_event.extract::<OrderEmulated>(py)?,
+        )),
+        stringify!(OrderExpired) => Ok(OrderEventAny::Expired(
+            order_event.extract::<OrderExpired>(py)?,
+        )),
+        stringify!(OrderFilled) => Ok(OrderEventAny::Filled(
+            order_event.extract::<OrderFilled>(py)?,
+        )),
+        stringify!(OrderInitialized) => Ok(OrderEventAny::Initialized(
+            order_event.extract::<OrderInitialized>(py)?,
+        )),
+        stringify!(OrderModifyRejected) => Ok(OrderEventAny::ModifyRejected(
+            order_event.extract::<OrderModifyRejected>(py)?,
+        )),
+        stringify!(OrderPendingCancel) => Ok(OrderEventAny::PendingCancel(
+            order_event.extract::<OrderPendingCancel>(py)?,
+        )),
+        stringify!(OrderPendingUpdate) => Ok(OrderEventAny::PendingUpdate(
+            order_event.extract::<OrderPendingUpdate>(py)?,
+        )),
+        stringify!(OrderRejected) => Ok(OrderEventAny::Rejected(
+            order_event.extract::<OrderRejected>(py)?,
+        )),
+        stringify!(OrderReleased) => Ok(OrderEventAny::Released(
+            order_event.extract::<OrderReleased>(py)?,
+        )),
+        stringify!(OrderSubmitted) => Ok(OrderEventAny::Submitted(
+            order_event.extract::<OrderSubmitted>(py)?,
+        )),
+        stringify!(OrderTriggered) => Ok(OrderEventAny::Triggered(
+            order_event.extract::<OrderTriggered>(py)?,
+        )),
+        stringify!(OrderUpdated) => Ok(OrderEventAny::Updated(
+            order_event.extract::<OrderUpdated>(py)?,
+        )),
+        _ => Err(to_pyvalue_err(
+            "Error in conversion from `PyObject` to `OrderEventAny`",
+        )),
     }
 }
-
-pub mod accepted;
-pub mod cancel_rejected;
-pub mod canceled;
-pub mod denied;
-pub mod emulated;
-pub mod expired;
-pub mod filled;
-pub mod initialized;
-pub mod modify_rejected;
-pub mod pending_cancel;
-pub mod pending_update;
-pub mod rejected;
-pub mod released;
-pub mod submitted;
-pub mod triggered;
-pub mod updated;
