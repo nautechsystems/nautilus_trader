@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{nanos::UnixNanos, python::to_pyruntime_err, uuid::UUID4};
 use pyo3::{
     basic::CompareOp,
     prelude::*,
@@ -38,7 +38,7 @@ use crate::{
         base::{str_hashmap_to_ustr, Order, OrderCore},
         limit::LimitOrder,
     },
-    python::common::commissions_from_hashmap,
+    python::{common::commissions_from_hashmap, events::order::convert_pyobject_to_order_event},
     types::{price::Price, quantity::Quantity},
 };
 
@@ -672,5 +672,11 @@ impl LimitOrder {
             |x| dict.set_item("avg_px", x.to_string()),
         )?;
         Ok(dict.into())
+    }
+
+    #[pyo3(name = "apply")]
+    fn py_apply(&mut self, event: PyObject, py: Python<'_>) -> PyResult<()> {
+        let event_any = convert_pyobject_to_order_event(py, event).unwrap();
+        self.apply(event_any).map(|_| ()).map_err(to_pyruntime_err)
     }
 }
