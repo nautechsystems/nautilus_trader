@@ -31,7 +31,7 @@ use crate::{
         base::{str_hashmap_to_ustr, Order},
         stop_market::StopMarketOrder,
     },
-    python::events::order::{convert_order_event_to_pyobject, convert_pyobject_to_order_event},
+    python::events::order::{order_event_to_pyobject, pyobject_to_order_event},
     types::{price::Price, quantity::Quantity},
 };
 
@@ -108,7 +108,7 @@ impl StopMarketOrder {
     fn py_events(&self, py: Python<'_>) -> PyResult<Vec<PyObject>> {
         self.events()
             .into_iter()
-            .map(|order_event| convert_order_event_to_pyobject(py, order_event.clone()))
+            .map(|event| order_event_to_pyobject(py, event.clone()))
             .collect()
     }
 
@@ -120,7 +120,7 @@ impl StopMarketOrder {
 
     #[pyo3(name = "apply")]
     fn py_apply(&mut self, event: PyObject, py: Python<'_>) -> PyResult<()> {
-        let event_any = convert_pyobject_to_order_event(py, event).unwrap();
+        let event_any = pyobject_to_order_event(py, event).unwrap();
         self.apply(event_any).map(|_| ()).map_err(to_pyruntime_err)
     }
 }

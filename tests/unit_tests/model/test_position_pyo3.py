@@ -85,6 +85,7 @@ def test_position_to_from_dict():
         "entry": "BUY",
         "events": [
             {
+                "type": "OrderFilled",
                 "account_id": "SIM-000",
                 "client_order_id": "O-20210410-022422-001-001-1",
                 "commission": "2.00 USD",

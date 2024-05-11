@@ -24,6 +24,15 @@ use crate::instruments::{
     futures_spread::FuturesSpread, options_contract::OptionsContract,
 };
 
+pub mod crypto_future;
+pub mod crypto_perpetual;
+pub mod currency_pair;
+pub mod equity;
+pub mod futures_contract;
+pub mod futures_spread;
+pub mod options_contract;
+pub mod options_spread;
+
 pub fn convert_instrument_any_to_pyobject(
     py: Python,
     instrument: InstrumentAny,
@@ -78,12 +87,3 @@ pub fn convert_pyobject_to_instrument_any(
         ))
     }
 }
-
-pub mod crypto_future;
-pub mod crypto_perpetual;
-pub mod currency_pair;
-pub mod equity;
-pub mod futures_contract;
-pub mod futures_spread;
-pub mod options_contract;
-pub mod options_spread;

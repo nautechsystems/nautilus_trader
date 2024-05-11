@@ -4496,7 +4496,7 @@ cdef class OrderFilled(OrderEvent):
         The position ID associated with the order fill (assigned by the venue).
     order_side : OrderSide {``BUY``, ``SELL``}
         The execution order side.
-    order_side : OrderType
+    order_type : OrderType
         The execution order type.
     last_qty : Quantity
         The fill quantity for this execution.

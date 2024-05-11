@@ -80,9 +80,7 @@ impl OrderModifyRejected {
         self.to_string()
     }
 
-    #[getter]
-    #[pyo3(name = "order_event_type")]
-    fn py_order_event_type(&self) -> &str {
+    fn type_str(&self) -> &str {
         stringify!(OrderModifyRejected)
     }
 
@@ -95,6 +93,7 @@ impl OrderModifyRejected {
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
+        dict.set_item("type", stringify!(OrderModifyRejected));
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;
