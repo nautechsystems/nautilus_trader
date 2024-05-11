@@ -135,7 +135,8 @@ cdef class Cache(CacheFacade):
         self._index_venue_account: dict[Venue, AccountId] = {}
         self._index_venue_orders: dict[Venue, set[ClientOrderId]] = {}
         self._index_venue_positions: dict[Venue, set[PositionId]] = {}
-        self._index_order_ids: dict[VenueOrderId, ClientOrderId] = {}
+        self._index_venue_order_ids: dict[VenueOrderId, ClientOrderId] = {}
+        self._index_client_order_ids: dict[ClientOrderId, VenueOrderId] = {}
         self._index_order_position: dict[ClientOrderId, PositionId] = {}
         self._index_order_strategy: dict[ClientOrderId, StrategyId] = {}
         self._index_order_client: dict[ClientOrderId, ClientId] = {}
@@ -479,10 +480,18 @@ cdef class Cache(CacheFacade):
                 )
                 error_count += 1
 
-        for client_order_id in self._index_order_ids.values():
+        for client_order_id in self._index_venue_order_ids.values():
             if client_order_id not in self._orders:
                 self._log.error(
                     f"{failure} in _index_venue_order_ids: "
+                    f"{repr(client_order_id)} not found in self._cached_orders"
+                )
+                error_count += 1
+
+        for client_order_id in self._index_client_order_ids:
+            if client_order_id not in self._orders:
+                self._log.error(
+                    f"{failure} in _index_client_order_ids: "
                     f"{repr(client_order_id)} not found in self._cached_orders"
                 )
                 error_count += 1
@@ -683,7 +692,8 @@ cdef class Cache(CacheFacade):
         self._index_venue_account.clear()
         self._index_venue_orders.clear()
         self._index_venue_positions.clear()
-        self._index_order_ids.clear()
+        self._index_venue_order_ids.clear()
+        self._index_client_order_ids.clear()
         self._index_order_position.clear()
         self._index_order_strategy.clear()
         self._index_order_client.clear()
@@ -781,9 +791,10 @@ cdef class Cache(CacheFacade):
                 self._index_venue_orders[order.instrument_id.venue] = set()
             self._index_venue_orders[order.instrument_id.venue].add(client_order_id)
 
-            # 2: Build _index_order_ids -> {VenueOrderId, ClientOrderId}
+            # 2: Build _index_venue_order_ids -> {VenueOrderId, ClientOrderId}
             if order.venue_order_id is not None:
-                self._index_order_ids[order.venue_order_id] = order.client_order_id
+                self._index_venue_order_ids[order.venue_order_id] = order.client_order_id
+                self._index_client_order_ids[order.client_order_id] = order.venue_order_id
 
             # 3: Build _index_order_position -> {ClientOrderId, PositionId}
             if order.position_id is not None:
@@ -1399,7 +1410,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void add_venue_order_id(self, ClientOrderId client_order_id, VenueOrderId venue_order_id):
         """
-        Index the given venue order ID with the given client order ID.
+        Index the given client order ID with the given venue order ID.
 
         Parameters
         ----------
@@ -1417,20 +1428,20 @@ cdef class Cache(CacheFacade):
         Condition.not_none(client_order_id, "client_order_id")
         Condition.not_none(venue_order_id, "venue_order_id")
 
-        # TODO: Also consider checking the reverse index here
-        cdef ClientOrderId existing_client_order_id = self._index_order_ids.get(venue_order_id)
-        if existing_client_order_id is not None and client_order_id != existing_client_order_id:
+        cdef VenueOrderId existing_venue_order_id = self._index_client_order_ids.get(client_order_id)
+        if existing_venue_order_id is not None and venue_order_id != existing_venue_order_id:
             raise ValueError(
-                f"Existing {existing_client_order_id!r} for {venue_order_id!r} "
-                f"did not match the given {client_order_id!r}. "
+                f"Existing {existing_venue_order_id!r} for {client_order_id!r} "
+                f"did not match the given {venue_order_id!r}. "
                 "If you are writing a test then try a different `venue_order_id`, "
                 "otherwise this is probably a bug."
             )
 
-        self._index_order_ids[venue_order_id] = client_order_id
+        self._index_client_order_ids[client_order_id] = venue_order_id
+        self._index_venue_order_ids[venue_order_id] = client_order_id
 
         self._log.debug(
-            f"Indexed client_order_id={client_order_id}, venue_order_id={venue_order_id})",
+            f"Indexed {client_order_id!r} with {venue_order_id!r}",
         )
 
     cpdef void add_order(
@@ -1804,7 +1815,7 @@ cdef class Cache(CacheFacade):
         Condition.not_none(order, "order")
 
         # Update venue order ID
-        if order.venue_order_id is not None:
+        if order.venue_order_id is not None and order.venue_order_id not in self._index_venue_order_ids:
             self.add_venue_order_id(order.client_order_id, order.venue_order_id)
 
         # Update in-flight state
@@ -3057,7 +3068,7 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(venue_order_id, "venue_order_id")
 
-        return self._index_order_ids.get(venue_order_id)
+        return self._index_venue_order_ids.get(venue_order_id)
 
     cpdef VenueOrderId venue_order_id(self, ClientOrderId client_order_id):
         """
@@ -3070,10 +3081,7 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(client_order_id, "client_order_id")
 
-        cdef Order order = self._orders.get(client_order_id)
-        if order is None:
-            return None
-        return order.venue_order_id
+        return self._index_client_order_ids.get(client_order_id)
 
     cpdef ClientId client_id(self, ClientOrderId client_order_id):
         """

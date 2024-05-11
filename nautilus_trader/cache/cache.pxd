@@ -79,7 +79,8 @@ cdef class Cache(CacheFacade):
     cdef dict _index_venue_account
     cdef dict _index_venue_orders
     cdef dict _index_venue_positions
-    cdef dict _index_order_ids
+    cdef dict _index_venue_order_ids
+    cdef dict _index_client_order_ids
     cdef dict _index_order_position
     cdef dict _index_order_strategy
     cdef dict _index_order_client
