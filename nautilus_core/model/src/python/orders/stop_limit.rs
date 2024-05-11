@@ -15,7 +15,11 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::{nanos::UnixNanos, python::to_pyvalue_err, uuid::UUID4};
+use nautilus_core::{
+    nanos::UnixNanos,
+    python::{to_pyruntime_err, to_pyvalue_err},
+    uuid::UUID4,
+};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use ustr::Ustr;
 
@@ -31,7 +35,10 @@ use crate::{
         base::{str_hashmap_to_ustr, Order},
         stop_limit::StopLimitOrder,
     },
-    python::{common::commissions_from_hashmap, events::order::convert_order_event_to_pyobject},
+    python::{
+        common::commissions_from_hashmap,
+        events::order::{convert_order_event_to_pyobject, convert_pyobject_to_order_event},
+    },
     types::{price::Price, quantity::Quantity},
 };
 
@@ -665,5 +672,11 @@ impl StopLimitOrder {
         )
         .unwrap();
         Ok(stop_limit_order)
+    }
+
+    #[pyo3(name = "apply")]
+    fn py_apply(&mut self, event: PyObject, py: Python<'_>) -> PyResult<()> {
+        let event_any = convert_pyobject_to_order_event(py, event).unwrap();
+        self.apply(event_any).map(|_| ()).map_err(to_pyruntime_err)
     }
 }
