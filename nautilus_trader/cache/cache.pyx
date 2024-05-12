@@ -46,6 +46,7 @@ from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -1408,7 +1409,12 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.add_account(account)
 
-    cpdef void add_venue_order_id(self, ClientOrderId client_order_id, VenueOrderId venue_order_id):
+    cpdef void add_venue_order_id(
+        self,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
+        bint overwrite=False,
+    ):
         """
         Index the given client order ID with the given venue order ID.
 
@@ -1418,18 +1424,22 @@ cdef class Cache(CacheFacade):
             The client order ID to index.
         venue_order_id : VenueOrderId
             The venue order ID to index.
+        overwrite : bool, default False
+            If the venue order ID will 'overwrite' any existing indexing and replace
+            it in the cache. This is currently used for updated orders where the venue
+            order ID may change.
 
         Raises
         ------
         ValueError
-            If the `client_order_id` is already indexed with a different `venue_order_id`.
+            If `overwrite` is False and the `client_order_id` is already indexed with a different `venue_order_id`.
 
         """
         Condition.not_none(client_order_id, "client_order_id")
         Condition.not_none(venue_order_id, "venue_order_id")
 
         cdef VenueOrderId existing_venue_order_id = self._index_client_order_ids.get(client_order_id)
-        if existing_venue_order_id is not None and venue_order_id != existing_venue_order_id:
+        if not overwrite and existing_venue_order_id is not None and venue_order_id != existing_venue_order_id:
             raise ValueError(
                 f"Existing {existing_venue_order_id!r} for {client_order_id!r} "
                 f"did not match the given {venue_order_id!r}. "
@@ -1449,7 +1459,7 @@ cdef class Cache(CacheFacade):
         Order order,
         PositionId position_id = None,
         ClientId client_id = None,
-        bint override = False,
+        bint overwrite = False,
     ):
         """
         Add the given order to the cache indexed with the given position
@@ -1463,8 +1473,8 @@ cdef class Cache(CacheFacade):
             The position ID to index for the order.
         client_id : ClientId, optional
             The execution client ID for order routing.
-        override : bool, default False
-            If the added order should 'override' any existing order and replace
+        overwrite : bool, default False
+            If the added order should 'overwrite' any existing order and replace
             it in the cache. This is currently used for emulated orders which are
             being released and transformed into another type.
 
@@ -1475,7 +1485,7 @@ cdef class Cache(CacheFacade):
 
         """
         Condition.not_none(order, "order")
-        if not override:
+        if not overwrite:
             Condition.not_in(order.client_order_id, self._orders, "order.client_order_id", "_orders")
             Condition.not_in(order.client_order_id, self._index_orders, "order.client_order_id", "_index_orders")
             Condition.not_in(order.client_order_id, self._index_order_position, "order.client_order_id", "_index_order_position")
@@ -1816,7 +1826,13 @@ cdef class Cache(CacheFacade):
 
         # Update venue order ID
         if order.venue_order_id is not None and order.venue_order_id not in self._index_venue_order_ids:
-            self.add_venue_order_id(order.client_order_id, order.venue_order_id)
+            # If the order is being modified then we allow a changing `VenueOrderId` to accommodate
+            # venues which use a cancel+replace update strategy.
+            self.add_venue_order_id(
+                order.client_order_id,
+                order.venue_order_id,
+                overwrite=isinstance(order._events[-1], OrderUpdated),
+            )
 
         # Update in-flight state
         if order.is_inflight_c():

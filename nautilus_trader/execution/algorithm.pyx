@@ -1109,7 +1109,7 @@ cdef class ExecAlgorithm(Actor):
         client_id = self.cache.client_id(order.client_order_id)
         cdef Order cached_order = self.cache.order(order.client_order_id)
         if cached_order.order_type != order.order_type:
-            self.cache.add_order(order, position_id, client_id, override=True)
+            self.cache.add_order(order, position_id, client_id, overwrite=True)
 
         command = SubmitOrder(
             trader_id=self.trader_id,
