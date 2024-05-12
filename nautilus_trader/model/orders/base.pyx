@@ -1061,7 +1061,7 @@ cdef class Order:
         cdef int64_t raw_leaves_qty = self.quantity._mem.raw - raw_filled_qty
         if raw_leaves_qty < 0:
             raise ValueError(
-                f"invalid order.leaves_qty: was {<uint64_t>raw_leaves_qty / 1e9}, "
+                f"invalid order.leaves_qty: was {raw_leaves_qty / 1e9}, "
                 f"order.quantity={self.quantity}, "
                 f"order.filled_qty={self.filled_qty}, "
                 f"fill.last_qty={fill.last_qty}, "
