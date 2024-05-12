@@ -107,7 +107,8 @@ pub struct CacheIndex {
     venue_account: HashMap<Venue, AccountId>,
     venue_orders: HashMap<Venue, HashSet<ClientOrderId>>,
     venue_positions: HashMap<Venue, HashSet<PositionId>>,
-    order_ids: HashMap<VenueOrderId, ClientOrderId>,
+    venue_order_ids: HashMap<VenueOrderId, ClientOrderId>,
+    client_order_ids: HashMap<ClientOrderId, VenueOrderId>,
     order_position: HashMap<ClientOrderId, PositionId>,
     order_strategy: HashMap<ClientOrderId, StrategyId>,
     order_client: HashMap<ClientOrderId, ClientId>,
@@ -139,7 +140,8 @@ impl CacheIndex {
         self.venue_account.clear();
         self.venue_orders.clear();
         self.venue_positions.clear();
-        self.order_ids.clear();
+        self.venue_order_ids.clear();
+        self.client_order_ids.clear();
         self.order_position.clear();
         self.order_strategy.clear();
         self.order_client.clear();
@@ -199,7 +201,8 @@ impl Cache {
             venue_account: HashMap::new(),
             venue_orders: HashMap::new(),
             venue_positions: HashMap::new(),
-            order_ids: HashMap::new(),
+            venue_order_ids: HashMap::new(),
+            client_order_ids: HashMap::new(),
             order_position: HashMap::new(),
             order_strategy: HashMap::new(),
             order_client: HashMap::new(),
@@ -362,7 +365,7 @@ impl Cache {
             // 2: Build index.order_ids -> {VenueOrderId, ClientOrderId}
             if let Some(venue_order_id) = order.venue_order_id() {
                 self.index
-                    .order_ids
+                    .venue_order_ids
                     .insert(venue_order_id, *client_order_id);
             }
 
@@ -642,10 +645,20 @@ impl Cache {
             }
         }
 
-        for client_order_id in self.index.order_ids.values() {
+        for client_order_id in self.index.venue_order_ids.values() {
             if !self.orders.contains_key(client_order_id) {
                 error!(
-                    "{} in `index.order_ids`: {} not found in `self.orders`",
+                    "{} in `index.venue_order_ids`: {} not found in `self.orders`",
+                    failure, client_order_id
+                );
+                error_count += 1;
+            }
+        }
+
+        for client_order_id in self.index.client_order_ids.keys() {
+            if !self.orders.contains_key(client_order_id) {
+                error!(
+                    "{} in `index.client_order_ids`: {} not found in `self.orders`",
                     failure, client_order_id
                 );
                 error_count += 1;
@@ -1092,6 +1105,34 @@ impl Cache {
         Ok(())
     }
 
+    /// Index the given client order ID with the given venue order ID.
+    pub fn add_venue_order_id(
+        &mut self,
+        client_order_id: &ClientOrderId,
+        venue_order_id: &VenueOrderId,
+        overwrite: bool,
+    ) -> anyhow::Result<()> {
+        if let Some(existing_venue_order_id) = self.index.client_order_ids.get(client_order_id) {
+            if !overwrite && existing_venue_order_id != venue_order_id {
+                anyhow::bail!(
+                    "Existing {existing_venue_order_id} for {client_order_id}
+                    did not match the given {venue_order_id}.
+                    If you are writing a test then try a different `venue_order_id`,
+                    otherwise this is probably a bug."
+                );
+            }
+        };
+
+        self.index
+            .client_order_ids
+            .insert(*client_order_id, *venue_order_id);
+        self.index
+            .venue_order_ids
+            .insert(*venue_order_id, *client_order_id);
+
+        Ok(())
+    }
+
     /// Add the order to the cache indexed with any given identifiers.
     ///
     /// # Parameters
@@ -1329,8 +1370,12 @@ impl Cache {
 
         // Update venue order ID
         if let Some(venue_order_id) = order.venue_order_id() {
-            // Assumes order_id does not change
-            self.index.order_ids.insert(venue_order_id, client_order_id);
+            // If the order is being modified then we allow a changing `VenueOrderId` to accommodate
+            // venues which use a cancel+replace update strategy.
+            if !self.index.venue_order_ids.contains_key(&venue_order_id) {
+                // TODO: If the last event was `OrderUpdated` then overwrite should be true
+                self.add_venue_order_id(&order.client_order_id(), &venue_order_id, false)?;
+            };
         }
 
         // Update in-flight state
@@ -1719,14 +1764,12 @@ impl Cache {
 
     #[must_use]
     pub fn client_order_id(&self, venue_order_id: &VenueOrderId) -> Option<&ClientOrderId> {
-        self.index.order_ids.get(venue_order_id)
+        self.index.venue_order_ids.get(venue_order_id)
     }
 
     #[must_use]
-    pub fn venue_order_id(&self, client_order_id: &ClientOrderId) -> Option<VenueOrderId> {
-        self.orders
-            .get(client_order_id)
-            .and_then(nautilus_model::polymorphism::GetVenueOrderId::venue_order_id)
+    pub fn venue_order_id(&self, client_order_id: &ClientOrderId) -> Option<&VenueOrderId> {
+        self.index.client_order_ids.get(client_order_id)
     }
 
     #[must_use]
@@ -2399,7 +2442,7 @@ mod tests {
         orders::{any::OrderAny, stubs::TestOrderStubs},
         polymorphism::{
             ApplyOrderEventAny, GetAccountId, GetClientOrderId, GetInstrumentId, GetStrategyId,
-            GetTraderId, IsOpen,
+            GetTraderId, GetVenueOrderId, IsOpen,
         },
         types::{price::Price, quantity::Quantity},
     };
@@ -2528,6 +2571,7 @@ mod tests {
         assert_eq!(cache.orders_emulated_count(None, None, None, None), 0);
         assert_eq!(cache.orders_inflight_count(None, None, None, None), 0);
         assert_eq!(cache.orders_total_count(None, None, None, None), 1);
+        assert_eq!(cache.venue_order_id(&order.client_order_id()), None);
     }
 
     #[rstest]
@@ -2576,6 +2620,7 @@ mod tests {
         assert_eq!(cache.orders_emulated_count(None, None, None, None), 0);
         assert_eq!(cache.orders_inflight_count(None, None, None, None), 0);
         assert_eq!(cache.orders_total_count(None, None, None, None), 1);
+        assert_eq!(cache.venue_order_id(&order.client_order_id()), None);
     }
 
     #[rstest]
@@ -2641,6 +2686,14 @@ mod tests {
         assert_eq!(cache.orders_emulated_count(None, None, None, None), 0);
         assert_eq!(cache.orders_inflight_count(None, None, None, None), 0);
         assert_eq!(cache.orders_total_count(None, None, None, None), 1);
+        assert_eq!(
+            cache.client_order_id(&order.venue_order_id().unwrap()),
+            Some(&order.client_order_id())
+        );
+        assert_eq!(
+            cache.venue_order_id(&order.client_order_id()),
+            Some(&order.venue_order_id().unwrap())
+        );
     }
 
     #[rstest]
