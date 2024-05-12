@@ -90,6 +90,7 @@ cdef class OrderMatchingEngine:
     cdef dict _account_ids
     cdef dict _execution_bar_types
     cdef dict _execution_bar_deltas
+    cdef dict _cached_filled_qty
 
     cdef readonly Venue venue
     """The venue for the matching engine.\n\n:returns: `Venue`"""

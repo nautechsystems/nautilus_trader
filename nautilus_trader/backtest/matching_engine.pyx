@@ -212,6 +212,7 @@ cdef class OrderMatchingEngine:
         self._account_ids: dict[TraderId, AccountId]  = {}
         self._execution_bar_types: dict[InstrumentId, BarType]  =  {}
         self._execution_bar_deltas: dict[BarType, timedelta]  =  {}
+        self._cached_filled_qty: dict[ClientOrderId, Quantity] = {}
 
         # Market
         self._core = MatchingCore(
@@ -248,6 +249,7 @@ cdef class OrderMatchingEngine:
         self._account_ids.clear()
         self._execution_bar_types.clear()
         self._execution_bar_deltas.clear()
+        self._cached_filled_qty.clear()
         self._core.reset()
         self._target_bid = 0
         self._target_ask = 0
@@ -1288,12 +1290,14 @@ cdef class OrderMatchingEngine:
         cdef Order order
         for order in orders:
             if order.is_closed_c():
+                self._cached_filled_qty.pop(order.client_order_id, None)
                 continue
 
             # Check expiry
             if self._support_gtd_orders:
                 if order.expire_time_ns > 0 and timestamp_ns >= order.expire_time_ns:
                     self._core.delete_order(order)
+                    self._cached_filled_qty.pop(order.client_order_id, None)
                     self.expire_order(order)
                     continue
 
@@ -1523,6 +1527,14 @@ cdef class OrderMatchingEngine:
             The order to fill.
 
         """
+        cdef Quantity cached_filled_qty = self._cached_filled_qty.get(order.client_order_id)
+        if cached_filled_qty is not None and cached_filled_qty._mem.raw >= order.quantity._mem.raw:
+            self._log.debug(
+                f"Ignoring fill as already filled pending application of events: "
+                f"{cached_filled_qty=}, {order.quantity=}, {order.filled_qty=}, {order.leaves_qty=}",
+            )
+            return
+
         cdef PositionId venue_position_id = self._get_position_id(order)
         cdef Position position = None
         if venue_position_id is not None:
@@ -1562,6 +1574,14 @@ cdef class OrderMatchingEngine:
 
         """
         Condition.true(order.has_price_c(), "order has no limit `price`")
+
+        cdef Quantity cached_filled_qty = self._cached_filled_qty.get(order.client_order_id)
+        if cached_filled_qty is not None and cached_filled_qty._mem.raw >= order.quantity._mem.raw:
+            self._log.debug(
+                f"Ignoring fill as already filled pending application of events: "
+                f"{cached_filled_qty=}, {order.quantity=}, {order.filled_qty=}, {order.leaves_qty=}",
+            )
+            return
 
         cdef Price price = order.price
         if order.liquidity_side == LiquiditySide.MAKER and self._fill_model:
@@ -1825,6 +1845,12 @@ cdef class OrderMatchingEngine:
             instrument=self.instrument,
         )
 
+        cdef Quantity cached_filled_qty = self._cached_filled_qty.get(order.client_order_id)
+        if cached_filled_qty is None:
+            self._cached_filled_qty[order.client_order_id] = Quantity.from_raw_c(last_qty._mem.raw, last_qty._mem.precision)
+        else:
+            cached_filled_qty._mem.raw += last_qty._mem.raw
+
         self._generate_order_filled(
             order=order,
             venue_order_id=self._get_venue_order_id(order),
@@ -1839,6 +1865,7 @@ cdef class OrderMatchingEngine:
         if order.is_passive_c() and order.is_closed_c():
             # Remove order from market
             self._core.delete_order(order)
+            self._cached_filled_qty.pop(order.client_order_id, None)
 
         if not self._support_contingent_orders:
             return
@@ -2016,6 +2043,7 @@ cdef class OrderMatchingEngine:
             return
 
         self._core.delete_order(order)
+        self._cached_filled_qty.pop(order.client_order_id, None)
 
         self._generate_order_canceled(order, venue_order_id=self._get_venue_order_id(order))
 
@@ -2101,6 +2129,7 @@ cdef class OrderMatchingEngine:
             if order.is_post_only:
                 # Would be liquidity taker
                 self._core.delete_order(order)
+                self._cached_filled_qty.pop(order.client_order_id, None)
                 self._generate_order_rejected(
                     order,
                     f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order "
