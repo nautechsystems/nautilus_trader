@@ -1,6 +1,6 @@
 # Databento
 
-```{warning}
+```{note}
 We are currently working on this integration guide.
 ```
 
@@ -23,7 +23,7 @@ It's recommended you make use of the [/metadata.get_cost](https://databento.com/
 ## Overview
 
 The adapter implementation takes the [databento-rs](https://crates.io/crates/databento) crate as a dependency,
-which is the official Rust client library provided by Databento 🦀. There are actually no Databento Python dependencies.
+which is the official Rust client library provided by Databento. There are actually no Databento Python dependencies.
 
 ```{note}
 There is no optional extra installation for `databento`, at this stage the core components of the adapter are compiled

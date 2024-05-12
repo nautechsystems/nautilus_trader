@@ -25,7 +25,7 @@ Log level (`LogLevel`) values include (and generally match Rusts `tracing` level
 - `ERROR`
 
 ```{note}
-See the `LoggingConfig` [API Reference](../api_reference/config.md#LoggingConfig) for further details.
+See the `LoggingConfig` [API Reference](../api_reference/config.md) for further details.
 ```
 
 Logging can be configured in the following ways:
@@ -114,7 +114,7 @@ logger = Logger("MyLogger")
 ```
 
 ```{note}
-See the `init_logging` [API Reference](../api_reference/common.md#init_logging) for further details.
+See the `init_logging` [API Reference](../api_reference/common) for further details.
 ```
 
 ```{warning}
