@@ -673,7 +673,7 @@ cdef class OrderEmulator(Actor):
             transformed,
             command.position_id,
             command.client_id,
-            override=True,
+            overwrite=True,
         )
 
         # Replace commands order with transformed order
@@ -745,7 +745,7 @@ cdef class OrderEmulator(Actor):
             transformed,
             command.position_id,
             command.client_id,
-            override=True,
+            overwrite=True,
         )
 
         # Replace commands order with transformed order

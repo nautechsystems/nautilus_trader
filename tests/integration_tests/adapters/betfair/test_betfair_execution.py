@@ -264,7 +264,6 @@ async def test_submit_order_error(
     assert rejected.reason == expecter_error
 
 
-@pytest.mark.skip(reason="Assignment of venue order IDs needs investigating for Betfair")
 @pytest.mark.asyncio()
 async def test_modify_order_success(
     exec_client: BetfairDataClient,
