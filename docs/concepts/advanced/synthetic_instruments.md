@@ -27,7 +27,7 @@ from the incoming component instrument prices.
 
 See the `evalexpr` documentation for a full description of available features, operators and precedence.
 
-```{warning}
+```{tip}
 Before defining a new synthetic instrument, ensure that all component instruments are already defined and exist in the cache.
 ```
 
