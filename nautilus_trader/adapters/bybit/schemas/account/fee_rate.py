@@ -22,6 +22,7 @@ class BybitFeeRate(msgspec.Struct):
     symbol: str
     takerFeeRate: str
     makerFeeRate: str
+    baseCoin: str | None = None
 
 
 class BybitFeeRateResponse(msgspec.Struct):
