@@ -16,7 +16,7 @@
 use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{deserialization::from_bool_as_u8, nanos::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -47,6 +47,7 @@ pub struct OrderExpired {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
+    #[serde(deserialize_with = "from_bool_as_u8")]
     pub reconciliation: u8, // TODO: Change to bool once Cython removed
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
