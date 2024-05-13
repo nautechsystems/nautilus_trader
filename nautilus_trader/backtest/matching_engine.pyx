@@ -1837,19 +1837,24 @@ cdef class OrderMatchingEngine:
 
         order.liquidity_side = liquidity_side
 
+        cdef Quantity cached_filled_qty = self._cached_filled_qty.get(order.client_order_id)
+        cdef Quantity fill_qty = None
+        cdef Quantity leaves_qty = None
+        if cached_filled_qty is None:
+            self._cached_filled_qty[order.client_order_id] = Quantity.from_raw_c(last_qty._mem.raw, last_qty._mem.precision)
+            fill_qty = Quantity.from_raw_c(last_qty._mem.raw, last_qty._mem.precision)
+        else:
+            leaves_qty = Quantity.from_raw_c(order.quantity._mem.raw - self._cached_filled_qty[order.client_order_id]._mem.raw, last_qty._mem.precision)
+            fill_qty = Quantity.from_raw_c(min(leaves_qty._mem.raw, last_qty._mem.raw), last_qty._mem.precision)
+            cached_filled_qty._mem.raw += fill_qty._mem.raw
+
         # Calculate commission
         cdef Money commission = self._fee_model.get_commission(
             order=order,
-            fill_qty=last_qty,
+            fill_qty=fill_qty,
             fill_px=last_px,
             instrument=self.instrument,
         )
-
-        cdef Quantity cached_filled_qty = self._cached_filled_qty.get(order.client_order_id)
-        if cached_filled_qty is None:
-            self._cached_filled_qty[order.client_order_id] = Quantity.from_raw_c(last_qty._mem.raw, last_qty._mem.precision)
-        else:
-            cached_filled_qty._mem.raw += last_qty._mem.raw
 
         self._generate_order_filled(
             order=order,
