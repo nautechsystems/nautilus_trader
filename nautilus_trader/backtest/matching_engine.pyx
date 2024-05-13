@@ -1860,7 +1860,7 @@ cdef class OrderMatchingEngine:
             order=order,
             venue_order_id=self._get_venue_order_id(order),
             venue_position_id=venue_position_id,
-            last_qty=last_qty,
+            last_qty=fill_qty,
             last_px=last_px,
             quote_currency=self.instrument.quote_currency,
             commission=commission,
