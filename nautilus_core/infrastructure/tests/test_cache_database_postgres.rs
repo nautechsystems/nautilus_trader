@@ -61,10 +61,14 @@ pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
 mod tests {
     use std::time::Duration;
 
-    use nautilus_core::equality::entirely_equal;
+    use nautilus_core::{equality::entirely_equal, nanos::UnixNanos};
     use nautilus_model::{
         enums::{CurrencyType, OrderSide},
-        identifiers::{client_order_id::ClientOrderId, instrument_id::InstrumentId},
+        events::order::event::OrderEventAny,
+        identifiers::{
+            account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
+            stubs::account_id, trade_id::TradeId, venue_order_id::VenueOrderId,
+        },
         instruments::{
             any::InstrumentAny,
             stubs::{
@@ -238,13 +242,15 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_add_order() {
+        let client_order_id_1 = ClientOrderId::new("O-19700101-0000-000-001-1").unwrap();
+        let client_order_id_2 = ClientOrderId::new("O-19700101-0000-000-001-2").unwrap();
         let instrument = currency_pair_ethusdt();
         let pg_cache = get_pg_cache_database().await.unwrap();
         let market_order = TestOrderStubs::market_order(
             instrument.id(),
             OrderSide::Buy,
             Quantity::from("1.0"),
-            Some(ClientOrderId::new("O-19700101-0000-000-001-1").unwrap()),
+            Some(client_order_id_1),
             None,
         );
         let limit_order = TestOrderStubs::limit_order(
@@ -252,7 +258,7 @@ mod tests {
             OrderSide::Sell,
             Price::from("100.0"),
             Quantity::from("1.0"),
-            Some(ClientOrderId::new("O-19700101-0000-000-001-2").unwrap()),
+            Some(client_order_id_2),
             None,
         );
         pg_cache
@@ -274,5 +280,82 @@ mod tests {
             .unwrap();
         entirely_equal(market_order_result.unwrap(), OrderAny::Market(market_order));
         entirely_equal(limit_order_result.unwrap(), OrderAny::Limit(limit_order));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_update_order_for_open_order() {
+        let client_order_id_1 = ClientOrderId::new("O-19700101-0000-000-002-1").unwrap();
+        let instrument = currency_pair_ethusdt();
+        let account = account_id();
+        let pg_cache = get_pg_cache_database().await.unwrap();
+        // Add the target currency of order
+        pg_cache
+            .add_currency(instrument.quote_currency)
+            .await
+            .unwrap();
+        // 1. create the order
+        let mut market_order = TestOrderStubs::market_order(
+            instrument.id(),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            Some(client_order_id_1),
+            None,
+        );
+        pg_cache
+            .add_order(OrderAny::Market(market_order.clone()))
+            .await
+            .unwrap();
+        // 2. submit the order
+        let submitted_event = market_order
+            .generate_order_submitted_event(account)
+            .unwrap();
+        market_order
+            .apply(OrderEventAny::Submitted(submitted_event))
+            .unwrap();
+        pg_cache
+            .update_order(OrderAny::Market(market_order.clone()))
+            .await
+            .unwrap();
+        // 3. accept the order
+        let accepted_event = market_order
+            .generate_order_accepted_event(account, VenueOrderId::new("001").unwrap())
+            .unwrap();
+        market_order
+            .apply(OrderEventAny::Accepted(accepted_event))
+            .unwrap();
+        pg_cache
+            .update_order(OrderAny::Market(market_order.clone()))
+            .await
+            .unwrap();
+        // 4. fill the order
+        let order_filled = market_order
+            .generate_order_filled_event(
+                TradeId::new("T-19700101-0000-000-001-1").unwrap(),
+                Price::from("100.0"),
+                Quantity::from("1.0"),
+                instrument.quote_currency,
+                UnixNanos::from("1234"),
+                Some(AccountId::new("SIM-001").unwrap()),
+                Some(VenueOrderId::new("001").unwrap()),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        market_order
+            .apply(OrderEventAny::Filled(order_filled))
+            .unwrap();
+        pg_cache
+            .update_order(OrderAny::Market(market_order.clone()))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        // assert
+        let market_order_result = pg_cache
+            .load_order(&market_order.client_order_id)
+            .await
+            .unwrap();
+        entirely_equal(market_order_result.unwrap(), OrderAny::Market(market_order));
     }
 }

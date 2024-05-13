@@ -105,18 +105,27 @@ impl OrderAny {
     }
 
     pub fn from_events(events: Vec<OrderEventAny>) -> anyhow::Result<Self> {
+        println!("from events");
+        println!("events: {:?}", events);
         if events.is_empty() {
             anyhow::bail!("No events provided");
-        } else if events.len() == 1 {
-            let init_event = events.first().unwrap();
-            match init_event {
-                OrderEventAny::Initialized(init) => Ok(init.to_owned().into()),
-                _ => {
-                    anyhow::bail!("First event must be OrderInitialized");
+        }
+        // pop the first event
+        let init_event = events.first().unwrap();
+        match init_event {
+            OrderEventAny::Initialized(init) => {
+                let mut order = Self::from(init.clone());
+                // apply the rest of the events
+                for event in events.into_iter().skip(1) {
+                    // apply event to order
+                    println!("applying event: {:?}", event);
+                    order.apply(event).unwrap();
                 }
+                Ok(order)
             }
-        } else {
-            anyhow::bail!("Only one event can be provided");
+            _ => {
+                anyhow::bail!("First event must be OrderInitialized");
+            }
         }
     }
 }

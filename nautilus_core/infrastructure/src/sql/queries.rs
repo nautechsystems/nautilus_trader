@@ -270,39 +270,47 @@ impl DatabaseQueries {
     ) -> anyhow::Result<()> {
         sqlx::query(r#"
             INSERT INTO "order_event" (
-                id, kind, order_id, order_type, order_side, trader_id, strategy_id, instrument_id, quantity, time_in_force,
-                post_only, reduce_only, quote_quantity, reconciliation, price, trigger_price, trigger_type, limit_offset, trailing_offset,
+                id, kind, order_id, order_type, order_side, trader_id, strategy_id, instrument_id, trade_id, currency, quantity, time_in_force, liquidity_side,
+                post_only, reduce_only, quote_quantity, reconciliation, price, last_px, last_qty, trigger_price, trigger_type, limit_offset, trailing_offset,
                 trailing_offset_type, expire_time, display_qty, emulation_trigger, trigger_instrument_id, contingency_type,
                 order_list_id, linked_order_ids, parent_order_id,
-                exec_algorithm_id, exec_spawn_id, venue_order_id, account_id, ts_event, ts_init, created_at, updated_at
+                exec_algorithm_id, exec_spawn_id, venue_order_id, account_id, position_id, commission, ts_event, ts_init, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-                $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             ON CONFLICT (id)
             DO UPDATE
             SET
-                kind = $2, order_id = $3, order_type = $4, order_side=$5, trader_id = $6, strategy_id = $7, instrument_id = $8, quantity = $9, time_in_force= $10,
-                post_only = $11, reduce_only = $12, quote_quantity = $13, reconciliation = $14, price = $15, trigger_price = $16, trigger_type = $17, limit_offset = $18, trailing_offset = $19,
-                trailing_offset_type = $20, expire_time = $21, display_qty = $22, emulation_trigger = $23, trigger_instrument_id = $24, contingency_type = $25,
-                order_list_id = $26, linked_order_ids = $27,
-                parent_order_id = $28, exec_algorithm_id = $29, exec_spawn_id = $30, venue_order_id = $31, account_id = $32, ts_event = $33, ts_init = $34, updated_at = CURRENT_TIMESTAMP
+                kind = $2, order_id = $3, order_type = $4, order_side=$5, trader_id = $6, strategy_id = $7, instrument_id = $8, trade_id = $9, currency = $10,
+                quantity = $11, time_in_force = $12, liquidity_side = $13,
+                post_only = $14, reduce_only = $15, quote_quantity = $16, reconciliation = $17, price = $18, last_px = $19,
+                last_qty = $20, trigger_price = $21, trigger_type = $22, limit_offset = $23, trailing_offset = $24,
+                trailing_offset_type = $25, expire_time = $26, display_qty = $27, emulation_trigger = $28, trigger_instrument_id = $29,
+                contingency_type = $30, order_list_id = $31, linked_order_ids = $32,
+                parent_order_id = $33, exec_algorithm_id = $34, exec_spawn_id = $35, venue_order_id = $36, account_id = $37, position_id = $38, commission = $39,
+                ts_event = $40, ts_init = $41, updated_at = CURRENT_TIMESTAMP
         "#)
             .bind(order_event.id().to_string())
             .bind(order_event.kind())
             .bind(order_event.client_order_id().to_string())
             .bind(order_event.order_type().map(|x| x.to_string()))
-            .bind(order_event.order_side().map(|x| format!("{:?}", x)))
+            .bind(order_event.order_side().map(|x| x.to_string()))
             .bind(order_event.trader_id().to_string())
             .bind(order_event.strategy_id().to_string())
             .bind(order_event.instrument_id().to_string())
+            .bind(order_event.trade_id().map(|x| x.to_string()))
+            .bind(order_event.currency().map(|x| x.code.as_str()))
             .bind(order_event.quantity().map(|x| x.to_string()))
-            .bind(order_event.time_in_force().map(|x| format!("{:?}", x)))
+            .bind(order_event.time_in_force().map(|x| x.to_string()))
+            .bind(order_event.liquidity_side().map(|x| x.to_string()))
             .bind(order_event.post_only())
             .bind(order_event.reduce_only())
             .bind(order_event.quote_quantity())
             .bind(order_event.reconciliation())
             .bind(order_event.price().map(|x| x.to_string()))
+            .bind(order_event.last_px().map(|x| x.to_string()))
+            .bind(order_event.last_qty().map(|x| x.to_string()))
             .bind(order_event.trigger_price().map(|x| x.to_string()))
             .bind(order_event.trigger_type().map(|x| x.to_string()))
             .bind(order_event.limit_offset().map(|x| x.to_string()))
@@ -320,6 +328,8 @@ impl DatabaseQueries {
             .bind(order_event.exec_spawn_id().map(|x| x.to_string()))
             .bind(order_event.venue_order_id().map(|x| x.to_string()))
             .bind(order_event.account_id().map(|x| x.to_string()))
+            .bind(order_event.position_id().map(|x| x.to_string()))
+            .bind(order_event.commission().map(|x| x.to_string()))
             .bind(order_event.ts_event().to_string())
             .bind(order_event.ts_init().to_string())
             .execute(pool)
@@ -332,11 +342,7 @@ impl DatabaseQueries {
         pool: &PgPool,
         order_id: &ClientOrderId,
     ) -> anyhow::Result<Vec<OrderEventAny>> {
-        sqlx::query_as::<_, OrderEventAnyModel>(
-            r#"
-          SELECT * FROM "order_event" event WHERE event.order_id = $1 ORDER BY event.ts_init ASC
-        "#,
-        )
+        sqlx::query_as::<_, OrderEventAnyModel>(r#"SELECT * FROM "order_event" event WHERE event.order_id = $1 ORDER BY created_at ASC"#)
         .bind(order_id.to_string())
         .fetch_all(pool)
         .await
