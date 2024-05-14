@@ -33,14 +33,14 @@ impl<'de> Visitor<'de> for BoolVisitor {
     where
         E: serde::de::Error,
     {
-        Ok(if value { 1 } else { 0 })
+        Ok(u8::from(value))
     }
 
     fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
     where
         E: serde::de::Error,
     {
-        if value > u8::MAX as u64 {
+        if value > u64::from(u8::MAX) {
             Err(E::invalid_value(Unexpected::Unsigned(value), &self))
         } else {
             Ok(value as u8)
