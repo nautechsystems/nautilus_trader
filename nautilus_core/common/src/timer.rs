@@ -138,7 +138,7 @@ impl TestTimer {
     ) -> anyhow::Result<Self> {
         check_valid_string(name, stringify!(name))?;
         // SAFETY: Guaranteed to be non-zero
-        let interval_ns = NonZeroU64::new(std::cmp::max(interval_ns, 1) as u64).unwrap();
+        let interval_ns = NonZeroU64::new(std::cmp::max(interval_ns, 1)).unwrap();
 
         Ok(Self {
             name: Ustr::from(name),
@@ -239,7 +239,7 @@ impl LiveTimer {
     ) -> anyhow::Result<Self> {
         check_valid_string(name, stringify!(name))?;
         // SAFETY: Guaranteed to be non-zero
-        let interval_ns = NonZeroU64::new(std::cmp::max(interval_ns, 1) as u64).unwrap();
+        let interval_ns = NonZeroU64::new(std::cmp::max(interval_ns, 1)).unwrap();
 
         debug!("Creating timer '{}'", name);
         Ok(Self {
