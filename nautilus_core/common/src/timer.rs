@@ -19,6 +19,7 @@ use std::{
     cmp::Ordering,
     ffi::c_char,
     fmt::{Display, Formatter},
+    num::NonZeroU64,
     sync::{
         atomic::{self, AtomicBool, AtomicU64},
         Arc,
@@ -26,11 +27,8 @@ use std::{
 };
 
 use nautilus_core::{
-    correctness::check_valid_string,
-    datetime::floor_to_nearest_microsecond,
-    nanos::{DurationNanos, UnixNanos},
-    time::get_atomic_clock_realtime,
-    uuid::UUID4,
+    correctness::check_valid_string, datetime::floor_to_nearest_microsecond, nanos::UnixNanos,
+    time::get_atomic_clock_realtime, uuid::UUID4,
 };
 #[cfg(feature = "python")]
 use pyo3::{types::PyCapsule, IntoPy, PyObject, Python};
@@ -120,23 +118,11 @@ impl Ord for TimeEventHandler {
     }
 }
 
-pub trait Timer {
-    fn new(
-        name: Ustr,
-        interval_ns: DurationNanos,
-        start_time_ns: UnixNanos,
-        stop_time_ns: Option<UnixNanos>,
-    ) -> Self;
-    fn pop_event(&self, event_id: UUID4, ts_init: UnixNanos) -> TimeEvent;
-    fn iterate_next_time(&mut self, ts_now: UnixNanos);
-    fn cancel(&mut self);
-}
-
 /// Provides a test timer for user with a `TestClock`.
 #[derive(Clone, Copy, Debug)]
 pub struct TestTimer {
     pub name: Ustr,
-    pub interval_ns: u64,
+    pub interval_ns: NonZeroU64,
     pub start_time_ns: UnixNanos,
     pub stop_time_ns: Option<UnixNanos>,
     next_time_ns: UnixNanos,
@@ -151,13 +137,15 @@ impl TestTimer {
         stop_time_ns: Option<UnixNanos>,
     ) -> anyhow::Result<Self> {
         check_valid_string(name, stringify!(name))?;
+        // SAFETY: Guaranteed to be non-zero
+        let interval_ns = NonZeroU64::new(std::cmp::max(interval_ns, 1) as u64).unwrap();
 
         Ok(Self {
             name: Ustr::from(name),
             interval_ns,
             start_time_ns,
             stop_time_ns,
-            next_time_ns: start_time_ns + interval_ns,
+            next_time_ns: start_time_ns + interval_ns.get(),
             is_expired: false,
         })
     }
@@ -186,8 +174,9 @@ impl TestTimer {
     /// of events. A [`TimeEvent`] is appended for each time a next event is
     /// <= the given `to_time_ns`.
     pub fn advance(&mut self, to_time_ns: UnixNanos) -> impl Iterator<Item = TimeEvent> + '_ {
-        let advances = to_time_ns.saturating_sub(self.next_time_ns.as_u64() - self.interval_ns)
-            / self.interval_ns;
+        let advances = to_time_ns
+            .saturating_sub(self.next_time_ns.as_u64() - self.interval_ns.get())
+            / self.interval_ns.get();
         self.take(advances as usize).map(|(event, _)| event)
     }
 
@@ -231,7 +220,7 @@ impl Iterator for TestTimer {
 /// Provides a live timer for use with a `LiveClock`.
 pub struct LiveTimer {
     pub name: Ustr,
-    pub interval_ns: u64,
+    pub interval_ns: NonZeroU64,
     pub start_time_ns: UnixNanos,
     pub stop_time_ns: Option<UnixNanos>,
     next_time_ns: Arc<AtomicU64>,
@@ -249,6 +238,8 @@ impl LiveTimer {
         callback: EventHandler,
     ) -> anyhow::Result<Self> {
         check_valid_string(name, stringify!(name))?;
+        // SAFETY: Guaranteed to be non-zero
+        let interval_ns = NonZeroU64::new(std::cmp::max(interval_ns, 1) as u64).unwrap();
 
         debug!("Creating timer '{}'", name);
         Ok(Self {
@@ -256,7 +247,7 @@ impl LiveTimer {
             interval_ns,
             start_time_ns,
             stop_time_ns,
-            next_time_ns: Arc::new(AtomicU64::new(start_time_ns.as_u64() + interval_ns)),
+            next_time_ns: Arc::new(AtomicU64::new(start_time_ns.as_u64() + interval_ns.get())),
             is_expired: Arc::new(AtomicBool::new(false)),
             callback,
             canceler: None,
@@ -278,7 +269,7 @@ impl LiveTimer {
         let stop_time_ns = self.stop_time_ns;
         let next_time_ns = self.next_time_ns.load(atomic::Ordering::SeqCst);
         let next_time_atomic = self.next_time_ns.clone();
-        let interval_ns = std::cmp::max(self.interval_ns, 1); // Must be positive for tokio timer
+        let interval_ns = self.interval_ns.get();
         let is_expired = self.is_expired.clone();
         let callback = self.callback.clone();
 
