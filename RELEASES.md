@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Added `ParquetDataCatalog` S3 support (#1620), thanks benjaminsingleton
 - Added `Bar.from_raw_arrays_to_list` (#1623), thanks rsmb7z
 - Improved venue order ID generation and assignment (it was previously possible for the `OrderMatchingEngine` to generate multiple IDs for the same order)
+- Improved `LiveTimer` robustness and flexibility by not requiring positive intervals or stop times in the futures (will immediately produce a time event), thanks for reporting @davidsblom
 
 ### Breaking Changes
 - Removed `allow_cash_positions` config (simplify to the most common use case, spot trading should track positions)

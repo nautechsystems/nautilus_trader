@@ -596,7 +596,6 @@ cdef class TestClock(Clock):
     ):
         Condition.valid_string(name, "name")
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
-        Condition.positive_int(interval_ns, "interval_ns")
 
         cdef uint64_t ts_now = self.timestamp_ns()
 
@@ -764,9 +763,8 @@ cdef class LiveClock(Clock):
         uint64_t stop_time_ns,
         callback: Callable[[TimeEvent], None] | None = None,
     ):
+        Condition.valid_string(name, "name")
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
-        Condition.not_in(name, self.timer_names, "name", "self.timer_names")
-        Condition.positive_int(interval_ns, "interval_ns")
 
         if callback is not None:
             callback = create_pyo3_conversion_wrapper(callback)

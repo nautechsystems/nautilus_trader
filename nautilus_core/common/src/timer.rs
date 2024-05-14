@@ -26,7 +26,7 @@ use std::{
 };
 
 use nautilus_core::{
-    correctness::{check_positive_u64, check_valid_string},
+    correctness::check_valid_string,
     datetime::floor_to_nearest_microsecond,
     nanos::{DurationNanos, UnixNanos},
     time::get_atomic_clock_realtime,
@@ -151,7 +151,6 @@ impl TestTimer {
         stop_time_ns: Option<UnixNanos>,
     ) -> anyhow::Result<Self> {
         check_valid_string(name, stringify!(name))?;
-        check_positive_u64(interval_ns, stringify!(interval_ns))?;
 
         Ok(Self {
             name: Ustr::from(name),
@@ -250,7 +249,6 @@ impl LiveTimer {
         callback: EventHandler,
     ) -> anyhow::Result<Self> {
         check_valid_string(name, stringify!(name))?;
-        check_positive_u64(interval_ns, stringify!(interval_ns))?;
 
         debug!("Creating timer '{}'", name);
         Ok(Self {
@@ -278,10 +276,9 @@ impl LiveTimer {
     pub fn start(&mut self) {
         let event_name = self.name;
         let stop_time_ns = self.stop_time_ns;
-        let mut start_time_ns = self.start_time_ns;
         let next_time_ns = self.next_time_ns.load(atomic::Ordering::SeqCst);
         let next_time_atomic = self.next_time_ns.clone();
-        let interval_ns = self.interval_ns;
+        let interval_ns = std::cmp::max(self.interval_ns, 1); // Must be positive for tokio timer
         let is_expired = self.is_expired.clone();
         let callback = self.callback.clone();
 
@@ -297,11 +294,6 @@ impl LiveTimer {
             let clock = get_atomic_clock_realtime();
             let now_ns = clock.get_time_ns();
 
-            if start_time_ns == 0 {
-                // No start was specified so start immediately
-                start_time_ns = now_ns;
-            }
-
             let start = if next_time_ns <= now_ns {
                 Instant::now()
             } else {
@@ -309,14 +301,6 @@ impl LiveTimer {
                 let delay = Duration::from_millis(1);
                 let diff: u64 = (next_time_ns - now_ns).into();
                 Instant::now() + Duration::from_nanos(diff) - delay
-            };
-
-            if let Some(stop_time_ns) = stop_time_ns {
-                assert!(stop_time_ns > now_ns, "stop_time was < now_ns");
-                assert!(
-                    start_time_ns + interval_ns <= stop_time_ns,
-                    "start_time + interval was > stop_time"
-                );
             };
 
             let mut timer = tokio::time::interval_at(start, Duration::from_nanos(interval_ns));
@@ -335,7 +319,7 @@ impl LiveTimer {
 
                         // Check if expired
                         if let Some(stop_time_ns) = stop_time_ns {
-                            if next_time_ns >= stop_time_ns {
+                            if std::cmp::max(next_time_ns, now_ns) >= stop_time_ns {
                                 break; // Timer expired
                             }
                         }
@@ -541,5 +525,32 @@ mod tests {
 
         wait_until(|| timer.is_expired(), Duration::from_secs(2));
         assert!(timer.next_time_ns() > next_time_ns);
+    }
+
+    #[tokio::test]
+    async fn test_live_timer_with_zero_interval_and_immediate_stop_time() {
+        pyo3::prepare_freethreaded_python();
+
+        let handler = Python::with_gil(|py| {
+            let callable = wrap_pyfunction!(receive_event, py).unwrap();
+            EventHandler::new(callable.into_py(py))
+        });
+
+        // Create a new LiveTimer with a stop time
+        let clock = get_atomic_clock_realtime();
+        let start_time = UnixNanos::default();
+        let interval_ns = 0;
+        let stop_time = clock.get_time_ns();
+        let mut timer = LiveTimer::new(
+            "TEST_TIMER",
+            interval_ns,
+            start_time,
+            Some(stop_time),
+            handler,
+        )
+        .unwrap();
+        timer.start();
+
+        wait_until(|| timer.is_expired(), Duration::from_secs(2));
     }
 }
