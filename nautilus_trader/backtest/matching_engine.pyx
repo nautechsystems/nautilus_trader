@@ -1844,7 +1844,7 @@ cdef class OrderMatchingEngine:
             self._cached_filled_qty[order.client_order_id] = Quantity.from_raw_c(last_qty._mem.raw, last_qty._mem.precision)
             fill_qty = Quantity.from_raw_c(last_qty._mem.raw, last_qty._mem.precision)
         else:
-            leaves_qty = Quantity.from_raw_c(order.quantity._mem.raw - self._cached_filled_qty[order.client_order_id]._mem.raw, last_qty._mem.precision)
+            leaves_qty = Quantity.from_raw_c(order.quantity._mem.raw - cached_filled_qty._mem.raw, last_qty._mem.precision)
             fill_qty = Quantity.from_raw_c(min(leaves_qty._mem.raw, last_qty._mem.raw), last_qty._mem.precision)
             cached_filled_qty._mem.raw += fill_qty._mem.raw
 
