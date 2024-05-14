@@ -21,7 +21,7 @@ Released on TBD (UTC).
 - Fixed `TimeEvent` equality (now based on then event `id` rather than the event `name`)
 - Fixed `ParquetDataCatalog` bar queries by `instrument_id` which were no longer returning data (the intent is to use `bar_type`, however using `instrument_id` now returns all matching bars)
 - Fixed venue order ID generation and application in sandbox mode (was previously generating additional venue order IDs), thanks for reporting @rsmb7z and @davidsblom
-- Fixed multiple fills causing overfills in sandbox mode (`OrderMatchingEngine` now cached filled quantity to prevent this), thanks for reporting @davidsblom
+- Fixed multiple fills causing overfills in sandbox mode (`OrderMatchingEngine` now cached filled quantity to prevent this), thanks @davidsblom
 - Fixed Interactive Brokers contract details parsing (#1615), thanks @rsmb7z
 - Fixed Interactive Brokers portfolio registration (#1616), thanks @rsmb7z
 - Fixed Interactive Brokers `IBOrder` attributes assignment (#1634), thanks @rsmb7z
