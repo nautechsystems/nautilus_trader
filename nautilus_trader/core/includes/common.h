@@ -415,6 +415,11 @@ uintptr_t live_clock_timer_count(struct LiveClock_API *clock);
  *
  * - Assumes `name_ptr` is a valid C string pointer.
  * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+ *
+ * # Panics
+ *
+ * - Panics if `name` is not a valid string.
+ * - Panics if `callback_ptr` is NULL and no default callback has been assigned on the clock.
  */
 void live_clock_set_time_alert(struct LiveClock_API *clock,
                                const char *name_ptr,
@@ -426,6 +431,11 @@ void live_clock_set_time_alert(struct LiveClock_API *clock,
  *
  * - Assumes `name_ptr` is a valid C string pointer.
  * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+ *
+ * # Panics
+ *
+ * - Panics if `name` is not a valid string.
+ * - Panics if `callback_ptr` is NULL and no default callback has been assigned on the clock.
  */
 void live_clock_set_timer(struct LiveClock_API *clock,
                           const char *name_ptr,

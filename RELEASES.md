@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Added `ParquetDataCatalog` S3 support (#1620), thanks benjaminsingleton
 - Added `Bar.from_raw_arrays_to_list` (#1623), thanks rsmb7z
 - Improved venue order ID generation and assignment (it was previously possible for the `OrderMatchingEngine` to generate multiple IDs for the same order)
+- Improved `LiveTimer` robustness and flexibility by not requiring positive intervals or stop times in the futures (will immediately produce a time event), thanks for reporting @davidsblom
 
 ### Breaking Changes
 - Removed `allow_cash_positions` config (simplify to the most common use case, spot trading should track positions)
@@ -19,8 +20,9 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed `Money` string parsing where the value from `str(money)` can now be passed to `Money.from_str`
 - Fixed `TimeEvent` equality (now based on then event `id` rather than the event `name`)
-- Fixed venue order ID generation and application in sandbox mode (was previously generating additional venue order IDs), thanks for reporting @rsmb7z and @davidsblom
 - Fixed `ParquetDataCatalog` bar queries by `instrument_id` which were no longer returning data (the intent is to use `bar_type`, however using `instrument_id` now returns all matching bars)
+- Fixed venue order ID generation and application in sandbox mode (was previously generating additional venue order IDs), thanks for reporting @rsmb7z and @davidsblom
+- Fixed multiple fills causing overfills in sandbox mode (`OrderMatchingEngine` now cached filled quantity to prevent this), thanks @davidsblom
 - Fixed Interactive Brokers contract details parsing (#1615), thanks @rsmb7z
 - Fixed Interactive Brokers portfolio registration (#1616), thanks @rsmb7z
 - Fixed Interactive Brokers `IBOrder` attributes assignment (#1634), thanks @rsmb7z
