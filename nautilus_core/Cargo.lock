@@ -1142,9 +1142,9 @@ checksum = "e8566979429cf69b49a5c740c60791108e86440e8be149bbea4fe54d2c32d6e2"
 
 [[package]]
 name = "databento"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0429639ce27e07a088b53b9e89dea7519c6e1871df5508a7ae33fc2c61b6cdf"
+checksum = "b867144e234bd2db892e77568f09c6c39b1466e460ef4806d32eaa339a078d3c"
 dependencies = [
  "dbn",
  "futures",
