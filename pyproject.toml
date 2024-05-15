@@ -58,7 +58,7 @@ click = "^8.1.7"
 fsspec = "==2023.6.0"  # Pinned due breaking changes
 msgspec = "^0.18.6"
 pandas = "^2.2.2"
-pyarrow = ">=16.0.0"
+pyarrow = ">=16.1.0"
 pytz = ">=2023.4.0"
 tqdm = "^4.66.4"
 uvloop = {version = "^0.19.0", markers = "sys_platform != 'win32'"}
@@ -81,7 +81,7 @@ optional = true
 black = "^24.4.2"
 docformatter = "^1.7.5"
 mypy = "^1.10.0"
-pandas-stubs = "^2.2.1"
+pandas-stubs = "^2.2.2"
 pre-commit = "^3.7.1"
 ruff = "^0.4.4"
 types-pytz = "^2023.3"
