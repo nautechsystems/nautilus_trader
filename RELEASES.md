@@ -18,18 +18,19 @@ Released on TBD (UTC).
 - Changed `Order.to_dict()` `commission` and `linked_order_id` fields to lists of strings rather than comma separated strings
 
 ### Fixes
+- Fixed `from_str` for `Price`, `Quantity` and `Money` when input string contains underscores in Rust, thanks for reporting @filipmacek
 - Fixed `Money` string parsing where the value from `str(money)` can now be passed to `Money.from_str`
 - Fixed `TimeEvent` equality (now based on then event `id` rather than the event `name`)
 - Fixed `ParquetDataCatalog` bar queries by `instrument_id` which were no longer returning data (the intent is to use `bar_type`, however using `instrument_id` now returns all matching bars)
 - Fixed venue order ID generation and application in sandbox mode (was previously generating additional venue order IDs), thanks for reporting @rsmb7z and @davidsblom
 - Fixed multiple fills causing overfills in sandbox mode (`OrderMatchingEngine` now cached filled quantity to prevent this), thanks @davidsblom
+- Fixed `leaves_qty` exception message underflow (now correctly displays the projected negative leaves quantity)
 - Fixed Interactive Brokers contract details parsing (#1615), thanks @rsmb7z
 - Fixed Interactive Brokers portfolio registration (#1616), thanks @rsmb7z
 - Fixed Interactive Brokers `IBOrder` attributes assignment (#1634), thanks @rsmb7z
 - Fixed IBKR reconnection after gateway/TWS disconnection (#1622), thanks @benjaminsingleton
-- Fixed `from_str` for `Price`, `Quantity` and `Money` when input string contains underscores in Rust, thanks for reporting @filipmacek
 - Fixed Binance Futures account balance calculation (was over stating `free` balance with margin collateral, which could result in a negative `locked` balance)
-- Fixed `leaves_qty` exception message underflow (now correctly displays the projected negative leaves quantity)
+- Fixed Betfair stream reconnection and avoid multiple reconnect attempts, thanks @imemo88
 
 ---
 
