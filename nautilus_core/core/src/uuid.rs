@@ -43,6 +43,7 @@ pub struct UUID4 {
 }
 
 impl UUID4 {
+    /// Creates a new `UUID4`.
     #[must_use]
     pub fn new() -> Self {
         let uuid = Uuid::new_v4();
@@ -54,6 +55,7 @@ impl UUID4 {
         Self { value }
     }
 
+    /// Converts the `UUID4` to a C string reference.
     #[must_use]
     pub fn to_cstr(&self) -> &CStr {
         // SAFETY: We always store valid C strings
@@ -62,10 +64,10 @@ impl UUID4 {
 }
 
 impl FromStr for UUID4 {
-    type Err = &'static str;
+    type Err = uuid::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let uuid = Uuid::parse_str(s).map_err(|_| "Invalid UUID string")?;
+        let uuid = Uuid::try_parse(s)?;
         let c_string = CString::new(uuid.to_string()).expect("`CString` conversion failed");
         let bytes = c_string.as_bytes_with_nul();
         let mut value = [0; UUID4_LEN];
@@ -136,6 +138,12 @@ mod tests {
         let uuid_parsed = Uuid::parse_str(&uuid_string).expect("Uuid::parse_str failed");
         assert_eq!(uuid_parsed.get_version().unwrap(), uuid::Version::Random);
         assert_eq!(uuid_parsed.to_string().len(), 36);
+    }
+
+    #[rstest]
+    fn test_invalid_uuid() {
+        let invalid_uuid = "invalid-uuid-string";
+        assert!(UUID4::from_str(invalid_uuid).is_err());
     }
 
     #[rstest]
