@@ -130,6 +130,7 @@ pub struct TestTimer {
 }
 
 impl TestTimer {
+    /// Creates a new `TestTimer`.
     pub fn new(
         name: &str,
         interval_ns: u64,
@@ -150,11 +151,13 @@ impl TestTimer {
         })
     }
 
+    /// Returns the next time in UNIX nanoseconds when the timer will fire.
     #[must_use]
     pub fn next_time_ns(&self) -> UnixNanos {
         self.next_time_ns
     }
 
+    /// Returns whether the timer is expired.
     #[must_use]
     pub fn is_expired(&self) -> bool {
         self.is_expired
@@ -230,6 +233,7 @@ pub struct LiveTimer {
 }
 
 impl LiveTimer {
+    /// Creates a new `LiveTimer`.
     pub fn new(
         name: &str,
         interval_ns: u64,
@@ -254,16 +258,19 @@ impl LiveTimer {
         })
     }
 
+    /// Returns the next time in UNIX nanoseconds when the timer will fire.
     #[must_use]
     pub fn next_time_ns(&self) -> UnixNanos {
         UnixNanos::from(self.next_time_ns.load(atomic::Ordering::SeqCst))
     }
 
+    /// Returns whether the timer is expired.
     #[must_use]
     pub fn is_expired(&self) -> bool {
         self.is_expired.load(atomic::Ordering::SeqCst)
     }
 
+    /// Starts the timer.
     pub fn start(&mut self) {
         let event_name = self.name;
         let stop_time_ns = self.stop_time_ns;
