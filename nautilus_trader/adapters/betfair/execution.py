@@ -149,6 +149,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._strategy_hashes: dict[str, str] = {}
         self._set_account_id(AccountId(f"{BETFAIR_VENUE}-001"))
         AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
+        self._reconnect_in_progress = False
 
     @property
     def instrument_provider(self) -> BetfairInstrumentProvider:
@@ -184,11 +185,25 @@ class BetfairExecutionClient(LiveExecutionClient):
     # -- ERROR HANDLING ---------------------------------------------------------------------------
     async def on_api_exception(self, error: BetfairError) -> None:
         if "INVALID_SESSION_INFORMATION" in error.args[0]:
-            # Session is invalid, need to reconnect
-            self._log.warning("Invalid session error, reconnecting...")
-            await self._client.disconnect()
-            await self._connect()
-            self._log.info("Reconnected")
+            if self._reconnect_in_progress:
+                self._log.info("Reconnect already in progress.")
+                return
+
+            # Avoid multiple reconnection attempts when multiple INVALID_SESSION_INFORMATION errors
+            # are received at "the same time" from the BF API. Simulaneous reconnection attempts
+            # will result in MAX_CONNECTION_LIMIT_EXCEEDED errors.
+            self._reconnect_in_progress = True
+
+            try:
+                # Session is invalid, need to reconnect
+                self._log.warning("Invalid session error, reconnecting..")
+                await self._disconnect()
+                await self._connect()
+                self._log.info("Reconnected.")
+            except Exception:
+                self._log.error("Reconnection failed.", exc_info=True)
+
+            self._reconnect_in_progress = False
 
     # -- ACCOUNT HANDLERS -------------------------------------------------------------------------
 
