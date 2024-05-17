@@ -957,7 +957,7 @@ impl Cache {
         check_valid_string(key, stringify!(key))?;
         check_slice_not_empty(value.as_slice(), stringify!(value))?;
 
-        debug!("Add general {key}");
+        debug!("Adding general {key}");
         self.general.insert(key.to_string(), value.clone());
 
         if let Some(database) = &self.database {
@@ -968,14 +968,14 @@ impl Cache {
 
     /// Add the given order `book` to the cache.
     pub fn add_order_book(&mut self, book: OrderBook) -> anyhow::Result<()> {
-        debug!("Add `OrderBook` {}", book.instrument_id);
+        debug!("Adding `OrderBook` {}", book.instrument_id);
         self.books.insert(book.instrument_id, book);
         Ok(())
     }
 
     /// Add the given `quote` tick to the cache.
     pub fn add_quote(&mut self, quote: QuoteTick) -> anyhow::Result<()> {
-        debug!("Add `QuoteTick` {}", quote.instrument_id);
+        debug!("Adding `QuoteTick` {}", quote.instrument_id);
         let quotes_deque = self
             .quotes
             .entry(quote.instrument_id)
@@ -989,7 +989,7 @@ impl Cache {
         check_slice_not_empty(quotes, stringify!(quotes))?;
 
         let instrument_id = quotes[0].instrument_id;
-        debug!("Add `QuoteTick`[{}] {}", quotes.len(), instrument_id);
+        debug!("Adding `QuoteTick`[{}] {}", quotes.len(), instrument_id);
         let quotes_deque = self
             .quotes
             .entry(instrument_id)
@@ -1003,7 +1003,7 @@ impl Cache {
 
     /// Add the given `trade` tick to the cache.
     pub fn add_trade(&mut self, trade: TradeTick) -> anyhow::Result<()> {
-        debug!("Add `TradeTick` {}", trade.instrument_id);
+        debug!("Adding `TradeTick` {}", trade.instrument_id);
         let trades_deque = self
             .trades
             .entry(trade.instrument_id)
@@ -1017,7 +1017,7 @@ impl Cache {
         check_slice_not_empty(trades, stringify!(trades))?;
 
         let instrument_id = trades[0].instrument_id;
-        debug!("Add `TradeTick`[{}] {}", trades.len(), instrument_id);
+        debug!("Adding `TradeTick`[{}] {}", trades.len(), instrument_id);
         let trades_deque = self
             .trades
             .entry(instrument_id)
@@ -1031,7 +1031,7 @@ impl Cache {
 
     /// Add the given `bar` to the cache.
     pub fn add_bar(&mut self, bar: Bar) -> anyhow::Result<()> {
-        debug!("Add `Bar` {}", bar.bar_type);
+        debug!("Adding `Bar` {}", bar.bar_type);
         let bars = self
             .bars
             .entry(bar.bar_type)
@@ -1045,7 +1045,7 @@ impl Cache {
         check_slice_not_empty(bars, stringify!(bars))?;
 
         let bar_type = bars[0].bar_type;
-        debug!("Add `Bar`[{}] {}", bars.len(), bar_type);
+        debug!("Adding `Bar`[{}] {}", bars.len(), bar_type);
         let bars_deque = self
             .bars
             .entry(bar_type)
@@ -1059,7 +1059,7 @@ impl Cache {
 
     /// Add the given `currency` to the cache.
     pub fn add_currency(&mut self, currency: Currency) -> anyhow::Result<()> {
-        debug!("Add `Currency` {}", currency.code);
+        debug!("Adding `Currency` {}", currency.code);
 
         if let Some(database) = &self.database {
             database.add_currency(&currency)?;
@@ -1071,7 +1071,7 @@ impl Cache {
 
     /// Add the given `instrument` to the cache.
     pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
-        debug!("Add `Instrument` {}", instrument.id());
+        debug!("Adding `Instrument` {}", instrument.id());
 
         if let Some(database) = &self.database {
             database.add_instrument(&instrument)?;
@@ -1083,7 +1083,7 @@ impl Cache {
 
     /// Add the given `synthetic` instrument to the cache.
     pub fn add_synthetic(&mut self, synthetic: SyntheticInstrument) -> anyhow::Result<()> {
-        debug!("Add `SyntheticInstrument` {}", synthetic.id);
+        debug!("Adding `SyntheticInstrument` {}", synthetic.id);
 
         if let Some(database) = &self.database {
             database.add_synthetic(&synthetic)?;
@@ -1095,7 +1095,7 @@ impl Cache {
 
     /// Add the given `account` to the cache.
     pub fn add_account(&mut self, account: Box<dyn Account>) -> anyhow::Result<()> {
-        debug!("Add `Account` {}", account.id());
+        debug!("Adding `Account` {}", account.id());
 
         if let Some(database) = &self.database {
             database.add_account(account.as_ref())?;
@@ -1185,7 +1185,7 @@ impl Cache {
             )?;
         };
 
-        debug!("Added {:?}", order);
+        debug!("Adding {:?}", order);
 
         self.index.orders.insert(client_order_id);
         self.index
@@ -1315,6 +1315,8 @@ impl Cache {
         self.index.positions.insert(position.id);
         self.index.positions_open.insert(position.id);
 
+        log::debug!("Adding {position}");
+
         self.add_position_id(
             &position.id,
             &position.instrument_id.venue,
@@ -1334,12 +1336,6 @@ impl Cache {
             .entry(instrument_id)
             .or_default();
         instrument_positions.insert(position.id);
-
-        log::debug!(
-            "Added Position(id={}, strategy_id={})",
-            position.id,
-            position.strategy_id,
-        );
 
         if let Some(database) = &mut self.database {
             database.add_position(&position)?;
