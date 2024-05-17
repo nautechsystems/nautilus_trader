@@ -28,9 +28,12 @@ class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True, kw_only=Tr
         The currency for this venue
     balance : int
         The starting balance for this venue
+    bar_execution: bool
+        If bars should be processed by the matching engine(s) (and move the market).
 
     """
 
     venue: str
     currency: str
     balance: int
+    bar_execution: bool = True
