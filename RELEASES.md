@@ -20,6 +20,7 @@ Released on TBD (UTC).
 - Changed `OrderMatchingEngine` to no longer process internally aggregated bars for execution (no tests failed, but still classifying as a behavior change), thanks for reporting @davidsblom
 
 ### Fixes
+- Fixed `CashAccount` PnL and balance calculations (was adjusting filled quantity based on open position quantity - causing a desync and incorrect balance values)
 - Fixed `from_str` for `Price`, `Quantity` and `Money` when input string contains underscores in Rust, thanks for reporting @filipmacek
 - Fixed `Money` string parsing where the value from `str(money)` can now be passed to `Money.from_str`
 - Fixed `TimeEvent` equality (now based on then event `id` rather than the event `name`)
