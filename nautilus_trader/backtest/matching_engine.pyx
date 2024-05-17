@@ -34,6 +34,7 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.model cimport AccountType
+from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport ContingencyType
@@ -478,6 +479,9 @@ cdef class OrderMatchingEngine:
             return  # Can only process an L1 book with bars
 
         cdef BarType bar_type = bar.bar_type
+        if bar_type._mem.aggregation_source == AggregationSource.INTERNAL:
+            return  # Do not process internally aggregated bars
+
         cdef InstrumentId instrument_id = bar_type.instrument_id
         cdef BarType execution_bar_type = self._execution_bar_types.get(instrument_id)
 

@@ -7,8 +7,9 @@ Released on TBD (UTC).
 - Added `Cfd` and `Commodity` instruments with Interactive Brokers support (#1604), thanks @DracheShiki
 - Added `OrderMatchingEngine` futures and options contract activation and expiration simulation
 - Added Sandbox example with Interactive Brokers (#1618), thanks @rsmb7z
-- Added `ParquetDataCatalog` S3 support (#1620), thanks benjaminsingleton
-- Added `Bar.from_raw_arrays_to_list` (#1623), thanks rsmb7z
+- Added `ParquetDataCatalog` S3 support (#1620), thanks @benjaminsingleton
+- Added `Bar.from_raw_arrays_to_list` (#1623), thanks @rsmb7z
+- Added `SandboxExecutionClientConfig.bar_execution` option, thanks @davidsblom
 - Improved venue order ID generation and assignment (it was previously possible for the `OrderMatchingEngine` to generate multiple IDs for the same order)
 - Improved `LiveTimer` robustness and flexibility by not requiring positive intervals or stop times in the future (will immediately produce a time event), thanks for reporting @davidsblom
 
@@ -16,6 +17,7 @@ Released on TBD (UTC).
 - Removed `allow_cash_positions` config (simplify to the most common use case, spot trading should track positions)
 - Changed `tags` param and return type from `str` to `list[str]` (more naturally expresses multiple tags)
 - Changed `Order.to_dict()` `commission` and `linked_order_id` fields to lists of strings rather than comma separated strings
+- Changed `OrderMatchingEngine` to no longer process internally aggregated bars for execution (no tests failed, but still classifying as a behavior change), thanks for reporting @davidsblom
 
 ### Fixes
 - Fixed `from_str` for `Price`, `Quantity` and `Money` when input string contains underscores in Rust, thanks for reporting @filipmacek
