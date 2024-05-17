@@ -87,6 +87,7 @@ class SandboxExecutionClient(LiveExecutionClient):
         oms_type: OmsType = OmsType.NETTING,
         account_type: AccountType = AccountType.MARGIN,
         default_leverage: Decimal = Decimal(10),
+        bar_execution: bool = True,
     ) -> None:
         self._currency = Currency.from_str(currency)
         money = Money(value=balance, currency=self._currency)
@@ -124,6 +125,7 @@ class SandboxExecutionClient(LiveExecutionClient):
             fee_model=MakerTakerFeeModel(),
             latency_model=LatencyModel(0),
             clock=self.test_clock,
+            bar_execution=bar_execution,
             frozen_account=True,  # <-- Freezing account
         )
         self._client = BacktestExecClient(
