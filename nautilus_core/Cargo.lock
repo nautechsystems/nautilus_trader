@@ -2734,6 +2734,7 @@ name = "nautilus-infrastructure"
 version = "0.22.0"
 dependencies = [
  "anyhow",
+ "log",
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",
@@ -2742,6 +2743,7 @@ dependencies = [
  "rmp-serde",
  "rstest",
  "rust_decimal",
+ "semver",
  "serde_json",
  "serial_test",
  "sqlx",

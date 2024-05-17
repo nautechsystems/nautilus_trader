@@ -31,6 +31,7 @@ use crate::redis::{create_redis_connection, get_buffer_interval, get_stream_name
 
 const XTRIM: &str = "XTRIM";
 const MINID: &str = "MINID";
+const TRIM_BUFFER_SECONDS: u64 = 60;
 
 #[cfg_attr(
     feature = "python",
@@ -184,9 +185,10 @@ fn drain_buffer(
         // Autotrim stream
         let last_trim_ms = last_trim_index.entry(key.clone()).or_insert(0); // Remove clone
         let unix_duration_now = duration_since_unix_epoch();
+        let trim_buffer = Duration::from_secs(TRIM_BUFFER_SECONDS);
 
         // Improve efficiency of this by batching
-        if *last_trim_ms < (unix_duration_now - Duration::from_secs(60)).as_millis() as usize {
+        if *last_trim_ms < (unix_duration_now - trim_buffer).as_millis() as usize {
             let min_timestamp_ms =
                 (unix_duration_now - autotrim_duration.unwrap()).as_millis() as usize;
             let result: Result<(), redis::RedisError> = redis::cmd(XTRIM)
