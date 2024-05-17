@@ -23,10 +23,12 @@ use std::{collections::HashMap, time::Duration};
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use redis::*;
+use semver::Version;
 use serde_json::{json, Value};
-use tracing::debug;
+use tracing::{debug, info};
 
-const DELIMITER: char = ':';
+const REDIS_MIN_VERSION: &str = "6.2.0";
+const REDIS_DELIMITER: char = ':';
 
 pub fn get_redis_url(database_config: &serde_json::Value) -> (String, String) {
     let host = database_config
@@ -90,14 +92,27 @@ pub fn get_redis_url(database_config: &serde_json::Value) -> (String, String) {
     (url, redacted_url)
 }
 
-pub fn create_redis_connection(database_config: &serde_json::Value) -> RedisResult<Connection> {
+pub fn create_redis_connection(database_config: &serde_json::Value) -> anyhow::Result<Connection> {
     let (redis_url, redacted_url) = get_redis_url(database_config);
     debug!("Connecting to {redacted_url}");
     let default_timeout = 20;
     let timeout = get_timeout_duration(database_config, default_timeout);
     let client = redis::Client::open(redis_url)?;
-    let conn = client.get_connection_with_timeout(timeout)?;
-    debug!("Connected");
+    let mut conn = client.get_connection_with_timeout(timeout)?;
+
+    let redis_version = get_redis_version(&mut conn)?;
+    let conn_msg = format!("Connected to redis v{redis_version}");
+    let version = Version::parse(&redis_version)?;
+    let min_version = Version::parse(REDIS_MIN_VERSION)?;
+
+    if version >= min_version {
+        info!(conn_msg);
+    } else {
+        // TODO: Using `log` error here so that the message is displayed regardless of whether
+        // the logging config has pyo3 enabled. Later we can standardize this to `tracing`.
+        log::error!("{conn_msg}, but minimum supported verson {REDIS_MIN_VERSION}");
+    };
+
     Ok(conn)
 }
 
@@ -129,12 +144,12 @@ fn get_stream_name(
 
     if let Some(json!(true)) = config.get("use_trader_id") {
         stream_name.push_str(trader_id.as_str());
-        stream_name.push(DELIMITER);
+        stream_name.push(REDIS_DELIMITER);
     }
 
     if let Some(json!(true)) = config.get("use_instance_id") {
         stream_name.push_str(&format!("{instance_id}"));
-        stream_name.push(DELIMITER);
+        stream_name.push(REDIS_DELIMITER);
     }
 
     let stream_prefix = config
@@ -143,8 +158,26 @@ fn get_stream_name(
         .as_str()
         .expect("Invalid configuration: `streams_prefix` is not a string");
     stream_name.push_str(stream_prefix);
-    stream_name.push(DELIMITER);
+    stream_name.push(REDIS_DELIMITER);
     stream_name
+}
+
+pub fn get_redis_version(conn: &mut Connection) -> anyhow::Result<String> {
+    let info: String = redis::cmd("INFO").query(conn)?;
+    parse_redis_version(&info)
+}
+
+fn parse_redis_version(info: &str) -> anyhow::Result<String> {
+    for line in info.lines() {
+        if line.starts_with("redis_version:") {
+            let version = line
+                .split(':')
+                .nth(1)
+                .ok_or(anyhow::anyhow!("Version not found"))?;
+            return Ok(version.trim().to_string());
+        }
+    }
+    Err(anyhow::anyhow!("Redis version not found in info"))
 }
 
 #[cfg(test)]
