@@ -1,4 +1,4 @@
-# Adapter Development Guide
+# Adapters
 
 ## Introduction
 
@@ -33,7 +33,7 @@ The `InstrumentProvider` supplies instrument definitions available on the venue.
 includes loading all available instruments, specific instruments by ID, and applying filters to the 
 instrument list.
 
-```{python}
+```python
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.model.identifiers import InstrumentId
 
@@ -63,7 +63,7 @@ The `LiveDataClient` handles the subscription and management of data feeds that 
 related to market data. This might include news feeds, custom data streams, or other data sources 
 that enhance trading strategies but do not directly represent market activity.
 
-```{python}
+```python
 from nautilus_trader.live.data_client import LiveDataClient
 from nautilus_trader.model.data import DataType
 from nautilus_trader.core.uuid import UUID4
@@ -110,7 +110,7 @@ The `MarketDataClient` handles market-specific data such as order books, top-of-
 and instrument status updates. It focuses on providing historical and real-time market data that is essential for 
 trading operations.
 
-```{python}
+```python
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import BarType, DataType
 from nautilus_trader.model.enums import BookType
@@ -162,7 +162,7 @@ The `ExecutionClient` is responsible for order management, including submission,
 cancellation of orders. It is a crucial component of the adapter that interacts with the venues 
 trading system to manage and execute trades.
 
-```{python}
+```python
 from nautilus_trader.execution.messages import CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder
 from nautilus_trader.execution.reports import FillReport, OrderStatusReport, PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
@@ -230,7 +230,7 @@ The configuration file defines settings specific to the adapter, such as API key
 details. These settings are essential for initializing and managing the adapter’s connection to the 
 data provider.
 
-```{python}
+```python
 from nautilus_trader.config import LiveDataClientConfig, LiveExecClientConfig
 
 class TemplateDataClientConfig(LiveDataClientConfig):
