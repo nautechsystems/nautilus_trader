@@ -9,7 +9,7 @@ Released on 18th May 2024 (UTC).
 - Added Sandbox example with Interactive Brokers (#1618), thanks @rsmb7z
 - Added `ParquetDataCatalog` S3 support (#1620), thanks @benjaminsingleton
 - Added `Bar.from_raw_arrays_to_list` (#1623), thanks @rsmb7z
-- Added `SandboxExecutionClientConfig.bar_execution` option, thanks @davidsblom
+- Added `SandboxExecutionClientConfig.bar_execution` option (#1646), thanks @davidsblom
 - Improved venue order ID generation and assignment (it was previously possible for the `OrderMatchingEngine` to generate multiple IDs for the same order)
 - Improved `LiveTimer` robustness and flexibility by not requiring positive intervals or stop times in the future (will immediately produce a time event), thanks for reporting @davidsblom
 
@@ -23,17 +23,17 @@ Released on 18th May 2024 (UTC).
 - Fixed `CashAccount` PnL and balance calculations (was adjusting filled quantity based on open position quantity - causing a desync and incorrect balance values)
 - Fixed `from_str` for `Price`, `Quantity` and `Money` when input string contains underscores in Rust, thanks for reporting @filipmacek
 - Fixed `Money` string parsing where the value from `str(money)` can now be passed to `Money.from_str`
-- Fixed `TimeEvent` equality (now based on then event `id` rather than the event `name`)
+- Fixed `TimeEvent` equality (now based on the event `id` rather than the event `name`)
 - Fixed `ParquetDataCatalog` bar queries by `instrument_id` which were no longer returning data (the intent is to use `bar_type`, however using `instrument_id` now returns all matching bars)
 - Fixed venue order ID generation and application in sandbox mode (was previously generating additional venue order IDs), thanks for reporting @rsmb7z and @davidsblom
-- Fixed multiple fills causing overfills in sandbox mode (`OrderMatchingEngine` now cached filled quantity to prevent this), thanks @davidsblom
+- Fixed multiple fills causing overfills in sandbox mode (`OrderMatchingEngine` now caching filled quantity to prevent this) (#1642), thanks @davidsblom
 - Fixed `leaves_qty` exception message underflow (now correctly displays the projected negative leaves quantity)
 - Fixed Interactive Brokers contract details parsing (#1615), thanks @rsmb7z
 - Fixed Interactive Brokers portfolio registration (#1616), thanks @rsmb7z
 - Fixed Interactive Brokers `IBOrder` attributes assignment (#1634), thanks @rsmb7z
 - Fixed IBKR reconnection after gateway/TWS disconnection (#1622), thanks @benjaminsingleton
 - Fixed Binance Futures account balance calculation (was over stating `free` balance with margin collateral, which could result in a negative `locked` balance)
-- Fixed Betfair stream reconnection and avoid multiple reconnect attempts, thanks @imemo88
+- Fixed Betfair stream reconnection and avoid multiple reconnect attempts (#1644), thanks @imemo88
 
 ---
 
