@@ -27,7 +27,7 @@ use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
     identifiers::{account_id::AccountId, instrument_id::InstrumentId},
-    instruments::{Instrument, InstrumentAny},
+    instruments::{any::InstrumentAny, Instrument},
     position::Position,
     types::{
         balance::{AccountBalance, MarginBalance},

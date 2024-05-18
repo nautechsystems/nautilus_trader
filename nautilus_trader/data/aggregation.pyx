@@ -657,7 +657,6 @@ cdef class TimeBarAggregator(BarAggregator):
         Stop the bar aggregator.
         """
         self._clock.cancel_timer(str(self.bar_type))
-        self._timer_name = None
 
     cdef timedelta _get_interval(self):
         cdef BarAggregation aggregation = self.bar_type.spec.aggregation

@@ -873,7 +873,7 @@ pub enum PositionSide {
     Short = 3,
 }
 
-/// The type of price for an instrument in market.
+/// The type of price for an instrument in a market.
 #[repr(C)]
 #[derive(
     Copy,
@@ -907,7 +907,7 @@ pub enum PriceType {
     Last = 4,
 }
 
-/// A record flag bit field, indicating packet end and data information.
+/// A record flag bit field, indicating event end and data information.
 #[repr(C)]
 #[derive(
     Copy,

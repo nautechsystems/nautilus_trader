@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Momentum type indicators.
+
 pub mod aroon;
 pub mod bias;
 pub mod cmo;

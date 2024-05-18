@@ -22,7 +22,7 @@ use nautilus_model::{
     events::{account::state::AccountState, order::filled::OrderFilled},
     identifiers::account_id::AccountId,
     position::Position,
-    python::instruments::convert_pyobject_to_instrument_any,
+    python::instruments::pyobject_to_instrument_any,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
@@ -47,19 +47,6 @@ impl CashAccount {
     #[getter]
     fn id(&self) -> AccountId {
         self.id
-    }
-
-    fn __str__(&self) -> String {
-        format!(
-            "{}(id={}, type={}, base={})",
-            stringify!(CashAccount),
-            self.id,
-            self.account_type,
-            self.base_currency.map_or_else(
-                || "None".to_string(),
-                |base_currency| format!("{}", base_currency.code)
-            ),
-        )
     }
 
     fn __repr__(&self) -> String {
@@ -155,7 +142,7 @@ impl CashAccount {
         use_quote_for_inverse: Option<bool>,
         py: Python,
     ) -> PyResult<Money> {
-        let instrument = convert_pyobject_to_instrument_any(py, instrument)?;
+        let instrument = pyobject_to_instrument_any(py, instrument)?;
         self.calculate_balance_locked(instrument, side, quantity, price, use_quote_for_inverse)
             .map_err(to_pyvalue_err)
     }
@@ -173,7 +160,7 @@ impl CashAccount {
         if liquidity_side == LiquiditySide::NoLiquiditySide {
             return Err(to_pyvalue_err("Invalid liquidity side"));
         }
-        let instrument = convert_pyobject_to_instrument_any(py, instrument)?;
+        let instrument = pyobject_to_instrument_any(py, instrument)?;
         self.calculate_commission(
             instrument,
             last_qty,
@@ -192,7 +179,7 @@ impl CashAccount {
         position: Option<Position>,
         py: Python,
     ) -> PyResult<Vec<Money>> {
-        let instrument = convert_pyobject_to_instrument_any(py, instrument)?;
+        let instrument = pyobject_to_instrument_any(py, instrument)?;
         self.calculate_pnls(instrument, fill, position)
             .map_err(to_pyvalue_err)
     }

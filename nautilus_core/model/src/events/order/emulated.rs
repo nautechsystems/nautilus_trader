@@ -13,19 +13,26 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
-use crate::identifiers::{
-    client_order_id::ClientOrderId, instrument_id::InstrumentId, strategy_id::StrategyId,
-    trader_id::TraderId,
+use crate::{
+    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
+    events::order::OrderEvent,
+    identifiers::{
+        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
+        instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
+        trader_id::TraderId, venue_order_id::VenueOrderId,
+    },
+    types::{price::Price, quantity::Quantity},
 };
 
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 #[cfg_attr(
@@ -65,13 +72,173 @@ impl OrderEmulated {
     }
 }
 
-impl Display for OrderEmulated {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl Debug for OrderEmulated {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "OrderEmulated(instrument_id={}, client_order_id={})",
-            self.instrument_id, self.client_order_id
+            "{}(trader_id={}, strategy_id={}, instrument_id={}, client_order_id={}, event_id={}, ts_init={})",
+            stringify!(OrderEmulated),
+            self.trader_id,
+            self.strategy_id,
+            self.instrument_id,
+            self.client_order_id,
+            self.event_id,
+            self.ts_init,
         )
+    }
+}
+
+impl Display for OrderEmulated {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}(instrument_id={}, client_order_id={})",
+            stringify!(OrderEmulated),
+            self.instrument_id,
+            self.client_order_id,
+        )
+    }
+}
+
+impl OrderEvent for OrderEmulated {
+    fn id(&self) -> UUID4 {
+        self.event_id
+    }
+
+    fn kind(&self) -> &str {
+        stringify!(OrderEmulated)
+    }
+
+    fn order_type(&self) -> Option<OrderType> {
+        None
+    }
+
+    fn order_side(&self) -> Option<OrderSide> {
+        None
+    }
+
+    fn trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    fn strategy_id(&self) -> StrategyId {
+        self.strategy_id
+    }
+
+    fn instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    fn client_order_id(&self) -> ClientOrderId {
+        self.client_order_id
+    }
+
+    fn reason(&self) -> Option<Ustr> {
+        None
+    }
+
+    fn quantity(&self) -> Option<Quantity> {
+        None
+    }
+
+    fn time_in_force(&self) -> Option<TimeInForce> {
+        None
+    }
+
+    fn post_only(&self) -> Option<bool> {
+        None
+    }
+
+    fn reduce_only(&self) -> Option<bool> {
+        None
+    }
+
+    fn quote_quantity(&self) -> Option<bool> {
+        None
+    }
+
+    fn reconciliation(&self) -> bool {
+        false
+    }
+
+    fn price(&self) -> Option<Price> {
+        None
+    }
+
+    fn trigger_price(&self) -> Option<Price> {
+        None
+    }
+
+    fn trigger_type(&self) -> Option<TriggerType> {
+        None
+    }
+
+    fn limit_offset(&self) -> Option<Price> {
+        None
+    }
+
+    fn trailing_offset(&self) -> Option<Price> {
+        None
+    }
+
+    fn trailing_offset_type(&self) -> Option<TrailingOffsetType> {
+        None
+    }
+
+    fn expire_time(&self) -> Option<UnixNanos> {
+        None
+    }
+
+    fn display_qty(&self) -> Option<Quantity> {
+        None
+    }
+
+    fn emulation_trigger(&self) -> Option<TriggerType> {
+        None
+    }
+
+    fn trigger_instrument_id(&self) -> Option<InstrumentId> {
+        None
+    }
+
+    fn contingency_type(&self) -> Option<ContingencyType> {
+        None
+    }
+
+    fn order_list_id(&self) -> Option<OrderListId> {
+        None
+    }
+
+    fn linked_order_ids(&self) -> Option<Vec<ClientOrderId>> {
+        None
+    }
+
+    fn parent_order_id(&self) -> Option<ClientOrderId> {
+        None
+    }
+
+    fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId> {
+        None
+    }
+
+    fn exec_spawn_id(&self) -> Option<ClientOrderId> {
+        None
+    }
+
+    fn venue_order_id(&self) -> Option<VenueOrderId> {
+        None
+    }
+
+    fn account_id(&self) -> Option<AccountId> {
+        None
+    }
+
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }
 
@@ -89,7 +256,7 @@ mod tests {
         let display = format!("{order_emulated}");
         assert_eq!(
             display,
-            "OrderEmulated(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1)"
+            "OrderEmulated(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1)"
         );
     }
 }

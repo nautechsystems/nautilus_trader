@@ -1254,7 +1254,7 @@ cdef class BacktestEngine:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
                 for b in account.starting_balances().values():
-                    self._log.info(b.to_str())
+                    self._log.info(b.to_formatted_str())
 
     def _log_run(self, start: pd.Timestamp, end: pd.Timestamp):
         cdef str color = self._get_log_color_code()
@@ -1326,15 +1326,15 @@ cdef class BacktestEngine:
                     continue
                 self._log.info(f"Balances starting:")
                 for b in account.starting_balances().values():
-                    self._log.info(b.to_str())
+                    self._log.info(b.to_formatted_str())
                 self._log.info(f"{color}-----------------------------------------------------------------")
                 self._log.info(f"Balances ending:")
                 for b in account.balances_total().values():
-                    self._log.info(b.to_str())
+                    self._log.info(b.to_formatted_str())
                 self._log.info(f"{color}-----------------------------------------------------------------")
                 self._log.info(f"Commissions:")
                 for c in account.commissions().values():
-                    self._log.info(Money(-c.as_double(), c.currency).to_str())  # Display commission as negative
+                    self._log.info(Money(-c.as_double(), c.currency).to_formatted_str())  # Display commission as negative
                 self._log.info(f"{color}-----------------------------------------------------------------")
                 self._log.info(f"Unrealized PnLs (included in totals):")
                 unrealized_pnls = self.portfolio.unrealized_pnls(Venue(venue.id.value))
@@ -1342,7 +1342,7 @@ cdef class BacktestEngine:
                     self._log.info("None")
                 else:
                     for b in unrealized_pnls.values():
-                        self._log.info(b.to_str())
+                        self._log.info(b.to_formatted_str())
 
             # Log output diagnostics for all simulation modules
             for module in venue.modules:

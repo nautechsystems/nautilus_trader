@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! A common `OrderMatchingCore` for the `OrderMatchingEngine` and other components.
+
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]
@@ -21,7 +23,8 @@ use nautilus_model::{
     enums::OrderSideSpecified,
     identifiers::{client_order_id::ClientOrderId, instrument_id::InstrumentId},
     orders::{
-        base::{LimitOrderAny, OrderError, PassiveOrderAny, StopOrderAny},
+        any::{LimitOrderAny, PassiveOrderAny, StopOrderAny},
+        base::OrderError,
         market::MarketOrder,
     },
     polymorphism::{GetClientOrderId, GetLimitPrice, GetOrderSideSpecified, GetStopPrice},

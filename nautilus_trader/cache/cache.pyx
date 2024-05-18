@@ -46,6 +46,7 @@ from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -135,7 +136,8 @@ cdef class Cache(CacheFacade):
         self._index_venue_account: dict[Venue, AccountId] = {}
         self._index_venue_orders: dict[Venue, set[ClientOrderId]] = {}
         self._index_venue_positions: dict[Venue, set[PositionId]] = {}
-        self._index_order_ids: dict[VenueOrderId, ClientOrderId] = {}
+        self._index_venue_order_ids: dict[VenueOrderId, ClientOrderId] = {}
+        self._index_client_order_ids: dict[ClientOrderId, VenueOrderId] = {}
         self._index_order_position: dict[ClientOrderId, PositionId] = {}
         self._index_order_strategy: dict[ClientOrderId, StrategyId] = {}
         self._index_order_client: dict[ClientOrderId, ClientId] = {}
@@ -479,10 +481,18 @@ cdef class Cache(CacheFacade):
                 )
                 error_count += 1
 
-        for client_order_id in self._index_order_ids.values():
+        for client_order_id in self._index_venue_order_ids.values():
             if client_order_id not in self._orders:
                 self._log.error(
                     f"{failure} in _index_venue_order_ids: "
+                    f"{repr(client_order_id)} not found in self._cached_orders"
+                )
+                error_count += 1
+
+        for client_order_id in self._index_client_order_ids:
+            if client_order_id not in self._orders:
+                self._log.error(
+                    f"{failure} in _index_client_order_ids: "
                     f"{repr(client_order_id)} not found in self._cached_orders"
                 )
                 error_count += 1
@@ -683,7 +693,8 @@ cdef class Cache(CacheFacade):
         self._index_venue_account.clear()
         self._index_venue_orders.clear()
         self._index_venue_positions.clear()
-        self._index_order_ids.clear()
+        self._index_venue_order_ids.clear()
+        self._index_client_order_ids.clear()
         self._index_order_position.clear()
         self._index_order_strategy.clear()
         self._index_order_client.clear()
@@ -781,9 +792,10 @@ cdef class Cache(CacheFacade):
                 self._index_venue_orders[order.instrument_id.venue] = set()
             self._index_venue_orders[order.instrument_id.venue].add(client_order_id)
 
-            # 2: Build _index_order_ids -> {VenueOrderId, ClientOrderId}
+            # 2: Build _index_venue_order_ids -> {VenueOrderId, ClientOrderId}
             if order.venue_order_id is not None:
-                self._index_order_ids[order.venue_order_id] = order.client_order_id
+                self._index_venue_order_ids[order.venue_order_id] = order.client_order_id
+                self._index_client_order_ids[order.client_order_id] = order.venue_order_id
 
             # 3: Build _index_order_position -> {ClientOrderId, PositionId}
             if order.position_id is not None:
@@ -1397,12 +1409,57 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.add_account(account)
 
+    cpdef void add_venue_order_id(
+        self,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
+        bint overwrite=False,
+    ):
+        """
+        Index the given client order ID with the given venue order ID.
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID to index.
+        venue_order_id : VenueOrderId
+            The venue order ID to index.
+        overwrite : bool, default False
+            If the venue order ID will 'overwrite' any existing indexing and replace
+            it in the cache. This is currently used for updated orders where the venue
+            order ID may change.
+
+        Raises
+        ------
+        ValueError
+            If `overwrite` is False and the `client_order_id` is already indexed with a different `venue_order_id`.
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+        Condition.not_none(venue_order_id, "venue_order_id")
+
+        cdef VenueOrderId existing_venue_order_id = self._index_client_order_ids.get(client_order_id)
+        if not overwrite and existing_venue_order_id is not None and venue_order_id != existing_venue_order_id:
+            raise ValueError(
+                f"Existing {existing_venue_order_id!r} for {client_order_id!r} "
+                f"did not match the given {venue_order_id!r}. "
+                "If you are writing a test then try a different `venue_order_id`, "
+                "otherwise this is probably a bug."
+            )
+
+        self._index_client_order_ids[client_order_id] = venue_order_id
+        self._index_venue_order_ids[venue_order_id] = client_order_id
+
+        self._log.debug(
+            f"Indexed {client_order_id!r} with {venue_order_id!r}",
+        )
+
     cpdef void add_order(
         self,
         Order order,
         PositionId position_id = None,
         ClientId client_id = None,
-        bint override = False,
+        bint overwrite = False,
     ):
         """
         Add the given order to the cache indexed with the given position
@@ -1416,8 +1473,8 @@ cdef class Cache(CacheFacade):
             The position ID to index for the order.
         client_id : ClientId, optional
             The execution client ID for order routing.
-        override : bool, default False
-            If the added order should 'override' any existing order and replace
+        overwrite : bool, default False
+            If the added order should 'overwrite' any existing order and replace
             it in the cache. This is currently used for emulated orders which are
             being released and transformed into another type.
 
@@ -1428,7 +1485,7 @@ cdef class Cache(CacheFacade):
 
         """
         Condition.not_none(order, "order")
-        if not override:
+        if not overwrite:
             Condition.not_in(order.client_order_id, self._orders, "order.client_order_id", "_orders")
             Condition.not_in(order.client_order_id, self._index_orders, "order.client_order_id", "_index_orders")
             Condition.not_in(order.client_order_id, self._index_order_position, "order.client_order_id", "_index_order_position")
@@ -1768,9 +1825,14 @@ cdef class Cache(CacheFacade):
         Condition.not_none(order, "order")
 
         # Update venue order ID
-        if order.venue_order_id is not None:
-            # Assumes order_id does not change
-            self._index_order_ids[order.venue_order_id] = order.client_order_id
+        if order.venue_order_id is not None and order.venue_order_id not in self._index_venue_order_ids:
+            # If the order is being modified then we allow a changing `VenueOrderId` to accommodate
+            # venues which use a cancel+replace update strategy.
+            self.add_venue_order_id(
+                order.client_order_id,
+                order.venue_order_id,
+                overwrite=isinstance(order._events[-1], OrderUpdated),
+            )
 
         # Update in-flight state
         if order.is_inflight_c():
@@ -3022,7 +3084,7 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(venue_order_id, "venue_order_id")
 
-        return self._index_order_ids.get(venue_order_id)
+        return self._index_venue_order_ids.get(venue_order_id)
 
     cpdef VenueOrderId venue_order_id(self, ClientOrderId client_order_id):
         """
@@ -3035,10 +3097,7 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(client_order_id, "client_order_id")
 
-        cdef Order order = self._orders.get(client_order_id)
-        if order is None:
-            return None
-        return order.venue_order_id
+        return self._index_client_order_ids.get(client_order_id)
 
     cpdef ClientId client_id(self, ClientOrderId client_order_id):
         """

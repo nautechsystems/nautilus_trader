@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Bar aggregate structures, data types and functionality.
+
 use std::{
     collections::HashMap,
     fmt::{Debug, Display, Formatter},
@@ -20,6 +22,7 @@ use std::{
     str::FromStr,
 };
 
+use derive_builder::Builder;
 use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -27,13 +30,14 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::{
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::instrument_id::InstrumentId,
+    polymorphism::GetTsInit,
     types::{price::Price, quantity::Quantity},
 };
 
 /// Represents a bar aggregation specification including a step, aggregation
 /// method/rule and price type.
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -281,8 +285,6 @@ impl Bar {
     }
 }
 
-impl Serializable for Bar {}
-
 impl Display for Bar {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -293,47 +295,11 @@ impl Display for Bar {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "stubs")]
-pub mod stubs {
-    use nautilus_core::nanos::UnixNanos;
-    use rstest::fixture;
+impl Serializable for Bar {}
 
-    use crate::{
-        data::bar::{Bar, BarSpecification, BarType},
-        enums::{AggregationSource, BarAggregation, PriceType},
-        identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
-        types::{price::Price, quantity::Quantity},
-    };
-
-    #[fixture]
-    pub fn stub_bar() -> Bar {
-        let instrument_id = InstrumentId {
-            symbol: Symbol::new("AUDUSD").unwrap(),
-            venue: Venue::new("SIM").unwrap(),
-        };
-        let bar_spec = BarSpecification {
-            step: 1,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Bid,
-        };
-        let bar_type = BarType {
-            instrument_id,
-            spec: bar_spec,
-            aggregation_source: AggregationSource::External,
-        };
-        Bar {
-            bar_type,
-            open: Price::from("1.00001"),
-            high: Price::from("1.00004"),
-            low: Price::from("1.00002"),
-            close: Price::from("1.00003"),
-            volume: Quantity::from("100000"),
-            ts_event: UnixNanos::from(0),
-            ts_init: UnixNanos::from(1),
-        }
+impl GetTsInit for Bar {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }
 
@@ -344,7 +310,7 @@ pub mod stubs {
 mod tests {
     use rstest::rstest;
 
-    use super::{stubs::*, *};
+    use super::*;
     use crate::{
         enums::BarAggregation,
         identifiers::{symbol::Symbol, venue::Venue},
@@ -542,8 +508,8 @@ mod tests {
             low: Price::from("1.00002"),
             close: Price::from("1.00003"),
             volume: Quantity::from("100000"),
-            ts_event: UnixNanos::from(0),
-            ts_init: UnixNanos::from(0),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::from(1),
         };
 
         let bar2 = Bar {
@@ -553,24 +519,24 @@ mod tests {
             low: Price::from("1.00002"),
             close: Price::from("1.00003"),
             volume: Quantity::from("100000"),
-            ts_event: UnixNanos::from(0),
-            ts_init: UnixNanos::from(0),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::from(1),
         };
         assert_eq!(bar1, bar1);
         assert_ne!(bar1, bar2);
     }
 
     #[rstest]
-    fn test_json_serialization(stub_bar: Bar) {
-        let bar = stub_bar;
+    fn test_json_serialization() {
+        let bar = Bar::default();
         let serialized = bar.as_json_bytes().unwrap();
         let deserialized = Bar::from_json_bytes(serialized).unwrap();
         assert_eq!(deserialized, bar);
     }
 
     #[rstest]
-    fn test_msgpack_serialization(stub_bar: Bar) {
-        let bar = stub_bar;
+    fn test_msgpack_serialization() {
+        let bar = Bar::default();
         let serialized = bar.as_msgpack_bytes().unwrap();
         let deserialized = Bar::from_msgpack_bytes(serialized).unwrap();
         assert_eq!(deserialized, bar);

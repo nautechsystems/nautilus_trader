@@ -13,5 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides an Apache Parquet backend powered by [DataFusion](https://arrow.apache.org/datafusion).
+
 pub mod kmerge_batch;
 pub mod session;

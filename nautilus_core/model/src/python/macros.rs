@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides macros.
+
 #[macro_export]
 macro_rules! identifier_for_python {
     ($ty:ty) => {
@@ -63,10 +65,6 @@ macro_rules! identifier_for_python {
                 self.inner().precomputed_hash() as isize
             }
 
-            fn __str__(&self) -> &'static str {
-                self.inner().as_str()
-            }
-
             fn __repr__(&self) -> String {
                 format!(
                     "{}('{}')",
@@ -75,10 +73,20 @@ macro_rules! identifier_for_python {
                 )
             }
 
+            fn __str__(&self) -> &'static str {
+                self.inner().as_str()
+            }
+
             #[getter]
             #[pyo3(name = "value")]
             fn py_value(&self) -> String {
                 self.to_string()
+            }
+
+            #[staticmethod]
+            #[pyo3(name = "from_str")]
+            fn py_from_str(value: &str) -> PyResult<Self> {
+                Self::from_str(value).map_err(to_pyvalue_err)
             }
         }
     };

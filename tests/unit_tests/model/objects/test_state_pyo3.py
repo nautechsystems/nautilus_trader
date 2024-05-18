@@ -69,11 +69,11 @@ def test_margin_account_state():
         ],
         "margins": [
             {
-                "currency": "USD",
-                "initial": "1.00",
-                "instrument_id": "AUD/USD.SIM",
-                "maintenance": "1.00",
                 "type": "MarginBalance",
+                "instrument_id": "AUD/USD.SIM",
+                "initial": "1.00",
+                "maintenance": "1.00",
+                "currency": "USD",
             },
         ],
         "event_id": "91762096-b188-49ea-8562-8d8a4cc22ff2",

@@ -76,7 +76,7 @@ impl OrderInitialized {
         exec_algorithm_id: Option<ExecAlgorithmId>,
         exec_algorithm_params: Option<HashMap<String, String>>,
         exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<String>,
+        tags: Option<Vec<String>>,
     ) -> PyResult<Self> {
         Self::new(
             trader_id,
@@ -111,10 +111,11 @@ impl OrderInitialized {
             exec_algorithm_id,
             exec_algorithm_params.map(str_hashmap_to_ustr),
             exec_spawn_id,
-            tags.map(|s| Ustr::from(&s)),
+            tags.map(|vec| vec.iter().map(|s| Ustr::from(&s)).collect()),
         )
         .map_err(to_pyvalue_err)
     }
+
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
             CompareOp::Eq => self.eq(other).into_py(py),
@@ -124,99 +125,17 @@ impl OrderInitialized {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "OrderInitialized(\
-            trader_id={}, \
-            strategy_id={}, \
-            instrument_id={}, \
-            client_order_id={}, \
-            side={}, \
-            type={}, \
-            quantity={}, \
-            time_in_force={}, \
-            post_only={}, \
-            reduce_only={}, \
-            quote_quantity={}, \
-            price={}, \
-            emulation_trigger={}, \
-            trigger_instrument_id={}, \
-            contingency_type={}, \
-            order_list_id={}, \
-            linked_order_ids=[{}], \
-            parent_order_id={}, \
-            exec_algorithm_id={}, \
-            exec_algorithm_params={}, \
-            exec_spawn_id={}, \
-            tags={}, \
-            event_id={}, \
-            ts_init={})",
-            self.trader_id,
-            self.strategy_id,
-            self.instrument_id,
-            self.client_order_id,
-            self.order_side,
-            self.order_type,
-            self.quantity,
-            self.time_in_force,
-            self.post_only,
-            self.reduce_only,
-            self.quote_quantity,
-            self.price
-                .map_or("None".to_string(), |price| format!("{price}")),
-            self.emulation_trigger
-                .map_or("None".to_string(), |trigger| format!("{trigger}")),
-            self.trigger_instrument_id
-                .map_or("None".to_string(), |instrument_id| format!(
-                    "{instrument_id}"
-                )),
-            self.contingency_type
-                .map_or("None".to_string(), |contingency_type| format!(
-                    "{contingency_type}"
-                )),
-            self.order_list_id
-                .map_or("None".to_string(), |order_list_id| format!(
-                    "{order_list_id}"
-                )),
-            self.linked_order_ids
-                .as_ref()
-                .map_or("None".to_string(), |linked_order_ids| linked_order_ids
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")),
-            self.parent_order_id
-                .map_or("None".to_string(), |parent_order_id| format!(
-                    "{parent_order_id}"
-                )),
-            self.exec_algorithm_id
-                .map_or("None".to_string(), |exec_algorithm_id| format!(
-                    "{exec_algorithm_id}"
-                )),
-            self.exec_algorithm_params
-                .as_ref()
-                .map_or("None".to_string(), |exec_algorithm_params| format!(
-                    "{exec_algorithm_params:?}"
-                )),
-            self.exec_spawn_id
-                .map_or("None".to_string(), |exec_spawn_id| format!(
-                    "{exec_spawn_id}"
-                )),
-            self.tags
-                .as_ref()
-                .map_or("None".to_string(), |tags| format!("{tags}")),
-            self.event_id,
-            self.ts_init
-        )
+        format!("{:?}", self)
     }
 
     fn __str__(&self) -> String {
-        format!("{self}")
+        self.to_string()
     }
 
     #[getter]
-    #[pyo3(name = "order_event_type")]
-    fn py_order_event_type(&self) -> &str {
-        stringify!(OrderInitialized)
+    #[pyo3(name = "order_type")]
+    fn py_order_type(&self) -> OrderType {
+        self.order_type
     }
 
     #[staticmethod]
@@ -225,9 +144,14 @@ impl OrderInitialized {
         from_dict_pyo3(py, values)
     }
 
+    fn type_str(&self) -> &str {
+        stringify!(OrderInitiliazed)
+    }
+
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
+        dict.set_item("type", stringify!(OrderInitiliazed));
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;
@@ -240,6 +164,8 @@ impl OrderInitialized {
         dict.set_item("reduce_only", self.reduce_only)?;
         dict.set_item("quote_quantity", self.quote_quantity)?;
         dict.set_item("reconciliation", self.reconciliation)?;
+        // TODO remove options as in legacy cython only
+        dict.set_item("options", PyDict::new(py))?;
         dict.set_item("event_id", self.event_id.to_string())?;
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
@@ -338,7 +264,10 @@ impl OrderInitialized {
             None => dict.set_item("exec_spawn_id", py.None())?,
         }
         match &self.tags {
-            Some(tags) => dict.set_item("tags", tags.to_string())?,
+            Some(tags) => dict.set_item(
+                "tags",
+                tags.iter().map(|x| x.to_string()).collect::<Vec<String>>(),
+            )?,
             None => dict.set_item("tags", py.None())?,
         }
         Ok(dict.into())

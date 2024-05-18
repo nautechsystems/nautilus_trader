@@ -17,8 +17,8 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     events::account::state::AccountState,
     identifiers::{account_id::AccountId, instrument_id::InstrumentId},
-    instruments::InstrumentAny,
-    python::instruments::convert_pyobject_to_instrument_any,
+    instruments::any::InstrumentAny,
+    python::instruments::pyobject_to_instrument_any,
     types::{money::Money, price::Price, quantity::Quantity},
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
@@ -48,19 +48,6 @@ impl MarginAccount {
     #[getter]
     fn default_leverage(&self) -> f64 {
         self.default_leverage
-    }
-
-    fn __str__(&self) -> String {
-        format!(
-            "{}(id={}, type={}, base={})",
-            stringify!(MarginAccount),
-            self.id,
-            self.account_type,
-            self.base_currency.map_or_else(
-                || "None".to_string(),
-                |base_currency| format!("{}", base_currency.code)
-            )
-        )
     }
 
     fn __repr__(&self) -> String {
@@ -168,7 +155,7 @@ impl MarginAccount {
         use_quote_for_inverse: Option<bool>,
         py: Python,
     ) -> PyResult<Money> {
-        let instrument_type = convert_pyobject_to_instrument_any(py, instrument)?;
+        let instrument_type = pyobject_to_instrument_any(py, instrument)?;
         match instrument_type {
             InstrumentAny::CryptoFuture(inst) => {
                 Ok(self.calculate_initial_margin(inst, quantity, price, use_quote_for_inverse))
@@ -201,7 +188,7 @@ impl MarginAccount {
         use_quote_for_inverse: Option<bool>,
         py: Python,
     ) -> PyResult<Money> {
-        let instrument_type = convert_pyobject_to_instrument_any(py, instrument)?;
+        let instrument_type = pyobject_to_instrument_any(py, instrument)?;
         match instrument_type {
             InstrumentAny::CryptoFuture(inst) => {
                 Ok(self.calculate_maintenance_margin(inst, quantity, price, use_quote_for_inverse))

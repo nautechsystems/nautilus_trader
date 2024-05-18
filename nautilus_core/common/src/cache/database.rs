@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides a `Cache` database backing.
+
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]
@@ -26,8 +28,8 @@ use nautilus_model::{
         component_id::ComponentId, instrument_id::InstrumentId, position_id::PositionId,
         strategy_id::StrategyId, trader_id::TraderId, venue_order_id::VenueOrderId,
     },
-    instruments::{synthetic::SyntheticInstrument, InstrumentAny},
-    orders::base::{Order, OrderAny},
+    instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
+    orders::{any::OrderAny, base::Order},
     position::Position,
     types::currency::Currency,
 };
@@ -56,6 +58,7 @@ pub struct DatabaseCommand {
 }
 
 impl DatabaseCommand {
+    #[must_use]
     pub fn new(op_type: DatabaseOperation, key: String, payload: Option<Vec<Vec<u8>>>) -> Self {
         Self {
             op_type,
@@ -65,6 +68,7 @@ impl DatabaseCommand {
     }
 
     /// Initialize a `Close` database command, this is meant to close the database cache channel.
+    #[must_use]
     pub fn close() -> Self {
         Self {
             op_type: DatabaseOperation::Close,
@@ -257,7 +261,7 @@ impl CacheDatabaseAdapter {
         todo!() // TODO
     }
 
-    pub fn update_account(&self) -> anyhow::Result<()> {
+    pub fn update_account(&self, account: &dyn Account) -> anyhow::Result<()> {
         todo!() // TODO
     }
 

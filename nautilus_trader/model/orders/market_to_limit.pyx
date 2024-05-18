@@ -93,9 +93,8 @@ cdef class MarketToLimitOrder(Order):
         The execution algorithm parameters for the order.
     exec_spawn_id : ClientOrderId, optional
         The execution algorithm spawning primary client order ID.
-    tags : str, optional
-        The custom user tags for the order. These are optional and can
-        contain any arbitrary delimiter if required.
+    tags : list[str], optional
+        The custom user tags for the order.
 
     Raises
     ------
@@ -133,7 +132,7 @@ cdef class MarketToLimitOrder(Order):
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         ClientOrderId exec_spawn_id = None,
-        str tags = None,
+        list[str] tags = None,
     ):
         Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NO_ORDER_SIDE")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_OPEN, "time_in_force", "AT_THE_OPEN`")
@@ -230,8 +229,8 @@ cdef class MarketToLimitOrder(Order):
         """
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
         return (
-            f"{order_side_to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{order_type_to_str(self.order_type)} @ {self.price} "
+            f"{order_side_to_str(self.side)} {self.quantity.to_formatted_str()} {self.instrument_id} "
+            f"{order_type_to_str(self.order_type)} @ {self.price.to_formatted_str() if self.price else None} "
             f"{time_in_force_to_str(self.time_in_force)}{expiration_str}"
         )
 
@@ -267,11 +266,11 @@ cdef class MarketToLimitOrder(Order):
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
             "avg_px": str(self.avg_px) if self.filled_qty.as_f64_c() > 0.0 else None,
             "slippage": str(self.slippage) if self.filled_qty.as_f64_c() > 0.0 else None,
-            "commissions": str([c.to_str() for c in self.commissions()]) if self._commissions else None,
+            "commissions": [str(c) for c in self.commissions()] if self._commissions else None,
             "status": self._fsm.state_string_c(),
             "contingency_type": contingency_type_to_str(self.contingency_type),
             "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
-            "linked_order_ids": ",".join([o.to_str() for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
+            "linked_order_ids": [o.to_str() for o in self.linked_order_ids] if self.linked_order_ids is not None else None,  # noqa
             "parent_order_id": self.parent_order_id.to_str() if self.parent_order_id is not None else None,
             "exec_algorithm_id": self.exec_algorithm_id.to_str() if self.exec_algorithm_id is not None else None,
             "exec_algorithm_params": self.exec_algorithm_params,
@@ -282,7 +281,7 @@ cdef class MarketToLimitOrder(Order):
         }
 
     @staticmethod
-    cdef MarketToLimitOrder create(OrderInitialized init):
+    cdef MarketToLimitOrder create_c(OrderInitialized init):
         """
         Return a `Market-To-Limit` order from the given initialized event.
 
@@ -329,3 +328,7 @@ cdef class MarketToLimitOrder(Order):
             exec_spawn_id=init.exec_spawn_id,
             tags=init.tags,
         )
+
+    @staticmethod
+    def create(init):
+        return MarketToLimitOrder.create_c(init)

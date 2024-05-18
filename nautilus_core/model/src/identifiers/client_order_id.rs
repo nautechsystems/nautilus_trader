@@ -48,20 +48,15 @@ impl ClientOrderId {
     }
 
     /// Returns the inner identifier value.
+    #[must_use]
     pub fn inner(&self) -> Ustr {
         self.0
     }
 
     /// Returns the inner identifier value as a string slice.
+    #[must_use]
     pub fn as_str(&self) -> &str {
         self.0.as_str()
-    }
-}
-
-impl Default for ClientOrderId {
-    fn default() -> Self {
-        // SAFETY: Default value is safe
-        Self::new("O-123456789").unwrap()
     }
 }
 
@@ -124,8 +119,8 @@ mod tests {
 
     #[rstest]
     fn test_string_reprs(client_order_id: ClientOrderId) {
-        assert_eq!(client_order_id.as_str(), "O-20200814-102234-001-001-1");
-        assert_eq!(format!("{client_order_id}"), "O-20200814-102234-001-001-1");
+        assert_eq!(client_order_id.as_str(), "O-19700101-0000-000-001-1");
+        assert_eq!(format!("{client_order_id}"), "O-19700101-0000-000-001-1");
     }
 
     #[rstest]

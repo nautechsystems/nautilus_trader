@@ -302,22 +302,14 @@ class TestEventStubs:
         ts_filled_ns: int = 0,
         account: Account | None = None,
     ) -> OrderFilled:
-        if strategy_id is None:
-            strategy_id = order.strategy_id
-        if account_id is None:
-            account_id = order.account_id
-            if account_id is None:
-                account_id = TestIdStubs.account_id()
-        if venue_order_id is None:
-            venue_order_id = VenueOrderId("1")
-        if trade_id is None:
-            trade_id = TradeId(order.client_order_id.value.replace("O", "E"))
-        if position_id is None:
-            position_id = order.position_id
-        if last_px is None:
-            last_px = Price.from_str(f"{1:.{instrument.price_precision}f}")
-        if last_qty is None:
-            last_qty = order.quantity
+        strategy_id = strategy_id or order.strategy_id
+        account_id = account_id or order.account_id or TestIdStubs.account_id()
+        venue_order_id = venue_order_id or order.venue_order_id or VenueOrderId("1")
+        trade_id = trade_id or TradeId(order.client_order_id.value.replace("O", "E"))
+        position_id = position_id or order.position_id
+        last_px = last_px or Price.from_str(f"{1:.{instrument.price_precision}f}")
+        last_qty = last_qty or order.quantity
+
         if account is None:
             # Causes circular import if moved to the top
             from nautilus_trader.test_kit.stubs.execution import TestExecStubs

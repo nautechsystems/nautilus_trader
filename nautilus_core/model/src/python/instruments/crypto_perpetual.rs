@@ -34,7 +34,7 @@ impl CryptoPerpetual {
     #[new]
     fn py_new(
         id: InstrumentId,
-        symbol: Symbol,
+        raw_symbol: Symbol,
         base_currency: Currency,
         quote_currency: Currency,
         settlement_currency: Currency,
@@ -59,7 +59,7 @@ impl CryptoPerpetual {
     ) -> PyResult<Self> {
         Self::new(
             id,
-            symbol,
+            raw_symbol,
             base_currency,
             quote_currency,
             settlement_currency,
@@ -99,8 +99,7 @@ impl CryptoPerpetual {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_type")]
-    fn py_instrument_type(&self) -> &str {
+    fn type_str(&self) -> &str {
         stringify!(CryptoPerpetual)
     }
 

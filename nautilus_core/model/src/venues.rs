@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Common `Venue` constants.
+
 use std::{
     collections::HashMap,
     sync::{Mutex, OnceLock},

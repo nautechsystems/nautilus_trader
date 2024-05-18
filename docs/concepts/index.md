@@ -23,20 +23,7 @@
 
 Welcome to NautilusTrader!
 
-
 Explore the foundational concepts of NautilusTrader through the following guides.
-
-```{note}
-The terms "NautilusTrader", "Nautilus" and "platform" are used interchageably throughout the documentation.
-```
-
-```{warning}
-It's important to note that the [API Reference](../api_reference/index.md) documentation should be 
-considered the source of truth for the platform. If there are any discrepancies between concepts described here
-and the API Reference, then the API Reference should be considered the correct information. We are 
-working to ensure that concepts stay up-to-date with the API Reference and will be introducing 
-doc tests in the near future to help with this.
-```
 
 ## [Overview](overview.md)
 The **Overview** guide covers the main use cases for the platform.
@@ -84,3 +71,11 @@ point-to-point, publish/subscribe and request/response.
 ## [Advanced](advanced/index.md)
 Here you will find more detailed documentation and examples covering the more advanced
 features and functionality of the platform.
+
+```{note}
+The [API Reference](../api_reference/index.md) documentation should be considered the source of truth 
+for the platform. If there are any discrepancies between concepts described here and the API Reference, 
+then the API Reference should be considered the correct information. We are working to ensure that 
+concepts stay up-to-date with the API Reference and will be introducing doc tests in the near future 
+to help with this.
+```

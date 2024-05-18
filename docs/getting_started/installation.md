@@ -30,6 +30,7 @@ To install with specific extras using _pip_:
     pip install -U "nautilus_trader[docker,ib]"
 
 ## From Source
+
 Installation from source requires the `Python.h` header file, which is included in development releases such as `python-dev`. 
 You'll also need the latest stable `rustc` and `cargo` to compile the Rust libraries.
 
@@ -70,6 +71,7 @@ as specified in the `pyproject.toml`. However, we highly recommend installing us
        poetry install --only main --all-extras
 
 ## From GitHub Release
+
 To install a binary wheel from GitHub, first navigate to the [latest release](https://github.com/nautechsystems/nautilus_trader/releases/latest).
 Download the appropriate `.whl` for your operating system and Python version, then run:
 

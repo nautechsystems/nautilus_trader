@@ -21,10 +21,11 @@ use nautilus_core::{
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
-use super::InstrumentAny;
+use super::any::InstrumentAny;
 use crate::{
-    enums::{AssetClass, InstrumentClass},
+    enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     instruments::Instrument,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
@@ -167,17 +168,41 @@ impl Instrument for CryptoPerpetual {
     fn instrument_class(&self) -> InstrumentClass {
         InstrumentClass::Swap
     }
-
-    fn quote_currency(&self) -> Currency {
-        self.quote_currency
+    fn underlying(&self) -> Option<Ustr> {
+        None
     }
 
     fn base_currency(&self) -> Option<Currency> {
         Some(self.base_currency)
     }
 
+    fn quote_currency(&self) -> Currency {
+        self.quote_currency
+    }
+
     fn settlement_currency(&self) -> Currency {
         self.settlement_currency
+    }
+
+    fn isin(&self) -> Option<Ustr> {
+        None
+    }
+    fn option_kind(&self) -> Option<OptionKind> {
+        None
+    }
+    fn exchange(&self) -> Option<Ustr> {
+        None
+    }
+    fn strike_price(&self) -> Option<Price> {
+        None
+    }
+
+    fn activation_ns(&self) -> Option<UnixNanos> {
+        None
+    }
+
+    fn expiration_ns(&self) -> Option<UnixNanos> {
+        None
     }
 
     fn is_inverse(&self) -> bool {
@@ -216,6 +241,14 @@ impl Instrument for CryptoPerpetual {
         self.min_quantity
     }
 
+    fn max_notional(&self) -> Option<Money> {
+        self.max_notional
+    }
+
+    fn min_notional(&self) -> Option<Money> {
+        self.min_notional
+    }
+
     fn max_price(&self) -> Option<Price> {
         self.max_price
     }
@@ -224,28 +257,28 @@ impl Instrument for CryptoPerpetual {
         self.min_price
     }
 
-    fn ts_event(&self) -> UnixNanos {
-        self.ts_event
-    }
-
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-
-    fn taker_fee(&self) -> Decimal {
-        self.taker_fee
-    }
-
-    fn maker_fee(&self) -> Decimal {
-        self.maker_fee
-    }
-
     fn margin_init(&self) -> Decimal {
         self.margin_init
     }
 
     fn margin_maint(&self) -> Decimal {
         self.margin_maint
+    }
+
+    fn maker_fee(&self) -> Decimal {
+        self.maker_fee
+    }
+
+    fn taker_fee(&self) -> Decimal {
+        self.taker_fee
+    }
+
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }
 

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Common test related helper functions.
+
 /// Checks if two floating-point numbers are approximately equal within the
 /// margin of floating-point precision.
 ///

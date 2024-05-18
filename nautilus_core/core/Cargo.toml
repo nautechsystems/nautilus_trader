@@ -13,6 +13,7 @@ crate-type = ["rlib", "staticlib"]
 [dependencies]
 anyhow = { workspace = true }
 chrono = { workspace = true }
+pretty_assertions = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rmp-serde = { workspace = true }
 serde = { workspace = true }

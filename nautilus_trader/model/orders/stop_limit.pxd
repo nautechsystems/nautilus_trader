@@ -39,7 +39,7 @@ cdef class StopLimitOrder(Order):
     """The UNIX timestamp (nanoseconds) when the order was triggered (0 if not triggered).\n\n:returns: `uint64_t`"""
 
     @staticmethod
-    cdef StopLimitOrder create(OrderInitialized init)
+    cdef StopLimitOrder create_c(OrderInitialized init)
 
     @staticmethod
     cdef StopLimitOrder from_pyo3_c(pyo3_order)

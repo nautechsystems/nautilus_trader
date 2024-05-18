@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{nanos::UnixNanos, python::to_pyruntime_err, uuid::UUID4};
 use pyo3::{
     basic::CompareOp,
     prelude::*,
@@ -28,6 +28,7 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
         TimeInForce, TriggerType,
     },
+    events::order::initialized::OrderInitialized,
     identifiers::{
         client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
@@ -37,6 +38,7 @@ use crate::{
         base::{str_hashmap_to_ustr, Order, OrderCore},
         limit::LimitOrder,
     },
+    python::{common::commissions_from_hashmap, events::order::pyobject_to_order_event},
     types::{price::Price, quantity::Quantity},
 };
 
@@ -69,7 +71,7 @@ impl LimitOrder {
         exec_algorithm_id: Option<ExecAlgorithmId>,
         exec_algorithm_params: Option<HashMap<String, String>>,
         exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<String>,
+        tags: Option<Vec<String>>,
     ) -> PyResult<Self> {
         let exec_algorithm_params = exec_algorithm_params.map(str_hashmap_to_ustr);
         Ok(Self::new(
@@ -95,7 +97,7 @@ impl LimitOrder {
             exec_algorithm_id,
             exec_algorithm_params,
             exec_spawn_id,
-            tags.map(|s| Ustr::from(&s)),
+            tags.map(|vec| vec.into_iter().map(|s| Ustr::from(s.as_str())).collect()),
             init_id,
             ts_init.into(),
         )
@@ -110,12 +112,18 @@ impl LimitOrder {
         }
     }
 
+    fn __repr__(&self) -> String {
+        self.to_string()
+    }
+
     fn __str__(&self) -> String {
         self.to_string()
     }
 
-    fn __repr__(&self) -> String {
-        self.to_string()
+    #[staticmethod]
+    #[pyo3(name = "create")]
+    fn py_create(init: OrderInitialized) -> PyResult<Self> {
+        Ok(LimitOrder::from(init))
     }
 
     #[getter]
@@ -312,18 +320,20 @@ impl LimitOrder {
 
     #[getter]
     #[pyo3(name = "exec_algorithm_params")]
-    fn py_exec_algorithm_params(&self) -> Option<HashMap<String, String>> {
-        self.exec_algorithm_params.clone().map(|x| {
+    fn py_exec_algorithm_params(&self) -> Option<HashMap<&str, &str>> {
+        self.exec_algorithm_params.as_ref().map(|x| {
             x.into_iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .map(|(k, v)| (k.as_str(), v.as_str()))
                 .collect()
         })
     }
 
     #[getter]
     #[pyo3(name = "tags")]
-    fn py_tags(&self) -> Option<String> {
-        self.tags.map(|x| x.to_string())
+    fn py_tags(&self) -> Option<Vec<&str>> {
+        self.tags
+            .as_ref()
+            .map(|vec| vec.iter().map(|s| s.as_str()).collect())
     }
 
     #[getter]
@@ -499,9 +509,9 @@ impl LimitOrder {
         })?;
         let tags = dict.get_item("tags").map(|x| {
             x.and_then(|inner| {
-                let extracted_str = inner.extract::<&str>();
+                let extracted_str = inner.extract::<Vec<String>>();
                 match extracted_str {
-                    Ok(item) => Some(Ustr::from(item)),
+                    Ok(item) => Some(item.iter().map(|s| Ustr::from(&s)).collect()),
                     Err(_) => None,
                 }
             })
@@ -566,11 +576,10 @@ impl LimitOrder {
         dict.set_item("init_id", self.init_id.to_string())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
         dict.set_item("ts_last", self.ts_last.as_u64())?;
-        let commissions_dict = PyDict::new(py);
-        for (key, value) in &self.commissions {
-            commissions_dict.set_item(key.code.to_string(), value.to_string())?;
-        }
-        dict.set_item("commissions", commissions_dict)?;
+        dict.set_item(
+            "commissions",
+            commissions_from_hashmap(py, self.commissions())?,
+        )?;
         self.venue_order_id.map_or_else(
             || dict.set_item("venue_order_id", py.None()),
             |x| dict.set_item("venue_order_id", x.to_string()),
@@ -629,9 +638,14 @@ impl LimitOrder {
             || dict.set_item("exec_spawn_id", py.None()),
             |x| dict.set_item("exec_spawn_id", x.to_string()),
         )?;
-        self.tags.map_or_else(
+        self.tags.clone().map_or_else(
             || dict.set_item("tags", py.None()),
-            |x| dict.set_item("tags", x.to_string()),
+            |x| {
+                dict.set_item(
+                    "tags",
+                    x.iter().map(|x| x.to_string()).collect::<Vec<String>>(),
+                )
+            },
         )?;
         self.account_id.map_or_else(
             || dict.set_item("account_id", py.None()),
@@ -658,5 +672,11 @@ impl LimitOrder {
             |x| dict.set_item("avg_px", x.to_string()),
         )?;
         Ok(dict.into())
+    }
+
+    #[pyo3(name = "apply")]
+    fn py_apply(&mut self, event: PyObject, py: Python<'_>) -> PyResult<()> {
+        let event_any = pyobject_to_order_event(py, event).unwrap();
+        self.apply(event_any).map(|_| ()).map_err(to_pyruntime_err)
     }
 }

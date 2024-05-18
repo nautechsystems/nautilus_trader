@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines common enumerations.
+
 use std::fmt::Debug;
 
 use serde::{Deserialize, Serialize};
@@ -226,6 +228,7 @@ pub enum LogColor {
 }
 
 impl LogColor {
+    #[must_use]
     pub fn as_ansi(&self) -> &str {
         match *self {
             Self::Normal => "",

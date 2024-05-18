@@ -28,6 +28,12 @@ from nautilus_trader.trading.strategy import Strategy
 class SignalStrategyConfig(StrategyConfig, frozen=True):
     """
     Configuration for ``SignalStrategy`` instances.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the strategy.
+
     """
 
     instrument_id: InstrumentId

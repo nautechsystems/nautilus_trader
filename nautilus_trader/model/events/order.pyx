@@ -248,9 +248,8 @@ cdef class OrderInitialized(OrderEvent):
         The execution algorithm parameters for the order.
     exec_spawn_id : ClientOrderId, optional with no default so ``None`` must be passed explicitly
         The execution algorithm spawning primary client order ID.
-    tags : str, optional with no default so ``None`` must be passed explicitly
-        The custom user tags for the order. These are optional and can
-        contain any arbitrary delimiter if required.
+    tags : list[str], optional with no default so ``None`` must be passed explicitly
+        The custom user tags for the order.
     event_id : UUID4
         The event ID.
     ts_init : uint64_t
@@ -279,17 +278,17 @@ cdef class OrderInitialized(OrderEvent):
         bint post_only,
         bint reduce_only,
         bint quote_quantity,
-        dict options not None,
+        dict[str, object] options not None,
         TriggerType emulation_trigger,
         InstrumentId trigger_instrument_id: InstrumentId | None,
         ContingencyType contingency_type,
         OrderListId order_list_id: OrderListId | None,
-        list linked_order_ids: list[ClientOrderId] | None,
+        list[ClientOrderId] linked_order_ids: list[ClientOrderId] | None,
         ClientOrderId parent_order_id: ClientOrderId | None,
         ExecAlgorithmId exec_algorithm_id: ExecAlgorithmId | None,
-        dict exec_algorithm_params: dict[str, Any] | None,
+        dict[str, object] exec_algorithm_params: dict[str, object] | None,
         ClientOrderId exec_spawn_id: ClientOrderId | None,
-        str tags: str | None,
+        list[str] tags: list[str] | None,
         UUID4 event_id not None,
         uint64_t ts_init,
         bint reconciliation=False,
@@ -343,7 +342,7 @@ cdef class OrderInitialized(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"side={order_side_to_str(self.side)}, "
             f"type={order_type_to_str(self.order_type)}, "
-            f"quantity={self.quantity.to_str()}, "
+            f"quantity={self.quantity.to_formatted_str()}, "
             f"time_in_force={time_in_force_to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
@@ -374,7 +373,7 @@ cdef class OrderInitialized(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"side={order_side_to_str(self.side)}, "
             f"type={order_type_to_str(self.order_type)}, "
-            f"quantity={self.quantity.to_str()}, "
+            f"quantity={self.quantity.to_formatted_str()}, "
             f"time_in_force={time_in_force_to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
@@ -526,6 +525,7 @@ cdef class OrderInitialized(OrderEvent):
         cdef str parent_order_id_str = values["parent_order_id"]
         cdef str exec_algorithm_id_str = values["exec_algorithm_id"]
         cdef str exec_spawn_id_str = values["exec_spawn_id"]
+        tags = values["tags"]
         return OrderInitialized(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -539,7 +539,7 @@ cdef class OrderInitialized(OrderEvent):
             reduce_only=values["reduce_only"],
             quote_quantity=values["quote_quantity"],
             options=values["options"],
-            emulation_trigger=trigger_type_from_str(values["emulation_trigger"]),
+            emulation_trigger=trigger_type_from_str(values["emulation_trigger"]) if values["emulation_trigger"] is not None else TriggerType.NO_TRIGGER,
             trigger_instrument_id=InstrumentId.from_str_c(trigger_instrument_id) if trigger_instrument_id is not None else None,
             contingency_type=contingency_type_from_str(values["contingency_type"]),
             order_list_id=OrderListId(order_list_id_str) if order_list_id_str is not None else None,
@@ -548,7 +548,7 @@ cdef class OrderInitialized(OrderEvent):
             exec_algorithm_id=ExecAlgorithmId(exec_algorithm_id_str) if exec_algorithm_id_str is not None else None,
             exec_algorithm_params=values["exec_algorithm_params"],
             exec_spawn_id=ClientOrderId(exec_spawn_id_str) if exec_spawn_id_str is not None else None,
-            tags=values["tags"],
+            tags=tags.split(",") if isinstance(tags, str) else tags,
             event_id=UUID4(values["event_id"]),
             ts_init=values["ts_init"],
             reconciliation=values.get("reconciliation", False),
@@ -584,6 +584,7 @@ cdef class OrderInitialized(OrderEvent):
             "tags": obj.tags,
             "event_id": obj.id.value,
             "ts_init": obj.ts_init,
+            "ts_event": obj.ts_init,
             "reconciliation": obj.reconciliation,
         }
 
@@ -681,7 +682,7 @@ cdef class OrderDenied(OrderEvent):
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id}, "
             f"client_order_id={self.client_order_id}, "
-            f"reason={self.reason})"
+            f"reason='{self.reason}')"
         )
 
     def __repr__(self) -> str:
@@ -691,7 +692,7 @@ cdef class OrderDenied(OrderEvent):
             f"strategy_id={self.strategy_id}, "
             f"instrument_id={self.instrument_id}, "
             f"client_order_id={self.client_order_id}, "
-            f"reason={self.reason}, "
+            f"reason='{self.reason}', "
             f"event_id={self.id}, "
             f"ts_init={self.ts_init})"
         )
@@ -855,7 +856,7 @@ cdef class OrderDenied(OrderEvent):
             "client_order_id": obj.client_order_id.value,
             "reason": obj.reason,
             "event_id": obj.id.value,
-            "ts_event": obj.ts_init,
+            "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
 
@@ -3648,7 +3649,7 @@ cdef class OrderModifyRejected(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
-            f"reason={self.reason}, "
+            f"reason='{self.reason}', "
             f"ts_event={self.ts_event})"
         )
 
@@ -3661,7 +3662,7 @@ cdef class OrderModifyRejected(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
-            f"reason={self.reason}, "
+            f"reason='{self.reason}', "
             f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
@@ -3946,7 +3947,7 @@ cdef class OrderCancelRejected(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
-            f"reason={self.reason}, "
+            f"reason='{self.reason}', "
             f"ts_event={self.ts_event})"
         )
 
@@ -3959,7 +3960,7 @@ cdef class OrderCancelRejected(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
-            f"reason={self.reason}, "
+            f"reason='{self.reason}', "
             f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
@@ -4252,9 +4253,9 @@ cdef class OrderUpdated(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
-            f"quantity={self.quantity.to_str()}, "
-            f"price={self.price}, "
-            f"trigger_price={self.trigger_price}, "
+            f"quantity={self.quantity.to_formatted_str() if self.quantity else None}, "
+            f"price={self.price.to_formatted_str() if self.price else None}, "
+            f"trigger_price={self.trigger_price.to_formatted_str() if self.trigger_price else None}, "
             f"ts_event={self.ts_event})"
         )
 
@@ -4267,9 +4268,9 @@ cdef class OrderUpdated(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
-            f"quantity={self.quantity.to_str()}, "
-            f"price={self.price}, "
-            f"trigger_price={self.trigger_price}, "
+            f"quantity={self.quantity.to_formatted_str() if self.quantity else None}, "
+            f"price={self.price.to_formatted_str() if self.price else None}, "
+            f"trigger_price={self.trigger_price.to_formatted_str() if self.trigger_price else None}, "
             f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
@@ -4495,7 +4496,7 @@ cdef class OrderFilled(OrderEvent):
         The position ID associated with the order fill (assigned by the venue).
     order_side : OrderSide {``BUY``, ``SELL``}
         The execution order side.
-    order_side : OrderType
+    order_type : OrderType
         The execution order type.
     last_qty : Quantity
         The fill quantity for this execution.
@@ -4594,9 +4595,9 @@ cdef class OrderFilled(OrderEvent):
             f"position_id={self.position_id}, "
             f"order_side={order_side_to_str(self.order_side)}, "
             f"order_type={order_type_to_str(self.order_type)}, "
-            f"last_qty={self.last_qty}, "
-            f"last_px={self.last_px} {self.currency.code}, "
-            f"commission={self.commission.to_str()}, "
+            f"last_qty={self.last_qty.to_formatted_str()}, "
+            f"last_px={self.last_px.to_formatted_str()} {self.currency.code}, "
+            f"commission={self.commission.to_formatted_str()}, "
             f"liquidity_side={liquidity_side_to_str(self.liquidity_side)}, "
             f"ts_event={self.ts_event})"
         )
@@ -4614,9 +4615,9 @@ cdef class OrderFilled(OrderEvent):
             f"position_id={self.position_id}, "
             f"order_side={order_side_to_str(self.order_side)}, "
             f"order_type={order_type_to_str(self.order_type)}, "
-            f"last_qty={self.last_qty}, "
-            f"last_px={self.last_px} {self.currency.code}, "
-            f"commission={self.commission.to_str()}, "
+            f"last_qty={self.last_qty.to_formatted_str()}, "
+            f"last_px={self.last_px.to_formatted_str()} {self.currency.code}, "
+            f"commission={self.commission.to_formatted_str()}, "
             f"liquidity_side={liquidity_side_to_str(self.liquidity_side)}, "
             f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
@@ -4791,7 +4792,7 @@ cdef class OrderFilled(OrderEvent):
             "last_qty": str(obj.last_qty),
             "last_px": str(obj.last_px),
             "currency": obj.currency.code,
-            "commission": obj.commission.to_str(),
+            "commission": str(obj.commission),
             "liquidity_side": liquidity_side_to_str(obj.liquidity_side),
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,

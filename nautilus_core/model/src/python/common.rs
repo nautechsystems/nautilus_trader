@@ -13,13 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
-    types::{PyDict, PyList},
+    types::{PyDict, PyList, PyNone},
 };
 use serde_json::Value;
 use strum::IntoEnumIterator;
+
+use crate::types::{currency::Currency, money::Money};
 
 pub const PY_MODULE_MODEL: &str = "nautilus_trader.core.nautilus_pyo3.model";
 
@@ -104,6 +108,28 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
             Ok(py_dict.into())
         }
     }
+}
+
+pub fn commissions_from_vec<'py>(py: Python<'py>, commissions: Vec<Money>) -> PyResult<&'py PyAny> {
+    let mut values = Vec::new();
+
+    for value in commissions {
+        values.push(value.to_string());
+    }
+
+    if values.is_empty() {
+        Ok(PyNone::get(py))
+    } else {
+        values.sort();
+        Ok(PyList::new(py, &values))
+    }
+}
+
+pub fn commissions_from_hashmap<'py>(
+    py: Python<'py>,
+    commissions: HashMap<Currency, Money>,
+) -> PyResult<&'py PyAny> {
+    commissions_from_vec(py, commissions.values().cloned().collect())
 }
 
 #[cfg(test)]

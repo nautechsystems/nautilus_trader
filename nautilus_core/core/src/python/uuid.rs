@@ -26,7 +26,7 @@ use pyo3::{
 };
 
 use super::to_pyvalue_err;
-use crate::uuid::UUID4;
+use crate::uuid::{UUID4, UUID4_LEN};
 
 #[pymethods]
 impl UUID4 {
@@ -42,7 +42,7 @@ impl UUID4 {
         let bytes: &PyBytes = state.extract(py)?;
         let slice = bytes.as_bytes();
 
-        if slice.len() != 37 {
+        if slice.len() != UUID4_LEN {
             return Err(to_pyvalue_err(
                 "Invalid state for deserialzing, incorrect bytes length",
             ));
@@ -81,12 +81,12 @@ impl UUID4 {
         h.finish() as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
+    fn __repr__(&self) -> String {
+        format!("{:?}", self)
     }
 
-    fn __repr__(&self) -> String {
-        format!("{}('{}')", stringify!(UUID4), self)
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]

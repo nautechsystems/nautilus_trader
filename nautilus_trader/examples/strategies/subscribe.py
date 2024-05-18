@@ -35,6 +35,12 @@ from nautilus_trader.trading.strategy import Strategy
 class SubscribeStrategyConfig(StrategyConfig, frozen=True):
     """
     Configuration for ``SubscribeStrategy`` instances.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the strategy.
+
     """
 
     instrument_id: InstrumentId

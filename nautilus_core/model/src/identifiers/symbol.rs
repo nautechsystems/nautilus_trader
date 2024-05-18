@@ -65,13 +65,6 @@ impl Symbol {
     }
 }
 
-impl Default for Symbol {
-    fn default() -> Self {
-        // SAFETY: Default value is safe
-        Self::new("AUD/USD").unwrap()
-    }
-}
-
 impl Debug for Symbol {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.0)

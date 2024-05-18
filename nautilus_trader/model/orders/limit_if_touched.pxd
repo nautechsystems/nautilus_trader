@@ -39,4 +39,4 @@ cdef class LimitIfTouchedOrder(Order):
     """The UNIX timestamp (nanoseconds) when the order was triggered (0 if not triggered).\n\n:returns: `uint64_t`"""
 
     @staticmethod
-    cdef LimitIfTouchedOrder create(OrderInitialized init)
+    cdef LimitIfTouchedOrder create_c(OrderInitialized init)

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines enumerations for the trading domain model.
+
 use std::str::FromStr;
 
 use nautilus_core::python::to_pyvalue_err;
@@ -41,10 +43,6 @@ impl AccountType {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -52,6 +50,10 @@ impl AccountType {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -110,10 +112,6 @@ impl AggregationSource {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -121,6 +119,10 @@ impl AggregationSource {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -173,10 +175,6 @@ impl AggressorSide {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -184,6 +182,10 @@ impl AggressorSide {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -242,10 +244,6 @@ impl AssetClass {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -253,6 +251,10 @@ impl AssetClass {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -335,10 +337,6 @@ impl InstrumentClass {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -346,6 +344,10 @@ impl InstrumentClass {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -440,10 +442,6 @@ impl BarAggregation {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -451,6 +449,10 @@ impl BarAggregation {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -586,10 +588,6 @@ impl BookAction {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -597,6 +595,10 @@ impl BookAction {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -661,10 +663,6 @@ impl ContingencyType {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -672,6 +670,10 @@ impl ContingencyType {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -736,10 +738,6 @@ impl CurrencyType {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -747,6 +745,10 @@ impl CurrencyType {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -805,10 +807,6 @@ impl InstrumentCloseType {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -816,6 +814,10 @@ impl InstrumentCloseType {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -868,10 +870,6 @@ impl LiquiditySide {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -879,6 +877,10 @@ impl LiquiditySide {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -937,10 +939,6 @@ impl MarketStatus {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -948,6 +946,10 @@ impl MarketStatus {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -1030,10 +1032,6 @@ impl HaltReason {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -1041,6 +1039,10 @@ impl HaltReason {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -1099,10 +1101,6 @@ impl OmsType {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -1110,6 +1108,10 @@ impl OmsType {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -1168,10 +1170,6 @@ impl OptionKind {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -1179,6 +1177,10 @@ impl OptionKind {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -1231,10 +1233,6 @@ impl OrderSide {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -1242,6 +1240,10 @@ impl OrderSide {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -1300,10 +1302,6 @@ impl OrderStatus {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -1311,6 +1309,10 @@ impl OrderStatus {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -1435,10 +1437,6 @@ impl OrderType {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -1446,6 +1444,10 @@ impl OrderType {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -1540,10 +1542,6 @@ impl PositionSide {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -1551,6 +1549,10 @@ impl PositionSide {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -1642,10 +1644,6 @@ impl RecordFlag {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -1653,6 +1651,10 @@ impl RecordFlag {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -1722,10 +1724,6 @@ impl TimeInForce {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -1733,6 +1731,10 @@ impl TimeInForce {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -1815,10 +1817,6 @@ impl TrailingOffsetType {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -1826,6 +1824,10 @@ impl TrailingOffsetType {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -1896,10 +1898,6 @@ impl TriggerType {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -1907,6 +1905,10 @@ impl TriggerType {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -2007,10 +2009,6 @@ impl BookType {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -2018,6 +2016,10 @@ impl BookType {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -2076,10 +2078,6 @@ impl TradingState {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -2087,6 +2085,10 @@ impl TradingState {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]

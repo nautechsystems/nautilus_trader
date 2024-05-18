@@ -33,10 +33,6 @@ impl LogLevel {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -44,6 +40,10 @@ impl LogLevel {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -114,10 +114,6 @@ impl LogColor {
         *self as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -125,6 +121,10 @@ impl LogColor {
             self.name(),
             self.value(),
         )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]

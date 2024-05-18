@@ -95,29 +95,11 @@ impl AccountState {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "{}(account_id={},account_type={},base_currency={},balances={},margins={},is_reported={},event_id={})",
-            stringify!(AccountState),
-            self.account_id,
-            self.account_type,
-            self.base_currency.map_or_else(|| "None".to_string(), |base_currency | format!("{}", base_currency.code)),            self.balances.iter().map(|b| format!("{b}")).collect::<Vec<String>>().join(","),
-            self.margins.iter().map(|m| format!("{m}")).collect::<Vec<String>>().join(","),
-            self.is_reported,
-            self.event_id,
-        )
+        format!("{:?}", self)
     }
 
     fn __str__(&self) -> String {
-        format!(
-            "{}(account_id={},account_type={},base_currency={},balances={},margins={},is_reported={},event_id={})",
-            stringify!(AccountState),
-            self.account_id,
-            self.account_type,
-            self.base_currency.map_or_else(|| "None".to_string(), |base_currency | format!("{}", base_currency.code)),            self.balances.iter().map(|b| format!("{b}")).collect::<Vec<String>>().join(","),
-            self.margins.iter().map(|m| format!("{m}")).collect::<Vec<String>>().join(","),
-            self.is_reported,
-            self.event_id,
-        )
+        self.to_string()
     }
 
     #[staticmethod]

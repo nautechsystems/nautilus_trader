@@ -14,18 +14,19 @@ members = [
     "network/tokio-tungstenite",
     "persistence",
     "pyo3",
+    "cli"
 ]
 
 [workspace.package]
-rust-version = "1.77.1"
-version = "0.21.0"
+rust-version = "1.78.0"
+version = "0.22.0"
 edition = "2021"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 documentation = "https://docs.nautilustrader.io"
 
 [workspace.dependencies]
-anyhow = "1.0.82"
+anyhow = "1.0.84"
 chrono = "0.4.38"
 derive_builder = "0.20.0"
 futures = "0.3.30"
@@ -37,21 +38,14 @@ log = { version = "0.4.21", features = ["std", "kv_unstable", "serde", "release_
 pyo3 = { version = "0.20.3", features = ["rust_decimal"] }
 pyo3-asyncio = { version = "0.20.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.8.5"
-redis = { version = "0.25.3", features = [
-    "connection-manager",
-    "keep-alive",
-    "tls-rustls",
-    "tls-rustls-webpki-roots",
-    "tokio-comp",
-    "tokio-rustls-comp",
-] }
-rmp-serde = "1.2.0"
+rmp-serde = "1.3.0"
 rust_decimal = "1.35.0"
 rust_decimal_macros = "1.34.2"
-serde = { version = "1.0.198", features = ["derive"] }
-serde_json = "1.0.116"
+semver = "1.0.23"
+serde = { version = "1.0.202", features = ["derive"] }
+serde_json = "1.0.117"
 strum = { version = "0.26.2", features = ["derive"] }
-thiserror = "1.0.58"
+thiserror = "1.0.61"
 thousands = "0.2.0"
 tracing = "0.1.40"
 tokio = { version = "1.37.0", features = ["full"] }
@@ -61,8 +55,9 @@ uuid = { version = "1.8.0", features = ["v4"] }
 # dev-dependencies
 criterion = "0.5.1"
 float-cmp = "0.9.0"
-iai = "0.1"
-rstest = "0.18.2"
+iai = "0.1.1"
+pretty_assertions = "1.4.0"
+rstest = "0.19.0"
 tempfile = "3.10.1"
 
 # build-dependencies
@@ -84,7 +79,6 @@ debug = true
 debug-assertions = true  # Fails Cython build if true (OK for cargo test)
 overflow-checks = true
 lto = false
-panic = "unwind"
 incremental = true
 codegen-units = 256
 

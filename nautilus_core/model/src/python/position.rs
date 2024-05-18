@@ -21,6 +21,7 @@ use pyo3::{
 };
 use rust_decimal::prelude::ToPrimitive;
 
+use super::common::{commissions_from_hashmap, commissions_from_vec};
 use crate::{
     enums::{OrderSide, PositionSide},
     events::order::filled::OrderFilled,
@@ -29,9 +30,9 @@ use crate::{
         strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
         venue::Venue, venue_order_id::VenueOrderId,
     },
-    instruments::InstrumentAny,
+    instruments::any::InstrumentAny,
     position::Position,
-    python::instruments::convert_pyobject_to_instrument_any,
+    python::instruments::pyobject_to_instrument_any,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
@@ -39,7 +40,7 @@ use crate::{
 impl Position {
     #[new]
     fn py_new(py: Python, instrument: PyObject, fill: OrderFilled) -> PyResult<Self> {
-        let instrument_type = convert_pyobject_to_instrument_any(py, instrument)?;
+        let instrument_type = pyobject_to_instrument_any(py, instrument)?;
         match instrument_type {
             InstrumentAny::CryptoFuture(inst) => Ok(Self::new(inst, fill).unwrap()),
             InstrumentAny::CryptoPerpetual(inst) => Ok(Self::new(inst, fill).unwrap()),
@@ -60,11 +61,11 @@ impl Position {
         }
     }
 
-    fn __str__(&self) -> String {
+    fn __repr__(&self) -> String {
         self.to_string()
     }
 
-    fn __repr__(&self) -> String {
+    fn __str__(&self) -> String {
         self.to_string()
     }
 
@@ -413,11 +414,7 @@ impl Position {
         dict.set_item("trade_ids", trade_ids_list)?;
         dict.set_item("buy_qty", self.buy_qty.to_string())?;
         dict.set_item("sell_qty", self.sell_qty.to_string())?;
-        let commissions_dict = PyDict::new(py);
-        for (key, value) in &self.commissions {
-            commissions_dict.set_item(key.code.to_string(), value.to_string())?;
-        }
-        dict.set_item("commissions", commissions_dict)?;
+        dict.set_item("commissions", commissions_from_vec(py, self.commissions())?)?;
         Ok(dict.into())
     }
 }

@@ -70,7 +70,7 @@ docs-python: install-just-deps-all
 
 .PHONY: docs-rust
 docs-rust:
-	(cd nautilus_core && RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --no-deps)
+	(cd nautilus_core && RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --all-features --no-deps --workspace --exclude tokio-tungstenite)
 
 .PHONY: clippy
 clippy:
@@ -137,6 +137,14 @@ docker-build-jupyter:
 docker-push-jupyter:
 	docker push ${IMAGE}:jupyter
 
+.PHONY: start-services
+start-services:
+	docker-compose -f .docker/docker-compose.yml up -d
+
+.PHONY: stop-services
+stop-services:
+	docker-compose -f .docker/docker-compose.yml down
+
 .PHONY: pytest
 pytest:
 	bash scripts/test.sh
@@ -153,11 +161,6 @@ test-examples:
 install-talib:
 	bash scripts/install-talib.sh
 
-.PHONY: init-db
-init-db:
-	(cd nautilus_core && cargo run --bin init-db)
-
-.PHONY: drop-db
-drop-db:
-	(cd nautilus_core && cargo run --bin drop-db)
-
+.PHONY: install-cli
+install-cli:
+	(cd nautilus_core && cargo install --path cli  --bin nautilus)

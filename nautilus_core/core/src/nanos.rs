@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines `UnixNanos` type for working with UNIX epoch (nanoseconds).
+
 use std::{
     cmp::Ordering,
     fmt::Display,
@@ -173,14 +175,8 @@ impl Display for UnixNanos {
     }
 }
 
-/// Represents an event timestamp in nanoseconds since UNIX epoch.
-pub type TsEvent = UnixNanos;
-
-/// Represents an initialization timestamp in nanoseconds since UNIX epoch.
-pub type TsInit = UnixNanos;
-
-/// Represents a timedelta in nanoseconds.
-pub type TimedeltaNanos = i64;
+/// Represents a duration in nanoseconds.
+pub type DurationNanos = u64;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
@@ -232,7 +228,7 @@ mod tests {
     #[rstest]
     fn test_edge_case_max_value() {
         let nanos = UnixNanos::from(u64::MAX);
-        assert_eq!(format!("{}", nanos), format!("{}", u64::MAX));
+        assert_eq!(format!("{nanos}"), format!("{}", u64::MAX));
     }
 
     #[rstest]
@@ -300,13 +296,13 @@ mod tests {
     #[rstest]
     #[should_panic(expected = "Error subtracting with underflow")]
     fn test_overflow_sub() {
-        let _ = UnixNanos::from(0) - UnixNanos::from(1); // This should panic due to underflow
+        let _ = UnixNanos::default() - UnixNanos::from(1); // This should panic due to underflow
     }
 
     #[rstest]
     #[should_panic(expected = "Error subtracting with underflow")]
     fn test_overflow_sub_u64() {
-        let _ = UnixNanos::from(0) - 1_u64; // This should panic due to underflow
+        let _ = UnixNanos::default() - 1_u64; // This should panic due to underflow
     }
 
     #[rstest]

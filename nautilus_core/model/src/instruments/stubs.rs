@@ -15,11 +15,13 @@
 
 use chrono::{TimeZone, Utc};
 use nautilus_core::nanos::UnixNanos;
-use rstest::fixture;
+use rstest::*;
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
-use super::{futures_spread::FuturesSpread, options_spread::OptionsSpread};
+use super::{
+    futures_spread::FuturesSpread, options_spread::OptionsSpread, synthetic::SyntheticInstrument,
+};
 use crate::{
     enums::{AssetClass, OptionKind},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
@@ -31,12 +33,34 @@ use crate::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
+impl Default for SyntheticInstrument {
+    fn default() -> Self {
+        let btc_binance = InstrumentId::from("BTC.BINANCE");
+        let ltc_binance = InstrumentId::from("LTC.BINANCE");
+        let formula = "(BTC.BINANCE + LTC.BINANCE) / 2.0".to_string();
+        SyntheticInstrument::new(
+            Symbol::new("BTC-LTC").unwrap(),
+            2,
+            vec![btc_binance, ltc_binance],
+            formula.clone(),
+            0.into(),
+            0.into(),
+        )
+        .unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // CryptoFuture
 ////////////////////////////////////////////////////////////////////////////////
 
 #[fixture]
-pub fn crypto_future_btcusdt() -> CryptoFuture {
+pub fn crypto_future_btcusdt(
+    #[default(2)] price_precision: u8,
+    #[default(6)] size_precision: u8,
+    #[default(Price::from("0.01"))] price_increment: Price,
+    #[default(Quantity::from("0.000001"))] size_increment: Quantity,
+) -> CryptoFuture {
     let activation = Utc.with_ymd_and_hms(2014, 4, 8, 0, 0, 0).unwrap();
     let expiration = Utc.with_ymd_and_hms(2014, 7, 8, 0, 0, 0).unwrap();
     CryptoFuture::new(
@@ -48,10 +72,10 @@ pub fn crypto_future_btcusdt() -> CryptoFuture {
         false,
         UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
         UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
-        2,
-        6,
-        Price::from("0.01"),
-        Quantity::from("0.000001"),
+        price_precision,
+        size_precision,
+        price_increment,
+        size_increment,
         dec!(0),
         dec!(0),
         dec!(0),

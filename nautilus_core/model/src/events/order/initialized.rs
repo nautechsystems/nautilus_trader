@@ -15,7 +15,7 @@
 
 use std::{
     collections::HashMap,
-    fmt::{Display, Formatter},
+    fmt::{Debug, Display},
 };
 
 use derive_builder::Builder;
@@ -25,16 +25,18 @@ use ustr::Ustr;
 
 use crate::{
     enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
+    events::order::OrderEvent,
     identifiers::{
-        client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
+        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
-        trader_id::TraderId,
+        trader_id::TraderId, venue_order_id::VenueOrderId,
     },
+    orders::any::OrderAny,
     types::{price::Price, quantity::Quantity},
 };
 
 #[repr(C)]
-#[derive(Clone, PartialEq, Eq, Debug, Builder, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Builder, Serialize, Deserialize)]
 #[builder(default)]
 #[serde(tag = "type")]
 #[cfg_attr(
@@ -74,7 +76,7 @@ pub struct OrderInitialized {
     pub exec_algorithm_id: Option<ExecAlgorithmId>,
     pub exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
     pub exec_spawn_id: Option<ClientOrderId>,
-    pub tags: Option<Ustr>,
+    pub tags: Option<Vec<Ustr>>,
 }
 
 impl Default for OrderInitialized {
@@ -152,7 +154,7 @@ impl OrderInitialized {
         exec_algorithm_id: Option<ExecAlgorithmId>,
         exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<Ustr>,
+        tags: Option<Vec<Ustr>>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             trader_id,
@@ -192,11 +194,13 @@ impl OrderInitialized {
     }
 }
 
-impl Display for OrderInitialized {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl Debug for OrderInitialized {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "OrderInitialized(\
+            "{}(\
+            trader_id={}, \
+            strategy_id={}, \
             instrument_id={}, \
             client_order_id={}, \
             side={}, \
@@ -216,7 +220,12 @@ impl Display for OrderInitialized {
             exec_algorithm_id={}, \
             exec_algorithm_params={}, \
             exec_spawn_id={}, \
-            tags={})",
+            tags={}, \
+            event_id={}, \
+            ts_init={})",
+            stringify!(OrderInitialized),
+            self.trader_id,
+            self.strategy_id,
             self.instrument_id,
             self.client_order_id,
             self.order_side,
@@ -266,10 +275,256 @@ impl Display for OrderInitialized {
                 .map_or("None".to_string(), |exec_spawn_id| format!(
                     "{exec_spawn_id}"
                 )),
-            self.tags
-                .as_ref()
-                .map_or("None".to_string(), |tags| format!("{tags}")),
+            self.tags.as_ref().map_or("None".to_string(), |tags| tags
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")),
+            self.event_id,
+            self.ts_init
         )
+    }
+}
+
+impl Display for OrderInitialized {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}(\
+            instrument_id={}, \
+            client_order_id={}, \
+            side={}, \
+            type={}, \
+            quantity={}, \
+            time_in_force={}, \
+            post_only={}, \
+            reduce_only={}, \
+            quote_quantity={}, \
+            price={}, \
+            emulation_trigger={}, \
+            trigger_instrument_id={}, \
+            contingency_type={}, \
+            order_list_id={}, \
+            linked_order_ids=[{}], \
+            parent_order_id={}, \
+            exec_algorithm_id={}, \
+            exec_algorithm_params={}, \
+            exec_spawn_id={}, \
+            tags={})",
+            stringify!(OrderInitialized),
+            self.instrument_id,
+            self.client_order_id,
+            self.order_side,
+            self.order_type,
+            self.quantity,
+            self.time_in_force,
+            self.post_only,
+            self.reduce_only,
+            self.quote_quantity,
+            self.price
+                .map_or("None".to_string(), |price| format!("{price}")),
+            self.emulation_trigger
+                .map_or("None".to_string(), |trigger| format!("{trigger}")),
+            self.trigger_instrument_id
+                .map_or("None".to_string(), |instrument_id| format!(
+                    "{instrument_id}"
+                )),
+            self.contingency_type
+                .map_or("None".to_string(), |contingency_type| format!(
+                    "{contingency_type}"
+                )),
+            self.order_list_id
+                .map_or("None".to_string(), |order_list_id| format!(
+                    "{order_list_id}"
+                )),
+            self.linked_order_ids
+                .as_ref()
+                .map_or("None".to_string(), |linked_order_ids| linked_order_ids
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")),
+            self.parent_order_id
+                .map_or("None".to_string(), |parent_order_id| format!(
+                    "{parent_order_id}"
+                )),
+            self.exec_algorithm_id
+                .map_or("None".to_string(), |exec_algorithm_id| format!(
+                    "{exec_algorithm_id}"
+                )),
+            self.exec_algorithm_params
+                .as_ref()
+                .map_or("None".to_string(), |exec_algorithm_params| format!(
+                    "{exec_algorithm_params:?}"
+                )),
+            self.exec_spawn_id
+                .map_or("None".to_string(), |exec_spawn_id| format!(
+                    "{exec_spawn_id}"
+                )),
+            self.tags.as_ref().map_or("None".to_string(), |tags| tags
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")),
+        )
+    }
+}
+
+impl OrderEvent for OrderInitialized {
+    fn id(&self) -> UUID4 {
+        self.event_id
+    }
+
+    fn kind(&self) -> &str {
+        stringify!(OrderInitialized)
+    }
+
+    fn order_type(&self) -> Option<OrderType> {
+        Some(self.order_type)
+    }
+
+    fn order_side(&self) -> Option<OrderSide> {
+        Some(self.order_side)
+    }
+
+    fn trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    fn strategy_id(&self) -> StrategyId {
+        self.strategy_id
+    }
+
+    fn instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    fn client_order_id(&self) -> ClientOrderId {
+        self.client_order_id
+    }
+
+    fn reason(&self) -> Option<Ustr> {
+        None
+    }
+
+    fn quantity(&self) -> Option<Quantity> {
+        Some(self.quantity)
+    }
+
+    fn time_in_force(&self) -> Option<TimeInForce> {
+        Some(self.time_in_force)
+    }
+
+    fn post_only(&self) -> Option<bool> {
+        Some(self.post_only)
+    }
+
+    fn reduce_only(&self) -> Option<bool> {
+        Some(self.reduce_only)
+    }
+
+    fn quote_quantity(&self) -> Option<bool> {
+        Some(self.quote_quantity)
+    }
+
+    fn reconciliation(&self) -> bool {
+        false
+    }
+
+    fn price(&self) -> Option<Price> {
+        self.price
+    }
+
+    fn trigger_price(&self) -> Option<Price> {
+        self.trigger_price
+    }
+
+    fn trigger_type(&self) -> Option<TriggerType> {
+        self.trigger_type
+    }
+
+    fn limit_offset(&self) -> Option<Price> {
+        self.limit_offset
+    }
+
+    fn trailing_offset(&self) -> Option<Price> {
+        self.trailing_offset
+    }
+
+    fn trailing_offset_type(&self) -> Option<TrailingOffsetType> {
+        self.trailing_offset_type
+    }
+
+    fn expire_time(&self) -> Option<UnixNanos> {
+        self.expire_time
+    }
+
+    fn display_qty(&self) -> Option<Quantity> {
+        self.display_qty
+    }
+
+    fn emulation_trigger(&self) -> Option<TriggerType> {
+        self.emulation_trigger
+    }
+
+    fn trigger_instrument_id(&self) -> Option<InstrumentId> {
+        self.trigger_instrument_id
+    }
+
+    fn contingency_type(&self) -> Option<ContingencyType> {
+        self.contingency_type
+    }
+
+    fn order_list_id(&self) -> Option<OrderListId> {
+        self.order_list_id
+    }
+
+    fn linked_order_ids(&self) -> Option<Vec<ClientOrderId>> {
+        self.linked_order_ids.clone()
+    }
+
+    fn parent_order_id(&self) -> Option<ClientOrderId> {
+        self.parent_order_id
+    }
+
+    fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId> {
+        self.exec_algorithm_id
+    }
+
+    fn exec_spawn_id(&self) -> Option<ClientOrderId> {
+        self.exec_spawn_id
+    }
+
+    fn venue_order_id(&self) -> Option<VenueOrderId> {
+        None
+    }
+
+    fn account_id(&self) -> Option<AccountId> {
+        None
+    }
+
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl From<OrderInitialized> for OrderAny {
+    fn from(order: OrderInitialized) -> Self {
+        match order.order_type {
+            OrderType::Limit => OrderAny::Limit(order.into()),
+            OrderType::Market => OrderAny::Market(order.into()),
+            OrderType::StopMarket => OrderAny::StopMarket(order.into()),
+            OrderType::StopLimit => OrderAny::StopLimit(order.into()),
+            OrderType::LimitIfTouched => OrderAny::LimitIfTouched(order.into()),
+            OrderType::TrailingStopLimit => OrderAny::TrailingStopLimit(order.into()),
+            OrderType::TrailingStopMarket => OrderAny::TrailingStopMarket(order.into()),
+            OrderType::MarketToLimit => OrderAny::MarketToLimit(order.into()),
+            OrderType::MarketIfTouched => OrderAny::MarketIfTouched(order.into()),
+        }
     }
 }
 
@@ -286,7 +541,7 @@ mod test {
         let display = format!("{order_initialized_buy_limit}");
         assert_eq!(
             display,
-            "OrderInitialized(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, \
+            "OrderInitialized(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, \
             side=BUY, type=LIMIT, quantity=0.561, time_in_force=DAY, post_only=true, reduce_only=true, \
             quote_quantity=false, price=22000, emulation_trigger=BID_ASK, trigger_instrument_id=BTCUSDT.COINBASE, \
             contingency_type=OTO, order_list_id=1, linked_order_ids=[O-2020872378424], parent_order_id=None, \

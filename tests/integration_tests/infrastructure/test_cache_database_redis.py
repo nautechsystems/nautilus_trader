@@ -68,14 +68,14 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
 
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+_AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 # Requirements:
-# - A Redis instance listening on the default port 6379
+# - A Redis service listening on the default port 6379
 
 pytestmark = pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="not longer testing with Memurai database",
+    sys.platform != "linux",
+    reason="databases only supported on Linux",
 )
 
 
@@ -199,19 +199,19 @@ class TestCacheDatabaseAdapter:
     @pytest.mark.asyncio
     async def test_add_instrument(self):
         # Arrange, Act
-        self.database.add_instrument(AUDUSD_SIM)
+        self.database.add_instrument(_AUDUSD_SIM)
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_instrument(AUDUSD_SIM.id))
+        await eventually(lambda: self.database.load_instrument(_AUDUSD_SIM.id))
 
         # Assert
-        assert self.database.load_instrument(AUDUSD_SIM.id) == AUDUSD_SIM
+        assert self.database.load_instrument(_AUDUSD_SIM.id) == _AUDUSD_SIM
 
     @pytest.mark.asyncio
     async def test_add_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
         )
@@ -229,12 +229,12 @@ class TestCacheDatabaseAdapter:
     async def test_add_position(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
         )
 
-        self.database.add_instrument(AUDUSD_SIM)
+        self.database.add_instrument(_AUDUSD_SIM)
         self.database.add_order(order)
 
         # Allow MPSC thread to insert
@@ -243,12 +243,12 @@ class TestCacheDatabaseAdapter:
         position_id = PositionId("P-1")
         fill = TestEventStubs.order_filled(
             order,
-            instrument=AUDUSD_SIM,
+            instrument=_AUDUSD_SIM,
             position_id=position_id,
             last_px=Price.from_str("1.00000"),
         )
 
-        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        position = Position(instrument=_AUDUSD_SIM, fill=fill)
 
         # Act
         self.database.add_position(position)
@@ -278,7 +278,7 @@ class TestCacheDatabaseAdapter:
     async def test_update_order_when_not_already_exists_logs(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
@@ -294,7 +294,7 @@ class TestCacheDatabaseAdapter:
     async def test_update_order_for_open_order(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
@@ -320,7 +320,7 @@ class TestCacheDatabaseAdapter:
     async def test_update_order_for_closed_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
         )
@@ -338,7 +338,7 @@ class TestCacheDatabaseAdapter:
 
         fill = TestEventStubs.order_filled(
             order,
-            instrument=AUDUSD_SIM,
+            instrument=_AUDUSD_SIM,
             last_px=Price.from_str("1.00001"),
         )
 
@@ -356,13 +356,13 @@ class TestCacheDatabaseAdapter:
     @pytest.mark.asyncio
     async def test_update_position_for_closed_position(self):
         # Arrange
-        self.database.add_instrument(AUDUSD_SIM)
+        self.database.add_instrument(_AUDUSD_SIM)
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_instrument(AUDUSD_SIM.id))
+        await eventually(lambda: self.database.load_instrument(_AUDUSD_SIM.id))
 
         order1 = self.strategy.order_factory.market(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
         )
@@ -382,7 +382,7 @@ class TestCacheDatabaseAdapter:
         order1.apply(
             TestEventStubs.order_filled(
                 order1,
-                instrument=AUDUSD_SIM,
+                instrument=_AUDUSD_SIM,
                 position_id=position_id,
                 last_px=Price.from_str("1.00001"),
                 trade_id=TradeId("1"),
@@ -394,14 +394,14 @@ class TestCacheDatabaseAdapter:
         await eventually(lambda: self.database.load_order(order1.client_order_id))
 
         # Act
-        position = Position(instrument=AUDUSD_SIM, fill=order1.last_event)
+        position = Position(instrument=_AUDUSD_SIM, fill=order1.last_event)
         self.database.add_position(position)
 
         # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_position(position.id))
 
         order2 = self.strategy.order_factory.market(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity.from_int(100_000),
         )
@@ -419,7 +419,7 @@ class TestCacheDatabaseAdapter:
 
         filled = TestEventStubs.order_filled(
             order2,
-            instrument=AUDUSD_SIM,
+            instrument=_AUDUSD_SIM,
             position_id=position_id,
             last_px=Price.from_str("1.00001"),
             trade_id=TradeId("2"),
@@ -443,7 +443,7 @@ class TestCacheDatabaseAdapter:
     async def test_update_position_when_not_already_exists_logs(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
         )
@@ -456,12 +456,12 @@ class TestCacheDatabaseAdapter:
         position_id = PositionId("P-1")
         fill = TestEventStubs.order_filled(
             order,
-            instrument=AUDUSD_SIM,
+            instrument=_AUDUSD_SIM,
             position_id=position_id,
             last_px=Price.from_str("1.00000"),
         )
 
-        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        position = Position(instrument=_AUDUSD_SIM, fill=fill)
 
         # Act
         self.database.update_position(position)
@@ -555,7 +555,7 @@ class TestCacheDatabaseAdapter:
     @pytest.mark.asyncio
     async def test_load_instrument_when_no_instrument_in_database_returns_none(self):
         # Arrange, Act
-        result = self.database.load_instrument(AUDUSD_SIM.id)
+        result = self.database.load_instrument(_AUDUSD_SIM.id)
 
         # Assert
         assert result is None
@@ -563,21 +563,21 @@ class TestCacheDatabaseAdapter:
     @pytest.mark.asyncio
     async def test_load_instrument_when_instrument_in_database_returns_expected(self):
         # Arrange
-        self.database.add_instrument(AUDUSD_SIM)
+        self.database.add_instrument(_AUDUSD_SIM)
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_instrument(AUDUSD_SIM.id))
+        await eventually(lambda: self.database.load_instrument(_AUDUSD_SIM.id))
 
         # Act
-        result = self.database.load_instrument(AUDUSD_SIM.id)
+        result = self.database.load_instrument(_AUDUSD_SIM.id)
 
         # Assert
-        assert result == AUDUSD_SIM
+        assert result == _AUDUSD_SIM
 
     @pytest.mark.asyncio
     async def test_load_instruments_when_instrument_in_database_returns_expected(self):
         # Arrange
-        self.database.add_instrument(AUDUSD_SIM)
+        self.database.add_instrument(_AUDUSD_SIM)
 
         # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_instruments())
@@ -586,7 +586,7 @@ class TestCacheDatabaseAdapter:
         result = self.database.load_instruments()
 
         # Assert
-        assert result == {AUDUSD_SIM.id: AUDUSD_SIM}
+        assert result == {_AUDUSD_SIM.id: _AUDUSD_SIM}
 
     @pytest.mark.asyncio
     async def test_load_synthetic_when_no_synethic_instrument_in_database_returns_none(self):
@@ -644,7 +644,7 @@ class TestCacheDatabaseAdapter:
     async def test_load_order_when_no_order_in_database_returns_none(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
         )
@@ -659,7 +659,7 @@ class TestCacheDatabaseAdapter:
     async def test_load_order_when_market_order_in_database_returns_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
         )
@@ -680,7 +680,7 @@ class TestCacheDatabaseAdapter:
         # Arrange
         exec_algorithm_params = {"horizon_secs": 20, "interval_secs": 2.5}
         order = self.strategy.order_factory.market(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
             exec_algorithm_id=ExecAlgorithmId("TWAP"),
@@ -703,7 +703,7 @@ class TestCacheDatabaseAdapter:
     async def test_load_order_when_limit_order_in_database_returns_order(self):
         # Arrange
         order = self.strategy.order_factory.limit(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
@@ -724,7 +724,7 @@ class TestCacheDatabaseAdapter:
     async def test_load_order_when_transformed_to_market_order_in_database_returns_order(self):
         # Arrange
         order = self.strategy.order_factory.limit(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
@@ -748,7 +748,7 @@ class TestCacheDatabaseAdapter:
     async def test_load_order_when_transformed_to_limit_order_in_database_returns_order(self):
         # Arrange
         order = self.strategy.order_factory.limit_if_touched(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
@@ -773,7 +773,7 @@ class TestCacheDatabaseAdapter:
     async def test_load_order_when_stop_market_order_in_database_returns_order(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
@@ -794,7 +794,7 @@ class TestCacheDatabaseAdapter:
     async def test_load_order_when_stop_limit_order_in_database_returns_order(self):
         # Arrange
         order = self.strategy.order_factory.stop_limit(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
             price=Price.from_str("1.00000"),
@@ -829,7 +829,7 @@ class TestCacheDatabaseAdapter:
     async def test_load_position_when_no_instrument_in_database_returns_none(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
         )
@@ -842,12 +842,12 @@ class TestCacheDatabaseAdapter:
         position_id = PositionId("P-1")
         fill = TestEventStubs.order_filled(
             order,
-            instrument=AUDUSD_SIM,
+            instrument=_AUDUSD_SIM,
             position_id=position_id,
             last_px=Price.from_str("1.00000"),
         )
 
-        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        position = Position(instrument=_AUDUSD_SIM, fill=fill)
         self.database.add_position(position)
 
         # Act
@@ -859,13 +859,13 @@ class TestCacheDatabaseAdapter:
     @pytest.mark.asyncio
     async def test_load_position_when_position_in_database_returns_position(self):
         # Arrange
-        self.database.add_instrument(AUDUSD_SIM)
+        self.database.add_instrument(_AUDUSD_SIM)
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_instrument(AUDUSD_SIM.id))
+        await eventually(lambda: self.database.load_instrument(_AUDUSD_SIM.id))
 
         order = self.strategy.order_factory.market(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
         )
@@ -878,12 +878,12 @@ class TestCacheDatabaseAdapter:
         position_id = PositionId("P-1")
         fill = TestEventStubs.order_filled(
             order,
-            instrument=AUDUSD_SIM,
+            instrument=_AUDUSD_SIM,
             position_id=position_id,
             last_px=Price.from_str("1.00000"),
         )
 
-        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        position = Position(instrument=_AUDUSD_SIM, fill=fill)
 
         self.database.add_position(position)
 
@@ -931,7 +931,7 @@ class TestCacheDatabaseAdapter:
     async def test_load_orders_cache_when_one_order_in_database(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
         )
@@ -958,13 +958,13 @@ class TestCacheDatabaseAdapter:
     @pytest.mark.asyncio
     async def test_load_positions_cache_when_one_position_in_database(self):
         # Arrange
-        self.database.add_instrument(AUDUSD_SIM)
+        self.database.add_instrument(_AUDUSD_SIM)
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_instrument(AUDUSD_SIM.id))
+        await eventually(lambda: self.database.load_instrument(_AUDUSD_SIM.id))
 
         order1 = self.strategy.order_factory.stop_market(
-            AUDUSD_SIM.id,
+            _AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
@@ -981,13 +981,13 @@ class TestCacheDatabaseAdapter:
         order1.apply(
             TestEventStubs.order_filled(
                 order1,
-                instrument=AUDUSD_SIM,
+                instrument=_AUDUSD_SIM,
                 position_id=position_id,
                 last_px=Price.from_str("1.00001"),
             ),
         )
 
-        position = Position(instrument=AUDUSD_SIM, fill=order1.last_event)
+        position = Position(instrument=_AUDUSD_SIM, fill=order1.last_event)
         self.database.add_position(position)
 
         # Allow MPSC thread to insert

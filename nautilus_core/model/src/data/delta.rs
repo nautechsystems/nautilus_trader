@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! An `OrderBookDelta` data type intended to carry book state information.
+
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
@@ -27,6 +29,7 @@ use super::order::{BookOrder, NULL_ORDER};
 use crate::{
     enums::{BookAction, RecordFlag},
     identifiers::instrument_id::InstrumentId,
+    polymorphism::GetTsInit,
 };
 
 /// Represents a single change/delta in an order book.
@@ -45,7 +48,7 @@ pub struct OrderBookDelta {
     pub action: BookAction,
     /// The order to apply.
     pub order: BookOrder,
-    /// The record flags bit field, indicating packet end and data information.
+    /// The record flags bit field, indicating event end and data information.
     pub flags: u8,
     /// The message sequence number assigned at the venue.
     pub sequence: u64,
@@ -145,43 +148,9 @@ impl Display for OrderBookDelta {
 
 impl Serializable for OrderBookDelta {}
 
-////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "stubs")]
-pub mod stubs {
-    use rstest::fixture;
-
-    use super::{BookAction, BookOrder, OrderBookDelta};
-    use crate::{
-        enums::OrderSide,
-        identifiers::instrument_id::InstrumentId,
-        types::{price::Price, quantity::Quantity},
-    };
-
-    #[fixture]
-    pub fn stub_delta() -> OrderBookDelta {
-        let instrument_id = InstrumentId::from("AAPL.XNAS");
-        let action = BookAction::Add;
-        let price = Price::from("100.00");
-        let size = Quantity::from("10");
-        let side = OrderSide::Buy;
-        let order_id = 123_456;
-        let flags = 0;
-        let sequence = 1;
-        let ts_event = 1;
-        let ts_init = 2;
-
-        let order = BookOrder::new(side, price, size, order_id);
-        OrderBookDelta::new(
-            instrument_id,
-            action,
-            order,
-            flags,
-            sequence,
-            ts_event.into(),
-            ts_init.into(),
-        )
+impl GetTsInit for OrderBookDelta {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }
 
@@ -263,7 +232,7 @@ mod tests {
         let delta = stub_delta;
         assert_eq!(
             format!("{delta}"),
-            "AAPL.XNAS,ADD,100.00,10,BUY,123456,0,1,1,2".to_string()
+            "AAPL.XNAS,ADD,BUY,100.00,10,123456,0,1,1,2".to_string()
         );
     }
 

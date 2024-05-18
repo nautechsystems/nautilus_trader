@@ -145,7 +145,6 @@ cdef class ExecutionEngine(Component):
 
         # Settings
         self.debug: bool = config.debug
-        self.allow_cash_positions: bool = config.allow_cash_positions
 
         # Counters
         self.command_count: int = 0
@@ -1040,10 +1039,6 @@ cdef class ExecutionEngine(Component):
             )
             return
 
-        if not self.allow_cash_positions and isinstance(instrument, CurrencyPair):
-            if account.is_unleveraged(instrument.id):
-                return  # No spot cash positions
-
         cdef Position position = self._cache.position(fill.position_id)
         if position is None or position.is_closed_c():
             position = self._open_position(instrument, position, fill, oms_type)
@@ -1236,7 +1231,7 @@ cdef class ExecutionEngine(Component):
         cdef dict position_state = position.to_dict()
         cdef Money unrealized_pnl = self._cache.calculate_unrealized_pnl(position)
         if unrealized_pnl is not None:
-            position_state["unrealized_pnl"] = unrealized_pnl.to_str()
+            position_state["unrealized_pnl"] = str(unrealized_pnl)
         if self._msgbus.serializer is not None:
             self._msgbus.publish(
                 topic=f"snapshots:positions:{position.id}",

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! An `OrderBookDepth10` aggregated top-of-book data type with a fixed depth of 10 levels per side.
+
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
@@ -23,13 +25,13 @@ use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
 use super::order::BookOrder;
-use crate::identifiers::instrument_id::InstrumentId;
+use crate::{identifiers::instrument_id::InstrumentId, polymorphism::GetTsInit};
 
 pub const DEPTH10_LEN: usize = 10;
 
-/// Represents a self-contained order book update with a fixed depth of 10 levels per side.
+/// Represents a aggregated order book update with a fixed depth of 10 levels per side.
 ///
-/// This struct is specifically designed for scenarios where a snapshot of the top 10 bid and
+/// This structure is specifically designed for scenarios where a snapshot of the top 10 bid and
 /// ask levels in an order book is needed. It differs from `OrderBookDelta` or `OrderBookDeltas`
 /// in its fixed-depth nature and is optimized for cases where a full depth representation is not
 /// required or practical.
@@ -54,7 +56,7 @@ pub struct OrderBookDepth10 {
     pub bid_counts: [u32; DEPTH10_LEN],
     /// The count of ask orders per level for the depth update.
     pub ask_counts: [u32; DEPTH10_LEN],
-    /// The record flags bit field, indicating packet end and data information.
+    /// The record flags bit field, indicating event end and data information.
     pub flags: u8,
     /// The message sequence number assigned at the venue.
     pub sequence: u64,
@@ -190,87 +192,9 @@ impl Display for OrderBookDepth10 {
 
 impl Serializable for OrderBookDepth10 {}
 
-////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "stubs")]
-#[allow(clippy::needless_range_loop)] // False positive?
-pub mod stubs {
-    use rstest::fixture;
-
-    use super::{OrderBookDepth10, DEPTH10_LEN};
-    use crate::{
-        data::order::BookOrder,
-        enums::OrderSide,
-        identifiers::instrument_id::InstrumentId,
-        types::{price::Price, quantity::Quantity},
-    };
-
-    #[fixture]
-    pub fn stub_depth10() -> OrderBookDepth10 {
-        let instrument_id = InstrumentId::from("AAPL.XNAS");
-        let flags = 0;
-        let sequence = 0;
-        let ts_event = 1;
-        let ts_init = 2;
-
-        let mut bids: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
-        let mut asks: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
-
-        // Create bids
-        let mut price = 99.00;
-        let mut quantity = 100.0;
-        let mut order_id = 1;
-
-        for i in 0..DEPTH10_LEN {
-            let order = BookOrder::new(
-                OrderSide::Buy,
-                Price::new(price, 2).unwrap(),
-                Quantity::new(quantity, 0).unwrap(),
-                order_id,
-            );
-
-            bids[i] = order;
-
-            price -= 1.0;
-            quantity += 100.0;
-            order_id += 1;
-        }
-
-        // Create asks
-        let mut price = 100.00;
-        let mut quantity = 100.0;
-        let mut order_id = 11;
-
-        for i in 0..DEPTH10_LEN {
-            let order = BookOrder::new(
-                OrderSide::Sell,
-                Price::new(price, 2).unwrap(),
-                Quantity::new(quantity, 0).unwrap(),
-                order_id,
-            );
-
-            asks[i] = order;
-
-            price += 1.0;
-            quantity += 100.0;
-            order_id += 1;
-        }
-
-        let bid_counts: [u32; DEPTH10_LEN] = [1; DEPTH10_LEN];
-        let ask_counts: [u32; DEPTH10_LEN] = [1; DEPTH10_LEN];
-
-        OrderBookDepth10::new(
-            instrument_id,
-            bids,
-            asks,
-            bid_counts,
-            ask_counts,
-            flags,
-            sequence,
-            ts_event.into(),
-            ts_init.into(),
-        )
+impl GetTsInit for OrderBookDepth10 {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }
 
@@ -281,7 +205,8 @@ pub mod stubs {
 mod tests {
     use rstest::rstest;
 
-    use super::{stubs::*, *};
+    use super::*;
+    use crate::data::stubs::*;
 
     #[rstest]
     fn test_new(stub_depth10: OrderBookDepth10) {

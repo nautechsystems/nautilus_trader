@@ -74,43 +74,14 @@ impl OrderUpdated {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "{}(trader_id={}, strategy_id={}, instrument_id={}, client_order_id={}, \
-            venue_order_id={}, account_id={}, quantity={}, price={}, trigger_price={}, event_id={}, ts_event={}, ts_init={})",
-            stringify!(OrderUpdated),
-            self.trader_id,
-            self.strategy_id,
-            self.instrument_id,
-            self.client_order_id,
-            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
-            self.account_id.map_or("None".to_string(), |account_id| format!("{account_id}")),
-            self.quantity,
-            self.price.map_or("None".to_string(), |price| format!("{price}")),
-            self.trigger_price.map_or("None".to_string(), |trigger_price| format!("{trigger_price}")),
-            self.event_id,
-            self.ts_event,
-            self.ts_init
-        )
+        format!("{:?}", self)
     }
 
     fn __str__(&self) -> String {
-        format!(
-            "{}(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, quantity={}, price={}, trigger_price={}, ts_event={})",
-            stringify!(OrderUpdated),
-            self.instrument_id,
-            self.client_order_id,
-            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
-            self.account_id.map_or("None".to_string(), |account_id| format!("{account_id}")),
-            self.quantity,
-            self.price.map_or("None".to_string(), |price| format!("{price}")),
-            self.trigger_price.map_or("None".to_string(), |trigger_price| format!("{trigger_price}")),
-            self.ts_event,
-        )
+        self.to_string()
     }
 
-    #[getter]
-    #[pyo3(name = "order_event_type")]
-    fn py_order_event_type(&self) -> &str {
+    fn type_str(&self) -> &str {
         stringify!(OrderUpdated)
     }
 
@@ -123,6 +94,7 @@ impl OrderUpdated {
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
+        dict.set_item("type", stringify!(OrderUpdated));
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;

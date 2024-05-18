@@ -13,4 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Order book specific indicators.
+
 pub mod imbalance;

@@ -246,7 +246,7 @@ class TestEventsProviderPyo3:
             exec_algorithm_id=None,
             exec_algorithm_params=None,
             exec_spawn_id=None,
-            tags="ENTRY",
+            tags=["ENTRY"],
             ts_init=0,
             ts_event=0,
         )

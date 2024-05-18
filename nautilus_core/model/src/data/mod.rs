@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines `Data` types for the trading domain model.
+
 pub mod bar;
 pub mod delta;
 pub mod deltas;
@@ -26,22 +28,22 @@ pub mod trade;
 use nautilus_core::nanos::UnixNanos;
 
 use self::{
-    bar::Bar,
-    delta::OrderBookDelta,
-    deltas::{OrderBookDeltas, OrderBookDeltas_API},
-    depth::OrderBookDepth10,
-    quote::QuoteTick,
-    trade::TradeTick,
+    bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas_API, depth::OrderBookDepth10,
+    quote::QuoteTick, trade::TradeTick,
 };
 use crate::polymorphism::GetTsInit;
 
+/// A built-in Nautilus data type.
+///
+/// Not recommended for storing large amounts of data, as the largest variant is significantly
+/// larger (10x) than the smallest.
 #[repr(C)]
 #[derive(Clone, Debug)]
-#[allow(clippy::large_enum_variant)] // TODO: Optimize this (largest variant 1008 vs 136 bytes)
+#[allow(clippy::large_enum_variant)]
 pub enum Data {
     Delta(OrderBookDelta),
     Deltas(OrderBookDeltas_API),
-    Depth10(OrderBookDepth10),
+    Depth10(OrderBookDepth10), // This variant is significantly larger
     Quote(QuoteTick),
     Trade(TradeTick),
     Bar(Bar),
@@ -57,42 +59,6 @@ impl GetTsInit for Data {
             Self::Trade(t) => t.ts_init,
             Self::Bar(b) => b.ts_init,
         }
-    }
-}
-
-impl GetTsInit for OrderBookDelta {
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-}
-
-impl GetTsInit for OrderBookDeltas {
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-}
-
-impl GetTsInit for OrderBookDepth10 {
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-}
-
-impl GetTsInit for QuoteTick {
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-}
-
-impl GetTsInit for TradeTick {
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-}
-
-impl GetTsInit for Bar {
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
     }
 }
 

@@ -22,13 +22,16 @@ use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::base::{Order, OrderAny, OrderCore};
+use super::{
+    any::OrderAny,
+    base::{Order, OrderCore},
+};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
         TrailingOffsetType, TriggerType,
     },
-    events::order::{event::OrderEvent, initialized::OrderInitialized, updated::OrderUpdated},
+    events::order::{event::OrderEventAny, initialized::OrderInitialized, updated::OrderUpdated},
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
@@ -80,7 +83,7 @@ impl StopMarketOrder {
         exec_algorithm_id: Option<ExecAlgorithmId>,
         exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<Ustr>,
+        tags: Option<Vec<Ustr>>,
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
@@ -276,8 +279,8 @@ impl Order for StopMarketOrder {
         self.order_list_id
     }
 
-    fn linked_order_ids(&self) -> Option<Vec<ClientOrderId>> {
-        self.linked_order_ids.clone()
+    fn linked_order_ids(&self) -> Option<&[ClientOrderId]> {
+        self.linked_order_ids.as_deref()
     }
 
     fn parent_order_id(&self) -> Option<ClientOrderId> {
@@ -288,16 +291,16 @@ impl Order for StopMarketOrder {
         self.exec_algorithm_id
     }
 
-    fn exec_algorithm_params(&self) -> Option<HashMap<Ustr, Ustr>> {
-        self.exec_algorithm_params.clone()
+    fn exec_algorithm_params(&self) -> Option<&HashMap<Ustr, Ustr>> {
+        self.exec_algorithm_params.as_ref()
     }
 
     fn exec_spawn_id(&self) -> Option<ClientOrderId> {
         self.exec_spawn_id
     }
 
-    fn tags(&self) -> Option<Ustr> {
-        self.tags
+    fn tags(&self) -> Option<&[Ustr]> {
+        self.tags.as_deref()
     }
 
     fn filled_qty(&self) -> Quantity {
@@ -328,7 +331,7 @@ impl Order for StopMarketOrder {
         self.ts_last
     }
 
-    fn events(&self) -> Vec<&OrderEvent> {
+    fn events(&self) -> Vec<&OrderEventAny> {
         self.events.iter().collect()
     }
 
@@ -340,11 +343,11 @@ impl Order for StopMarketOrder {
         self.trade_ids.iter().collect()
     }
 
-    fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
-        if let OrderEvent::OrderUpdated(ref event) = event {
+    fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
+        if let OrderEventAny::Updated(ref event) = event {
             self.update(event);
         };
-        let is_order_filled = matches!(event, OrderEvent::OrderFilled(_));
+        let is_order_filled = matches!(event, OrderEventAny::Filled(_));
 
         self.core.apply(event)?;
 

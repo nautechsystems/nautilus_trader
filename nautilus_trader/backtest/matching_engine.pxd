@@ -79,6 +79,7 @@ cdef class OrderMatchingEngine:
     cdef FillModel _fill_model
     cdef FeeModel _fee_model
     # cdef object _auction_match_algo
+    cdef bint _instrument_has_expiration
     cdef bint _bar_execution
     cdef bint _reject_stop_orders
     cdef bint _support_gtd_orders
@@ -89,6 +90,7 @@ cdef class OrderMatchingEngine:
     cdef dict _account_ids
     cdef dict _execution_bar_types
     cdef dict _execution_bar_deltas
+    cdef dict _cached_filled_qty
 
     cdef readonly Venue venue
     """The venue for the matching engine.\n\n:returns: `Venue`"""
@@ -200,6 +202,7 @@ cdef class OrderMatchingEngine:
 
 # -- IDENTIFIER GENERATORS ------------------------------------------------------------------------
 
+    cdef VenueOrderId _get_venue_order_id(self, Order order)
     cdef PositionId _get_position_id(self, Order order, bint generate=*)
     cdef PositionId _generate_venue_position_id(self)
     cdef VenueOrderId _generate_venue_order_id(self)
@@ -219,7 +222,7 @@ cdef class OrderMatchingEngine:
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 
     cdef void _generate_order_rejected(self, Order order, str reason)
-    cdef void _generate_order_accepted(self, Order order)
+    cdef void _generate_order_accepted(self, Order order, VenueOrderId venue_order_id)
     cdef void _generate_order_modify_rejected(
         self,
         TraderId trader_id,
@@ -241,12 +244,13 @@ cdef class OrderMatchingEngine:
         str reason,
     )
     cpdef void _generate_order_updated(self, Order order, Quantity qty, Price price, Price trigger_price)
-    cdef void _generate_order_canceled(self, Order order)
+    cdef void _generate_order_canceled(self, Order order, VenueOrderId venue_order_id)
     cdef void _generate_order_triggered(self, Order order)
     cdef void _generate_order_expired(self, Order order)
     cdef void _generate_order_filled(
         self,
         Order order,
+        VenueOrderId venue_order_id,
         PositionId venue_position_id,
         Quantity last_qty,
         Price last_px,

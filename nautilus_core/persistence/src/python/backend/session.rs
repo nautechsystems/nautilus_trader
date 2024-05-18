@@ -103,7 +103,7 @@ impl DataQueryResult {
                 let cvec = slf.set_chunk(acc);
                 Python::with_gil(|py| match PyCapsule::new::<CVec>(py, cvec, None) {
                     Ok(capsule) => Ok(Some(capsule.into_py(py))),
-                    Err(err) => Err(to_pyruntime_err(err)),
+                    Err(e) => Err(to_pyruntime_err(e)),
                 })
             }
             _ => Ok(None),

@@ -1049,6 +1049,75 @@ cdef class Bar(Data):
         return bar
 
     @staticmethod
+    cdef list[Bar] from_raw_arrays_to_list_c(
+        BarType bar_type,
+        uint8_t price_prec,
+        uint8_t size_prec,
+        int64_t[:] opens,
+        int64_t[:] highs,
+        int64_t[:] lows,
+        int64_t[:] closes,
+        uint64_t[:] volumes,
+        uint64_t[:] ts_events,
+        uint64_t[:] ts_inits,
+    ):
+        Condition.true(
+            len(opens) == len(highs) == len(lows) == len(lows) ==
+            len(closes) == len(volumes) == len(ts_events) == len(ts_inits),
+            "Array lengths must be equal",
+        )
+
+        cdef int count = ts_events.shape[0]
+        cdef list[Bar] bars = []
+
+        cdef:
+            int i
+            Bar bar
+        for i in range(count):
+            bar = Bar.__new__(Bar)
+            bar._mem = bar_new_from_raw(
+                bar_type._mem,
+                opens[i],
+                highs[i],
+                lows[i],
+                closes[i],
+                price_prec,
+                volumes[i],
+                size_prec,
+                ts_events[i],
+                ts_inits[i],
+            )
+            bars.append(bar)
+
+        return bars
+
+    @staticmethod
+    def from_raw_arrays_to_list(
+        BarType bar_type,
+        uint8_t price_prec,
+        uint8_t size_prec,
+        int64_t[:] opens,
+        int64_t[:] highs,
+        int64_t[:] lows,
+        int64_t[:] closes,
+        uint64_t[:] volumes,
+        uint64_t[:] ts_events,
+        uint64_t[:] ts_inits,
+    ) -> list[Bar]:
+        return Bar.from_raw_arrays_to_list_c(
+            bar_type,
+            price_prec,
+            size_prec,
+            opens,
+            highs,
+            lows,
+            closes,
+            volumes,
+            ts_events,
+            ts_inits,
+        )
+
+    @staticmethod
     cdef Bar from_dict_c(dict values):
         Condition.not_none(values, "values")
         return Bar(
@@ -1619,7 +1688,7 @@ cdef class OrderBookDelta(Data):
     order : BookOrder, optional with no default so ``None`` must be passed explicitly
         The book order for the delta.
     flags : uint8_t
-        The record flags bit field, indicating packet end and data information.
+        The record flags bit field, indicating event end and data information.
         A value of zero indicates no flags.
     sequence : uint64_t
         The unique sequence number for the update.
@@ -2027,7 +2096,7 @@ cdef class OrderBookDelta(Data):
         order_id : uint64_t
             The order ID.
         flags : uint8_t
-            The record flags bit field, indicating packet end and data information.
+            The record flags bit field, indicating event end and data information.
             A value of zero indicates no flags.
         sequence : uint64_t
             The unique sequence number for the update.
@@ -2481,7 +2550,7 @@ cdef class OrderBookDepth10(Data):
     ask_counts : list[uint32_t]
         The count of ask orders per level for the update. Can be zeros if data not available.
     flags : uint8_t
-        The record flags bit field, indicating packet end and data information.
+        The record flags bit field, indicating event end and data information.
         A value of zero indicates no flags.
     sequence : uint64_t
         The unique sequence number for the update.

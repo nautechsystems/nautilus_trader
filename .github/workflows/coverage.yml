@@ -14,6 +14,25 @@ jobs:
         python-version: ["3.10"]  # Fails on 3.11 due Cython
     name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: nautilus
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
       - name: Free disk space (Ubuntu)
@@ -90,10 +109,16 @@ jobs:
           path: ${{ env.POETRY_CACHE_DIR }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
-      - name: Install Redis
+      - name: Install Nautilus CLI and run init postgres
         run: |
-          sudo apt-get install redis-server
-          redis-server --daemonize yes
+          make install-cli
+          nautilus database init --schema ${{ github.workspace }}/schema
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USERNAME: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DATABASE: nautilus
 
       - name: Run tests with coverage
         run: make pytest-coverage

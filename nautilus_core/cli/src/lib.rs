@@ -13,8 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#[derive(sqlx::FromRow)]
-pub struct GeneralItem {
-    pub key: String,
-    pub value: String,
+use crate::{
+    database::postgres::run_database_command,
+    opt::{Commands, NautilusCli},
+};
+
+mod database;
+pub mod opt;
+
+pub async fn run(opt: NautilusCli) -> anyhow::Result<()> {
+    match opt.command {
+        Commands::Database(database_opt) => run_database_command(database_opt).await?,
+    }
+    Ok(())
 }

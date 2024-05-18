@@ -21,10 +21,11 @@ use nautilus_core::{
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
-use super::{Instrument, InstrumentAny};
+use super::{any::InstrumentAny, Instrument};
 use crate::{
-    enums::{AssetClass, InstrumentClass},
+    enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
@@ -173,6 +174,10 @@ impl Instrument for CryptoFuture {
         InstrumentClass::Future
     }
 
+    fn underlying(&self) -> Option<Ustr> {
+        Some(self.underlying.code)
+    }
+
     fn quote_currency(&self) -> Currency {
         self.quote_currency
     }
@@ -183,6 +188,18 @@ impl Instrument for CryptoFuture {
 
     fn settlement_currency(&self) -> Currency {
         self.settlement_currency
+    }
+
+    fn isin(&self) -> Option<Ustr> {
+        None
+    }
+
+    fn exchange(&self) -> Option<Ustr> {
+        None
+    }
+
+    fn option_kind(&self) -> Option<OptionKind> {
+        None
     }
 
     fn is_inverse(&self) -> bool {
@@ -236,6 +253,26 @@ impl Instrument for CryptoFuture {
 
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
+    }
+
+    fn strike_price(&self) -> Option<Price> {
+        None
+    }
+
+    fn activation_ns(&self) -> Option<UnixNanos> {
+        Some(self.activation_ns)
+    }
+
+    fn expiration_ns(&self) -> Option<UnixNanos> {
+        Some(self.expiration_ns)
+    }
+
+    fn max_notional(&self) -> Option<Money> {
+        self.max_notional
+    }
+
+    fn min_notional(&self) -> Option<Money> {
+        self.min_notional
     }
 }
 

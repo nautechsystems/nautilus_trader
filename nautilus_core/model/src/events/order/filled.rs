@@ -13,24 +13,30 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use crate::{
-    enums::{LiquiditySide, OrderSide, OrderType},
+    enums::{
+        ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TrailingOffsetType,
+        TriggerType,
+    },
+    events::order::OrderEvent,
     identifiers::{
-        account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
-        position_id::PositionId, strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
+        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
+        instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
+        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
         venue_order_id::VenueOrderId,
     },
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 #[cfg_attr(
@@ -142,11 +148,21 @@ impl Default for OrderFilled {
     }
 }
 
-impl Display for OrderFilled {
+impl Debug for OrderFilled {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let position_id_str = match self.position_id {
+            Some(position_id) => position_id.to_string(),
+            None => "None".to_string(),
+        };
+        let commission_str = match self.commission {
+            Some(commission) => commission.to_string(),
+            None => "None".to_string(),
+        };
         write!(
             f,
-            "OrderFilled(\
+            "{}(\
+            trader_id={}, \
+            strategy_id={}, \
             instrument_id={}, \
             client_order_id={}, \
             venue_order_id={}, \
@@ -156,10 +172,54 @@ impl Display for OrderFilled {
             order_side={}, \
             order_type={}, \
             last_qty={}, \
-            last_px={}, \
-            commission={} ,\
+            last_px={} {}, \
+            commission={}, \
+            liquidity_side={}, \
+            event_id={}, \
+            ts_event={}, \
+            ts_init={})",
+            stringify!(OrderFilled),
+            self.trader_id,
+            self.strategy_id,
+            self.instrument_id,
+            self.client_order_id,
+            self.venue_order_id,
+            self.account_id,
+            self.trade_id,
+            position_id_str,
+            self.order_side,
+            self.order_type,
+            self.last_qty.to_formatted_string(),
+            self.last_px.to_formatted_string(),
+            self.currency,
+            commission_str,
+            self.liquidity_side,
+            self.event_id,
+            self.ts_event,
+            self.ts_init
+        )
+    }
+}
+
+impl Display for OrderFilled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}(\
+            instrument_id={}, \
+            client_order_id={}, \
+            venue_order_id={}, \
+            account_id={}, \
+            trade_id={}, \
+            position_id={}, \
+            order_side={}, \
+            order_type={}, \
+            last_qty={}, \
+            last_px={} {}, \
+            commission={}, \
             liquidity_side={}, \
             ts_event={})",
+            stringify!(OrderFilled),
             self.instrument_id,
             self.client_order_id,
             self.venue_order_id,
@@ -168,12 +228,155 @@ impl Display for OrderFilled {
             self.position_id.unwrap_or_default(),
             self.order_side,
             self.order_type,
-            self.last_qty,
-            self.last_px,
+            self.last_qty.to_formatted_string(),
+            self.last_px.to_formatted_string(),
+            self.currency,
             self.commission.unwrap_or(Money::from("0.0 USD")),
             self.liquidity_side,
             self.ts_event
         )
+    }
+}
+
+impl OrderEvent for OrderFilled {
+    fn id(&self) -> UUID4 {
+        self.event_id
+    }
+
+    fn kind(&self) -> &str {
+        stringify!(OrderFilled)
+    }
+
+    fn order_type(&self) -> Option<OrderType> {
+        Some(self.order_type)
+    }
+
+    fn order_side(&self) -> Option<OrderSide> {
+        Some(self.order_side)
+    }
+
+    fn trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    fn strategy_id(&self) -> StrategyId {
+        self.strategy_id
+    }
+
+    fn instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    fn client_order_id(&self) -> ClientOrderId {
+        self.client_order_id
+    }
+
+    fn reason(&self) -> Option<Ustr> {
+        None
+    }
+
+    fn quantity(&self) -> Option<Quantity> {
+        Some(self.last_qty)
+    }
+
+    fn time_in_force(&self) -> Option<TimeInForce> {
+        None
+    }
+
+    fn post_only(&self) -> Option<bool> {
+        None
+    }
+
+    fn reduce_only(&self) -> Option<bool> {
+        None
+    }
+
+    fn quote_quantity(&self) -> Option<bool> {
+        None
+    }
+
+    fn reconciliation(&self) -> bool {
+        false
+    }
+
+    fn price(&self) -> Option<Price> {
+        None
+    }
+
+    fn trigger_price(&self) -> Option<Price> {
+        None
+    }
+
+    fn trigger_type(&self) -> Option<TriggerType> {
+        None
+    }
+
+    fn limit_offset(&self) -> Option<Price> {
+        None
+    }
+
+    fn trailing_offset(&self) -> Option<Price> {
+        None
+    }
+
+    fn trailing_offset_type(&self) -> Option<TrailingOffsetType> {
+        None
+    }
+
+    fn expire_time(&self) -> Option<UnixNanos> {
+        None
+    }
+
+    fn display_qty(&self) -> Option<Quantity> {
+        None
+    }
+
+    fn emulation_trigger(&self) -> Option<TriggerType> {
+        None
+    }
+
+    fn trigger_instrument_id(&self) -> Option<InstrumentId> {
+        None
+    }
+
+    fn contingency_type(&self) -> Option<ContingencyType> {
+        None
+    }
+
+    fn order_list_id(&self) -> Option<OrderListId> {
+        None
+    }
+
+    fn linked_order_ids(&self) -> Option<Vec<ClientOrderId>> {
+        None
+    }
+
+    fn parent_order_id(&self) -> Option<ClientOrderId> {
+        None
+    }
+
+    fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId> {
+        None
+    }
+
+    fn exec_spawn_id(&self) -> Option<ClientOrderId> {
+        None
+    }
+
+    fn venue_order_id(&self) -> Option<VenueOrderId> {
+        Some(self.venue_order_id)
+    }
+
+    fn account_id(&self) -> Option<AccountId> {
+        Some(self.account_id)
+    }
+
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }
 
@@ -191,10 +394,10 @@ mod tests {
         let display = format!("{order_filled}");
         assert_eq!(
             display,
-            "OrderFilled(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, \
+            "OrderFilled(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, \
             venue_order_id=123456, account_id=SIM-001, trade_id=1, position_id=P-001, \
-            order_side=BUY, order_type=LIMIT, last_qty=0.561, last_px=22000, \
-            commission=12.20000000 USDT ,liquidity_side=TAKER, ts_event=0)");
+            order_side=BUY, order_type=LIMIT, last_qty=0.561, last_px=22_000 USDT, \
+            commission=12.20000000 USDT, liquidity_side=TAKER, ts_event=0)");
     }
 
     #[rstest]

@@ -220,7 +220,7 @@ cdef class OrderFactory:
         bint quote_quantity = False,
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
-        str tags = None,
+        list[str] tags = None,
     ):
         """
         Create a new ``MARKET`` order.
@@ -243,9 +243,8 @@ cdef class OrderFactory:
             The execution algorithm ID for the order.
         exec_algorithm_params : dict[str, Any], optional
             The execution algorithm parameters for the order.
-        tags : str, optional
-            The custom user tags for the order. These are optional and can
-            contain any arbitrary delimiter if required.
+        tags : list[str], optional
+            The custom user tags for the order.
 
         Returns
         -------
@@ -298,7 +297,7 @@ cdef class OrderFactory:
         InstrumentId trigger_instrument_id = None,
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
-        str tags = None,
+        list[str] tags = None,
     ):
         """
         Create a new ``LIMIT`` order.
@@ -333,9 +332,8 @@ cdef class OrderFactory:
             The execution algorithm ID for the order.
         exec_algorithm_params : dict[str, Any], optional
             The execution algorithm parameters for the order.
-        tags : str, optional
-            The custom user tags for the order. These are optional and can
-            contain any arbitrary delimiter if required.
+        tags : list[str], optional
+            The custom user tags for the order.
 
         Returns
         -------
@@ -395,7 +393,7 @@ cdef class OrderFactory:
         InstrumentId trigger_instrument_id = None,
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
-        str tags = None,
+        list[str] tags = None,
     ):
         """
         Create a new ``STOP_MARKET`` conditional order.
@@ -428,9 +426,8 @@ cdef class OrderFactory:
             The execution algorithm ID for the order.
         exec_algorithm_params : dict[str, Any], optional
             The execution algorithm parameters for the order.
-        tags : str, optional
-            The custom user tags for the order. These are optional and can
-            contain any arbitrary delimiter if required.
+        tags : list[str], optional
+            The custom user tags for the order.
 
         Returns
         -------
@@ -494,7 +491,7 @@ cdef class OrderFactory:
         InstrumentId trigger_instrument_id = None,
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
-        str tags = None,
+        list[str] tags = None,
     ):
         """
         Create a new ``STOP_LIMIT`` conditional order.
@@ -533,9 +530,8 @@ cdef class OrderFactory:
             The execution algorithm ID for the order.
         exec_algorithm_params : dict[str, Any], optional
             The execution algorithm parameters for the order.
-        tags : str, optional
-            The custom user tags for the order. These are optional and can
-            contain any arbitrary delimiter if required.
+        tags : list[str], optional
+            The custom user tags for the order.
 
         Returns
         -------
@@ -598,7 +594,7 @@ cdef class OrderFactory:
         Quantity display_qty = None,
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
-        str tags = None,
+        list[str] tags = None,
     ):
         """
         Create a new ``MARKET`` order.
@@ -625,9 +621,8 @@ cdef class OrderFactory:
             The execution algorithm ID for the order.
         exec_algorithm_params : dict[str, Any], optional
             The execution algorithm parameters for the order.
-        tags : str, optional
-            The custom user tags for the order. These are optional and can
-            contain any arbitrary delimiter if required.
+        tags : list[str], optional
+            The custom user tags for the order.
 
         Returns
         -------
@@ -680,7 +675,7 @@ cdef class OrderFactory:
         InstrumentId trigger_instrument_id = None,
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
-        str tags = None,
+        list[str] tags = None,
     ):
         """
         Create a new ``MARKET_IF_TOUCHED`` (MIT) conditional order.
@@ -713,9 +708,8 @@ cdef class OrderFactory:
             The execution algorithm ID for the order.
         exec_algorithm_params : dict[str, Any], optional
             The execution algorithm parameters for the order.
-        tags : str, optional
-            The custom user tags for the order. These are optional and can
-            contain any arbitrary delimiter if required.
+        tags : list[str], optional
+            The custom user tags for the order.
 
         Returns
         -------
@@ -779,7 +773,7 @@ cdef class OrderFactory:
         InstrumentId trigger_instrument_id = None,
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
-        str tags = None,
+        list[str] tags = None,
     ):
         """
         Create a new ``LIMIT_IF_TOUCHED`` (LIT) conditional order.
@@ -818,9 +812,8 @@ cdef class OrderFactory:
             The execution algorithm ID for the order.
         exec_algorithm_params : dict[str, Any], optional
             The execution algorithm parameters for the order.
-        tags : str, optional
-            The custom user tags for the order. These are optional and can
-            contain any arbitrary delimiter if required.
+        tags : list[str], optional
+            The custom user tags for the order.
 
         Returns
         -------
@@ -888,7 +881,7 @@ cdef class OrderFactory:
         InstrumentId trigger_instrument_id = None,
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
-        str tags = None,
+        list[str] tags = None,
     ):
         """
         Create a new ``TRAILING_STOP_MARKET`` conditional order.
@@ -924,9 +917,8 @@ cdef class OrderFactory:
             The execution algorithm ID for the order.
         exec_algorithm_params : dict[str, Any], optional
             The execution algorithm parameters for the order.
-        tags : str, optional
-            The custom user tags for the order. These are optional and can
-            contain any arbitrary delimiter if required.
+        tags : list[str], optional
+            The custom user tags for the order.
 
         Returns
         -------
@@ -997,7 +989,7 @@ cdef class OrderFactory:
         InstrumentId trigger_instrument_id = None,
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
-        str tags = None,
+        list[str] tags = None,
     ):
         """
         Create a new ``TRAILING_STOP_LIMIT`` conditional order.
@@ -1044,9 +1036,8 @@ cdef class OrderFactory:
             The execution algorithm ID for the order.
         exec_algorithm_params : dict[str, Any], optional
             The execution algorithm parameters for the order.
-        tags : str, optional
-            The custom user tags for the order. These are optional and can
-            contain any arbitrary delimiter if required.
+        tags : list[str], optional
+            The custom user tags for the order.
 
         Returns
         -------
@@ -1128,9 +1119,9 @@ cdef class OrderFactory:
         dict entry_exec_algorithm_params = None,
         dict tp_exec_algorithm_params = None,
         dict sl_exec_algorithm_params = None,
-        str entry_tags = "ENTRY",
-        str tp_tags = "TAKE_PROFIT",
-        str sl_tags = "STOP_LOSS",
+        list[str] entry_tags = None,
+        list[str] tp_tags = None,
+        list[str] sl_tags = None,
     ):
         """
         Create a bracket order with optional entry of take-profit order types.
@@ -1189,21 +1180,22 @@ cdef class OrderFactory:
             The execution algorithm parameters for the order.
         sl_exec_algorithm_params : dict[str, Any], optional
             The execution algorithm parameters for the order.
-        entry_tags : str, default "ENTRY"
-            The custom user tags for the entry order. These are optional and can
-            contain any arbitrary delimiter if required.
-        tp_tags : str, default "TAKE_PROFIT"
-            The custom user tags for the take-profit order. These are optional and can
-            contain any arbitrary delimiter if required.
-        sl_tags : str, default "STOP_LOSS"
-            The custom user tags for the stop-loss order. These are optional and can
-            contain any arbitrary delimiter if required.
+        entry_tags : list[str], default ["ENTRY"]
+            The custom user tags for the entry order.
+        tp_tags : list[str], default ["TAKE_PROFIT"]
+            The custom user tags for the take-profit order.
+        sl_tags : list[str], default ["STOP_LOSS"]
+            The custom user tags for the stop-loss order.
 
         Returns
         -------
         OrderList
 
         """
+        entry_tags = entry_tags if entry_tags is not None else ["ENTRY"]
+        sl_tags = sl_tags if sl_tags is not None else ["STOP_LOSS"]
+        tp_tags = tp_tags if tp_tags is not None else ["TAKE_PROFIT"]
+
         cdef OrderListId order_list_id = self._order_list_id_generator.generate()
         cdef ClientOrderId entry_client_order_id = self._order_id_generator.generate()
         cdef ClientOrderId sl_client_order_id = self._order_id_generator.generate()

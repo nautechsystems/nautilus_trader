@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines the Apache Arrow schema for Nautilus types.
+
 pub mod bar;
 pub mod delta;
 pub mod depth;

@@ -52,12 +52,12 @@ impl BookOrder {
         h.finish() as isize
     }
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
     fn __repr__(&self) -> String {
         format!("{self:?}")
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 
     #[getter]
@@ -154,7 +154,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::data::order::stubs::stub_book_order;
+    use crate::data::stubs::stub_book_order;
 
     #[rstest]
     fn test_as_dict(stub_book_order: BookOrder) {

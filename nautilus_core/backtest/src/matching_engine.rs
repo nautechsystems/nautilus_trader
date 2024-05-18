@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides an `OrderMatchingEngine` for use in research, backtesting and sandbox environments.
+
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]
@@ -36,7 +38,7 @@ use nautilus_model::{
     instruments::Instrument,
     orderbook::book::OrderBook,
     orders::{
-        base::{PassiveOrderAny, StopOrderAny},
+        any::{PassiveOrderAny, StopOrderAny},
         trailing_stop_limit::TrailingStopLimitOrder,
         trailing_stop_market::TrailingStopMarketOrder,
     },

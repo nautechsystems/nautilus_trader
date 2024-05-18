@@ -13,12 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! A `TradeTick` data type representing a single trade in a market.
+
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
     hash::Hash,
 };
 
+use derive_builder::Builder;
 use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
@@ -26,12 +29,13 @@ use serde::{Deserialize, Serialize};
 use crate::{
     enums::AggressorSide,
     identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    polymorphism::GetTsInit,
     types::{price::Price, quantity::Quantity},
 };
 
 /// Represents a single trade tick in a market.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Builder)]
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
@@ -122,32 +126,9 @@ impl Display for TradeTick {
 
 impl Serializable for TradeTick {}
 
-////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "stubs")]
-pub mod stubs {
-    use nautilus_core::nanos::UnixNanos;
-    use rstest::fixture;
-
-    use crate::{
-        data::trade::TradeTick,
-        enums::AggressorSide,
-        identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
-        types::{price::Price, quantity::Quantity},
-    };
-
-    #[fixture]
-    pub fn stub_trade_tick_ethusdt_buyer() -> TradeTick {
-        TradeTick {
-            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            price: Price::from("10000.0000"),
-            size: Quantity::from("1.00000000"),
-            aggressor_side: AggressorSide::Buyer,
-            trade_id: TradeId::new("123456789").unwrap(),
-            ts_event: UnixNanos::from(0),
-            ts_init: UnixNanos::from(1),
-        }
+impl GetTsInit for TradeTick {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }
 
@@ -160,8 +141,10 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use super::stubs::*;
-    use crate::{data::trade::TradeTick, enums::AggressorSide};
+    use crate::{
+        data::{stubs::stub_trade_tick_ethusdt_buyer, trade::TradeTick},
+        enums::AggressorSide,
+    };
 
     #[rstest]
     fn test_to_string(stub_trade_tick_ethusdt_buyer: TradeTick) {

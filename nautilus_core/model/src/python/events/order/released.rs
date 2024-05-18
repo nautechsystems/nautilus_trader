@@ -64,32 +64,14 @@ impl OrderReleased {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "{}(trader_id={}, strategy_id={}, instrument_id={}, client_order_id={}, released_price={}, event_id={}, ts_init={})",
-            stringify!(OrderReleased),
-            self.trader_id,
-            self.strategy_id,
-            self.instrument_id,
-            self.client_order_id,
-            self.released_price,
-            self.event_id,
-            self.ts_init
-        )
+        format!("{:?}", self)
     }
 
     fn __str__(&self) -> String {
-        format!(
-            "{}(instrument_id={}, client_order_id={}, released_price={})",
-            stringify!(OrderReleased),
-            self.instrument_id,
-            self.client_order_id,
-            self.released_price
-        )
+        self.to_string()
     }
 
-    #[getter]
-    #[pyo3(name = "order_event_type")]
-    fn py_order_event_type(&self) -> &str {
+    fn type_str(&self) -> &str {
         stringify!(OrderReleased)
     }
 
@@ -102,6 +84,7 @@ impl OrderReleased {
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
+        dict.set_item("type", stringify!(OrderReleased));
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;

@@ -60,13 +60,6 @@ impl VenueOrderId {
     }
 }
 
-impl Default for VenueOrderId {
-    fn default() -> Self {
-        // SAFETY: Default value is safe
-        Self::new("001").unwrap()
-    }
-}
-
 impl Debug for VenueOrderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.0)

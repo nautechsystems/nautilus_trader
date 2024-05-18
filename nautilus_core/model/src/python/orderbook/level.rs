@@ -19,12 +19,12 @@ use crate::{data::order::BookOrder, orderbook::level::Level, types::price::Price
 
 #[pymethods]
 impl Level {
-    fn __str__(&self) -> String {
-        // TODO: Return debug string for now
+    fn __repr__(&self) -> String {
         format!("{self:?}")
     }
 
-    fn __repr__(&self) -> String {
+    fn __str__(&self) -> String {
+        // TODO: Return debug string for now
         format!("{self:?}")
     }
 

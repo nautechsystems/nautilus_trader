@@ -96,30 +96,29 @@ pub mod encryption {
             match mode {
                 Mode::Plain => Ok(MaybeTlsStream::Plain(socket)),
                 Mode::Tls => {
-                    let config = match tls_connector {
-                        Some(config) => config,
-                        None => {
-                            #[allow(unused_mut)]
-                            let mut root_store = RootCertStore::empty();
-                            #[cfg(feature = "rustls-tls-native-roots")]
-                            {
-                                let native_certs = rustls_native_certs::load_native_certs()?;
-                                let total_number = native_certs.len();
-                                let (number_added, number_ignored) =
-                                    root_store.add_parsable_certificates(native_certs);
-                                log::debug!("Added {number_added}/{total_number} native root certificates (ignored {number_ignored})");
-                            }
-                            #[cfg(feature = "rustls-tls-webpki-roots")]
-                            {
-                                root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-                            }
-
-                            Arc::new(
-                                ClientConfig::builder()
-                                    .with_root_certificates(root_store)
-                                    .with_no_client_auth(),
-                            )
+                    let config = if let Some(config) = tls_connector {
+                        config
+                    } else {
+                        #[allow(unused_mut)]
+                        let mut root_store = RootCertStore::empty();
+                        #[cfg(feature = "rustls-tls-native-roots")]
+                        {
+                            let native_certs = rustls_native_certs::load_native_certs()?;
+                            let total_number = native_certs.len();
+                            let (number_added, number_ignored) =
+                                root_store.add_parsable_certificates(native_certs);
+                            log::debug!("Added {number_added}/{total_number} native root certificates (ignored {number_ignored})");
                         }
+                        #[cfg(feature = "rustls-tls-webpki-roots")]
+                        {
+                            root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+                        }
+
+                        Arc::new(
+                            ClientConfig::builder()
+                                .with_root_certificates(root_store)
+                                .with_no_client_auth(),
+                        )
                     };
                     let domain = ServerName::try_from(domain.as_str())
                         .map_err(|_| TlsError::InvalidDnsName)?

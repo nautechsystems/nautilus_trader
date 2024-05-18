@@ -10,6 +10,7 @@
    cython.md
    rust.md
    testing.md
+   adapters.md
    packaged_data.md
 ```
 
@@ -51,4 +52,5 @@ types and how these map to their corresponding `PyObject` types.
 - [Cython](cython.md)
 - [Rust](rust.md)
 - [Testing](testing.md)
+- [Adapters](adapters.md)
 - [Packaged Data](packaged_data.md)

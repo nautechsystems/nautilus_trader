@@ -197,10 +197,6 @@ class TradingNodeBuilder:
                     venue = Venue(venue)
                 self._data_engine.register_venue_routing(client, venue)
 
-            # Temporary handling for setting specific 'venue' for portfolio
-            if name == "InteractiveBrokers":
-                self._portfolio.set_specific_venue(Venue("InteractiveBrokers"))
-
     def build_exec_clients(  # noqa: C901 (too complex)
         self,
         config: dict[str, LiveExecClientConfig],
@@ -264,5 +260,5 @@ class TradingNodeBuilder:
                 self._exec_engine.register_venue_routing(client, venue)
 
             # Temporary handling for setting specific 'venue' for portfolio
-            if name == "InteractiveBrokers":
-                self._portfolio.set_specific_venue(Venue("InteractiveBrokers"))
+            if factory.__name__ == "InteractiveBrokersLiveExecClientFactory":
+                self._portfolio.set_specific_venue(Venue("INTERACTIVE_BROKERS"))

@@ -13,19 +13,32 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines traits to faciliate polymorphism.
+
 use nautilus_core::nanos::UnixNanos;
 
 use crate::{
     enums::{OrderSide, OrderSideSpecified, TriggerType},
+    events::order::event::OrderEventAny,
     identifiers::{
-        client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
-        instrument_id::InstrumentId, strategy_id::StrategyId, venue_order_id::VenueOrderId,
+        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
+        instrument_id::InstrumentId, position_id::PositionId, strategy_id::StrategyId,
+        trader_id::TraderId, venue_order_id::VenueOrderId,
     },
-    types::price::Price,
+    orders::base::OrderError,
+    types::{price::Price, quantity::Quantity},
 };
 
 pub trait GetTsInit {
     fn ts_init(&self) -> UnixNanos;
+}
+
+pub trait GetTraderId {
+    fn trader_id(&self) -> TraderId;
+}
+
+pub trait GetStrategyId {
+    fn strategy_id(&self) -> StrategyId;
 }
 
 pub trait GetInstrumentId {
@@ -36,12 +49,16 @@ pub trait GetClientOrderId {
     fn client_order_id(&self) -> ClientOrderId;
 }
 
+pub trait GetAccountId {
+    fn account_id(&self) -> Option<AccountId>;
+}
+
 pub trait GetVenueOrderId {
     fn venue_order_id(&self) -> Option<VenueOrderId>;
 }
 
-pub trait GetStrategyId {
-    fn strategy_id(&self) -> StrategyId;
+pub trait GetPositionId {
+    fn position_id(&self) -> Option<PositionId>;
 }
 
 pub trait GetExecAlgorithmId {
@@ -54,6 +71,18 @@ pub trait GetExecSpawnId {
 
 pub trait GetOrderSide {
     fn order_side(&self) -> OrderSide;
+}
+
+pub trait GetOrderQuantity {
+    fn quantity(&self) -> Quantity;
+}
+
+pub trait GetOrderFilledQty {
+    fn filled_qty(&self) -> Quantity;
+}
+
+pub trait GetOrderLeavesQty {
+    fn leaves_qty(&self) -> Quantity;
 }
 
 pub trait GetOrderSideSpecified {
@@ -70,4 +99,20 @@ pub trait GetLimitPrice {
 
 pub trait GetStopPrice {
     fn stop_px(&self) -> Price;
+}
+
+pub trait IsOpen {
+    fn is_open(&self) -> bool;
+}
+
+pub trait IsClosed {
+    fn is_closed(&self) -> bool;
+}
+
+pub trait IsInflight {
+    fn is_inflight(&self) -> bool;
+}
+
+pub trait ApplyOrderEventAny {
+    fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError>;
 }

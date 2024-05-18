@@ -447,12 +447,18 @@ cdef class Portfolio(PortfolioFacade):
             )
             return  # No instrument found
 
+        cdef list[Position] positions_open
         cdef AccountState account_state = None
         if isinstance(event, OrderFilled):
-            account_state = self._accounts.update_balances(
+            self._accounts.update_balances(
                 account=account,
                 instrument=instrument,
                 fill=event,
+            )
+
+
+            self._unrealized_pnls[event.instrument_id] = self._calculate_unrealized_pnl(
+                instrument_id=event.instrument_id,
             )
 
         cdef list orders_open = self._cache.orders_open(
@@ -524,23 +530,12 @@ cdef class Portfolio(PortfolioFacade):
             )
             return  # No instrument found
 
-        cdef AccountState account_state = self._accounts.update_positions(
+        self._accounts.update_positions(
             account=account,
             instrument=instrument,
             positions_open=positions_open,
             ts_event=event.ts_event,
         )
-
-        if account_state is None:
-            self._log.debug(f"Added pending calculation for {instrument.id}")
-            self._pending_calcs.add(instrument.id)
-        else:
-            self._msgbus.publish_c(
-                topic=f"events.account.{account.id}",
-                msg=account_state,
-            )
-
-        self._log.debug(f"Updated {event}")
 
     def _reset(self) -> None:
         self._net_positions.clear()

@@ -15,18 +15,23 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::uuid::UUID4;
+use nautilus_core::{python::to_pyruntime_err, uuid::UUID4};
 use pyo3::prelude::*;
 use ustr::Ustr;
 
 use crate::{
-    enums::{ContingencyType, OrderSide, TimeInForce, TriggerType},
+    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TriggerType},
+    events::order::initialized::OrderInitialized,
     identifiers::{
         client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
         trader_id::TraderId,
     },
-    orders::{base::str_hashmap_to_ustr, market_if_touched::MarketIfTouchedOrder},
+    orders::{
+        base::{str_hashmap_to_ustr, Order},
+        market_if_touched::MarketIfTouchedOrder,
+    },
+    python::events::order::{order_event_to_pyobject, pyobject_to_order_event},
     types::{price::Price, quantity::Quantity},
 };
 
@@ -59,7 +64,7 @@ impl MarketIfTouchedOrder {
         exec_algorithm_id: Option<ExecAlgorithmId>,
         exec_algorithm_params: Option<HashMap<String, String>>,
         exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<String>,
+        tags: Option<Vec<String>>,
     ) -> PyResult<Self> {
         let exec_algorithm_params = exec_algorithm_params.map(str_hashmap_to_ustr);
         Ok(Self::new(
@@ -85,10 +90,37 @@ impl MarketIfTouchedOrder {
             exec_algorithm_id,
             exec_algorithm_params,
             exec_spawn_id,
-            tags.map(|s| Ustr::from(&s)),
+            tags.map(|vec| vec.into_iter().map(|s| Ustr::from(s.as_str())).collect()),
             init_id,
             ts_init.into(),
         )
         .unwrap())
+    }
+
+    #[getter]
+    #[pyo3(name = "order_type")]
+    fn py_order_type(&self) -> OrderType {
+        self.order_type
+    }
+
+    #[getter]
+    #[pyo3(name = "events")]
+    fn py_events(&self, py: Python<'_>) -> PyResult<Vec<PyObject>> {
+        self.events()
+            .into_iter()
+            .map(|event| order_event_to_pyobject(py, event.clone()))
+            .collect()
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "create")]
+    fn py_create(init: OrderInitialized) -> PyResult<Self> {
+        Ok(MarketIfTouchedOrder::from(init))
+    }
+
+    #[pyo3(name = "apply")]
+    fn py_apply(&mut self, event: PyObject, py: Python<'_>) -> PyResult<()> {
+        let event_any = pyobject_to_order_event(py, event).unwrap();
+        self.apply(event_any).map(|_| ()).map_err(to_pyruntime_err)
     }
 }

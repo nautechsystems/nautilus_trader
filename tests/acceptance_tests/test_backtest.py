@@ -383,79 +383,13 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         assert ending_balance == Money(1_088_115.65, USD)
 
 
-class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
-    def setup(self):
-        # Fixture Setup
-        config = BacktestEngineConfig(
-            run_analysis=False,
-            logging=LoggingConfig(bypass_logging=True),
-            exec_engine=ExecEngineConfig(allow_cash_positions=False),  # <-- Normally True
-            risk_engine=RiskEngineConfig(bypass=True),
-        )
-        self.engine = BacktestEngine(
-            config=config,
-        )
-        self.venue = Venue("BINANCE")
-
-        self.engine.add_venue(
-            venue=self.venue,
-            oms_type=OmsType.NETTING,
-            account_type=AccountType.CASH,  # <-- Spot exchange
-            starting_balances=[Money(10, BTC), Money(10_000_000, USDT)],
-            base_currency=None,
-        )
-
-        self.btcusdt = TestInstrumentProvider.btcusdt_binance()
-        self.engine.add_instrument(self.btcusdt)
-
-    def teardown(self):
-        self.engine.dispose()
-
-    def test_run_ema_cross_with_minute_trade_bars(self):
-        # Arrange
-        wrangler = BarDataWrangler(
-            bar_type=BarType.from_str("BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
-            instrument=self.btcusdt,
-        )
-
-        provider = TestDataProvider()
-
-        # Build externally aggregated bars
-        bars = wrangler.process(
-            data=provider.read_csv_bars("btc-perp-20211231-20220201_1m.csv")[:10_000],
-        )
-
-        self.engine.add_data(bars)
-
-        config = EMACrossConfig(
-            instrument_id=self.btcusdt.id,
-            bar_type=BarType.from_str("BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
-            trade_size=Decimal(0.001),
-            fast_ema_period=10,
-            slow_ema_period=20,
-        )
-        strategy = EMACross(config=config)
-        self.engine.add_strategy(strategy)
-
-        # Act
-        self.engine.run()
-
-        # Assert
-        assert strategy.fast_ema.count == 10_000
-        assert self.engine.iteration == 10_000
-        btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
-        usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
-        assert btc_ending_balance == Money(9.57200000, BTC)
-        assert usdt_ending_balance == Money(10_017_571.74970600, USDT)
-
-
 class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
     def setup(self):
         # Fixture Setup
         config = BacktestEngineConfig(
             run_analysis=False,
             logging=LoggingConfig(bypass_logging=True),
-            exec_engine=ExecEngineConfig(allow_cash_positions=False),  # <-- Normally True
+            exec_engine=ExecEngineConfig(),
             risk_engine=RiskEngineConfig(bypass=True),
         )
         self.engine = BacktestEngine(
@@ -516,8 +450,8 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
         assert self.engine.iteration == 10_000
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
-        assert btc_ending_balance == Money(5.71250000, BTC)
-        assert usdt_ending_balance == Money(10_176_033.01433484, USDT)
+        assert btc_ending_balance == Money(10.00000000, BTC)
+        assert usdt_ending_balance == Money(9_999_138.27266000, USDT)
 
     def test_run_ema_cross_with_trade_ticks_from_bar_data(self):
         # Arrange
@@ -552,8 +486,8 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
         assert self.engine.iteration == 40_000
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
-        assert btc_ending_balance == Money(9.57200000, BTC)
-        assert usdt_ending_balance == Money(10_017_571.74970600, USDT)
+        assert btc_ending_balance == Money(10.00000000, BTC)
+        assert usdt_ending_balance == Money(9_999_913.82726600, USDT)
 
 
 class TestBacktestAcceptanceTestsAUDUSD:

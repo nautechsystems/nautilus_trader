@@ -1343,7 +1343,9 @@ class TestExecutionEngine:
         # Act
         self.risk_engine.execute(submit_order2)
         self.exec_engine.process(TestEventStubs.order_submitted(order2))
-        self.exec_engine.process(TestEventStubs.order_accepted(order2))
+        self.exec_engine.process(
+            TestEventStubs.order_accepted(order2, venue_order_id=VenueOrderId("2")),
+        )
         self.exec_engine.process(
             TestEventStubs.order_filled(order2, AUDUSD_SIM, position_id=expected_position_id),
         )
@@ -1418,7 +1420,9 @@ class TestExecutionEngine:
         # Act
         self.risk_engine.execute(submit_order2)
         self.exec_engine.process(TestEventStubs.order_submitted(order2))
-        self.exec_engine.process(TestEventStubs.order_accepted(order2))
+        self.exec_engine.process(
+            TestEventStubs.order_accepted(order2, venue_order_id=VenueOrderId("2")),
+        )
         self.exec_engine.process(
             TestEventStubs.order_filled(order2, AUDUSD_SIM, position_id=position_id),
         )
@@ -1506,7 +1510,9 @@ class TestExecutionEngine:
             TestEventStubs.order_filled(order1, AUDUSD_SIM, position_id=position1_id),
         )
         self.exec_engine.process(TestEventStubs.order_submitted(order2))
-        self.exec_engine.process(TestEventStubs.order_accepted(order2))
+        self.exec_engine.process(
+            TestEventStubs.order_accepted(order2, venue_order_id=VenueOrderId("2")),
+        )
         self.exec_engine.process(
             TestEventStubs.order_filled(order2, AUDUSD_SIM, position_id=position2_id),
         )
@@ -1627,14 +1633,18 @@ class TestExecutionEngine:
 
         self.risk_engine.execute(submit_order2)
         self.exec_engine.process(TestEventStubs.order_submitted(order2))
-        self.exec_engine.process(TestEventStubs.order_accepted(order2))
+        self.exec_engine.process(
+            TestEventStubs.order_accepted(order2, venue_order_id=VenueOrderId("2")),
+        )
         self.exec_engine.process(
             TestEventStubs.order_filled(order2, AUDUSD_SIM, position_id=position_id1),
         )
 
         self.risk_engine.execute(submit_order3)
         self.exec_engine.process(TestEventStubs.order_submitted(order3))
-        self.exec_engine.process(TestEventStubs.order_accepted(order3))
+        self.exec_engine.process(
+            TestEventStubs.order_accepted(order3, venue_order_id=VenueOrderId("3")),
+        )
         self.exec_engine.process(
             TestEventStubs.order_filled(order3, AUDUSD_SIM, position_id=position_id2),
         )
@@ -1719,7 +1729,9 @@ class TestExecutionEngine:
         # Act
         self.risk_engine.execute(submit_order2)
         self.exec_engine.process(TestEventStubs.order_submitted(order2))
-        self.exec_engine.process(TestEventStubs.order_accepted(order2))
+        self.exec_engine.process(
+            TestEventStubs.order_accepted(order2, venue_order_id=VenueOrderId("2")),
+        )
         self.exec_engine.process(
             TestEventStubs.order_filled(order2, AUDUSD_SIM, position_id=position_id),
         )
@@ -1797,7 +1809,9 @@ class TestExecutionEngine:
         # Act
         self.risk_engine.execute(submit_order2)
         self.exec_engine.process(TestEventStubs.order_submitted(order2))
-        self.exec_engine.process(TestEventStubs.order_accepted(order2))
+        self.exec_engine.process(
+            TestEventStubs.order_accepted(order2, venue_order_id=VenueOrderId("2")),
+        )
         self.exec_engine.process(
             TestEventStubs.order_filled(order2, AUDUSD_SIM, position_id=position_id),
         )
@@ -1892,7 +1906,9 @@ class TestExecutionEngine:
 
         self.risk_engine.execute(submit_order2)
         self.exec_engine.process(TestEventStubs.order_submitted(order2))
-        self.exec_engine.process(TestEventStubs.order_accepted(order2))
+        self.exec_engine.process(
+            TestEventStubs.order_accepted(order2, venue_order_id=VenueOrderId("2")),
+        )
         self.exec_engine.process(
             TestEventStubs.order_filled(order2, AUDUSD_SIM, position_id=position_id),
         )
@@ -1960,7 +1976,9 @@ class TestExecutionEngine:
         # Act
         self.risk_engine.execute(submit_order2)
         self.exec_engine.process(TestEventStubs.order_submitted(order2))
-        self.exec_engine.process(TestEventStubs.order_accepted(order2))
+        self.exec_engine.process(
+            TestEventStubs.order_accepted(order2, venue_order_id=VenueOrderId("2")),
+        )
         self.exec_engine.process(
             TestEventStubs.order_filled(order2, AUDUSD_SIM, position_id=position_id),
         )
@@ -2013,13 +2031,13 @@ class TestExecutionEngine:
         assert cached_order.venue_order_id == order.venue_order_id
 
         # Act
-        new_venue_id = VenueOrderId("UPDATED")
+        new_venue_id = VenueOrderId("1")
         order_updated = OrderUpdated(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=AUDUSD_SIM.id,
             client_order_id=order.client_order_id,
-            venue_order_id=new_venue_id,
+            venue_order_id=VenueOrderId("1"),
             account_id=self.account_id,
             quantity=order.quantity,
             price=order.price,
@@ -2031,6 +2049,7 @@ class TestExecutionEngine:
         self.exec_engine.process(order_updated)
 
         # Order should have new venue_order_id
+        # TODO: This test was updated as the venue order ID currently does not change once assigned
         cached_order = self.cache.order(order.client_order_id)
         assert cached_order.venue_order_id == new_venue_id
 

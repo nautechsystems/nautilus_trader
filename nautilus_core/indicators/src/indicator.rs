@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines a common `Indicator` trait.
+
 use std::{fmt, fmt::Debug};
 
 use nautilus_model::{

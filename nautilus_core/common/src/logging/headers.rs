@@ -30,8 +30,8 @@ pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, com
 
     let c = component;
 
-    let kernel_version = System::kernel_version().map_or("".to_string(), |v| format!("kernel-{v} "));
-    let os_version = System::long_os_version().unwrap_or("".to_string());
+    let kernel_version = System::kernel_version().map_or(String::new(), |v| format!("kernel-{v} "));
+    let os_version = System::long_os_version().unwrap_or_default();
     let pid = std::process::id();
 
     header_sepr(c, "=================================================================");
@@ -58,7 +58,7 @@ pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, com
     header_sepr(c, "=================================================================");
     header_line(c, &format!("CPU architecture: {}", sys.cpus()[0].brand()));
     header_line(c, &format!("CPU(s): {} @ {} Mhz", sys.cpus().len(), sys.cpus()[0].frequency()));
-    header_line(c, &format!("OS: {}{}", kernel_version, os_version));
+    header_line(c, &format!("OS: {kernel_version}{os_version}"));
 
     log_sysinfo(component);
 

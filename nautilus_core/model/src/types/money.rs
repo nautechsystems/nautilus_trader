@@ -15,7 +15,7 @@
 
 use std::{
     cmp::Ordering,
-    fmt::{Display, Formatter, Result as FmtResult},
+    fmt::{Debug, Display},
     hash::{Hash, Hasher},
     ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign},
     str::FromStr,
@@ -36,7 +36,7 @@ pub const MONEY_MAX: f64 = 9_223_372_036.0;
 pub const MONEY_MIN: f64 = -9_223_372_036.0;
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq)]
+#[derive(Clone, Copy, Eq)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -96,14 +96,15 @@ impl FromStr for Money {
         // Ensure we have both the amount and currency
         if parts.len() != 2 {
             return Err(format!(
-                "Invalid input format: '{input}'. Expected '<amount> <currency>'"
+                "Error invalid input format '{input}'. Expected '<amount> <currency>'"
             ));
         }
 
         // Parse amount
         let amount = parts[0]
+            .replace('_', "")
             .parse::<f64>()
-            .map_err(|e| format!("Cannot parse amount '{}' as `f64`: {:?}", parts[0], e))?;
+            .map_err(|e| format!("Error parsing amount '{}' as `f64`: {:?}", parts[0], e))?;
 
         // Parse currency
         let currency = Currency::from_str(parts[1]).map_err(|e: anyhow::Error| e.to_string())?;
@@ -251,14 +252,27 @@ impl Div<f64> for Money {
     }
 }
 
+impl Debug for Money {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}({:.*}, {})",
+            stringify!(Money),
+            self.currency.precision as usize,
+            self.as_f64(),
+            self.currency,
+        )
+    }
+}
+
 impl Display for Money {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{:.*} {}",
             self.currency.precision as usize,
             self.as_f64(),
-            self.currency.code
+            self.currency
         )
     }
 }
@@ -278,23 +292,8 @@ impl<'de> Deserialize<'de> for Money {
         D: Deserializer<'de>,
     {
         let money_str: &str = Deserialize::deserialize(deserializer)?;
-
-        let parts: Vec<&str> = money_str.splitn(2, ' ').collect();
-        if parts.len() != 2 {
-            return Err(serde::de::Error::custom("Invalid Money format"));
-        }
-
-        let amount_str = parts[0];
-        let currency_str = parts[1];
-
-        let amount = amount_str
-            .parse::<f64>()
-            .map_err(|_| serde::de::Error::custom("Failed to parse Money amount"))?;
-
-        let currency = Currency::from_str(currency_str)
-            .map_err(|_| serde::de::Error::custom("Invalid currency"))?;
-
-        Ok(Self::new(amount, currency).unwrap()) // TODO: Properly handle the error
+        Money::from_str(money_str)
+            .map_err(|_| serde::de::Error::custom("Failed to parse Money amount"))
     }
 }
 
@@ -308,6 +307,22 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+
+    #[rstest]
+    fn test_debug() {
+        let money = Money::new(1010.12, Currency::USD()).unwrap();
+        let result = format!("{:?}", money);
+        let expected = "Money(1010.12, USD)";
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_display() {
+        let money = Money::new(1010.12, Currency::USD()).unwrap();
+        let result = format!("{money}");
+        let expected = "1010.12 USD";
+        assert_eq!(result, expected);
+    }
 
     #[rstest]
     #[should_panic]
@@ -388,6 +403,7 @@ mod tests {
     #[case("0 USD", Currency::USD(), dec!(0.00))]
     #[case("1.1 AUD", Currency::AUD(), dec!(1.10))]
     #[case("1.12345678 BTC", Currency::BTC(), dec!(1.12345678))]
+    #[case("10_000.10 USD", Currency::USD(), dec!(10000.10))]
     fn test_from_str_valid_input(
         #[case] input: &str,
         #[case] expected_currency: Currency,

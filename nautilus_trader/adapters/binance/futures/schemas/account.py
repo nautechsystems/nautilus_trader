@@ -59,8 +59,12 @@ class BinanceFuturesBalanceInfo(msgspec.Struct, frozen=True):
 
     def parse_to_account_balance(self) -> AccountBalance:
         currency = Currency.from_str(self.asset)
+        # This calculation is currently mixing wallet cash balance and the available balance after
+        # considering margin collateral. As a temporary measure we're taking the `min` to
+        # disregard free amounts above the cash balance, but still considering where not all
+        # balance is available (so locked in some way, i.e. allocated as collateral).
         total = Decimal(self.walletBalance)
-        free = Decimal(self.availableBalance) if total != 0 else total
+        free = min(Decimal(self.availableBalance), total)
         locked = total - free
         return AccountBalance(
             total=Money(total, currency),

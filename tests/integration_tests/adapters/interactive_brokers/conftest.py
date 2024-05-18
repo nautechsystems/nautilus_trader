@@ -103,9 +103,9 @@ def ib_client(data_client_config, event_loop, msgbus, cache, clock):
 
 @pytest.fixture()
 def ib_client_running(ib_client):
-    ib_client._is_ib_connected.set()
     ib_client._connect = AsyncMock()
     ib_client._eclient = MagicMock()
+    ib_client._eclient.startApi = MagicMock(side_effect=ib_client._is_ib_connected.set)
     ib_client._account_ids = {"DU123456,"}
     ib_client.start()
     yield ib_client

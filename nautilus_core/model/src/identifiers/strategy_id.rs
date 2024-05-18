@@ -89,13 +89,6 @@ impl StrategyId {
     }
 }
 
-impl Default for StrategyId {
-    fn default() -> Self {
-        // SAFETY: Default value is safe
-        Self::new("S-001").unwrap()
-    }
-}
-
 impl Debug for StrategyId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.0)

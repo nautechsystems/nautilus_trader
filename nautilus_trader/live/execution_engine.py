@@ -870,7 +870,7 @@ class LiveExecutionEngine(ExecutionEngine):
         strategy_id = self.get_external_order_claim(report.instrument_id)
         if strategy_id is None:
             strategy_id = StrategyId("EXTERNAL")
-            tags = "EXTERNAL"
+            tags = ["EXTERNAL"]
         else:
             tags = None
 

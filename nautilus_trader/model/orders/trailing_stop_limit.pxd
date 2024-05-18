@@ -46,4 +46,4 @@ cdef class TrailingStopLimitOrder(Order):
     """The UNIX timestamp (nanoseconds) when the order was triggered (0 if not triggered).\n\n:returns: `uint64_t`"""
 
     @staticmethod
-    cdef TrailingStopLimitOrder create(OrderInitialized init)
+    cdef TrailingStopLimitOrder create_c(OrderInitialized init)

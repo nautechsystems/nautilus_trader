@@ -101,7 +101,18 @@ class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
 
     """
 
-    secType: Literal["CASH", "STK", "OPT", "FUT", "FOP", "CONTFUT", "CRYPTO", ""] = ""
+    secType: Literal[
+        "CASH",
+        "STK",
+        "OPT",
+        "FUT",
+        "FOP",
+        "CONTFUT",
+        "CRYPTO",
+        "CFD",
+        "CMDTY",
+        "",
+    ] = ""
     conId: int = 0
     exchange: str = ""
     primaryExchange: str = ""
@@ -167,7 +178,7 @@ class IBOrderTags(NautilusConfig, frozen=True, repr_omit_defaults=True):
 
     @property
     def value(self):
-        return self.json().decode()
+        return f"IBOrderTags:{self.json().decode()}"
 
     def __str__(self):
         return self.value

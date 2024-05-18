@@ -21,10 +21,11 @@ use nautilus_core::{
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
-use super::{Instrument, InstrumentAny};
+use super::{any::InstrumentAny, Instrument};
 use crate::{
-    enums::{AssetClass, InstrumentClass},
+    enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
@@ -160,6 +161,9 @@ impl Instrument for CurrencyPair {
     fn instrument_class(&self) -> InstrumentClass {
         InstrumentClass::Spot
     }
+    fn underlying(&self) -> Option<Ustr> {
+        None
+    }
 
     fn quote_currency(&self) -> Currency {
         self.quote_currency
@@ -171,6 +175,9 @@ impl Instrument for CurrencyPair {
 
     fn settlement_currency(&self) -> Currency {
         self.quote_currency
+    }
+    fn isin(&self) -> Option<Ustr> {
+        None
     }
 
     fn is_inverse(&self) -> bool {
@@ -240,6 +247,34 @@ impl Instrument for CurrencyPair {
 
     fn maker_fee(&self) -> Decimal {
         self.maker_fee
+    }
+
+    fn option_kind(&self) -> Option<OptionKind> {
+        None
+    }
+
+    fn exchange(&self) -> Option<Ustr> {
+        None
+    }
+
+    fn strike_price(&self) -> Option<Price> {
+        None
+    }
+
+    fn activation_ns(&self) -> Option<UnixNanos> {
+        None
+    }
+
+    fn expiration_ns(&self) -> Option<UnixNanos> {
+        None
+    }
+
+    fn max_notional(&self) -> Option<Money> {
+        self.max_notional
+    }
+
+    fn min_notional(&self) -> Option<Money> {
+        self.min_notional
     }
 }
 

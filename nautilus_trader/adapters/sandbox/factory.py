@@ -73,5 +73,6 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
             venue=name or config.venue,
             balance=config.balance,
             currency=config.currency,
+            bar_execution=config.bar_execution,
         )
         return exec_client

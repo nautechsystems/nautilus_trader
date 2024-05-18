@@ -13,6 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod database;
-pub mod schema;
-pub mod sql;
+pub mod postgres;

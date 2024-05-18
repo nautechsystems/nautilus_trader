@@ -234,7 +234,7 @@ class TestExecAlgorithm:
                 quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("2")),  # <-- Greater than primary
                 time_in_force=TimeInForce.FOK,
                 reduce_only=True,
-                tags="EXIT",
+                tags=["EXIT"],
             )
 
     def test_exec_algorithm_spawn_market_order(self) -> None:
@@ -268,7 +268,7 @@ class TestExecAlgorithm:
             quantity=ETHUSDT_PERP_BINANCE.make_qty(spawned_qty),
             time_in_force=TimeInForce.FOK,
             reduce_only=True,
-            tags="EXIT",
+            tags=["EXIT"],
         )
 
         # Assert
@@ -280,7 +280,7 @@ class TestExecAlgorithm:
         assert spawned_order.quantity == spawned_qty
         assert spawned_order.time_in_force == TimeInForce.FOK
         assert spawned_order.is_reduce_only
-        assert spawned_order.tags == "EXIT"
+        assert spawned_order.tags == ["EXIT"]
 
     def test_exec_algorithm_spawn_limit_order(self) -> None:
         """
@@ -315,7 +315,7 @@ class TestExecAlgorithm:
             price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.25")),
             time_in_force=TimeInForce.DAY,
             reduce_only=False,
-            tags="ENTRY",
+            tags=["ENTRY"],
         )
 
         # Assert
@@ -327,7 +327,7 @@ class TestExecAlgorithm:
         assert spawned_order.quantity == spawned_qty
         assert spawned_order.time_in_force == TimeInForce.DAY
         assert not spawned_order.is_reduce_only
-        assert spawned_order.tags == "ENTRY"
+        assert spawned_order.tags == ["ENTRY"]
         assert primary_order.is_primary
         assert not primary_order.is_spawned
         assert not spawned_order.is_primary
@@ -366,7 +366,7 @@ class TestExecAlgorithm:
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH + timedelta(minutes=60),
             reduce_only=False,
-            tags="ENTRY",
+            tags=["ENTRY"],
         )
 
         # Assert
@@ -379,7 +379,7 @@ class TestExecAlgorithm:
         assert spawned_order.time_in_force == TimeInForce.GTD
         assert spawned_order.expire_time_ns == 3_600_000_000_000
         assert not spawned_order.is_reduce_only
-        assert spawned_order.tags == "ENTRY"
+        assert spawned_order.tags == ["ENTRY"]
 
     def test_exec_algorithm_modify_order_in_place(self) -> None:
         """
@@ -413,7 +413,7 @@ class TestExecAlgorithm:
             price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.25")),
             time_in_force=TimeInForce.DAY,
             reduce_only=False,
-            tags="ENTRY",
+            tags=["ENTRY"],
         )
 
         new_price = ETHUSDT_PERP_BINANCE.make_price(Decimal("5001.0"))

@@ -27,6 +27,9 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
 
 
+cdef set[InstrumentClass] EXPIRING_INSTRUMENT_TYPES
+
+
 cdef class Instrument(Data):
     cdef TickScheme _tick_scheme
 

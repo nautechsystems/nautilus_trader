@@ -107,9 +107,8 @@ cdef class StopMarketOrder(Order):
         The execution algorithm parameters for the order.
     exec_spawn_id : ClientOrderId, optional
         The execution algorithm spawning primary client order ID.
-    tags : str, optional
-        The custom user tags for the order. These are optional and can
-        contain any arbitrary delimiter if required.
+    tags : list[str], optional
+        The custom user tags for the order.
 
     Raises
     ------
@@ -154,7 +153,7 @@ cdef class StopMarketOrder(Order):
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         ClientOrderId exec_spawn_id = None,
-        str tags = None,
+        list[str] tags = None,
     ):
         Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NO_ORDER_SIDE")
         Condition.not_equal(trigger_type, TriggerType.NO_TRIGGER, "trigger_type", "NO_TRIGGER")
@@ -254,8 +253,8 @@ cdef class StopMarketOrder(Order):
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
         cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NO_TRIGGER else f" EMULATED[{trigger_type_to_str(self.emulation_trigger)}]"
         return (
-            f"{order_side_to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{order_type_to_str(self.order_type)} @ {self.trigger_price}"
+            f"{order_side_to_str(self.side)} {self.quantity.to_formatted_str()} {self.instrument_id} "
+            f"{order_type_to_str(self.order_type)} @ {self.trigger_price.to_formatted_str()}"
             f"[{trigger_type_to_str(self.trigger_type)}] "
             f"{time_in_force_to_str(self.time_in_force)}{expiration_str}"
             f"{emulation_str}"
@@ -291,7 +290,7 @@ cdef class StopMarketOrder(Order):
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
             "avg_px": str(self.avg_px) if self.filled_qty.as_f64_c() > 0.0 else None,
             "slippage": str(self.slippage) if self.filled_qty.as_f64_c() > 0.0 else None,
-            "commissions": str([c.to_str() for c in self.commissions()]) if self._commissions else None,
+            "commissions": [str(c) for c in self.commissions()] if self._commissions else None,
             "status": self._fsm.state_string_c(),
             "is_reduce_only": self.is_reduce_only,
             "is_quote_quantity": self.is_quote_quantity,
@@ -299,7 +298,7 @@ cdef class StopMarketOrder(Order):
             "trigger_instrument_id": self.trigger_instrument_id.to_str() if self.trigger_instrument_id is not None else None,
             "contingency_type": contingency_type_to_str(self.contingency_type),
             "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
-            "linked_order_ids": ",".join([o.to_str() for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
+            "linked_order_ids": [o.to_str() for o in self.linked_order_ids] if self.linked_order_ids is not None else None,  # noqa
             "parent_order_id": self.parent_order_id.to_str() if self.parent_order_id is not None else None,
             "exec_algorithm_id": self.exec_algorithm_id.to_str() if self.exec_algorithm_id is not None else None,
             "exec_algorithm_params": self.exec_algorithm_params,
@@ -310,7 +309,7 @@ cdef class StopMarketOrder(Order):
         }
 
     @staticmethod
-    cdef StopMarketOrder create(OrderInitialized init):
+    cdef StopMarketOrder create_c(OrderInitialized init):
         """
         Return a `Stop-Market` order from the given initialized event.
 
@@ -331,7 +330,6 @@ cdef class StopMarketOrder(Order):
         """
         Condition.not_none(init, "init")
         Condition.equal(init.order_type, OrderType.STOP_MARKET, "init.order_type", "OrderType")
-
         return StopMarketOrder(
             trader_id=init.trader_id,
             strategy_id=init.strategy_id,
@@ -358,3 +356,7 @@ cdef class StopMarketOrder(Order):
             exec_spawn_id=init.exec_spawn_id,
             tags=init.tags,
         )
+
+    @staticmethod
+    def create(init):
+        return StopMarketOrder.create_c(init)

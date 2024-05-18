@@ -173,14 +173,14 @@ cdef class PositionEvent(Event):
             f"entry={order_side_to_str(self.entry)}, "
             f"side={position_side_to_str(self.side)}, "
             f"signed_qty={self.signed_qty}, "
-            f"quantity={self.quantity.to_str()}, "
-            f"peak_qty={self.peak_qty.to_str()}, "
+            f"quantity={self.quantity.to_formatted_str()}, "
+            f"peak_qty={self.peak_qty.to_formatted_str()}, "
             f"currency={self.currency.code}, "
             f"avg_px_open={self.avg_px_open}, "
             f"avg_px_close={self.avg_px_close}, "
             f"realized_return={self.realized_return:.5f}, "
-            f"realized_pnl={self.realized_pnl.to_str()}, "
-            f"unrealized_pnl={self.unrealized_pnl.to_str()}, "
+            f"realized_pnl={self.realized_pnl.to_formatted_str()}, "
+            f"unrealized_pnl={self.unrealized_pnl.to_formatted_str()}, "
             f"ts_opened={self.ts_opened}, "
             f"ts_last={self.ts_event}, "
             f"ts_closed={self.ts_closed}, "
@@ -200,14 +200,14 @@ cdef class PositionEvent(Event):
             f"entry={order_side_to_str(self.entry)}, "
             f"side={position_side_to_str(self.side)}, "
             f"signed_qty={self.signed_qty}, "
-            f"quantity={self.quantity.to_str()}, "
-            f"peak_qty={self.peak_qty.to_str()}, "
+            f"quantity={self.quantity.to_formatted_str()}, "
+            f"peak_qty={self.peak_qty.to_formatted_str()}, "
             f"currency={self.currency.code}, "
             f"avg_px_open={self.avg_px_open}, "
             f"avg_px_close={self.avg_px_close}, "
             f"realized_return={self.realized_return:.5f}, "
-            f"realized_pnl={self.realized_pnl.to_str()}, "
-            f"unrealized_pnl={self.unrealized_pnl.to_str()}, "
+            f"realized_pnl={self.realized_pnl.to_formatted_str()}, "
+            f"unrealized_pnl={self.unrealized_pnl.to_formatted_str()}, "
             f"ts_opened={self.ts_opened}, "
             f"ts_last={self._ts_event}, "
             f"ts_closed={self.ts_closed}, "
@@ -430,7 +430,7 @@ cdef class PositionOpened(PositionEvent):
             "last_px": str(obj.last_px),
             "currency": obj.currency.code,
             "avg_px_open": obj.avg_px_open,
-            "realized_pnl": obj.realized_pnl.to_str(),
+            "realized_pnl": str(obj.realized_pnl),
             "duration_ns": obj.duration_ns,
             "event_id": obj._event_id.to_str(),
             "ts_event": obj._ts_event,
@@ -695,8 +695,8 @@ cdef class PositionChanged(PositionEvent):
             "avg_px_open": obj.avg_px_open,
             "avg_px_close": obj.avg_px_close,
             "realized_return": obj.realized_return,
-            "realized_pnl": obj.realized_pnl.to_str(),
-            "unrealized_pnl": obj.unrealized_pnl.to_str(),
+            "realized_pnl": str(obj.realized_pnl),
+            "unrealized_pnl": str(obj.unrealized_pnl),
             "event_id": obj._event_id.to_str(),
             "ts_opened": obj.ts_opened,
             "ts_event": obj._ts_event,
@@ -967,7 +967,7 @@ cdef class PositionClosed(PositionEvent):
             "avg_px_open": obj.avg_px_open,
             "avg_px_close": obj.avg_px_close,
             "realized_return": obj.realized_return,
-            "realized_pnl": obj.realized_pnl.to_str(),
+            "realized_pnl": str(obj.realized_pnl),
             "event_id": obj._event_id.to_str(),
             "ts_opened": obj.ts_opened,
             "ts_closed": obj.ts_closed,
