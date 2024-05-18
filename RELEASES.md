@@ -1,6 +1,6 @@
 # NautilusTrader 1.192.0 Beta
 
-Released on TBD (UTC).
+Released on 18th May 2024 (UTC).
 
 ### Enhancements
 - Added Nautilus CLI (see [docs](https://docs.nautilustrader.io/nightly/developer_guide/index.html)) (#1602), many thanks @filipmacek
