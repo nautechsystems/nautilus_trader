@@ -95,10 +95,6 @@ impl OrderFilled {
         self.to_string()
     }
 
-    fn type_str(&self) -> &str {
-        stringify!(OrderFilled)
-    }
-
     #[getter]
     #[pyo3(name = "is_buy")]
     fn py_is_buy(&self) -> bool {
