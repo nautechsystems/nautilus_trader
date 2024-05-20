@@ -19,14 +19,14 @@ members = [
 
 [workspace.package]
 rust-version = "1.78.0"
-version = "0.22.0"
+version = "0.23.0"
 edition = "2021"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 documentation = "https://docs.nautilustrader.io"
 
 [workspace.dependencies]
-anyhow = "1.0.84"
+anyhow = "1.0.86"
 chrono = "0.4.38"
 derive_builder = "0.20.0"
 futures = "0.3.30"
