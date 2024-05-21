@@ -31,11 +31,11 @@ class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True, kw_only=Tr
         The starting balance for this venue
     bar_execution: bool
         If bars should be processed by the matching engine(s) (and move the market).
-    default_leverage: Decimal
+    default_leverage: float
         The account default leverage (for margin accounts).
-    oms_type: OmsType {``HEDGING``, ``NETTING``}
+    oms_type: str
         The order management system type used by the exchange.
-    account_type : AccountType
+    account_type : str
         The account type for the client.
 
     """
