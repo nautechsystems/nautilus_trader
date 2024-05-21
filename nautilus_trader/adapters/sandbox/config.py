@@ -13,11 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 
 from nautilus_trader.config import LiveExecClientConfig
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OmsType
 
 
 class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True, kw_only=True):
@@ -47,6 +44,6 @@ class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True, kw_only=Tr
     currency: str
     balance: int
     bar_execution: bool = True
-    default_leverage: Decimal = Decimal(10)
-    oms_type: OmsType = OmsType.NETTING
-    account_type: AccountType = AccountType.MARGIN
+    default_leverage: float = 10.0
+    oms_type: str = "NETTING"
+    account_type: str = "MARGIN"
