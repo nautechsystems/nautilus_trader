@@ -125,7 +125,7 @@ impl DataBackendSession {
             parquet_options,
         ))?;
 
-        let default_query = format!("SELECT * FROM {}", &table_name);
+        let default_query = format!("SELECT * FROM {} ORDER BY ts_init", &table_name);
         let sql_query = sql_query.unwrap_or(&default_query);
         let query = self.runtime.block_on(self.session_ctx.sql(sql_query))?;
 
