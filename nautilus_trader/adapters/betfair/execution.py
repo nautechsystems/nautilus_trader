@@ -23,6 +23,7 @@ from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
 from betfair_parser.spec.betting.enums import ExecutionReportStatus
 from betfair_parser.spec.betting.enums import InstructionReportStatus
 from betfair_parser.spec.betting.enums import OrderProjection
+from betfair_parser.spec.betting.orders import CancelOrders
 from betfair_parser.spec.betting.orders import PlaceOrders
 from betfair_parser.spec.betting.orders import ReplaceOrders
 from betfair_parser.spec.betting.type_definitions import CurrentOrderSummary
@@ -50,6 +51,7 @@ from nautilus_trader.adapters.betfair.parsing.requests import make_customer_orde
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_cancel_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_place_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_to_trade_id
+from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_cancel_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_replace_order_params
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
@@ -439,10 +441,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         self._log.debug(f"Received modify_order {command}")
-        client_order_id: ClientOrderId = command.client_order_id
-        instrument = self._cache.instrument(command.instrument_id)
-        PyCondition.not_none(instrument, "instrument")
-        existing_order = self._cache.order(client_order_id)  # type: Order
+        existing_order = self._cache.order(command.client_order_id)  # type: Order
 
         if existing_order is None:
             self._log.warning(
@@ -451,7 +450,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             self.generate_order_modify_rejected(
                 command.strategy_id,
                 command.instrument_id,
-                client_order_id,
+                command.client_order_id,
                 command.venue_order_id,
                 "ORDER NOT IN CACHE",
                 self._clock.timestamp_ns(),
@@ -461,16 +460,47 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._log.warning(f"Order found does not have `id` set: {existing_order}")
             PyCondition.not_none(command.strategy_id, "command.strategy_id")
             PyCondition.not_none(command.instrument_id, "command.instrument_id")
-            PyCondition.not_none(client_order_id, "client_order_id")
+            PyCondition.not_none(command.client_order_id, "client_order_id")
             self.generate_order_modify_rejected(
                 command.strategy_id,
                 command.instrument_id,
-                client_order_id,
+                command.client_order_id,
                 None,
                 "ORDER MISSING VENUE_ORDER_ID",
                 self._clock.timestamp_ns(),
             )
             return
+
+        # Size and Price cannot be modified in a single operation, so we cannot guarantee
+        # an atomic amend (pass or fail).
+        if command.quantity != existing_order.quantity and command.price != existing_order.price:
+            self.generate_order_modify_rejected(
+                command.strategy_id,
+                command.instrument_id,
+                command.client_order_id,
+                existing_order.venue_order_id,
+                "CANNOT MODIFY PRICE AND SIZE AT THE SAME TIME",
+                self._clock.timestamp_ns(),
+            )
+            return
+
+        if command.price != existing_order.price:
+            await self._modify_price(command, existing_order)
+        elif command.quantity != existing_order.quantity:
+            await self._modify_quantity(command, existing_order)
+        else:
+            self.generate_order_modify_rejected(
+                command.strategy_id,
+                command.instrument_id,
+                command.client_order_id,
+                existing_order.venue_order_id,
+                "NOP",
+                self._clock.timestamp_ns(),
+            )
+
+    async def _modify_price(self, command: ModifyOrder, existing_order: Order) -> None:
+        instrument = self._cache.instrument(command.instrument_id)
+        PyCondition.not_none(instrument, "instrument")
 
         # Send order to client
         replace_orders: ReplaceOrders = order_update_to_replace_order_params(
@@ -486,7 +516,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         except Exception as e:
             if isinstance(e, BetfairError):
                 await self.on_api_exception(error=e)
-            self._log.warning(f"Modify failed: {e}")
+            self._log.warning(f"Modify failed (px): {e}")
             self.generate_order_modify_rejected(
                 command.strategy_id,
                 command.instrument_id,
@@ -520,17 +550,74 @@ class BetfairExecutionClient(LiveExecutionClient):
 
             place_instruction = report.place_instruction_report
             venue_order_id = VenueOrderId(str(place_instruction.bet_id))
-            self.set_venue_id_mapping(venue_order_id, client_order_id)
+            self.set_venue_id_mapping(venue_order_id, command.client_order_id)
             self.generate_order_updated(
                 command.strategy_id,
                 command.instrument_id,
-                client_order_id,
+                command.client_order_id,
                 venue_order_id,
                 betfair_float_to_quantity(place_instruction.instruction.limit_order.size),
                 betfair_float_to_price(place_instruction.instruction.limit_order.price),
                 None,  # Not applicable for Betfair
                 self._clock.timestamp_ns(),
                 True,
+            )
+
+    async def _modify_quantity(self, command: ModifyOrder, existing_order: Order) -> None:
+        instrument = self._cache.instrument(command.instrument_id)
+
+        size_reduction = existing_order.quantity - command.quantity
+        if size_reduction <= 0:
+            # TODO: generate a reject
+            return
+
+        cancel_orders: CancelOrders = order_update_to_cancel_order_params(
+            command=command,
+            instrument=instrument,
+            size_reduction=size_reduction,
+        )
+
+        try:
+            result = await self._client.cancel_orders(cancel_orders)
+        except Exception as e:
+            if isinstance(e, BetfairError):
+                await self.on_api_exception(error=e)
+            self._log.warning(f"Modify failed (qty): {e}")
+            self.generate_order_modify_rejected(
+                command.strategy_id,
+                command.instrument_id,
+                command.client_order_id,
+                existing_order.venue_order_id,
+                "client error",
+                self._clock.timestamp_ns(),
+            )
+            return
+
+        self._log.debug(f"result={result}")
+
+        for report in result.instruction_reports:
+            if report.status == ExecutionReportStatus.FAILURE:
+                reason = f"{result.error_code.name} ({result.error_code.__doc__})"
+                self._log.warning(f"size reduction failed - {reason}")
+                self.generate_order_rejected(
+                    command.strategy_id,
+                    command.instrument_id,
+                    command.client_order_id,
+                    reason,
+                    self._clock.timestamp_ns(),
+                )
+                return
+
+            self.generate_order_updated(
+                command.strategy_id,
+                command.instrument_id,
+                command.client_order_id,
+                command.venue_order_id,
+                betfair_float_to_quantity(existing_order.quantity - report.size_cancelled),
+                betfair_float_to_price(existing_order.price),
+                None,  # Not applicable for Betfair
+                self._clock.timestamp_ns(),
+                False,
             )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
