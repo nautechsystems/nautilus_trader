@@ -13,7 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from nautilus_trader.config import LiveExecClientConfig
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import OmsType
 
 
 class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True, kw_only=True):
@@ -30,6 +34,12 @@ class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True, kw_only=Tr
         The starting balance for this venue
     bar_execution: bool
         If bars should be processed by the matching engine(s) (and move the market).
+    default_leverage: Decimal
+        The account default leverage (for margin accounts).
+    oms_type: OmsType {``HEDGING``, ``NETTING``}
+        The order management system type used by the exchange.
+    account_type : AccountType
+        The account type for the client.
 
     """
 
@@ -37,3 +47,6 @@ class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True, kw_only=Tr
     currency: str
     balance: int
     bar_execution: bool = True
+    default_leverage: Decimal = Decimal(10)
+    oms_type: OmsType = OmsType.NETTING
+    account_type: AccountType = AccountType.MARGIN

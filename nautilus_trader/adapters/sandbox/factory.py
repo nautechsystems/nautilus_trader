@@ -74,5 +74,8 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
             balance=config.balance,
             currency=config.currency,
             bar_execution=config.bar_execution,
+            default_leverage=config.default_leverage,
+            oms_type=config.oms_type,
+            account_type=config.account_type,
         )
         return exec_client
