@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from decimal import Decimal
 
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sandbox.execution import SandboxExecutionClient
@@ -21,6 +22,8 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.live.factories import LiveExecClientFactory
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.portfolio import PortfolioFacade
 
 
@@ -74,5 +77,8 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
             balance=config.balance,
             currency=config.currency,
             bar_execution=config.bar_execution,
+            default_leverage=Decimal(config.default_leverage),
+            oms_type=OmsType[config.oms_type],
+            account_type=AccountType[config.account_type],
         )
         return exec_client
