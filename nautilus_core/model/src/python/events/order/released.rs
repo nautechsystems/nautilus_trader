@@ -71,10 +71,6 @@ impl OrderReleased {
         self.to_string()
     }
 
-    fn type_str(&self) -> &str {
-        stringify!(OrderReleased)
-    }
-
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {

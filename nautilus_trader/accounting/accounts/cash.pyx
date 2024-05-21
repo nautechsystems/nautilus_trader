@@ -335,20 +335,25 @@ cdef class CashAccount(Account):
         cdef Currency quote_currency = instrument.quote_currency
         cdef Currency base_currency = instrument.get_base_currency()
 
-        cdef double fill_qty = fill.last_qty.as_f64_c()
         cdef double fill_px = fill.last_px.as_f64_c()
+        cdef double fill_qty = fill.last_qty.as_f64_c()
+        cdef double last_qty = fill_qty
 
+        # TODO: This adjustment is potentially problematic and causing other bugs,
+        # the intent is to only 'book' PnL when a position is being reduced - rather than entered.
         if position is not None and position.quantity._mem.raw != 0:
             # Only book open quantity towards realized PnL
             fill_qty = fmin(fill_qty, position.quantity.as_f64_c())
 
+        # Below we are using the original `last_qty` to adjust the base currency,
+        # this is to avoid a desync in account balance vs filled quantities later.
         if fill.order_side == OrderSide.BUY:
             if base_currency and not self.base_currency:
-                pnls[base_currency] = Money(fill_qty, base_currency)
+                pnls[base_currency] = Money(last_qty, base_currency)
             pnls[quote_currency] = Money(-(fill_px * fill_qty), quote_currency)
         elif fill.order_side == OrderSide.SELL:
             if base_currency and not self.base_currency:
-                pnls[base_currency] = Money(-fill_qty, base_currency)
+                pnls[base_currency] = Money(-last_qty, base_currency)
             pnls[quote_currency] = Money(fill_px * fill_qty, quote_currency)
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid `OrderSide`, was {fill.order_side}")  # pragma: no cover (design-time error)

@@ -1,14 +1,31 @@
-# NautilusTrader 1.192.0 Beta
+# NautilusTrader 1.193.0 Beta
 
 Released on TBD (UTC).
+
+### Enhancements
+None
+
+### Breaking Changes
+None
+
+### Fixes
+- Fixed data order by `ts_init` when streaming (#1656), thanks @twitu
+- Fixed Interactive Brokers tick level historical data downloading (#1653), thanks @DracheShiki
+
+---
+
+# NautilusTrader 1.192.0 Beta
+
+Released on 18th May 2024 (UTC).
 
 ### Enhancements
 - Added Nautilus CLI (see [docs](https://docs.nautilustrader.io/nightly/developer_guide/index.html)) (#1602), many thanks @filipmacek
 - Added `Cfd` and `Commodity` instruments with Interactive Brokers support (#1604), thanks @DracheShiki
 - Added `OrderMatchingEngine` futures and options contract activation and expiration simulation
 - Added Sandbox example with Interactive Brokers (#1618), thanks @rsmb7z
-- Added `ParquetDataCatalog` S3 support (#1620), thanks benjaminsingleton
-- Added `Bar.from_raw_arrays_to_list` (#1623), thanks rsmb7z
+- Added `ParquetDataCatalog` S3 support (#1620), thanks @benjaminsingleton
+- Added `Bar.from_raw_arrays_to_list` (#1623), thanks @rsmb7z
+- Added `SandboxExecutionClientConfig.bar_execution` option (#1646), thanks @davidsblom
 - Improved venue order ID generation and assignment (it was previously possible for the `OrderMatchingEngine` to generate multiple IDs for the same order)
 - Improved `LiveTimer` robustness and flexibility by not requiring positive intervals or stop times in the future (will immediately produce a time event), thanks for reporting @davidsblom
 
@@ -16,20 +33,23 @@ Released on TBD (UTC).
 - Removed `allow_cash_positions` config (simplify to the most common use case, spot trading should track positions)
 - Changed `tags` param and return type from `str` to `list[str]` (more naturally expresses multiple tags)
 - Changed `Order.to_dict()` `commission` and `linked_order_id` fields to lists of strings rather than comma separated strings
+- Changed `OrderMatchingEngine` to no longer process internally aggregated bars for execution (no tests failed, but still classifying as a behavior change), thanks for reporting @davidsblom
 
 ### Fixes
+- Fixed `CashAccount` PnL and balance calculations (was adjusting filled quantity based on open position quantity - causing a desync and incorrect balance values)
+- Fixed `from_str` for `Price`, `Quantity` and `Money` when input string contains underscores in Rust, thanks for reporting @filipmacek
 - Fixed `Money` string parsing where the value from `str(money)` can now be passed to `Money.from_str`
-- Fixed `TimeEvent` equality (now based on then event `id` rather than the event `name`)
+- Fixed `TimeEvent` equality (now based on the event `id` rather than the event `name`)
 - Fixed `ParquetDataCatalog` bar queries by `instrument_id` which were no longer returning data (the intent is to use `bar_type`, however using `instrument_id` now returns all matching bars)
 - Fixed venue order ID generation and application in sandbox mode (was previously generating additional venue order IDs), thanks for reporting @rsmb7z and @davidsblom
-- Fixed multiple fills causing overfills in sandbox mode (`OrderMatchingEngine` now cached filled quantity to prevent this), thanks @davidsblom
+- Fixed multiple fills causing overfills in sandbox mode (`OrderMatchingEngine` now caching filled quantity to prevent this) (#1642), thanks @davidsblom
+- Fixed `leaves_qty` exception message underflow (now correctly displays the projected negative leaves quantity)
 - Fixed Interactive Brokers contract details parsing (#1615), thanks @rsmb7z
 - Fixed Interactive Brokers portfolio registration (#1616), thanks @rsmb7z
 - Fixed Interactive Brokers `IBOrder` attributes assignment (#1634), thanks @rsmb7z
 - Fixed IBKR reconnection after gateway/TWS disconnection (#1622), thanks @benjaminsingleton
-- Fixed `from_str` for `Price`, `Quantity` and `Money` when input string contains underscores in Rust, thanks for reporting @filipmacek
 - Fixed Binance Futures account balance calculation (was over stating `free` balance with margin collateral, which could result in a negative `locked` balance)
-- Fixed `leaves_qty` exception message underflow (now correctly displays the projected negative leaves quantity)
+- Fixed Betfair stream reconnection and avoid multiple reconnect attempts (#1644), thanks @imemo88
 
 ---
 

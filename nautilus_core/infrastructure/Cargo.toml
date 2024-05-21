@@ -16,8 +16,10 @@ nautilus-core = { path = "../core" , features = ["python"] }
 nautilus-model = { path = "../model" , features = ["python", "stubs"] }
 anyhow = { workspace = true }
 pyo3 = { workspace = true, optional = true }
+log = { workspace = true }
 rmp-serde = { workspace = true }
 rust_decimal = { workspace = true }
+semver = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = {workspace = true }

@@ -70,6 +70,8 @@ cdef class Cfd(Instrument):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
+    base_currency : Currency
+        The base currency.
     lot_size : Quantity, optional
         The rounded lot unit size.
     max_quantity : Quantity, optional
@@ -153,7 +155,6 @@ cdef class Cfd(Instrument):
         str tick_scheme_name = None,
         dict info = None,
     ):
-
         super().__init__(
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
@@ -182,6 +183,8 @@ cdef class Cfd(Instrument):
             ts_init=ts_init,
             info=info,
         )
+
+        self.base_currency = base_currency
 
     @staticmethod
     cdef Cfd from_dict_c(dict values):
@@ -234,6 +237,7 @@ cdef class Cfd(Instrument):
             "size_precision": obj.size_precision,
             "size_increment": str(obj.size_increment),
             "lot_size": str(obj.lot_size) if obj.lot_size is not None else None,
+            "base_currency": obj.base_currency.code if obj.base_currency is not None else None,
             "max_quantity": str(obj.max_quantity) if obj.max_quantity is not None else None,
             "min_quantity": str(obj.min_quantity) if obj.min_quantity is not None else None,
             "max_notional": str(obj.max_notional) if obj.max_notional is not None else None,

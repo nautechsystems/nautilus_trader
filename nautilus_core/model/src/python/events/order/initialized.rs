@@ -144,10 +144,6 @@ impl OrderInitialized {
         from_dict_pyo3(py, values)
     }
 
-    fn type_str(&self) -> &str {
-        stringify!(OrderInitiliazed)
-    }
-
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);

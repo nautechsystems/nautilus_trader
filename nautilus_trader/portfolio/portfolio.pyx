@@ -450,28 +450,12 @@ cdef class Portfolio(PortfolioFacade):
         cdef list[Position] positions_open
         cdef AccountState account_state = None
         if isinstance(event, OrderFilled):
-            positions_open = self._cache.positions_open(
-                venue=None,  # Faster query filtering
-                instrument_id=instrument.id,
-            )
-            self._update_net_position(
-                instrument_id=instrument.id,
-                positions_open=positions_open
-            )
-
             self._accounts.update_balances(
                 account=account,
                 instrument=instrument,
                 fill=event,
             )
 
-            if account.type == AccountType.MARGIN and account.calculate_account_state:
-                self._accounts.update_positions(
-                    account=account,
-                    instrument=instrument,
-                    positions_open=positions_open,
-                    ts_event=event.ts_event,
-                )
 
             self._unrealized_pnls[event.instrument_id] = self._calculate_unrealized_pnl(
                 instrument_id=event.instrument_id,

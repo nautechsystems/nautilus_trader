@@ -23,14 +23,26 @@ class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True, kw_only=Tr
     Parameters
     ----------
     venue : str
-        The venue to generate a sandbox execution client for
-    currency: str
-        The currency for this venue
+        The venue to generate a sandbox execution client for.
+    currency : str
+        The currency for this venue.
     balance : int
-        The starting balance for this venue
+        The starting balance for this venue.
+    bar_execution : bool, default True
+        If bars should be processed by the matching engine(s) (and move the market).
+    default_leverage : float, default 10.0
+        The account default leverage (for margin accounts).
+    oms_type : str, default 'NETTING'
+        The order management system type used by the exchange.
+    account_type : str, default 'MARGIN'
+        The account type for the client.
 
     """
 
     venue: str
     currency: str
     balance: int
+    bar_execution: bool = True
+    default_leverage: float = 10.0
+    oms_type: str = "NETTING"
+    account_type: str = "MARGIN"

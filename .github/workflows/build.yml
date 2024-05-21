@@ -69,7 +69,7 @@ jobs:
         working-directory: ${{ github.workspace }}
 
       - name: Set up Rust tool-chain (Linux, Windows) stable
-        uses: actions-rust-lang/setup-rust-toolchain@v1.5
+        uses: actions-rust-lang/setup-rust-toolchain@v1.8
         with:
           toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt, clippy
@@ -175,7 +175,7 @@ jobs:
         working-directory: ${{ github.workspace }}
 
       - name: Set up Rust tool-chain (Linux, Windows) stable
-        uses: actions-rust-lang/setup-rust-toolchain@v1.5
+        uses: actions-rust-lang/setup-rust-toolchain@v1.8
         with:
           toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt, clippy
@@ -234,8 +234,7 @@ jobs:
           PARALLEL_BUILD: false
 
   build-macos:
-    if: github.ref == 'refs/heads/master'
-    # if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/nightly'
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/nightly'
     strategy:
       fail-fast: false
       matrix:

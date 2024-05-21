@@ -65,7 +65,8 @@ pub fn order_event_to_pyobject(py: Python, order_event: OrderEventAny) -> PyResu
 }
 
 pub fn pyobject_to_order_event(py: Python, order_event: PyObject) -> PyResult<OrderEventAny> {
-    match order_event.getattr(py, "type_str")?.extract::<&str>(py)? {
+    let class = order_event.getattr(py, "__class__")?;
+    match class.getattr(py, "__name__")?.extract::<&str>(py)? {
         stringify!(OrderAccepted) => Ok(OrderEventAny::Accepted(
             order_event.extract::<OrderAccepted>(py)?,
         )),
