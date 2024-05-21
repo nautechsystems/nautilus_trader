@@ -9,7 +9,8 @@ None
 None
 
 ### Fixes
-None
+- Fixed data order by `ts_init` when streaming (#1656), thanks @twitu
+- Fixed Interactive Brokers tick level historical data downloading (#1653), thanks @DracheShiki
 
 ---
 
