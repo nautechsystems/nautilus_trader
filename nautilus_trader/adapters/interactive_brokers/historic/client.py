@@ -429,7 +429,8 @@ class HistoricInteractiveBrokersClient:
 
         if min_timestamp.floor("S") == max_timestamp.floor("S"):
             max_timestamp = max_timestamp.floor("S") + pd.Timedelta(seconds=1)
-
+        if len(ticks) <= 50:
+            max_timestamp = max_timestamp.floor("S") + pd.Timedelta(minutes=1)
         if max_timestamp >= end_date_time:
             return None, False
 
