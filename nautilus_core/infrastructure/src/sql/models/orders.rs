@@ -17,7 +17,10 @@ use std::{collections::HashMap, str::FromStr};
 
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
-    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
+    enums::{
+        ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TrailingOffsetType,
+        TriggerType,
+    },
     events::order::{
         accepted::OrderAccepted, cancel_rejected::OrderCancelRejected, canceled::OrderCanceled,
         denied::OrderDenied, emulated::OrderEmulated, event::OrderEventAny, expired::OrderExpired,
@@ -27,11 +30,12 @@ use nautilus_model::{
         triggered::OrderTriggered, updated::OrderUpdated,
     },
     identifiers::{
-        client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
-        instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
-        trader_id::TraderId,
+        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
+        instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
+        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
+        venue_order_id::VenueOrderId,
     },
-    types::{price::Price, quantity::Quantity},
+    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 use sqlx::{postgres::PgRow, FromRow, Row};
 use ustr::Ustr;
@@ -116,7 +120,7 @@ impl<'r> FromRow<'r, PgRow> for OrderEventAnyModel {
 
 impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let order_id = row.try_get::<&str, _>("id").map(UUID4::from)?;
+        let event_id = row.try_get::<&str, _>("id").map(UUID4::from)?;
         let client_order_id = row
             .try_get::<&str, _>("order_id")
             .map(ClientOrderId::from)?;
@@ -225,7 +229,7 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
             .ok()
             .and_then(|x| x.map(|x| serde_json::from_value::<Vec<String>>(x).unwrap()))
             .map(|x| x.into_iter().map(|x| Ustr::from(x.as_str())).collect());
-        let order = OrderInitialized::new(
+        let order_event = OrderInitialized::new(
             trader_id,
             strategy_id,
             instrument_id,
@@ -238,7 +242,7 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
             reduce_only,
             quote_quantity,
             reconciliation,
-            order_id,
+            event_id,
             ts_event,
             ts_init,
             price,
@@ -261,13 +265,43 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
             tags,
         )
         .unwrap();
-        Ok(OrderInitializedModel(order))
+        Ok(OrderInitializedModel(order_event))
     }
 }
 
 impl<'r> FromRow<'r, PgRow> for OrderAcceptedModel {
-    fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        todo!()
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let event_id = row.try_get::<&str, _>("id").map(UUID4::from)?;
+        let trader_id = row.try_get::<&str, _>("trader_id").map(TraderId::from)?;
+        let strategy_id = row
+            .try_get::<&str, _>("strategy_id")
+            .map(StrategyId::from)?;
+        let instrument_id = row
+            .try_get::<&str, _>("instrument_id")
+            .map(InstrumentId::from)?;
+        let order_id = row
+            .try_get::<&str, _>("order_id")
+            .map(ClientOrderId::from)?;
+        let venue_order_id = row
+            .try_get::<&str, _>("venue_order_id")
+            .map(VenueOrderId::from)?;
+        let account_id = row.try_get::<&str, _>("account_id").map(AccountId::from)?;
+        let ts_event = row.try_get::<&str, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<&str, _>("ts_init").map(UnixNanos::from)?;
+        let order_event = OrderAccepted::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            order_id,
+            venue_order_id,
+            account_id,
+            event_id,
+            ts_event,
+            ts_init,
+            false,
+        )
+        .unwrap();
+        Ok(OrderAcceptedModel(order_event))
     }
 }
 
@@ -302,8 +336,68 @@ impl<'r> FromRow<'r, PgRow> for OrderExpiredModel {
 }
 
 impl<'r> FromRow<'r, PgRow> for OrderFilledModel {
-    fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        todo!()
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let event_id = row.try_get::<&str, _>("id").map(UUID4::from)?;
+        let trader_id = row.try_get::<&str, _>("trader_id").map(TraderId::from)?;
+        let strategy_id = row
+            .try_get::<&str, _>("strategy_id")
+            .map(StrategyId::from)?;
+        let instrument_id = row
+            .try_get::<&str, _>("instrument_id")
+            .map(InstrumentId::from)?;
+        let order_id = row
+            .try_get::<&str, _>("order_id")
+            .map(ClientOrderId::from)?;
+        let venue_order_id = row
+            .try_get::<&str, _>("venue_order_id")
+            .map(VenueOrderId::from)?;
+        let account_id = row.try_get::<&str, _>("account_id").map(AccountId::from)?;
+        let trade_id = row.try_get::<&str, _>("trade_id").map(TradeId::from)?;
+        let order_side = row
+            .try_get::<&str, _>("order_side")
+            .map(|x| OrderSide::from_str(x).unwrap())?;
+        let order_type = row
+            .try_get::<&str, _>("order_type")
+            .map(|x| OrderType::from_str(x).unwrap())?;
+        let last_px = row.try_get::<&str, _>("last_px").map(Price::from)?;
+        let last_qty = row.try_get::<&str, _>("last_qty").map(Quantity::from)?;
+        let currency = row.try_get::<&str, _>("currency").map(Currency::from)?;
+        let test = row.try_get::<&str, _>("liquidity_side").unwrap();
+        println!("test: {:?}", test);
+        let liquidity_side = row
+            .try_get::<&str, _>("liquidity_side")
+            .map(|x| LiquiditySide::from_str(x).unwrap())?;
+        let ts_event = row.try_get::<&str, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<&str, _>("ts_init").map(UnixNanos::from)?;
+        let position_id = row
+            .try_get::<Option<&str>, _>("position_id")
+            .map(|x| x.map(PositionId::from))?;
+        let commission = row
+            .try_get::<Option<&str>, _>("commission")
+            .map(|x| x.map(|x| Money::from_str(x).unwrap()))?;
+        let order_event = OrderFilled::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            order_id,
+            venue_order_id,
+            account_id,
+            trade_id,
+            order_side,
+            order_type,
+            last_qty,
+            last_px,
+            currency,
+            liquidity_side,
+            event_id,
+            ts_event,
+            ts_init,
+            false,
+            position_id,
+            commission,
+        )
+        .unwrap();
+        Ok(OrderFilledModel(order_event))
     }
 }
 
@@ -338,8 +432,37 @@ impl<'r> FromRow<'r, PgRow> for OrderReleasedModel {
 }
 
 impl<'r> FromRow<'r, PgRow> for OrderSubmittedModel {
-    fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        todo!()
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let trader_id = row.try_get::<&str, _>("trader_id").map(TraderId::from)?;
+        let strategy_id = row
+            .try_get::<&str, _>("strategy_id")
+            .map(StrategyId::from)?;
+        let instrument_id = row
+            .try_get::<&str, _>("instrument_id")
+            .map(InstrumentId::from)?;
+        let client_order_id = row
+            .try_get::<&str, _>("order_id")
+            .map(ClientOrderId::from)?;
+        let account_id = row.try_get::<&str, _>("account_id").map(AccountId::from)?;
+        let event_id = row.try_get::<&str, _>("id").map(UUID4::from)?;
+        let ts_event = row
+            .try_get::<String, _>("ts_event")
+            .map(|res| UnixNanos::from(res.as_str()))?;
+        let ts_init = row
+            .try_get::<String, _>("ts_init")
+            .map(|res| UnixNanos::from(res.as_str()))?;
+        let order_event = OrderSubmitted::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            account_id,
+            event_id,
+            ts_event,
+            ts_init,
+        )
+        .unwrap();
+        Ok(OrderSubmittedModel(order_event))
     }
 }
 
