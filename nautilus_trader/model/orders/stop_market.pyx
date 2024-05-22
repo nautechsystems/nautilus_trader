@@ -337,7 +337,7 @@ cdef class StopMarketOrder(Order):
             client_order_id=init.client_order_id,
             order_side=init.side,
             quantity=init.quantity,
-            trigger_price=Price.from_str_c(init.options['trigger_price']),
+            trigger_price=Price.from_str_c(init.options["trigger_price"]),
             trigger_type=trigger_type_from_str(init.options["trigger_type"]),
             init_id=init.id,
             ts_init=init.ts_init,
