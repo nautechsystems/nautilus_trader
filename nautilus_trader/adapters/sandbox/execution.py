@@ -14,11 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from decimal import Decimal
 from typing import ClassVar
 
 import pandas as pd
 
+from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
@@ -27,7 +27,6 @@ from nautilus_trader.backtest.models import MakerTakerFeeModel
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.data import Data
 from nautilus_trader.execution.reports import FillReport
@@ -39,15 +38,15 @@ from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import account_type_from_str
+from nautilus_trader.model.enums import book_type_from_str
+from nautilus_trader.model.enums import oms_type_from_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.portfolio.base import PortfolioFacade
@@ -81,27 +80,20 @@ class SandboxExecutionClient(LiveExecutionClient):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        venue: str,
-        currency: str,
-        balance: int,
-        oms_type: OmsType = OmsType.NETTING,
-        account_type: AccountType = AccountType.MARGIN,
-        default_leverage: Decimal = Decimal(10),
-        bar_execution: bool = True,
+        config: SandboxExecutionClientConfig,
     ) -> None:
-        self._currency = Currency.from_str(currency)
-        money = Money(value=balance, currency=self._currency)
-        self.balance = AccountBalance(total=money, locked=Money(0, money.currency), free=money)
-        self.test_clock = TestClock()
-        self._account_type = account_type
-        sandbox_venue = Venue(venue)
+        sandbox_venue = Venue(config.venue)
+        oms_type = oms_type_from_str(config.oms_type)
+        account_type = account_type_from_str(config.account_type)
+        base_currency = Currency.from_str(config.base_currency) if config.base_currency else None
+
         super().__init__(
             loop=loop,
-            client_id=ClientId(venue),
+            client_id=ClientId(config.venue),
             venue=sandbox_venue,
             oms_type=oms_type,
             account_type=account_type,
-            base_currency=self._currency,
+            base_currency=base_currency,
             instrument_provider=InstrumentProvider(),
             msgbus=msgbus,
             cache=cache,
@@ -111,28 +103,35 @@ class SandboxExecutionClient(LiveExecutionClient):
         self.exchange = SimulatedExchange(
             venue=sandbox_venue,
             oms_type=oms_type,
-            account_type=self._account_type,
-            base_currency=self._currency,
-            starting_balances=[self.balance.free],
-            default_leverage=default_leverage,
-            leverages={},
+            account_type=account_type,
+            starting_balances=[Money.from_str(b) for b in config.starting_balances],
+            base_currency=base_currency,
+            default_leverage=config.default_leverage,
+            leverages=config.leverages or {},
             instruments=self.INSTRUMENTS,
             modules=[],
             portfolio=portfolio,
             msgbus=self._msgbus,
             cache=cache,
+            clock=clock,
             fill_model=FillModel(),
             fee_model=MakerTakerFeeModel(),
             latency_model=LatencyModel(0),
-            clock=self.test_clock,
-            bar_execution=bar_execution,
-            frozen_account=True,  # <-- Freezing account
+            book_type=book_type_from_str(config.book_type),
+            frozen_account=config.frozen_account,
+            bar_execution=config.bar_execution,
+            reject_stop_orders=config.reject_stop_orders,
+            support_gtd_orders=config.support_gtd_orders,
+            support_contingent_orders=config.support_contingent_orders,
+            use_position_ids=config.use_position_ids,
+            use_random_ids=config.use_random_ids,
+            use_reduce_only=config.use_reduce_only,
         )
         self._client = BacktestExecClient(
             exchange=self.exchange,
             msgbus=msgbus,
-            cache=self._cache,
-            clock=self.test_clock,
+            cache=cache,
+            clock=clock,
         )
         self.exchange.register_client(self._client)
         self.exchange.initialize_account()

@@ -14,7 +14,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from decimal import Decimal
 
 # fmt: off
@@ -70,8 +69,8 @@ exec_clients = {}
 for venue in SANDBOX_VENUES:
     exec_clients[venue] = SandboxExecutionClientConfig(
         venue=venue,
-        currency="USD",
-        balance=1_000_000,
+        base_currency="USD",
+        starting_balances=["1_000_000 USD"],
         instrument_provider=instrument_provider,
     )
 
