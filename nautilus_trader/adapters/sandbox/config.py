@@ -34,7 +34,7 @@ class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True, kw_only=Tr
         The order management system type used by the exchange.
     account_type : str, default 'MARGIN'
         The account type for the client.
-    default_leverage : float, default 10.0
+    default_leverage : decimal.Decimal, default Decimal(1)
         The account default leverage (for margin accounts).
     bar_execution : bool, default True
         If bars should be processed by the matching engine(s) (and move the market).
@@ -46,7 +46,7 @@ class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True, kw_only=Tr
     base_currency: str | None = None
     oms_type: str = "NETTING"
     account_type: str = "MARGIN"
-    default_leverage: Decimal = Decimal(10)
+    default_leverage: Decimal = Decimal(1)
     leverages: dict[str, float] | None = None
     book_type: str = "L1_MBP"
     frozen_account: bool = False
