@@ -27,6 +27,7 @@ from nautilus_trader.backtest.models import MakerTakerFeeModel
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.data import Data
 from nautilus_trader.execution.reports import FillReport
@@ -87,6 +88,8 @@ class SandboxExecutionClient(LiveExecutionClient):
         account_type = account_type_from_str(config.account_type)
         base_currency = Currency.from_str(config.base_currency) if config.base_currency else None
 
+        self.test_clock = TestClock()
+
         super().__init__(
             loop=loop,
             client_id=ClientId(config.venue),
@@ -113,7 +116,7 @@ class SandboxExecutionClient(LiveExecutionClient):
             portfolio=portfolio,
             msgbus=self._msgbus,
             cache=cache,
-            clock=clock,
+            clock=self.test_clock,
             fill_model=FillModel(),
             fee_model=MakerTakerFeeModel(),
             latency_model=LatencyModel(0),
@@ -131,7 +134,7 @@ class SandboxExecutionClient(LiveExecutionClient):
             exchange=self.exchange,
             msgbus=msgbus,
             cache=cache,
-            clock=clock,
+            clock=self.test_clock,
         )
         self.exchange.register_client(self._client)
         self.exchange.initialize_account()
