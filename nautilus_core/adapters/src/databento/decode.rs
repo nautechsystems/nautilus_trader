@@ -414,7 +414,7 @@ pub fn decode_mbo_msg(
         instrument_id,
         parse_book_action(msg.action)?,
         order,
-        msg.flags,
+        msg.flags.raw(),
         msg.sequence.into(),
         msg.ts_recv.into(),
         ts_init,
@@ -550,7 +550,7 @@ pub fn decode_mbp10_msg(
         asks,
         bid_counts,
         ask_counts,
-        msg.flags,
+        msg.flags.raw(),
         msg.sequence.into(),
         msg.ts_recv.into(),
         ts_init,
@@ -1024,8 +1024,8 @@ mod tests {
     use std::path::PathBuf;
 
     use databento::dbn::decode::{dbn::Decoder, DecodeStream};
+    use fallible_streaming_iterator::FallibleStreamingIterator;
     use rstest::*;
-    use streaming_iterator::StreamingIterator;
 
     use super::*;
 
@@ -1038,7 +1038,7 @@ mod tests {
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::MboMsg>();
-        let msg = dbn_stream.next().unwrap();
+        let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let (delta, _) = decode_mbo_msg(msg, instrument_id, 2, 0.into(), false).unwrap();
@@ -1063,7 +1063,7 @@ mod tests {
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::Mbp1Msg>();
-        let msg = dbn_stream.next().unwrap();
+        let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let (quote, _) = decode_mbp1_msg(msg, instrument_id, 2, 0.into(), false).unwrap();
@@ -1084,7 +1084,7 @@ mod tests {
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::Mbp10Msg>();
-        let msg = dbn_stream.next().unwrap();
+        let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let depth10 = decode_mbp10_msg(msg, instrument_id, 2, 0.into()).unwrap();
@@ -1107,7 +1107,7 @@ mod tests {
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::TradeMsg>();
-        let msg = dbn_stream.next().unwrap();
+        let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let trade = decode_trade_msg(msg, instrument_id, 2, 0.into()).unwrap();
@@ -1128,7 +1128,7 @@ mod tests {
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::Mbp1Msg>();
-        let msg = dbn_stream.next().unwrap();
+        let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let (quote, trade) = decode_tbbo_msg(msg, instrument_id, 2, 0.into()).unwrap();
@@ -1158,7 +1158,7 @@ mod tests {
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::OhlcvMsg>();
-        let msg = dbn_stream.next().unwrap();
+        let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let bar = decode_ohlcv_msg(msg, instrument_id, 2, 0.into()).unwrap();
@@ -1181,7 +1181,7 @@ mod tests {
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::InstrumentDefMsg>();
-        let msg = dbn_stream.next().unwrap();
+        let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let result = decode_instrument_def_msg(msg, instrument_id, 0.into());
@@ -1195,7 +1195,7 @@ mod tests {
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::compat::InstrumentDefMsgV1>();
-        let msg = dbn_stream.next().unwrap();
+        let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let result = decode_instrument_def_msg_v1(msg, instrument_id, 0.into());
@@ -1209,7 +1209,7 @@ mod tests {
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::ImbalanceMsg>();
-        let msg = dbn_stream.next().unwrap();
+        let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let imbalance = decode_imbalance_msg(msg, instrument_id, 2, 0.into()).unwrap();
@@ -1233,7 +1233,7 @@ mod tests {
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::StatMsg>();
-        let msg = dbn_stream.next().unwrap();
+        let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let statistics = decode_statistics_msg(msg, instrument_id, 2, 0.into()).unwrap();

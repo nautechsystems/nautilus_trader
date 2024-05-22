@@ -40,7 +40,9 @@ async fn main() {
         if let Some(msg) = record.get::<MboMsg>() {
             println!(
                 "Received delta: {} {} flags={}",
-                count, msg.hd.ts_event, msg.flags,
+                count,
+                msg.hd.ts_event,
+                msg.flags.raw(),
             );
             count += 1;
         }
