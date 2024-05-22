@@ -161,7 +161,13 @@ impl OrderInitialized {
         dict.set_item("quote_quantity", self.quote_quantity)?;
         dict.set_item("reconciliation", self.reconciliation)?;
         // TODO remove options as in legacy cython only
-        dict.set_item("options", PyDict::new(py))?;
+        let options = PyDict::new(py);
+        if self.order_type == OrderType::StopMarket {
+            options.set_item("trigger_type", self.trigger_type.map(|x| x.to_string()))?;
+            options.set_item("trigger_price", self.trigger_price.map(|x| x.to_string()))?;
+            options.set_item("expire_time_ns", self.expire_time.map(|x| x.to_string()))?;
+        }
+        dict.set_item("options", options)?;
         dict.set_item("event_id", self.event_id.to_string())?;
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;

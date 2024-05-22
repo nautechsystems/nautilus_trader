@@ -78,6 +78,10 @@ class CachePostgresAdapter(CacheDatabaseFacade):
         order_pyo3 = transform_order_to_pyo3(order)
         self._backing.add_order(order_pyo3)
 
+    def update_order(self, order: Order):
+        order_pyo3 = transform_order_to_pyo3(order)
+        self._backing.update_order(order_pyo3)
+
     def load_order(self, client_order_id: ClientOrderId):
         order_id_pyo3 = nautilus_pyo3.ClientOrderId.from_str(str(client_order_id))
         order_pyo3 = self._backing.load_order(order_id_pyo3)
