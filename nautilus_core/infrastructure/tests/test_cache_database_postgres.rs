@@ -61,7 +61,7 @@ pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
 mod tests {
     use std::time::Duration;
 
-    use nautilus_core::{equality::entirely_equal, nanos::UnixNanos};
+    use nautilus_core::equality::entirely_equal;
     use nautilus_model::{
         enums::{CurrencyType, OrderSide},
         events::order::event::OrderEventAny,
@@ -77,7 +77,10 @@ mod tests {
             },
             Instrument,
         },
-        orders::{any::OrderAny, stubs::TestOrderStubs},
+        orders::{
+            any::OrderAny,
+            stubs::{TestOrderEventStubs, TestOrderStubs},
+        },
         types::{currency::Currency, price::Price, quantity::Quantity},
     };
     use serial_test::serial;
@@ -306,10 +309,7 @@ mod tests {
             .add_order(OrderAny::Market(market_order.clone()))
             .await
             .unwrap();
-        // 2. submit the order
-        let submitted_event = market_order
-            .generate_order_submitted_event(account)
-            .unwrap();
+        let submitted_event = TestOrderEventStubs::order_submitted(&market_order, account).unwrap();
         market_order
             .apply(OrderEventAny::Submitted(submitted_event))
             .unwrap();
@@ -317,10 +317,12 @@ mod tests {
             .update_order(OrderAny::Market(market_order.clone()))
             .await
             .unwrap();
-        // 3. accept the order
-        let accepted_event = market_order
-            .generate_order_accepted_event(account, VenueOrderId::new("001").unwrap())
-            .unwrap();
+        let accepted_event = TestOrderEventStubs::order_accepted(
+            &market_order,
+            account,
+            VenueOrderId::new("001").unwrap(),
+        )
+        .unwrap();
         market_order
             .apply(OrderEventAny::Accepted(accepted_event))
             .unwrap();
@@ -328,21 +330,19 @@ mod tests {
             .update_order(OrderAny::Market(market_order.clone()))
             .await
             .unwrap();
-        // 4. fill the order
-        let order_filled = market_order
-            .generate_order_filled_event(
-                TradeId::new("T-19700101-0000-000-001-1").unwrap(),
-                Price::from("100.0"),
-                Quantity::from("1.0"),
-                instrument.quote_currency,
-                UnixNanos::from("1234"),
-                Some(AccountId::new("SIM-001").unwrap()),
-                Some(VenueOrderId::new("001").unwrap()),
-                None,
-                None,
-                None,
-            )
-            .unwrap();
+        let order_filled = TestOrderEventStubs::order_filled(
+            &market_order,
+            &instrument,
+            None,
+            Some(TradeId::new("T-19700101-0000-000-001-1").unwrap()),
+            None,
+            Some(Price::from("100.0")),
+            Some(Quantity::from("1.0")),
+            None,
+            None,
+            Some(AccountId::new("SIM-001").unwrap()),
+        )
+        .unwrap();
         market_order
             .apply(OrderEventAny::Filled(order_filled))
             .unwrap();
