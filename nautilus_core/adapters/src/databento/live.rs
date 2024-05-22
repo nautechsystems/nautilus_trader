@@ -262,16 +262,16 @@ impl DatabentoFeedHandler {
                             deltas_count,
                             delta.ts_event,
                             buffering_start,
-                            msg.flags,
+                            msg.flags.raw(),
                         );
 
                         // Check if last message in the packet
-                        if !RecordFlag::F_LAST.matches(msg.flags) {
+                        if !RecordFlag::F_LAST.matches(msg.flags.raw()) {
                             continue; // NOT last message
                         }
 
                         // Check if snapshot
-                        if RecordFlag::F_SNAPSHOT.matches(msg.flags) {
+                        if RecordFlag::F_SNAPSHOT.matches(msg.flags.raw()) {
                             continue; // Buffer snapshot
                         }
 

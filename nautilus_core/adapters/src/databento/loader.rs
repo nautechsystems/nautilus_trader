@@ -20,6 +20,7 @@ use dbn::{
     compat::InstrumentDefMsgV1,
     decode::{dbn::Decoder, DbnMetadata, DecodeStream},
 };
+use fallible_streaming_iterator::FallibleStreamingIterator;
 use indexmap::IndexMap;
 use nautilus_model::{
     data::Data,
@@ -27,7 +28,6 @@ use nautilus_model::{
     instruments::any::InstrumentAny,
     types::currency::Currency,
 };
-use streaming_iterator::StreamingIterator;
 use ustr::Ustr;
 
 use super::{
@@ -153,8 +153,9 @@ impl DatabentoDataLoader {
         let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsgV1>();
 
         Ok(std::iter::from_fn(move || {
-            dbn_stream.advance();
-
+            if let Err(e) = dbn_stream.advance() {
+                return Some(Err(e.into()));
+            }
             match dbn_stream.get() {
                 Some(rec) => {
                     let record = dbn::RecordRef::from(rec);
@@ -198,7 +199,9 @@ impl DatabentoDataLoader {
         let price_precision = Currency::USD().precision; // Hard coded for now
 
         Ok(std::iter::from_fn(move || {
-            dbn_stream.advance();
+            if let Err(e) = dbn_stream.advance() {
+                return Some(Err(e.into()));
+            }
             match dbn_stream.get() {
                 Some(rec) => {
                     let record = dbn::RecordRef::from(rec);
@@ -243,7 +246,9 @@ impl DatabentoDataLoader {
         let price_precision = Currency::USD().precision; // Hard coded for now
 
         Ok(std::iter::from_fn(move || {
-            dbn_stream.advance();
+            if let Err(e) = dbn_stream.advance() {
+                return Some(Err(e.into()));
+            }
             match dbn_stream.get() {
                 Some(rec) => {
                     let record = dbn::RecordRef::from(rec);
@@ -290,7 +295,9 @@ impl DatabentoDataLoader {
         let price_precision = Currency::USD().precision; // Hard coded for now
 
         Ok(std::iter::from_fn(move || {
-            dbn_stream.advance();
+            if let Err(e) = dbn_stream.advance() {
+                return Some(Err(e.into()));
+            }
             match dbn_stream.get() {
                 Some(rec) => {
                     let record = dbn::RecordRef::from(rec);
