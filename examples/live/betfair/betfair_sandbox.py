@@ -71,8 +71,8 @@ async def main(instrument_config: BetfairInstrumentProviderConfig) -> TradingNod
         exec_clients={
             "SANDBOX": SandboxExecutionClientConfig(
                 venue="BETFAIR",
-                currency="AUD",
-                balance=10_000,
+                base_currency="AUD",
+                starting_balances=["10_000 AUD"],
             ),
         },
     )

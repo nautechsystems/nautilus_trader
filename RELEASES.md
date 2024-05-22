@@ -6,7 +6,7 @@ Released on TBD (UTC).
 None
 
 ### Breaking Changes
-None
+- Overhauled `SandboxExecutionClientConfig` to more closely match `BacktestVenueConfig` (many changes and additions)
 
 ### Fixes
 - Fixed data order by `ts_init` when streaming (#1656), thanks @twitu
