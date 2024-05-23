@@ -14,6 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 from decimal import Decimal
 
 # fmt: off
@@ -45,113 +46,122 @@ from nautilus_trader.model.identifiers import TraderId
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
-# Connect to Binance client early to load all instruments
-clock = LiveClock()
-account_type = BinanceAccountType.USDT_FUTURE
-client = get_cached_binance_http_client(
-    clock=clock,
-    account_type=account_type,
-    is_testnet=True,
-)
 
-provider = get_cached_binance_futures_instrument_provider(
-    client=client,
-    clock=clock,
-    account_type=account_type,
-    config=InstrumentProviderConfig(),
-)
-provider.load_all()
-instruments = provider.list_all()
+async def main():
+    """
+    Show how to run a strategy in a sandbox for the Binance venue.
+    """
+    # Connect to Binance client early to load all instruments
+    clock = LiveClock()
+    account_type = BinanceAccountType.USDT_FUTURE
+    client = get_cached_binance_http_client(
+        clock=clock,
+        account_type=account_type,
+        is_testnet=True,
+    )
 
+    provider = get_cached_binance_futures_instrument_provider(
+        client=client,
+        clock=clock,
+        account_type=account_type,
+        config=InstrumentProviderConfig(),
+    )
+    await provider.load_all_async()
+    instruments = provider.list_all()
 
-# Configure the trading node
-config_node = TradingNodeConfig(
-    trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(
-        log_level="INFO",
-        # log_level_file="DEBUG",
-        # log_file_format="json",
-        log_colors=True,
-        use_pyo3=True,
-    ),
-    exec_engine=LiveExecEngineConfig(
-        reconciliation=True,
-        reconciliation_lookback_mins=1440,
-        filter_position_reports=True,
-    ),
-    cache=CacheConfig(
-        # database=DatabaseConfig(timeout=2),
-        timestamps_as_iso8601=True,
-        flush_on_start=False,
-    ),
-    # message_bus=MessageBusConfig(
-    #     database=DatabaseConfig(timeout=2),
-    #     encoding="json",
-    #     timestamps_as_iso8601=True,
-    #     streams_prefix="quoters",
-    #     use_instance_id=False,
-    #     # types_filter=[QuoteTick],
-    #     autotrim_mins=30,
-    # ),
-    # heartbeat_interval=1.0,
-    # snapshot_orders=True,
-    # snapshot_positions=True,
-    # snapshot_positions_interval=5.0,
-    data_clients={
-        "BINANCE": BinanceDataClientConfig(
-            api_key=None,  # 'BINANCE_API_KEY' env var
-            api_secret=None,  # 'BINANCE_API_SECRET' env var
-            account_type=BinanceAccountType.USDT_FUTURE,
-            base_url_http=None,  # Override with custom endpoint
-            base_url_ws=None,  # Override with custom endpoint
-            us=False,  # If client is for Binance US
-            testnet=True,  # If client uses the testnet
-            instrument_provider=InstrumentProviderConfig(load_all=True),
+    # Need to manually set instruments for sandbox exec client
+    SandboxExecutionClient.INSTRUMENTS = instruments
+
+    # Configure the trading node
+    config_node = TradingNodeConfig(
+        trader_id=TraderId("TESTER-001"),
+        logging=LoggingConfig(
+            log_level="INFO",
+            # log_level_file="DEBUG",
+            # log_file_format="json",
+            log_colors=True,
+            use_pyo3=True,
         ),
-    },
-    exec_clients={
-        "SANDBOX": SandboxExecutionClientConfig(
-            venue="BINANCE",
-            starting_balances=["10_000 USDT", "10 ETH"],
+        exec_engine=LiveExecEngineConfig(
+            reconciliation=True,
+            reconciliation_lookback_mins=1440,
+            filter_position_reports=True,
         ),
-    },
-    timeout_connection=30.0,
-    timeout_reconciliation=10.0,
-    timeout_portfolio=10.0,
-    timeout_disconnection=10.0,
-    timeout_post_stop=5.0,
-)
+        cache=CacheConfig(
+            # database=DatabaseConfig(timeout=2),
+            timestamps_as_iso8601=True,
+            flush_on_start=False,
+        ),
+        # message_bus=MessageBusConfig(
+        #     database=DatabaseConfig(timeout=2),
+        #     encoding="json",
+        #     timestamps_as_iso8601=True,
+        #     streams_prefix="quoters",
+        #     use_instance_id=False,
+        #     # types_filter=[QuoteTick],
+        #     autotrim_mins=30,
+        # ),
+        # heartbeat_interval=1.0,
+        # snapshot_orders=True,
+        # snapshot_positions=True,
+        # snapshot_positions_interval=5.0,
+        data_clients={
+            "BINANCE": BinanceDataClientConfig(
+                api_key=None,  # 'BINANCE_API_KEY' env var
+                api_secret=None,  # 'BINANCE_API_SECRET' env var
+                account_type=BinanceAccountType.USDT_FUTURE,
+                base_url_http=None,  # Override with custom endpoint
+                base_url_ws=None,  # Override with custom endpoint
+                us=False,  # If client is for Binance US
+                testnet=True,  # If client uses the testnet
+                instrument_provider=InstrumentProviderConfig(load_all=True),
+            ),
+        },
+        exec_clients={
+            "SANDBOX": SandboxExecutionClientConfig(
+                venue="BINANCE",
+                starting_balances=["10_000 USDT", "10 ETH"],
+            ),
+        },
+        timeout_connection=30.0,
+        timeout_reconciliation=10.0,
+        timeout_portfolio=10.0,
+        timeout_disconnection=10.0,
+        timeout_post_stop=5.0,
+    )
 
-# Instantiate the node with a configuration
-node = TradingNode(config=config_node)
+    # Instantiate the node with a configuration
+    node = TradingNode(config=config_node)
 
-# Configure your strategy
-strat_config = VolatilityMarketMakerConfig(
-    instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
-    external_order_claims=[InstrumentId.from_str("ETHUSDT-PERP.BINANCE")],
-    bar_type=BarType.from_str("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"),
-    atr_period=20,
-    atr_multiple=6.0,
-    trade_size=Decimal("0.010"),
-    # manage_gtd_expiry=True,
-)
-# Instantiate your strategy
-strategy = VolatilityMarketMaker(config=strat_config)
+    # Configure your strategy
+    strat_config = VolatilityMarketMakerConfig(
+        instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
+        external_order_claims=[InstrumentId.from_str("ETHUSDT-PERP.BINANCE")],
+        bar_type=BarType.from_str("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+        atr_period=20,
+        atr_multiple=6.0,
+        trade_size=Decimal("0.010"),
+        # manage_gtd_expiry=True,
+    )
+    # Instantiate your strategy
+    strategy = VolatilityMarketMaker(config=strat_config)
 
-# Add your strategies and modules
-node.trader.add_strategy(strategy)
+    # Add your strategies and modules
+    node.trader.add_strategy(strategy)
 
-SandboxExecutionClient.INSTRUMENTS = instruments
+    # Register your client factories with the node (can take user defined factories)
+    node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
+    node.add_exec_client_factory("SANDBOX", SandboxLiveExecClientFactory)
+    node.build()
 
-# Register your client factories with the node (can take user defined factories)
-node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
-node.add_exec_client_factory("SANDBOX", SandboxLiveExecClientFactory)
-node.build()
+    try:
+        await node.run_async()
+    finally:
+        await node.stop_async()
+        await asyncio.sleep(1)
+        node.dispose()
 
 
 # Stop and dispose of the node with SIGINT/CTRL+C
 if __name__ == "__main__":
-    try:
-        node.run()
-    finally:
-        node.dispose()
+    asyncio.run(main())
