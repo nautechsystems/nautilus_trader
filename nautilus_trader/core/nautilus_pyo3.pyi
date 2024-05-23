@@ -711,7 +711,7 @@ class HaltReason(Enum):
 class OmsType(Enum):
     UNSPECIFIED = "UNSPECIFIED"
     NETTING = "NETTING"
-    HEDGING = "HEDGIN"
+    HEDGING = "HEDGING"
 
 class OptionKind(Enum):
     CALL = "CALL"
