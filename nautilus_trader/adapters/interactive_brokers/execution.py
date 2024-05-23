@@ -295,14 +295,20 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             timestring_to_timestamp(ib_order.goodTillDate) if ib_order.tif == "GTD" else None
         )
 
-        # TODO: Testing for advanced Open orders
+        mapped_order_type_info = ib_to_nautilus_order_type[ib_order.orderType]
+        if isinstance(mapped_order_type_info, tuple):
+            order_type, time_in_force = mapped_order_type_info
+        else:
+            order_type = mapped_order_type_info
+            time_in_force = ib_to_nautilus_time_in_force[ib_order.tif]
+
         order_status = OrderStatusReport(
             account_id=self.account_id,
             instrument_id=instrument.id,
             venue_order_id=VenueOrderId(str(ib_order.orderId)),
             order_side=ib_to_nautilus_order_side[ib_order.action],
-            order_type=ib_to_nautilus_order_type[ib_order.orderType],
-            time_in_force=ib_to_nautilus_time_in_force[ib_order.tif],
+            order_type=order_type,
+            time_in_force=time_in_force,
             order_status=order_status,
             quantity=total_qty,
             filled_qty=Quantity.from_int(0),
@@ -498,9 +504,13 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     def _transform_order_to_ib_order(self, order: Order) -> IBOrder:
         ib_order = IBOrder()
+        time_in_force = order.time_in_force
         for key, field, fn in MAP_ORDER_FIELDS:
             if value := getattr(order, key, None):
-                setattr(ib_order, field, fn(value))
+                if key == "order_type" and time_in_force == TimeInForce.AT_THE_CLOSE:
+                    setattr(ib_order, field, fn((value, time_in_force)))
+                else:
+                    setattr(ib_order, field, fn(value))
 
         if self._cache.instrument(order.instrument_id).is_inverse:
             ib_order.cashQty = int(ib_order.totalQuantity)
