@@ -3,7 +3,9 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added Interactive Brokers support for Market-on-Close (MOC) and Limit-on-Close (LOC) order types (#1663), thanks @rsmb7z
+- Added Bybit sandbox example (#1659), thanks @davidsblom
+- Added Binance sandbox example
 
 ### Breaking Changes
 - Overhauled `SandboxExecutionClientConfig` to more closely match `BacktestVenueConfig` (many changes and additions)
