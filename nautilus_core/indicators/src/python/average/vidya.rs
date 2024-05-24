@@ -37,7 +37,10 @@ impl VariableIndexDynamicAverage {
     }
 
     fn __repr__(&self) -> String {
-        format!("VariableIndexDynamicAverage({},{:?})", self.period, self.price_type)
+        format!(
+            "VariableIndexDynamicAverage({},{:?})",
+            self.period, self.price_type
+        )
     }
 
     #[getter]
