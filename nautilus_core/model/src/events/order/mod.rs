@@ -17,13 +17,17 @@ use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use ustr::Ustr;
 
 use crate::{
-    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
+    enums::{
+        ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TrailingOffsetType,
+        TriggerType,
+    },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
-        instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
-        trader_id::TraderId, venue_order_id::VenueOrderId,
+        instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
+        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
+        venue_order_id::VenueOrderId,
     },
-    types::{price::Price, quantity::Quantity},
+    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
 pub mod accepted;
@@ -55,15 +59,20 @@ pub trait OrderEvent: 'static + Send {
     fn trader_id(&self) -> TraderId;
     fn strategy_id(&self) -> StrategyId;
     fn instrument_id(&self) -> InstrumentId;
+    fn trade_id(&self) -> Option<TradeId>;
+    fn currency(&self) -> Option<Currency>;
     fn client_order_id(&self) -> ClientOrderId;
     fn reason(&self) -> Option<Ustr>;
     fn quantity(&self) -> Option<Quantity>;
     fn time_in_force(&self) -> Option<TimeInForce>;
+    fn liquidity_side(&self) -> Option<LiquiditySide>;
     fn post_only(&self) -> Option<bool>;
     fn reduce_only(&self) -> Option<bool>;
     fn quote_quantity(&self) -> Option<bool>;
     fn reconciliation(&self) -> bool;
     fn price(&self) -> Option<Price>;
+    fn last_px(&self) -> Option<Price>;
+    fn last_qty(&self) -> Option<Quantity>;
     fn trigger_price(&self) -> Option<Price>;
     fn trigger_type(&self) -> Option<TriggerType>;
     fn limit_offset(&self) -> Option<Price>;
@@ -81,6 +90,8 @@ pub trait OrderEvent: 'static + Send {
     fn exec_spawn_id(&self) -> Option<ClientOrderId>;
     fn venue_order_id(&self) -> Option<VenueOrderId>;
     fn account_id(&self) -> Option<AccountId>;
+    fn position_id(&self) -> Option<PositionId>;
+    fn commission(&self) -> Option<Money>;
     fn ts_event(&self) -> UnixNanos;
     fn ts_init(&self) -> UnixNanos;
 }

@@ -95,10 +95,6 @@ impl OrderFilled {
         self.to_string()
     }
 
-    fn type_str(&self) -> &str {
-        stringify!(OrderFilled)
-    }
-
     #[getter]
     #[pyo3(name = "is_buy")]
     fn py_is_buy(&self) -> bool {
@@ -252,6 +248,7 @@ impl OrderFilled {
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
         dict.set_item("reconciliation", self.reconciliation)?;
+        dict.set_item("info", PyDict::new(py))?;
         match self.position_id {
             Some(position_id) => dict.set_item("position_id", position_id.to_string())?,
             None => dict.set_item("position_id", py.None())?,

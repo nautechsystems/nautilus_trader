@@ -40,6 +40,7 @@ MAP_TIME_IN_FORCE: dict[int, str] = {
     TimeInForce.IOC: "IOC",
     TimeInForce.GTD: "GTD",
     TimeInForce.AT_THE_OPEN: "OPG",
+    TimeInForce.AT_THE_CLOSE: "DAY",
     TimeInForce.FOK: "FOK",
     # unsupported: 'DTC',
 }
@@ -54,7 +55,7 @@ ORDER_SIDE_TO_ORDER_ACTION: dict[str, str] = {
     "SLD": "SELL",
 }
 
-MAP_ORDER_TYPE: dict[int, str] = {
+MAP_ORDER_TYPE: dict[int | tuple[int, int], str] = {
     OrderType.LIMIT: "LMT",
     OrderType.LIMIT_IF_TOUCHED: "LIT",
     OrderType.MARKET: "MKT",
@@ -64,6 +65,8 @@ MAP_ORDER_TYPE: dict[int, str] = {
     OrderType.STOP_MARKET: "STP",
     OrderType.TRAILING_STOP_LIMIT: "TRAIL LIMIT",
     OrderType.TRAILING_STOP_MARKET: "TRAIL",
+    (OrderType.MARKET, TimeInForce.AT_THE_CLOSE): "MOC",
+    (OrderType.LIMIT, TimeInForce.AT_THE_CLOSE): "LOC",
 }
 
 

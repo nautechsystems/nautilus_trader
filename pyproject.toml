@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.192.0"
+version = "1.193.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -59,14 +59,14 @@ fsspec = "==2023.6.0"  # Pinned due breaking changes
 msgspec = "^0.18.6"
 pandas = "^2.2.2"
 pyarrow = ">=16.1.0"
-pytz = ">=2023.4.0"
+pytz = ">=2024.1.0"
 tqdm = "^4.66.4"
 uvloop = {version = "^0.19.0", markers = "sys_platform != 'win32'"}
 
 async-timeout = {version = "^4.0.3", optional = true}
 betfair_parser = {version = "==0.12.0", optional = true}  # Pinned for stability
 defusedxml = {version = "^0.7.1", optional = true}
-docker = {version = "^7.0.0", optional = true}
+docker = {version = "^7.1.0", optional = true}
 nautilus_ibapi = {version = "==10.19.2", optional = true}  # Pinned for stability
 
 [tool.poetry.extras]
@@ -83,7 +83,7 @@ docformatter = "^1.7.5"
 mypy = "^1.10.0"
 pandas-stubs = "^2.2.2"
 pre-commit = "^3.7.1"
-ruff = "^0.4.4"
+ruff = "^0.4.5"
 types-pytz = "^2023.3"
 types-requests = "^2.31"
 types-toml = "^0.10.2"

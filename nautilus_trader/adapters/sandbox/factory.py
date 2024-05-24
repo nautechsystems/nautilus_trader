@@ -48,8 +48,6 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
             The event loop for the client.
         name : str
             The custom client ID.
-        config : dict[str, object]
-            The configuration for the client.
         portfolio : PortfolioFacade
             The read-only portfolio for the client.
         msgbus : MessageBus
@@ -58,6 +56,8 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
+        config : dict[str, object]
+            The configuration for the client.
 
         Returns
         -------
@@ -70,9 +70,6 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
             portfolio=portfolio,
             msgbus=msgbus,
             cache=cache,
-            venue=name or config.venue,
-            balance=config.balance,
-            currency=config.currency,
-            bar_execution=config.bar_execution,
+            config=config,
         )
         return exec_client

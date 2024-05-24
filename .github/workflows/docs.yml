@@ -37,13 +37,13 @@ jobs:
 
       - name: Set up Rust tool-chain (Linux, Windows) stable
         if: (runner.os == 'Linux') || (runner.os == 'Windows')
-        uses: actions-rust-lang/setup-rust-toolchain@v1.5
+        uses: actions-rust-lang/setup-rust-toolchain@v1.8
         with:
           toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt, clippy
 
       - name: Set up Rust tool-chain (nightly)
-        uses: actions-rust-lang/setup-rust-toolchain@v1.5
+        uses: actions-rust-lang/setup-rust-toolchain@v1.8
         with:
           toolchain: nightly
           components: rustfmt, clippy

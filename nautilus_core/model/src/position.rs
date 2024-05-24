@@ -582,7 +582,9 @@ mod tests {
             None,
             None,
             None,
-        );
+            None,
+        )
+        .unwrap();
         let fill2 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
             &order2,
             &audusd_sim,
@@ -593,7 +595,9 @@ mod tests {
             None,
             None,
             None,
-        );
+            None,
+        )
+        .unwrap();
         let mut position = Position::new(audusd_sim, fill1).unwrap();
         position.apply(&fill2);
     }
@@ -617,7 +621,9 @@ mod tests {
             None,
             None,
             None,
-        );
+            None,
+        )
+        .unwrap();
         let last_price = Price::from_str("1.0005").unwrap();
         let position = Position::new(audusd_sim, fill).unwrap();
         assert_eq!(position.symbol(), audusd_sim.id.symbol);
@@ -683,7 +689,9 @@ mod tests {
             None,
             None,
             None,
-        );
+            None,
+        )
+        .unwrap();
         let last_price = Price::from_str("1.00050").unwrap();
         let position = Position::new(audusd_sim, fill).unwrap();
         assert_eq!(position.symbol(), audusd_sim.id.symbol);
@@ -747,7 +755,9 @@ mod tests {
             Some(Quantity::from(50_000)),
             None,
             None,
-        );
+            None,
+        )
+        .unwrap();
         let last_price = Price::from_str("1.00048").unwrap();
         let position = Position::new(audusd_sim, fill).unwrap();
         assert_eq!(position.quantity, Quantity::from(50_000));
@@ -803,7 +813,9 @@ mod tests {
             Some(Quantity::from(50_000)),
             None,
             None,
-        );
+            None,
+        )
+        .unwrap();
         let fill2 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
             &order,
             &audusd_sim,
@@ -814,7 +826,9 @@ mod tests {
             Some(Quantity::from(50_000)),
             None,
             None,
-        );
+            None,
+        )
+        .unwrap();
         let last_price = Price::from_str("1.0005").unwrap();
         let mut position = Position::new(audusd_sim, fill1).unwrap();
         position.apply(&fill2);
@@ -868,7 +882,9 @@ mod tests {
             None,
             None,
             Some(UnixNanos::from(1_000_000_000)),
-        );
+            None,
+        )
+        .unwrap();
         let mut position = Position::new(audusd_sim, fill).unwrap();
 
         let fill2 = OrderFilled::new(
@@ -958,7 +974,9 @@ mod tests {
             None,
             None,
             None,
-        );
+            None,
+        )
+        .unwrap();
         let mut position = Position::new(audusd_sim, fill1).unwrap();
         // create closing from order from different venue but same strategy
         let fill2 = TestOrderEventStubs::order_filled(
@@ -971,7 +989,9 @@ mod tests {
             Some(Quantity::from(50_000)),
             None,
             None,
-        );
+            None,
+        )
+        .unwrap();
         let fill3 = TestOrderEventStubs::order_filled(
             &order2,
             &audusd_sim,
@@ -982,7 +1002,9 @@ mod tests {
             Some(Quantity::from(50_000)),
             None,
             None,
-        );
+            None,
+        )
+        .unwrap();
         let last = Price::from("1.0005");
         position.apply(&fill2);
         position.apply(&fill3);
@@ -1049,7 +1071,9 @@ mod tests {
             None,
             None,
             None,
-        );
+            None,
+        )
+        .unwrap();
         let mut position = Position::new(audusd_sim, fill1).unwrap();
         let fill2 = TestOrderEventStubs::order_filled(
             &order2,
@@ -1061,7 +1085,9 @@ mod tests {
             None,
             None,
             None,
-        );
+            None,
+        )
+        .unwrap();
         let last = Price::from("1.0005");
         position.apply(&fill2);
 
@@ -1135,7 +1161,9 @@ mod tests {
             None,
             None,
             None,
-        );
+            None,
+        )
+        .unwrap();
         let fill2 = TestOrderEventStubs::order_filled(
             &order2,
             &audusd_sim,
@@ -1146,7 +1174,9 @@ mod tests {
             None,
             None,
             None,
-        );
+            None,
+        )
+        .unwrap();
         let fill3 = TestOrderEventStubs::order_filled(
             &order3,
             &audusd_sim,
@@ -1157,7 +1187,9 @@ mod tests {
             None,
             None,
             None,
-        );
+            None,
+        )
+        .unwrap();
         let mut position = Position::new(audusd_sim, fill1).unwrap();
         let last = Price::from("1.0005");
         position.apply(&fill2);
@@ -1223,7 +1255,9 @@ mod tests {
             None,
             Some(commission1),
             None,
-        );
+            None,
+        )
+        .unwrap();
         let mut position = Position::new(currency_pair_ethusdt, fill1).unwrap();
         let quantity2 = Quantity::from(17);
         let order2 = TestOrderStubs::market_order(
@@ -1246,7 +1280,9 @@ mod tests {
             None,
             Some(commission2),
             None,
-        );
+            None,
+        )
+        .unwrap();
         position.apply(&fill2);
         assert_eq!(position.quantity, Quantity::from(29));
         assert_eq!(
@@ -1275,7 +1311,9 @@ mod tests {
             None,
             Some(commission3),
             None,
-        );
+            None,
+        )
+        .unwrap();
         position.apply(&fill3);
         assert_eq!(position.quantity, Quantity::from(20));
         assert_eq!(position.realized_pnl, Some(Money::from("13.89666207 USDT")));
@@ -1301,7 +1339,9 @@ mod tests {
             None,
             Some(commission4),
             None,
-        );
+            None,
+        )
+        .unwrap();
         position.apply(&fill4);
         assert_eq!(position.quantity, Quantity::from("16"));
         assert_eq!(position.realized_pnl, Some(Money::from("36.19948966 USDT")));
@@ -1327,7 +1367,9 @@ mod tests {
             None,
             Some(commission5),
             None,
-        );
+            None,
+        )
+        .unwrap();
         position.apply(&fill5);
         assert_eq!(position.quantity, Quantity::from("19"));
         assert_eq!(position.realized_pnl, Some(Money::from("36.16858966 USDT")));
@@ -1355,7 +1397,9 @@ mod tests {
             None,
             Some(commission1),
             Some(UnixNanos::from(1_000_000_000)),
-        );
+            None,
+        )
+        .unwrap();
         let mut position = Position::new(audusd_sim, fill1).unwrap();
 
         let fill2 = OrderFilled::new(
@@ -1474,7 +1518,9 @@ mod tests {
             None,
             Some(commission1),
             None,
-        );
+            None,
+        )
+        .unwrap();
         let mut position = Position::new(currency_pair_btcusdt, fill1).unwrap();
         let order2 = TestOrderStubs::market_order(
             currency_pair_btcusdt.id,
@@ -1500,7 +1546,9 @@ mod tests {
             None,
             Some(commission2),
             None,
-        );
+            None,
+        )
+        .unwrap();
         position.apply(&fill2);
         assert_eq!(position.quantity, Quantity::from(29));
         assert_eq!(
@@ -1532,7 +1580,9 @@ mod tests {
             None,
             Some(commission3),
             None,
-        );
+            None,
+        )
+        .unwrap();
         position.apply(&fill3);
         assert_eq!(position.quantity, Quantity::from(20));
         assert_eq!(
@@ -1564,7 +1614,9 @@ mod tests {
             None,
             Some(commission4),
             None,
-        );
+            None,
+        )
+        .unwrap();
         position.apply(&fill4);
         assert_eq!(position.quantity, Quantity::from(23));
         assert_eq!(
@@ -1596,7 +1648,9 @@ mod tests {
             None,
             Some(commission5),
             None,
-        );
+            None,
+        )
+        .unwrap();
         position.apply(&fill5);
         assert_eq!(position.quantity, Quantity::from(19));
         assert_eq!(
@@ -1631,7 +1685,9 @@ mod tests {
             None,
             None,
             None,
-        );
+            None,
+        )
+        .unwrap();
         let position = Position::new(currency_pair_btcusdt, fill).unwrap();
         let result = position.calculate_pnl(10500.0, 10500.0, Quantity::from("100000.0"));
         assert_eq!(result, Money::from("0 USDT"));
@@ -1663,7 +1719,9 @@ mod tests {
             None,
             Some(commission),
             None,
-        );
+            None,
+        )
+        .unwrap();
         let position = Position::new(currency_pair_btcusdt, fill).unwrap();
         let pnl = position.calculate_pnl(10500.0, 10510.0, Quantity::from("12.0"));
         assert_eq!(pnl, Money::from("120 USDT"));
@@ -1705,7 +1763,9 @@ mod tests {
             None,
             Some(commission),
             None,
-        );
+            None,
+        )
+        .unwrap();
         let position = Position::new(currency_pair_btcusdt, fill).unwrap();
         let pnl = position.calculate_pnl(10500.0, 10480.5, Quantity::from("10.0"));
         assert_eq!(pnl, Money::from("-195 USDT"));
@@ -1747,7 +1807,9 @@ mod tests {
             None,
             Some(commission),
             None,
-        );
+            None,
+        )
+        .unwrap();
         let position = Position::new(currency_pair_btcusdt, fill).unwrap();
         let pnl = position.calculate_pnl(10500.0, 10390.0, Quantity::from("10.15"));
         assert_eq!(pnl, Money::from("1116.5 USDT"));
@@ -1789,7 +1851,9 @@ mod tests {
             None,
             Some(commission),
             None,
-        );
+            None,
+        )
+        .unwrap();
         let position = Position::new(currency_pair_btcusdt, fill).unwrap();
         let pnl = position.calculate_pnl(10500.0, 10670.5, Quantity::from("10.0"));
         assert_eq!(pnl, Money::from("-1705 USDT"));
@@ -1827,7 +1891,9 @@ mod tests {
             None,
             Some(commission),
             None,
-        );
+            None,
+        )
+        .unwrap();
         let position = Position::new(xbtusd_bitmex, fill).unwrap();
         let pnl = position.calculate_pnl(10000.0, 11000.0, Quantity::from("100000.0"));
         assert_eq!(pnl, Money::from("-0.90909091 BTC"));
@@ -1864,7 +1930,9 @@ mod tests {
             None,
             Some(commission),
             None,
-        );
+            None,
+        )
+        .unwrap();
         let position = Position::new(ethusdt_bitmex, fill).unwrap();
 
         assert_eq!(
@@ -1910,7 +1978,9 @@ mod tests {
             None,
             Some(commission1),
             None,
-        );
+            None,
+        )
+        .unwrap();
         let commission2 = calculate_commission(
             currency_pair_btcusdt,
             order2.quantity,
@@ -1928,7 +1998,9 @@ mod tests {
             None,
             Some(commission2),
             None,
-        );
+            None,
+        )
+        .unwrap();
         let mut position = Position::new(currency_pair_btcusdt, fill1).unwrap();
         position.apply(&fill2);
         let pnl = position.unrealized_pnl(Price::from("11505.60"));
@@ -1969,7 +2041,9 @@ mod tests {
             None,
             Some(commission),
             None,
-        );
+            None,
+        )
+        .unwrap();
         let position = Position::new(currency_pair_btcusdt, fill).unwrap();
         let pnl = position.unrealized_pnl(Price::from("10407.15"));
         assert_eq!(pnl, Money::from("582.03640000 USDT"));
@@ -2005,7 +2079,9 @@ mod tests {
             None,
             Some(commission),
             None,
-        );
+            None,
+        )
+        .unwrap();
 
         let position = Position::new(xbtusd_bitmex, fill).unwrap();
         let pnl = position.unrealized_pnl(Price::from("11505.60"));
@@ -2036,7 +2112,9 @@ mod tests {
             None,
             Some(commission),
             None,
-        );
+            None,
+        )
+        .unwrap();
         let position = Position::new(xbtusd_bitmex, fill).unwrap();
         let pnl = position.unrealized_pnl(Price::from("12506.65"));
 
@@ -2074,7 +2152,9 @@ mod tests {
             None,
             Some(commission),
             None,
-        );
+            None,
+        )
+        .unwrap();
         let position = Position::new(audusd_sim, fill).unwrap();
         assert_eq!(position.signed_qty, expected);
     }

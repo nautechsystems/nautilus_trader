@@ -21,14 +21,18 @@ use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use crate::{
-    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
+    enums::{
+        ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TrailingOffsetType,
+        TriggerType,
+    },
     events::order::OrderEvent,
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
-        instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
-        trader_id::TraderId, venue_order_id::VenueOrderId,
+        instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
+        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
+        venue_order_id::VenueOrderId,
     },
-    types::{price::Price, quantity::Quantity},
+    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
 #[repr(C)]
@@ -133,6 +137,14 @@ impl OrderEvent for OrderReleased {
         self.instrument_id
     }
 
+    fn trade_id(&self) -> Option<TradeId> {
+        None
+    }
+
+    fn currency(&self) -> Option<Currency> {
+        None
+    }
+
     fn client_order_id(&self) -> ClientOrderId {
         self.client_order_id
     }
@@ -147,6 +159,10 @@ impl OrderEvent for OrderReleased {
 
     fn time_in_force(&self) -> Option<TimeInForce> {
         None
+    }
+
+    fn liquidity_side(&self) -> Option<LiquiditySide> {
+        todo!()
     }
 
     fn post_only(&self) -> Option<bool> {
@@ -166,6 +182,14 @@ impl OrderEvent for OrderReleased {
     }
 
     fn price(&self) -> Option<Price> {
+        None
+    }
+
+    fn last_px(&self) -> Option<Price> {
+        None
+    }
+
+    fn last_qty(&self) -> Option<Quantity> {
         None
     }
 
@@ -234,6 +258,14 @@ impl OrderEvent for OrderReleased {
     }
 
     fn account_id(&self) -> Option<AccountId> {
+        None
+    }
+
+    fn position_id(&self) -> Option<PositionId> {
+        None
+    }
+
+    fn commission(&self) -> Option<Money> {
         None
     }
 

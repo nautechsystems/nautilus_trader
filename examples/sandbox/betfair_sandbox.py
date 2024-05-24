@@ -55,6 +55,9 @@ async def main(instrument_config: BetfairInstrumentProviderConfig) -> TradingNod
     instruments = provider.list_all()
     print(f"Found instruments:\n{[ins.id for ins in instruments]}")
 
+    # Need to manually set instruments for sandbox exec client
+    SandboxExecutionClient.INSTRUMENTS = instruments
+
     # Load account currency
     account_currency = await provider.get_account_currency()
 
@@ -71,8 +74,8 @@ async def main(instrument_config: BetfairInstrumentProviderConfig) -> TradingNod
         exec_clients={
             "SANDBOX": SandboxExecutionClientConfig(
                 venue="BETFAIR",
-                currency="AUD",
-                balance=10_000,
+                base_currency="AUD",
+                starting_balances=["10_000 AUD"],
             ),
         },
     )
@@ -90,9 +93,6 @@ async def main(instrument_config: BetfairInstrumentProviderConfig) -> TradingNod
     # Setup TradingNode
     node = TradingNode(config=config)
     node.trader.add_strategies(strategies)
-
-    # Need to manually set instruments for sandbox exec client
-    SandboxExecutionClient.INSTRUMENTS = instruments
 
     # Register your client factories with the node (can take user defined factories)
     node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)

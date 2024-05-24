@@ -132,6 +132,13 @@ impl PostgresCacheDatabase {
         result.map_err(to_pyruntime_err)
     }
 
+    #[pyo3(name = "update_order")]
+    fn py_update_order(slf: PyRef<'_, Self>, order: PyObject, py: Python<'_>) -> PyResult<()> {
+        let order_any = convert_pyobject_to_order_any(py, order)?;
+        let result = get_runtime().block_on(async { slf.update_order(order_any).await });
+        result.map_err(to_pyruntime_err)
+    }
+
     #[pyo3(name = "load_order")]
     fn py_load_order(
         slf: PyRef<'_, Self>,

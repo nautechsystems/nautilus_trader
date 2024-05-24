@@ -27,6 +27,7 @@ from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP
 from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAPConfig
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import TraderId
@@ -82,24 +83,6 @@ engine = BacktestEngine(config=config)
 
 See the [Configuration](../api_reference/config.md) API reference for details of all configuration options available.
 
-## Adding data
-
-Now we can add data to the backtest engine. First add the `Instrument` object we previously initialized, which matches our data.
-
-Then we can add the trade ticks we wrangled earlier:
-```python
-# Add instrument(s)
-engine.add_instrument(ETHUSDT_BINANCE)
-
-# Add data
-engine.add_data(ticks)
-
-```
-
-```{note}
-The amount of and variety of data types is only limited by machine resources and your imagination (custom types are possible).
-```
-
 ## Adding venues
 
 We'll need a venue to trade on, which should match the *market* data being added to the engine.
@@ -117,6 +100,24 @@ engine.add_venue(
     starting_balances=[Money(1_000_000.0, USDT), Money(10.0, ETH)],
 )
 
+```
+
+## Adding data
+
+Now we can add data to the backtest engine. First add the `Instrument` object we previously initialized, which matches our data.
+
+Then we can add the trade ticks we wrangled earlier:
+```python
+# Add instrument(s)
+engine.add_instrument(ETHUSDT_BINANCE)
+
+# Add data
+engine.add_data(ticks)
+
+```
+
+```{note}
+The amount of and variety of data types is only limited by machine resources and your imagination (custom types are possible).
 ```
 
 ```{note}

@@ -20,11 +20,9 @@ from nautilus_trader.config import NonNegativeFloat
 from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.nautilus_pyo3 import BookImbalanceRatio
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import book_type_from_str
@@ -103,12 +101,12 @@ class OrderBookImbalance(Strategy):
         self.instrument: Instrument | None = None
         if self.config.use_quote_ticks:
             assert self.config.book_type == "L1_MBP"
-        self.book_type: BookType = book_type_from_str(self.config.book_type)
+        self.book_type: nautilus_pyo3.BookType = nautilus_pyo3.BookType(self.config.book_type)
 
         # We need to initialize the Rust pyo3 objects
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value)
         self.book = nautilus_pyo3.OrderBook(self.book_type, pyo3_instrument_id)
-        self.imbalance = BookImbalanceRatio()
+        self.imbalance = nautilus_pyo3.BookImbalanceRatio()
 
     def on_start(self) -> None:
         """
@@ -121,7 +119,7 @@ class OrderBookImbalance(Strategy):
             return
 
         if self.config.use_quote_ticks:
-            self.book_type = BookType.L1_MBP
+            self.book_type = nautilus_pyo3.BookType.L1_MBP
             self.subscribe_quote_ticks(self.instrument.id)
         else:
             self.book_type = book_type_from_str(self.config.book_type)

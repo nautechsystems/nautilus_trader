@@ -1,3 +1,21 @@
+# NautilusTrader 1.193.0 Beta
+
+Released on 24th May 2024 (UTC).
+
+### Enhancements
+- Added Interactive Brokers support for Market-on-Close (MOC) and Limit-on-Close (LOC) order types (#1663), thanks @rsmb7z
+- Added Bybit sandbox example (#1659), thanks @davidsblom
+- Added Binance sandbox example
+
+### Breaking Changes
+- Overhauled `SandboxExecutionClientConfig` to more closely match `BacktestVenueConfig` (many changes and additions)
+
+### Fixes
+- Fixed DataFusion backend data ordering by `ts_init` when streaming (#1656), thanks @twitu
+- Fixed Interactive Brokers tick level historical data downloading (#1653), thanks @DracheShiki
+
+---
+
 # NautilusTrader 1.192.0 Beta
 
 Released on 18th May 2024 (UTC).
