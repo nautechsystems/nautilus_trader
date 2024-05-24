@@ -101,12 +101,18 @@ cdef extern from "../includes/common.h":
         # The **ERROR** error log level.
         ERROR # = 40,
 
+    # Provides a real-time clock which uses system time.
+    #
+    # Timestamps are guaranteed to be unique and monotonically increasing.
     cdef struct LiveClock:
         pass
 
     cdef struct LogGuard:
         pass
 
+    # Provides a static test clock.
+    #
+    # Stores the current timestamp internally which can be advanced.
     cdef struct TestClock:
         pass
 

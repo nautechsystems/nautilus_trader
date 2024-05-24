@@ -71,6 +71,9 @@ pub trait Clock {
     fn cancel_timers(&mut self);
 }
 
+/// Provides a static test clock.
+///
+/// Stores the current timestamp internally which can be advanced.
 pub struct TestClock {
     time: AtomicTime,
     timers: HashMap<Ustr, TestTimer>,
@@ -261,6 +264,9 @@ impl Clock for TestClock {
     }
 }
 
+/// Provides a real-time clock which uses system time.
+///
+/// Timestamps are guaranteed to be unique and monotonically increasing.
 pub struct LiveClock {
     time: &'static AtomicTime,
     timers: HashMap<Ustr, LiveTimer>,
