@@ -43,16 +43,16 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Features
 
-- **Fast** - Core written in Rust with asynchronous networking using [tokio](https://crates.io/crates/tokio)
-- **Reliable** - Type safety and thread safety through Rust. Redis backed performant state persistence
-- **Portable** - OS independent, runs on Linux, macOS, Windows. Deploy using Docker
-- **Flexible** - Modular adapters mean any REST, WebSocket, or FIX API can be integrated
-- **Advanced** - Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`
-- **Customizable** - Add user defined custom components, or assemble entire systems from scratch leveraging the cache and message bus
-- **Backtesting** - Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution
-- **Live** - Use identical strategy implementations between backtesting and live deployments
-- **Multi-venue** - Multiple venue capabilities facilitate market making and statistical arbitrage strategies
-- **AI Agent Training** - Backtest engine fast enough to be used to train AI trading agents (RL/ES)
+- **Fast:** Core written in Rust with asynchronous networking using [tokio](https://crates.io/crates/tokio)
+- **Reliable:** Type safety and thread safety through Rust. Redis backed performant state persistence
+- **Portable:** OS independent, runs on Linux, macOS, Windows. Deploy using Docker
+- **Flexible:** Modular adapters mean any REST, WebSocket, or FIX API can be integrated
+- **Advanced:** Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`
+- **Customizable:** Add user defined custom components, or assemble entire systems from scratch leveraging the cache and message bus
+- **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution
+- **Live:** Use identical strategy implementations between backtesting and live deployments
+- **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies
+- **AI training:** - Backtest engine fast enough to be used to train AI trading agents (RL/ES)
 
 ![Alt text](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-art.png?raw=true "nautilus")
 
@@ -63,10 +63,10 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Why NautilusTrader?
 
-- **Highly performant event-driven Python** - native binary core components
-- **Parity between backtesting and live trading** - identical strategy code
-- **Reduced operational risk** - risk management functionality, logical correctness and type safety
-- **Highly extendable** - message bus, custom components and actors, custom data, custom adapters
+- **Highly performant event-driven Python:** Native binary core components
+- **Parity between backtesting and live trading:** Identical strategy code
+- **Reduced operational risk:** Risk management functionality, logical correctness and type safety
+- **Highly extendable:** Message bus, custom components and actors, custom data, custom adapters
 
 Traditionally, trading strategy research and backtesting might be conducted in Python (or other suitable language)
 using vectorized methods, with the strategy then needing to be reimplemented in a more event-drive way
@@ -129,8 +129,8 @@ into a unified interface. The following integrations are currently supported:
 | [Databento](https://databento.com)                        | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/databento.html) |
 | [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/ib.html)        |
 
-- `ID:` The default client ID for the integrations adapter clients
-- `Type:` The type of integration (often the venue type)
+- **ID:** The default client ID for the integrations adapter clients
+- **Type:** The type of integration (often the venue type)
 
 ### Status
 - `building` - Under construction and likely not in a usable state
@@ -196,19 +196,23 @@ Refer to the [Installation Guide](https://docs.nautilustrader.io/getting_started
 
 ## Versioning and releases
 
-NautilusTrader is currently following a bi-weekly beta release schedule.
+NautilusTrader is currently targeting a weekly release schedule, occasionally there may be experimental
+or larger features which will delay a release by several weeks.
+
 The API is becoming more stable, however breaking changes are still possible between releases.
 Documentation of these changes in the release notes are made on a best-effort basis.
 
 ### Branches
 
+We aim to maintain a stable passing build on all branches.
+
 - `master` branch will always reflect the source code for the latest released version
 - `nightly` branch may contain experimental features and is generally merged from `develop` branch daily, and also when required
-- `develop` branch is normally very active with frequent commits and may contain experimental features. We aim to maintain a stable
-  passing build on this branch
+- `develop` branch is normally very active with frequent commits and may contain experimental features
 
-The current roadmap has a goal of achieving a stable API for a `2.x` version. From this
-point we will follow a formal process for releases, with deprecation periods for any API changes.
+The current roadmap has a goal of achieving a stable API for a `2.x` version (likely post Rust port).
+From this point we will follow a formal process for releases, with deprecation periods for any API changes.
+This allows us to maintain a maximum pace of development for now.
 
 ## Makefile
 
