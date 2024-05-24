@@ -9,10 +9,10 @@ into a unified interface.
 ## Structure of an Adapter
 
 An adapter typically consists of several components:
-1. **Instrument Provider**: Supplies instrument definitions
-2. **Data Client**: Handles live market data feeds and historical data requests
-3. **Execution Client**: Handles order execution and management
-5. **Configuration**: Configures the client settings
+1. **Instrument Provider:** Supplies instrument definitions
+2. **Data Client:** Handles live market data feeds and historical data requests
+3. **Execution Client:** Handles order execution and management
+5. **Configuration:** Configures the client settings
 
 ## Steps to Implement a New Adapter
 

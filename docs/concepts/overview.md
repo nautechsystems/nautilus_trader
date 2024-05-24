@@ -26,7 +26,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution
 - **Live:** Use identical strategy implementations between backtesting and live deployments
 - **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies
-- **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES)
+- **AI Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES)
 
 ![Nautilus](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-art.png?raw=true "nautilus")
 > *nautilus - from ancient Greek 'sailor' and naus 'ship'.*
@@ -36,10 +36,10 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Why NautilusTrader?
 
-- **Highly performant event-driven Python** - native binary core components
-- **Parity between backtesting and live trading** - identical strategy code
-- **Reduced operational risk** - risk management functionality, logical correctness and type safety
-- **Highly extendable** - message bus, custom components and actors, custom data, custom adapters
+- **Highly performant event-driven Python:** Native binary core components
+- **Parity between backtesting and live trading:** Identical strategy code
+- **Reduced operational risk:** Risk management functionality, logical correctness and type safety
+- **Highly extendable:** Message bus, custom components and actors, custom data, custom adapters
 
 Traditionally, trading strategy research and backtesting might be conducted in Python (or other suitable language)
 using vectorized methods, with the strategy then needing to be reimplemented in a more event-drive way
@@ -95,11 +95,13 @@ Python 3.11 offers improved run-time performance, while Python 3.12 additionally
 ```
 
 ## Domain model
+
 The platform features a comprehensive trading domain model that includes various value types such as 
 `Price` and `Quantity`, as well as more complex entities such as `Order` and `Position` objects, 
 which are used to aggregate multiple events to determine state.
 
 ### Data Types
+
 The following market data types can be requested historically, and also subscribed to as live streams when available from a venue / data provider, and implemented in an integrations adapter.
 - `OrderBookDelta` (L1/L2/L3)
 - `OrderBookDeltas` (container type)
@@ -140,6 +142,7 @@ The price types and bar aggregations can be combined with step sizes >= 1 in any
 This enables maximum flexibility and now allows alternative bars to be aggregated for live trading.
 
 ### Account Types
+
 The following account types are available for both live and backtest environments;
 
 - `Cash` single-currency (base currency)
@@ -149,6 +152,7 @@ The following account types are available for both live and backtest environment
 - `Betting` single-currency
 
 ### Order Types
+
 The following order types are available (when possible on a venue);
 
 - `MARKET`
@@ -160,4 +164,3 @@ The following order types are available (when possible on a venue);
 - `LIMIT_IF_TOUCHED`
 - `TRAILING_STOP_MARKET`
 - `TRAILING_STOP_LIMIT`
-

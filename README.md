@@ -52,7 +52,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution
 - **Live:** Use identical strategy implementations between backtesting and live deployments
 - **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies
-- **AI training:** - Backtest engine fast enough to be used to train AI trading agents (RL/ES)
+- **AI Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES)
 
 ![Alt text](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-art.png?raw=true "nautilus")
 
