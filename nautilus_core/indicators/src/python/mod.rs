@@ -35,6 +35,7 @@ pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::average::hma::HullMovingAverage>()?;
     m.add_class::<crate::average::rma::WilderMovingAverage>()?;
     m.add_class::<crate::average::vidya::VariableIndexDynamicAverage>()?;
+    m.add_class::<crate::average::vwap::VolumeWeightedAveragePrice>()?;
     // book
     m.add_class::<crate::book::imbalance::BookImbalanceRatio>()?;
     // ratio

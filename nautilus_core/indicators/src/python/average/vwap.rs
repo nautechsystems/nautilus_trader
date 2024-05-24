@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::{nanos::UnixNanos, python::to_pyvalue_err};
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -21,26 +21,19 @@ use nautilus_model::{
 use pyo3::prelude::*;
 
 use crate::{
-    average::{vidya::VariableIndexDynamicAverage, MovingAverageType},
+    average::vwap::VolumeWeightedAveragePrice,
     indicator::{Indicator, MovingAverage},
 };
 
 #[pymethods]
-impl VariableIndexDynamicAverage {
+impl VolumeWeightedAveragePrice {
     #[new]
-    pub fn py_new(
-        period: usize,
-        price_type: Option<PriceType>,
-        cmo_ma_type: Option<MovingAverageType>,
-    ) -> PyResult<Self> {
-        Self::new(period, price_type, cmo_ma_type).map_err(to_pyvalue_err)
+    pub fn py_new() -> PyResult<Self> {
+        Self::new().map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "VariableIndexDynamicAverage({},{:?})",
-            self.period, self.price_type
-        )
+        format!("VolumeWeightedAveragePrice")
     }
 
     #[getter]
@@ -50,39 +43,9 @@ impl VariableIndexDynamicAverage {
     }
 
     #[getter]
-    #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
-        self.period
-    }
-
-    #[getter]
-    #[pyo3(name = "count")]
-    fn py_count(&self) -> usize {
-        self.count()
-    }
-
-    #[getter]
-    #[pyo3(name = "alpha")]
-    fn py_alpha(&self) -> f64 {
-        self.alpha
-    }
-
-    #[getter]
     #[pyo3(name = "has_inputs")]
     fn py_has_inputs(&self) -> bool {
         self.has_inputs()
-    }
-
-    #[getter]
-    #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
-        self.initialized
-    }
-
-    #[getter]
-    #[pyo3(name = "cmo_pct")]
-    fn py_cmo_pct(&self) -> f64 {
-        self.cmo_pct
     }
 
     #[getter]
@@ -91,19 +54,19 @@ impl VariableIndexDynamicAverage {
         self.value
     }
 
-    #[pyo3(name = "handle_quote_tick")]
-    fn py_handle_quote_tick(&mut self, tick: &QuoteTick) {
-        self.py_update_raw(tick.extract_price(self.price_type).into());
-    }
-
-    #[pyo3(name = "handle_trade_tick")]
-    fn py_handle_trade_tick(&mut self, tick: &TradeTick) {
-        self.update_raw((&tick.price).into());
+    #[getter]
+    #[pyo3(name = "initialized")]
+    fn py_initialized(&self) -> bool {
+        self.initialized
     }
 
     #[pyo3(name = "handle_bar")]
     fn py_handle_bar(&mut self, bar: &Bar) {
-        self.update_raw((&bar.close).into());
+        self.py_update_raw(
+            (&bar.close).into(),
+            (&bar.volume).into(),
+            bar.ts_init.as_f64(),
+        );
     }
 
     #[pyo3(name = "reset")]
@@ -112,7 +75,7 @@ impl VariableIndexDynamicAverage {
     }
 
     #[pyo3(name = "update_raw")]
-    fn py_update_raw(&mut self, value: f64) {
-        self.update_raw(value);
+    fn py_update_raw(&mut self, value: f64, volume: f64, ts: f64) {
+        self.update_raw(value, volume, ts);
     }
 }
