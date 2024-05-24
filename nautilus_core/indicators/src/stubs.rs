@@ -31,8 +31,8 @@ use crate::{
     average::{
         ama::AdaptiveMovingAverage, dema::DoubleExponentialMovingAverage,
         ema::ExponentialMovingAverage, hma::HullMovingAverage, rma::WilderMovingAverage,
-        sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage, wma::WeightedMovingAverage,
-        MovingAverageType,
+        sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage,
+        vwap::VolumeWeightedAveragePrice, wma::WeightedMovingAverage, MovingAverageType,
     },
     momentum::{bias::Bias, cmo::ChandeMomentumOscillator, rsi::RelativeStrengthIndex},
     ratio::efficiency_ratio::EfficiencyRatio,
@@ -135,6 +135,11 @@ pub fn indicator_dema_10() -> DoubleExponentialMovingAverage {
 pub fn indicator_vidya_10() -> VariableIndexDynamicAverage {
     VariableIndexDynamicAverage::new(10, Some(PriceType::Mid), Some(MovingAverageType::Wilder))
         .unwrap()
+}
+
+#[fixture]
+pub fn indicator_vwap() -> VolumeWeightedAveragePrice {
+    VolumeWeightedAveragePrice::new().unwrap()
 }
 
 #[fixture]

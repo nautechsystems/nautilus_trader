@@ -41,7 +41,7 @@ pub struct VariableIndexDynamicAverage {
     pub initialized: bool,
     has_inputs: bool,
     pub cmo: ChandeMomentumOscillator,
-    cmo_pct: f64,
+    pub cmo_pct: f64,
 }
 
 impl Display for VariableIndexDynamicAverage {
