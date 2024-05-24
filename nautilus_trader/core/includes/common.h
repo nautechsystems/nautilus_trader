@@ -193,10 +193,20 @@ typedef enum LogLevel {
     ERROR = 40,
 } LogLevel;
 
+/**
+ * Provides a real-time clock which uses system time.
+ *
+ * Timestamps are guaranteed to be unique and monotonically increasing.
+ */
 typedef struct LiveClock LiveClock;
 
 typedef struct LogGuard LogGuard;
 
+/**
+ * Provides a static test clock.
+ *
+ * Stores the current timestamp internally which can be advanced.
+ */
 typedef struct TestClock TestClock;
 
 /**

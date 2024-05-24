@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! The core cache in-memory structure.
+
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     time::{SystemTime, UNIX_EPOCH},
