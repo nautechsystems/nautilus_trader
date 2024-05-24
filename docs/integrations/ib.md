@@ -56,7 +56,7 @@ print(gateway.is_logged_in(gateway.container))
 print(gateway.container.logs())
 ```
 
-**Note**: To supply credentials to the Interactive Brokers Gateway, either pass the `username` and `password` to the config dictionaries, or set the following environment variables:
+**Note:** To supply credentials to the Interactive Brokers Gateway, either pass the `username` and `password` to the config dictionaries, or set the following environment variables:
 - `TWS_USERNAME`
 - `TWS_PASSWORD`
 
