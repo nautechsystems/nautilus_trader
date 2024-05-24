@@ -85,6 +85,12 @@ impl VariableIndexDynamicAverage {
         self.cmo_pct
     }
 
+    #[getter]
+    #[pyo3(name = "value")]
+    fn py_value(&self) -> f64 {
+        self.value
+    }
+
     #[pyo3(name = "handle_quote_tick")]
     fn py_handle_quote_tick(&mut self, tick: &QuoteTick) {
         self.py_update_raw(tick.extract_price(self.price_type).into());

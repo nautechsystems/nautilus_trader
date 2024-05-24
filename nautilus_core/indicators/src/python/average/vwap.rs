@@ -49,6 +49,12 @@ impl VolumeWeightedAveragePrice {
     }
 
     #[getter]
+    #[pyo3(name = "value")]
+    fn py_value(&self) -> f64 {
+        self.value
+    }
+
+    #[getter]
     #[pyo3(name = "initialized")]
     fn py_initialized(&self) -> bool {
         self.initialized
