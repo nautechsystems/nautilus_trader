@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents a valid trading venue ID.
+
 use std::{
     fmt::{Debug, Display, Formatter},
     hash::Hash,
@@ -39,7 +41,7 @@ impl Venue {
     ///
     /// # Panics
     ///
-    /// Panics if the value is not a valid string.
+    /// Panics if `value` is not a valid string.
     pub fn new(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
 

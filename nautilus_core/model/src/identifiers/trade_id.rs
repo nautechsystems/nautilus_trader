@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents a valid trade match ID (assigned by a trading venue).
+
 use std::{
     ffi::{CStr, CString},
     fmt::{Debug, Display, Formatter},
@@ -26,11 +28,6 @@ use serde::{Deserialize, Deserializer, Serialize};
 const TRADE_ID_LEN: usize = 37;
 
 /// Represents a valid trade match ID (assigned by a trading venue).
-///
-/// Maximum length is 36 characters.
-///
-/// The unique ID assigned to the trade entity once it is received or matched by
-/// the exchange or central counterparty.
 ///
 /// Can correspond to the `TradeID <1003> field` of the FIX protocol.
 #[repr(C)]
@@ -47,9 +44,14 @@ pub struct TradeId {
 impl TradeId {
     /// Creates a new [`TradeId`] instance.
     ///
+    /// Maximum length is 36 characters.
+    ///
+    /// The unique ID assigned to the trade entity once it is received or matched by
+    /// the exchange or central counterparty.
+    ///
     /// # Panics
     ///
-    /// Panics if the value is not a valid string, or value length is greater than 36.
+    /// Panics if `value` is not a valid string, or value length is greater than 36.
     pub fn new(value: &str) -> anyhow::Result<Self> {
         let cstr = CString::new(value).expect("`CString` conversion failed");
         Self::from_cstr(cstr)

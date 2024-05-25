@@ -256,7 +256,7 @@ impl Cache {
 
     // -- COMMANDS --------------------------------------------------------------------------------
 
-    /// Clears the current general cache and load the general objects from the cache database.
+    /// Clears the current general cache and loads the general objects from the cache database.
     pub fn cache_general(&mut self) -> anyhow::Result<()> {
         self.general = match &self.database {
             Some(db) => db.load()?,
@@ -270,7 +270,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Clears the current currencies cache and load currencies from the cache database.
+    /// Clears the current currencies cache and loads currencies from the cache database.
     pub fn cache_currencies(&mut self) -> anyhow::Result<()> {
         self.currencies = match &self.database {
             Some(db) => db.load_currencies()?,
@@ -281,7 +281,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Clears the current instruments cache and load instruments from the cache database.
+    /// Clears the current instruments cache and loads instruments from the cache database.
     pub fn cache_instruments(&mut self) -> anyhow::Result<()> {
         self.instruments = match &self.database {
             Some(db) => db.load_instruments()?,
@@ -292,7 +292,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Clears the current synthetic instruments cache and load synthetic instruments from the cache
+    /// Clears the current synthetic instruments cache and loads synthetic instruments from the cache
     /// database.
     pub fn cache_synthetics(&mut self) -> anyhow::Result<()> {
         self.synthetics = match &self.database {
@@ -307,7 +307,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Clears the current accounts cache and load accounts from the cache database.
+    /// Clears the current accounts cache and loads accounts from the cache database.
     pub fn cache_accounts(&mut self) -> anyhow::Result<()> {
         self.accounts = match &self.database {
             Some(db) => db.load_accounts()?,
@@ -321,7 +321,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Clears the current orders cache and load orders from the cache database.
+    /// Clears the current orders cache and loads orders from the cache database.
     pub fn cache_orders(&mut self) -> anyhow::Result<()> {
         self.orders = match &self.database {
             Some(db) => db.load_orders()?,
@@ -332,7 +332,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Clears the current positions cache and load positions from the cache database.
+    /// Clears the current positions cache and loads positions from the cache database.
     pub fn cache_positions(&mut self) -> anyhow::Result<()> {
         self.positions = match &self.database {
             Some(db) => db.load_positions()?,

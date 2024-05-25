@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents a valid instrument ID.
+
 use std::{
     fmt::{Debug, Display, Formatter},
     hash::Hash,
