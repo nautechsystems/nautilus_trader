@@ -103,8 +103,6 @@ impl VerticalHorizontalFilter {
 
         let min_price = self.prices.iter().cloned().fold(f64::INFINITY, f64::min);
 
-        // print the max and min prices
-        println!("max: {}, min: {}", max_price, min_price);
         self.ma.update_raw(f64::abs(close - self.previous_close));
         if self.initialized {
             self.value = f64::abs(max_price - min_price) / self.period as f64 / self.ma.value()
