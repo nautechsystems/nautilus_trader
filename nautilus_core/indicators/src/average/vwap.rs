@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::data::bar::Bar;
 use std::fmt::{Display, Formatter};
+
+use nautilus_model::data::bar::Bar;
 
 use crate::indicator::Indicator;
 
