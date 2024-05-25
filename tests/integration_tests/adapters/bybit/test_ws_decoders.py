@@ -49,6 +49,9 @@ from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerSpot
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerSpotMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTrade
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTradeMsg
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 
 
 class TestBybitWsDecoders:
@@ -131,6 +134,28 @@ class TestBybitWsDecoders:
         assert result.topic == "orderbook.50.BTCUSDT"
         assert result.ts == 1687940967466
         assert result.type == "delta"
+
+    def test_ws_public_orderbook_delta_parse_to_deltas(self):
+        # Prepare
+        item = pkgutil.get_data(
+            "tests.integration_tests.adapters.bybit.resources.ws_messages.public",
+            "ws_orderbook_delta.json",
+        )
+        assert item is not None
+        instrument_id = InstrumentId(Symbol("BTCUSDT-LINEAR"), Venue("BYBIT"))
+        decoder = msgspec.json.Decoder(BybitWsOrderbookDepthMsg)
+
+        # Act
+        result = decoder.decode(item).data.parse_to_deltas(
+            instrument_id=instrument_id,
+            price_precision=2,
+            size_precision=2,
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Assert
+        assert len(result.deltas) == 12
 
     def test_ws_public_orderbook_snapshot(self):
         item = pkgutil.get_data(
