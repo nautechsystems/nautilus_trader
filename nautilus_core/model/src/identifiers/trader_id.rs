@@ -37,7 +37,7 @@ use ustr::Ustr;
 pub struct TraderId(Ustr);
 
 impl TraderId {
-    /// Creates a new `TraderId` instance from the given identifier value.
+    /// Creates a new `TraderId` instance.
     ///
     /// # Panics
     ///

@@ -43,7 +43,7 @@ pub struct UUID4 {
 }
 
 impl UUID4 {
-    /// Creates a new `UUID4`.
+    /// Creates a new `UUID4` instance.
     #[must_use]
     pub fn new() -> Self {
         let uuid = Uuid::new_v4();

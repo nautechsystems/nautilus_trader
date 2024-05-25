@@ -31,7 +31,7 @@ use ustr::Ustr;
 pub struct Symbol(Ustr);
 
 impl Symbol {
-    /// Creates a new `Symbol` instance from the given identifier value.
+    /// Creates a new `Symbol` instance.
     ///
     /// # Panics
     ///

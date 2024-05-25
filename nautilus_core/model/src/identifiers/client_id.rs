@@ -31,7 +31,7 @@ use ustr::Ustr;
 pub struct ClientId(Ustr);
 
 impl ClientId {
-    /// Creates a new `ClientId` instance from the given identifier value.
+    /// Creates a new `ClientId` instance.
     ///
     /// # Panics
     ///
