@@ -33,7 +33,7 @@ use crate::{
     types::price::{Price, ERROR_PRICE},
 };
 
-/// Provides a C compatible Foreign Function Interface (FFI) for an underlying
+/// C compatible Foreign Function Interface (FFI) for an underlying
 /// [`SyntheticInstrument`].
 ///
 /// This struct wraps `SyntheticInstrument` in a way that makes it compatible with C function

@@ -31,7 +31,7 @@ use nautilus_model::{
     types::price::Price,
 };
 
-/// Provides a generic order matching core.
+/// A generic order matching core.
 pub struct OrderMatchingCore {
     /// The instrument ID for the matching core.
     pub instrument_id: InstrumentId,

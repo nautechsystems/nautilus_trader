@@ -37,7 +37,7 @@ use crate::{
     },
 };
 
-/// Provides a C compatible Foreign Function Interface (FFI) for an underlying [`LogGuard`].
+/// C compatible Foreign Function Interface (FFI) for an underlying [`LogGuard`].
 ///
 /// This struct wraps `LogGuard` in a way that makes it compatible with C function
 /// calls, enabling interaction with `LogGuard` in a C environment.

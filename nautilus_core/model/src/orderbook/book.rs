@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides a performant, generic, multi-purpose order book.
+//! A performant, generic, multi-purpose order book.
 
 use nautilus_core::nanos::UnixNanos;
 

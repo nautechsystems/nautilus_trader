@@ -824,7 +824,7 @@ typedef struct OrderBookDelta_t {
 } OrderBookDelta_t;
 
 /**
- * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
+ * C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
  *
  * This struct wraps `OrderBookDeltas` in a way that makes it compatible with C function
  * calls, enabling interaction with `OrderBookDeltas` in a C environment.
@@ -1222,7 +1222,7 @@ typedef struct PositionId_t {
 } PositionId_t;
 
 /**
- * Provides a C compatible Foreign Function Interface (FFI) for an underlying
+ * C compatible Foreign Function Interface (FFI) for an underlying
  * [`SyntheticInstrument`].
  *
  * This struct wraps `SyntheticInstrument` in a way that makes it compatible with C function
@@ -1237,7 +1237,7 @@ typedef struct SyntheticInstrument_API {
 } SyntheticInstrument_API;
 
 /**
- * Provides a C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
+ * C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
  *
  * This struct wraps `OrderBook` in a way that makes it compatible with C function
  * calls, enabling interaction with `OrderBook` in a C environment.
@@ -1251,7 +1251,7 @@ typedef struct OrderBook_API {
 } OrderBook_API;
 
 /**
- * Provides a C compatible Foreign Function Interface (FFI) for an underlying order book[`Level`].
+ * C compatible Foreign Function Interface (FFI) for an underlying order book[`Level`].
  *
  * This struct wraps `Level` in a way that makes it compatible with C function
  * calls, enabling interaction with `Level` in a C environment.

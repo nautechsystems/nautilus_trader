@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides an `OrderMatchingEngine` for use in research, backtesting and sandbox environments.
+//! An `OrderMatchingEngine` for use in research, backtesting and sandbox environments.
 
 // Under development
 #![allow(dead_code)]
@@ -55,7 +55,7 @@ pub struct OrderMatchingEngineConfig {
     pub use_reduce_only: bool,
 }
 
-/// Provides an order matching engine for a single market.
+/// An order matching engine for a single market.
 pub struct OrderMatchingEngine {
     /// The venue for the matching engine.
     pub venue: Venue,

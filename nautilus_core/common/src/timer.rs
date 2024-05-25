@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides real-time and test timers for use with `Clock` implementations.
+//! Real-time and test timers for use with `Clock` implementations.
 
 use std::{
     cmp::Ordering,
@@ -120,7 +120,7 @@ impl Ord for TimeEventHandler {
     }
 }
 
-/// Provides a test timer for user with a `TestClock`.
+/// A test timer for user with a `TestClock`.
 #[derive(Clone, Copy, Debug)]
 pub struct TestTimer {
     pub name: Ustr,
@@ -222,7 +222,7 @@ impl Iterator for TestTimer {
     }
 }
 
-/// Provides a live timer for use with a `LiveClock`.
+/// A live timer for use with a `LiveClock`.
 pub struct LiveTimer {
     pub name: Ustr,
     pub interval_ns: NonZeroU64,

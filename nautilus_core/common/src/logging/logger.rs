@@ -148,7 +148,7 @@ impl LoggerConfig {
 /// configured to filter modules and write up to a specific level only using
 /// by passing a configuration using the `RUST_LOG` environment variable.
 
-/// Provides a high-performance logger utilizing a MPSC channel under the hood.
+/// A high-performance logger utilizing a MPSC channel under the hood.
 ///
 /// A separate thead is spawned at initialization which receives [`LogEvent`] structs over the
 /// channel.

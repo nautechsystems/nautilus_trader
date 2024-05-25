@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides a high-performance HTTP client implementation.
+//! A high-performance HTTP client implementation.
 
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
@@ -31,7 +31,7 @@ use tracing::trace;
 
 use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
 
-/// Provides a high-performance `HttpClient` for HTTP requests.
+/// A high-performance `HttpClient` for HTTP requests.
 ///
 /// The client is backed by a hyper Client which keeps connections alive and
 /// can be cloned cheaply. The client also has a list of header fields to

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides core parsing functions.
+//! Core parsing functions.
 
 /// Returns the decimal precision inferred from the given string.
 #[must_use]

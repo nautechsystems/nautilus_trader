@@ -110,7 +110,7 @@ impl fmt::Display for BusMessage {
     }
 }
 
-/// Provides a generic message bus to facilitate various messaging patterns.
+/// A generic message bus to facilitate various messaging patterns.
 ///
 /// The bus provides both a producer and consumer API for Pub/Sub, Req/Rep, as
 /// well as direct point-to-point messaging to registered endpoints.

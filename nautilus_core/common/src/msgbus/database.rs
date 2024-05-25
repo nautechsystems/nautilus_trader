@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 
-/// Provides a generic message bus database facade.
+/// A generic message bus database facade.
 ///
 /// The main operations take a consistent `key` and `payload` which should provide enough
 /// information to implement the message bus database in many different technologies.

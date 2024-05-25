@@ -36,7 +36,7 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-/// Provides a C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
+/// C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
 ///
 /// This struct wraps `OrderBook` in a way that makes it compatible with C function
 /// calls, enabling interaction with `OrderBook` in a C environment.

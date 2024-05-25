@@ -79,7 +79,7 @@ impl DatabaseCommand {
     }
 }
 
-/// Provides a generic cache database facade.
+/// A generic cache database facade.
 ///
 /// The main operations take a consistent `key` and `payload` which should provide enough
 /// information to implement the cache database in many different technologies.
