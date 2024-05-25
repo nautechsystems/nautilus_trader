@@ -34,7 +34,10 @@ use crate::{
         sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage,
         vwap::VolumeWeightedAveragePrice, wma::WeightedMovingAverage, MovingAverageType,
     },
-    momentum::{bias::Bias, cmo::ChandeMomentumOscillator, rsi::RelativeStrengthIndex},
+    momentum::{
+        bias::Bias, cmo::ChandeMomentumOscillator, rsi::RelativeStrengthIndex,
+        vhf::VerticalHorizontalFilter,
+    },
     ratio::efficiency_ratio::EfficiencyRatio,
 };
 
@@ -172,4 +175,9 @@ pub fn cmo_10() -> ChandeMomentumOscillator {
 #[fixture]
 pub fn bias_10() -> Bias {
     Bias::new(10, Some(MovingAverageType::Wilder)).unwrap()
+}
+
+#[fixture]
+pub fn vhf_10() -> VerticalHorizontalFilter {
+    VerticalHorizontalFilter::new(10, Some(MovingAverageType::Simple)).unwrap()
 }
