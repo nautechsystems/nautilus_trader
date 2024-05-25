@@ -13,6 +13,7 @@ None
 
 ### Fixes
 - Fixed Bybit order book deltas parsing (was appending bid side twice) (#1668), thanks @davidsblom
+- Fixed `BinanceBar` streaming feather writing (was not setting up writer)
 
 ---
 
