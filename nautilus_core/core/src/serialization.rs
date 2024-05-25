@@ -13,8 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Defines common serialization traits.
+//! Defines common serialization traits and functions.
 
+use std::fmt;
+
+use serde::{
+    de::{Unexpected, Visitor},
+    Deserializer,
+};
+
+struct BoolVisitor;
 use serde::{Deserialize, Serialize};
 
 /// Represents types which are serializable for JSON and `MsgPack` specifications.
@@ -37,5 +45,76 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
     /// Serialize an object to `MsgPack` encoded bytes.
     fn as_msgpack_bytes(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> {
         rmp_serde::to_vec_named(self)
+    }
+}
+
+impl<'de> Visitor<'de> for BoolVisitor {
+    type Value = u8;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a boolean as u8")
+    }
+
+    fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(u8::from(value))
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        if value > u64::from(u8::MAX) {
+            Err(E::invalid_value(Unexpected::Unsigned(value), &self))
+        } else {
+            Ok(value as u8)
+        }
+    }
+}
+
+pub fn from_bool_as_u8<'de, D>(deserializer: D) -> Result<u8, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_any(BoolVisitor)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use serde::Deserialize;
+
+    use super::from_bool_as_u8;
+
+    #[derive(Deserialize)]
+    pub struct TestStruct {
+        #[serde(deserialize_with = "from_bool_as_u8")]
+        pub value: u8,
+    }
+
+    #[test]
+    fn test_deserialize_bool_as_u8_with_boolean() {
+        let json_true = r#"{"value": true}"#;
+        let test_struct: TestStruct = serde_json::from_str(json_true).unwrap();
+        assert_eq!(test_struct.value, 1);
+
+        let json_false = r#"{"value": false}"#;
+        let test_struct: TestStruct = serde_json::from_str(json_false).unwrap();
+        assert_eq!(test_struct.value, 0);
+    }
+
+    #[test]
+    fn test_deserialize_bool_as_u8_with_u64() {
+        let json_true = r#"{"value": 1}"#;
+        let test_struct: TestStruct = serde_json::from_str(json_true).unwrap();
+        assert_eq!(test_struct.value, 1);
+
+        let json_false = r#"{"value": 0}"#;
+        let test_struct: TestStruct = serde_json::from_str(json_false).unwrap();
+        assert_eq!(test_struct.value, 0);
     }
 }
