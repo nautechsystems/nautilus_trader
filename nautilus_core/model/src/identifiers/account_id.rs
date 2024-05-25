@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents a valid account ID.
+
 use std::{
     fmt::{Debug, Display, Formatter},
     hash::Hash,
@@ -24,12 +26,6 @@ use ustr::Ustr;
 use super::venue::Venue;
 
 /// Represents a valid account ID.
-///
-/// Must be correctly formatted with two valid strings either side of a hyphen '-'.
-/// It is expected an account ID is the name of the issuer with an account number
-/// separated by a hyphen.
-///
-/// Example: "IB-D02851908".
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
@@ -41,9 +37,14 @@ pub struct AccountId(Ustr);
 impl AccountId {
     /// Creates a new [`AccountId`] instance.
     ///
+    /// Must be correctly formatted with two valid strings either side of a hyphen '-'.
+    /// It is expected an account ID is the name of the issuer with an account number
+    /// separated by a hyphen.
+    ///
+    /// Example: "IB-D02851908".
     /// # Panics
     ///
-    /// Panics if the value is not a valid string, or does not contain a hyphen '-' separator.
+    /// Panics if `value` is not a valid string, or does not contain a hyphen '-' separator.
     pub fn new(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
         check_string_contains(value, "-", stringify!(value))?;

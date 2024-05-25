@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Functions related to order book analysis.
+
 use std::collections::BTreeMap;
 
 use super::{book::OrderBook, ladder::BookPrice, level::Level};

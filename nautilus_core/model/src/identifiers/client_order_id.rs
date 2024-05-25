@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents a valid client order ID (assigned by the Nautilus system).
+
 use std::{
     fmt::{Debug, Display, Formatter},
     hash::Hash,
@@ -35,7 +37,7 @@ impl ClientOrderId {
     ///
     /// # Panics
     ///
-    /// Panics if the value is not a valid string.
+    /// Panics if `value` is not a valid string.
     pub fn new(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
 

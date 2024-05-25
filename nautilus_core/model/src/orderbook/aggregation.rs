@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Functions related to normalizing and processing top-of-book events.
+
 use nautilus_core::nanos::UnixNanos;
 
 use super::{book::OrderBook, error::InvalidBookOperation};

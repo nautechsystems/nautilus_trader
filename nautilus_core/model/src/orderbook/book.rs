@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides a performant, generic, multi-purpose order book.
+
 use nautilus_core::nanos::UnixNanos;
 
 use super::{aggregation::pre_process_order, analysis, display::pprint_book, level::Level};
@@ -26,7 +28,7 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-/// Provides an order book.
+/// Provides a performant, generic, multi-purpose order book.
 ///
 /// Can handle the following granularity data:
 /// - MBO (market by order) / L3
