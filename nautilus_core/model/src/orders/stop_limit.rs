@@ -61,6 +61,7 @@ pub struct StopLimitOrder {
 }
 
 impl StopLimitOrder {
+    /// Creates a new [`StopLimitOrder`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,

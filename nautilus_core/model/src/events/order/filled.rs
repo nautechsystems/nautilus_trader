@@ -66,6 +66,7 @@ pub struct OrderFilled {
 }
 
 impl OrderFilled {
+    /// Creates a new [`OrderFilled`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
@@ -123,6 +124,7 @@ impl OrderFilled {
 }
 
 impl Default for OrderFilled {
+    /// Creates a new default [`OrderFilled`] instance for testing.
     fn default() -> Self {
         Self {
             trader_id: TraderId::default(),

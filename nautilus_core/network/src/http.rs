@@ -148,6 +148,7 @@ pub struct HttpResponse {
 }
 
 impl Default for InnerHttpClient {
+    /// Creates a new default [`InnerHttpClient`] instance.
     fn default() -> Self {
         let client = reqwest::Client::new();
         Self {

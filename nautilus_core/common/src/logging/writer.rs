@@ -42,6 +42,7 @@ pub struct StdoutWriter {
 }
 
 impl StdoutWriter {
+    /// Creates a new [`StdoutWriter`] instance.
     #[must_use]
     pub fn new(level: LevelFilter, is_colored: bool) -> Self {
         Self {
@@ -80,6 +81,7 @@ pub struct StderrWriter {
 }
 
 impl StderrWriter {
+    /// Creates a new [`StderrWriter`] instance.
     #[must_use]
     pub fn new(is_colored: bool) -> Self {
         Self {
@@ -121,6 +123,7 @@ pub struct FileWriterConfig {
 }
 
 impl FileWriterConfig {
+    /// Creates a new [`FileWriterConfig`] instance.
     #[must_use]
     pub fn new(
         directory: Option<String>,
@@ -147,6 +150,7 @@ pub struct FileWriter {
 }
 
 impl FileWriter {
+    /// Creates a new [`FileWriter`] instance.
     pub fn new(
         trader_id: String,
         instance_id: String,

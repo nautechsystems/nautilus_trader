@@ -44,6 +44,7 @@ pub struct ModifyOrder {
 }
 
 impl ModifyOrder {
+    /// Creates a new [`ModifyOrder`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,

@@ -40,7 +40,7 @@ const EXTERNAL_STRATEGY_ID: &str = "EXTERNAL";
 pub struct StrategyId(Ustr);
 
 impl StrategyId {
-    /// Creates a new `StrategyId` instance.
+    /// Creates a new [`StrategyId`] instance.
     ///
     /// # Panics
     ///

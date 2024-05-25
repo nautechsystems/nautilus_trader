@@ -31,7 +31,7 @@ use ustr::Ustr;
 pub struct VenueOrderId(Ustr);
 
 impl VenueOrderId {
-    /// Creates a new `VenueOrderId` instance.
+    /// Creates a new [`VenueOrderId`] instance.
     ///
     /// # Panics
     ///

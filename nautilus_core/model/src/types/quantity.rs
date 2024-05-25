@@ -44,6 +44,7 @@ pub struct Quantity {
 }
 
 impl Quantity {
+    /// Creates a new [`Quantity`] instance.
     pub fn new(value: f64, precision: u8) -> anyhow::Result<Self> {
         check_in_range_inclusive_f64(value, QUANTITY_MIN, QUANTITY_MAX, "value")?;
         check_fixed_precision(precision)?;

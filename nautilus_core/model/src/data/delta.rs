@@ -59,6 +59,7 @@ pub struct OrderBookDelta {
 }
 
 impl OrderBookDelta {
+    /// Creates a new [`OrderBookDelta`] instance.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(

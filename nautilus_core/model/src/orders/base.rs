@@ -421,6 +421,7 @@ pub struct OrderCore {
 }
 
 impl OrderCore {
+    /// Creates a new [`OrderCore`] instance.
     pub fn new(init: OrderInitialized) -> anyhow::Result<Self> {
         let events: Vec<OrderEventAny> = vec![OrderEventAny::Initialized(init.clone())];
         Ok(Self {

@@ -58,6 +58,7 @@ pub struct DatabaseCommand {
 }
 
 impl DatabaseCommand {
+    /// Creates a new [`DatabaseCommand`] instance.
     #[must_use]
     pub fn new(op_type: DatabaseOperation, key: String, payload: Option<Vec<Vec<u8>>>) -> Self {
         Self {

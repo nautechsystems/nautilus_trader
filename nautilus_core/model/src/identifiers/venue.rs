@@ -35,7 +35,7 @@ pub const SYNTHETIC_VENUE: &str = "SYNTH";
 pub struct Venue(Ustr);
 
 impl Venue {
-    /// Creates a new `Venue` instance.
+    /// Creates a new [`Venue`] instance.
     ///
     /// # Panics
     ///

@@ -50,6 +50,7 @@ pub struct OrderBookDeltas {
 }
 
 impl OrderBookDeltas {
+    /// Creates a new [`OrderBookDeltas`] instance.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(instrument_id: InstrumentId, deltas: Vec<OrderBookDelta>) -> Self {

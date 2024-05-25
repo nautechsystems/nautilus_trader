@@ -61,6 +61,7 @@ pub struct QuoteTick {
 }
 
 impl QuoteTick {
+    /// Creates a new [`QuoteTick`] instance.
     pub fn new(
         instrument_id: InstrumentId,
         bid_price: Price,

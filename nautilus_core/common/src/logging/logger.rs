@@ -64,6 +64,7 @@ pub struct LoggerConfig {
 }
 
 impl Default for LoggerConfig {
+    /// Creates a new default [`LoggerConfig`] instance.
     fn default() -> Self {
         Self {
             stdout_level: LevelFilter::Info,
@@ -76,6 +77,7 @@ impl Default for LoggerConfig {
 }
 
 impl LoggerConfig {
+    /// Creates a new [`LoggerConfig`] instance.
     #[must_use]
     pub fn new(
         stdout_level: LevelFilter,
@@ -194,6 +196,7 @@ pub struct LogLineWrapper {
 }
 
 impl LogLineWrapper {
+    /// Creates a new [`LogLineWrapper`] instance.
     #[must_use]
     pub fn new(line: LogLine, trader_id: Ustr, timestamp: UnixNanos) -> Self {
         Self {
@@ -479,6 +482,7 @@ pub struct LogGuard {
 }
 
 impl LogGuard {
+    /// Creates a new [`LogGuard`] instance.
     #[must_use]
     pub fn new(handle: Option<JoinHandle<()>>) -> Self {
         Self { handle }
@@ -486,6 +490,7 @@ impl LogGuard {
 }
 
 impl Default for LogGuard {
+    /// Creates a new default [`LogGuard`] instance.
     fn default() -> Self {
         Self::new(None)
     }

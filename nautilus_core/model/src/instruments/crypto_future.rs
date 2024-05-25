@@ -66,6 +66,7 @@ pub struct CryptoFuture {
 }
 
 impl CryptoFuture {
+    /// Creates a new [`CryptoFuture`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,

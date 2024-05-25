@@ -51,6 +51,7 @@ pub struct OrderMatchingCore {
 }
 
 impl OrderMatchingCore {
+    // Creates a new [`OrderMatchingCore`] instance.
     #[must_use]
     pub fn new(
         instrument_id: InstrumentId,

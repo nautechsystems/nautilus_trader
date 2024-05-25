@@ -43,7 +43,7 @@ pub struct UUID4 {
 }
 
 impl UUID4 {
-    /// Creates a new `UUID4` instance.
+    /// Creates a new [`UUID4`] instance.
     #[must_use]
     pub fn new() -> Self {
         let uuid = Uuid::new_v4();
@@ -84,6 +84,7 @@ impl From<&str> for UUID4 {
 }
 
 impl Default for UUID4 {
+    /// Creates a new default [`UUID4`] instance.
     fn default() -> Self {
         Self::new()
     }

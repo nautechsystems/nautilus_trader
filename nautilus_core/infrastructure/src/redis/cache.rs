@@ -78,6 +78,7 @@ pub struct RedisCacheDatabase {
 impl CacheDatabase for RedisCacheDatabase {
     type DatabaseType = RedisCacheDatabase;
 
+    /// Creates a new [`RedisCacheDatabase`] instance.
     fn new(
         trader_id: TraderId,
         instance_id: UUID4,

@@ -31,7 +31,7 @@ use ustr::Ustr;
 pub struct ExecAlgorithmId(Ustr);
 
 impl ExecAlgorithmId {
-    /// Creates a new `ExecAlgorithmId` instance.
+    /// Creates a new [`ExecAlgorithmId`] instance.
     ///
     /// # Panics
     ///

@@ -41,6 +41,7 @@ pub struct Currency {
 }
 
 impl Currency {
+    /// Creates a new [`Currency`] instance.
     pub fn new(
         code: &str,
         precision: u8,

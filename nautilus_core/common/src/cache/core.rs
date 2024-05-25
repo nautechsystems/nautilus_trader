@@ -64,6 +64,7 @@ pub struct CacheConfig {
 }
 
 impl CacheConfig {
+    /// Creates a new [`CacheConfig`] instance.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
@@ -90,7 +91,7 @@ impl CacheConfig {
 }
 
 impl Default for CacheConfig {
-    /// Creates a new default `CacheConfig` instance.
+    /// Creates a new default [`CacheConfig`] instance.
     fn default() -> Self {
         Self::new(
             SerializationEncoding::MsgPack,
@@ -192,14 +193,14 @@ pub struct Cache {
 }
 
 impl Default for Cache {
-    /// Creates a new default `Cache` instance.
+    /// Creates a new default [`Cache`] instance.
     fn default() -> Self {
         Self::new(CacheConfig::default(), None)
     }
 }
 
 impl Cache {
-    /// Creates a new `Cache` instance.
+    /// Creates a new [`Cache`] instance.
     #[must_use]
     pub fn new(config: CacheConfig, database: Option<CacheDatabaseAdapter>) -> Self {
         let index = CacheIndex {

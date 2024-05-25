@@ -56,6 +56,7 @@ pub struct MarketToLimitOrder {
 }
 
 impl MarketToLimitOrder {
+    /// Creates a new [`MarketToLimitOrder`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,

@@ -31,7 +31,7 @@ use ustr::Ustr;
 pub struct PositionId(Ustr);
 
 impl PositionId {
-    /// Creates a new `PositionId` instance.
+    /// Creates a new [`PositionId`] instance.
     ///
     /// # Panics
     ///

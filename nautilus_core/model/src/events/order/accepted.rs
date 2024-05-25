@@ -58,6 +58,7 @@ pub struct OrderAccepted {
 }
 
 impl OrderAccepted {
+    /// Creates a new [`OrderAccepted`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,

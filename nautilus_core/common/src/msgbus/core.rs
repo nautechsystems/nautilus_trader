@@ -43,6 +43,7 @@ pub struct Subscription {
 }
 
 impl Subscription {
+    /// Creates a new [`Subscription`] instance.
     #[must_use]
     pub fn new(
         topic: Ustr,
@@ -165,7 +166,7 @@ pub struct MessageBus {
 }
 
 impl MessageBus {
-    /// Creates a new `MessageBus` instance.
+    /// Creates a new [`MessageBus`] instance.
     pub fn new(
         trader_id: TraderId,
         instance_id: UUID4,
