@@ -138,7 +138,7 @@ mod tests {
         indicator_vwap.update_raw(10.0, 10.0, 10.0);
         indicator_vwap.update_raw(20.0, 20.0, 10.0);
         indicator_vwap.update_raw(30.0, 30.0, 10.0);
-        assert_eq!(indicator_vwap.value, 23.333333333333332);
+        assert_eq!(indicator_vwap.value, 23.333_333_333_333_332);
     }
 
     #[rstest]
@@ -164,7 +164,7 @@ mod tests {
         indicator_vwap.update_raw(1.00020, 3.00000, 10.0);
         indicator_vwap.update_raw(1.00010, 1.00000, 10.0);
         indicator_vwap.update_raw(1.00000, 2.00000, 10.0);
-        assert_eq!(indicator_vwap.value, 1.000242857142857);
+        assert_eq!(indicator_vwap.value, 1.000_242_857_142_857);
     }
 
     #[rstest]
