@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides real-time and static test `Clock` implementations.
+//! Real-time and static test `Clock` implementations.
 
 use std::{collections::HashMap, ops::Deref};
 
@@ -71,7 +71,7 @@ pub trait Clock {
     fn cancel_timers(&mut self);
 }
 
-/// Provides a static test clock.
+/// A static test clock.
 ///
 /// Stores the current timestamp internally which can be advanced.
 pub struct TestClock {
@@ -266,7 +266,7 @@ impl Clock for TestClock {
     }
 }
 
-/// Provides a real-time clock which uses system time.
+/// A real-time clock which uses system time.
 ///
 /// Timestamps are guaranteed to be unique and monotonically increasing.
 pub struct LiveClock {

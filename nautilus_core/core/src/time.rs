@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides the core `AtomicTime` real-time and static clocks.
+//! The core `AtomicTime` real-time and static clocks.
 
 use std::{
     ops::Deref,
@@ -29,10 +29,10 @@ use crate::{
     nanos::UnixNanos,
 };
 
-/// Provides a global atomic time in real-time mode for use across the system.
+/// Global atomic time in real-time mode for use across the system.
 pub static ATOMIC_CLOCK_REALTIME: OnceLock<AtomicTime> = OnceLock::new();
 
-/// Provides a global atomic time in static mode for use across the system.
+/// Global atomic time in static mode for use across the system.
 pub static ATOMIC_CLOCK_STATIC: OnceLock<AtomicTime> = OnceLock::new();
 
 /// Returns a static reference to the global atomic clock in real-time mode.

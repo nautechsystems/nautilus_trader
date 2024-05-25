@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides static condition checks similar to the *design by contract* philosophy
+//! Functions for static condition checks similar to the *design by contract* philosophy
 //! to help ensure logical correctness.
 //!
 //! This module provides validation checking of function or method conditions.

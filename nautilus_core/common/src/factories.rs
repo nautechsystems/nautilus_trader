@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides factories for constructing domain objects such as orders.
+//! Factories for constructing domain objects such as orders.
 
 use std::collections::HashMap;
 

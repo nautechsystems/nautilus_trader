@@ -100,7 +100,6 @@ impl Default for LimitIfTouchedOrder {
     }
 }
 
-/// Provides a default [`MarketOrder`] used for testing.
 impl Default for MarketOrder {
     /// Creates a new default [`MarketOrder`] instance for testing.
     fn default() -> Self {

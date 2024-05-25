@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides order book components which can handle L1/L2/L3 data.
+//! Order book components which can handle L1/L2/L3 data.
 
 pub mod aggregation;
 pub mod analysis;

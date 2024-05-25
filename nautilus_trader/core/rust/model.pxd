@@ -451,7 +451,7 @@ cdef extern from "../includes/model.h":
         # The UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
-    # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
+    # C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
     #
     # This struct wraps `OrderBookDeltas` in a way that makes it compatible with C function
     # calls, enabling interaction with `OrderBookDeltas` in a C environment.
@@ -695,7 +695,7 @@ cdef extern from "../includes/model.h":
     cdef struct PositionId_t:
         char* _0;
 
-    # Provides a C compatible Foreign Function Interface (FFI) for an underlying
+    # C compatible Foreign Function Interface (FFI) for an underlying
     # [`SyntheticInstrument`].
     #
     # This struct wraps `SyntheticInstrument` in a way that makes it compatible with C function
@@ -707,7 +707,7 @@ cdef extern from "../includes/model.h":
     cdef struct SyntheticInstrument_API:
         SyntheticInstrument *_0;
 
-    # Provides a C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
+    # C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
     #
     # This struct wraps `OrderBook` in a way that makes it compatible with C function
     # calls, enabling interaction with `OrderBook` in a C environment.
@@ -718,7 +718,7 @@ cdef extern from "../includes/model.h":
     cdef struct OrderBook_API:
         OrderBook *_0;
 
-    # Provides a C compatible Foreign Function Interface (FFI) for an underlying order book[`Level`].
+    # C compatible Foreign Function Interface (FFI) for an underlying order book[`Level`].
     #
     # This struct wraps `Level` in a way that makes it compatible with C function
     # calls, enabling interaction with `Level` in a C environment.

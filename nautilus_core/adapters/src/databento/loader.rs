@@ -39,7 +39,7 @@ use super::{
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, Dataset, PublisherId},
 };
 
-/// Provides a Nautilus data loader for Databento Binary Encoding (DBN) format data.
+/// A Nautilus data loader for Databento Binary Encoding (DBN) format data.
 ///
 /// # Supported schemas:
 ///  - MBO -> `OrderBookDelta`
