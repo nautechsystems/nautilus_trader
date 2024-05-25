@@ -3,13 +3,16 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Improved Bybit order book deltas parsing to set `F_LAST` flag (#1670), thanks @davidsblom
+- Improved Interactive Brokers integration test mocks (#1669), thanks @rsmb7z
 - Ported `VolumeWeightedAveragePrice` indicator to Rust (#1665), thanks @Pushkarm029
+- Ported `VerticalHorizontalFilter` indicator to Rust (#1666), thanks @Pushkarm029
 
 ### Breaking Changes
 None
 
 ### Fixes
-None
+- Fixed Bybit order book deltas parsing (was appending bid side twice) (#1668), thanks @davidsblom
 
 ---
 
