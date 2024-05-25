@@ -67,6 +67,7 @@ pub struct OrderBookDepth10 {
 }
 
 impl OrderBookDepth10 {
+    /// Creates a new [`OrderBookDepth10`] instance.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(

@@ -59,8 +59,10 @@ pub struct TimeEvent {
     pub ts_init: UnixNanos,
 }
 
-/// Assumes `name` is a valid string.
 impl TimeEvent {
+    /// Creates a new [`TimeEvent`] instance.
+    ///
+    /// Assumes `name` is a valid string.
     #[must_use]
     pub fn new(name: Ustr, event_id: UUID4, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
         Self {
@@ -92,7 +94,7 @@ impl PartialEq for TimeEvent {
 #[derive(Clone, Debug)]
 /// Represents a time event and its associated handler.
 pub struct TimeEventHandler {
-    /// The event.
+    /// The time event.
     pub event: TimeEvent,
     /// The callable raw pointer.
     pub callback_ptr: *mut c_char,
@@ -130,7 +132,7 @@ pub struct TestTimer {
 }
 
 impl TestTimer {
-    /// Creates a new `TestTimer` instance.
+    /// Creates a new [`TestTimer`] instance.
     pub fn new(
         name: &str,
         interval_ns: u64,
@@ -233,7 +235,7 @@ pub struct LiveTimer {
 }
 
 impl LiveTimer {
-    /// Creates a new `LiveTimer` instance.
+    /// Creates a new [`LiveTimer`] instance.
     pub fn new(
         name: &str,
         interval_ns: u64,

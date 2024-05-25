@@ -60,6 +60,7 @@ pub struct LimitIfTouchedOrder {
 }
 
 impl LimitIfTouchedOrder {
+    /// Creates a new [`LimitIfTouchedOrder`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,

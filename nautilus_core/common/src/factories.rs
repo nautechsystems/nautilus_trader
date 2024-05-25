@@ -44,6 +44,7 @@ pub struct OrderFactory {
 }
 
 impl OrderFactory {
+    /// Creates a new [`OrderFactory`] instance.
     pub fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,

@@ -34,6 +34,7 @@ use crate::{
 };
 
 impl Default for SyntheticInstrument {
+    /// Creates a new default [`SyntheticInstrument`] instance for testing.
     fn default() -> Self {
         let btc_binance = InstrumentId::from("BTC.BINANCE");
         let ltc_binance = InstrumentId::from("LTC.BINANCE");

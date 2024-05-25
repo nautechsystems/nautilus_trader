@@ -83,7 +83,7 @@ pub struct DatabentoFeedHandler {
 }
 
 impl DatabentoFeedHandler {
-    /// Initialize a new instance of the [`DatabentoFeedHandler`].
+    /// Creates a new [`DatabentoFeedHandler`] instance.
     #[must_use]
     pub fn new(
         key: String,

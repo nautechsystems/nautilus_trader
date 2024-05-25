@@ -86,6 +86,7 @@ impl Indicator for VariableIndexDynamicAverage {
 }
 
 impl VariableIndexDynamicAverage {
+    /// Creates a new [`VariableIndexDynamicAverage`] instance.
     pub fn new(
         period: usize,
         price_type: Option<PriceType>,

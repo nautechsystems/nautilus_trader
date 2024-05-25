@@ -163,7 +163,7 @@ cdef extern from "../includes/common.h":
 
     # Represents a time event and its associated handler.
     cdef struct TimeEventHandler_t:
-        # The event.
+        # The time event.
         TimeEvent_t event;
         # The callable raw pointer.
         char *callback_ptr;

@@ -73,6 +73,7 @@ impl Indicator for VolumeWeightedAveragePrice {
 }
 
 impl VolumeWeightedAveragePrice {
+    /// Creates a new [`VolumeWeightedAveragePrice`] instance.
     pub fn new() -> anyhow::Result<Self> {
         Ok(Self {
             value: 0.0,

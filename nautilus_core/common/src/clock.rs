@@ -82,6 +82,7 @@ pub struct TestClock {
 }
 
 impl TestClock {
+    /// Creates a new [`TestClock`] instance.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -152,6 +153,7 @@ fn create_time_event_handler(event: TimeEvent, handler: &EventHandler) -> TimeEv
 }
 
 impl Default for TestClock {
+    /// Creates a new default [`TestClock`] instance.
     fn default() -> Self {
         Self::new()
     }
@@ -274,6 +276,7 @@ pub struct LiveClock {
 }
 
 impl LiveClock {
+    /// Creates a new [`LiveClock`] instance.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -290,6 +293,7 @@ impl LiveClock {
 }
 
 impl Default for LiveClock {
+    /// Creates a new default [`LiveClock`] instance.
     fn default() -> Self {
         Self::new()
     }

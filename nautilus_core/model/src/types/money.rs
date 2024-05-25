@@ -47,6 +47,7 @@ pub struct Money {
 }
 
 impl Money {
+    /// Creates a new [`Money`] instance.
     pub fn new(amount: f64, currency: Currency) -> anyhow::Result<Self> {
         check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount")?;
 

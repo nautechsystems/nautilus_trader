@@ -43,6 +43,7 @@ pub struct CashAccount {
 }
 
 impl CashAccount {
+    /// Creates a new [`CashAccount`] instance.
     pub fn new(event: AccountState, calculate_account_state: bool) -> anyhow::Result<Self> {
         Ok(Self {
             base: BaseAccount::new(event, calculate_account_state)?,

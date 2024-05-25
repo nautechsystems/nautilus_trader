@@ -77,6 +77,7 @@ impl Indicator for SimpleMovingAverage {
 }
 
 impl SimpleMovingAverage {
+    /// Creates a new [`SimpleMovingAverage`] instance.
     pub fn new(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
         // Inputs don't require validation, however we return a `Result`
         // to standardize with other indicators which do need validation.

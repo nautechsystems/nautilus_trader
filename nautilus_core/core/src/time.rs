@@ -85,13 +85,17 @@ impl Deref for AtomicTime {
 }
 
 impl Default for AtomicTime {
+    /// Creates a new default [`AtomicTime`] instance.
     fn default() -> Self {
         Self::new(true, UnixNanos::default())
     }
 }
 
 impl AtomicTime {
-    /// New atomic clock set with the given UNIX time (nanoseconds).
+    /// Creates a new [`AtomicTime`] instance.
+    ///
+    /// The `realtime` flag will determine whether the atomic time is based off system time.
+    /// The time will be set to the given UNIX `time` (nanoseconds).
     #[must_use]
     pub fn new(realtime: bool, time: UnixNanos) -> Self {
         Self {

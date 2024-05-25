@@ -86,6 +86,7 @@ impl Indicator for RelativeStrengthIndex {
 }
 
 impl RelativeStrengthIndex {
+    /// Creates a new [`RelativeStrengthIndex`] instance.
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> anyhow::Result<Self> {
         Ok(Self {
             period,

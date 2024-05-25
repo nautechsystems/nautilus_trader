@@ -45,7 +45,7 @@ pub struct TradeId {
 }
 
 impl TradeId {
-    /// Creates a new `TradeId` instance.
+    /// Creates a new [`TradeId`] instance.
     ///
     /// # Panics
     ///

@@ -68,6 +68,7 @@ pub struct DatabentoDataLoader {
 }
 
 impl DatabentoDataLoader {
+    /// Creates a new [`DatabentoDataLoader`] instance.
     pub fn new(path: Option<PathBuf>) -> anyhow::Result<Self> {
         let mut loader = Self {
             publishers_map: IndexMap::new(),

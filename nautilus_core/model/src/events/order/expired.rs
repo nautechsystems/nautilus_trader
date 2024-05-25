@@ -58,6 +58,7 @@ pub struct OrderExpired {
 }
 
 impl OrderExpired {
+    /// Creates a new [`OrderExpired`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,

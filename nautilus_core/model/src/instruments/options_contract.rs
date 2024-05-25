@@ -68,6 +68,7 @@ pub struct OptionsContract {
 }
 
 impl OptionsContract {
+    /// Creates a new [`OptionsContract`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,

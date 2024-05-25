@@ -64,6 +64,7 @@ pub struct BookOrder {
 }
 
 impl BookOrder {
+    /// Creates a new [`BookOrder`] instance.
     #[must_use]
     pub fn new(side: OrderSide, price: Price, size: Quantity, order_id: u64) -> Self {
         Self {
@@ -95,6 +96,7 @@ impl BookOrder {
 }
 
 impl Default for BookOrder {
+    /// Creates a NULL [`BookOrder`] instance.
     fn default() -> Self {
         NULL_ORDER
     }

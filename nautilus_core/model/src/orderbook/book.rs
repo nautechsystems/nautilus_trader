@@ -53,6 +53,7 @@ pub struct OrderBook {
 }
 
 impl OrderBook {
+    /// Creates a new [`OrderBook`] instance.
     #[must_use]
     pub fn new(book_type: BookType, instrument_id: InstrumentId) -> Self {
         Self {

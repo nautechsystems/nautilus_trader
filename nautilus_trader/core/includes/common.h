@@ -279,7 +279,7 @@ typedef struct TimeEvent_t {
  */
 typedef struct TimeEventHandler_t {
     /**
-     * The event.
+     * The time event.
      */
     struct TimeEvent_t event;
     /**

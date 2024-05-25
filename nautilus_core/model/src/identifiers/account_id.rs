@@ -39,7 +39,7 @@ use super::venue::Venue;
 pub struct AccountId(Ustr);
 
 impl AccountId {
-    /// Creates a new `AccountId` instance.
+    /// Creates a new [`AccountId`] instance.
     ///
     /// # Panics
     ///

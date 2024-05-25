@@ -91,8 +91,9 @@ pub struct OrderMatchingEngine {
     execution_count: usize,
 }
 
-// Note: we'll probably be changing the `FillModel` (don't add for now)
+// TODO: we'll probably be changing the `FillModel` (don't add for now)
 impl OrderMatchingEngine {
+    /// Creates a new [`OrderMatchingEngine`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument: Box<dyn Instrument>,

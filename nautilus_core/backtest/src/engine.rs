@@ -29,7 +29,7 @@ pub struct TimeEventAccumulator {
 }
 
 impl TimeEventAccumulator {
-    /// Creates a new `TimeEventAccumulator` instance.
+    /// Creates a new [`TimeEventAccumulator`] instance.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -55,6 +55,7 @@ impl TimeEventAccumulator {
 }
 
 impl Default for TimeEventAccumulator {
+    /// Creates a new default [`TimeEventAccumulator`] instance.
     fn default() -> Self {
         Self::new()
     }
