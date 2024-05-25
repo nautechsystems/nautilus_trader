@@ -31,7 +31,7 @@ use ustr::Ustr;
 pub struct ComponentId(Ustr);
 
 impl ComponentId {
-    /// Creates a new `ComponentId` instance from the given identifier value.
+    /// Creates a new `ComponentId` instance.
     ///
     /// # Panics
     ///

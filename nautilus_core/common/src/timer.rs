@@ -130,7 +130,7 @@ pub struct TestTimer {
 }
 
 impl TestTimer {
-    /// Creates a new `TestTimer`.
+    /// Creates a new `TestTimer` instance.
     pub fn new(
         name: &str,
         interval_ns: u64,
@@ -233,7 +233,7 @@ pub struct LiveTimer {
 }
 
 impl LiveTimer {
-    /// Creates a new `LiveTimer`.
+    /// Creates a new `LiveTimer` instance.
     pub fn new(
         name: &str,
         interval_ns: u64,

@@ -40,7 +40,7 @@ pub struct InstrumentId {
 }
 
 impl InstrumentId {
-    /// Creates a new `InstrumentId` instance from the given `Symbol` and `Venue`.
+    /// Creates a new `InstrumentId` instance.
     #[must_use]
     pub fn new(symbol: Symbol, venue: Venue) -> Self {
         Self { symbol, venue }
