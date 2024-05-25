@@ -38,7 +38,7 @@ class StreamingConfig(NautilusConfig, frozen=True):
         If any existing feather files should be replaced.
     include_types : list[type], optional
         A list of Arrow serializable types to write.
-        If this is specified then *only* the included types will be written.
+        If this is specified then **only** the included types will be written.
 
     """
 
