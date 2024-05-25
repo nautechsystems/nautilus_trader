@@ -237,7 +237,6 @@ class BybitWsOrderbookDepth(msgspec.Struct):
                 is_snapshot=False,
             )
             deltas.append(delta)
-            deltas.append(delta)
 
         for ask in asks_raw:
             delta = parse_bybit_delta(
