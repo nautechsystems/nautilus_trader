@@ -64,7 +64,6 @@ class MockEClient(EClient):
 
     def reqContractDetails(self, reqId: int, contract: IBContract):
         instrument_id = ib_contract_to_instrument_id(contract)
-        print(f"******************************* {reqId=} {instrument_id=}")
         match instrument_id.value:
             case "AAPL.NASDAQ":
                 self._handle_task(
