@@ -355,9 +355,9 @@ impl FromU8 for BookAction {
 pub enum BookType {
     /// Top-of-book best bid/ask, one level per side.
     L1_MBP = 1,
-    /// Market by price, one order per level (aggregated).
+    /// Market-by-price, one order per level (aggregated).
     L2_MBP = 2,
-    /// Market by order, multiple orders per level (full granularity).
+    /// Market-by-order, multiple orders per level (full granularity).
     L3_MBO = 3,
 }
 

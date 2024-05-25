@@ -138,11 +138,11 @@ typedef enum BookType {
      */
     L1_MBP = 1,
     /**
-     * Market by price, one order per level (aggregated).
+     * Market-by-price, one order per level (aggregated).
      */
     L2_MBP = 2,
     /**
-     * Market by order, multiple orders per level (full granularity).
+     * Market-by-order, multiple orders per level (full granularity).
      */
     L3_MBO = 3,
 } BookType;
@@ -708,9 +708,9 @@ typedef struct Level Level;
  * Provides a performant, generic, multi-purpose order book.
  *
  * Can handle the following granularity data:
- * - MBO (market by order) / L3
- * - MBP (market by price) / L2 aggregated order per level
- * - MBP (market by price) / L1 top-of-book only
+ * - MBO (market-by-order) / L3
+ * - MBP (market-by-price) / L2 aggregated order per level
+ * - MBP (market-by-price) / L1 top-of-book only
  */
 typedef struct OrderBook OrderBook;
 
