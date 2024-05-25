@@ -29,7 +29,6 @@
 
 pub mod correctness;
 pub mod datetime;
-pub mod deserialization;
 pub mod equality;
 pub mod message;
 pub mod nanos;

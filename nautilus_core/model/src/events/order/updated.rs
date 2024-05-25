@@ -16,7 +16,7 @@
 use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
-use nautilus_core::{deserialization::from_bool_as_u8, nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{nanos::UnixNanos, serialization::from_bool_as_u8, uuid::UUID4};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 

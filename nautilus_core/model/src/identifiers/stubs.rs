@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Default implementations and fixture functions to provide stub identifiers for testing.
+
 use nautilus_core::uuid::UUID4;
 use rstest::fixture;
 
