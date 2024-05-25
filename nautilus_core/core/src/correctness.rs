@@ -196,7 +196,7 @@ pub fn check_slice_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Checks the slice is *not* empty.
+/// Checks the slice is **not** empty.
 pub fn check_slice_not_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> {
     if slice.is_empty() {
         anyhow::bail!(
@@ -219,7 +219,7 @@ pub fn check_map_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Result
     Ok(())
 }
 
-/// Checks the map is *not* empty.
+/// Checks the map is **not** empty.
 pub fn check_map_not_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Result<()> {
     if map.is_empty() {
         anyhow::bail!(
