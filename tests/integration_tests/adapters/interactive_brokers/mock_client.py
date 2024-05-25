@@ -78,12 +78,6 @@ class MockEClient(EClient):
                     req_id=reqId,
                     contract_details=IBTestContractStubs.eurusd_forex_contract_details(),
                 )
-            case "EUR/USD.IDEALPRO":
-                self._handle_task(
-                    self.wrapper._client.process_contract_details,
-                    req_id=reqId,
-                    contract_details=IBTestContractStubs.eurusd_forex_contract_details(),
-                )
 
         self._handle_task(
             self.wrapper._client.process_contract_details_end,
