@@ -86,6 +86,7 @@ where
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::*;
     use serde::Deserialize;
 
     use super::from_bool_as_u8;
@@ -96,25 +97,19 @@ mod tests {
         pub value: u8,
     }
 
-    #[test]
-    fn test_deserialize_bool_as_u8_with_boolean() {
-        let json_true = r#"{"value": true}"#;
-        let test_struct: TestStruct = serde_json::from_str(json_true).unwrap();
-        assert_eq!(test_struct.value, 1);
-
-        let json_false = r#"{"value": false}"#;
-        let test_struct: TestStruct = serde_json::from_str(json_false).unwrap();
-        assert_eq!(test_struct.value, 0);
+    #[rstest]
+    #[case(r#"{"value": true}"#, 1)]
+    #[case(r#"{"value": false}"#, 0)]
+    fn test_deserialize_bool_as_u8_with_boolean(#[case] json_str: &str, #[case] expected: u8) {
+        let test_struct: TestStruct = serde_json::from_str(json_str).unwrap();
+        assert_eq!(test_struct.value, expected);
     }
 
-    #[test]
-    fn test_deserialize_bool_as_u8_with_u64() {
-        let json_true = r#"{"value": 1}"#;
-        let test_struct: TestStruct = serde_json::from_str(json_true).unwrap();
-        assert_eq!(test_struct.value, 1);
-
-        let json_false = r#"{"value": 0}"#;
-        let test_struct: TestStruct = serde_json::from_str(json_false).unwrap();
-        assert_eq!(test_struct.value, 0);
+    #[rstest]
+    #[case(r#"{"value": 1}"#, 1)]
+    #[case(r#"{"value": 0}"#, 0)]
+    fn test_deserialize_bool_as_u8_with_u64(#[case] json_str: &str, #[case] expected: u8) {
+        let test_struct: TestStruct = serde_json::from_str(json_str).unwrap();
+        assert_eq!(test_struct.value, expected);
     }
 }
