@@ -36,7 +36,7 @@ class DataEngineConfig(NautilusConfig, frozen=True):
     validate_data_sequence : bool, default False
         If data objects timestamp sequencing will be validated and handled.
     buffer_deltas : bool, default False
-        Buffer deltas until the F_LAST flag is set for a delta
+        If order book deltas should be buffered until the F_LAST flag is set for a delta.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
 
