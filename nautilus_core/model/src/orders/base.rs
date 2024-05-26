@@ -315,11 +315,16 @@ pub trait Order: 'static + Send {
     }
 
     fn is_inflight(&self) -> bool {
-        self.emulation_trigger().is_none()
-            && matches!(
-                self.status(),
-                OrderStatus::Submitted | OrderStatus::PendingCancel | OrderStatus::PendingUpdate
-            )
+        if let Some(emulation_trigger) = self.emulation_trigger() {
+            if emulation_trigger != TriggerType::NoTrigger {
+                return false;
+            }
+        }
+
+        matches!(
+            self.status(),
+            OrderStatus::Submitted | OrderStatus::PendingCancel | OrderStatus::PendingUpdate
+        )
     }
 
     fn is_pending_update(&self) -> bool {
@@ -331,8 +336,9 @@ pub trait Order: 'static + Send {
     }
 
     fn is_spawned(&self) -> bool {
-        self.exec_algorithm_id().is_some()
-            && self.exec_spawn_id().unwrap() != self.client_order_id()
+        self.exec_spawn_id().map_or(false, |exec_spawn_id| {
+            exec_spawn_id != self.client_order_id()
+        })
     }
 }
 
