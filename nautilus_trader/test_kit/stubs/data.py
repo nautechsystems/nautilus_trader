@@ -427,10 +427,11 @@ class TestDataStubs:
     def order_book_deltas(
         instrument_id: InstrumentId | None = None,
         deltas: list[OrderBookDelta] | None = None,
+        flags: int = 0,
     ) -> OrderBookDeltas:
         return OrderBookDeltas(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
-            deltas=deltas or [TestDataStubs.order_book_delta()],
+            deltas=deltas or [TestDataStubs.order_book_delta(flags=flags)],
         )
 
     @staticmethod
