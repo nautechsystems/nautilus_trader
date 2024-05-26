@@ -35,6 +35,8 @@ class DataEngineConfig(NautilusConfig, frozen=True):
         - 'right-open': start time is included and end time is excluded.
     validate_data_sequence : bool, default False
         If data objects timestamp sequencing will be validated and handled.
+    buffer_deltas : bool, default False
+        Buffer deltas until the F_LAST flag is set for a delta
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
 
@@ -44,4 +46,5 @@ class DataEngineConfig(NautilusConfig, frozen=True):
     time_bars_timestamp_on_close: bool = True
     time_bars_interval_type: str = "left-open"
     validate_data_sequence: bool = False
+    buffer_deltas: bool = False
     debug: bool = False

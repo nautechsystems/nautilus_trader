@@ -89,6 +89,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.enums import RecordFlag
 
 
 cdef class DataEngine(Component):
@@ -137,6 +138,7 @@ cdef class DataEngine(Component):
         self._synthetic_trade_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
         self._subscribed_synthetic_quotes: list[InstrumentId] = []
         self._subscribed_synthetic_trades: list[InstrumentId] = []
+        self._buffer_deltas_map: dict[InstrumentId, list[OrderBookDelta]] = {}
 
         # Settings
         self.debug = config.debug
@@ -144,6 +146,7 @@ cdef class DataEngine(Component):
         self._time_bars_timestamp_on_close = config.time_bars_timestamp_on_close
         self._time_bars_interval_type = config.time_bars_interval_type
         self._validate_data_sequence = config.validate_data_sequence
+        self._buffer_deltas = config.buffer_deltas
 
         # Counters
         self.command_count = 0
@@ -1374,24 +1377,79 @@ cdef class DataEngine(Component):
         )
 
     cpdef void _handle_order_book_delta(self, OrderBookDelta delta):
-        cdef OrderBookDeltas deltas = OrderBookDeltas(
-            instrument_id=delta.instrument_id,
-            deltas=[delta]
-        )
-        self._msgbus.publish_c(
-            topic=f"data.book.deltas"
-                  f".{deltas.instrument_id.venue}"
-                  f".{deltas.instrument_id.symbol}",
-            msg=deltas,
-        )
+        cdef OrderBookDeltas deltas = None
+        cdef list[OrderBookDelta] buffer_deltas = None
+        cdef bint is_last_delta = False
+
+        if self._buffer_deltas:
+            buffer_deltas = self._buffer_deltas_map.get(delta.instrument_id)
+
+            if buffer_deltas is None:
+                buffer_deltas = []
+                self._buffer_deltas_map[delta.instrument_id] = buffer_deltas
+
+            buffer_deltas.append(delta)
+            is_last_delta = delta.flags == RecordFlag.F_LAST
+
+            if is_last_delta:
+                deltas = OrderBookDeltas(
+                    instrument_id=delta.instrument_id,
+                    deltas=buffer_deltas
+                )
+                self._msgbus.publish_c(
+                    topic=f"data.book.deltas"
+                        f".{deltas.instrument_id.venue}"
+                        f".{deltas.instrument_id.symbol}",
+                    msg=deltas,
+                )
+                buffer_deltas.clear()
+        else:
+            deltas = OrderBookDeltas(
+                instrument_id=delta.instrument_id,
+                deltas=[delta]
+            )
+            self._msgbus.publish_c(
+                 topic=f"data.book.deltas"
+                    f".{deltas.instrument_id.venue}"
+                    f".{deltas.instrument_id.symbol}",
+                msg=deltas,
+            )
 
     cpdef void _handle_order_book_deltas(self, OrderBookDeltas deltas):
-        self._msgbus.publish_c(
-            topic=f"data.book.deltas"
-                  f".{deltas.instrument_id.venue}"
-                  f".{deltas.instrument_id.symbol}",
-            msg=deltas,
-        )
+        cdef OrderBookDeltas deltas_to_publish = None
+        cdef list[OrderBookDelta] buffer_deltas = None
+        cdef bint is_last_delta = False
+
+        if self._buffer_deltas:
+            buffer_deltas = self._buffer_deltas_map.get(deltas.instrument_id)
+
+            if buffer_deltas is None:
+                buffer_deltas = []
+                self._buffer_deltas_map[deltas.instrument_id] = buffer_deltas
+
+            for delta in deltas.deltas:
+                buffer_deltas.append(delta)
+                is_last_delta = delta.flags == RecordFlag.F_LAST
+
+                if is_last_delta:
+                    deltas_to_publish = OrderBookDeltas(
+                        instrument_id=deltas.instrument_id,
+                        deltas=buffer_deltas
+                    )
+                    self._msgbus.publish_c(
+                        topic=f"data.book.deltas"
+                            f".{deltas.instrument_id.venue}"
+                            f".{deltas.instrument_id.symbol}",
+                        msg=deltas_to_publish,
+                    )
+                    buffer_deltas.clear()
+        else:
+            self._msgbus.publish_c(
+                topic=f"data.book.deltas"
+                    f".{deltas.instrument_id.venue}"
+                    f".{deltas.instrument_id.symbol}",
+                msg=deltas,
+            )
 
     cpdef void _handle_order_book_depth(self, OrderBookDepth10 depth):
         self._msgbus.publish_c(

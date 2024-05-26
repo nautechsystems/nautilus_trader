@@ -57,10 +57,12 @@ cdef class DataEngine(Component):
     cdef readonly dict[InstrumentId, list[SyntheticInstrument]] _synthetic_trade_feeds
     cdef readonly list[InstrumentId] _subscribed_synthetic_quotes
     cdef readonly list[InstrumentId] _subscribed_synthetic_trades
+    cdef readonly dict[InstrumentId, list[OrderBookDelta]] _buffer_deltas_map
     cdef readonly bint _time_bars_build_with_no_updates
     cdef readonly bint _time_bars_timestamp_on_close
     cdef readonly str _time_bars_interval_type
     cdef readonly bint _validate_data_sequence
+    cdef readonly bint _buffer_deltas
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
