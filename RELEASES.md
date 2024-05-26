@@ -3,7 +3,10 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `DataEngine` order book deltas buffering to `F_LAST` flag (#1673), thanks @davidsblom
+- Added `DataEngineConfig.buffer_deltas` config option for the above (#1670), thanks @davidsblom
 - Improved Bybit order book deltas parsing to set `F_LAST` flag (#1670), thanks @davidsblom
+- Improved Bybit handling for top-of-book quotes and order book deltas (#1672), thanks @davidsblom
 - Improved Interactive Brokers integration test mocks (#1669), thanks @rsmb7z
 - Improved error message when no tick scheme initialized for an instrument, thanks for reporting @VeraLyu
 - Ported `VolumeWeightedAveragePrice` indicator to Rust (#1665), thanks @Pushkarm029
