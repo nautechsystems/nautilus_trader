@@ -265,7 +265,7 @@ impl DatabentoFeedHandler {
                             msg.flags.raw(),
                         );
 
-                        // Check if last message in the packet
+                        // Check if last message in the book event
                         if !RecordFlag::F_LAST.matches(msg.flags.raw()) {
                             continue; // NOT last message
                         }

@@ -932,7 +932,7 @@ pub enum PriceType {
 )]
 #[allow(non_camel_case_types)]
 pub enum RecordFlag {
-    /// Last message in the packet from the venue for a given `instrument_id`.
+    /// Last message in the book event or packet from the venue for a given `instrument_id`.
     F_LAST = 1 << 7, // 128
     /// Top-of-book message, not an individual order.
     F_TOB = 1 << 6, // 64

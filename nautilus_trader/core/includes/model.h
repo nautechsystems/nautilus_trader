@@ -547,7 +547,7 @@ typedef enum PriceType {
  */
 typedef enum RecordFlag {
     /**
-     * Last message in the packet from the venue for a given `instrument_id`.
+     * Last message in the book event or packet from the venue for a given `instrument_id`.
      */
     F_LAST = (1 << 7),
     /**
