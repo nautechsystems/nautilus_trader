@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Defines traits to faciliate polymorphism.
+//! Traits to faciliate polymorphism.
 
 use nautilus_core::nanos::UnixNanos;
 

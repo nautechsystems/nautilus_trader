@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Defines enumerations for the trading domain model.
+//! Enumerations for the trading domain model.
 
 use std::str::FromStr;
 
