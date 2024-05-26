@@ -2517,7 +2517,7 @@ mod tests {
     use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
     use nautilus_model::{
         data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
-        enums::OrderSide,
+        enums::{OrderSide, OrderStatus},
         events::order::{accepted::OrderAccepted, event::OrderEventAny, submitted::OrderSubmitted},
         identifiers::{
             account_id::AccountId, client_order_id::ClientOrderId, position_id::PositionId,
@@ -2529,8 +2529,8 @@ mod tests {
         },
         orders::{any::OrderAny, stubs::TestOrderStubs},
         polymorphism::{
-            ApplyOrderEventAny, GetAccountId, GetClientOrderId, GetInstrumentId, GetStrategyId,
-            GetTraderId, GetVenueOrderId, IsOpen,
+            ApplyOrderEventAny, GetAccountId, GetClientOrderId, GetInstrumentId, GetOrderStatus,
+            GetStrategyId, GetTraderId, GetVenueOrderId, IsOpen,
         },
         types::{price::Price, quantity::Quantity},
     };
@@ -2691,22 +2691,23 @@ mod tests {
 
         let result = cache.order(&order.client_order_id()).unwrap();
 
+        assert_eq!(order.status(), OrderStatus::Submitted);
         assert_eq!(result, &order);
         assert_eq!(cache.orders(None, None, None, None), vec![&order]);
         assert!(cache.orders_open(None, None, None, None).is_empty());
         assert!(cache.orders_closed(None, None, None, None).is_empty());
         assert!(cache.orders_emulated(None, None, None, None).is_empty());
-        assert!(cache.orders_inflight(None, None, None, None).is_empty());
+        assert!(!cache.orders_inflight(None, None, None, None).is_empty());
         assert!(cache.order_exists(&order.client_order_id()));
         assert!(!cache.is_order_open(&order.client_order_id()));
         assert!(!cache.is_order_closed(&order.client_order_id()));
         assert!(!cache.is_order_emulated(&order.client_order_id()));
-        assert!(!cache.is_order_inflight(&order.client_order_id()));
+        assert!(cache.is_order_inflight(&order.client_order_id()));
         assert!(!cache.is_order_pending_cancel_local(&order.client_order_id()));
         assert_eq!(cache.orders_open_count(None, None, None, None), 0);
         assert_eq!(cache.orders_closed_count(None, None, None, None), 0);
         assert_eq!(cache.orders_emulated_count(None, None, None, None), 0);
-        assert_eq!(cache.orders_inflight_count(None, None, None, None), 0);
+        assert_eq!(cache.orders_inflight_count(None, None, None, None), 1);
         assert_eq!(cache.orders_total_count(None, None, None, None), 1);
         assert_eq!(cache.venue_order_id(&order.client_order_id()), None);
     }
