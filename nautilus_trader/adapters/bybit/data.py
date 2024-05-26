@@ -156,7 +156,7 @@ class BybitDataClient(LiveMarketDataClient):
         self._decoder_ws_msg_general = msgspec.json.Decoder(BybitWsMessageGeneral)
 
         self._tob_quotes: set[InstrumentId] = set()
-        self._depths: dict[InstrumentId, set[int]] = defaultdict(set)
+        self._depths: dict[InstrumentId, int] = {}
         self._topic_bar_type: dict[str, BarType] = {}
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
@@ -297,11 +297,11 @@ class BybitDataClient(LiveMarketDataClient):
                 )
                 return  # Already subscribed
 
-        if depth in self._depths.get(instrument_id, set()):
-            self._log.warning(f"Already subscribed to {instrument_id} order book depth {depth}")
+        if instrument_id in self._depths:
+            self._log.warning(f"Already subscribed to {instrument_id} order book deltas")
             return
 
-        self._depths[instrument_id].add(depth)
+        self._depths[instrument_id] = depth
         ws_client = self._ws_clients[bybit_symbol.product_type]
         await ws_client.subscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
 
@@ -342,18 +342,14 @@ class BybitDataClient(LiveMarketDataClient):
     async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
-        depths: set[int] = self._depths.get(instrument_id, set())
-
-        for depth in depths:
-            await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
+        depth = self._depths.get(instrument_id, 1)
+        await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
 
     async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
-        depths: set[int] = self._depths.get(instrument_id, set())
-
-        for depth in depths:
-            await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
+        depth = self._depths.get(instrument_id, 1)
+        await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
