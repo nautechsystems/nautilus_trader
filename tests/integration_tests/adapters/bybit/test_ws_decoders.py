@@ -49,6 +49,7 @@ from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerSpot
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerSpotMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTrade
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTradeMsg
+from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -163,7 +164,7 @@ class TestBybitWsDecoders:
             if delta_id < len(result.deltas) - 1:
                 assert delta.flags == 0
             else:
-                assert delta.flags == 128
+                assert delta.flags == RecordFlag.F_LAST
 
     def test_ws_public_orderbook_delta_parse_to_deltas_no_asks(self):
         # Prepare
@@ -193,7 +194,7 @@ class TestBybitWsDecoders:
             if delta_id < len(result.deltas) - 1:
                 assert delta.flags == 0
             else:
-                assert delta.flags == 128
+                assert delta.flags == RecordFlag.F_LAST
 
     def test_ws_public_orderbook_snapshot(self):
         item = pkgutil.get_data(
@@ -249,7 +250,7 @@ class TestBybitWsDecoders:
             if delta_id < len(result.deltas) - 1:
                 assert delta.flags == 0
             else:
-                assert delta.flags == 128
+                assert delta.flags == RecordFlag.F_LAST
 
     def test_ws_public_orderbook_snapshot_flags_no_asks(self):
         # Prepare
@@ -279,7 +280,7 @@ class TestBybitWsDecoders:
             if delta_id < len(result.deltas) - 1:
                 assert delta.flags == 0
             else:
-                assert delta.flags == 128
+                assert delta.flags == RecordFlag.F_LAST
 
     def test_ws_public_ticker_linear(self):
         item = pkgutil.get_data(
