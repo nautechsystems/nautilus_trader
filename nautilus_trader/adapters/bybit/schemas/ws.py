@@ -40,6 +40,7 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -181,7 +182,7 @@ class BybitWsOrderbookDepth(msgspec.Struct):
             if bid_id == num_bids_raw - 1 and num_asks_raw == 0:
                 # F_LAST, 1 << 7
                 # Last message in the packet from the venue for a given `instrument_id`
-                flags = 128
+                flags = RecordFlag.F_LAST
 
             delta = parse_bybit_delta(
                 instrument_id=instrument_id,
@@ -202,7 +203,7 @@ class BybitWsOrderbookDepth(msgspec.Struct):
             if ask_id == num_asks_raw - 1:
                 # F_LAST, 1 << 7
                 # Last message in the packet from the venue for a given `instrument_id`
-                flags = 128
+                flags = RecordFlag.F_LAST
 
             delta = parse_bybit_delta(
                 instrument_id=instrument_id,
@@ -251,7 +252,7 @@ class BybitWsOrderbookDepth(msgspec.Struct):
             if bid_id == num_bids_raw - 1 and num_asks_raw == 0:
                 # F_LAST, 1 << 7
                 # Last message in the packet from the venue for a given `instrument_id`
-                flags = 128
+                flags = RecordFlag.F_LAST
 
             delta = parse_bybit_delta(
                 instrument_id=instrument_id,
@@ -272,7 +273,7 @@ class BybitWsOrderbookDepth(msgspec.Struct):
             if ask_id == num_asks_raw - 1:
                 # F_LAST, 1 << 7
                 # Last message in the packet from the venue for a given `instrument_id`
-                flags = 128
+                flags = RecordFlag.F_LAST
 
             delta = parse_bybit_delta(
                 instrument_id=instrument_id,
