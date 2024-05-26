@@ -443,6 +443,28 @@ class TestInstrument:
         # Assert
         assert result == Quantity.from_str("1250")
 
+    def test_next_bid_price_when_no_tick_scheme(self):
+        # Arrange, Act
+        with pytest.raises(ValueError) as exc_info:
+            BTCUSDT_BINANCE.next_bid_price(100_000.0)
+
+        # Assert
+        assert (
+            str(exc_info.value)
+            == "No tick scheme for instrument BTCUSDT.BINANCE. You can specify a tick scheme by passing a `tick_scheme_name` at initialization."
+        )
+
+    def test_next_ask_price_when_no_tick_scheme(self):
+        # Arrange, Act
+        with pytest.raises(ValueError) as exc_info:
+            BTCUSDT_BINANCE.next_ask_price(100_000.0)
+
+        # Assert
+        assert (
+            str(exc_info.value)
+            == "No tick scheme for instrument BTCUSDT.BINANCE. You can specify a tick scheme by passing a `tick_scheme_name` at initialization."
+        )
+
     @pytest.mark.parametrize(
         ("instrument", "value", "n", "expected"),
         [
