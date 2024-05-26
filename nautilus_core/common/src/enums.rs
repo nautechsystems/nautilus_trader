@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Defines common enumerations.
+//! Enumerations for common components.
 
 use std::fmt::Debug;
 

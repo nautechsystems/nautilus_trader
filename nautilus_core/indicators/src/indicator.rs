@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Defines a common `Indicator` trait.
+//! A common `Indicator` trait.
 
 use std::{fmt, fmt::Debug};
 

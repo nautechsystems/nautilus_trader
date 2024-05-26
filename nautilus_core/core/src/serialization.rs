@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Defines common serialization traits and functions.
+//! Common serialization traits and functions.
 
 use std::fmt;
 

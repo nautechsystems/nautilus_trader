@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A core `UUID4` universally unique identifier (UUID) version 4 based on a 128-bit
+//! A `UUID4` universally unique identifier (UUID) version 4 based on a 128-bit
 //! label (RFC 4122).
 
 use std::{

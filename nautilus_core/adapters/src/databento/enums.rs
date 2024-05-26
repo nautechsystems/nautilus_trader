@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Defines enumerations for the Databento integration.
+//! Enumerations for the Databento integration.
 
 use std::str::FromStr;
 
