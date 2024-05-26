@@ -156,7 +156,7 @@ class BybitDataClient(LiveMarketDataClient):
         self._decoder_ws_msg_general = msgspec.json.Decoder(BybitWsMessageGeneral)
 
         self._tob_quotes: set[InstrumentId] = set()
-        self._depths: dict[InstrumentId, int] = {}
+        self._depths: dict[InstrumentId, set[int]] = defaultdict(set)
         self._topic_bar_type: dict[str, BarType] = {}
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
@@ -291,16 +291,17 @@ class BybitDataClient(LiveMarketDataClient):
 
         if instrument_id in self._tob_quotes:
             if depth == 1:
-                self._log.debug(
+                self._log.warning(
                     f"Already subscribed to {instrument_id} top-of-book",
                     LogColor.MAGENTA,
                 )
                 return  # Already subscribed
-            raise RuntimeError(
-                "Cannot subscribe to both top-of-book quotes and order book",
-            )
 
-        self._depths[instrument_id] = depth
+        if depth in self._depths.get(instrument_id, set()):
+            self._log.warning(f"Already subscribed to {instrument_id} order book depth {depth}")
+            return
+
+        self._depths[instrument_id].add(depth)
         ws_client = self._ws_clients[bybit_symbol.product_type]
         await ws_client.subscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
 
@@ -341,14 +342,18 @@ class BybitDataClient(LiveMarketDataClient):
     async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
-        depth = self._depths.get(instrument_id, 1)
-        await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
+        depths: set[int] = self._depths.get(instrument_id, set())
+
+        for depth in depths:
+            await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
 
     async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]
-        depth = self._depths.get(instrument_id, 1)
-        await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
+        depths: set[int] = self._depths.get(instrument_id, set())
+
+        for depth in depths:
+            await ws_client.unsubscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
@@ -576,7 +581,7 @@ class BybitDataClient(LiveMarketDataClient):
                 return
 
             if "orderbook" in ws_message.topic:
-                self._handle_orderbook(product_type, raw)
+                self._handle_orderbook(product_type, raw, ws_message.topic)
             elif "publicTrade" in ws_message.topic:
                 self._handle_trade(product_type, raw)
             elif "tickers" in ws_message.topic:
@@ -588,7 +593,7 @@ class BybitDataClient(LiveMarketDataClient):
         except Exception as e:
             self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
 
-    def _handle_orderbook(self, product_type: BybitProductType, raw: bytes) -> None:
+    def _handle_orderbook(self, product_type: BybitProductType, raw: bytes, topic: str) -> None:
         msg = self._decoder_ws_orderbook.decode(raw)
         symbol = msg.data.s + f"-{product_type.value.upper()}"
         instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
@@ -598,7 +603,7 @@ class BybitDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot parse order book data: no instrument for {instrument_id}")
             return
 
-        if instrument_id in self._tob_quotes:
+        if instrument_id in self._tob_quotes and topic.startswith("orderbook.1."):
             quote = msg.data.parse_to_quote_tick(
                 instrument_id=instrument_id,
                 last_quote=self._last_quotes.get(instrument_id),
