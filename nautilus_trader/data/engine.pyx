@@ -138,7 +138,7 @@ cdef class DataEngine(Component):
         self._synthetic_trade_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
         self._subscribed_synthetic_quotes: list[InstrumentId] = []
         self._subscribed_synthetic_trades: list[InstrumentId] = []
-        self._buffer_deltas_map: dict[InstrumentId, list[OrderBookDelta]] = {}
+        self._buffered_deltas_map: dict[InstrumentId, list[OrderBookDelta]] = {}
 
         # Settings
         self.debug = config.debug
@@ -534,6 +534,7 @@ cdef class DataEngine(Component):
         self._synthetic_trade_feeds.clear()
         self._subscribed_synthetic_quotes.clear()
         self._subscribed_synthetic_trades.clear()
+        self._buffered_deltas_map.clear()
 
         self._clock.cancel_timers()
         self.command_count = 0
@@ -1382,11 +1383,11 @@ cdef class DataEngine(Component):
         cdef bint is_last_delta = False
 
         if self._buffer_deltas:
-            buffer_deltas = self._buffer_deltas_map.get(delta.instrument_id)
+            buffer_deltas = self._buffered_deltas_map.get(delta.instrument_id)
 
             if buffer_deltas is None:
                 buffer_deltas = []
-                self._buffer_deltas_map[delta.instrument_id] = buffer_deltas
+                self._buffered_deltas_map[delta.instrument_id] = buffer_deltas
 
             buffer_deltas.append(delta)
             is_last_delta = delta.flags == RecordFlag.F_LAST
@@ -1421,11 +1422,11 @@ cdef class DataEngine(Component):
         cdef bint is_last_delta = False
 
         if self._buffer_deltas:
-            buffer_deltas = self._buffer_deltas_map.get(deltas.instrument_id)
+            buffer_deltas = self._buffered_deltas_map.get(deltas.instrument_id)
 
             if buffer_deltas is None:
                 buffer_deltas = []
-                self._buffer_deltas_map[deltas.instrument_id] = buffer_deltas
+                self._buffered_deltas_map[deltas.instrument_id] = buffer_deltas
 
             for delta in deltas.deltas:
                 buffer_deltas.append(delta)
@@ -1434,7 +1435,7 @@ cdef class DataEngine(Component):
                 if is_last_delta:
                     deltas_to_publish = OrderBookDeltas(
                         instrument_id=deltas.instrument_id,
-                        deltas=buffer_deltas
+                        deltas=buffer_deltas,
                     )
                     self._msgbus.publish_c(
                         topic=f"data.book.deltas"
