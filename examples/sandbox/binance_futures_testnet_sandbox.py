@@ -118,7 +118,7 @@ async def main():
             ),
         },
         exec_clients={
-            "SANDBOX": SandboxExecutionClientConfig(
+            "BINANCE": SandboxExecutionClientConfig(
                 venue="BINANCE",
                 starting_balances=["10_000 USDT", "10 ETH"],
             ),
@@ -151,7 +151,7 @@ async def main():
 
     # Register your client factories with the node (can take user defined factories)
     node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
-    node.add_exec_client_factory("SANDBOX", SandboxLiveExecClientFactory)
+    node.add_exec_client_factory("BINANCE", SandboxLiveExecClientFactory)
     node.build()
 
     try:

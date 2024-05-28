@@ -72,7 +72,7 @@ async def main(instrument_config: BetfairInstrumentProviderConfig) -> TradingNod
             ),
         },
         exec_clients={
-            "SANDBOX": SandboxExecutionClientConfig(
+            "BETFAIR": SandboxExecutionClientConfig(
                 venue="BETFAIR",
                 base_currency="AUD",
                 starting_balances=["10_000 AUD"],
@@ -96,7 +96,7 @@ async def main(instrument_config: BetfairInstrumentProviderConfig) -> TradingNod
 
     # Register your client factories with the node (can take user defined factories)
     node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
-    node.add_exec_client_factory("SANDBOX", SandboxLiveExecClientFactory)
+    node.add_exec_client_factory("BETFAIR", SandboxLiveExecClientFactory)
     node.build()
 
     try:
