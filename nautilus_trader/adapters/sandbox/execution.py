@@ -111,7 +111,7 @@ class SandboxExecutionClient(LiveExecutionClient):
             base_currency=base_currency,
             default_leverage=config.default_leverage,
             leverages=config.leverages or {},
-            instruments=self.INSTRUMENTS,
+            instruments=[i for i in self.INSTRUMENTS if i.venue == sandbox_venue],
             modules=[],
             portfolio=portfolio,
             msgbus=self._msgbus,
