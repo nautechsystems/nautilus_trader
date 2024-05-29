@@ -100,14 +100,14 @@ impl VerticalHorizontalFilter {
         let max_price = self
             .prices
             .iter()
-            .cloned()
+            .copied()
             .fold(f64::NEG_INFINITY, f64::max);
 
-        let min_price = self.prices.iter().cloned().fold(f64::INFINITY, f64::min);
+        let min_price = self.prices.iter().copied().fold(f64::INFINITY, f64::min);
 
         self.ma.update_raw(f64::abs(close - self.previous_close));
         if self.initialized {
-            self.value = f64::abs(max_price - min_price) / self.period as f64 / self.ma.value()
+            self.value = f64::abs(max_price - min_price) / self.period as f64 / self.ma.value();
         }
         self.previous_close = close;
 
