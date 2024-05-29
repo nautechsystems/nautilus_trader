@@ -9,6 +9,7 @@ Released on TBD (UTC).
 - Improved Bybit handling for top-of-book quotes and order book deltas (#1672), thanks @davidsblom
 - Improved Interactive Brokers integration test mocks (#1669), thanks @rsmb7z
 - Improved error message when no tick scheme initialized for an instrument, thanks for reporting @VeraLyu
+- Improved `SandboxExecutionClient` instruments filtering to match the venue, thanks @fredmonroe
 - Ported `VolumeWeightedAveragePrice` indicator to Rust (#1665), thanks @Pushkarm029
 - Ported `VerticalHorizontalFilter` indicator to Rust (#1666), thanks @Pushkarm029
 
@@ -378,7 +379,7 @@ Released on 23rd December 2023 (UTC).
 - Changed `StrategyConfig.strategy_id` to type `StrategyId | None`
 - Changed `Instrument`, `OrderFilled` and `AccountState` `info` field serialization due below fix (you'll need to flush your cache)
 - Changed `CacheConfig` to take a `DatabaseConfig` (better symmetry with `MessageBusConfig`)
-- Changed `RedisCacheDatabase` data structure for currencies from hashset to simpler key-value (you'll need to clear cache or delete all curreny keys)
+- Changed `RedisCacheDatabase` data structure for currencies from hashset to simpler key-value (you'll need to clear cache or delete all currency keys)
 - Changed `Actor` state loading to now use the standard `Serializer`
 - Renamed `register_json_encoding` to `register_config_encoding`
 - Renamed `register_json_decoding` to `register_config_decoding`
