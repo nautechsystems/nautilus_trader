@@ -113,7 +113,10 @@ class ArrowSerializer:
         return data
 
     @staticmethod
-    def rust_defined_to_record_batch(data: list[Data], data_cls: type) -> pa.Table | pa.RecordBatch:
+    def rust_defined_to_record_batch(  # noqa: C901 (too complex)
+        data: list[Data],
+        data_cls: type,
+    ) -> pa.Table | pa.RecordBatch:
         data = sorted(data, key=lambda x: x.ts_init)
         data = ArrowSerializer._unpack_container_objects(data_cls, data)
 

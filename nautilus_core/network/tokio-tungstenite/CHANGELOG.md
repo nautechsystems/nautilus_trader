@@ -13,7 +13,7 @@
 
 - Make `Origin` header case-sensitive (to keep compatibility with poorely-written servers that don't accept lowercase `Origin` header).
 - Make semantics of the reading form the `WebSocketStream` more reasonable (return `None` instead of an error when the stream is normally closed).
-- Imrpove the way `poll_close()` works by properly driving the close of the stream till completion.
+- Improve the way `poll_close()` works by properly driving the close of the stream till completion.
 
 # 0.17.1
 
