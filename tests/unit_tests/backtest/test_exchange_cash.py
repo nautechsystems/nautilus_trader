@@ -97,7 +97,6 @@ class TestSimulatedExchangeCashAccount:
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(0),
             leverages={},
-            instruments=[_AAPL_XNAS],
             modules=[],
             fill_model=FillModel(),
             fee_model=MakerTakerFeeModel(),
@@ -107,6 +106,7 @@ class TestSimulatedExchangeCashAccount:
             clock=self.clock,
             latency_model=LatencyModel(0),
         )
+        self.exchange.add_instrument(_AAPL_XNAS)
 
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,

@@ -82,20 +82,22 @@ cdef class SimulatedExchange:
         The account default leverage (for margin accounts).
     leverages : dict[InstrumentId, Decimal]
         The instrument specific leverage configuration (for margin accounts).
+    modules : list[SimulatedModule]
+        The simulation modules for the exchange.
     portfolio : PortfolioFacade
         The read-only portfolio for the exchange.
     msgbus : MessageBus
         The message bus for the exchange.
     cache : CacheFacade
         The read-only cache for the exchange.
+    clock : TestClock
+        The clock for the exchange.
     fill_model : FillModel
         The fill model for the exchange.
     fee_model : FeeModel
         The fee model for the exchange.
     latency_model : LatencyModel, optional
         The latency model for the exchange.
-    clock : TestClock
-        The clock for the exchange.
     book_type : BookType
         The order book type for the exchange.
     frozen_account : bool, default False
@@ -105,14 +107,14 @@ cdef class SimulatedExchange:
     reject_stop_orders : bool, default True
         If stop orders are rejected on submission if in the market.
     support_gtd_orders : bool, default True
-        If orders with GTD time in force will be supported by the venue.
+        If orders with GTD time in force will be supported by the exchange.
     support_contingent_orders : bool, default True
-        If contingent orders will be supported/respected by the venue.
+        If contingent orders will be supported/respected by the exchange.
         If False then its expected the strategy will be managing any contingent orders.
     use_position_ids : bool, default True
         If venue position IDs will be generated on order fills.
     use_random_ids : bool, default False
-        If all venue generated identifiers will be random UUID4's.
+        If all exchange generated identifiers will be random UUID4's.
     use_reduce_only : bool, default True
         If the `reduce_only` execution instruction on orders will be honored.
     use_message_queue : bool, default True
@@ -147,7 +149,6 @@ cdef class SimulatedExchange:
         Currency base_currency: Currency | None,
         default_leverage not None: Decimal,
         leverages not None: dict[InstrumentId, Decimal],
-        list instruments not None,
         list modules not None,
         PortfolioFacade portfolio not None,
         MessageBus msgbus not None,
@@ -167,7 +168,6 @@ cdef class SimulatedExchange:
         bint use_reduce_only = True,
         bint use_message_queue = True,
     ) -> None:
-        Condition.list_type(instruments, Instrument, "instruments", "Instrument")
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(starting_balances, Money, "starting_balances")
         Condition.list_type(modules, SimulationModule, "modules", "SimulationModule")
@@ -224,12 +224,8 @@ cdef class SimulatedExchange:
             self._log.info(f"Loaded {module}")
 
         # Markets
-        self._matching_engines: dict[InstrumentId, OrderMatchingEngine] = {}
-
-        # Load instruments
         self.instruments: dict[InstrumentId, Instrument] = {}
-        for instrument in instruments:
-            self.add_instrument(instrument)
+        self._matching_engines: dict[InstrumentId, OrderMatchingEngine] = {}
 
         self._message_queue = deque()
         self._inflight_queue: list[tuple[(uint64_t, uint64_t), TradingCommand]] = []
@@ -302,12 +298,13 @@ cdef class SimulatedExchange:
     cpdef void initialize_account(self):
         """
         Initialize the account to the starting balances.
+
         """
         self._generate_fresh_account_state()
 
     cpdef void add_instrument(self, Instrument instrument):
         """
-        Add the given instrument to the venue.
+        Add the given instrument to the exchange.
 
         Parameters
         ----------
@@ -668,7 +665,10 @@ cdef class SimulatedExchange:
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(delta.instrument_id)
         if matching_engine is None:
-            raise RuntimeError(f"No matching engine found for {delta.instrument_id}")
+            instrument = self.cache.instrument(delta.instrument_id)
+            if instrument is None:
+                raise RuntimeError(f"No matching engine found for {delta.instrument_id}")
+            self.add_instrument(instrument)
 
         matching_engine.process_order_book_delta(delta)
 
@@ -690,7 +690,10 @@ cdef class SimulatedExchange:
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(deltas.instrument_id)
         if matching_engine is None:
-            raise RuntimeError(f"No matching engine found for {deltas.instrument_id}")
+            instrument = self.cache.instrument(deltas.instrument_id)
+            if instrument is None:
+                raise RuntimeError(f"No matching engine found for {deltas.instrument_id}")
+            self.add_instrument(instrument)
 
         matching_engine.process_order_book_deltas(deltas)
 
@@ -714,7 +717,10 @@ cdef class SimulatedExchange:
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(tick.instrument_id)
         if matching_engine is None:
-            raise RuntimeError(f"No matching engine found for {tick.instrument_id}")
+            instrument = self.cache.instrument(tick.instrument_id)
+            if instrument is None:
+                raise RuntimeError(f"No matching engine found for {tick.instrument_id}")
+            self.add_instrument(instrument)
 
         matching_engine.process_quote_tick(tick)
 
@@ -738,7 +744,10 @@ cdef class SimulatedExchange:
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(tick.instrument_id)
         if matching_engine is None:
-            raise RuntimeError(f"No matching engine found for {tick.instrument_id}")
+            instrument = self.cache.instrument(tick.instrument_id)
+            if instrument is None:
+                raise RuntimeError(f"No matching engine found for {tick.instrument_id}")
+            self.add_instrument(instrument)
 
         matching_engine.process_trade_tick(tick)
 
@@ -762,7 +771,10 @@ cdef class SimulatedExchange:
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(bar.bar_type.instrument_id)
         if matching_engine is None:
-            raise RuntimeError(f"No matching engine found for {bar.bar_type.instrument_id}")
+            instrument = self.cache.instrument(bar.bar_type.instrument_id)
+            if instrument is None:
+                raise RuntimeError(f"No matching engine found for {bar.bar_type.instrument_id}")
+            self.add_instrument(instrument)
 
         matching_engine.process_bar(bar)
 
@@ -804,7 +816,10 @@ cdef class SimulatedExchange:
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(data.instrument_id)
         if matching_engine is None:
-            raise RuntimeError(f"No matching engine found for {data.instrument_id}")
+            instrument = self.cache.instrument(data.instrument_id)
+            if instrument is None:
+                raise RuntimeError(f"No matching engine found for {data.instrument_id}")
+            self.add_instrument(instrument)
 
         matching_engine.process_status(data.status)
 
@@ -867,22 +882,26 @@ cdef class SimulatedExchange:
         self._log.info("Reset")
 
     cdef void _process_trading_command(self, TradingCommand command):
+        cdef OrderMatchingEngine matching_engine = self._matching_engines.get(command.instrument_id)
+        if matching_engine is None:
+            raise RuntimeError(f"Cannot process command: no matching engine for {command.instrument_id}")
+
         cdef:
             Order order
             list[Order] orders
         if isinstance(command, SubmitOrder):
-            self._matching_engines[command.instrument_id].process_order(command.order, self.exec_client.account_id)
+            matching_engine.process_order(command.order, self.exec_client.account_id)
         elif isinstance(command, SubmitOrderList):
             for order in command.order_list.orders:
-                self._matching_engines[command.instrument_id].process_order(order, self.exec_client.account_id)
+                matching_engine.process_order(order, self.exec_client.account_id)
         elif isinstance(command, ModifyOrder):
-            self._matching_engines[command.instrument_id].process_modify(command, self.exec_client.account_id)
+            matching_engine.process_modify(command, self.exec_client.account_id)
         elif isinstance(command, CancelOrder):
-            self._matching_engines[command.instrument_id].process_cancel(command, self.exec_client.account_id)
+            matching_engine.process_cancel(command, self.exec_client.account_id)
         elif isinstance(command, CancelAllOrders):
-            self._matching_engines[command.instrument_id].process_cancel_all(command, self.exec_client.account_id)
+            matching_engine.process_cancel_all(command, self.exec_client.account_id)
         elif isinstance(command, BatchCancelOrders):
-            self._matching_engines[command.instrument_id].process_batch_cancel(command, self.exec_client.account_id)
+            matching_engine.process_batch_cancel(command, self.exec_client.account_id)
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 
