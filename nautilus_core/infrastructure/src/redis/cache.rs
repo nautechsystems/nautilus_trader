@@ -20,12 +20,26 @@ use std::{
     time::{Duration, Instant},
 };
 
-use nautilus_common::enums::SerializationEncoding;
-use nautilus_core::{correctness::check_slice_not_empty, uuid::UUID4};
-use nautilus_model::identifiers::trader_id::TraderId;
+use nautilus_common::{
+    cache::database::CacheDatabaseAdapter, enums::SerializationEncoding,
+    interface::account::Account,
+};
+use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::UUID4};
+use nautilus_model::{
+    identifiers::{
+        account_id::AccountId, client_id::ClientId, client_order_id::ClientOrderId,
+        component_id::ComponentId, instrument_id::InstrumentId, position_id::PositionId,
+        strategy_id::StrategyId, trader_id::TraderId, venue_order_id::VenueOrderId,
+    },
+    instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
+    orders::any::OrderAny,
+    position::Position,
+    types::currency::Currency,
+};
 use redis::{Commands, Connection, Pipeline};
 use serde_json::{json, Value};
 use tracing::{debug, error};
+use ustr::Ustr;
 
 use crate::redis::{create_redis_connection, get_buffer_interval};
 
@@ -665,6 +679,189 @@ fn deserialize_payload(
 pub struct RedisCacheDatabaseAdapter {
     pub encoding: SerializationEncoding,
     database: RedisCacheDatabase,
+}
+
+#[allow(dead_code)] // Under development
+#[allow(unused)] // Under development
+impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
+    fn close(&mut self) -> anyhow::Result<()> {
+        self.database.close()
+    }
+
+    fn flush(&mut self) -> anyhow::Result<()> {
+        self.database.flushdb()
+    }
+
+    fn load(&mut self) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+        // self.database.load()
+        Ok(HashMap::new()) // TODO
+    }
+
+    fn load_currencies(&mut self) -> anyhow::Result<HashMap<Ustr, Currency>> {
+        let mut currencies = HashMap::new();
+
+        for key in self.database.keys(&format!("{CURRENCIES}*"))? {
+            let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
+            let currency_code = Ustr::from(parts.first().unwrap());
+            let currency = self.load_currency(&currency_code)?;
+            currencies.insert(currency_code, currency);
+        }
+
+        Ok(currencies)
+    }
+
+    fn load_instruments(&mut self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
+        todo!()
+    }
+
+    fn load_synthetics(&mut self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
+        todo!()
+    }
+
+    fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, Box<dyn Account>>> {
+        todo!()
+    }
+
+    fn load_orders(&mut self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
+        todo!()
+    }
+
+    fn load_positions(&mut self) -> anyhow::Result<HashMap<PositionId, Position>> {
+        todo!()
+    }
+
+    fn load_index_order_position(&mut self) -> anyhow::Result<HashMap<ClientOrderId, Position>> {
+        todo!()
+    }
+
+    fn load_index_order_client(&mut self) -> anyhow::Result<HashMap<ClientOrderId, ClientId>> {
+        todo!()
+    }
+
+    fn load_currency(&mut self, code: &Ustr) -> anyhow::Result<Currency> {
+        todo!()
+    }
+
+    fn load_instrument(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<InstrumentAny> {
+        todo!()
+    }
+
+    fn load_synthetic(
+        &mut self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<SyntheticInstrument> {
+        todo!()
+    }
+
+    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn load_order(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<OrderAny> {
+        todo!()
+    }
+
+    fn load_position(&mut self, position_id: &PositionId) -> anyhow::Result<Position> {
+        todo!()
+    }
+
+    fn load_actor(
+        &mut self,
+        component_id: &ComponentId,
+    ) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+        todo!()
+    }
+
+    fn delete_actor(&mut self, component_id: &ComponentId) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn load_strategy(
+        &mut self,
+        strategy_id: &StrategyId,
+    ) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+        todo!()
+    }
+
+    fn delete_strategy(&mut self, component_id: &StrategyId) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add(&mut self, key: String, value: Vec<u8>) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_currency(&mut self, currency: &Currency) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_synthetic(&mut self, synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_account(&mut self, account: &dyn Account) -> anyhow::Result<Box<dyn Account>> {
+        todo!()
+    }
+
+    fn add_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_position(&mut self, position: &Position) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn index_venue_order_id(
+        &mut self,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn index_order_position(
+        &mut self,
+        client_order_id: ClientOrderId,
+        position_id: PositionId,
+    ) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn update_actor(&mut self) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn update_strategy(&mut self) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn update_account(&mut self, account: &dyn Account) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn update_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn update_position(&mut self, position: &Position) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn snapshot_order_state(&mut self, order: &OrderAny) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn snapshot_position_state(&mut self, position: &Position) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn heartbeat(&mut self, timestamp: UnixNanos) -> anyhow::Result<()> {
+        todo!()
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -258,7 +258,7 @@ impl Cache {
 
     /// Clears the current general cache and loads the general objects from the cache database.
     pub fn cache_general(&mut self) -> anyhow::Result<()> {
-        self.general = match &self.database {
+        self.general = match &mut self.database {
             Some(db) => db.load()?,
             None => HashMap::new(),
         };
@@ -272,7 +272,7 @@ impl Cache {
 
     /// Clears the current currencies cache and loads currencies from the cache database.
     pub fn cache_currencies(&mut self) -> anyhow::Result<()> {
-        self.currencies = match &self.database {
+        self.currencies = match &mut self.database {
             Some(db) => db.load_currencies()?,
             None => HashMap::new(),
         };
@@ -283,7 +283,7 @@ impl Cache {
 
     /// Clears the current instruments cache and loads instruments from the cache database.
     pub fn cache_instruments(&mut self) -> anyhow::Result<()> {
-        self.instruments = match &self.database {
+        self.instruments = match &mut self.database {
             Some(db) => db.load_instruments()?,
             None => HashMap::new(),
         };
@@ -295,7 +295,7 @@ impl Cache {
     /// Clears the current synthetic instruments cache and loads synthetic instruments from the cache
     /// database.
     pub fn cache_synthetics(&mut self) -> anyhow::Result<()> {
-        self.synthetics = match &self.database {
+        self.synthetics = match &mut self.database {
             Some(db) => db.load_synthetics()?,
             None => HashMap::new(),
         };
@@ -309,7 +309,7 @@ impl Cache {
 
     /// Clears the current accounts cache and loads accounts from the cache database.
     pub fn cache_accounts(&mut self) -> anyhow::Result<()> {
-        self.accounts = match &self.database {
+        self.accounts = match &mut self.database {
             Some(db) => db.load_accounts()?,
             None => HashMap::new(),
         };
@@ -323,7 +323,7 @@ impl Cache {
 
     /// Clears the current orders cache and loads orders from the cache database.
     pub fn cache_orders(&mut self) -> anyhow::Result<()> {
-        self.orders = match &self.database {
+        self.orders = match &mut self.database {
             Some(db) => db.load_orders()?,
             None => HashMap::new(),
         };
@@ -334,7 +334,7 @@ impl Cache {
 
     /// Clears the current positions cache and loads positions from the cache database.
     pub fn cache_positions(&mut self) -> anyhow::Result<()> {
-        self.positions = match &self.database {
+        self.positions = match &mut self.database {
             Some(db) => db.load_positions()?,
             None => HashMap::new(),
         };
@@ -938,8 +938,8 @@ impl Cache {
     }
 
     /// Dispose of the cache which will close any underlying database adapter.
-    pub fn dispose(&self) -> anyhow::Result<()> {
-        if let Some(database) = &self.database {
+    pub fn dispose(&mut self) -> anyhow::Result<()> {
+        if let Some(database) = &mut self.database {
             // TODO: Log operations in database adapter
             database.close()?;
         }
@@ -947,8 +947,8 @@ impl Cache {
     }
 
     /// Flushes the caches database which permanently removes all persisted data.
-    pub fn flush_db(&self) -> anyhow::Result<()> {
-        if let Some(database) = &self.database {
+    pub fn flush_db(&mut self) -> anyhow::Result<()> {
+        if let Some(database) = &mut self.database {
             // TODO: Log operations in database adapter
             database.flush()?;
         }
@@ -966,7 +966,7 @@ impl Cache {
         debug!("Adding general {key}");
         self.general.insert(key.to_string(), value.clone());
 
-        if let Some(database) = &self.database {
+        if let Some(database) = &mut self.database {
             database.add(key.to_string(), value)?;
         }
         Ok(())
@@ -1067,7 +1067,7 @@ impl Cache {
     pub fn add_currency(&mut self, currency: Currency) -> anyhow::Result<()> {
         debug!("Adding `Currency` {}", currency.code);
 
-        if let Some(database) = &self.database {
+        if let Some(database) = &mut self.database {
             database.add_currency(&currency)?;
         }
 
@@ -1079,7 +1079,7 @@ impl Cache {
     pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
         debug!("Adding `Instrument` {}", instrument.id());
 
-        if let Some(database) = &self.database {
+        if let Some(database) = &mut self.database {
             database.add_instrument(&instrument)?;
         }
 
@@ -1091,7 +1091,7 @@ impl Cache {
     pub fn add_synthetic(&mut self, synthetic: SyntheticInstrument) -> anyhow::Result<()> {
         debug!("Adding `SyntheticInstrument` {}", synthetic.id);
 
-        if let Some(database) = &self.database {
+        if let Some(database) = &mut self.database {
             database.add_synthetic(&synthetic)?;
         }
 
@@ -1103,7 +1103,7 @@ impl Cache {
     pub fn add_account(&mut self, account: Box<dyn Account>) -> anyhow::Result<()> {
         debug!("Adding `Account` {}", account.id());
 
-        if let Some(database) = &self.database {
+        if let Some(database) = &mut self.database {
             database.add_account(account.as_ref())?;
         }
 
@@ -2559,21 +2559,21 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispose_when_empty(cache: Cache) {
+    fn test_dispose_when_empty(mut cache: Cache) {
         let result = cache.dispose();
         assert!(result.is_ok());
     }
 
     #[rstest]
-    fn test_flush_db_when_empty(cache: Cache) {
+    fn test_flush_db_when_empty(mut cache: Cache) {
         let result = cache.flush_db();
         assert!(result.is_ok());
     }
 
     #[rstest]
     fn test_check_residuals_when_empty(cache: Cache) {
-        let result = cache.flush_db();
-        assert!(result.is_ok());
+        let result = cache.check_residuals();
+        assert!(!result);
     }
 
     #[rstest]
