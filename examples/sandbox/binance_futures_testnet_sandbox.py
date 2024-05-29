@@ -17,16 +17,11 @@
 import asyncio
 from decimal import Decimal
 
-# fmt: off
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
-from nautilus_trader.adapters.binance.factories import get_cached_binance_futures_instrument_provider
-from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
-from nautilus_trader.adapters.sandbox.execution import SandboxExecutionClient
 from nautilus_trader.adapters.sandbox.factory import SandboxLiveExecClientFactory
-from nautilus_trader.common.component import LiveClock
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
@@ -40,9 +35,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 
 
-# fmt: on
-
-
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
@@ -51,27 +43,6 @@ async def main():
     """
     Show how to run a strategy in a sandbox for the Binance venue.
     """
-    # Connect to Binance client early to load all instruments
-    clock = LiveClock()
-    account_type = BinanceAccountType.USDT_FUTURE
-    client = get_cached_binance_http_client(
-        clock=clock,
-        account_type=account_type,
-        is_testnet=True,
-    )
-
-    provider = get_cached_binance_futures_instrument_provider(
-        client=client,
-        clock=clock,
-        account_type=account_type,
-        config=InstrumentProviderConfig(),
-    )
-    await provider.load_all_async()
-    instruments = provider.list_all()
-
-    # Need to manually set instruments for sandbox exec client
-    SandboxExecutionClient.INSTRUMENTS = instruments
-
     # Configure the trading node
     config_node = TradingNodeConfig(
         trader_id=TraderId("TESTER-001"),

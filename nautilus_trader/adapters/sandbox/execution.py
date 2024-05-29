@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import ClassVar
 
 import pandas as pd
 
@@ -47,7 +46,6 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.portfolio.base import PortfolioFacade
@@ -71,8 +69,6 @@ class SandboxExecutionClient(LiveExecutionClient):
         The clock for the client.
 
     """
-
-    INSTRUMENTS: ClassVar[list[Instrument]] = []
 
     def __init__(
         self,
@@ -130,10 +126,6 @@ class SandboxExecutionClient(LiveExecutionClient):
             use_reduce_only=config.use_reduce_only,
             use_message_queue=False,  # Do not use internal message queue for real-time
         )
-        for instrument in self.INSTRUMENTS:
-            if instrument.venue != sandbox_venue:
-                continue  # Not for this venue
-            self.exchange.add_instrument(instrument)
 
         self._client = BacktestExecClient(
             exchange=self.exchange,
@@ -150,6 +142,11 @@ class SandboxExecutionClient(LiveExecutionClient):
         """
         self._log.info("Connecting...")
         self._msgbus.subscribe("data.*", handler=self.on_data)
+
+        # Load all instruments for venue
+        for instrument in self.exchange.cache.instruments(venue=self.venue):
+            self.exchange.add_instrument(instrument)
+
         self._client._set_connected(True)
         self._set_connected(True)
         self._log.info("Connected")

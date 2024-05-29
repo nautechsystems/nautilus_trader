@@ -669,6 +669,7 @@ cdef class SimulatedExchange:
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {delta.instrument_id}")
             self.add_instrument(instrument)
+            matching_engine = self._matching_engines[delta.instrument_id]
 
         matching_engine.process_order_book_delta(delta)
 
@@ -694,6 +695,7 @@ cdef class SimulatedExchange:
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {deltas.instrument_id}")
             self.add_instrument(instrument)
+            matching_engine = self._matching_engines[deltas.instrument_id]
 
         matching_engine.process_order_book_deltas(deltas)
 
@@ -721,6 +723,7 @@ cdef class SimulatedExchange:
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {tick.instrument_id}")
             self.add_instrument(instrument)
+            matching_engine = self._matching_engines[tick.instrument_id]
 
         matching_engine.process_quote_tick(tick)
 
@@ -748,6 +751,7 @@ cdef class SimulatedExchange:
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {tick.instrument_id}")
             self.add_instrument(instrument)
+            matching_engine = self._matching_engines[tick.instrument_id]
 
         matching_engine.process_trade_tick(tick)
 
@@ -775,6 +779,7 @@ cdef class SimulatedExchange:
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {bar.bar_type.instrument_id}")
             self.add_instrument(instrument)
+            matching_engine = self._matching_engines[bar.bar_type.instrument_id]
 
         matching_engine.process_bar(bar)
 
@@ -820,6 +825,7 @@ cdef class SimulatedExchange:
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {data.instrument_id}")
             self.add_instrument(instrument)
+            matching_engine = self._matching_engines[data.instrument_id]
 
         matching_engine.process_status(data.status)
 
