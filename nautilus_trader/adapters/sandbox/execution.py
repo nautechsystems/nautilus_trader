@@ -129,6 +129,7 @@ class SandboxExecutionClient(LiveExecutionClient):
             use_position_ids=config.use_position_ids,
             use_random_ids=config.use_random_ids,
             use_reduce_only=config.use_reduce_only,
+            use_message_queue=False,  # Do not use internal message queue for real-time
         )
         self._client = BacktestExecClient(
             exchange=self.exchange,

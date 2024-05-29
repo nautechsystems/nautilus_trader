@@ -95,6 +95,8 @@ cdef class SimulatedExchange:
     """If venue order and position IDs will be randomly generated UUID4s.\n\n:returns: `bool`"""
     cdef readonly bint use_reduce_only
     """If the `reduce_only` option on orders will be honored.\n\n:returns: `bool`"""
+    cdef readonly bint use_message_queue
+    """If an internal message queue is being used to sequentially process incoming trading commands.\n\n:returns: `bool`"""
     cdef readonly list modules
     """The simulation modules registered with the exchange.\n\n:returns: `list[SimulationModule]`"""
     cdef readonly dict instruments
@@ -140,6 +142,8 @@ cdef class SimulatedExchange:
     cpdef void process_instrument_status(self, InstrumentStatus data)
     cpdef void process(self, uint64_t ts_now)
     cpdef void reset(self)
+
+    cdef void _process_trading_command(self, TradingCommand command)
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 

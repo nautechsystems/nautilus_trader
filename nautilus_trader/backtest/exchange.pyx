@@ -115,6 +115,11 @@ cdef class SimulatedExchange:
         If all venue generated identifiers will be random UUID4's.
     use_reduce_only : bool, default True
         If the `reduce_only` execution instruction on orders will be honored.
+    use_message_queue : bool, default True
+        If an internal message queue should be used to process trading commands in sequence after
+        they have initially arrived. Setting this to False would be appropriate for real-time
+        sandbox environments, where we don't want to introduce additional latency of waiting for
+        the next data event before processing the trading command.
 
     Raises
     ------
@@ -130,6 +135,7 @@ cdef class SimulatedExchange:
         If `base_currency` and multiple starting balances.
     ValueError
         If `modules` contains a type other than `SimulationModule`.
+
     """
 
     def __init__(
@@ -159,6 +165,7 @@ cdef class SimulatedExchange:
         bint use_position_ids = True,
         bint use_random_ids = False,
         bint use_reduce_only = True,
+        bint use_message_queue = True,
     ) -> None:
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
         Condition.not_empty(starting_balances, "starting_balances")
@@ -197,6 +204,7 @@ cdef class SimulatedExchange:
         self.use_position_ids = use_position_ids
         self.use_random_ids = use_random_ids
         self.use_reduce_only = use_reduce_only
+        self.use_message_queue = use_message_queue
         self.fill_model = fill_model
         self.fee_model = fee_model
         self.latency_model = latency_model
@@ -225,7 +233,7 @@ cdef class SimulatedExchange:
 
         self._message_queue = deque()
         self._inflight_queue: list[tuple[(uint64_t, uint64_t), TradingCommand]] = []
-        self._inflight_counter: dict[uint64_t, int] = {}
+        self._inflight_counter: dict[uint64_t, uint64_t] = {}
 
     def __repr__(self) -> str:
         return (
@@ -300,8 +308,6 @@ cdef class SimulatedExchange:
     cpdef void add_instrument(self, Instrument instrument):
         """
         Add the given instrument to the venue.
-
-        A random and unique 32-bit unsigned integer raw ID will be generated.
 
         Parameters
         ----------
@@ -621,7 +627,9 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(command, "command")
 
-        if self.latency_model is None:
+        if not self.use_message_queue:
+            self._process_trading_command(command)
+        elif self.latency_model is None:
             self._message_queue.appendleft(command)
         else:
             heappush(self._inflight_queue, self.generate_inflight_command(command))
@@ -802,7 +810,7 @@ cdef class SimulatedExchange:
 
     cpdef void process(self, uint64_t ts_now):
         """
-        Process the exchange to the gives time.
+        Process the exchange to the given time.
 
         All pending commands will be processed along with all simulation modules.
 
@@ -826,25 +834,10 @@ cdef class SimulatedExchange:
             else:
                 break
 
-        cdef:
-            TradingCommand command
-            Order order
-            list orders
+        cdef TradingCommand command
         while self._message_queue:
             command = self._message_queue.pop()
-            if isinstance(command, SubmitOrder):
-                self._matching_engines[command.instrument_id].process_order(command.order, self.exec_client.account_id)
-            elif isinstance(command, SubmitOrderList):
-                for order in command.order_list.orders:
-                    self._matching_engines[command.instrument_id].process_order(order, self.exec_client.account_id)
-            elif isinstance(command, ModifyOrder):
-                self._matching_engines[command.instrument_id].process_modify(command, self.exec_client.account_id)
-            elif isinstance(command, CancelOrder):
-                self._matching_engines[command.instrument_id].process_cancel(command, self.exec_client.account_id)
-            elif isinstance(command, CancelAllOrders):
-                self._matching_engines[command.instrument_id].process_cancel_all(command, self.exec_client.account_id)
-            elif isinstance(command, BatchCancelOrders):
-                self._matching_engines[command.instrument_id].process_batch_cancel(command, self.exec_client.account_id)
+            self._process_trading_command(command)
 
         # Iterate over modules
         cdef SimulationModule module
@@ -872,6 +865,24 @@ cdef class SimulatedExchange:
         self._inflight_counter.clear()
 
         self._log.info("Reset")
+
+    cdef void _process_trading_command(self, TradingCommand command):
+        cdef:
+            Order order
+            list[Order] orders
+        if isinstance(command, SubmitOrder):
+            self._matching_engines[command.instrument_id].process_order(command.order, self.exec_client.account_id)
+        elif isinstance(command, SubmitOrderList):
+            for order in command.order_list.orders:
+                self._matching_engines[command.instrument_id].process_order(order, self.exec_client.account_id)
+        elif isinstance(command, ModifyOrder):
+            self._matching_engines[command.instrument_id].process_modify(command, self.exec_client.account_id)
+        elif isinstance(command, CancelOrder):
+            self._matching_engines[command.instrument_id].process_cancel(command, self.exec_client.account_id)
+        elif isinstance(command, CancelAllOrders):
+            self._matching_engines[command.instrument_id].process_cancel_all(command, self.exec_client.account_id)
+        elif isinstance(command, BatchCancelOrders):
+            self._matching_engines[command.instrument_id].process_batch_cancel(command, self.exec_client.account_id)
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 
