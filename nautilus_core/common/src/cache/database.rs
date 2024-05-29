@@ -29,7 +29,7 @@ use nautilus_model::{
         strategy_id::StrategyId, venue_order_id::VenueOrderId,
     },
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
-    orders::{any::OrderAny, base::Order},
+    orders::any::OrderAny,
     position::Position,
     types::currency::Currency,
 };
@@ -38,87 +38,96 @@ use ustr::Ustr;
 use crate::interface::account::Account;
 
 pub trait CacheDatabaseAdapter {
-    fn close(&self) -> anyhow::Result<()>;
+    fn close(&mut self) -> anyhow::Result<()>;
 
-    fn flush(&self) -> anyhow::Result<()>;
+    fn flush(&mut self) -> anyhow::Result<()>;
 
-    fn load(&self) -> anyhow::Result<HashMap<String, Vec<u8>>>;
+    fn load(&mut self) -> anyhow::Result<HashMap<String, Vec<u8>>>;
 
-    fn load_currencies(&self) -> anyhow::Result<HashMap<Ustr, Currency>>;
+    fn load_currencies(&mut self) -> anyhow::Result<HashMap<Ustr, Currency>>;
 
-    fn load_instruments(&self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>>;
+    fn load_instruments(&mut self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>>;
 
-    fn load_synthetics(&self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>>;
+    fn load_synthetics(&mut self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>>;
 
-    fn load_accounts(&self) -> anyhow::Result<HashMap<AccountId, Box<dyn Account>>>;
+    fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, Box<dyn Account>>>;
 
-    fn load_orders(&self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>>;
+    fn load_orders(&mut self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>>;
 
-    fn load_positions(&self) -> anyhow::Result<HashMap<PositionId, Position>>;
+    fn load_positions(&mut self) -> anyhow::Result<HashMap<PositionId, Position>>;
 
-    fn load_index_order_position(&self) -> anyhow::Result<HashMap<ClientOrderId, Position>>;
+    fn load_index_order_position(&mut self) -> anyhow::Result<HashMap<ClientOrderId, Position>>;
 
-    fn load_index_order_client(&self) -> anyhow::Result<HashMap<ClientOrderId, ClientId>>;
+    fn load_index_order_client(&mut self) -> anyhow::Result<HashMap<ClientOrderId, ClientId>>;
 
-    fn load_currency(&self, code: &Ustr) -> anyhow::Result<Currency>;
+    fn load_currency(&mut self, code: &Ustr) -> anyhow::Result<Currency>;
 
-    fn load_instrument(&self, instrument_id: &InstrumentId) -> anyhow::Result<InstrumentAny>;
+    fn load_instrument(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<InstrumentAny>;
 
-    fn load_synthetic(&self, instrument_id: &InstrumentId) -> anyhow::Result<SyntheticInstrument>;
+    fn load_synthetic(
+        &mut self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<SyntheticInstrument>;
 
-    fn load_account(&self, account_id: &AccountId) -> anyhow::Result<()>;
+    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<()>;
 
-    fn load_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<Box<dyn Order>>;
+    fn load_order(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<OrderAny>;
 
-    fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Position>;
+    fn load_position(&mut self, position_id: &PositionId) -> anyhow::Result<Position>;
 
-    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Vec<u8>>>;
+    fn load_actor(
+        &mut self,
+        component_id: &ComponentId,
+    ) -> anyhow::Result<HashMap<String, Vec<u8>>>;
 
-    fn delete_actor(&self, component_id: &ComponentId) -> anyhow::Result<()>;
+    fn delete_actor(&mut self, component_id: &ComponentId) -> anyhow::Result<()>;
 
-    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<HashMap<String, Vec<u8>>>;
+    fn load_strategy(
+        &mut self,
+        strategy_id: &StrategyId,
+    ) -> anyhow::Result<HashMap<String, Vec<u8>>>;
 
-    fn delete_strategy(&self, component_id: &StrategyId) -> anyhow::Result<()>;
+    fn delete_strategy(&mut self, component_id: &StrategyId) -> anyhow::Result<()>;
 
-    fn add(&self, key: String, value: Vec<u8>) -> anyhow::Result<()>;
+    fn add(&mut self, key: String, value: Vec<u8>) -> anyhow::Result<()>;
 
-    fn add_currency(&self, currency: &Currency) -> anyhow::Result<()>;
+    fn add_currency(&mut self, currency: &Currency) -> anyhow::Result<()>;
 
-    fn add_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()>;
+    fn add_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()>;
 
-    fn add_synthetic(&self, synthetic: &SyntheticInstrument) -> anyhow::Result<()>;
+    fn add_synthetic(&mut self, synthetic: &SyntheticInstrument) -> anyhow::Result<()>;
 
-    fn add_account(&self, account: &dyn Account) -> anyhow::Result<Box<dyn Account>>;
+    fn add_account(&mut self, account: &dyn Account) -> anyhow::Result<Box<dyn Account>>;
 
-    fn add_order(&self, order: &OrderAny) -> anyhow::Result<()>;
+    fn add_order(&mut self, order: &OrderAny) -> anyhow::Result<()>;
 
-    fn add_position(&self, position: &Position) -> anyhow::Result<()>;
+    fn add_position(&mut self, position: &Position) -> anyhow::Result<()>;
 
     fn index_venue_order_id(
-        &self,
+        &mut self,
         client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
     ) -> anyhow::Result<()>;
 
     fn index_order_position(
-        &self,
+        &mut self,
         client_order_id: ClientOrderId,
         position_id: PositionId,
     ) -> anyhow::Result<()>;
 
-    fn update_actor(&self) -> anyhow::Result<()>;
+    fn update_actor(&mut self) -> anyhow::Result<()>;
 
-    fn update_strategy(&self) -> anyhow::Result<()>;
+    fn update_strategy(&mut self) -> anyhow::Result<()>;
 
-    fn update_account(&self, account: &dyn Account) -> anyhow::Result<()>;
+    fn update_account(&mut self, account: &dyn Account) -> anyhow::Result<()>;
 
-    fn update_order(&self, order: &OrderAny) -> anyhow::Result<()>;
+    fn update_order(&mut self, order: &OrderAny) -> anyhow::Result<()>;
 
-    fn update_position(&self, position: &Position) -> anyhow::Result<()>;
+    fn update_position(&mut self, position: &Position) -> anyhow::Result<()>;
 
-    fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()>;
+    fn snapshot_order_state(&mut self, order: &OrderAny) -> anyhow::Result<()>;
 
-    fn snapshot_position_state(&self, position: &Position) -> anyhow::Result<()>;
+    fn snapshot_position_state(&mut self, position: &Position) -> anyhow::Result<()>;
 
-    fn heartbeat(&self, timestamp: UnixNanos) -> anyhow::Result<()>;
+    fn heartbeat(&mut self, timestamp: UnixNanos) -> anyhow::Result<()>;
 }
