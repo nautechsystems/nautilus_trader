@@ -129,7 +129,6 @@ class TestOrderEmulatorWithOrderLists:
             starting_balances=[Money(200, ETH), Money(1_000_000, USDT)],
             default_leverage=Decimal(10),
             leverages={},
-            instruments=[ETHUSDT_PERP_BINANCE],
             modules=[],
             fill_model=FillModel(),
             fee_model=MakerTakerFeeModel(),
@@ -139,6 +138,7 @@ class TestOrderEmulatorWithOrderLists:
             clock=self.clock,
             support_contingent_orders=False,
         )
+        self.exchange.add_instrument(ETHUSDT_PERP_BINANCE)
 
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,

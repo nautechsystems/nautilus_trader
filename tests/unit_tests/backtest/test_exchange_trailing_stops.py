@@ -107,7 +107,6 @@ class TestSimulatedExchange:
             ],
             default_leverage=Decimal(50),
             leverages={AUDUSD_SIM.id: Decimal(10)},
-            instruments=[USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
             fee_model=MakerTakerFeeModel(),
@@ -117,6 +116,7 @@ class TestSimulatedExchange:
             clock=self.clock,
             latency_model=LatencyModel(0),
         )
+        self.exchange.add_instrument(USDJPY_SIM)
 
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,

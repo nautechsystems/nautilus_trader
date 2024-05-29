@@ -111,7 +111,6 @@ class SandboxExecutionClient(LiveExecutionClient):
             base_currency=base_currency,
             default_leverage=config.default_leverage,
             leverages=config.leverages or {},
-            instruments=[i for i in self.INSTRUMENTS if i.venue == sandbox_venue],
             modules=[],
             portfolio=portfolio,
             msgbus=self._msgbus,
@@ -131,6 +130,11 @@ class SandboxExecutionClient(LiveExecutionClient):
             use_reduce_only=config.use_reduce_only,
             use_message_queue=False,  # Do not use internal message queue for real-time
         )
+        for instrument in self.INSTRUMENTS:
+            if instrument.venue != sandbox_venue:
+                continue  # Not for this venue
+            self.exchange.add_instrument(instrument)
+
         self._client = BacktestExecClient(
             exchange=self.exchange,
             msgbus=msgbus,
