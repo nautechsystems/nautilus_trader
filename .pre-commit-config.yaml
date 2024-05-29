@@ -31,12 +31,12 @@ repos:
       # - id: gitlint-ci
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.6
+    rev: v2.3.0
     hooks:
       - id: codespell
         description: Checks for common misspellings.
         types_or: [python, cython, rst, markdown]
-        args: ["-L", "crate,ot,zar"]
+        args: ["-L", "crate,ot,socio-economic,zar"]
 
   ##############################################################################
   #  Rust formatting and linting
@@ -82,7 +82,7 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.5
+    rev: v0.4.6
     hooks:
       - id: ruff
         args: ["--fix"]
