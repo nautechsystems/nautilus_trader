@@ -9,7 +9,7 @@ Released on TBD (UTC).
 - Improved Bybit handling for top-of-book quotes and order book deltas (#1672), thanks @davidsblom
 - Improved Interactive Brokers integration test mocks (#1669), thanks @rsmb7z
 - Improved error message when no tick scheme initialized for an instrument, thanks for reporting @VeraLyu
-- Improved `SandboxExecutionClient` instruments filtering to match the venue, thanks @fredmonroe
+- Improved `SandboxExecutionClient` instrument handling (instruments just need to be added to cache)
 - Ported `VolumeWeightedAveragePrice` indicator to Rust (#1665), thanks @Pushkarm029
 - Ported `VerticalHorizontalFilter` indicator to Rust (#1666), thanks @Pushkarm029
 
@@ -17,6 +17,7 @@ Released on TBD (UTC).
 None
 
 ### Fixes
+- Fixed `SimulatedExchange` processing of commands in real-time for sandbox mode
 - Fixed Bybit order book deltas parsing (was appending bid side twice) (#1668), thanks @davidsblom
 - Fixed `BinanceBar` streaming feather writing (was not setting up writer)
 

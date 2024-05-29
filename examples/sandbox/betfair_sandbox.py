@@ -24,7 +24,6 @@ from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_instrument_provider
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
-from nautilus_trader.adapters.sandbox.execution import SandboxExecutionClient
 from nautilus_trader.adapters.sandbox.factory import SandboxLiveExecClientFactory
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
@@ -54,9 +53,6 @@ async def main(instrument_config: BetfairInstrumentProviderConfig) -> TradingNod
     await provider.load_all_async()
     instruments = provider.list_all()
     print(f"Found instruments:\n{[ins.id for ins in instruments]}")
-
-    # Need to manually set instruments for sandbox exec client
-    SandboxExecutionClient.INSTRUMENTS = instruments
 
     # Load account currency
     account_currency = await provider.get_account_currency()
@@ -92,6 +88,11 @@ async def main(instrument_config: BetfairInstrumentProviderConfig) -> TradingNod
 
     # Setup TradingNode
     node = TradingNode(config=config)
+
+    # Can manually set instruments for sandbox exec client
+    for instrument in instruments:
+        node.cache.add_instrument(instrument)
+
     node.trader.add_strategies(strategies)
 
     # Register your client factories with the node (can take user defined factories)
