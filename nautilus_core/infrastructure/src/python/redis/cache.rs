@@ -15,7 +15,6 @@
 
 use std::collections::HashMap;
 
-use nautilus_common::cache::database::CacheDatabase;
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
     uuid::UUID4,

@@ -20,7 +20,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use nautilus_common::cache::database::{CacheDatabase, DatabaseCommand, DatabaseOperation};
+use nautilus_common::enums::SerializationEncoding;
 use nautilus_core::{correctness::check_slice_not_empty, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
 use redis::{Commands, Connection, Pipeline};
@@ -63,6 +63,48 @@ const INDEX_POSITIONS: &str = "index:positions";
 const INDEX_POSITIONS_OPEN: &str = "index:positions_open";
 const INDEX_POSITIONS_CLOSED: &str = "index:positions_closed";
 
+/// A type of database operation.
+#[derive(Clone, Debug)]
+pub enum DatabaseOperation {
+    Insert,
+    Update,
+    Delete,
+    Close,
+}
+
+/// Represents a database command to be performed which may be executed in another thread.
+#[derive(Clone, Debug)]
+pub struct DatabaseCommand {
+    /// The database operation type.
+    pub op_type: DatabaseOperation,
+    /// The primary key for the operation.
+    pub key: Option<String>,
+    /// The data payload for the operation.
+    pub payload: Option<Vec<Vec<u8>>>,
+}
+
+impl DatabaseCommand {
+    /// Creates a new [`DatabaseCommand`] instance.
+    #[must_use]
+    pub fn new(op_type: DatabaseOperation, key: String, payload: Option<Vec<Vec<u8>>>) -> Self {
+        Self {
+            op_type,
+            key: Some(key),
+            payload,
+        }
+    }
+
+    /// Initialize a `Close` database command, this is meant to close the database cache channel.
+    #[must_use]
+    pub fn close() -> Self {
+        Self {
+            op_type: DatabaseOperation::Close,
+            key: None,
+            payload: None,
+        }
+    }
+}
+
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
@@ -75,11 +117,9 @@ pub struct RedisCacheDatabase {
     handle: Option<JoinHandle<()>>,
 }
 
-impl CacheDatabase for RedisCacheDatabase {
-    type DatabaseType = RedisCacheDatabase;
-
+impl RedisCacheDatabase {
     /// Creates a new [`RedisCacheDatabase`] instance.
-    fn new(
+    pub fn new(
         trader_id: TraderId,
         instance_id: UUID4,
         config: HashMap<String, serde_json::Value>,
@@ -110,7 +150,7 @@ impl CacheDatabase for RedisCacheDatabase {
         })
     }
 
-    fn close(&mut self) -> anyhow::Result<()> {
+    pub fn close(&mut self) -> anyhow::Result<()> {
         debug!("Closing cache database adapter");
         self.tx
             .send(DatabaseCommand::close())
@@ -124,14 +164,14 @@ impl CacheDatabase for RedisCacheDatabase {
         }
     }
 
-    fn flushdb(&mut self) -> anyhow::Result<()> {
+    pub fn flushdb(&mut self) -> anyhow::Result<()> {
         match redis::cmd(FLUSHDB).query::<()>(&mut self.conn) {
             Ok(_) => Ok(()),
             Err(e) => Err(e.into()),
         }
     }
 
-    fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
+    pub fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
         let pattern = format!("{}{DELIMITER}{}", self.trader_key, pattern);
         debug!("Querying keys: {pattern}");
         match self.conn.keys(pattern) {
@@ -140,7 +180,7 @@ impl CacheDatabase for RedisCacheDatabase {
         }
     }
 
-    fn read(&mut self, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
+    pub fn read(&mut self, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
         let collection = get_collection_key(key)?;
         let key = format!("{}{DELIMITER}{}", self.trader_key, key);
 
@@ -159,7 +199,7 @@ impl CacheDatabase for RedisCacheDatabase {
         }
     }
 
-    fn insert(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()> {
+    pub fn insert(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Insert, key, payload);
         match self.tx.send(op) {
             Ok(_) => Ok(()),
@@ -167,7 +207,7 @@ impl CacheDatabase for RedisCacheDatabase {
         }
     }
 
-    fn update(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()> {
+    pub fn update(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Update, key, payload);
         match self.tx.send(op) {
             Ok(_) => Ok(()),
@@ -175,7 +215,7 @@ impl CacheDatabase for RedisCacheDatabase {
         }
     }
 
-    fn delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()> {
+    pub fn delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Delete, key, payload);
         match self.tx.send(op) {
             Ok(_) => Ok(()),
@@ -621,6 +661,15 @@ fn deserialize_payload(
     }
 }
 
+#[allow(dead_code)] // Under development
+pub struct RedisCacheDatabaseAdapter {
+    pub encoding: SerializationEncoding,
+    database: RedisCacheDatabase,
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;

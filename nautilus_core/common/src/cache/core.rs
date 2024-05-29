@@ -176,7 +176,7 @@ impl CacheIndex {
 pub struct Cache {
     config: CacheConfig,
     index: CacheIndex,
-    database: Option<CacheDatabaseAdapter>,
+    database: Option<Box<dyn CacheDatabaseAdapter>>,
     general: HashMap<String, Vec<u8>>,
     quotes: HashMap<InstrumentId, VecDeque<QuoteTick>>,
     trades: HashMap<InstrumentId, VecDeque<TradeTick>>,
@@ -202,7 +202,7 @@ impl Default for Cache {
 impl Cache {
     /// Creates a new [`Cache`] instance.
     #[must_use]
-    pub fn new(config: CacheConfig, database: Option<CacheDatabaseAdapter>) -> Self {
+    pub fn new(config: CacheConfig, database: Option<Box<dyn CacheDatabaseAdapter>>) -> Self {
         let index = CacheIndex {
             venue_account: HashMap::new(),
             venue_orders: HashMap::new(),
