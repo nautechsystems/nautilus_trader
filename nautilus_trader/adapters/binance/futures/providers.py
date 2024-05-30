@@ -251,8 +251,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                 BinanceSymbolFilterType.MIN_NOTIONAL,
             )
 
-            tick_size = price_filter.tickSize.rstrip("0")
-            step_size = lot_size_filter.stepSize.rstrip("0")
+            tick_size = price_filter.tickSize
+            step_size = lot_size_filter.stepSize
             PyCondition.in_range(float(tick_size), PRICE_MIN, PRICE_MAX, "tick_size")
             PyCondition.in_range(float(step_size), QUANTITY_MIN, QUANTITY_MAX, "step_size")
 
