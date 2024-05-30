@@ -63,7 +63,7 @@ Then we can create Nautilus `QuoteTick` objects by processing the DataFrame with
 
 ```python
 # Here we just take the first data file found and load into a pandas DataFrame
-df = CSVTickDataLoader.load(raw_files[0], index_col=0, format="%Y%m%d %H%M%S%f")
+df = CSVTickDataLoader.load(raw_files[0], index_col=0, datetime_format="%Y%m%d %H%M%S%f")
 df.columns = ["bid_price", "ask_price"]
 
 # Process quote ticks using a wrangler
@@ -141,7 +141,7 @@ data_configs = [
     BacktestDataConfig(
         catalog_path=str(ParquetDataCatalog.from_env().path),
         data_cls=QuoteTick,
-        instrument_id=instrument.id.value,
+        instrument_id=instrument.id,
         start_time=start,
         end_time=end,
     ),
@@ -152,7 +152,7 @@ strategies = [
         strategy_path="nautilus_trader.examples.strategies.ema_cross:EMACross",
         config_path="nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
         config=dict(
-            instrument_id=instrument.id.value,
+            instrument_id=instrument.id,
             bar_type="EUR/USD.SIM-15-MINUTE-BID-INTERNAL",
             fast_ema_period=10,
             slow_ema_period=20,

@@ -21,6 +21,7 @@ None
 - Fixed Bybit order book deltas parsing (was appending bid side twice) (#1668), thanks @davidsblom
 - Fixed Binance instruments price and size precision parsing (was incorrectly stripping trailing zeros)
 - Fixed `BinanceBar` streaming feather writing (was not setting up writer)
+- Fixed backtest high-level tutorial documentation errors, thanks for reporting @Leonz5288
 
 ---
 
