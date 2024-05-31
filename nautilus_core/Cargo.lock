@@ -578,9 +578,9 @@ dependencies = [
 
 [[package]]
 name = "borsh"
-version = "1.5.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbe5b10e214954177fb1dc9fbd20a1a2608fe99e6c832033bdc7cea287a20d77"
+checksum = "a6362ed55def622cddc70a4746a68554d7b687713770de539e59a739b249f8ed"
 dependencies = [
  "borsh-derive",
  "cfg_aliases",
@@ -588,9 +588,9 @@ dependencies = [
 
 [[package]]
 name = "borsh-derive"
-version = "1.5.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7a8646f94ab393e43e8b35a2558b1624bed28b97ee09c5d15456e3c9463f46d"
+checksum = "c3ef8005764f53cd4dca619f5bf64cafd4664dada50ece25e4d81de54c80cc0b"
 dependencies = [
  "once_cell",
  "proc-macro-crate",
@@ -732,9 +732,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "cfg_aliases"
-version = "0.1.1"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
+checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chrono"
@@ -2486,7 +2486,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-accounting"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2502,7 +2502,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-adapters"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2533,7 +2533,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2550,7 +2550,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cli"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "anyhow",
  "clap 4.5.4",
@@ -2567,7 +2567,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2595,7 +2595,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2615,7 +2615,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -2640,7 +2640,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "anyhow",
  "nautilus-core",
@@ -2652,7 +2652,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "anyhow",
  "log",
@@ -2675,7 +2675,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2703,7 +2703,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2728,7 +2728,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -2751,7 +2751,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "nautilus-accounting",
  "nautilus-adapters",
