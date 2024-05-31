@@ -61,6 +61,7 @@ pub struct LimitOrder {
 }
 
 impl LimitOrder {
+    /// Creates a new [`LimitOrder`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,

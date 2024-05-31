@@ -58,6 +58,7 @@ pub struct MarketIfTouchedOrder {
 }
 
 impl MarketIfTouchedOrder {
+    /// Creates a new [`MarketIfTouchedOrder`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,

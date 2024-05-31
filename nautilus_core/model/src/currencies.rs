@@ -988,7 +988,7 @@ impl Currency {
     }
 }
 
-/// Provides a map of built-in `Currency` constants.
+/// A map of built-in `Currency` constants.
 pub static CURRENCY_MAP: Lazy<Mutex<HashMap<String, Currency>>> = Lazy::new(|| {
     let mut map = HashMap::new();
     ///////////////////////////////////////////////////////////////////////////

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents a ladder of price levels for one side of an order book.
+
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, HashMap},
@@ -75,7 +77,7 @@ impl Display for BookPrice {
     }
 }
 
-/// Represents one side of an order book as a ladder of price levels.
+/// Represents a ladder of price levels for one side of an order book.
 #[derive(Clone, Debug)]
 pub struct Ladder {
     pub side: OrderSide,

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Defines `UnixNanos` type for working with UNIX epoch (nanoseconds).
+//! A `UnixNanos` type for working with UNIX epoch (nanoseconds).
 
 use std::{
     cmp::Ordering,

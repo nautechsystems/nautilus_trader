@@ -80,9 +80,9 @@ cdef extern from "../includes/model.h":
     cpdef enum BookType:
         # Top-of-book best bid/ask, one level per side.
         L1_MBP # = 1,
-        # Market by price, one order per level (aggregated).
+        # Market-by-price, one order per level (aggregated).
         L2_MBP # = 2,
-        # Market by order, multiple orders per level (full granularity).
+        # Market-by-order, multiple orders per level (full granularity).
         L3_MBO # = 3,
 
     # The order contigency type which specifies the behavior of linked orders.
@@ -296,7 +296,7 @@ cdef extern from "../includes/model.h":
 
     # A record flag bit field, indicating event end and data information.
     cpdef enum RecordFlag:
-        # Last message in the packet from the venue for a given `instrument_id`.
+        # Last message in the book event or packet from the venue for a given `instrument_id`.
         F_LAST # = (1 << 7),
         # Top-of-book message, not an individual order.
         F_TOB # = (1 << 6),
@@ -378,12 +378,12 @@ cdef extern from "../includes/model.h":
     cdef struct Level:
         pass
 
-    # Provides an order book.
+    # Provides a performant, generic, multi-purpose order book.
     #
     # Can handle the following granularity data:
-    # - MBO (market by order) / L3
-    # - MBP (market by price) / L2 aggregated order per level
-    # - MBP (market by price) / L1 top-of-book only
+    # - MBO (market-by-order) / L3
+    # - MBP (market-by-price) / L2 aggregated order per level
+    # - MBP (market-by-price) / L1 top-of-book only
     cdef struct OrderBook:
         pass
 
@@ -451,7 +451,7 @@ cdef extern from "../includes/model.h":
         # The UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
-    # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
+    # C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
     #
     # This struct wraps `OrderBookDeltas` in a way that makes it compatible with C function
     # calls, enabling interaction with `OrderBookDeltas` in a C environment.
@@ -509,11 +509,6 @@ cdef extern from "../includes/model.h":
         uint64_t ts_init;
 
     # Represents a valid trade match ID (assigned by a trading venue).
-    #
-    # Maximum length is 36 characters.
-    #
-    # The unique ID assigned to the trade entity once it is received or matched by
-    # the exchange or central counterparty.
     #
     # Can correspond to the `TradeID <1003> field` of the FIX protocol.
     cdef struct TradeId_t:
@@ -598,27 +593,10 @@ cdef extern from "../includes/model.h":
         Bar_t bar;
 
     # Represents a valid trader ID.
-    #
-    # Must be correctly formatted with two valid strings either side of a hyphen.
-    # It is expected a trader ID is the abbreviated name of the trader
-    # with an order ID tag number separated by a hyphen.
-    #
-    # Example: "TESTER-001".
-    # The reason for the numerical component of the ID is so that order and position IDs
-    # do not collide with those from another node instance.
     cdef struct TraderId_t:
         char* _0;
 
     # Represents a valid strategy ID.
-    #
-    # Must be correctly formatted with two valid strings either side of a hyphen.
-    # It is expected a strategy ID is the class name of the strategy,
-    # with an order ID tag number separated by a hyphen.
-    #
-    # Example: "EMACross-001".
-    #
-    # The reason for the numerical component of the ID is so that order and position IDs
-    # do not collide with those from another strategy within the node instance.
     cdef struct StrategyId_t:
         char* _0;
 
@@ -656,12 +634,6 @@ cdef extern from "../includes/model.h":
         uint64_t ts_init;
 
     # Represents a valid account ID.
-    #
-    # Must be correctly formatted with two valid strings either side of a hyphen '-'.
-    # It is expected an account ID is the name of the issuer with an account number
-    # separated by a hyphen.
-    #
-    # Example: "IB-D02851908".
     cdef struct AccountId_t:
         char* _0;
 
@@ -723,7 +695,7 @@ cdef extern from "../includes/model.h":
     cdef struct PositionId_t:
         char* _0;
 
-    # Provides a C compatible Foreign Function Interface (FFI) for an underlying
+    # C compatible Foreign Function Interface (FFI) for an underlying
     # [`SyntheticInstrument`].
     #
     # This struct wraps `SyntheticInstrument` in a way that makes it compatible with C function
@@ -735,7 +707,7 @@ cdef extern from "../includes/model.h":
     cdef struct SyntheticInstrument_API:
         SyntheticInstrument *_0;
 
-    # Provides a C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
+    # C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
     #
     # This struct wraps `OrderBook` in a way that makes it compatible with C function
     # calls, enabling interaction with `OrderBook` in a C environment.
@@ -746,7 +718,7 @@ cdef extern from "../includes/model.h":
     cdef struct OrderBook_API:
         OrderBook *_0;
 
-    # Provides a C compatible Foreign Function Interface (FFI) for an underlying order book[`Level`].
+    # C compatible Foreign Function Interface (FFI) for an underlying order book[`Level`].
     #
     # This struct wraps `Level` in a way that makes it compatible with C function
     # calls, enabling interaction with `Level` in a C environment.

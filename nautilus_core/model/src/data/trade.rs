@@ -60,6 +60,7 @@ pub struct TradeTick {
 }
 
 impl TradeTick {
+    /// Creates a new [`TradeTick`] instance.
     #[must_use]
     pub fn new(
         instrument_id: InstrumentId,

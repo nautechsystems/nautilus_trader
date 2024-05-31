@@ -16,7 +16,7 @@
 use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
-use nautilus_core::{deserialization::from_bool_as_u8, nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{nanos::UnixNanos, serialization::from_bool_as_u8, uuid::UUID4};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -58,6 +58,7 @@ pub struct OrderExpired {
 }
 
 impl OrderExpired {
+    /// Creates a new [`OrderExpired`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,

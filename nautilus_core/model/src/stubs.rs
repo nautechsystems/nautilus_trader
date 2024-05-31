@@ -154,7 +154,7 @@ pub fn stub_order_book_mbp(
             OrderSide::Buy,
             price,
             size,
-            0, // order_id not applicable for MBP (market by price) books
+            0, // order_id not applicable for MBP (market-by-price) books
         );
         book.add(order, 0, 1, 2.into());
     }
@@ -175,7 +175,7 @@ pub fn stub_order_book_mbp(
             OrderSide::Sell,
             price,
             size,
-            0, // order_id not applicable for MBP (market by price) books
+            0, // order_id not applicable for MBP (market-by-price) books
         );
         book.add(order, 0, 1, 2.into());
     }

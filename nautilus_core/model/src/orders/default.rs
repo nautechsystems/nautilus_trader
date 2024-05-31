@@ -30,8 +30,8 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-/// Provides a default [`LimitOrder`] used for testing.
 impl Default for LimitOrder {
+    /// Creates a new default [`LimitOrder`] instance for testing.
     fn default() -> Self {
         Self::new(
             TraderId::default(),
@@ -64,8 +64,8 @@ impl Default for LimitOrder {
     }
 }
 
-/// Provides a default [`LimitIfTouchedOrder`] used for testing.
 impl Default for LimitIfTouchedOrder {
+    /// Creates a new default [`LimitIfTouchedOrder`] instance for testing.
     fn default() -> Self {
         Self::new(
             TraderId::default(),
@@ -100,8 +100,8 @@ impl Default for LimitIfTouchedOrder {
     }
 }
 
-/// Provides a default [`MarketOrder`] used for testing.
 impl Default for MarketOrder {
+    /// Creates a new default [`MarketOrder`] instance for testing.
     fn default() -> Self {
         Self::new(
             TraderId::default(),
@@ -128,8 +128,8 @@ impl Default for MarketOrder {
     }
 }
 
-/// Provides a default [`MarketIfTouchedOrder`] used for testing.
 impl Default for MarketIfTouchedOrder {
+    /// Creates a new default [`MarketIfTouchedOrder`] instance for testing.
     fn default() -> Self {
         Self::new(
             TraderId::default(),
@@ -162,8 +162,8 @@ impl Default for MarketIfTouchedOrder {
     }
 }
 
-/// Provides a default [`MarketToLimitOrder`] used for testing.
 impl Default for MarketToLimitOrder {
+    /// Creates a new default [`MarketToLimitOrder`] instance for testing.
     fn default() -> Self {
         Self::new(
             TraderId::default(),
@@ -193,8 +193,8 @@ impl Default for MarketToLimitOrder {
     }
 }
 
-/// Provides a default [`StopLimitOrder`] used for testing.
 impl Default for StopLimitOrder {
+    /// Creates a new default [`StopLimitOrder`] instance for testing.
     fn default() -> Self {
         Self::new(
             TraderId::default(),
@@ -229,8 +229,8 @@ impl Default for StopLimitOrder {
     }
 }
 
-/// Provides a default [`StopMarketOrder`] used for testing.
 impl Default for StopMarketOrder {
+    /// Creates a new default [`StopMarketOrder`] instance for testing.
     fn default() -> Self {
         Self::new(
             TraderId::default(),
@@ -263,8 +263,8 @@ impl Default for StopMarketOrder {
     }
 }
 
-/// Provides a default [`TrailingStopLimitOrder`] used for testing.
 impl Default for TrailingStopLimitOrder {
+    /// Creates a new default [`TrailingStopLimitOrder`] instance for testing.
     fn default() -> Self {
         Self::new(
             TraderId::default(),
@@ -302,8 +302,8 @@ impl Default for TrailingStopLimitOrder {
     }
 }
 
-/// Provides a default [`TrailingStopMarketOrder`] used for testing.
 impl Default for TrailingStopMarketOrder {
+    /// Creates a new default [`TrailingStopMarketOrder`] instance for testing.
     fn default() -> Self {
         Self::new(
             TraderId::default(),

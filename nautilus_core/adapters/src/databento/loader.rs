@@ -39,7 +39,7 @@ use super::{
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, Dataset, PublisherId},
 };
 
-/// Provides a Nautilus data loader for Databento Binary Encoding (DBN) format data.
+/// A Nautilus data loader for Databento Binary Encoding (DBN) format data.
 ///
 /// # Supported schemas:
 ///  - MBO -> `OrderBookDelta`
@@ -68,6 +68,7 @@ pub struct DatabentoDataLoader {
 }
 
 impl DatabentoDataLoader {
+    /// Creates a new [`DatabentoDataLoader`] instance.
     pub fn new(path: Option<PathBuf>) -> anyhow::Result<Self> {
         let mut loader = Self {
             publishers_map: IndexMap::new(),

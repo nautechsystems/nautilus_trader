@@ -101,16 +101,22 @@ cdef extern from "../includes/common.h":
         # The **ERROR** error log level.
         ERROR # = 40,
 
+    # A real-time clock which uses system time.
+    #
+    # Timestamps are guaranteed to be unique and monotonically increasing.
     cdef struct LiveClock:
         pass
 
     cdef struct LogGuard:
         pass
 
+    # A static test clock.
+    #
+    # Stores the current timestamp internally which can be advanced.
     cdef struct TestClock:
         pass
 
-    # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
+    # C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
     #
     # This struct wraps `TestClock` in a way that makes it compatible with C function
     # calls, enabling interaction with `TestClock` in a C environment.
@@ -121,7 +127,7 @@ cdef extern from "../includes/common.h":
     cdef struct TestClock_API:
         TestClock *_0;
 
-    # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`LiveClock`].
+    # C compatible Foreign Function Interface (FFI) for an underlying [`LiveClock`].
     #
     # This struct wraps `LiveClock` in a way that makes it compatible with C function
     # calls, enabling interaction with `LiveClock` in a C environment.
@@ -133,7 +139,7 @@ cdef extern from "../includes/common.h":
     cdef struct LiveClock_API:
         LiveClock *_0;
 
-    # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`LogGuard`].
+    # C compatible Foreign Function Interface (FFI) for an underlying [`LogGuard`].
     #
     # This struct wraps `LogGuard` in a way that makes it compatible with C function
     # calls, enabling interaction with `LogGuard` in a C environment.
@@ -157,7 +163,7 @@ cdef extern from "../includes/common.h":
 
     # Represents a time event and its associated handler.
     cdef struct TimeEventHandler_t:
-        # The event.
+        # The time event.
         TimeEvent_t event;
         # The callable raw pointer.
         char *callback_ptr;

@@ -34,6 +34,7 @@ use crate::{
 };
 
 impl Default for QuoteTick {
+    /// Creates a new default [`QuoteTick`] instance for testing.
     fn default() -> Self {
         Self {
             instrument_id: InstrumentId::from("AUDUSD.SIM"),
@@ -48,6 +49,7 @@ impl Default for QuoteTick {
 }
 
 impl Default for TradeTick {
+    /// Creates a new default [`TradeTick`] instance for testing.
     fn default() -> Self {
         TradeTick {
             instrument_id: InstrumentId::from("AUDUSD.SIM"),
@@ -62,6 +64,7 @@ impl Default for TradeTick {
 }
 
 impl Default for Bar {
+    /// Creates a new default [`Bar`] instance for testing.
     fn default() -> Self {
         Self {
             bar_type: BarType::from("AUDUSD.SIM-1-MINUTE-LAST-INTERNAL"),

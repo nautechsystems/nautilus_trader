@@ -28,6 +28,7 @@ pub struct PostgresConnectOptions {
 }
 
 impl PostgresConnectOptions {
+    /// Creates a new [`PostgresConnectOptions`] instance.
     pub fn new(
         host: String,
         port: u16,

@@ -81,6 +81,7 @@ impl Indicator for ChandeMomentumOscillator {
 }
 
 impl ChandeMomentumOscillator {
+    /// Creates a new [`ChandeMomentumOscillator`] instance.
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> anyhow::Result<Self> {
         Ok(Self {
             period,

@@ -95,7 +95,6 @@ class TestSimulatedExchangeGlbx:
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(10),
             leverages={},
-            instruments=[_ESH4_GLBX],
             modules=[],
             fill_model=FillModel(),
             fee_model=MakerTakerFeeModel(),
@@ -105,6 +104,7 @@ class TestSimulatedExchangeGlbx:
             clock=self.clock,
             latency_model=LatencyModel(0),
         )
+        self.exchange.add_instrument(_ESH4_GLBX)
 
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,

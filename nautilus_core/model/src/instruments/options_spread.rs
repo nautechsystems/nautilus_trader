@@ -67,6 +67,7 @@ pub struct OptionsSpread {
 }
 
 impl OptionsSpread {
+    /// Creates a new [`OptionsSpread`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,

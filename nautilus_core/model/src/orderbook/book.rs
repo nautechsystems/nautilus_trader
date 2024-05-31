@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! A performant, generic, multi-purpose order book.
+
 use nautilus_core::nanos::UnixNanos;
 
 use super::{aggregation::pre_process_order, analysis, display::pprint_book, level::Level};
@@ -26,12 +28,12 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-/// Provides an order book.
+/// Provides a performant, generic, multi-purpose order book.
 ///
 /// Can handle the following granularity data:
-/// - MBO (market by order) / L3
-/// - MBP (market by price) / L2 aggregated order per level
-/// - MBP (market by price) / L1 top-of-book only
+/// - MBO (market-by-order) / L3
+/// - MBP (market-by-price) / L2 aggregated order per level
+/// - MBP (market-by-price) / L1 top-of-book only
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
@@ -53,6 +55,7 @@ pub struct OrderBook {
 }
 
 impl OrderBook {
+    /// Creates a new [`OrderBook`] instance.
     #[must_use]
     pub fn new(book_type: BookType, instrument_id: InstrumentId) -> Self {
         Self {

@@ -100,7 +100,6 @@ class TestL2OrderBookExchange:
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(50),
             leverages={},
-            instruments=[_USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
             fee_model=MakerTakerFeeModel(),
@@ -111,6 +110,7 @@ class TestL2OrderBookExchange:
             book_type=BookType.L2_MBP,  # <-- L2 MBP book
             latency_model=LatencyModel(0),
         )
+        self.exchange.add_instrument(_USDJPY_SIM)
 
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,

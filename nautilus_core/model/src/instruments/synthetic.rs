@@ -48,6 +48,7 @@ pub struct SyntheticInstrument {
 }
 
 impl SyntheticInstrument {
+    /// Creates a new [`SyntheticInstrument`] instance.
     pub fn new(
         symbol: Symbol,
         price_precision: u8,

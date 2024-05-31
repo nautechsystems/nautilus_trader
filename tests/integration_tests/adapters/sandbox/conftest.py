@@ -40,7 +40,8 @@ def exec_client(
     clock,
     venue,
 ):
-    SandboxExecutionClient.INSTRUMENTS = [instrument]
+    cache.add_instrument(instrument)  # <-- This might be redundant now
+
     config = SandboxExecutionClientConfig(
         venue=venue.value,
         starting_balances=["100_000 USD"],

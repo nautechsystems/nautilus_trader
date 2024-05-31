@@ -38,6 +38,7 @@ pub struct BatchCancelOrders {
 }
 
 impl BatchCancelOrders {
+    /// Creates a new [`BatchCancelOrders`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,

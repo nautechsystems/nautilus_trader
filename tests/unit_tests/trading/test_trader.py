@@ -101,12 +101,12 @@ class TestTrader:
             portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
-            instruments=[USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
             fee_model=MakerTakerFeeModel(),
             clock=self.clock,
         )
+        self.exchange.add_instrument(USDJPY_SIM)
 
         self.data_client = BacktestMarketDataClient(
             client_id=ClientId("SIM"),

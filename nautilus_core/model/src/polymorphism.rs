@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Defines traits to faciliate polymorphism.
+//! Traits to faciliate polymorphism.
 
 use nautilus_core::nanos::UnixNanos;
 
 use crate::{
-    enums::{OrderSide, OrderSideSpecified, TriggerType},
+    enums::{OrderSide, OrderSideSpecified, OrderStatus, TriggerType},
     events::order::event::OrderEventAny,
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
@@ -75,6 +75,10 @@ pub trait GetOrderSide {
 
 pub trait GetOrderQuantity {
     fn quantity(&self) -> Quantity;
+}
+
+pub trait GetOrderStatus {
+    fn status(&self) -> OrderStatus;
 }
 
 pub trait GetOrderFilledQty {

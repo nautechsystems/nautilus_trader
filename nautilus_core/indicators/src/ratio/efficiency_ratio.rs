@@ -79,6 +79,7 @@ impl Indicator for EfficiencyRatio {
 }
 
 impl EfficiencyRatio {
+    /// Creates a new [`EfficiencyRatio`] instance.
     pub fn new(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
         Ok(Self {
             period,

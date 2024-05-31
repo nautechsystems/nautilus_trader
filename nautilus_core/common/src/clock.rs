@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides real-time and static test `Clock` implementations.
+//! Real-time and static test `Clock` implementations.
 
 use std::{collections::HashMap, ops::Deref};
 
@@ -71,6 +71,9 @@ pub trait Clock {
     fn cancel_timers(&mut self);
 }
 
+/// A static test clock.
+///
+/// Stores the current timestamp internally which can be advanced.
 pub struct TestClock {
     time: AtomicTime,
     timers: HashMap<Ustr, TestTimer>,
@@ -79,6 +82,7 @@ pub struct TestClock {
 }
 
 impl TestClock {
+    /// Creates a new [`TestClock`] instance.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -149,6 +153,7 @@ fn create_time_event_handler(event: TimeEvent, handler: &EventHandler) -> TimeEv
 }
 
 impl Default for TestClock {
+    /// Creates a new default [`TestClock`] instance.
     fn default() -> Self {
         Self::new()
     }
@@ -261,6 +266,9 @@ impl Clock for TestClock {
     }
 }
 
+/// A real-time clock which uses system time.
+///
+/// Timestamps are guaranteed to be unique and monotonically increasing.
 pub struct LiveClock {
     time: &'static AtomicTime,
     timers: HashMap<Ustr, LiveTimer>,
@@ -268,6 +276,7 @@ pub struct LiveClock {
 }
 
 impl LiveClock {
+    /// Creates a new [`LiveClock`] instance.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -284,6 +293,7 @@ impl LiveClock {
 }
 
 impl Default for LiveClock {
+    /// Creates a new default [`LiveClock`] instance.
     fn default() -> Self {
         Self::new()
     }

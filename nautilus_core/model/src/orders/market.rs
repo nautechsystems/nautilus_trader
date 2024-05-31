@@ -56,6 +56,7 @@ pub struct MarketOrder {
 }
 
 impl MarketOrder {
+    /// Creates a new [`MarketOrder`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,

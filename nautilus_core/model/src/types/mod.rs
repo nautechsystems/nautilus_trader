@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Defines value types for the trading domain model such as `Price`, `Quantity` and `Money`.
+//! Value types for the trading domain model such as `Price`, `Quantity` and `Money`.
 
 pub mod balance;
 pub mod currency;

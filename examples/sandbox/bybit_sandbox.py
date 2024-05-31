@@ -17,16 +17,11 @@
 import asyncio
 from decimal import Decimal
 
-from nautilus_trader.adapters.bybit.common.constants import BYBIT_ALL_PRODUCTS
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.factories import BybitLiveDataClientFactory
-from nautilus_trader.adapters.bybit.factories import get_bybit_http_client
-from nautilus_trader.adapters.bybit.factories import get_bybit_instrument_provider
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
-from nautilus_trader.adapters.sandbox.execution import SandboxExecutionClient
 from nautilus_trader.adapters.sandbox.factory import SandboxLiveExecClientFactory
-from nautilus_trader.common.component import LiveClock
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
@@ -46,27 +41,10 @@ async def main():
     """
     Show how to run a strategy in a sandbox for the Bybit venue.
     """
-    # Connect to Bybit client early to load all instruments
-    clock = LiveClock()
-    client = get_bybit_http_client(clock=clock)
-
-    product_types = BYBIT_ALL_PRODUCTS
     instrument_provider_config = InstrumentProviderConfig(load_all=True)
-    provider = get_bybit_instrument_provider(
-        client=client,
-        clock=clock,
-        product_types=product_types,
-        config=instrument_provider_config,
-    )
-    await provider.load_all_async()
-
-    instruments = provider.list_all()
-
-    # Need to manually set instruments for sandbox exec client
-    SandboxExecutionClient.INSTRUMENTS = instruments
 
     # Set up the execution clients (required per venue)
-    venues = {str(instrument.venue) for instrument in instruments}
+    venues = ["BYBIT"]
 
     exec_clients = {}
     for venue in venues:

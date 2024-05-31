@@ -65,6 +65,7 @@ pub struct CryptoPerpetual {
 }
 
 impl CryptoPerpetual {
+    /// Creates a new [`CryptoPerpetual`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
