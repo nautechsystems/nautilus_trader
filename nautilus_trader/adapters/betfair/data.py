@@ -281,6 +281,8 @@ class BetfairDataClient(LiveMarketDataClient):
             self._log.error(f"Error connecting to betfair: {update.error_message}")
             if update.error_code == "MAX_CONNECTION_LIMIT_EXCEEDED":
                 raise RuntimeError("No more connections available")
+            elif update.error_code == "SUBSCRIPTION_LIMIT_EXCEEDED":
+                raise RuntimeError("Subscription request limit exceeded")
             else:
                 self._log.info("Attempting reconnect")
                 if self._stream.is_connected:

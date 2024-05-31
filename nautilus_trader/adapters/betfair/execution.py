@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import traceback
 from collections import defaultdict
 
 import msgspec
@@ -26,6 +27,7 @@ from betfair_parser.spec.betting.enums import OrderProjection
 from betfair_parser.spec.betting.orders import CancelOrders
 from betfair_parser.spec.betting.orders import PlaceOrders
 from betfair_parser.spec.betting.orders import ReplaceOrders
+from betfair_parser.spec.betting.type_definitions import CancelExecutionReport
 from betfair_parser.spec.betting.type_definitions import CurrentOrderSummary
 from betfair_parser.spec.betting.type_definitions import PlaceExecutionReport
 from betfair_parser.spec.common import BetId
@@ -151,7 +153,12 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._strategy_hashes: dict[str, str] = {}
         self._set_account_id(AccountId(f"{BETFAIR_VENUE}-001"))
         AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
+
         self._reconnect_in_progress = False
+        self._init_scheduled_tasks()
+
+    def _init_scheduled_tasks(self) -> None:
+        self.create_task(self.account_state_updates())
 
     @property
     def instrument_provider(self) -> BetfairInstrumentProvider:
@@ -162,10 +169,7 @@ class BetfairExecutionClient(LiveExecutionClient):
     async def _connect(self) -> None:
         self._log.info("Connecting to BetfairHttpClient...")
         await self._client.connect()
-        self._log.info("BetfairHttpClient login successful", LogColor.GREEN)
-
-        # Start scheduled account state updates
-        self.create_task(self.account_state_updates())
+        self._log.info("BetfairHttpClient login successful.", LogColor.GREEN)
 
         # Connections and start-up checks
         aws = [
@@ -186,7 +190,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     # -- ERROR HANDLING ---------------------------------------------------------------------------
     async def on_api_exception(self, error: BetfairError) -> None:
-        if "INVALID_SESSION_INFORMATION" in error.args[0]:
+        if "INVALID_SESSION_INFORMATION" in error.args[0] or "NO_SESSION" in error.args[0]:
             if self._reconnect_in_progress:
                 self._log.info("Reconnect already in progress.")
                 return
@@ -203,20 +207,27 @@ class BetfairExecutionClient(LiveExecutionClient):
                 await self._connect()
                 self._log.info("Reconnected.")
             except Exception:
-                self._log.error("Reconnection failed.", exc_info=True)
+                self._log.error(f"Reconnection failed: {traceback.format_exc()}")
 
             self._reconnect_in_progress = False
 
     # -- ACCOUNT HANDLERS -------------------------------------------------------------------------
 
     async def account_state_updates(self) -> None:
-        while True:
+        async def update_account_state():
             self._log.debug("Requesting account state")
             account_state = await self.request_account_state()
             self._log.debug(f"Received account state: {account_state}")
             self._send_account_state(account_state)
             self._log.debug("Sent account state")
-            await asyncio.sleep(self.request_account_state_period)
+
+        while True:
+            await update_account_state()
+            try:
+                await asyncio.sleep(self.request_account_state_period)
+                await update_account_state()
+            except Exception:
+                self._log.error(f"account_state_updates: {traceback.format_exc()}")
 
     async def request_account_state(self) -> AccountState:
         account_details = await self._client.get_account_details()
@@ -530,7 +541,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(f"result={result}")
 
         for report in result.instruction_reports:
-            if report.status == ExecutionReportStatus.FAILURE:
+            if report.status in {ExecutionReportStatus.FAILURE, InstructionReportStatus.FAILURE}:
                 reason = f"{result.error_code.name} ({result.error_code.__doc__})"
                 self._log.warning(f"replace failed - {reason}")
                 self.generate_order_rejected(
@@ -568,7 +579,14 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         size_reduction = existing_order.quantity - command.quantity
         if size_reduction <= 0:
-            # TODO: generate a reject
+            self.generate_order_modify_rejected(
+                command.strategy_id,
+                command.instrument_id,
+                command.client_order_id,
+                existing_order.venue_order_id,
+                f"Insufficient remaining quantity: {size_reduction}",
+                self._clock.timestamp_ns(),
+            )
             return
 
         cancel_orders: CancelOrders = order_update_to_cancel_order_params(
@@ -578,7 +596,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         )
 
         try:
-            result = await self._client.cancel_orders(cancel_orders)
+            result: CancelExecutionReport = await self._client.cancel_orders(cancel_orders)
         except Exception as e:
             if isinstance(e, BetfairError):
                 await self.on_api_exception(error=e)
@@ -596,7 +614,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(f"result={result}")
 
         for report in result.instruction_reports:
-            if report.status == ExecutionReportStatus.FAILURE:
+            if report.status in {ExecutionReportStatus.FAILURE, InstructionReportStatus.FAILURE}:
                 reason = f"{result.error_code.name} ({result.error_code.__doc__})"
                 self._log.warning(f"size reduction failed - {reason}")
                 self.generate_order_rejected(
