@@ -1,6 +1,6 @@
 # NautilusTrader 1.194.0 Beta
 
-Released on TBD (UTC).
+Released on 31st May 2024 (UTC).
 
 ### Enhancements
 - Added `DataEngine` order book deltas buffering to `F_LAST` flag (#1673), thanks @davidsblom
