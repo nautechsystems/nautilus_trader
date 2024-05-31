@@ -14,7 +14,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from decimal import Decimal
 
 # fmt: off
@@ -23,7 +22,6 @@ from nautilus_trader.adapters.interactive_brokers.config import InteractiveBroke
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
-from nautilus_trader.adapters.sandbox.execution import SandboxExecutionClient
 from nautilus_trader.adapters.sandbox.factory import SandboxLiveExecClientFactory
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -41,11 +39,6 @@ from nautilus_trader.persistence.catalog import ParquetDataCatalog
 CATALOG_PATH = "/path/to/catalog"
 catalog = ParquetDataCatalog(CATALOG_PATH)
 SANDBOX_INSTRUMENTS = catalog.instruments(instrument_ids=["EUR/USD.IDEALPRO"])
-
-# Need to manually set instruments for sandbox exec client
-SandboxExecutionClient.INSTRUMENTS = (
-    SANDBOX_INSTRUMENTS  # <- ALL INSTRUMENTS MUST HAVE THE SAME VENUE
-)
 
 # Set up the Interactive Brokers gateway configuration, this is applicable only when using Docker.
 gateway = InteractiveBrokersGatewayConfig(
@@ -70,8 +63,8 @@ exec_clients = {}
 for venue in SANDBOX_VENUES:
     exec_clients[venue] = SandboxExecutionClientConfig(
         venue=venue,
-        currency="USD",
-        balance=1_000_000,
+        base_currency="USD",
+        starting_balances=["1_000_000 USD"],
         instrument_provider=instrument_provider,
     )
 
@@ -104,6 +97,10 @@ config_node = TradingNodeConfig(
 
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
+
+# Can manually set instruments for sandbox exec client
+for instrument in SANDBOX_INSTRUMENTS:
+    node.cache.add_instrument(instrument)
 
 # Instantiate strategies
 strategies = {}

@@ -320,7 +320,7 @@ class MessageBusConfig(NautilusConfig, frozen=True):
         If `use_trader_id` and `use_instance_id` are *both* false, then it becomes possible for
         many traders to be configured to write to the same streams.
     types_filter : list[type], optional
-        A list of serializable types *not* to publish externally.
+        A list of serializable types **not** to publish externally.
 
     """
 

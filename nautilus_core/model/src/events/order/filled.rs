@@ -66,6 +66,7 @@ pub struct OrderFilled {
 }
 
 impl OrderFilled {
+    /// Creates a new [`OrderFilled`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
@@ -123,6 +124,7 @@ impl OrderFilled {
 }
 
 impl Default for OrderFilled {
+    /// Creates a new default [`OrderFilled`] instance for testing.
     fn default() -> Self {
         Self {
             trader_id: TraderId::default(),
@@ -267,6 +269,14 @@ impl OrderEvent for OrderFilled {
         self.instrument_id
     }
 
+    fn trade_id(&self) -> Option<TradeId> {
+        Some(self.trade_id)
+    }
+
+    fn currency(&self) -> Option<Currency> {
+        Some(self.currency)
+    }
+
     fn client_order_id(&self) -> ClientOrderId {
         self.client_order_id
     }
@@ -281,6 +291,10 @@ impl OrderEvent for OrderFilled {
 
     fn time_in_force(&self) -> Option<TimeInForce> {
         None
+    }
+
+    fn liquidity_side(&self) -> Option<LiquiditySide> {
+        Some(self.liquidity_side)
     }
 
     fn post_only(&self) -> Option<bool> {
@@ -301,6 +315,14 @@ impl OrderEvent for OrderFilled {
 
     fn price(&self) -> Option<Price> {
         None
+    }
+
+    fn last_px(&self) -> Option<Price> {
+        Some(self.last_px)
+    }
+
+    fn last_qty(&self) -> Option<Quantity> {
+        Some(self.last_qty)
     }
 
     fn trigger_price(&self) -> Option<Price> {
@@ -369,6 +391,14 @@ impl OrderEvent for OrderFilled {
 
     fn account_id(&self) -> Option<AccountId> {
         Some(self.account_id)
+    }
+
+    fn position_id(&self) -> Option<PositionId> {
+        self.position_id
+    }
+
+    fn commission(&self) -> Option<Money> {
+        self.commission
     }
 
     fn ts_event(&self) -> UnixNanos {

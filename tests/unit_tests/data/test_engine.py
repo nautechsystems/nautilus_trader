@@ -41,6 +41,7 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -1034,6 +1035,43 @@ class TestDataEngine:
 
         # Assert
         assert isinstance(handler[0], OrderBook)
+
+    def test_process_order_book_delta_then_sends_to_registered_handler(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        self.data_engine.process(ETHUSDT_BINANCE)  # <-- add necessary instrument for test
+
+        handler = []
+        self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETHUSDT", handler=handler.append)
+
+        subscribe = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
+            data_type=DataType(
+                OrderBookDelta,
+                {
+                    "instrument_id": ETHUSDT_BINANCE.id,
+                    "book_type": BookType.L3_MBO,
+                    "depth": 5,
+                    "managed": True,
+                },
+            ),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        deltas = TestDataStubs.order_book_delta(ETHUSDT_BINANCE.id)
+
+        # Act
+        self.data_engine.process(deltas)
+
+        # Assert
+        assert handler[0].instrument_id == ETHUSDT_BINANCE.id
+        assert isinstance(handler[0], OrderBookDeltas)
 
     def test_process_order_book_deltas_then_sends_to_registered_handler(self):
         # Arrange
@@ -2376,3 +2414,232 @@ class TestDataEngine:
     #     assert len(handler[0].data) == 21
     #     assert handler[0].data[0].ts_init == 1637971200000000000
     #     assert handler[0].data[-1].ts_init == 1638058200000000000
+
+
+class TestDataBufferEngine:
+    def setup(self):
+        # Fixture Setup
+        self.clock = TestClock()
+        self.trader_id = TestIdStubs.trader_id()
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+
+        self.cache = TestComponentStubs.cache()
+
+        self.portfolio = Portfolio(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        config = DataEngineConfig(
+            validate_data_sequence=True,
+            debug=True,
+            buffer_deltas=True,
+        )
+        self.data_engine = DataEngine(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            config=config,
+        )
+
+        self.binance_client = BacktestMarketDataClient(
+            client_id=ClientId(BINANCE.value),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        self.bitmex_client = BacktestMarketDataClient(
+            client_id=ClientId(BITMEX.value),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        self.quandl = BacktestMarketDataClient(
+            client_id=ClientId("QUANDL"),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        self.betfair = BacktestMarketDataClient(
+            client_id=ClientId("BETFAIR"),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        self.data_engine.process(BTCUSDT_BINANCE)
+        self.data_engine.process(ETHUSDT_BINANCE)
+        self.data_engine.process(XBTUSD_BITMEX)
+
+    def test_process_order_book_delta_buffering_then_sends_to_registered_handler(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        self.data_engine.process(ETHUSDT_BINANCE)  # <-- add necessary instrument for test
+
+        handler = []
+        self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETHUSDT", handler=handler.append)
+
+        subscribe = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
+            data_type=DataType(
+                OrderBookDelta,
+                {
+                    "instrument_id": ETHUSDT_BINANCE.id,
+                    "book_type": BookType.L3_MBO,
+                    "depth": 5,
+                    "managed": True,
+                },
+            ),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        delta = TestDataStubs.order_book_delta(ETHUSDT_BINANCE.id)
+        last_delta = TestDataStubs.order_book_delta(ETHUSDT_BINANCE.id, flags=RecordFlag.F_LAST)
+
+        self.data_engine.process(delta)
+
+        assert handler == []
+
+        # Act
+        self.data_engine.process(last_delta)
+
+        # Assert
+        assert handler[0].instrument_id == ETHUSDT_BINANCE.id
+        assert isinstance(handler[0], OrderBookDeltas)
+        assert len(handler) == 1
+        assert handler[0].deltas == [delta, last_delta]
+
+    def test_process_order_book_delta_buffers_are_cleared(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        self.data_engine.process(ETHUSDT_BINANCE)  # <-- add necessary instrument for test
+
+        handler = []
+        self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETHUSDT", handler=handler.append)
+
+        subscribe = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
+            data_type=DataType(
+                OrderBookDelta,
+                {
+                    "instrument_id": ETHUSDT_BINANCE.id,
+                    "book_type": BookType.L3_MBO,
+                    "depth": 5,
+                    "managed": True,
+                },
+            ),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        delta = TestDataStubs.order_book_delta(ETHUSDT_BINANCE.id, flags=RecordFlag.F_LAST)
+
+        # Act
+        self.data_engine.process(delta)
+        self.data_engine.process(delta)
+
+        # Assert
+        assert len(handler) == 2
+        assert len(handler[0].deltas) == 1
+        assert len(handler[1].deltas) == 1
+
+    def test_process_order_book_deltas_then_sends_to_registered_handler(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        self.data_engine.process(ETHUSDT_BINANCE)  # <-- add necessary instrument for test
+
+        handler = []
+        self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETHUSDT", handler=handler.append)
+
+        subscribe = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
+            data_type=DataType(
+                OrderBookDelta,
+                {
+                    "instrument_id": ETHUSDT_BINANCE.id,
+                    "book_type": BookType.L3_MBO,
+                    "depth": 5,
+                    "managed": True,
+                },
+            ),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        deltas = TestDataStubs.order_book_deltas(ETHUSDT_BINANCE.id)
+        last_deltas = TestDataStubs.order_book_deltas(ETHUSDT_BINANCE.id, flags=RecordFlag.F_LAST)
+
+        self.data_engine.process(deltas)
+
+        assert handler == []
+
+        # Act
+        self.data_engine.process(last_deltas)
+
+        # Assert
+        assert handler[0].instrument_id == ETHUSDT_BINANCE.id
+        assert isinstance(handler[0], OrderBookDeltas)
+        assert len(handler[0].deltas) == 2
+
+    def test_process_order_book_deltas_buffers_are_cleared(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        self.data_engine.process(ETHUSDT_BINANCE)  # <-- add necessary instrument for test
+
+        handler = []
+        self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETHUSDT", handler=handler.append)
+
+        subscribe = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
+            data_type=DataType(
+                OrderBookDelta,
+                {
+                    "instrument_id": ETHUSDT_BINANCE.id,
+                    "book_type": BookType.L3_MBO,
+                    "depth": 5,
+                    "managed": True,
+                },
+            ),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        deltas = TestDataStubs.order_book_deltas(ETHUSDT_BINANCE.id, flags=RecordFlag.F_LAST)
+
+        # Act
+        self.data_engine.process(deltas)
+        self.data_engine.process(deltas)
+
+        # Assert
+        assert len(handler) == 2
+        assert len(handler[0].deltas) == 1
+        assert len(handler[1].deltas) == 1

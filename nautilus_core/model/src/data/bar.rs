@@ -53,6 +53,7 @@ pub struct BarSpecification {
 }
 
 impl BarSpecification {
+    /// Creates a new [`BarSpecification`] instance.
     #[must_use]
     pub fn new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> Self {
         Self {
@@ -87,6 +88,7 @@ pub struct BarType {
 }
 
 impl BarType {
+    /// Creates a new [`BarType`] instance.
     #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
@@ -230,6 +232,7 @@ pub struct Bar {
 }
 
 impl Bar {
+    /// Creates a new [`Bar`] instance.
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(

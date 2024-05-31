@@ -31,10 +31,13 @@ use crate::{
     average::{
         ama::AdaptiveMovingAverage, dema::DoubleExponentialMovingAverage,
         ema::ExponentialMovingAverage, hma::HullMovingAverage, rma::WilderMovingAverage,
-        sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage, wma::WeightedMovingAverage,
-        MovingAverageType,
+        sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage,
+        vwap::VolumeWeightedAveragePrice, wma::WeightedMovingAverage, MovingAverageType,
     },
-    momentum::{bias::Bias, cmo::ChandeMomentumOscillator, rsi::RelativeStrengthIndex},
+    momentum::{
+        bias::Bias, cmo::ChandeMomentumOscillator, rsi::RelativeStrengthIndex,
+        vhf::VerticalHorizontalFilter,
+    },
     ratio::efficiency_ratio::EfficiencyRatio,
 };
 
@@ -138,6 +141,11 @@ pub fn indicator_vidya_10() -> VariableIndexDynamicAverage {
 }
 
 #[fixture]
+pub fn indicator_vwap() -> VolumeWeightedAveragePrice {
+    VolumeWeightedAveragePrice::new().unwrap()
+}
+
+#[fixture]
 pub fn indicator_wma_10() -> WeightedMovingAverage {
     let weights = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
     WeightedMovingAverage::new(10, weights, Some(PriceType::Mid)).unwrap()
@@ -167,4 +175,9 @@ pub fn cmo_10() -> ChandeMomentumOscillator {
 #[fixture]
 pub fn bias_10() -> Bias {
     Bias::new(10, Some(MovingAverageType::Wilder)).unwrap()
+}
+
+#[fixture]
+pub fn vhf_10() -> VerticalHorizontalFilter {
+    VerticalHorizontalFilter::new(10, Some(MovingAverageType::Simple)).unwrap()
 }

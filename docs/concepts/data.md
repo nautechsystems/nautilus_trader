@@ -199,7 +199,7 @@ from nautilus_trader.model.data import OrderBookDelta
 data_config = BacktestDataConfig(
     catalog_path=str(catalog.path),
     data_cls=OrderBookDelta,
-    instrument_id=instrument.id.value,
+    instrument_id=instrument.id,
     start_time=start,
     end_time=end,
 )

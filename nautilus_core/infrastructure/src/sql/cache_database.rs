@@ -52,7 +52,7 @@ pub enum DatabaseQuery {
     Add(String, Vec<u8>),
     AddCurrency(Currency),
     AddInstrument(InstrumentAny),
-    AddOrder(OrderAny),
+    AddOrder(OrderAny, bool),
 }
 
 fn get_buffer_interval() -> Duration {
@@ -110,52 +110,58 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                         .unwrap()
                 }
             },
-            DatabaseQuery::AddOrder(order_any) => match order_any {
+            DatabaseQuery::AddOrder(order_any, updated) => match order_any {
                 OrderAny::Limit(order) => {
-                    DatabaseQueries::add_order(pool, "LIMIT", false, Box::new(order))
+                    DatabaseQueries::add_order(pool, "LIMIT", updated, Box::new(order))
                         .await
                         .unwrap()
                 }
                 OrderAny::LimitIfTouched(order) => {
-                    DatabaseQueries::add_order(pool, "LIMIT_IF_TOUCHED", false, Box::new(order))
+                    DatabaseQueries::add_order(pool, "LIMIT_IF_TOUCHED", updated, Box::new(order))
                         .await
                         .unwrap()
                 }
                 OrderAny::Market(order) => {
-                    DatabaseQueries::add_order(pool, "MARKET", false, Box::new(order))
+                    DatabaseQueries::add_order(pool, "MARKET", updated, Box::new(order))
                         .await
                         .unwrap()
                 }
                 OrderAny::MarketIfTouched(order) => {
-                    DatabaseQueries::add_order(pool, "MARKET_IF_TOUCHED", false, Box::new(order))
+                    DatabaseQueries::add_order(pool, "MARKET_IF_TOUCHED", updated, Box::new(order))
                         .await
                         .unwrap()
                 }
                 OrderAny::MarketToLimit(order) => {
-                    DatabaseQueries::add_order(pool, "MARKET_TO_LIMIT", false, Box::new(order))
+                    DatabaseQueries::add_order(pool, "MARKET_TO_LIMIT", updated, Box::new(order))
                         .await
                         .unwrap()
                 }
                 OrderAny::StopLimit(order) => {
-                    DatabaseQueries::add_order(pool, "STOP_LIMIT", false, Box::new(order))
+                    DatabaseQueries::add_order(pool, "STOP_LIMIT", updated, Box::new(order))
                         .await
                         .unwrap()
                 }
                 OrderAny::StopMarket(order) => {
-                    DatabaseQueries::add_order(pool, "STOP_MARKET", false, Box::new(order))
+                    DatabaseQueries::add_order(pool, "STOP_MARKET", updated, Box::new(order))
                         .await
                         .unwrap()
                 }
-                OrderAny::TrailingStopLimit(order) => {
-                    DatabaseQueries::add_order(pool, "TRAILING_STOP_LIMIT", false, Box::new(order))
-                        .await
-                        .unwrap()
-                }
-                OrderAny::TrailingStopMarket(order) => {
-                    DatabaseQueries::add_order(pool, "TRAILING_STOP_MARKET", false, Box::new(order))
-                        .await
-                        .unwrap()
-                }
+                OrderAny::TrailingStopLimit(order) => DatabaseQueries::add_order(
+                    pool,
+                    "TRAILING_STOP_LIMIT",
+                    updated,
+                    Box::new(order),
+                )
+                .await
+                .unwrap(),
+                OrderAny::TrailingStopMarket(order) => DatabaseQueries::add_order(
+                    pool,
+                    "TRAILING_STOP_MARKET",
+                    updated,
+                    Box::new(order),
+                )
+                .await
+                .unwrap(),
             },
         }
     }
@@ -268,7 +274,14 @@ impl PostgresCacheDatabase {
     }
 
     pub async fn add_order(&self, order: OrderAny) -> anyhow::Result<()> {
-        let query = DatabaseQuery::AddOrder(order);
+        let query = DatabaseQuery::AddOrder(order, false);
+        self.tx.send(query).await.map_err(|err| {
+            anyhow::anyhow!("Failed to send query add_order to database message handler: {err}")
+        })
+    }
+
+    pub async fn update_order(&self, order: OrderAny) -> anyhow::Result<()> {
+        let query = DatabaseQuery::AddOrder(order, true);
         self.tx.send(query).await.map_err(|err| {
             anyhow::anyhow!("Failed to send query add_order to database message handler: {err}")
         })

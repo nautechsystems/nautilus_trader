@@ -63,6 +63,7 @@ pub struct TrailingStopLimitOrder {
 }
 
 impl TrailingStopLimitOrder {
+    /// Creates a new [`TrailingStopLimitOrder`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,

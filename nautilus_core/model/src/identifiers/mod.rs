@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Defines identifiers for the trading domain models.
+//! Identifiers for the trading domain model.
 
 use std::str::FromStr;
 

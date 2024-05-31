@@ -1,15 +1,45 @@
-# NautilusTrader 1.193.0 Beta
+# NautilusTrader 1.194.0 Beta
 
-Released on TBD (UTC).
+Released on 31st May 2024 (UTC).
 
 ### Enhancements
-None
+- Added `DataEngine` order book deltas buffering to `F_LAST` flag (#1673), thanks @davidsblom
+- Added `DataEngineConfig.buffer_deltas` config option for the above (#1670), thanks @davidsblom
+- Improved Bybit order book deltas parsing to set `F_LAST` flag (#1670), thanks @davidsblom
+- Improved Bybit handling for top-of-book quotes and order book deltas (#1672), thanks @davidsblom
+- Improved Interactive Brokers integration test mocks (#1669), thanks @rsmb7z
+- Improved error message when no tick scheme initialized for an instrument, thanks for reporting @VeraLyu
+- Improved `SandboxExecutionClient` instrument handling (instruments just need to be added to cache)
+- Ported `VolumeWeightedAveragePrice` indicator to Rust (#1665), thanks @Pushkarm029
+- Ported `VerticalHorizontalFilter` indicator to Rust (#1666), thanks @Pushkarm029
 
 ### Breaking Changes
 None
 
 ### Fixes
-- Fixed data order by `ts_init` when streaming (#1656), thanks @twitu
+- Fixed `SimulatedExchange` processing of commands in real-time for sandbox mode
+- Fixed `DataEngine` unsubscribe handling (edge case would attempt to unsubscribe from the client multiple times)
+- Fixed Bybit order book deltas parsing (was appending bid side twice) (#1668), thanks @davidsblom
+- Fixed Binance instruments price and size precision parsing (was incorrectly stripping trailing zeros)
+- Fixed `BinanceBar` streaming feather writing (was not setting up writer)
+- Fixed backtest high-level tutorial documentation errors, thanks for reporting @Leonz5288
+
+---
+
+# NautilusTrader 1.193.0 Beta
+
+Released on 24th May 2024 (UTC).
+
+### Enhancements
+- Added Interactive Brokers support for Market-on-Close (MOC) and Limit-on-Close (LOC) order types (#1663), thanks @rsmb7z
+- Added Bybit sandbox example (#1659), thanks @davidsblom
+- Added Binance sandbox example
+
+### Breaking Changes
+- Overhauled `SandboxExecutionClientConfig` to more closely match `BacktestVenueConfig` (many changes and additions)
+
+### Fixes
+- Fixed DataFusion backend data ordering by `ts_init` when streaming (#1656), thanks @twitu
 - Fixed Interactive Brokers tick level historical data downloading (#1653), thanks @DracheShiki
 
 ---
@@ -70,7 +100,7 @@ Released on 20th April 2024 (UTC).
 - Improved `modify_order` error logging when order values remain unchanged
 - Added `RecordFlag` enum for Rust and Python
 - Interactive Brokers further improvements and fixes, thanks @rsmb7z
-- Ported Bias indicator to Rust, thanks @Pushkarm029
+- Ported `Bias` indicator to Rust, thanks @Pushkarm029
 
 ### Breaking Changes
 - Reordered `OrderBookDelta` params `flags` and `sequence` and removed default 0 values (more explicit and less chance of mismatches)
@@ -109,8 +139,8 @@ Released on 22nd March 2024 (UTC).
 - Improved Binance execution client ping listen key error handling and logging
 - Improved Redis cache adapter and message bus error handling and logging
 - Improved Redis port parsing (`DatabaseConfig.port` can now be either a string or integer)
-- Ported ChandeMomentumOscillator indicator to Rust, thanks @Pushkarm029
-- Ported VIDYA indicator to Rust, thanks @Pushkarm029
+- Ported `ChandeMomentumOscillator` indicator to Rust, thanks @Pushkarm029
+- Ported `VIDYA` indicator to Rust, thanks @Pushkarm029
 - Refactored `InteractiveBrokersEWrapper`, thanks @rsmb7z
 - Redact Redis passwords in strings and logs
 - Upgraded `redis` crate to 0.25.2 which bumps up TLS dependencies, and turned on `tls-rustls-webpki-roots` feature flag
@@ -353,7 +383,7 @@ Released on 23rd December 2023 (UTC).
 - Changed `StrategyConfig.strategy_id` to type `StrategyId | None`
 - Changed `Instrument`, `OrderFilled` and `AccountState` `info` field serialization due below fix (you'll need to flush your cache)
 - Changed `CacheConfig` to take a `DatabaseConfig` (better symmetry with `MessageBusConfig`)
-- Changed `RedisCacheDatabase` data structure for currencies from hashset to simpler key-value (you'll need to clear cache or delete all curreny keys)
+- Changed `RedisCacheDatabase` data structure for currencies from hashset to simpler key-value (you'll need to clear cache or delete all currency keys)
 - Changed `Actor` state loading to now use the standard `Serializer`
 - Renamed `register_json_encoding` to `register_config_encoding`
 - Renamed `register_json_decoding` to `register_config_decoding`

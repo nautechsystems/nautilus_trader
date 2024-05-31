@@ -44,6 +44,7 @@ pub struct BaseAccount {
 }
 
 impl BaseAccount {
+    /// Creates a new [`BaseAccount`] instance.
     pub fn new(event: AccountState, calculate_account_state: bool) -> anyhow::Result<Self> {
         let mut balances_starting: HashMap<Currency, Money> = HashMap::new();
         let mut balances: HashMap<Currency, AccountBalance> = HashMap::new();

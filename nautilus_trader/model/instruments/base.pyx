@@ -450,10 +450,14 @@ cdef class Instrument(Data):
         Raises
         ------
         ValueError
-            If tick scheme is not registered.
+            If a tick scheme is not initialized.
 
         """
-        Condition.not_none(self._tick_scheme, "self._tick_scheme")
+        if self._tick_scheme is None:
+            raise ValueError(
+                f"No tick scheme for instrument {self.id.to_str()}. "
+                "You can specify a tick scheme by passing a `tick_scheme_name` at initialization."
+            )
 
         return self._tick_scheme.next_bid_price(value=value, n=num_ticks)
 
@@ -477,10 +481,14 @@ cdef class Instrument(Data):
         Raises
         ------
         ValueError
-            If tick scheme is not registered.
+            If a tick scheme is not initialized.
 
         """
-        Condition.not_none(self._tick_scheme, "self._tick_scheme")
+        if self._tick_scheme is None:
+            raise ValueError(
+                f"No tick scheme for instrument {self.id.to_str()}. "
+                "You can specify a tick scheme by passing a `tick_scheme_name` at initialization."
+            )
 
         return self._tick_scheme.next_ask_price(value=value, n=num_ticks)
 

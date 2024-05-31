@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from decimal import Decimal
 
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sandbox.execution import SandboxExecutionClient
@@ -22,8 +21,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.live.factories import LiveExecClientFactory
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OmsType
 from nautilus_trader.portfolio import PortfolioFacade
 
 
@@ -51,8 +48,6 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
             The event loop for the client.
         name : str
             The custom client ID.
-        config : dict[str, object]
-            The configuration for the client.
         portfolio : PortfolioFacade
             The read-only portfolio for the client.
         msgbus : MessageBus
@@ -61,6 +56,8 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
+        config : dict[str, object]
+            The configuration for the client.
 
         Returns
         -------
@@ -73,12 +70,6 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
             portfolio=portfolio,
             msgbus=msgbus,
             cache=cache,
-            venue=name or config.venue,
-            balance=config.balance,
-            currency=config.currency,
-            bar_execution=config.bar_execution,
-            default_leverage=Decimal(config.default_leverage),
-            oms_type=OmsType[config.oms_type],
-            account_type=AccountType[config.account_type],
+            config=config,
         )
         return exec_client

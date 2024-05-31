@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents a valid venue order ID (assigned by a trading venue).
+
 use std::{
     fmt::{Debug, Display, Formatter},
     hash::Hash,
@@ -31,11 +33,11 @@ use ustr::Ustr;
 pub struct VenueOrderId(Ustr);
 
 impl VenueOrderId {
-    /// Creates a new `VenueOrderId` instance from the given identifier value.
+    /// Creates a new [`VenueOrderId`] instance.
     ///
     /// # Panics
     ///
-    /// Panics if the value is not a valid string.
+    /// Panics if `value` is not a valid string.
     pub fn new(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
 

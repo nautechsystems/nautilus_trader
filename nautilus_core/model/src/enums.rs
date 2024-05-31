@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Defines enumerations for the trading domain model.
+//! Enumerations for the trading domain model.
 
 use std::str::FromStr;
 
@@ -355,9 +355,9 @@ impl FromU8 for BookAction {
 pub enum BookType {
     /// Top-of-book best bid/ask, one level per side.
     L1_MBP = 1,
-    /// Market by price, one order per level (aggregated).
+    /// Market-by-price, one order per level (aggregated).
     L2_MBP = 2,
-    /// Market by order, multiple orders per level (full granularity).
+    /// Market-by-order, multiple orders per level (full granularity).
     L3_MBO = 3,
 }
 
@@ -932,7 +932,7 @@ pub enum PriceType {
 )]
 #[allow(non_camel_case_types)]
 pub enum RecordFlag {
-    /// Last message in the packet from the venue for a given `instrument_id`.
+    /// Last message in the book event or packet from the venue for a given `instrument_id`.
     F_LAST = 1 << 7, // 128
     /// Top-of-book message, not an individual order.
     F_TOB = 1 << 6, // 64

@@ -83,7 +83,7 @@ pub struct DatabentoFeedHandler {
 }
 
 impl DatabentoFeedHandler {
-    /// Initialize a new instance of the [`DatabentoFeedHandler`].
+    /// Creates a new [`DatabentoFeedHandler`] instance.
     #[must_use]
     pub fn new(
         key: String,
@@ -262,16 +262,16 @@ impl DatabentoFeedHandler {
                             deltas_count,
                             delta.ts_event,
                             buffering_start,
-                            msg.flags,
+                            msg.flags.raw(),
                         );
 
-                        // Check if last message in the packet
-                        if !RecordFlag::F_LAST.matches(msg.flags) {
+                        // Check if last message in the book event
+                        if !RecordFlag::F_LAST.matches(msg.flags.raw()) {
                             continue; // NOT last message
                         }
 
                         // Check if snapshot
-                        if RecordFlag::F_SNAPSHOT.matches(msg.flags) {
+                        if RecordFlag::F_SNAPSHOT.matches(msg.flags.raw()) {
                             continue; // Buffer snapshot
                         }
 

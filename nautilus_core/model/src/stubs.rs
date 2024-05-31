@@ -75,7 +75,9 @@ pub fn test_position_long(audusd_sim: CurrencyPair) -> Position {
         None,
         None,
         None,
-    );
+        None,
+    )
+    .unwrap();
     Position::new(audusd_sim, order_filled).unwrap()
 }
 
@@ -98,7 +100,9 @@ pub fn test_position_short(audusd_sim: CurrencyPair) -> Position {
         None,
         None,
         None,
-    );
+        None,
+    )
+    .unwrap();
     Position::new(audusd_sim, order_filled).unwrap()
 }
 
@@ -150,7 +154,7 @@ pub fn stub_order_book_mbp(
             OrderSide::Buy,
             price,
             size,
-            0, // order_id not applicable for MBP (market by price) books
+            0, // order_id not applicable for MBP (market-by-price) books
         );
         book.add(order, 0, 1, 2.into());
     }
@@ -171,7 +175,7 @@ pub fn stub_order_book_mbp(
             OrderSide::Sell,
             price,
             size,
-            0, // order_id not applicable for MBP (market by price) books
+            0, // order_id not applicable for MBP (market-by-price) books
         );
         book.add(order, 0, 1, 2.into());
     }

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents a discrete price level in an order book.
+
 use std::{cmp::Ordering, collections::BTreeMap};
 
 use nautilus_core::nanos::UnixNanos;

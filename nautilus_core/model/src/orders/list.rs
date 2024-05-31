@@ -40,6 +40,7 @@ pub struct OrderList {
 }
 
 impl OrderList {
+    /// Creates a new [`OrderList`] instance.
     pub fn new(
         order_list_id: OrderListId,
         instrument_id: InstrumentId,

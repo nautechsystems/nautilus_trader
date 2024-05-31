@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A core `UUID4` universally unique identifier (UUID) version 4 based on a 128-bit
+//! A `UUID4` universally unique identifier (UUID) version 4 based on a 128-bit
 //! label (RFC 4122).
 
 use std::{
@@ -43,7 +43,7 @@ pub struct UUID4 {
 }
 
 impl UUID4 {
-    /// Creates a new `UUID4`.
+    /// Creates a new [`UUID4`] instance.
     #[must_use]
     pub fn new() -> Self {
         let uuid = Uuid::new_v4();
@@ -84,6 +84,7 @@ impl From<&str> for UUID4 {
 }
 
 impl Default for UUID4 {
+    /// Creates a new default [`UUID4`] instance.
     fn default() -> Self {
         Self::new()
     }

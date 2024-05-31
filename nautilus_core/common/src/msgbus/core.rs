@@ -43,6 +43,7 @@ pub struct Subscription {
 }
 
 impl Subscription {
+    /// Creates a new [`Subscription`] instance.
     #[must_use]
     pub fn new(
         topic: Ustr,
@@ -109,7 +110,7 @@ impl fmt::Display for BusMessage {
     }
 }
 
-/// Provides a generic message bus to facilitate various messaging patterns.
+/// A generic message bus to facilitate various messaging patterns.
 ///
 /// The bus provides both a producer and consumer API for Pub/Sub, Req/Rep, as
 /// well as direct point-to-point messaging to registered endpoints.
@@ -165,7 +166,7 @@ pub struct MessageBus {
 }
 
 impl MessageBus {
-    /// Creates a new `MessageBus` instance.
+    /// Creates a new [`MessageBus`] instance.
     pub fn new(
         trader_id: TraderId,
         instance_id: UUID4,

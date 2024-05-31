@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides a high-performance raw TCP client implementation with TLS capability.
+//! A high-performance raw TCP client implementation with TLS capability.
 
 use std::{sync::Arc, time::Duration};
 

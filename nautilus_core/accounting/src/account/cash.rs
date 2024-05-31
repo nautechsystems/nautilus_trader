@@ -43,6 +43,7 @@ pub struct CashAccount {
 }
 
 impl CashAccount {
+    /// Creates a new [`CashAccount`] instance.
     pub fn new(event: AccountState, calculate_account_state: bool) -> anyhow::Result<Self> {
         Ok(Self {
             base: BaseAccount::new(event, calculate_account_state)?,
@@ -461,7 +462,9 @@ mod tests {
             None,
             None,
             None,
-        );
+            Some(AccountId::from("SIM-001")),
+        )
+        .unwrap();
         let position = Position::new(audusd_sim, fill).unwrap();
         let pnls = cash_account_million_usd
             .calculate_pnls(audusd_sim.into_any(), fill, Some(position))
@@ -496,7 +499,9 @@ mod tests {
             None,
             None,
             None,
-        );
+            Some(AccountId::from("SIM-001")),
+        )
+        .unwrap();
         let position = Position::new(currency_pair_btcusdt, fill1).unwrap();
         let result1 = cash_account_multi
             .calculate_pnls(
@@ -526,7 +531,9 @@ mod tests {
             None,
             None,
             None,
-        );
+            Some(AccountId::from("SIM-001")),
+        )
+        .unwrap();
         let result2 = cash_account_multi
             .calculate_pnls(currency_pair_btcusdt.into_any(), fill2, Some(position))
             .unwrap();

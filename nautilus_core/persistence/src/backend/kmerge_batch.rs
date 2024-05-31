@@ -107,6 +107,7 @@ where
     I: Iterator<Item = IntoIter<T>>,
     C: Compare<ElementBatchIter<I, T>>,
 {
+    /// Creates a new [`KMerge`] instance.
     pub fn new(cmp: C) -> Self {
         Self {
             heap: BinaryHeap::from_vec_cmp(Vec::new(), cmp),

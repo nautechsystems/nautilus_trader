@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides common data and time functions.
+//! Common data and time functions.
 
 use std::time::{Duration, UNIX_EPOCH};
 

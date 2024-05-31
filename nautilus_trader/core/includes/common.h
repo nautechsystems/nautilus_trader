@@ -193,14 +193,24 @@ typedef enum LogLevel {
     ERROR = 40,
 } LogLevel;
 
+/**
+ * A real-time clock which uses system time.
+ *
+ * Timestamps are guaranteed to be unique and monotonically increasing.
+ */
 typedef struct LiveClock LiveClock;
 
 typedef struct LogGuard LogGuard;
 
+/**
+ * A static test clock.
+ *
+ * Stores the current timestamp internally which can be advanced.
+ */
 typedef struct TestClock TestClock;
 
 /**
- * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
+ * C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
  *
  * This struct wraps `TestClock` in a way that makes it compatible with C function
  * calls, enabling interaction with `TestClock` in a C environment.
@@ -214,7 +224,7 @@ typedef struct TestClock_API {
 } TestClock_API;
 
 /**
- * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`LiveClock`].
+ * C compatible Foreign Function Interface (FFI) for an underlying [`LiveClock`].
  *
  * This struct wraps `LiveClock` in a way that makes it compatible with C function
  * calls, enabling interaction with `LiveClock` in a C environment.
@@ -229,7 +239,7 @@ typedef struct LiveClock_API {
 } LiveClock_API;
 
 /**
- * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`LogGuard`].
+ * C compatible Foreign Function Interface (FFI) for an underlying [`LogGuard`].
  *
  * This struct wraps `LogGuard` in a way that makes it compatible with C function
  * calls, enabling interaction with `LogGuard` in a C environment.
@@ -269,7 +279,7 @@ typedef struct TimeEvent_t {
  */
 typedef struct TimeEventHandler_t {
     /**
-     * The event.
+     * The time event.
      */
     struct TimeEvent_t event;
     /**

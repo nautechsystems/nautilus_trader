@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from nautilus_trader.config import LiveExecClientConfig
 
 
@@ -24,25 +26,34 @@ class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True, kw_only=Tr
     ----------
     venue : str
         The venue to generate a sandbox execution client for.
-    currency : str
-        The currency for this venue.
-    balance : int
-        The starting balance for this venue.
-    bar_execution : bool, default True
-        If bars should be processed by the matching engine(s) (and move the market).
-    default_leverage : float, default 10.0
-        The account default leverage (for margin accounts).
+    starting_balances : list[str]
+        The starting balances for this sandbox venue.
+    base_currency : str, optional
+        The base currency for this venue.
     oms_type : str, default 'NETTING'
         The order management system type used by the exchange.
     account_type : str, default 'MARGIN'
         The account type for the client.
+    default_leverage : decimal.Decimal, default Decimal(1)
+        The account default leverage (for margin accounts).
+    bar_execution : bool, default True
+        If bars should be processed by the matching engine(s) (and move the market).
 
     """
 
     venue: str
-    currency: str
-    balance: int
-    bar_execution: bool = True
-    default_leverage: float = 10.0
+    starting_balances: list[str]
+    base_currency: str | None = None
     oms_type: str = "NETTING"
     account_type: str = "MARGIN"
+    default_leverage: Decimal = Decimal(1)
+    leverages: dict[str, float] | None = None
+    book_type: str = "L1_MBP"
+    frozen_account: bool = False
+    bar_execution: bool = True
+    reject_stop_orders: bool = True
+    support_gtd_orders: bool = True
+    support_contingent_orders: bool = True
+    use_position_ids: bool = True
+    use_random_ids: bool = False
+    use_reduce_only: bool = True

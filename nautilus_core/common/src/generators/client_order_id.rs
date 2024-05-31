@@ -29,6 +29,7 @@ pub struct ClientOrderIdGenerator {
 }
 
 impl ClientOrderIdGenerator {
+    /// Creates a new [`ClientOrderIdGenerator`] instance.
     #[must_use]
     pub fn new(
         trader_id: TraderId,

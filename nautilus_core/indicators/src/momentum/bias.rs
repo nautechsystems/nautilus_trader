@@ -73,6 +73,7 @@ impl Indicator for Bias {
 }
 
 impl Bias {
+    /// Creates a new [`Bias`] instance.
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> anyhow::Result<Self> {
         Ok(Self {
             period,
@@ -80,7 +81,7 @@ impl Bias {
             value: 0.0,
             count: 0,
             previous_close: 0.0,
-            ma: MovingAverageFactory::create(MovingAverageType::Simple, period),
+            ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
             has_inputs: false,
             initialized: false,
         })

@@ -91,6 +91,7 @@ impl Indicator for AroonOscillator {
 }
 
 impl AroonOscillator {
+    /// Creates a new [`AroonOscillator`] instance.
     pub fn new(period: usize) -> anyhow::Result<Self> {
         Ok(Self {
             period,

@@ -14,9 +14,22 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.rust.model import OrderType
 from nautilus_trader.model.enums import CurrencyType
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderDenied
+from nautilus_trader.model.events import OrderEmulated
+from nautilus_trader.model.events import OrderExpired
+from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.events import OrderModifyRejected
+from nautilus_trader.model.events import OrderPendingCancel
+from nautilus_trader.model.events import OrderPendingUpdate
+from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderReleased
+from nautilus_trader.model.events import OrderSubmitted
+from nautilus_trader.model.events import OrderTriggered
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.instruments import CryptoFuture
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
@@ -27,8 +40,8 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.instruments import OptionsSpread
 from nautilus_trader.model.objects import Currency
-from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.model.orders import Order
+from nautilus_trader.model.orders.unpacker import OrderUnpacker
 
 
 ################################################################################
@@ -103,7 +116,45 @@ def transform_instrument_from_pyo3(instrument_pyo3) -> Instrument | None:
 ################################################################################
 # Orders
 ################################################################################
-def transform_order_event_to_pyo3(order_event):
+def transform_order_event_to_pyo3(order_event):  # noqa: C901
+    if isinstance(order_event, OrderInitialized):
+        return nautilus_pyo3.OrderInitialized.from_dict(OrderInitialized.to_dict(order_event))
+    elif isinstance(order_event, OrderDenied):
+        return nautilus_pyo3.OrderDenied.from_dict(OrderDenied.to_dict(order_event))
+    elif isinstance(order_event, OrderEmulated):
+        return nautilus_pyo3.OrderEmulated.from_dict(OrderEmulated.to_dict(order_event))
+    elif isinstance(order_event, OrderReleased):
+        return nautilus_pyo3.OrderReleased.from_dict(OrderReleased.to_dict(order_event))
+    elif isinstance(order_event, OrderSubmitted):
+        return nautilus_pyo3.OrderSubmitted.from_dict(OrderSubmitted.to_dict(order_event))
+    elif isinstance(order_event, OrderAccepted):
+        order_event_dict = OrderAccepted.to_dict(order_event)
+        return nautilus_pyo3.OrderAccepted.from_dict(order_event_dict)
+    elif isinstance(order_event, OrderRejected):
+        return nautilus_pyo3.OrderRejected.from_dict(OrderRejected.to_dict(order_event))
+    elif isinstance(order_event, OrderCanceled):
+        return nautilus_pyo3.OrderCanceled.from_dict(OrderCanceled.to_dict(order_event))
+    elif isinstance(order_event, OrderExpired):
+        return nautilus_pyo3.OrderExpired.from_dict(OrderExpired.to_dict(order_event))
+    elif isinstance(order_event, OrderTriggered):
+        return nautilus_pyo3.OrderTriggered.from_dict(OrderTriggered.to_dict(order_event))
+    elif isinstance(order_event, OrderPendingUpdate):
+        return nautilus_pyo3.OrderPendingUpdate.from_dict(OrderPendingUpdate.to_dict(order_event))
+    elif isinstance(order_event, OrderModifyRejected):
+        return nautilus_pyo3.OrderModifyRejected.from_dict(OrderModifyRejected.to_dict(order_event))
+    elif isinstance(order_event, OrderPendingCancel):
+        return nautilus_pyo3.OrderPendingCancel.from_dict(OrderPendingCancel.to_dict(order_event))
+    elif isinstance(order_event, OrderUpdated):
+        return nautilus_pyo3.OrderUpdated.from_dict(OrderUpdated.to_dict(order_event))
+    elif isinstance(order_event, OrderFilled):
+        return nautilus_pyo3.OrderFilled.from_dict(OrderFilled.to_dict(order_event))
+    elif isinstance(order_event, OrderPendingCancel):
+        return nautilus_pyo3.OrderPendingCancel.from_dict(OrderPendingCancel.to_dict(order_event))
+    else:
+        raise ValueError(f"Unknown order event type: {order_event}")
+
+
+def from_order_initialized_cython_to_order_pyo3(order_event):
     order_event_dict = OrderInitialized.to_dict(order_event)
     # in options field there are some properties we need to attach to dict
     for key, value in order_event.options.items():
@@ -121,11 +172,44 @@ def transform_order_event_to_pyo3(order_event):
         raise ValueError(f"Unknown order type: {order_event_pyo3.event_type}")
 
 
-def transform_order_event_from_pyo3(order_event_pyo3):
-    order_event_dict = order_event_pyo3.to_dict()
-    order_event_cython = OrderInitialized.from_dict(order_event_dict)
-    if order_event_pyo3.order_type == OrderType.MARKET:
-        return MarketOrder.create(order_event_cython)
+def from_order_initialized_pyo3_to_order_cython(order_event):
+    order_event_cython = OrderInitialized.from_dict(order_event.to_dict())
+    return OrderUnpacker.from_init(order_event_cython)
+
+
+def transform_order_event_from_pyo3(order_event_pyo3):  # noqa: C901
+    if isinstance(order_event_pyo3, nautilus_pyo3.OrderInitialized):
+        return OrderInitialized.from_dict(order_event_pyo3.to_dict())
+    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderDenied):
+        return OrderDenied.from_dict(order_event_pyo3.to_dict())
+    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderEmulated):
+        return OrderEmulated.from_dict(order_event_pyo3.to_dict())
+    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderReleased):
+        return OrderReleased.from_dict(order_event_pyo3.to_dict())
+    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderSubmitted):
+        return OrderSubmitted.from_dict(order_event_pyo3.to_dict())
+    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderAccepted):
+        return OrderAccepted.from_dict(order_event_pyo3.to_dict())
+    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderRejected):
+        return OrderRejected.from_dict(order_event_pyo3.to_dict())
+    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderCanceled):
+        return OrderCanceled.from_dict(order_event_pyo3.to_dict())
+    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderExpired):
+        return OrderExpired.from_dict(order_event_pyo3.to_dict())
+    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderTriggered):
+        return OrderTriggered.from_dict(order_event_pyo3.to_dict())
+    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderPendingUpdate):
+        return OrderPendingUpdate.from_dict(order_event_pyo3.to_dict())
+    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderModifyRejected):
+        return OrderModifyRejected.from_dict(order_event_pyo3.to_dict())
+    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderPendingCancel):
+        return OrderPendingCancel.from_dict(order_event_pyo3.to_dict())
+    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderUpdated):
+        return OrderUpdated.from_dict(order_event_pyo3.to_dict())
+    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderFilled):
+        return OrderFilled.from_dict(order_event_pyo3.to_dict())
+    else:
+        raise ValueError(f"Unknown order event type: {order_event_pyo3}")
 
 
 def transform_order_to_pyo3(order: Order):
@@ -135,11 +219,10 @@ def transform_order_to_pyo3(order: Order):
     init_event = events.pop(0)
     if not isinstance(init_event, OrderInitialized):
         raise KeyError("init event should be of type OrderInitialized")
-    order_py3: nautilus_pyo3.OrderInitialized = transform_order_event_to_pyo3(init_event)
+    order_py3 = from_order_initialized_cython_to_order_pyo3(init_event)
     for event_cython in events:
-        raise NotImplementedError("Not implemented")
-        # event_pyo3 = transform_order_event_to_pyo3(event_cython)
-        # order_py3.apply(event_pyo3)
+        event_pyo3 = transform_order_event_to_pyo3(event_cython)
+        order_py3.apply(event_pyo3)
     return order_py3
 
 
@@ -150,9 +233,8 @@ def transform_order_from_pyo3(order_pyo3):
     init_event = events_pyo3.pop(0)
     if not isinstance(init_event, nautilus_pyo3.OrderInitialized):
         raise KeyError("init event should be of type OrderInitialized")
-    order_cython = transform_order_event_from_pyo3(init_event)
+    order_cython = from_order_initialized_pyo3_to_order_cython(init_event)
     for event_pyo3 in events_pyo3:
-        raise NotImplementedError("Not implemented")
-        # event_cython = transform_order_event_from_pyo3(event_pyo3)
-        # order_cython.apply(event_cython)
+        event_cython = transform_order_event_from_pyo3(event_pyo3)
+        order_cython.apply(event_cython)
     return order_cython

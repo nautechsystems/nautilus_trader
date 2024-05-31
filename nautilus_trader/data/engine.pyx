@@ -89,6 +89,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.enums import RecordFlag
 
 
 cdef class DataEngine(Component):
@@ -137,6 +138,7 @@ cdef class DataEngine(Component):
         self._synthetic_trade_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
         self._subscribed_synthetic_quotes: list[InstrumentId] = []
         self._subscribed_synthetic_trades: list[InstrumentId] = []
+        self._buffered_deltas_map: dict[InstrumentId, list[OrderBookDelta]] = {}
 
         # Settings
         self.debug = config.debug
@@ -144,6 +146,7 @@ cdef class DataEngine(Component):
         self._time_bars_timestamp_on_close = config.time_bars_timestamp_on_close
         self._time_bars_interval_type = config.time_bars_interval_type
         self._validate_data_sequence = config.validate_data_sequence
+        self._buffer_deltas = config.buffer_deltas
 
         # Counters
         self.command_count = 0
@@ -531,6 +534,7 @@ cdef class DataEngine(Component):
         self._synthetic_trade_feeds.clear()
         self._subscribed_synthetic_quotes.clear()
         self._subscribed_synthetic_trades.clear()
+        self._buffered_deltas_map.clear()
 
         self._clock.cancel_timers()
         self.command_count = 0
@@ -1055,7 +1059,8 @@ cdef class DataEngine(Component):
 
         if instrument_id is None:
             if not self._msgbus.has_subscribers(f"data.instrument.{client.id.value}.*"):
-                client.unsubscribe_instruments()
+                if client.subscribed_instruments():
+                    client.unsubscribe_instruments()
             return
         else:
             if instrument_id.is_synthetic():
@@ -1067,7 +1072,8 @@ cdef class DataEngine(Component):
                 f".{instrument_id.venue}"
                 f".{instrument_id.symbol}",
             ):
-                client.unsubscribe_instrument(instrument_id)
+                if instrument_id in client.subscribed_instruments():
+                    client.unsubscribe_instrument(instrument_id)
 
     cpdef void _handle_unsubscribe_order_book_deltas(
         self,
@@ -1088,7 +1094,8 @@ cdef class DataEngine(Component):
             f".{instrument_id.venue}"
             f".{instrument_id.symbol}",
         ):
-            client.unsubscribe_order_book_deltas(instrument_id)
+            if instrument_id in client.subscribed_order_book_deltas():
+                client.unsubscribe_order_book_deltas(instrument_id)
 
     cpdef void _handle_unsubscribe_order_book_snapshots(
         self,
@@ -1109,7 +1116,8 @@ cdef class DataEngine(Component):
             f".{instrument_id.venue}"
             f".{instrument_id.symbol}",
         ):
-            client.unsubscribe_order_book_snapshots(instrument_id)
+            if instrument_id in client.subscribed_order_book_snapshots():
+                client.unsubscribe_order_book_snapshots(instrument_id)
 
     cpdef void _handle_unsubscribe_quote_ticks(
         self,
@@ -1124,7 +1132,8 @@ cdef class DataEngine(Component):
             f".{instrument_id.venue}"
             f".{instrument_id.symbol}",
         ):
-            client.unsubscribe_quote_ticks(instrument_id)
+            if instrument_id in client.subscribed_quote_ticks():
+                client.unsubscribe_quote_ticks(instrument_id)
 
     cpdef void _handle_unsubscribe_trade_ticks(
         self,
@@ -1139,7 +1148,8 @@ cdef class DataEngine(Component):
             f".{instrument_id.venue}"
             f".{instrument_id.symbol}",
         ):
-            client.unsubscribe_trade_ticks(instrument_id)
+            if instrument_id in client.subscribed_trade_ticks():
+                client.unsubscribe_trade_ticks(instrument_id)
 
     cpdef void _handle_unsubscribe_bars(
         self,
@@ -1171,7 +1181,8 @@ cdef class DataEngine(Component):
 
         try:
             if not self._msgbus.has_subscribers(f"data.{data_type}"):
-                client.unsubscribe(data_type)
+                if data_type in client.subscribed_custom_data():
+                    client.unsubscribe(data_type)
         except NotImplementedError:
             self._log.error(
                 f"Cannot unsubscribe: {client.id.value} "
@@ -1374,24 +1385,79 @@ cdef class DataEngine(Component):
         )
 
     cpdef void _handle_order_book_delta(self, OrderBookDelta delta):
-        cdef OrderBookDeltas deltas = OrderBookDeltas(
-            instrument_id=delta.instrument_id,
-            deltas=[delta]
-        )
-        self._msgbus.publish_c(
-            topic=f"data.book.deltas"
-                  f".{deltas.instrument_id.venue}"
-                  f".{deltas.instrument_id.symbol}",
-            msg=deltas,
-        )
+        cdef OrderBookDeltas deltas = None
+        cdef list[OrderBookDelta] buffer_deltas = None
+        cdef bint is_last_delta = False
+
+        if self._buffer_deltas:
+            buffer_deltas = self._buffered_deltas_map.get(delta.instrument_id)
+
+            if buffer_deltas is None:
+                buffer_deltas = []
+                self._buffered_deltas_map[delta.instrument_id] = buffer_deltas
+
+            buffer_deltas.append(delta)
+            is_last_delta = delta.flags == RecordFlag.F_LAST
+
+            if is_last_delta:
+                deltas = OrderBookDeltas(
+                    instrument_id=delta.instrument_id,
+                    deltas=buffer_deltas
+                )
+                self._msgbus.publish_c(
+                    topic=f"data.book.deltas"
+                        f".{deltas.instrument_id.venue}"
+                        f".{deltas.instrument_id.symbol}",
+                    msg=deltas,
+                )
+                buffer_deltas.clear()
+        else:
+            deltas = OrderBookDeltas(
+                instrument_id=delta.instrument_id,
+                deltas=[delta]
+            )
+            self._msgbus.publish_c(
+                 topic=f"data.book.deltas"
+                    f".{deltas.instrument_id.venue}"
+                    f".{deltas.instrument_id.symbol}",
+                msg=deltas,
+            )
 
     cpdef void _handle_order_book_deltas(self, OrderBookDeltas deltas):
-        self._msgbus.publish_c(
-            topic=f"data.book.deltas"
-                  f".{deltas.instrument_id.venue}"
-                  f".{deltas.instrument_id.symbol}",
-            msg=deltas,
-        )
+        cdef OrderBookDeltas deltas_to_publish = None
+        cdef list[OrderBookDelta] buffer_deltas = None
+        cdef bint is_last_delta = False
+
+        if self._buffer_deltas:
+            buffer_deltas = self._buffered_deltas_map.get(deltas.instrument_id)
+
+            if buffer_deltas is None:
+                buffer_deltas = []
+                self._buffered_deltas_map[deltas.instrument_id] = buffer_deltas
+
+            for delta in deltas.deltas:
+                buffer_deltas.append(delta)
+                is_last_delta = delta.flags == RecordFlag.F_LAST
+
+                if is_last_delta:
+                    deltas_to_publish = OrderBookDeltas(
+                        instrument_id=deltas.instrument_id,
+                        deltas=buffer_deltas,
+                    )
+                    self._msgbus.publish_c(
+                        topic=f"data.book.deltas"
+                            f".{deltas.instrument_id.venue}"
+                            f".{deltas.instrument_id.symbol}",
+                        msg=deltas_to_publish,
+                    )
+                    buffer_deltas.clear()
+        else:
+            self._msgbus.publish_c(
+                topic=f"data.book.deltas"
+                    f".{deltas.instrument_id.venue}"
+                    f".{deltas.instrument_id.symbol}",
+                msg=deltas,
+            )
 
     cpdef void _handle_order_book_depth(self, OrderBookDepth10 depth):
         self._msgbus.publish_c(

@@ -138,11 +138,11 @@ typedef enum BookType {
      */
     L1_MBP = 1,
     /**
-     * Market by price, one order per level (aggregated).
+     * Market-by-price, one order per level (aggregated).
      */
     L2_MBP = 2,
     /**
-     * Market by order, multiple orders per level (full granularity).
+     * Market-by-order, multiple orders per level (full granularity).
      */
     L3_MBO = 3,
 } BookType;
@@ -547,7 +547,7 @@ typedef enum PriceType {
  */
 typedef enum RecordFlag {
     /**
-     * Last message in the packet from the venue for a given `instrument_id`.
+     * Last message in the book event or packet from the venue for a given `instrument_id`.
      */
     F_LAST = (1 << 7),
     /**
@@ -705,12 +705,12 @@ typedef enum TriggerType {
 typedef struct Level Level;
 
 /**
- * Provides an order book.
+ * Provides a performant, generic, multi-purpose order book.
  *
  * Can handle the following granularity data:
- * - MBO (market by order) / L3
- * - MBP (market by price) / L2 aggregated order per level
- * - MBP (market by price) / L1 top-of-book only
+ * - MBO (market-by-order) / L3
+ * - MBP (market-by-price) / L2 aggregated order per level
+ * - MBP (market-by-price) / L1 top-of-book only
  */
 typedef struct OrderBook OrderBook;
 
@@ -824,7 +824,7 @@ typedef struct OrderBookDelta_t {
 } OrderBookDelta_t;
 
 /**
- * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
+ * C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
  *
  * This struct wraps `OrderBookDeltas` in a way that makes it compatible with C function
  * calls, enabling interaction with `OrderBookDeltas` in a C environment.
@@ -923,11 +923,6 @@ typedef struct QuoteTick_t {
 
 /**
  * Represents a valid trade match ID (assigned by a trading venue).
- *
- * Maximum length is 36 characters.
- *
- * The unique ID assigned to the trade entity once it is received or matched by
- * the exchange or central counterparty.
  *
  * Can correspond to the `TradeID <1003> field` of the FIX protocol.
  */
@@ -1089,14 +1084,6 @@ typedef struct Data_t {
 
 /**
  * Represents a valid trader ID.
- *
- * Must be correctly formatted with two valid strings either side of a hyphen.
- * It is expected a trader ID is the abbreviated name of the trader
- * with an order ID tag number separated by a hyphen.
- *
- * Example: "TESTER-001".
- * The reason for the numerical component of the ID is so that order and position IDs
- * do not collide with those from another node instance.
  */
 typedef struct TraderId_t {
     char* _0;
@@ -1104,15 +1091,6 @@ typedef struct TraderId_t {
 
 /**
  * Represents a valid strategy ID.
- *
- * Must be correctly formatted with two valid strings either side of a hyphen.
- * It is expected a strategy ID is the class name of the strategy,
- * with an order ID tag number separated by a hyphen.
- *
- * Example: "EMACross-001".
- *
- * The reason for the numerical component of the ID is so that order and position IDs
- * do not collide with those from another strategy within the node instance.
  */
 typedef struct StrategyId_t {
     char* _0;
@@ -1159,12 +1137,6 @@ typedef struct OrderReleased_t {
 
 /**
  * Represents a valid account ID.
- *
- * Must be correctly formatted with two valid strings either side of a hyphen '-'.
- * It is expected an account ID is the name of the issuer with an account number
- * separated by a hyphen.
- *
- * Example: "IB-D02851908".
  */
 typedef struct AccountId_t {
     char* _0;
@@ -1250,7 +1222,7 @@ typedef struct PositionId_t {
 } PositionId_t;
 
 /**
- * Provides a C compatible Foreign Function Interface (FFI) for an underlying
+ * C compatible Foreign Function Interface (FFI) for an underlying
  * [`SyntheticInstrument`].
  *
  * This struct wraps `SyntheticInstrument` in a way that makes it compatible with C function
@@ -1265,7 +1237,7 @@ typedef struct SyntheticInstrument_API {
 } SyntheticInstrument_API;
 
 /**
- * Provides a C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
+ * C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
  *
  * This struct wraps `OrderBook` in a way that makes it compatible with C function
  * calls, enabling interaction with `OrderBook` in a C environment.
@@ -1279,7 +1251,7 @@ typedef struct OrderBook_API {
 } OrderBook_API;
 
 /**
- * Provides a C compatible Foreign Function Interface (FFI) for an underlying order book[`Level`].
+ * C compatible Foreign Function Interface (FFI) for an underlying order book[`Level`].
  *
  * This struct wraps `Level` in a way that makes it compatible with C function
  * calls, enabling interaction with `Level` in a C environment.

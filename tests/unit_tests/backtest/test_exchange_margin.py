@@ -126,7 +126,6 @@ class TestSimulatedExchangeMarginAccount:
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(50),
             leverages={_AUDUSD_SIM.id: Decimal(10)},
-            instruments=[_USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
             fee_model=MakerTakerFeeModel(),
@@ -136,6 +135,7 @@ class TestSimulatedExchangeMarginAccount:
             clock=self.clock,
             latency_model=LatencyModel(0),
         )
+        self.exchange.add_instrument(_USDJPY_SIM)
 
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
@@ -2728,7 +2728,6 @@ class TestSimulatedExchangeMarginAccount:
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(50),
             leverages={},
-            instruments=[_USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
             fee_model=MakerTakerFeeModel(),
@@ -2738,6 +2737,7 @@ class TestSimulatedExchangeMarginAccount:
             clock=self.clock,
             frozen_account=True,  # <-- Freezing account
         )
+        exchange.add_instrument(_USDJPY_SIM)
         exchange.register_client(self.exec_client)
         exchange.reset()
 
@@ -3027,7 +3027,6 @@ class TestSimulatedExchangeL1:
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(50),
             leverages={_AUDUSD_SIM.id: Decimal(10)},
-            instruments=[_USDJPY_SIM],
             modules=[self.module],
             fill_model=FillModel(),
             fee_model=MakerTakerFeeModel(),
@@ -3038,6 +3037,7 @@ class TestSimulatedExchangeL1:
             latency_model=LatencyModel(0),
             book_type=BookType.L1_MBP,
         )
+        self.exchange.add_instrument(_USDJPY_SIM)
 
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,

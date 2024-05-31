@@ -29,7 +29,7 @@ use super::{
     trailing_stop_market::TrailingStopMarketOrder,
 };
 use crate::{
-    enums::{OrderSide, OrderSideSpecified, TriggerType},
+    enums::{OrderSide, OrderSideSpecified, OrderStatus, TriggerType},
     events::order::event::OrderEventAny,
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
@@ -39,8 +39,9 @@ use crate::{
     polymorphism::{
         ApplyOrderEventAny, GetAccountId, GetClientOrderId, GetEmulationTrigger,
         GetExecAlgorithmId, GetExecSpawnId, GetInstrumentId, GetLimitPrice, GetOrderFilledQty,
-        GetOrderLeavesQty, GetOrderQuantity, GetOrderSide, GetOrderSideSpecified, GetPositionId,
-        GetStopPrice, GetStrategyId, GetTraderId, GetVenueOrderId, IsClosed, IsInflight, IsOpen,
+        GetOrderLeavesQty, GetOrderQuantity, GetOrderSide, GetOrderSideSpecified, GetOrderStatus,
+        GetPositionId, GetStopPrice, GetStrategyId, GetTraderId, GetVenueOrderId, IsClosed,
+        IsInflight, IsOpen,
     },
     types::{price::Price, quantity::Quantity},
 };
@@ -105,18 +106,27 @@ impl OrderAny {
     }
 
     pub fn from_events(events: Vec<OrderEventAny>) -> anyhow::Result<Self> {
+        println!("from events");
+        println!("events: {:?}", events);
         if events.is_empty() {
             anyhow::bail!("No events provided");
-        } else if events.len() == 1 {
-            let init_event = events.first().unwrap();
-            match init_event {
-                OrderEventAny::Initialized(init) => Ok(init.to_owned().into()),
-                _ => {
-                    anyhow::bail!("First event must be OrderInitialized");
+        }
+        // pop the first event
+        let init_event = events.first().unwrap();
+        match init_event {
+            OrderEventAny::Initialized(init) => {
+                let mut order = Self::from(init.clone());
+                // apply the rest of the events
+                for event in events.into_iter().skip(1) {
+                    // apply event to order
+                    println!("applying event: {:?}", event);
+                    order.apply(event).unwrap();
                 }
+                Ok(order)
             }
-        } else {
-            anyhow::bail!("Only one event can be provided");
+            _ => {
+                anyhow::bail!("First event must be OrderInitialized");
+            }
         }
     }
 }
@@ -299,6 +309,22 @@ impl GetOrderQuantity for OrderAny {
             Self::StopMarket(order) => order.quantity,
             Self::TrailingStopLimit(order) => order.quantity,
             Self::TrailingStopMarket(order) => order.quantity,
+        }
+    }
+}
+
+impl GetOrderStatus for OrderAny {
+    fn status(&self) -> OrderStatus {
+        match self {
+            Self::Limit(order) => order.status,
+            Self::LimitIfTouched(order) => order.status,
+            Self::Market(order) => order.status,
+            Self::MarketIfTouched(order) => order.status,
+            Self::MarketToLimit(order) => order.status,
+            Self::StopLimit(order) => order.status,
+            Self::StopMarket(order) => order.status,
+            Self::TrailingStopLimit(order) => order.status,
+            Self::TrailingStopMarket(order) => order.status,
         }
     }
 }

@@ -34,7 +34,7 @@ use crate::{
     timer::{TimeEvent, TimeEventHandler},
 };
 
-/// Provides a C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
+/// C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
 ///
 /// This struct wraps `TestClock` in a way that makes it compatible with C function
 /// calls, enabling interaction with `TestClock` in a C environment.
@@ -243,7 +243,7 @@ pub extern "C" fn test_clock_cancel_timers(clock: &mut TestClock_API) {
     clock.cancel_timers();
 }
 
-/// Provides a C compatible Foreign Function Interface (FFI) for an underlying [`LiveClock`].
+/// C compatible Foreign Function Interface (FFI) for an underlying [`LiveClock`].
 ///
 /// This struct wraps `LiveClock` in a way that makes it compatible with C function
 /// calls, enabling interaction with `LiveClock` in a C environment.

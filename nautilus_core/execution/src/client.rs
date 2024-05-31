@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides execution client base functionality.
+//! Base execution client functionality.
 
 // Under development
 #![allow(dead_code)]

@@ -30,6 +30,7 @@ pub struct PositionIdGenerator {
 }
 
 impl PositionIdGenerator {
+    /// Creates a new [`PositionIdGenerator`] instance.
     #[must_use]
     pub fn new(trader_id: TraderId, clock: &'static AtomicTime) -> Self {
         Self {
