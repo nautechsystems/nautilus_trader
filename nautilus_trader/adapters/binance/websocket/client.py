@@ -496,7 +496,7 @@ class BinanceWebSocketClient:
 
     async def _unsubscribe(self, stream: str) -> None:
         if stream not in self._streams:
-            self._log.warning(f"Cannot unsubscribe from {stream}: never subscribed")
+            self._log.warning(f"Cannot unsubscribe from {stream}: not subscribed")
             return  # Not subscribed
 
         self._streams.remove(stream)
