@@ -1059,7 +1059,8 @@ cdef class DataEngine(Component):
 
         if instrument_id is None:
             if not self._msgbus.has_subscribers(f"data.instrument.{client.id.value}.*"):
-                client.unsubscribe_instruments()
+                if client.subscribed_instruments():
+                    client.unsubscribe_instruments()
             return
         else:
             if instrument_id.is_synthetic():
@@ -1071,7 +1072,8 @@ cdef class DataEngine(Component):
                 f".{instrument_id.venue}"
                 f".{instrument_id.symbol}",
             ):
-                client.unsubscribe_instrument(instrument_id)
+                if instrument_id in client.subscribed_instruments():
+                    client.unsubscribe_instrument(instrument_id)
 
     cpdef void _handle_unsubscribe_order_book_deltas(
         self,
@@ -1092,7 +1094,8 @@ cdef class DataEngine(Component):
             f".{instrument_id.venue}"
             f".{instrument_id.symbol}",
         ):
-            client.unsubscribe_order_book_deltas(instrument_id)
+            if instrument_id in client.subscribed_order_book_deltas():
+                client.unsubscribe_order_book_deltas(instrument_id)
 
     cpdef void _handle_unsubscribe_order_book_snapshots(
         self,
@@ -1113,7 +1116,8 @@ cdef class DataEngine(Component):
             f".{instrument_id.venue}"
             f".{instrument_id.symbol}",
         ):
-            client.unsubscribe_order_book_snapshots(instrument_id)
+            if instrument_id in client.subscribed_order_book_snapshots():
+                client.unsubscribe_order_book_snapshots(instrument_id)
 
     cpdef void _handle_unsubscribe_quote_ticks(
         self,
@@ -1128,7 +1132,8 @@ cdef class DataEngine(Component):
             f".{instrument_id.venue}"
             f".{instrument_id.symbol}",
         ):
-            client.unsubscribe_quote_ticks(instrument_id)
+            if instrument_id in client.subscribed_quote_ticks():
+                client.unsubscribe_quote_ticks(instrument_id)
 
     cpdef void _handle_unsubscribe_trade_ticks(
         self,
@@ -1143,7 +1148,8 @@ cdef class DataEngine(Component):
             f".{instrument_id.venue}"
             f".{instrument_id.symbol}",
         ):
-            client.unsubscribe_trade_ticks(instrument_id)
+            if instrument_id in client.subscribed_trade_ticks():
+                client.unsubscribe_trade_ticks(instrument_id)
 
     cpdef void _handle_unsubscribe_bars(
         self,
@@ -1175,7 +1181,8 @@ cdef class DataEngine(Component):
 
         try:
             if not self._msgbus.has_subscribers(f"data.{data_type}"):
-                client.unsubscribe(data_type)
+                if data_type in client.subscribed_custom_data():
+                    client.unsubscribe(data_type)
         except NotImplementedError:
             self._log.error(
                 f"Cannot unsubscribe: {client.id.value} "
