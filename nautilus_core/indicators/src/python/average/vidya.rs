@@ -21,7 +21,7 @@ use nautilus_model::{
 use pyo3::prelude::*;
 
 use crate::{
-    average::vidya::VariableIndexDynamicAverage,
+    average::{vidya::VariableIndexDynamicAverage, MovingAverageType},
     indicator::{Indicator, MovingAverage},
 };
 
@@ -30,14 +30,17 @@ impl VariableIndexDynamicAverage {
     #[new]
     pub fn py_new(
         period: usize,
-        weights: Vec<f64>,
         price_type: Option<PriceType>,
+        cmo_ma_type: Option<MovingAverageType>,
     ) -> PyResult<Self> {
-        Self::new(period, weights, price_type).map_err(to_pyvalue_err)
+        Self::new(period, price_type, cmo_ma_type).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
-        format!("VariableIndexDynamicAverage({},{:?})", self.period, self.weights)
+        format!(
+            "VariableIndexDynamicAverage({},{:?})",
+            self.period, self.price_type
+        )
     }
 
     #[getter]
@@ -60,8 +63,8 @@ impl VariableIndexDynamicAverage {
 
     #[getter]
     #[pyo3(name = "alpha")]
-    fn py_alpha(&self) -> usize {
-        self.alpha()
+    fn py_alpha(&self) -> f64 {
+        self.alpha
     }
 
     #[getter]
@@ -83,11 +86,10 @@ impl VariableIndexDynamicAverage {
     }
 
     #[getter]
-    #[pyo3(name = "cmo")]
-    fn py_cmo(&self) -> ChandeMomentumOscillator {
-        self.cmo
+    #[pyo3(name = "value")]
+    fn py_value(&self) -> f64 {
+        self.value
     }
-
 
     #[pyo3(name = "handle_quote_tick")]
     fn py_handle_quote_tick(&mut self, tick: &QuoteTick) {

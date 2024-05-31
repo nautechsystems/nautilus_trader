@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents a valid strategy ID.
+
 use std::fmt::{Debug, Display, Formatter};
 
 use nautilus_core::correctness::{check_string_contains, check_valid_string};
@@ -22,15 +24,6 @@ use ustr::Ustr;
 const EXTERNAL_STRATEGY_ID: &str = "EXTERNAL";
 
 /// Represents a valid strategy ID.
-///
-/// Must be correctly formatted with two valid strings either side of a hyphen.
-/// It is expected a strategy ID is the class name of the strategy,
-/// with an order ID tag number separated by a hyphen.
-///
-/// Example: "EMACross-001".
-///
-/// The reason for the numerical component of the ID is so that order and position IDs
-/// do not collide with those from another strategy within the node instance.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
@@ -40,11 +33,20 @@ const EXTERNAL_STRATEGY_ID: &str = "EXTERNAL";
 pub struct StrategyId(Ustr);
 
 impl StrategyId {
-    /// Creates a new `StrategyId` instance from the given identifier value.
+    /// Creates a new [`StrategyId`] instance.
+    ///
+    /// Must be correctly formatted with two valid strings either side of a hyphen.
+    /// It is expected a strategy ID is the class name of the strategy,
+    /// with an order ID tag number separated by a hyphen.
+    ///
+    /// Example: "EMACross-001".
+    ///
+    /// The reason for the numerical component of the ID is so that order and position IDs
+    /// do not collide with those from another strategy within the node instance.
     ///
     /// # Panics
     ///
-    /// Panics if the value is not a valid string, or does not contain a hyphen '-' separator.
+    /// Panics if `value` is not a valid string, or does not contain a hyphen '-' separator.
     pub fn new(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
         if value != EXTERNAL_STRATEGY_ID {

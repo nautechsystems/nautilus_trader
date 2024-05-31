@@ -465,7 +465,6 @@ cdef class BacktestEngine:
             base_currency=base_currency,
             default_leverage=default_leverage,
             leverages=leverages or {},
-            instruments=[],
             modules=modules,
             portfolio=self.kernel.portfolio,
             msgbus=self.kernel.msgbus,

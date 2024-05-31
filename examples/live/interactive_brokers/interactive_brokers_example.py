@@ -14,7 +14,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 # fmt: off
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE

@@ -13,9 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Functions to evaluation total equality of two instances.
+
 use pretty_assertions::assert_eq;
 use serde::Serialize;
 
+/// Return whether `a` and `b` are entirely equal (all fields).
+///
+/// Serializes the input values to JSON and compares the resulting strings.
 pub fn entirely_equal<T: Serialize>(a: T, b: T) {
     let a_serialized = serde_json::to_string(&a).unwrap();
     let b_serialized = serde_json::to_string(&b).unwrap();

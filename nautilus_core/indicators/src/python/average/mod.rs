@@ -19,4 +19,6 @@ pub mod ema;
 pub mod hma;
 pub mod rma;
 pub mod sma;
+pub mod vidya;
+pub mod vwap;
 pub mod wma;

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Functions related to order book display.
+
 use tabled::{settings::Style, Table, Tabled};
 
 use super::{ladder::BookPrice, level::Level};

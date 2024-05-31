@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents a valid ticker symbol ID for a tradable instrument.
+
 use std::{
     fmt::{Debug, Display, Formatter},
     hash::Hash,
@@ -31,11 +33,11 @@ use ustr::Ustr;
 pub struct Symbol(Ustr);
 
 impl Symbol {
-    /// Creates a new `Symbol` instance from the given identifier value.
+    /// Creates a new [`Symbol`] instance.
     ///
     /// # Panics
     ///
-    /// Panics if the value is not a valid string.
+    /// Panics if `value` is not a valid string.
     pub fn new(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
 

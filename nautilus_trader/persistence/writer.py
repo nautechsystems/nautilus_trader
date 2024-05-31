@@ -56,7 +56,7 @@ class StreamingFeatherWriter:
         If existing files at the given `path` should be replaced.
     include_types : list[type], optional
         A list of Arrow serializable types to write.
-        If this is specified then *only* the included types will be written.
+        If this is specified then **only** the included types will be written.
 
     """
 
@@ -89,10 +89,9 @@ class StreamingFeatherWriter:
         self._writers: dict[str, RecordBatchStreamWriter] = {}
         self._instrument_writers: dict[tuple[str, str], RecordBatchStreamWriter] = {}
         self._per_instrument_writers = {
-            "trade_tick",
-            "quote_tick",
             "order_book_delta",
-            "ticker",
+            "quote_tick",
+            "trade_tick",
         }
         self._instruments: dict[InstrumentId, Instrument] = {}
         self._create_writers()
@@ -133,6 +132,8 @@ class StreamingFeatherWriter:
         self._files[table_name] = f
         self._writers[table_name] = pa.ipc.new_stream(f, schema)
 
+        self.logger.info(f"Created writer for table '{table_name}'")
+
     def _create_writers(self) -> None:
         for cls in self._schemas:
             self._create_writer(cls=cls)
@@ -155,6 +156,8 @@ class StreamingFeatherWriter:
         f = self.fs.open(full_path, "wb")
         self._files[key] = f
         self._instrument_writers[key] = pa.ipc.new_stream(f, schema)
+
+        self.logger.info(f"Created writer for table '{table_name}'")
 
     def _extract_obj_metadata(
         self,
@@ -228,9 +231,10 @@ class StreamingFeatherWriter:
             table += f"_{str(bar.bar_type).lower()}"
 
         if table not in self._writers:
+            self.logger.debug(f"Writer not setup for table '{table}'")
             if table.startswith("custom_signal"):
                 self._create_writer(cls=cls)
-            elif table.startswith("bar"):
+            elif table.startswith(("bar", "binance_bar")):
                 self._create_writer(cls=cls, table_name=table)
             elif table in self._per_instrument_writers:
                 key = (table, obj.instrument_id.value)  # type: ignore
@@ -242,13 +246,16 @@ class StreamingFeatherWriter:
                 return
             else:
                 return
+
         if table in self._per_instrument_writers:
             writer: RecordBatchStreamWriter = self._instrument_writers[(table, obj.instrument_id.value)]  # type: ignore
         else:
             writer: RecordBatchStreamWriter = self._writers[table]  # type: ignore
+
         serialized = ArrowSerializer.serialize_batch([obj], data_cls=cls)
         if not serialized:
             return
+
         try:
             writer.write_table(serialized)
             self.check_flush()

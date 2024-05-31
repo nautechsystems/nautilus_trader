@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Defines order types for the trading domain model.
+//! Order types for the trading domain model.
 
 #![allow(dead_code)]
 

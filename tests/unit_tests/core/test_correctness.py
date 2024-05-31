@@ -274,7 +274,10 @@ class TestCondition:
 
     @pytest.mark.parametrize(
         ("value", "start", "end"),
-        [[-1e-22, 0.0, 1.0], [1.0000001, 0.0, 1.0]],
+        [
+            [-1e16, 0.0, 1.0],
+            [1 + 1e16, 0.0, 1.0],
+        ],
     )
     def test_in_range_when_arg_out_of_range_raises_value_error(self, value, start, end):
         # Arrange, Act, Assert

@@ -46,6 +46,7 @@ pub struct AccountState {
 }
 
 impl AccountState {
+    /// Creates a new [`AccountState`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         account_id: AccountId,

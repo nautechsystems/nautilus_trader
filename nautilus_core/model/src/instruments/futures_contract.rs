@@ -66,6 +66,7 @@ pub struct FuturesContract {
 }
 
 impl FuturesContract {
+    /// Creates a new [`FuturesContract`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,

@@ -20,14 +20,16 @@ use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use super::{limit::LimitOrder, stop_market::StopMarketOrder};
 use crate::{
     enums::{LiquiditySide, OrderSide, TimeInForce, TriggerType},
-    events::order::filled::OrderFilled,
+    events::order::{accepted::OrderAccepted, filled::OrderFilled, submitted::OrderSubmitted},
     identifiers::{
+        account_id::AccountId,
         client_order_id::ClientOrderId,
         instrument_id::InstrumentId,
         position_id::PositionId,
         strategy_id::StrategyId,
         stubs::{strategy_id_ema_cross, trader_id},
         trade_id::TradeId,
+        venue_order_id::VenueOrderId,
     },
     instruments::Instrument,
     orders::{base::Order, market::MarketOrder},
@@ -49,12 +51,15 @@ impl TestOrderEventStubs {
         last_qty: Option<Quantity>,
         commission: Option<Money>,
         ts_filled_ns: Option<UnixNanos>,
-    ) -> OrderFilled {
+        account_id: Option<AccountId>,
+    ) -> anyhow::Result<OrderFilled> {
         let trader_id = trader_id();
         let strategy_id = strategy_id.unwrap_or(order.strategy_id());
         let instrument_id = order.instrument_id();
         let venue_order_id = order.venue_order_id().unwrap_or_default();
-        let account_id = order.account_id().unwrap_or_default();
+        let account_id = account_id
+            .or(order.account_id())
+            .unwrap_or(AccountId::from("SIM-001"));
         let trade_id = trade_id.unwrap_or(
             TradeId::new(order.client_order_id().as_str().replace('O', "E").as_str()).unwrap(),
         );
@@ -66,7 +71,7 @@ impl TestOrderEventStubs {
         let commission = commission.unwrap_or(Money::from_str("2 USD").unwrap());
         let last_px = last_px.unwrap_or(Price::from_str("1.0").unwrap());
         let last_qty = last_qty.unwrap_or(order.quantity());
-        OrderFilled::new(
+        Ok(OrderFilled::new(
             trader_id,
             strategy_id,
             instrument_id,
@@ -87,7 +92,52 @@ impl TestOrderEventStubs {
             Some(position_id),
             Some(commission),
         )
-        .unwrap()
+        .unwrap())
+    }
+
+    pub fn order_submitted<T: Order>(
+        order: &T,
+        account_id: AccountId,
+    ) -> anyhow::Result<OrderSubmitted> {
+        let trader_id = trader_id();
+        let strategy_id = order.strategy_id();
+        let instrument_id = order.instrument_id();
+        let client_order_id = order.client_order_id();
+        Ok(OrderSubmitted::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            account_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap())
+    }
+
+    pub fn order_accepted<T: Order>(
+        order: &T,
+        account_id: AccountId,
+        venue_order_id: VenueOrderId,
+    ) -> anyhow::Result<OrderAccepted> {
+        let trader_id = trader_id();
+        let strategy_id = order.strategy_id();
+        let instrument_id = order.instrument_id();
+        let client_order_id = order.client_order_id();
+        Ok(OrderAccepted::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            account_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+        )
+        .unwrap())
     }
 }
 

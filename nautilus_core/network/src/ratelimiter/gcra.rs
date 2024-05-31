@@ -34,6 +34,7 @@ pub struct StateSnapshot {
 }
 
 impl StateSnapshot {
+    /// Creates a new [`StateSnapshot`] instance.
     #[inline]
     pub(crate) fn new(t: Nanos, tau: Nanos, time_of_measurement: Nanos, tat: Nanos) -> Self {
         Self {

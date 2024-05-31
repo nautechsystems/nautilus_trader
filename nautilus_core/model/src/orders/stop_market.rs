@@ -59,6 +59,7 @@ pub struct StopMarketOrder {
 }
 
 impl StopMarketOrder {
+    /// Creates a new [`StopMarketOrder`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Defines instrument definitions for the trading domain models.
+//! Instrument definitions for the trading domain model.
 
 pub mod any;
 pub mod crypto_future;

@@ -50,6 +50,7 @@ pub struct OrderBookDeltas {
 }
 
 impl OrderBookDeltas {
+    /// Creates a new [`OrderBookDeltas`] instance.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(instrument_id: InstrumentId, deltas: Vec<OrderBookDelta>) -> Self {
@@ -111,7 +112,7 @@ impl GetTsInit for OrderBookDeltas {
     }
 }
 
-/// Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
+/// C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
 ///
 /// This struct wraps `OrderBookDeltas` in a way that makes it compatible with C function
 /// calls, enabling interaction with `OrderBookDeltas` in a C environment.

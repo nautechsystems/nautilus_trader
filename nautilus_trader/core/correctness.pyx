@@ -698,6 +698,9 @@ cdef class Condition:
         """
         Check the real number value is within the specified range (inclusive).
 
+        This function accounts for potential floating-point precision issues by using a small
+        epsilon value of 1e-15.
+
         Parameters
         ----------
         value : scalar
@@ -717,7 +720,8 @@ cdef class Condition:
               If `value` is not within the range (inclusive of the end points).
 
         """
-        if start <= value <= end:
+        cdef double epsilon = 1e-15  # Epsilon to account for floating-point precision issues
+        if start - epsilon <= value <= end + epsilon:
             return  # Check passed
 
         raise make_exception(

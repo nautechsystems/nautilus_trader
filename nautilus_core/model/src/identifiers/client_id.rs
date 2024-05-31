@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents a system client ID.
+
 use std::{
     fmt::{Debug, Display, Formatter},
     hash::Hash,
@@ -31,11 +33,11 @@ use ustr::Ustr;
 pub struct ClientId(Ustr);
 
 impl ClientId {
-    /// Creates a new `ClientId` instance from the given identifier value.
+    /// Creates a new [`ClientId`] instance.
     ///
     /// # Panics
     ///
-    /// Panics if the value is not a valid string.
+    /// Panics if `value` is not a valid string.
     pub fn new(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
 

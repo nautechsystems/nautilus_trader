@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides static condition checks similar to the *design by contract* philosophy
+//! Functions for static condition checks similar to the *design by contract* philosophy
 //! to help ensure logical correctness.
 //!
 //! This module provides validation checking of function or method conditions.
@@ -163,10 +163,12 @@ pub fn check_in_range_inclusive_i64(value: i64, l: i64, r: i64, param: &str) -> 
 
 /// Checks the `f64` value is in range [`l`, `r`] (inclusive).
 pub fn check_in_range_inclusive_f64(value: f64, l: f64, r: f64, param: &str) -> anyhow::Result<()> {
+    const EPSILON: f64 = 1e-15; // Epsilon to account for floating-point precision issues
+
     if value.is_nan() || value.is_infinite() {
         anyhow::bail!("{FAILED} invalid f64 for '{param}', was {value}")
     }
-    if value < l || value > r {
+    if value < l - EPSILON || value > r + EPSILON {
         anyhow::bail!("{FAILED} invalid f64 for '{param}' not in range [{l}, {r}], was {value}")
     }
     Ok(())
@@ -196,7 +198,7 @@ pub fn check_slice_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Checks the slice is *not* empty.
+/// Checks the slice is **not** empty.
 pub fn check_slice_not_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> {
     if slice.is_empty() {
         anyhow::bail!(
@@ -219,7 +221,7 @@ pub fn check_map_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Result
     Ok(())
 }
 
-/// Checks the map is *not* empty.
+/// Checks the map is **not** empty.
 pub fn check_map_not_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Result<()> {
     if map.is_empty() {
         anyhow::bail!(
@@ -476,6 +478,31 @@ mod tests {
         #[case] param: &str,
     ) {
         assert!(check_in_range_inclusive_i64(value, l, r, param).is_ok());
+    }
+
+    #[rstest]
+    #[case(0.0, 0.0, 0.0, "value")]
+    #[case(0.0, 0.0, 1.0, "value")]
+    #[case(1.0, 0.0, 1.0, "value")]
+    fn test_check_in_range_inclusive_f64_when_in_range(
+        #[case] value: f64,
+        #[case] l: f64,
+        #[case] r: f64,
+        #[case] param: &str,
+    ) {
+        assert!(check_in_range_inclusive_f64(value, l, r, param).is_ok());
+    }
+
+    #[rstest]
+    #[case(-1e16, 0.0, 0.0, "value")]
+    #[case(1.0 + 1e16, 0.0, 1.0, "value")]
+    fn test_check_in_range_inclusive_f64_when_out_of_range(
+        #[case] value: f64,
+        #[case] l: f64,
+        #[case] r: f64,
+        #[case] param: &str,
+    ) {
+        assert!(check_in_range_inclusive_f64(value, l, r, param).is_err());
     }
 
     #[rstest]

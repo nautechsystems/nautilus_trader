@@ -40,6 +40,7 @@ pub struct CancelAllOrders {
 }
 
 impl CancelAllOrders {
+    /// Creates a new [`CancelAllOrders`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,

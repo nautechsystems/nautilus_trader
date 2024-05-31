@@ -33,6 +33,7 @@ from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
 
@@ -348,6 +349,70 @@ class TestCachePostgresAdapter:
         await eventually(lambda: self.database.load_order(order.client_order_id))
 
         # Assert
+        result = self.database.load_order(order.client_order_id)
+        assert result == order
+        assert order.to_dict() == result.to_dict()
+
+    @pytest.mark.asyncio
+    async def test_update_order_for_closed_order(self):
+        self.database.add_currency(_AUDUSD_SIM.quote_currency)
+        # Arrange
+        order = self.strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        self.database.add_order(order)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_order(order.client_order_id))
+
+        order.apply(TestEventStubs.order_submitted(order))
+        self.database.update_order(order)
+
+        order.apply(TestEventStubs.order_accepted(order))
+        self.database.update_order(order)
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=_AUDUSD_SIM,
+            last_px=Price.from_str("1.00001"),
+        )
+
+        order.apply(fill)
+        self.database.update_order(order)
+
+        await asyncio.sleep(0.5)
+
+        result = self.database.load_order(order.client_order_id)
+        assert result == order
+        assert order.to_dict() == result.to_dict()
+
+    @pytest.mark.asyncio
+    async def test_update_order_for_open_order(self):
+        self.database.add_currency(_AUDUSD_SIM.quote_currency)
+        order = self.strategy.order_factory.stop_market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+
+        self.database.add_order(order)
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_order(order.client_order_id))
+
+        order.apply(TestEventStubs.order_submitted(order))
+        self.database.update_order(order)
+
+        order.apply(TestEventStubs.order_accepted(order))
+
+        # Act
+        self.database.update_order(order)
+
+        await asyncio.sleep(0.5)
+
         result = self.database.load_order(order.client_order_id)
         assert result == order
         assert order.to_dict() == result.to_dict()

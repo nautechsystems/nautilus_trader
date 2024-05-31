@@ -52,6 +52,7 @@ impl Display for WeightedMovingAverage {
 }
 
 impl WeightedMovingAverage {
+    /// Creates a new [`WeightedMovingAverage`] instance.
     pub fn new(
         period: usize,
         weights: Vec<f64>,

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Errors associated with order book operations and integrity.
+
 use nautilus_core::nanos::UnixNanos;
 
 use super::ladder::BookPrice;

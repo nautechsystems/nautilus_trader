@@ -47,6 +47,7 @@ def parse_bybit_delta(
     ts_event: int,
     ts_init: int,
     is_snapshot: bool,
+    flags: int = 0,
 ) -> OrderBookDelta:
     price = values[0]
     size = values[1]
@@ -64,7 +65,7 @@ def parse_bybit_delta(
             size=size,
             order_id=update_id,
         ),
-        flags=0,  # Not applicable
+        flags=flags,
         sequence=sequence,
         ts_event=ts_event,
         ts_init=ts_init,

@@ -67,6 +67,7 @@ pub struct FuturesSpread {
 }
 
 impl FuturesSpread {
+    /// Creates a new [`FuturesSpread`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,

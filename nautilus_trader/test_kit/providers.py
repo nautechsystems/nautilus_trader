@@ -650,7 +650,7 @@ def third_friday_of_month(year: int, month: int) -> dt.date:
     return third_friday
 
 
-def get_contract_month_code(expiry_month: int) -> str:
+def get_contract_month_code(expiry_month: int) -> str:  # noqa: C901 (too complex)
     match expiry_month:
         case 1:
             return "F"

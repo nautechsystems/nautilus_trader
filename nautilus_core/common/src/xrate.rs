@@ -18,7 +18,7 @@
 // as its not efficient to be allocating so many structures and doing so many recalculations"
 // ****************************************************************************
 
-//! Provides exchange rate calculations between currencies.
+//! Exchange rate calculations between currencies.
 //!
 //! An exchange rate is the value of one asset versus that of another.
 use std::collections::{HashMap, HashSet};

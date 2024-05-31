@@ -47,7 +47,9 @@ pub fn test_position_long(mut order_factory: OrderFactory, audusd_sim: CurrencyP
         None,
         None,
         None,
-    );
+        None,
+    )
+    .unwrap();
     Position::new(audusd_sim, order_filled).unwrap()
 }
 
@@ -74,6 +76,8 @@ pub fn test_position_short(mut order_factory: OrderFactory, audusd_sim: Currency
         None,
         None,
         None,
-    );
+        None,
+    )
+    .unwrap();
     Position::new(audusd_sim, order_filled).unwrap()
 }

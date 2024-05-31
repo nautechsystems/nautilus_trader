@@ -104,6 +104,7 @@ impl Indicator for AdaptiveMovingAverage {
 }
 
 impl AdaptiveMovingAverage {
+    /// Creates a new [`AdaptiveMovingAverage`] instance.
     pub fn new(
         period_efficiency_ratio: usize,
         period_fast: usize,

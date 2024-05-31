@@ -85,6 +85,7 @@ pub struct DatabentoImbalance {
 }
 
 impl DatabentoImbalance {
+    /// Creates a new [`DatabentoImbalance`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
@@ -154,6 +155,7 @@ pub struct DatabentoStatistics {
 }
 
 impl DatabentoStatistics {
+    /// Creates a new [`DatabentoStatistics`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,

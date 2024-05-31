@@ -101,13 +101,13 @@ class TestBitmexExchange:
             portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
-            instruments=[XBTUSD_BITMEX],
             modules=[],
             fill_model=FillModel(),
             fee_model=MakerTakerFeeModel(),
             clock=self.clock,
             latency_model=LatencyModel(0),
         )
+        self.exchange.add_instrument(XBTUSD_BITMEX)
 
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,

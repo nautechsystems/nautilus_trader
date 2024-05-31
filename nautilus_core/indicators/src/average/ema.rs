@@ -78,6 +78,7 @@ impl Indicator for ExponentialMovingAverage {
 }
 
 impl ExponentialMovingAverage {
+    /// Creates a new [`ExponentialMovingAverage`] instance.
     pub fn new(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
         // Inputs don't require validation, however we return a `Result`
         // to standardize with other indicators which do need validation.

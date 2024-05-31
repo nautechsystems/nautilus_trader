@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides account types and accounting functionality.
+//! Account implementations and accounting functionality.
 
 pub mod base;
 pub mod cash;

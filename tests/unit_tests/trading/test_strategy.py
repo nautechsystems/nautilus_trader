@@ -124,7 +124,6 @@ class TestStrategy:
             portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
-            instruments=[_USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
             fee_model=MakerTakerFeeModel(),
@@ -133,6 +132,7 @@ class TestStrategy:
             support_contingent_orders=False,
             use_reduce_only=False,
         )
+        self.exchange.add_instrument(_USDJPY_SIM)
 
         self.data_client = BacktestMarketDataClient(
             client_id=ClientId("SIM"),
