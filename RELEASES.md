@@ -18,6 +18,7 @@ None
 
 ### Fixes
 - Fixed `SimulatedExchange` processing of commands in real-time for sandbox mode
+- Fixed `DataEngine` unsubscribe handling (edge case would attempt to unsubscribe from the client multiple times)
 - Fixed Bybit order book deltas parsing (was appending bid side twice) (#1668), thanks @davidsblom
 - Fixed Binance instruments price and size precision parsing (was incorrectly stripping trailing zeros)
 - Fixed `BinanceBar` streaming feather writing (was not setting up writer)
