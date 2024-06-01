@@ -18,14 +18,12 @@
 use nautilus_core::nanos::UnixNanos;
 
 use crate::{
-    enums::{OrderSide, OrderSideSpecified, OrderStatus, TriggerType},
-    events::order::event::OrderEventAny,
+    enums::{LiquiditySide, OrderSide, OrderSideSpecified, OrderStatus, OrderType, TriggerType},
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, position_id::PositionId, strategy_id::StrategyId,
         trader_id::TraderId, venue_order_id::VenueOrderId,
     },
-    orders::base::OrderError,
     types::{price::Price, quantity::Quantity},
 };
 
@@ -73,6 +71,10 @@ pub trait GetOrderSide {
     fn order_side(&self) -> OrderSide;
 }
 
+pub trait GetOrderType {
+    fn order_type(&self) -> OrderType;
+}
+
 pub trait GetOrderQuantity {
     fn quantity(&self) -> Quantity;
 }
@@ -91,6 +93,10 @@ pub trait GetOrderLeavesQty {
 
 pub trait GetOrderSideSpecified {
     fn order_side_specified(&self) -> OrderSideSpecified;
+}
+
+pub trait GetLiquiditySide {
+    fn liquidity_side(&self) -> Option<LiquiditySide>;
 }
 
 pub trait GetEmulationTrigger {
@@ -115,8 +121,4 @@ pub trait IsClosed {
 
 pub trait IsInflight {
     fn is_inflight(&self) -> bool;
-}
-
-pub trait ApplyOrderEventAny {
-    fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError>;
 }

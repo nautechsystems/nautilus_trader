@@ -38,6 +38,21 @@ pub enum InstrumentAny {
 }
 
 impl InstrumentAny {
+    /// Consumes the `OrderAny` enum and returns the underlying order as a boxed trait.
+    #[must_use]
+    pub fn into_instrument(self) -> Box<dyn Instrument> {
+        match self {
+            Self::CryptoFuture(inst) => Box::new(inst),
+            Self::CryptoPerpetual(inst) => Box::new(inst),
+            Self::CurrencyPair(inst) => Box::new(inst),
+            Self::Equity(inst) => Box::new(inst),
+            Self::FuturesContract(inst) => Box::new(inst),
+            Self::FuturesSpread(inst) => Box::new(inst),
+            Self::OptionsContract(inst) => Box::new(inst),
+            Self::OptionsSpread(inst) => Box::new(inst),
+        }
+    }
+
     #[must_use]
     pub fn id(&self) -> InstrumentId {
         match self {
@@ -161,6 +176,20 @@ impl InstrumentAny {
             Self::FuturesSpread(inst) => inst.size_increment(),
             Self::OptionsContract(inst) => inst.size_increment(),
             Self::OptionsSpread(inst) => inst.size_increment(),
+        }
+    }
+
+    #[must_use]
+    pub fn multiplier(&self) -> Quantity {
+        match self {
+            Self::CryptoFuture(inst) => inst.multiplier(),
+            Self::CryptoPerpetual(inst) => inst.multiplier(),
+            Self::CurrencyPair(inst) => inst.multiplier(),
+            Self::Equity(inst) => inst.multiplier(),
+            Self::FuturesContract(inst) => inst.multiplier(),
+            Self::FuturesSpread(inst) => inst.multiplier(),
+            Self::OptionsContract(inst) => inst.multiplier(),
+            Self::OptionsSpread(inst) => inst.multiplier(),
         }
     }
 

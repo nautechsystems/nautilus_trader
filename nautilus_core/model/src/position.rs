@@ -32,7 +32,7 @@ use crate::{
         position_id::PositionId, strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId,
         trader_id::TraderId, venue::Venue, venue_order_id::VenueOrderId,
     },
-    instruments::Instrument,
+    instruments::any::InstrumentAny,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
@@ -83,7 +83,7 @@ pub struct Position {
 }
 
 impl Position {
-    pub fn new<T: Instrument>(instrument: T, fill: OrderFilled) -> anyhow::Result<Self> {
+    pub fn new(instrument: &InstrumentAny, fill: OrderFilled) -> anyhow::Result<Self> {
         assert_eq!(instrument.id(), fill.instrument_id);
         assert!(fill.position_id.is_some());
         assert_ne!(fill.order_side, OrderSide::NoOrderSide);
@@ -512,10 +512,6 @@ impl Display for Position {
     }
 }
 
-// Tests either need to:
-// - Use more primitive objects so that `model` doesn't depend on `common`
-// - Transfer these sorts of tests to a dedicated testing crate (less desirable)
-
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -533,10 +529,14 @@ mod tests {
             account_id::AccountId, position_id::PositionId, strategy_id::StrategyId, stubs::uuid4,
             trade_id::TradeId, venue_order_id::VenueOrderId,
         },
-        instruments::{crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, stubs::*},
-        orders::{
-            market::MarketOrder,
-            stubs::{TestOrderEventStubs, TestOrderStubs},
+        instruments::{
+            any::InstrumentAny, crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
+            stubs::*,
+        },
+        orders::stubs::{TestOrderEventStubs, TestOrderStubs},
+        polymorphism::{
+            GetAccountId, GetClientOrderId, GetInstrumentId, GetOrderQuantity, GetStrategyId,
+            GetTraderId,
         },
         position::Position,
         stubs::*,
@@ -558,21 +558,22 @@ mod tests {
     #[rstest]
     #[should_panic(expected = "`fill.trade_id` already contained in `trade_ids")]
     fn test_two_trades_with_same_trade_id_throws(audusd_sim: CurrencyPair) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
         let order1 = TestOrderStubs::market_order(
-            audusd_sim.id,
+            audusd_sim.id(),
             OrderSide::Buy,
             Quantity::from(100_000),
             None,
             None,
         );
         let order2 = TestOrderStubs::market_order(
-            audusd_sim.id,
+            audusd_sim.id(),
             OrderSide::Buy,
             Quantity::from(100_000),
             None,
             None,
         );
-        let fill1 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
+        let fill1 = TestOrderEventStubs::order_filled(
             &order1,
             &audusd_sim,
             Some(TradeId::new("1").unwrap()),
@@ -584,7 +585,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let fill2 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
+        let fill2 = TestOrderEventStubs::order_filled(
             &order2,
             &audusd_sim,
             Some(TradeId::new("1").unwrap()),
@@ -596,14 +597,15 @@ mod tests {
             None,
         )
         .unwrap();
-        let mut position = Position::new(audusd_sim, fill1).unwrap();
+        let mut position = Position::new(&audusd_sim, fill1).unwrap();
         position.apply(&fill2);
     }
 
     #[rstest]
     fn test_position_filled_with_buy_order(audusd_sim: CurrencyPair) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
         let order = TestOrderStubs::market_order(
-            audusd_sim.id,
+            audusd_sim.id(),
             OrderSide::Buy,
             Quantity::from(100_000),
             None,
@@ -622,9 +624,9 @@ mod tests {
         )
         .unwrap();
         let last_price = Price::from_str("1.0005").unwrap();
-        let position = Position::new(audusd_sim, fill).unwrap();
-        assert_eq!(position.symbol(), audusd_sim.id.symbol);
-        assert_eq!(position.venue(), audusd_sim.id.venue);
+        let position = Position::new(&audusd_sim, fill).unwrap();
+        assert_eq!(position.symbol(), audusd_sim.id().symbol);
+        assert_eq!(position.venue(), audusd_sim.id().venue);
         assert!(!position.is_opposite_side(fill.order_side));
         assert_eq!(position, position); // equality operator test
         assert!(position.closing_order_id.is_none());
@@ -669,8 +671,9 @@ mod tests {
 
     #[rstest]
     fn test_position_filled_with_sell_order(audusd_sim: CurrencyPair) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
         let order = TestOrderStubs::market_order(
-            audusd_sim.id,
+            audusd_sim.id(),
             OrderSide::Sell,
             Quantity::from(100_000),
             None,
@@ -689,9 +692,9 @@ mod tests {
         )
         .unwrap();
         let last_price = Price::from_str("1.00050").unwrap();
-        let position = Position::new(audusd_sim, fill).unwrap();
-        assert_eq!(position.symbol(), audusd_sim.id.symbol);
-        assert_eq!(position.venue(), audusd_sim.id.venue);
+        let position = Position::new(&audusd_sim, fill).unwrap();
+        assert_eq!(position.symbol(), audusd_sim.id().symbol);
+        assert_eq!(position.venue(), audusd_sim.id().venue);
         assert!(!position.is_opposite_side(fill.order_side));
         assert_eq!(position, position); // equality operator test
         assert!(position.closing_order_id.is_none());
@@ -734,8 +737,9 @@ mod tests {
 
     #[rstest]
     fn test_position_partial_fills_with_buy_order(audusd_sim: CurrencyPair) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
         let order = TestOrderStubs::market_order(
-            audusd_sim.id,
+            audusd_sim.id(),
             OrderSide::Buy,
             Quantity::from(100_000),
             None,
@@ -754,7 +758,7 @@ mod tests {
         )
         .unwrap();
         let last_price = Price::from_str("1.00048").unwrap();
-        let position = Position::new(audusd_sim, fill).unwrap();
+        let position = Position::new(&audusd_sim, fill).unwrap();
         assert_eq!(position.quantity, Quantity::from(50_000));
         assert_eq!(position.peak_qty, Quantity::from(50_000));
         assert_eq!(position.side, PositionSide::Long);
@@ -791,14 +795,15 @@ mod tests {
 
     #[rstest]
     fn test_position_partial_fills_with_two_sell_orders(audusd_sim: CurrencyPair) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
         let order = TestOrderStubs::market_order(
-            audusd_sim.id,
+            audusd_sim.id(),
             OrderSide::Sell,
             Quantity::from(100_000),
             None,
             None,
         );
-        let fill1 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
+        let fill1 = TestOrderEventStubs::order_filled(
             &order,
             &audusd_sim,
             Some(TradeId::new("1").unwrap()),
@@ -810,7 +815,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let fill2 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
+        let fill2 = TestOrderEventStubs::order_filled(
             &order,
             &audusd_sim,
             Some(TradeId::new("2").unwrap()),
@@ -823,7 +828,7 @@ mod tests {
         )
         .unwrap();
         let last_price = Price::from_str("1.0005").unwrap();
-        let mut position = Position::new(audusd_sim, fill1).unwrap();
+        let mut position = Position::new(&audusd_sim, fill1).unwrap();
         position.apply(&fill2);
 
         assert_eq!(position.quantity, Quantity::from(100_000));
@@ -858,8 +863,9 @@ mod tests {
 
     #[rstest]
     pub fn test_position_filled_with_buy_order_then_sell_order(audusd_sim: CurrencyPair) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
         let order = TestOrderStubs::market_order(
-            audusd_sim.id,
+            audusd_sim.id(),
             OrderSide::Buy,
             Quantity::from(150_000),
             None,
@@ -877,23 +883,23 @@ mod tests {
             None,
         )
         .unwrap();
-        let mut position = Position::new(audusd_sim, fill).unwrap();
+        let mut position = Position::new(&audusd_sim, fill).unwrap();
 
         let fill2 = OrderFilled::new(
-            order.trader_id,
+            order.trader_id(),
             StrategyId::new("S-001").unwrap(),
-            order.instrument_id,
-            order.client_order_id,
+            order.instrument_id(),
+            order.client_order_id(),
             VenueOrderId::from("2"),
             order
-                .account_id
+                .account_id()
                 .unwrap_or(AccountId::new("SIM-001").unwrap()),
             TradeId::new("2").unwrap(),
             OrderSide::Sell,
             OrderType::Market,
-            order.quantity,
+            order.quantity(),
             Price::from("1.00011"),
-            audusd_sim.quote_currency,
+            audusd_sim.quote_currency(),
             LiquiditySide::Taker,
             uuid4(),
             2_000_000_000.into(),
@@ -909,7 +915,7 @@ mod tests {
         assert!(position.is_opposite_side(fill2.order_side));
         assert_eq!(
             position.quantity,
-            Quantity::zero(audusd_sim.price_precision)
+            Quantity::zero(audusd_sim.price_precision())
         );
         assert_eq!(position.size_precision, 0);
         assert_eq!(position.signed_qty, 0.0);
@@ -942,21 +948,22 @@ mod tests {
 
     #[rstest]
     pub fn test_position_filled_with_sell_order_then_buy_order(audusd_sim: CurrencyPair) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
         let order1 = TestOrderStubs::market_order(
-            audusd_sim.id,
+            audusd_sim.id(),
             OrderSide::Sell,
             Quantity::from(100_000),
             None,
             None,
         );
         let order2 = TestOrderStubs::market_order(
-            audusd_sim.id,
+            audusd_sim.id(),
             OrderSide::Buy,
             Quantity::from(100_000),
             None,
             None,
         );
-        let fill1 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
+        let fill1 = TestOrderEventStubs::order_filled(
             &order1,
             &audusd_sim,
             None,
@@ -968,7 +975,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let mut position = Position::new(audusd_sim, fill1).unwrap();
+        let mut position = Position::new(&audusd_sim, fill1).unwrap();
         // create closing from order from different venue but same strategy
         let fill2 = TestOrderEventStubs::order_filled(
             &order2,
@@ -1000,7 +1007,7 @@ mod tests {
 
         assert_eq!(
             position.quantity,
-            Quantity::zero(audusd_sim.price_precision)
+            Quantity::zero(audusd_sim.price_precision())
         );
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.ts_opened, 0);
@@ -1036,15 +1043,16 @@ mod tests {
 
     #[rstest]
     fn test_position_filled_with_no_change(audusd_sim: CurrencyPair) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
         let order1 = TestOrderStubs::market_order(
-            audusd_sim.id,
+            audusd_sim.id(),
             OrderSide::Buy,
             Quantity::from(100_000),
             None,
             None,
         );
         let order2 = TestOrderStubs::market_order(
-            audusd_sim.id,
+            audusd_sim.id(),
             OrderSide::Sell,
             Quantity::from(100_000),
             None,
@@ -1062,7 +1070,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let mut position = Position::new(audusd_sim, fill1).unwrap();
+        let mut position = Position::new(&audusd_sim, fill1).unwrap();
         let fill2 = TestOrderEventStubs::order_filled(
             &order2,
             &audusd_sim,
@@ -1080,7 +1088,7 @@ mod tests {
 
         assert_eq!(
             position.quantity,
-            Quantity::zero(audusd_sim.price_precision)
+            Quantity::zero(audusd_sim.price_precision())
         );
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.ts_opened, 0);
@@ -1117,22 +1125,23 @@ mod tests {
 
     #[rstest]
     fn test_position_long_with_multiple_filled_orders(audusd_sim: CurrencyPair) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
         let order1 = TestOrderStubs::market_order(
-            audusd_sim.id,
+            audusd_sim.id(),
             OrderSide::Buy,
             Quantity::from(100_000),
             None,
             None,
         );
         let order2 = TestOrderStubs::market_order(
-            audusd_sim.id,
+            audusd_sim.id(),
             OrderSide::Buy,
             Quantity::from(100_000),
             None,
             None,
         );
         let order3 = TestOrderStubs::market_order(
-            audusd_sim.id,
+            audusd_sim.id(),
             OrderSide::Sell,
             Quantity::from(200_000),
             None,
@@ -1174,14 +1183,14 @@ mod tests {
             None,
         )
         .unwrap();
-        let mut position = Position::new(audusd_sim, fill1).unwrap();
+        let mut position = Position::new(&audusd_sim, fill1).unwrap();
         let last = Price::from("1.0005");
         position.apply(&fill2);
         position.apply(&fill3);
 
         assert_eq!(
             position.quantity,
-            Quantity::zero(audusd_sim.price_precision)
+            Quantity::zero(audusd_sim.price_precision())
         );
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.ts_opened, 0);
@@ -1218,6 +1227,7 @@ mod tests {
 
     #[rstest]
     fn test_pnl_calculation_from_trading_technologies_example(currency_pair_ethusdt: CurrencyPair) {
+        let ethusdt = InstrumentAny::CurrencyPair(currency_pair_ethusdt);
         let quantity1 = Quantity::from(12);
         let price1 = Price::from("100.0");
         let order1 = TestOrderStubs::market_order(
@@ -1227,11 +1237,10 @@ mod tests {
             None,
             None,
         );
-        let commission1 =
-            calculate_commission(currency_pair_ethusdt, order1.quantity, price1, None).unwrap();
-        let fill1 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
+        let commission1 = calculate_commission(&ethusdt, order1.quantity(), price1, None).unwrap();
+        let fill1 = TestOrderEventStubs::order_filled(
             &order1,
-            &currency_pair_ethusdt,
+            &ethusdt,
             Some(TradeId::new("1").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(price1),
@@ -1241,7 +1250,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let mut position = Position::new(currency_pair_ethusdt, fill1).unwrap();
+        let mut position = Position::new(&ethusdt, fill1).unwrap();
         let quantity2 = Quantity::from(17);
         let order2 = TestOrderStubs::market_order(
             currency_pair_ethusdt.id,
@@ -1251,11 +1260,10 @@ mod tests {
             None,
         );
         let price2 = Price::from("99.0");
-        let commission2 =
-            calculate_commission(currency_pair_ethusdt, order2.quantity, price2, None).unwrap();
-        let fill2 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
+        let commission2 = calculate_commission(&ethusdt, order2.quantity(), price2, None).unwrap();
+        let fill2 = TestOrderEventStubs::order_filled(
             &order2,
-            &currency_pair_ethusdt,
+            &ethusdt,
             Some(TradeId::new("2").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(price2),
@@ -1281,11 +1289,10 @@ mod tests {
             None,
         );
         let price3 = Price::from("101.0");
-        let commission3 =
-            calculate_commission(currency_pair_ethusdt, order3.quantity, price3, None).unwrap();
-        let fill3 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
+        let commission3 = calculate_commission(&ethusdt, order3.quantity(), price3, None).unwrap();
+        let fill3 = TestOrderEventStubs::order_filled(
             &order3,
-            &currency_pair_ethusdt,
+            &ethusdt,
             Some(TradeId::new("3").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(price3),
@@ -1301,18 +1308,12 @@ mod tests {
         assert_eq!(position.avg_px_open, 99.413_793_103_448_27);
         let quantity4 = Quantity::from("4");
         let price4 = Price::from("105.0");
-        let order4 = TestOrderStubs::market_order(
-            currency_pair_ethusdt.id,
-            OrderSide::Sell,
-            quantity4,
-            None,
-            None,
-        );
-        let commission4 =
-            calculate_commission(currency_pair_ethusdt, order4.quantity, price4, None).unwrap();
-        let fill4 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
+        let order4 =
+            TestOrderStubs::market_order(ethusdt.id(), OrderSide::Sell, quantity4, None, None);
+        let commission4 = calculate_commission(&ethusdt, order4.quantity(), price4, None).unwrap();
+        let fill4 = TestOrderEventStubs::order_filled(
             &order4,
-            &currency_pair_ethusdt,
+            &ethusdt,
             Some(TradeId::new("4").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(price4),
@@ -1335,11 +1336,10 @@ mod tests {
             None,
             None,
         );
-        let commission5 =
-            calculate_commission(currency_pair_ethusdt, order5.quantity, price5, None).unwrap();
-        let fill5 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
+        let commission5 = calculate_commission(&ethusdt, order5.quantity(), price5, None).unwrap();
+        let fill5 = TestOrderEventStubs::order_filled(
             &order5,
-            &currency_pair_ethusdt,
+            &ethusdt,
             Some(TradeId::new("5").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(price5),
@@ -1361,12 +1361,13 @@ mod tests {
 
     #[rstest]
     fn test_position_closed_and_reopened(audusd_sim: CurrencyPair) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
         let quantity1 = Quantity::from(150_000);
         let price1 = Price::from("1.00001");
         let order =
-            TestOrderStubs::market_order(audusd_sim.id, OrderSide::Buy, quantity1, None, None);
-        let commission1 = calculate_commission(audusd_sim, quantity1, price1, None).unwrap();
-        let fill1 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
+            TestOrderStubs::market_order(audusd_sim.id(), OrderSide::Buy, quantity1, None, None);
+        let commission1 = calculate_commission(&audusd_sim, quantity1, price1, None).unwrap();
+        let fill1 = TestOrderEventStubs::order_filled(
             &order,
             &audusd_sim,
             Some(TradeId::new("5").unwrap()),
@@ -1378,23 +1379,23 @@ mod tests {
             None,
         )
         .unwrap();
-        let mut position = Position::new(audusd_sim, fill1).unwrap();
+        let mut position = Position::new(&audusd_sim, fill1).unwrap();
 
         let fill2 = OrderFilled::new(
-            order.trader_id,
-            order.strategy_id,
-            order.instrument_id,
-            order.client_order_id,
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
             VenueOrderId::from("2"),
             order
-                .account_id
+                .account_id()
                 .unwrap_or(AccountId::new("SIM-001").unwrap()),
             TradeId::from("2"),
             OrderSide::Sell,
             OrderType::Market,
-            order.quantity,
+            order.quantity(),
             Price::from("1.00011"),
-            audusd_sim.quote_currency,
+            audusd_sim.quote_currency(),
             LiquiditySide::Taker,
             uuid4(),
             UnixNanos::from(2_000_000_000),
@@ -1406,20 +1407,20 @@ mod tests {
         .unwrap();
         position.apply(&fill2);
         let fill3 = OrderFilled::new(
-            order.trader_id,
-            order.strategy_id,
-            order.instrument_id,
-            order.client_order_id,
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
             VenueOrderId::from("2"),
             order
-                .account_id
+                .account_id()
                 .unwrap_or(AccountId::new("SIM-001").unwrap()),
             TradeId::from("3"),
             OrderSide::Buy,
             OrderType::Market,
-            order.quantity,
+            order.quantity(),
             Price::from("1.00012"),
-            audusd_sim.quote_currency,
+            audusd_sim.quote_currency(),
             LiquiditySide::Taker,
             uuid4(),
             UnixNanos::from(3_000_000_000),
@@ -1472,6 +1473,7 @@ mod tests {
     fn test_position_realised_pnl_with_interleaved_order_sides(
         currency_pair_btcusdt: CurrencyPair,
     ) {
+        let btcusdt = InstrumentAny::CurrencyPair(currency_pair_btcusdt);
         let order1 = TestOrderStubs::market_order(
             currency_pair_btcusdt.id,
             OrderSide::Buy,
@@ -1479,16 +1481,12 @@ mod tests {
             None,
             None,
         );
-        let commission1 = calculate_commission(
-            currency_pair_btcusdt,
-            order1.quantity,
-            Price::from("10000.0"),
-            None,
-        )
-        .unwrap();
+        let commission1 =
+            calculate_commission(&btcusdt, order1.quantity(), Price::from("10000.0"), None)
+                .unwrap();
         let fill1 = TestOrderEventStubs::order_filled(
             &order1,
-            &currency_pair_btcusdt,
+            &btcusdt,
             Some(TradeId::from("1")),
             Some(PositionId::from("P-19700101-0000-001-001-1")),
             Some(Price::from("10000.0")),
@@ -1498,7 +1496,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let mut position = Position::new(currency_pair_btcusdt, fill1).unwrap();
+        let mut position = Position::new(&btcusdt, fill1).unwrap();
         let order2 = TestOrderStubs::market_order(
             currency_pair_btcusdt.id,
             OrderSide::Buy,
@@ -1506,16 +1504,11 @@ mod tests {
             None,
             None,
         );
-        let commission2 = calculate_commission(
-            currency_pair_btcusdt,
-            order2.quantity,
-            Price::from("9999.0"),
-            None,
-        )
-        .unwrap();
+        let commission2 =
+            calculate_commission(&btcusdt, order2.quantity(), Price::from("9999.0"), None).unwrap();
         let fill2 = TestOrderEventStubs::order_filled(
             &order2,
-            &currency_pair_btcusdt,
+            &btcusdt,
             Some(TradeId::from("2")),
             Some(PositionId::from("P-19700101-0000-001-001-1")),
             Some(Price::from("9999.0")),
@@ -1539,16 +1532,12 @@ mod tests {
             None,
             None,
         );
-        let commission3 = calculate_commission(
-            currency_pair_btcusdt,
-            order3.quantity,
-            Price::from("10001.0"),
-            None,
-        )
-        .unwrap();
+        let commission3 =
+            calculate_commission(&btcusdt, order3.quantity(), Price::from("10001.0"), None)
+                .unwrap();
         let fill3 = TestOrderEventStubs::order_filled(
             &order3,
-            &currency_pair_btcusdt,
+            &btcusdt,
             Some(TradeId::from("3")),
             Some(PositionId::from("P-19700101-0000-001-001-1")),
             Some(Price::from("10001.0")),
@@ -1572,16 +1561,12 @@ mod tests {
             None,
             None,
         );
-        let commission4 = calculate_commission(
-            currency_pair_btcusdt,
-            order4.quantity,
-            Price::from("10003.0"),
-            None,
-        )
-        .unwrap();
+        let commission4 =
+            calculate_commission(&btcusdt, order4.quantity(), Price::from("10003.0"), None)
+                .unwrap();
         let fill4 = TestOrderEventStubs::order_filled(
             &order4,
-            &currency_pair_btcusdt,
+            &btcusdt,
             Some(TradeId::from("4")),
             Some(PositionId::from("P-19700101-0000-001-001-1")),
             Some(Price::from("10003.0")),
@@ -1605,16 +1590,12 @@ mod tests {
             None,
             None,
         );
-        let commission5 = calculate_commission(
-            currency_pair_btcusdt,
-            order5.quantity,
-            Price::from("10005.0"),
-            None,
-        )
-        .unwrap();
+        let commission5 =
+            calculate_commission(&btcusdt, order5.quantity(), Price::from("10005.0"), None)
+                .unwrap();
         let fill5 = TestOrderEventStubs::order_filled(
             &order5,
-            &currency_pair_btcusdt,
+            &btcusdt,
             Some(TradeId::from("5")),
             Some(PositionId::from("P-19700101-0000-001-001-1")),
             Some(Price::from("10005.0")),
@@ -1641,6 +1622,7 @@ mod tests {
     fn test_calculate_pnl_when_given_position_side_flat_returns_zero(
         currency_pair_btcusdt: CurrencyPair,
     ) {
+        let btcusdt = InstrumentAny::CurrencyPair(currency_pair_btcusdt);
         let order = TestOrderStubs::market_order(
             currency_pair_btcusdt.id,
             OrderSide::Buy,
@@ -1650,7 +1632,7 @@ mod tests {
         );
         let fill = TestOrderEventStubs::order_filled(
             &order,
-            &currency_pair_btcusdt,
+            &btcusdt,
             None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("10500.0")),
@@ -1660,13 +1642,14 @@ mod tests {
             None,
         )
         .unwrap();
-        let position = Position::new(currency_pair_btcusdt, fill).unwrap();
+        let position = Position::new(&btcusdt, fill).unwrap();
         let result = position.calculate_pnl(10500.0, 10500.0, Quantity::from("100000.0"));
         assert_eq!(result, Money::from("0 USDT"));
     }
 
     #[rstest]
     fn test_calculate_pnl_for_long_position_win(currency_pair_btcusdt: CurrencyPair) {
+        let btcusdt = InstrumentAny::CurrencyPair(currency_pair_btcusdt);
         let order = TestOrderStubs::market_order(
             currency_pair_btcusdt.id,
             OrderSide::Buy,
@@ -1674,16 +1657,11 @@ mod tests {
             None,
             None,
         );
-        let commission = calculate_commission(
-            currency_pair_btcusdt,
-            order.quantity,
-            Price::from("10500.0"),
-            None,
-        )
-        .unwrap();
+        let commission =
+            calculate_commission(&btcusdt, order.quantity(), Price::from("10500.0"), None).unwrap();
         let fill = TestOrderEventStubs::order_filled(
             &order,
-            &currency_pair_btcusdt,
+            &btcusdt,
             None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("10500.0")),
@@ -1693,7 +1671,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let position = Position::new(currency_pair_btcusdt, fill).unwrap();
+        let position = Position::new(&btcusdt, fill).unwrap();
         let pnl = position.calculate_pnl(10500.0, 10510.0, Quantity::from("12.0"));
         assert_eq!(pnl, Money::from("120 USDT"));
         assert_eq!(position.realized_pnl, Some(Money::from("-126 USDT")));
@@ -1710,6 +1688,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_pnl_for_long_position_loss(currency_pair_btcusdt: CurrencyPair) {
+        let btcusdt = InstrumentAny::CurrencyPair(currency_pair_btcusdt);
         let order = TestOrderStubs::market_order(
             currency_pair_btcusdt.id,
             OrderSide::Buy,
@@ -1717,16 +1696,11 @@ mod tests {
             None,
             None,
         );
-        let commission = calculate_commission(
-            currency_pair_btcusdt,
-            order.quantity,
-            Price::from("10500.0"),
-            None,
-        )
-        .unwrap();
+        let commission =
+            calculate_commission(&btcusdt, order.quantity(), Price::from("10500.0"), None).unwrap();
         let fill = TestOrderEventStubs::order_filled(
             &order,
-            &currency_pair_btcusdt,
+            &btcusdt,
             None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("10500.0")),
@@ -1736,7 +1710,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let position = Position::new(currency_pair_btcusdt, fill).unwrap();
+        let position = Position::new(&btcusdt, fill).unwrap();
         let pnl = position.calculate_pnl(10500.0, 10480.5, Quantity::from("10.0"));
         assert_eq!(pnl, Money::from("-195 USDT"));
         assert_eq!(position.realized_pnl, Some(Money::from("-126 USDT")));
@@ -1753,6 +1727,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_pnl_for_short_position_winning(currency_pair_btcusdt: CurrencyPair) {
+        let btcusdt = InstrumentAny::CurrencyPair(currency_pair_btcusdt);
         let order = TestOrderStubs::market_order(
             currency_pair_btcusdt.id,
             OrderSide::Sell,
@@ -1760,16 +1735,11 @@ mod tests {
             None,
             None,
         );
-        let commission = calculate_commission(
-            currency_pair_btcusdt,
-            order.quantity,
-            Price::from("10500.0"),
-            None,
-        )
-        .unwrap();
+        let commission =
+            calculate_commission(&btcusdt, order.quantity(), Price::from("10500.0"), None).unwrap();
         let fill = TestOrderEventStubs::order_filled(
             &order,
-            &currency_pair_btcusdt,
+            &btcusdt,
             None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("10500.0")),
@@ -1779,7 +1749,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let position = Position::new(currency_pair_btcusdt, fill).unwrap();
+        let position = Position::new(&btcusdt, fill).unwrap();
         let pnl = position.calculate_pnl(10500.0, 10390.0, Quantity::from("10.15"));
         assert_eq!(pnl, Money::from("1116.5 USDT"));
         assert_eq!(
@@ -1796,6 +1766,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_pnl_for_short_position_loss(currency_pair_btcusdt: CurrencyPair) {
+        let btcusdt = InstrumentAny::CurrencyPair(currency_pair_btcusdt);
         let order = TestOrderStubs::market_order(
             currency_pair_btcusdt.id,
             OrderSide::Sell,
@@ -1803,16 +1774,11 @@ mod tests {
             None,
             None,
         );
-        let commission = calculate_commission(
-            currency_pair_btcusdt,
-            order.quantity,
-            Price::from("10500.0"),
-            None,
-        )
-        .unwrap();
+        let commission =
+            calculate_commission(&btcusdt, order.quantity(), Price::from("10500.0"), None).unwrap();
         let fill = TestOrderEventStubs::order_filled(
             &order,
-            &currency_pair_btcusdt,
+            &btcusdt,
             None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("10500.0")),
@@ -1822,7 +1788,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let position = Position::new(currency_pair_btcusdt, fill).unwrap();
+        let position = Position::new(&btcusdt, fill).unwrap();
         let pnl = position.calculate_pnl(10500.0, 10670.5, Quantity::from("10.0"));
         assert_eq!(pnl, Money::from("-1705 USDT"));
         assert_eq!(
@@ -1839,16 +1805,21 @@ mod tests {
 
     #[rstest]
     fn test_calculate_pnl_for_inverse1(xbtusd_bitmex: CryptoPerpetual) {
+        let xbtusd_bitmex = InstrumentAny::CryptoPerpetual(xbtusd_bitmex);
         let order = TestOrderStubs::market_order(
-            xbtusd_bitmex.id,
+            xbtusd_bitmex.id(),
             OrderSide::Sell,
             Quantity::from("100000"),
             None,
             None,
         );
-        let commission =
-            calculate_commission(xbtusd_bitmex, order.quantity, Price::from("10000.0"), None)
-                .unwrap();
+        let commission = calculate_commission(
+            &xbtusd_bitmex,
+            order.quantity(),
+            Price::from("10000.0"),
+            None,
+        )
+        .unwrap();
         let fill = TestOrderEventStubs::order_filled(
             &order,
             &xbtusd_bitmex,
@@ -1861,7 +1832,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let position = Position::new(xbtusd_bitmex, fill).unwrap();
+        let position = Position::new(&xbtusd_bitmex, fill).unwrap();
         let pnl = position.calculate_pnl(10000.0, 11000.0, Quantity::from("100000.0"));
         assert_eq!(pnl, Money::from("-0.90909091 BTC"));
         assert_eq!(
@@ -1877,16 +1848,21 @@ mod tests {
 
     #[rstest]
     fn test_calculate_pnl_for_inverse2(ethusdt_bitmex: CryptoPerpetual) {
+        let ethusdt_bitmex = InstrumentAny::CryptoPerpetual(ethusdt_bitmex);
         let order = TestOrderStubs::market_order(
-            ethusdt_bitmex.id,
+            ethusdt_bitmex.id(),
             OrderSide::Sell,
             Quantity::from("100000"),
             None,
             None,
         );
-        let commission =
-            calculate_commission(ethusdt_bitmex, order.quantity, Price::from("375.95"), None)
-                .unwrap();
+        let commission = calculate_commission(
+            &ethusdt_bitmex,
+            order.quantity(),
+            Price::from("375.95"),
+            None,
+        )
+        .unwrap();
         let fill = TestOrderEventStubs::order_filled(
             &order,
             &ethusdt_bitmex,
@@ -1899,7 +1875,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let position = Position::new(ethusdt_bitmex, fill).unwrap();
+        let position = Position::new(&ethusdt_bitmex, fill).unwrap();
 
         assert_eq!(
             position.unrealized_pnl(Price::from("370.00")),
@@ -1913,6 +1889,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_unrealized_pnl_for_long(currency_pair_btcusdt: CurrencyPair) {
+        let btcusdt = InstrumentAny::CurrencyPair(currency_pair_btcusdt);
         let order1 = TestOrderStubs::market_order(
             currency_pair_btcusdt.id,
             OrderSide::Buy,
@@ -1927,16 +1904,12 @@ mod tests {
             None,
             None,
         );
-        let commission1 = calculate_commission(
-            currency_pair_btcusdt,
-            order1.quantity,
-            Price::from("10500.0"),
-            None,
-        )
-        .unwrap();
+        let commission1 =
+            calculate_commission(&btcusdt, order1.quantity(), Price::from("10500.0"), None)
+                .unwrap();
         let fill1 = TestOrderEventStubs::order_filled(
             &order1,
-            &currency_pair_btcusdt,
+            &btcusdt,
             Some(TradeId::new("1").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("10500.00")),
@@ -1946,16 +1919,12 @@ mod tests {
             None,
         )
         .unwrap();
-        let commission2 = calculate_commission(
-            currency_pair_btcusdt,
-            order2.quantity,
-            Price::from("10500.0"),
-            None,
-        )
-        .unwrap();
+        let commission2 =
+            calculate_commission(&btcusdt, order2.quantity(), Price::from("10500.0"), None)
+                .unwrap();
         let fill2 = TestOrderEventStubs::order_filled(
             &order2,
-            &currency_pair_btcusdt,
+            &btcusdt,
             Some(TradeId::new("2").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("10500.00")),
@@ -1965,7 +1934,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let mut position = Position::new(currency_pair_btcusdt, fill1).unwrap();
+        let mut position = Position::new(&btcusdt, fill1).unwrap();
         position.apply(&fill2);
         let pnl = position.unrealized_pnl(Price::from("11505.60"));
         assert_eq!(pnl, Money::from("4022.40000000 USDT"));
@@ -1981,6 +1950,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_unrealized_pnl_for_short(currency_pair_btcusdt: CurrencyPair) {
+        let btcusdt = InstrumentAny::CurrencyPair(currency_pair_btcusdt);
         let order = TestOrderStubs::market_order(
             currency_pair_btcusdt.id,
             OrderSide::Sell,
@@ -1988,16 +1958,12 @@ mod tests {
             None,
             None,
         );
-        let commission = calculate_commission(
-            currency_pair_btcusdt,
-            order.quantity,
-            Price::from("10505.60"),
-            None,
-        )
-        .unwrap();
+        let commission =
+            calculate_commission(&btcusdt, order.quantity(), Price::from("10505.60"), None)
+                .unwrap();
         let fill = TestOrderEventStubs::order_filled(
             &order,
-            &currency_pair_btcusdt,
+            &btcusdt,
             Some(TradeId::new("1").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("10505.60")),
@@ -2007,7 +1973,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let position = Position::new(currency_pair_btcusdt, fill).unwrap();
+        let position = Position::new(&btcusdt, fill).unwrap();
         let pnl = position.unrealized_pnl(Price::from("10407.15"));
         assert_eq!(pnl, Money::from("582.03640000 USDT"));
         assert_eq!(
@@ -2022,16 +1988,21 @@ mod tests {
 
     #[rstest]
     fn test_calculate_unrealized_pnl_for_long_inverse(xbtusd_bitmex: CryptoPerpetual) {
+        let xbtusd_bitmex = InstrumentAny::CryptoPerpetual(xbtusd_bitmex);
         let order = TestOrderStubs::market_order(
-            xbtusd_bitmex.id,
+            xbtusd_bitmex.id(),
             OrderSide::Buy,
             Quantity::from("100000"),
             None,
             None,
         );
-        let commission =
-            calculate_commission(xbtusd_bitmex, order.quantity, Price::from("10500.0"), None)
-                .unwrap();
+        let commission = calculate_commission(
+            &xbtusd_bitmex,
+            order.quantity(),
+            Price::from("10500.0"),
+            None,
+        )
+        .unwrap();
         let fill = TestOrderEventStubs::order_filled(
             &order,
             &xbtusd_bitmex,
@@ -2045,7 +2016,7 @@ mod tests {
         )
         .unwrap();
 
-        let position = Position::new(xbtusd_bitmex, fill).unwrap();
+        let position = Position::new(&xbtusd_bitmex, fill).unwrap();
         let pnl = position.unrealized_pnl(Price::from("11505.60"));
         assert_eq!(pnl, Money::from("0.83238969 BTC"));
         assert_eq!(position.realized_pnl, Some(Money::from("-0.00714286 BTC")));
@@ -2054,16 +2025,21 @@ mod tests {
 
     #[rstest]
     fn test_calculate_unrealized_pnl_for_short_inverse(xbtusd_bitmex: CryptoPerpetual) {
+        let xbtusd_bitmex = InstrumentAny::CryptoPerpetual(xbtusd_bitmex);
         let order = TestOrderStubs::market_order(
-            xbtusd_bitmex.id,
+            xbtusd_bitmex.id(),
             OrderSide::Sell,
             Quantity::from("1250000"),
             None,
             None,
         );
-        let commission =
-            calculate_commission(xbtusd_bitmex, order.quantity, Price::from("15500.00"), None)
-                .unwrap();
+        let commission = calculate_commission(
+            &xbtusd_bitmex,
+            order.quantity(),
+            Price::from("15500.00"),
+            None,
+        )
+        .unwrap();
         let fill = TestOrderEventStubs::order_filled(
             &order,
             &xbtusd_bitmex,
@@ -2076,7 +2052,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let position = Position::new(xbtusd_bitmex, fill).unwrap();
+        let position = Position::new(&xbtusd_bitmex, fill).unwrap();
         let pnl = position.unrealized_pnl(Price::from("12506.65"));
 
         assert_eq!(pnl, Money::from("19.30166700 BTC"));
@@ -2093,8 +2069,9 @@ mod tests {
         #[case] expected: f64,
         audusd_sim: CurrencyPair,
     ) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
         let order = TestOrderStubs::market_order(
-            audusd_sim.id,
+            audusd_sim.id(),
             order_side,
             Quantity::from(quantity),
             None,
@@ -2102,7 +2079,7 @@ mod tests {
         );
 
         let commission =
-            calculate_commission(audusd_sim, order.quantity, Price::from("1.0"), None).unwrap();
+            calculate_commission(&audusd_sim, order.quantity(), Price::from("1.0"), None).unwrap();
         let fill = TestOrderEventStubs::order_filled(
             &order,
             &audusd_sim,
@@ -2115,7 +2092,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let position = Position::new(audusd_sim, fill).unwrap();
+        let position = Position::new(&audusd_sim, fill).unwrap();
         assert_eq!(position.signed_qty, expected);
     }
 }

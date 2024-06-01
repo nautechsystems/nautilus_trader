@@ -17,7 +17,7 @@ use std::str::FromStr;
 
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 
-use super::{limit::LimitOrder, stop_market::StopMarketOrder};
+use super::{any::OrderAny, limit::LimitOrder, stop_market::StopMarketOrder};
 use crate::{
     enums::{LiquiditySide, OrderSide, TimeInForce, TriggerType},
     events::order::{accepted::OrderAccepted, filled::OrderFilled, submitted::OrderSubmitted},
@@ -26,8 +26,12 @@ use crate::{
         position_id::PositionId, strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
         venue_order_id::VenueOrderId,
     },
-    instruments::Instrument,
-    orders::{base::Order, market::MarketOrder},
+    instruments::any::InstrumentAny,
+    orders::market::MarketOrder,
+    polymorphism::{
+        GetAccountId, GetClientOrderId, GetInstrumentId, GetLiquiditySide, GetOrderQuantity,
+        GetOrderSide, GetOrderType, GetPositionId, GetStrategyId, GetTraderId, GetVenueOrderId,
+    },
     types::{money::Money, price::Price, quantity::Quantity},
 };
 
@@ -36,9 +40,9 @@ pub struct TestOrderEventStubs;
 
 impl TestOrderEventStubs {
     #[allow(clippy::too_many_arguments)]
-    pub fn order_filled<T: Order, I: Instrument>(
-        order: &T,
-        instrument: &I,
+    pub fn order_filled(
+        order: &OrderAny,
+        instrument: &InstrumentAny,
         trade_id: Option<TradeId>,
         position_id: Option<PositionId>,
         last_px: Option<Price>,
@@ -70,7 +74,7 @@ impl TestOrderEventStubs {
             venue_order_id,
             account_id,
             trade_id,
-            order.side(),
+            order.order_side(),
             order.order_type(),
             last_qty,
             last_px,
@@ -86,8 +90,8 @@ impl TestOrderEventStubs {
         .unwrap())
     }
 
-    pub fn order_submitted<T: Order>(
-        order: &T,
+    pub fn order_submitted(
+        order: &OrderAny,
         account_id: AccountId,
     ) -> anyhow::Result<OrderSubmitted> {
         Ok(OrderSubmitted::new(
@@ -103,8 +107,8 @@ impl TestOrderEventStubs {
         .unwrap())
     }
 
-    pub fn order_accepted<T: Order>(
-        order: &T,
+    pub fn order_accepted(
+        order: &OrderAny,
         account_id: AccountId,
         venue_order_id: VenueOrderId,
     ) -> anyhow::Result<OrderAccepted> {
@@ -134,8 +138,8 @@ impl TestOrderStubs {
         quantity: Quantity,
         client_order_id: Option<ClientOrderId>,
         time_in_force: Option<TimeInForce>,
-    ) -> MarketOrder {
-        MarketOrder::new(
+    ) -> OrderAny {
+        let order = MarketOrder::new(
             TraderId::default(),
             StrategyId::default(),
             instrument_id,
@@ -156,7 +160,8 @@ impl TestOrderStubs {
             None,
             None,
         )
-        .unwrap()
+        .unwrap();
+        OrderAny::Market(order)
     }
 
     #[must_use]
@@ -167,9 +172,9 @@ impl TestOrderStubs {
         quantity: Quantity,
         client_order_id: Option<ClientOrderId>,
         time_in_force: Option<TimeInForce>,
-    ) -> LimitOrder {
+    ) -> OrderAny {
         let client_order_id = client_order_id.unwrap_or_default();
-        LimitOrder::new(
+        let order = LimitOrder::new(
             TraderId::default(),
             StrategyId::default(),
             instrument_id,
@@ -196,7 +201,8 @@ impl TestOrderStubs {
             UUID4::new(),
             UnixNanos::default(),
         )
-        .unwrap()
+        .unwrap();
+        OrderAny::Limit(order)
     }
 
     #[must_use]
@@ -208,8 +214,8 @@ impl TestOrderStubs {
         trigger_type: Option<TriggerType>,
         client_order_id: Option<ClientOrderId>,
         time_in_force: Option<TimeInForce>,
-    ) -> StopMarketOrder {
-        StopMarketOrder::new(
+    ) -> OrderAny {
+        let order = StopMarketOrder::new(
             TraderId::default(),
             StrategyId::default(),
             instrument_id,
@@ -236,6 +242,7 @@ impl TestOrderStubs {
             UUID4::new(),
             UnixNanos::default(),
         )
-        .unwrap()
+        .unwrap();
+        OrderAny::StopMarket(order)
     }
 }
