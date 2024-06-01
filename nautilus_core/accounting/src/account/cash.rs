@@ -467,7 +467,7 @@ mod tests {
         .unwrap();
         let position = Position::new(&audusd_sim, fill).unwrap();
         let pnls = cash_account_million_usd
-            .calculate_pnls(audusd_sim.clone(), fill, Some(position))
+            .calculate_pnls(audusd_sim, fill, Some(position))
             .unwrap();
         assert_eq!(pnls, vec![Money::from("-800000 USD")]);
     }
