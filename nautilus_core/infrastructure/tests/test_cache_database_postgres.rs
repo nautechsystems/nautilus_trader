@@ -78,7 +78,6 @@ mod tests {
             Instrument,
         },
         orders::stubs::{TestOrderEventStubs, TestOrderStubs},
-        polymorphism::GetClientOrderId,
         types::{currency::Currency, price::Price, quantity::Quantity},
     };
     use serial_test::serial;

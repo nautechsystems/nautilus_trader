@@ -38,11 +38,6 @@ use nautilus_model::{
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
     orderbook::book::OrderBook,
     orders::{any::OrderAny, list::OrderList},
-    polymorphism::{
-        GetClientOrderId, GetEmulationTrigger, GetExecAlgorithmId, GetExecSpawnId, GetInstrumentId,
-        GetOrderFilledQty, GetOrderLeavesQty, GetOrderQuantity, GetOrderSide, GetPositionId,
-        GetStrategyId, GetVenueOrderId, IsClosed, IsInflight, IsOpen,
-    },
     position::Position,
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
@@ -2526,7 +2521,6 @@ mod tests {
             synthetic::SyntheticInstrument,
         },
         orders::stubs::{TestOrderEventStubs, TestOrderStubs},
-        polymorphism::{GetClientOrderId, GetOrderStatus, GetVenueOrderId, IsClosed, IsOpen},
         types::{price::Price, quantity::Quantity},
     };
     use rstest::*;

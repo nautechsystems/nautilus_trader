@@ -23,8 +23,8 @@ use std::{
 
 use nautilus_core::nanos::UnixNanos;
 
-use super::delta::OrderBookDelta;
-use crate::{identifiers::instrument_id::InstrumentId, polymorphism::GetTsInit};
+use super::{delta::OrderBookDelta, GetTsInit};
+use crate::identifiers::instrument_id::InstrumentId;
 
 /// Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
 ///

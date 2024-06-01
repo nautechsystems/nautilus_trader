@@ -27,10 +27,10 @@ use indexmap::IndexMap;
 use nautilus_core::{correctness::check_equal_u8, nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
+use super::GetTsInit;
 use crate::{
     enums::PriceType,
     identifiers::instrument_id::InstrumentId,
-    polymorphism::GetTsInit,
     types::{fixed::FIXED_PRECISION, price::Price, quantity::Quantity},
 };
 
