@@ -42,7 +42,6 @@ pub fn test_position_long(mut order_factory: OrderFactory, audusd_sim: CurrencyP
         &audusd_sim,
         None,
         None,
-        None,
         Some(Price::from("1.0002")),
         None,
         None,
@@ -69,7 +68,6 @@ pub fn test_position_short(mut order_factory: OrderFactory, audusd_sim: Currency
     let order_filled = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
         &order,
         &audusd_sim,
-        None,
         None,
         None,
         Some(Price::from("22000.0")),

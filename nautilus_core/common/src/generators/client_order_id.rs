@@ -85,11 +85,9 @@ mod tests {
     use crate::generators::client_order_id::ClientOrderIdGenerator;
 
     fn get_client_order_id_generator(initial_count: Option<usize>) -> ClientOrderIdGenerator {
-        let trader_id = TraderId::from("TRADER-001");
-        let strategy_id = StrategyId::from("EMACross-001");
         ClientOrderIdGenerator::new(
-            trader_id,
-            strategy_id,
+            TraderId::default(),
+            StrategyId::default(),
             initial_count.unwrap_or(0),
             get_atomic_clock_static(),
         )

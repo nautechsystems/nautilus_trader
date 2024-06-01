@@ -228,7 +228,7 @@ mod tests {
     use nautilus_model::{
         enums::{AccountType, LiquiditySide, OrderSide},
         events::account::{state::AccountState, stubs::*},
-        identifiers::{account_id::AccountId, position_id::PositionId, strategy_id::StrategyId},
+        identifiers::{account_id::AccountId, position_id::PositionId},
         instruments::{
             crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, equity::Equity,
             stubs::*, Instrument,
@@ -455,7 +455,6 @@ mod tests {
         let fill = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
             &order,
             &audusd_sim,
-            Some(StrategyId::new("S-001").unwrap()),
             None,
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("0.8")),
@@ -492,7 +491,6 @@ mod tests {
         let fill1 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
             &order1,
             &currency_pair_btcusdt,
-            Some(StrategyId::new("S-001").unwrap()),
             None,
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("45500.00")),
@@ -524,7 +522,6 @@ mod tests {
         let fill2 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
             &order2,
             &currency_pair_btcusdt,
-            Some(StrategyId::new("S-001").unwrap()),
             None,
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("45500.00")),

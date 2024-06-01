@@ -42,7 +42,7 @@ impl Default for ClientId {
 impl Default for ClientOrderId {
     /// Creates a new default [`ClientOrderId`] instance for testing.
     fn default() -> Self {
-        Self::from("O-19700101-0000-000-001-1")
+        Self::from("O-19700101-0000-001-001-1")
     }
 }
 
@@ -77,7 +77,7 @@ impl Default for TradeId {
 impl Default for TraderId {
     /// Creates a new default [`TraderId`] instance for testing.
     fn default() -> Self {
-        Self::from("TRADER-000")
+        Self::from("TRADER-001")
     }
 }
 
@@ -123,7 +123,7 @@ pub fn client_id_dydx() -> ClientId {
 
 #[fixture]
 pub fn client_order_id() -> ClientOrderId {
-    ClientOrderId::from("O-19700101-0000-000-001-1")
+    ClientOrderId::from("O-19700101-0000-001-001-1")
 }
 
 // ---- ComponentId ----

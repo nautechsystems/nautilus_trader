@@ -303,7 +303,7 @@ mod tests {
     #[rstest]
     fn test_order_rejected_display(order_rejected_insufficient_margin: OrderRejected) {
         let display = format!("{order_rejected_insufficient_margin}");
-        assert_eq!(display, "OrderRejected(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, \
+        assert_eq!(display, "OrderRejected(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-001-001-1, \
         account_id=SIM-001, reason='INSUFFICIENT_MARGIN', ts_event=0)");
     }
 }

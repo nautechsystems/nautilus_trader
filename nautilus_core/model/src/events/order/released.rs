@@ -292,7 +292,7 @@ mod tests {
         let display = format!("{order_released}");
         assert_eq!(
             display,
-            "OrderReleased(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, released_price=22_000)"
+            "OrderReleased(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-001-001-1, released_price=22_000)"
         );
     }
 }

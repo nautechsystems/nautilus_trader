@@ -575,7 +575,6 @@ mod tests {
         let fill1 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
             &order1,
             &audusd_sim,
-            None,
             Some(TradeId::new("1").unwrap()),
             None,
             Some(Price::from("1.00001")),
@@ -588,7 +587,6 @@ mod tests {
         let fill2 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
             &order2,
             &audusd_sim,
-            None,
             Some(TradeId::new("1").unwrap()),
             None,
             Some(Price::from("1.00002")),
@@ -614,7 +612,6 @@ mod tests {
         let fill = TestOrderEventStubs::order_filled(
             &order,
             &audusd_sim,
-            None,
             None,
             None,
             Some(Price::from("1.00001")),
@@ -684,7 +681,6 @@ mod tests {
             &audusd_sim,
             None,
             None,
-            None,
             Some(Price::from("1.00001")),
             None,
             None,
@@ -750,7 +746,6 @@ mod tests {
             &audusd_sim,
             None,
             None,
-            None,
             Some(Price::from("1.00001")),
             Some(Quantity::from(50_000)),
             None,
@@ -806,7 +801,6 @@ mod tests {
         let fill1 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
             &order,
             &audusd_sim,
-            None,
             Some(TradeId::new("1").unwrap()),
             None,
             Some(Price::from("1.00001")),
@@ -819,7 +813,6 @@ mod tests {
         let fill2 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
             &order,
             &audusd_sim,
-            None,
             Some(TradeId::new("2").unwrap()),
             None,
             Some(Price::from("1.00002")),
@@ -875,7 +868,6 @@ mod tests {
         let fill = TestOrderEventStubs::order_filled(
             &order,
             &audusd_sim,
-            Some(StrategyId::new("S-001").unwrap()),
             Some(TradeId::new("1").unwrap()),
             Some(PositionId::new("P-1").unwrap()),
             Some(Price::from("1.00001")),
@@ -968,8 +960,7 @@ mod tests {
             &order1,
             &audusd_sim,
             None,
-            None,
-            Some(PositionId::new("P-19700101-0000-000-001-1").unwrap()),
+            Some(PositionId::new("P-19700101-0000-001-001-1").unwrap()),
             Some(Price::from("1.0")),
             None,
             None,
@@ -982,9 +973,8 @@ mod tests {
         let fill2 = TestOrderEventStubs::order_filled(
             &order2,
             &audusd_sim,
-            Some(StrategyId::new("S-001").unwrap()),
             Some(TradeId::new("1").unwrap()),
-            Some(PositionId::new("P-19700101-0000-000-001-1").unwrap()),
+            Some(PositionId::new("P-19700101-0000-001-001-1").unwrap()),
             Some(Price::from("1.00001")),
             Some(Quantity::from(50_000)),
             None,
@@ -995,9 +985,8 @@ mod tests {
         let fill3 = TestOrderEventStubs::order_filled(
             &order2,
             &audusd_sim,
-            Some(StrategyId::new("S-001").unwrap()),
             Some(TradeId::new("2").unwrap()),
-            Some(PositionId::new("P-19700101-0000-000-001-1").unwrap()),
+            Some(PositionId::new("P-19700101-0000-001-001-1").unwrap()),
             Some(Price::from("1.00003")),
             Some(Quantity::from(50_000)),
             None,
@@ -1041,7 +1030,7 @@ mod tests {
         );
         assert_eq!(
             format!("{position}"),
-            "Position(FLAT AUD/USD.SIM, id=P-19700101-0000-000-001-1)"
+            "Position(FLAT AUD/USD.SIM, id=P-19700101-0000-001-001-1)"
         );
     }
 
@@ -1064,9 +1053,8 @@ mod tests {
         let fill1 = TestOrderEventStubs::order_filled(
             &order1,
             &audusd_sim,
-            None,
             Some(TradeId::new("1").unwrap()),
-            Some(PositionId::new("P-19700101-0000-000-001-1").unwrap()),
+            Some(PositionId::new("P-19700101-0000-001-001-1").unwrap()),
             Some(Price::from("1.0")),
             None,
             None,
@@ -1078,9 +1066,8 @@ mod tests {
         let fill2 = TestOrderEventStubs::order_filled(
             &order2,
             &audusd_sim,
-            None,
             Some(TradeId::new("2").unwrap()),
-            Some(PositionId::new("P-19700101-0000-000-001-1").unwrap()),
+            Some(PositionId::new("P-19700101-0000-001-001-1").unwrap()),
             Some(Price::from("1.0")),
             None,
             None,
@@ -1124,7 +1111,7 @@ mod tests {
         );
         assert_eq!(
             format!("{position}"),
-            "Position(FLAT AUD/USD.SIM, id=P-19700101-0000-000-001-1)"
+            "Position(FLAT AUD/USD.SIM, id=P-19700101-0000-001-001-1)"
         );
     }
 
@@ -1154,7 +1141,6 @@ mod tests {
         let fill1 = TestOrderEventStubs::order_filled(
             &order1,
             &audusd_sim,
-            Some(StrategyId::from("S-001")),
             Some(TradeId::new("1").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("1.0")),
@@ -1167,7 +1153,6 @@ mod tests {
         let fill2 = TestOrderEventStubs::order_filled(
             &order2,
             &audusd_sim,
-            Some(StrategyId::from("S-001")),
             Some(TradeId::new("2").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("1.00001")),
@@ -1180,7 +1165,6 @@ mod tests {
         let fill3 = TestOrderEventStubs::order_filled(
             &order3,
             &audusd_sim,
-            Some(StrategyId::from("S-001")),
             Some(TradeId::new("3").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("1.0001")),
@@ -1248,7 +1232,6 @@ mod tests {
         let fill1 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
             &order1,
             &currency_pair_ethusdt,
-            Some(StrategyId::from("S-001")),
             Some(TradeId::new("1").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(price1),
@@ -1273,7 +1256,6 @@ mod tests {
         let fill2 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
             &order2,
             &currency_pair_ethusdt,
-            Some(StrategyId::from("S-001")),
             Some(TradeId::new("2").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(price2),
@@ -1304,7 +1286,6 @@ mod tests {
         let fill3 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
             &order3,
             &currency_pair_ethusdt,
-            Some(StrategyId::from("S-001")),
             Some(TradeId::new("3").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(price3),
@@ -1332,7 +1313,6 @@ mod tests {
         let fill4 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
             &order4,
             &currency_pair_ethusdt,
-            Some(StrategyId::from("S-001")),
             Some(TradeId::new("4").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(price4),
@@ -1360,7 +1340,6 @@ mod tests {
         let fill5 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
             &order5,
             &currency_pair_ethusdt,
-            Some(StrategyId::from("S-001")),
             Some(TradeId::new("5").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(price5),
@@ -1390,7 +1369,6 @@ mod tests {
         let fill1 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
             &order,
             &audusd_sim,
-            Some(StrategyId::from("S-001")),
             Some(TradeId::new("5").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("1.00001")),
@@ -1511,9 +1489,8 @@ mod tests {
         let fill1 = TestOrderEventStubs::order_filled(
             &order1,
             &currency_pair_btcusdt,
-            None,
             Some(TradeId::from("1")),
-            Some(PositionId::from("P-19700101-0000-000-001-1")),
+            Some(PositionId::from("P-19700101-0000-001-001-1")),
             Some(Price::from("10000.0")),
             None,
             Some(commission1),
@@ -1539,9 +1516,8 @@ mod tests {
         let fill2 = TestOrderEventStubs::order_filled(
             &order2,
             &currency_pair_btcusdt,
-            None,
             Some(TradeId::from("2")),
-            Some(PositionId::from("P-19700101-0000-000-001-1")),
+            Some(PositionId::from("P-19700101-0000-001-001-1")),
             Some(Price::from("9999.0")),
             None,
             Some(commission2),
@@ -1573,9 +1549,8 @@ mod tests {
         let fill3 = TestOrderEventStubs::order_filled(
             &order3,
             &currency_pair_btcusdt,
-            None,
             Some(TradeId::from("3")),
-            Some(PositionId::from("P-19700101-0000-000-001-1")),
+            Some(PositionId::from("P-19700101-0000-001-001-1")),
             Some(Price::from("10001.0")),
             None,
             Some(commission3),
@@ -1607,9 +1582,8 @@ mod tests {
         let fill4 = TestOrderEventStubs::order_filled(
             &order4,
             &currency_pair_btcusdt,
-            None,
             Some(TradeId::from("4")),
-            Some(PositionId::from("P-19700101-0000-000-001-1")),
+            Some(PositionId::from("P-19700101-0000-001-001-1")),
             Some(Price::from("10003.0")),
             None,
             Some(commission4),
@@ -1641,9 +1615,8 @@ mod tests {
         let fill5 = TestOrderEventStubs::order_filled(
             &order5,
             &currency_pair_btcusdt,
-            None,
             Some(TradeId::from("5")),
-            Some(PositionId::from("P-19700101-0000-000-001-1")),
+            Some(PositionId::from("P-19700101-0000-001-001-1")),
             Some(Price::from("10005.0")),
             None,
             Some(commission5),
@@ -1660,7 +1633,7 @@ mod tests {
         assert_eq!(position.avg_px_open, 9_999.881_559_220_39);
         assert_eq!(
             format!("{position}"),
-            "Position(LONG 19.000000 BTCUSDT.BINANCE, id=P-19700101-0000-000-001-1)"
+            "Position(LONG 19.000000 BTCUSDT.BINANCE, id=P-19700101-0000-001-001-1)"
         );
     }
 
@@ -1678,7 +1651,6 @@ mod tests {
         let fill = TestOrderEventStubs::order_filled(
             &order,
             &currency_pair_btcusdt,
-            None,
             None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("10500.0")),
@@ -1712,7 +1684,6 @@ mod tests {
         let fill = TestOrderEventStubs::order_filled(
             &order,
             &currency_pair_btcusdt,
-            None,
             None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("10500.0")),
@@ -1757,7 +1728,6 @@ mod tests {
             &order,
             &currency_pair_btcusdt,
             None,
-            None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("10500.0")),
             None,
@@ -1800,7 +1770,6 @@ mod tests {
         let fill = TestOrderEventStubs::order_filled(
             &order,
             &currency_pair_btcusdt,
-            None,
             None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("10500.0")),
@@ -1845,7 +1814,6 @@ mod tests {
             &order,
             &currency_pair_btcusdt,
             None,
-            None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("10500.0")),
             None,
@@ -1885,7 +1853,6 @@ mod tests {
             &order,
             &xbtusd_bitmex,
             None,
-            None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("10000.0")),
             None,
@@ -1923,7 +1890,6 @@ mod tests {
         let fill = TestOrderEventStubs::order_filled(
             &order,
             &ethusdt_bitmex,
-            None,
             None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("375.95")),
@@ -1971,7 +1937,6 @@ mod tests {
         let fill1 = TestOrderEventStubs::order_filled(
             &order1,
             &currency_pair_btcusdt,
-            Some(StrategyId::from("S-001")),
             Some(TradeId::new("1").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("10500.00")),
@@ -1991,7 +1956,6 @@ mod tests {
         let fill2 = TestOrderEventStubs::order_filled(
             &order2,
             &currency_pair_btcusdt,
-            Some(StrategyId::from("S-001")),
             Some(TradeId::new("2").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("10500.00")),
@@ -2034,7 +1998,6 @@ mod tests {
         let fill = TestOrderEventStubs::order_filled(
             &order,
             &currency_pair_btcusdt,
-            Some(StrategyId::from("S-001")),
             Some(TradeId::new("1").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("10505.60")),
@@ -2072,7 +2035,6 @@ mod tests {
         let fill = TestOrderEventStubs::order_filled(
             &order,
             &xbtusd_bitmex,
-            Some(StrategyId::from("S-001")),
             Some(TradeId::new("1").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("10500.00")),
@@ -2105,7 +2067,6 @@ mod tests {
         let fill = TestOrderEventStubs::order_filled(
             &order,
             &xbtusd_bitmex,
-            Some(StrategyId::from("S-001")),
             Some(TradeId::new("1").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("15500.00")),
@@ -2145,7 +2106,6 @@ mod tests {
         let fill = TestOrderEventStubs::order_filled(
             &order,
             &audusd_sim,
-            None,
             None,
             Some(PositionId::from("P-123456")),
             None,
