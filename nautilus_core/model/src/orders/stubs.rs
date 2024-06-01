@@ -20,7 +20,10 @@ use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use super::{any::OrderAny, limit::LimitOrder, stop_market::StopMarketOrder};
 use crate::{
     enums::{LiquiditySide, OrderSide, TimeInForce, TriggerType},
-    events::order::{accepted::OrderAccepted, filled::OrderFilled, submitted::OrderSubmitted},
+    events::order::{
+        accepted::OrderAccepted, event::OrderEventAny, filled::OrderFilled,
+        submitted::OrderSubmitted,
+    },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
         position_id::PositionId, strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
@@ -35,6 +38,42 @@ use crate::{
 pub struct TestOrderEventStubs;
 
 impl TestOrderEventStubs {
+    pub fn order_submitted(order: &OrderAny, account_id: AccountId) -> OrderEventAny {
+        let event = OrderSubmitted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            account_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        OrderEventAny::Submitted(event)
+    }
+
+    pub fn order_accepted(
+        order: &OrderAny,
+        account_id: AccountId,
+        venue_order_id: VenueOrderId,
+    ) -> OrderEventAny {
+        let event = OrderAccepted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            venue_order_id,
+            account_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+        )
+        .unwrap();
+        OrderEventAny::Accepted(event)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn order_filled(
         order: &OrderAny,
@@ -46,7 +85,7 @@ impl TestOrderEventStubs {
         commission: Option<Money>,
         ts_filled_ns: Option<UnixNanos>,
         account_id: Option<AccountId>,
-    ) -> anyhow::Result<OrderFilled> {
+    ) -> OrderEventAny {
         let venue_order_id = order.venue_order_id().unwrap_or_default();
         let account_id = account_id
             .or(order.account_id())
@@ -62,7 +101,7 @@ impl TestOrderEventStubs {
         let commission = commission.unwrap_or(Money::from_str("2 USD").unwrap());
         let last_px = last_px.unwrap_or(Price::from_str("1.0").unwrap());
         let last_qty = last_qty.unwrap_or(order.quantity());
-        Ok(OrderFilled::new(
+        let event = OrderFilled::new(
             order.trader_id(),
             order.strategy_id(),
             instrument.id(),
@@ -83,44 +122,8 @@ impl TestOrderEventStubs {
             Some(position_id),
             Some(commission),
         )
-        .unwrap())
-    }
-
-    pub fn order_submitted(
-        order: &OrderAny,
-        account_id: AccountId,
-    ) -> anyhow::Result<OrderSubmitted> {
-        Ok(OrderSubmitted::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            account_id,
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
-        .unwrap())
-    }
-
-    pub fn order_accepted(
-        order: &OrderAny,
-        account_id: AccountId,
-        venue_order_id: VenueOrderId,
-    ) -> anyhow::Result<OrderAccepted> {
-        Ok(OrderAccepted::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            venue_order_id,
-            account_id,
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
-        )
-        .unwrap())
+        .unwrap();
+        OrderEventAny::Filled(event)
     }
 }
 

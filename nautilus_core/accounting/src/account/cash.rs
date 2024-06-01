@@ -463,11 +463,10 @@ mod tests {
             None,
             None,
             Some(AccountId::from("SIM-001")),
-        )
-        .unwrap();
-        let position = Position::new(&audusd_sim, fill).unwrap();
+        );
+        let position = Position::new(&audusd_sim, fill.clone().into()).unwrap();
         let pnls = cash_account_million_usd
-            .calculate_pnls(audusd_sim, fill, Some(position))
+            .calculate_pnls(audusd_sim, fill.into(), Some(position)) // TODO: Remove clone
             .unwrap();
         assert_eq!(pnls, vec![Money::from("-800000 USD")]);
     }
@@ -500,13 +499,12 @@ mod tests {
             None,
             None,
             Some(AccountId::from("SIM-001")),
-        )
-        .unwrap();
-        let position = Position::new(&btcusdt, fill1).unwrap();
+        );
+        let position = Position::new(&btcusdt, fill1.clone().into()).unwrap();
         let result1 = cash_account_multi
             .calculate_pnls(
                 currency_pair_btcusdt.into_any(),
-                fill1,
+                fill1.into(), // TODO: This doesn't need to be owned
                 Some(position.clone()),
             )
             .unwrap();
@@ -531,10 +529,13 @@ mod tests {
             None,
             None,
             Some(AccountId::from("SIM-001")),
-        )
-        .unwrap();
+        );
         let result2 = cash_account_multi
-            .calculate_pnls(currency_pair_btcusdt.into_any(), fill2, Some(position))
+            .calculate_pnls(
+                currency_pair_btcusdt.into_any(),
+                fill2.into(),
+                Some(position),
+            )
             .unwrap();
         // use hash set to ignore order of results
         let result1_set: HashSet<Money> = result1.into_iter().collect();

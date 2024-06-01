@@ -29,6 +29,29 @@ use crate::{
     identifiers::{client_order_id::ClientOrderId, strategy_id::StrategyId},
 };
 
+/// Represents a type of [`OrderEvent`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum OrderEventType {
+    Initialized,
+    Denied,
+    Emulated,
+    Released,
+    Submitted,
+    Accepted,
+    Rejected,
+    Canceled,
+    Expired,
+    Triggered,
+    PendingUpdate,
+    PendingCancel,
+    ModifyRejected,
+    CancelRejected,
+    Updated,
+    PartiallyFilled,
+    Filled,
+}
+
+/// Wraps an [`OrderEvent`] allowing polymorphism.
 #[derive(Clone, PartialEq, Eq, Display, Debug, Serialize, Deserialize)]
 pub enum OrderEventAny {
     Initialized(OrderInitialized),
@@ -51,6 +74,29 @@ pub enum OrderEventAny {
 }
 
 impl OrderEventAny {
+    #[must_use]
+    pub fn event_type(&self) -> OrderEventType {
+        match self {
+            Self::Initialized(_) => OrderEventType::Initialized,
+            Self::Denied(_) => OrderEventType::Denied,
+            Self::Emulated(_) => OrderEventType::Emulated,
+            Self::Released(_) => OrderEventType::Released,
+            Self::Submitted(_) => OrderEventType::Submitted,
+            Self::Accepted(_) => OrderEventType::Accepted,
+            Self::Rejected(_) => OrderEventType::Rejected,
+            Self::Canceled(_) => OrderEventType::Canceled,
+            Self::Expired(_) => OrderEventType::Expired,
+            Self::Triggered(_) => OrderEventType::Triggered,
+            Self::PendingUpdate(_) => OrderEventType::PendingUpdate,
+            Self::PendingCancel(_) => OrderEventType::PendingCancel,
+            Self::ModifyRejected(_) => OrderEventType::ModifyRejected,
+            Self::CancelRejected(_) => OrderEventType::CancelRejected,
+            Self::Updated(_) => OrderEventType::Updated,
+            Self::PartiallyFilled(_) => OrderEventType::PartiallyFilled,
+            Self::Filled(_) => OrderEventType::Filled,
+        }
+    }
+
     #[must_use]
     pub fn client_order_id(&self) -> ClientOrderId {
         match self {
@@ -117,6 +163,15 @@ impl OrderEventAny {
             Self::Updated(event) => event.ts_event,
             Self::PartiallyFilled(event) => event.ts_event,
             Self::Filled(event) => event.ts_event,
+        }
+    }
+}
+
+impl From<OrderEventAny> for OrderFilled {
+    fn from(event: OrderEventAny) -> OrderFilled {
+        match event {
+            OrderEventAny::Filled(event) => event,
+            _ => panic!("Invalid `OrderEventAny` not `OrderFilled`, was {:?}", event),
         }
     }
 }

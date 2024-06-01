@@ -64,7 +64,6 @@ mod tests {
     use nautilus_core::equality::entirely_equal;
     use nautilus_model::{
         enums::{CurrencyType, OrderSide},
-        events::order::event::OrderEventAny,
         identifiers::{
             account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
             stubs::account_id, trade_id::TradeId, venue_order_id::VenueOrderId,
@@ -297,22 +296,19 @@ mod tests {
             None,
         );
         pg_cache.add_order(market_order.clone()).await.unwrap();
-        let submitted_event = TestOrderEventStubs::order_submitted(&market_order, account).unwrap();
-        market_order
-            .apply(OrderEventAny::Submitted(submitted_event))
-            .unwrap();
+        let submitted = TestOrderEventStubs::order_submitted(&market_order, account);
+        market_order.apply(submitted).unwrap();
         pg_cache.update_order(market_order.clone()).await.unwrap();
-        let accepted_event = TestOrderEventStubs::order_accepted(
+
+        let accepted = TestOrderEventStubs::order_accepted(
             &market_order,
             account,
             VenueOrderId::new("001").unwrap(),
-        )
-        .unwrap();
-        market_order
-            .apply(OrderEventAny::Accepted(accepted_event))
-            .unwrap();
+        );
+        market_order.apply(accepted).unwrap();
         pg_cache.update_order(market_order.clone()).await.unwrap();
-        let order_filled = TestOrderEventStubs::order_filled(
+
+        let filled = TestOrderEventStubs::order_filled(
             &market_order,
             &instrument,
             Some(TradeId::new("T-19700101-0000-001-001-1").unwrap()),
@@ -322,11 +318,8 @@ mod tests {
             None,
             None,
             Some(AccountId::new("SIM-001").unwrap()),
-        )
-        .unwrap();
-        market_order
-            .apply(OrderEventAny::Filled(order_filled))
-            .unwrap();
+        );
+        market_order.apply(filled).unwrap();
         pg_cache.update_order(market_order.clone()).await.unwrap();
         tokio::time::sleep(Duration::from_secs(2)).await;
         // Assert
