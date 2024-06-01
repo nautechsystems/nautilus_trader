@@ -38,7 +38,7 @@ pub fn test_position_long(mut order_factory: OrderFactory, audusd_sim: CurrencyP
         None,
         None,
     );
-    let order_filled = TestOrderEventStubs::order_filled(
+    let filled = TestOrderEventStubs::order_filled(
         &order,
         &audusd_sim,
         None,
@@ -48,9 +48,8 @@ pub fn test_position_long(mut order_factory: OrderFactory, audusd_sim: CurrencyP
         None,
         None,
         None,
-    )
-    .unwrap();
-    Position::new(&audusd_sim, order_filled).unwrap()
+    );
+    Position::new(&audusd_sim, filled.into()).unwrap()
 }
 
 #[fixture]
@@ -67,7 +66,7 @@ pub fn test_position_short(mut order_factory: OrderFactory, audusd_sim: Currency
         None,
         None,
     );
-    let order_filled = TestOrderEventStubs::order_filled(
+    let filled = TestOrderEventStubs::order_filled(
         &order,
         &audusd_sim,
         None,
@@ -77,7 +76,6 @@ pub fn test_position_short(mut order_factory: OrderFactory, audusd_sim: Currency
         None,
         None,
         None,
-    )
-    .unwrap();
-    Position::new(&audusd_sim, order_filled).unwrap()
+    );
+    Position::new(&audusd_sim, filled.into()).unwrap()
 }

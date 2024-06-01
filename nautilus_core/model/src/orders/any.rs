@@ -56,50 +56,6 @@ pub enum OrderAny {
 
 impl OrderAny {
     /// Consumes the `OrderAny` enum and returns the underlying order as a boxed trait.
-    #[must_use]
-    pub fn into_order(self) -> Box<dyn Order> {
-        match self {
-            OrderAny::Limit(order) => Box::new(order),
-            OrderAny::LimitIfTouched(order) => Box::new(order),
-            OrderAny::Market(order) => Box::new(order),
-            OrderAny::MarketIfTouched(order) => Box::new(order),
-            OrderAny::MarketToLimit(order) => Box::new(order),
-            OrderAny::StopLimit(order) => Box::new(order),
-            OrderAny::StopMarket(order) => Box::new(order),
-            OrderAny::TrailingStopLimit(order) => Box::new(order),
-            OrderAny::TrailingStopMarket(order) => Box::new(order),
-        }
-    }
-
-    #[must_use]
-    pub fn into_stop_order(self) -> StopOrderAny {
-        match self {
-            OrderAny::Limit(_order) => panic!("Not implemented (WIP)"),
-            OrderAny::LimitIfTouched(order) => StopOrderAny::LimitIfTouched(order),
-            OrderAny::Market(_order) => panic!("Not implemented (WIP)"),
-            OrderAny::MarketIfTouched(order) => StopOrderAny::MarketIfTouched(order),
-            OrderAny::MarketToLimit(_order) => panic!("Not implemented (WIP)"),
-            OrderAny::StopLimit(order) => StopOrderAny::StopLimit(order),
-            OrderAny::StopMarket(order) => StopOrderAny::StopMarket(order),
-            OrderAny::TrailingStopLimit(order) => StopOrderAny::TrailingStopLimit(order),
-            OrderAny::TrailingStopMarket(order) => StopOrderAny::TrailingStopMarket(order),
-        }
-    }
-
-    #[must_use]
-    pub fn into_limit_order(self) -> LimitOrderAny {
-        match self {
-            OrderAny::Limit(order) => LimitOrderAny::Limit(order),
-            OrderAny::LimitIfTouched(_order) => panic!("Not implemented (WIP)"),
-            OrderAny::Market(_order) => panic!("Not implemented (WIP)"),
-            OrderAny::MarketIfTouched(_order) => panic!("Not implemented (WIP)"),
-            OrderAny::MarketToLimit(order) => LimitOrderAny::MarketToLimit(order),
-            OrderAny::StopLimit(_order) => panic!("Not implemented (WIP)"),
-            OrderAny::StopMarket(_order) => panic!("Not implemented (WIP)"),
-            OrderAny::TrailingStopLimit(_order) => panic!("Not implemented (WIP)"),
-            OrderAny::TrailingStopMarket(_order) => panic!("Not implemented (WIP)"),
-        }
-    }
 
     pub fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
         match self {
@@ -503,6 +459,65 @@ impl OrderAny {
 impl PartialEq for OrderAny {
     fn eq(&self, other: &Self) -> bool {
         self.client_order_id() == other.client_order_id()
+    }
+}
+
+impl From<OrderAny> for Box<dyn Order> {
+    fn from(order: OrderAny) -> Box<dyn Order> {
+        match order {
+            OrderAny::Limit(order) => Box::new(order),
+            OrderAny::LimitIfTouched(order) => Box::new(order),
+            OrderAny::Market(order) => Box::new(order),
+            OrderAny::MarketIfTouched(order) => Box::new(order),
+            OrderAny::MarketToLimit(order) => Box::new(order),
+            OrderAny::StopLimit(order) => Box::new(order),
+            OrderAny::StopMarket(order) => Box::new(order),
+            OrderAny::TrailingStopLimit(order) => Box::new(order),
+            OrderAny::TrailingStopMarket(order) => Box::new(order),
+        }
+    }
+}
+
+impl From<OrderAny> for LimitOrder {
+    fn from(order: OrderAny) -> LimitOrder {
+        match order {
+            OrderAny::Limit(order) => order,
+            _ => panic!("Invalid `OrderAny` not `LimitOrder`, was {:?}", order),
+        }
+    }
+}
+
+// TODO: From impls for the remaining order types
+
+impl From<OrderAny> for StopOrderAny {
+    fn from(order: OrderAny) -> StopOrderAny {
+        match order {
+            OrderAny::Limit(_order) => panic!("Not implemented (WIP)"),
+            OrderAny::LimitIfTouched(order) => StopOrderAny::LimitIfTouched(order),
+            OrderAny::Market(_order) => panic!("Not implemented (WIP)"),
+            OrderAny::MarketIfTouched(order) => StopOrderAny::MarketIfTouched(order),
+            OrderAny::MarketToLimit(_order) => panic!("Not implemented (WIP)"),
+            OrderAny::StopLimit(order) => StopOrderAny::StopLimit(order),
+            OrderAny::StopMarket(order) => StopOrderAny::StopMarket(order),
+            OrderAny::TrailingStopLimit(order) => StopOrderAny::TrailingStopLimit(order),
+            OrderAny::TrailingStopMarket(order) => StopOrderAny::TrailingStopMarket(order),
+        }
+    }
+}
+
+impl From<OrderAny> for LimitOrderAny {
+    fn from(order: OrderAny) -> LimitOrderAny {
+        match order {
+            OrderAny::Limit(order) => LimitOrderAny::Limit(order),
+            OrderAny::LimitIfTouched(_order) => panic!("Not implemented (WIP)"),
+            OrderAny::Market(_order) => panic!("Not implemented (WIP)"),
+            OrderAny::MarketIfTouched(_order) => panic!("Not implemented (WIP)"),
+            OrderAny::MarketToLimit(order) => LimitOrderAny::MarketToLimit(order),
+            OrderAny::StopLimit(_order) => panic!("Not implemented (WIP)"),
+            OrderAny::StopMarket(_order) => panic!("Not implemented (WIP)"),
+            OrderAny::TrailingStopLimit(_order) => panic!("Not implemented (WIP)"),
+            OrderAny::TrailingStopMarket(_order) => panic!("Not implemented (WIP)"),
+        }
     }
 }
 

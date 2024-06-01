@@ -2807,9 +2807,8 @@ mod tests {
             None,
             None,
             None,
-        )
-        .unwrap();
-        order.apply(OrderEventAny::Filled(filled)).unwrap();
+        );
+        order.apply(filled).unwrap();
         cache.update_order(&order).unwrap();
 
         let result = cache.order(&order.client_order_id()).unwrap();

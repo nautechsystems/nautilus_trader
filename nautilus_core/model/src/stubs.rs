@@ -69,7 +69,7 @@ pub fn test_position_long(audusd_sim: CurrencyPair) -> Position {
         None,
         None,
     );
-    let order_filled = TestOrderEventStubs::order_filled(
+    let filled = TestOrderEventStubs::order_filled(
         &order,
         &audusd_sim,
         None,
@@ -79,9 +79,8 @@ pub fn test_position_long(audusd_sim: CurrencyPair) -> Position {
         None,
         None,
         None,
-    )
-    .unwrap();
-    Position::new(&audusd_sim, order_filled).unwrap()
+    );
+    Position::new(&audusd_sim, filled.into()).unwrap()
 }
 
 #[fixture]
@@ -94,7 +93,7 @@ pub fn test_position_short(audusd_sim: CurrencyPair) -> Position {
         None,
         None,
     );
-    let order_filled = TestOrderEventStubs::order_filled(
+    let filled = TestOrderEventStubs::order_filled(
         &order,
         &audusd_sim,
         None,
@@ -104,9 +103,8 @@ pub fn test_position_short(audusd_sim: CurrencyPair) -> Position {
         None,
         None,
         None,
-    )
-    .unwrap();
-    Position::new(&audusd_sim, order_filled).unwrap()
+    );
+    Position::new(&audusd_sim, filled.into()).unwrap()
 }
 
 #[must_use]

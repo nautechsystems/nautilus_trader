@@ -247,7 +247,7 @@ mod tests {
         );
         let client_order_id = order.client_order_id();
 
-        let passive_order = PassiveOrderAny::Limit(order.into_limit_order());
+        let passive_order = PassiveOrderAny::Limit(order.into());
         matching_core.add_order(passive_order.clone()).unwrap();
 
         assert!(matching_core.get_orders_bid().contains(&passive_order));
@@ -272,7 +272,7 @@ mod tests {
         );
         let client_order_id = order.client_order_id();
 
-        let passive_order = PassiveOrderAny::Limit(order.into_limit_order());
+        let passive_order = PassiveOrderAny::Limit(order.into());
         matching_core.add_order(passive_order.clone()).unwrap();
 
         assert!(matching_core.get_orders_ask().contains(&passive_order));
@@ -297,7 +297,7 @@ mod tests {
         );
         let client_order_id = order.client_order_id();
 
-        let passive_order = PassiveOrderAny::Limit(order.into_limit_order());
+        let passive_order = PassiveOrderAny::Limit(order.into());
         matching_core.add_order(passive_order).unwrap();
         matching_core.bid = Some(Price::from("100.00"));
         matching_core.ask = Some(Price::from("100.00"));
@@ -327,7 +327,7 @@ mod tests {
             None,
         );
 
-        let passive_order = PassiveOrderAny::Limit(order.into_limit_order());
+        let passive_order = PassiveOrderAny::Limit(order.into());
         let result = matching_core.delete_order(&passive_order);
 
         assert!(result.is_err());
@@ -349,7 +349,7 @@ mod tests {
             None,
         );
 
-        let passive_order = PassiveOrderAny::Limit(order.into_limit_order());
+        let passive_order = PassiveOrderAny::Limit(order.into());
         matching_core.add_order(passive_order.clone()).unwrap();
         matching_core.delete_order(&passive_order).unwrap();
 
@@ -423,7 +423,7 @@ mod tests {
             None,
         );
 
-        let result = matching_core.is_limit_matched(&order.into_limit_order());
+        let result = matching_core.is_limit_matched(&order.into());
 
         assert_eq!(result, expected);
     }
@@ -495,7 +495,7 @@ mod tests {
             None,
         );
 
-        let result = matching_core.is_stop_matched(&order.into_stop_order());
+        let result = matching_core.is_stop_matched(&order.into());
 
         assert_eq!(result, expected);
     }
@@ -533,11 +533,11 @@ mod tests {
             None,
         );
 
-        matching_core.match_stop_order(&order.clone().into_stop_order()); // TODO: WIP
+        matching_core.match_stop_order(&order.clone().into()); // TODO: WIP
 
         let triggered_stops = TRIGGERED_STOPS.lock().unwrap();
         assert_eq!(triggered_stops.len(), 1);
-        assert_eq!(triggered_stops[0], order.into_stop_order());
+        assert_eq!(triggered_stops[0], order.into());
     }
 
     #[rstest]
@@ -571,10 +571,10 @@ mod tests {
             None,
         );
 
-        matching_core.match_limit_order(&order.clone().into_limit_order());
+        matching_core.match_limit_order(&order.clone().into());
 
         let filled_limits = FILLED_LIMITS.lock().unwrap();
         assert_eq!(filled_limits.len(), 1);
-        assert_eq!(filled_limits[0], order.into_limit_order());
+        assert_eq!(filled_limits[0], order.into());
     }
 }
