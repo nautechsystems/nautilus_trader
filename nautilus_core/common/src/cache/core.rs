@@ -862,7 +862,6 @@ impl Cache {
             }
         }
 
-        // Finally
         let total_us = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
@@ -2514,23 +2513,18 @@ impl Cache {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
     use nautilus_model::{
         data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
         enums::{OrderSide, OrderStatus},
         events::order::{accepted::OrderAccepted, event::OrderEventAny, submitted::OrderSubmitted},
-        identifiers::{
-            account_id::AccountId, client_order_id::ClientOrderId, position_id::PositionId,
-            venue_order_id::VenueOrderId,
-        },
+        identifiers::{client_order_id::ClientOrderId, position_id::PositionId},
         instruments::{
             any::InstrumentAny, currency_pair::CurrencyPair, stubs::*,
             synthetic::SyntheticInstrument,
         },
         orders::{any::OrderAny, stubs::TestOrderStubs},
         polymorphism::{
-            ApplyOrderEventAny, GetAccountId, GetClientOrderId, GetInstrumentId, GetOrderStatus,
-            GetStrategyId, GetTraderId, GetVenueOrderId, IsOpen,
+            ApplyOrderEventAny, GetClientOrderId, GetOrderStatus, GetVenueOrderId, IsOpen,
         },
         types::{price::Price, quantity::Quantity},
     };
@@ -2546,6 +2540,18 @@ mod tests {
     #[rstest]
     fn test_build_index_when_empty(mut cache: Cache) {
         cache.build_index();
+    }
+
+    #[rstest]
+    fn test_check_integrity_when_empty(mut cache: Cache) {
+        let result = cache.check_integrity();
+        assert!(result);
+    }
+
+    #[rstest]
+    fn test_check_residuals_when_empty(cache: Cache) {
+        let result = cache.check_residuals();
+        assert!(!result);
     }
 
     #[rstest]
@@ -2571,29 +2577,28 @@ mod tests {
     }
 
     #[rstest]
-    fn test_check_residuals_when_empty(cache: Cache) {
-        let result = cache.check_residuals();
-        assert!(!result);
-    }
-
-    #[rstest]
-    fn test_cache_general_load_when_no_database(mut cache: Cache) {
+    fn test_cache_general_when_no_database(mut cache: Cache) {
         assert!(cache.cache_general().is_ok());
     }
 
     #[rstest]
-    fn test_cache_currencies_load_when_no_database(mut cache: Cache) {
+    fn test_cache_currencies_when_no_database(mut cache: Cache) {
         assert!(cache.cache_currencies().is_ok());
     }
 
     #[rstest]
-    fn test_cache_instruments_load_when_no_database(mut cache: Cache) {
+    fn test_cache_instruments_when_no_database(mut cache: Cache) {
         assert!(cache.cache_instruments().is_ok());
     }
 
     #[rstest]
     fn test_cache_synthetics_when_no_database(mut cache: Cache) {
         assert!(cache.cache_synthetics().is_ok());
+    }
+
+    #[rstest]
+    fn test_cache_accounts_when_no_database(mut cache: Cache) {
+        assert!(cache.cache_accounts().is_ok());
     }
 
     #[rstest]
@@ -2604,21 +2609,6 @@ mod tests {
     #[rstest]
     fn test_cache_positions_when_no_database(mut cache: Cache) {
         assert!(cache.cache_positions().is_ok());
-    }
-
-    #[rstest]
-    fn test_get_general_when_empty(cache: Cache) {
-        let result = cache.get("A").unwrap();
-        assert!(result.is_none());
-    }
-
-    #[rstest]
-    fn test_add_general_when_value(mut cache: Cache) {
-        let key = "A";
-        let value = vec![0_u8];
-        cache.add(key, value.clone()).unwrap();
-        let result = cache.get(key).unwrap();
-        assert_eq!(result, Some(&value.as_slice()).copied());
     }
 
     #[rstest]
@@ -2675,17 +2665,7 @@ mod tests {
         let mut order = OrderAny::Limit(order);
         cache.add_order(order.clone(), None, None, false).unwrap();
 
-        let submitted = OrderSubmitted::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            AccountId::default(),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
-        .unwrap(); // TODO: Should event generation be fallible?
+        let submitted = OrderSubmitted::default();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         cache.update_order(&order).unwrap();
 
@@ -2725,33 +2705,11 @@ mod tests {
         let mut order = OrderAny::Limit(order);
         cache.add_order(order.clone(), None, None, false).unwrap();
 
-        let submitted = OrderSubmitted::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            AccountId::default(),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
-        .unwrap(); // TODO: Should event generation be fallible?
+        let submitted = OrderSubmitted::default();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         cache.update_order(&order).unwrap();
 
-        let accepted = OrderAccepted::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            VenueOrderId::default(),
-            order.account_id().unwrap(),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
-        )
-        .unwrap();
+        let accepted = OrderAccepted::default();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
         cache.update_order(&order).unwrap();
 
@@ -2783,6 +2741,21 @@ mod tests {
             cache.venue_order_id(&order.client_order_id()),
             Some(&order.venue_order_id().unwrap())
         );
+    }
+
+    #[rstest]
+    fn test_get_general_when_empty(cache: Cache) {
+        let result = cache.get("A").unwrap();
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_add_general_when_value(mut cache: Cache) {
+        let key = "A";
+        let value = vec![0_u8];
+        cache.add(key, value.clone()).unwrap();
+        let result = cache.get(key).unwrap();
+        assert_eq!(result, Some(&value.as_slice()).copied());
     }
 
     #[rstest]

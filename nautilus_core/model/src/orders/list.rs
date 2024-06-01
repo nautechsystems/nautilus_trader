@@ -138,14 +138,14 @@ mod tests {
         let order_list = OrderList::new(
             OrderListId::from("OL-001"),
             audusd_sim.id,
-            StrategyId::from("EMACross-001"),
+            StrategyId::default(),
             orders,
             UnixNanos::default(),
         )
         .unwrap();
 
         assert!(order_list.to_string().starts_with(
-            "OrderList(id=OL-001, instrument_id=AUD/USD.SIM, strategy_id=EMACross-001, orders="
+            "OrderList(id=OL-001, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders="
         ));
     }
 }

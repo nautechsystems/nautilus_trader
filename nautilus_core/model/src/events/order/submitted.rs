@@ -297,7 +297,7 @@ mod tests {
         let display = format!("{order_submitted}");
         assert_eq!(
             display,
-            "OrderSubmitted(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, account_id=SIM-001, ts_event=0)"
+            "OrderSubmitted(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-001-001-1, account_id=SIM-001, ts_event=0)"
         );
     }
 }

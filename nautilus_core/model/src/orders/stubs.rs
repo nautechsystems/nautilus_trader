@@ -22,13 +22,8 @@ use crate::{
     enums::{LiquiditySide, OrderSide, TimeInForce, TriggerType},
     events::order::{accepted::OrderAccepted, filled::OrderFilled, submitted::OrderSubmitted},
     identifiers::{
-        account_id::AccountId,
-        client_order_id::ClientOrderId,
-        instrument_id::InstrumentId,
-        position_id::PositionId,
-        strategy_id::StrategyId,
-        stubs::{strategy_id_ema_cross, trader_id},
-        trade_id::TradeId,
+        account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
+        position_id::PositionId, strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
         venue_order_id::VenueOrderId,
     },
     instruments::Instrument,
@@ -44,7 +39,6 @@ impl TestOrderEventStubs {
     pub fn order_filled<T: Order, I: Instrument>(
         order: &T,
         instrument: &I,
-        strategy_id: Option<StrategyId>,
         trade_id: Option<TradeId>,
         position_id: Option<PositionId>,
         last_px: Option<Price>,
@@ -53,9 +47,6 @@ impl TestOrderEventStubs {
         ts_filled_ns: Option<UnixNanos>,
         account_id: Option<AccountId>,
     ) -> anyhow::Result<OrderFilled> {
-        let trader_id = trader_id();
-        let strategy_id = strategy_id.unwrap_or(order.strategy_id());
-        let instrument_id = order.instrument_id();
         let venue_order_id = order.venue_order_id().unwrap_or_default();
         let account_id = account_id
             .or(order.account_id())
@@ -72,9 +63,9 @@ impl TestOrderEventStubs {
         let last_px = last_px.unwrap_or(Price::from_str("1.0").unwrap());
         let last_qty = last_qty.unwrap_or(order.quantity());
         Ok(OrderFilled::new(
-            trader_id,
-            strategy_id,
-            instrument_id,
+            order.trader_id(),
+            order.strategy_id(),
+            instrument.id(),
             order.client_order_id(),
             venue_order_id,
             account_id,
@@ -99,15 +90,11 @@ impl TestOrderEventStubs {
         order: &T,
         account_id: AccountId,
     ) -> anyhow::Result<OrderSubmitted> {
-        let trader_id = trader_id();
-        let strategy_id = order.strategy_id();
-        let instrument_id = order.instrument_id();
-        let client_order_id = order.client_order_id();
         Ok(OrderSubmitted::new(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
             account_id,
             UUID4::new(),
             UnixNanos::default(),
@@ -121,15 +108,11 @@ impl TestOrderEventStubs {
         account_id: AccountId,
         venue_order_id: VenueOrderId,
     ) -> anyhow::Result<OrderAccepted> {
-        let trader_id = trader_id();
-        let strategy_id = order.strategy_id();
-        let instrument_id = order.instrument_id();
-        let client_order_id = order.client_order_id();
         Ok(OrderAccepted::new(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
             venue_order_id,
             account_id,
             UUID4::new(),
@@ -152,18 +135,14 @@ impl TestOrderStubs {
         client_order_id: Option<ClientOrderId>,
         time_in_force: Option<TimeInForce>,
     ) -> MarketOrder {
-        let trader = trader_id();
-        let strategy = strategy_id_ema_cross();
-        let client_order_id = client_order_id.unwrap_or_default();
-        let time_in_force = time_in_force.unwrap_or(TimeInForce::Gtc);
         MarketOrder::new(
-            trader,
-            strategy,
+            TraderId::default(),
+            StrategyId::default(),
             instrument_id,
-            client_order_id,
+            client_order_id.unwrap_or_default(),
             order_side,
             quantity,
-            time_in_force,
+            time_in_force.unwrap_or(TimeInForce::Gtc),
             UUID4::new(),
             UnixNanos::default(),
             false,
@@ -189,19 +168,16 @@ impl TestOrderStubs {
         client_order_id: Option<ClientOrderId>,
         time_in_force: Option<TimeInForce>,
     ) -> LimitOrder {
-        let trader = trader_id();
-        let strategy = strategy_id_ema_cross();
         let client_order_id = client_order_id.unwrap_or_default();
-        let time_in_force = time_in_force.unwrap_or(TimeInForce::Gtc);
         LimitOrder::new(
-            trader,
-            strategy,
+            TraderId::default(),
+            StrategyId::default(),
             instrument_id,
             client_order_id,
             order_side,
             quantity,
             price,
-            time_in_force,
+            time_in_force.unwrap_or(TimeInForce::Gtc),
             None,
             false,
             false,
@@ -233,20 +209,16 @@ impl TestOrderStubs {
         client_order_id: Option<ClientOrderId>,
         time_in_force: Option<TimeInForce>,
     ) -> StopMarketOrder {
-        let trader = trader_id();
-        let strategy = strategy_id_ema_cross();
-        let client_order_id = client_order_id.unwrap_or_default();
-        let time_in_force = time_in_force.unwrap_or(TimeInForce::Gtc);
         StopMarketOrder::new(
-            trader,
-            strategy,
+            TraderId::default(),
+            StrategyId::default(),
             instrument_id,
-            client_order_id,
+            client_order_id.unwrap_or_default(),
             order_side,
             quantity,
             trigger_price,
             trigger_type.unwrap_or(TriggerType::BidAsk),
-            time_in_force,
+            time_in_force.unwrap_or(TimeInForce::Gtc),
             None,
             false,
             false,

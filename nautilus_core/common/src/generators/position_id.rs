@@ -80,8 +80,7 @@ mod tests {
     use crate::generators::position_id::PositionIdGenerator;
 
     fn get_position_id_generator() -> PositionIdGenerator {
-        let trader_id = TraderId::from("TRADER-001");
-        PositionIdGenerator::new(trader_id, get_atomic_clock_static())
+        PositionIdGenerator::new(TraderId::default(), get_atomic_clock_static())
     }
 
     #[rstest]
