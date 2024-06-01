@@ -21,7 +21,7 @@ use datafusion::{
 };
 use futures::StreamExt;
 use nautilus_core::ffi::cvec::CVec;
-use nautilus_model::{data::Data, polymorphism::GetTsInit};
+use nautilus_model::data::{Data, GetTsInit};
 
 use super::kmerge_batch::{EagerStream, ElementBatchIter, KMerge};
 use crate::arrow::{

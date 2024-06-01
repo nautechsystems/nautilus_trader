@@ -28,10 +28,6 @@ use crate::{
     },
     instruments::any::InstrumentAny,
     orders::market::MarketOrder,
-    polymorphism::{
-        GetAccountId, GetClientOrderId, GetInstrumentId, GetLiquiditySide, GetOrderQuantity,
-        GetOrderSide, GetOrderType, GetPositionId, GetStrategyId, GetTraderId, GetVenueOrderId,
-    },
     types::{money::Money, price::Price, quantity::Quantity},
 };
 

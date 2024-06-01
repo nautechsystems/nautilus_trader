@@ -26,10 +26,10 @@ use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
+use super::GetTsInit;
 use crate::{
     enums::AggressorSide,
     identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
-    polymorphism::GetTsInit,
     types::{price::Price, quantity::Quantity},
 };
 

@@ -25,11 +25,13 @@ use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
-use super::order::{BookOrder, NULL_ORDER};
+use super::{
+    order::{BookOrder, NULL_ORDER},
+    GetTsInit,
+};
 use crate::{
     enums::{BookAction, RecordFlag},
     identifiers::instrument_id::InstrumentId,
-    polymorphism::GetTsInit,
 };
 
 /// Represents a single change/delta in an order book.

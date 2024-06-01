@@ -24,8 +24,8 @@ use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
-use super::order::BookOrder;
-use crate::{identifiers::instrument_id::InstrumentId, polymorphism::GetTsInit};
+use super::{order::BookOrder, GetTsInit};
+use crate::identifiers::instrument_id::InstrumentId;
 
 pub const DEPTH10_LEN: usize = 10;
 
