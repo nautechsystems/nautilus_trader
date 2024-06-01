@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::serialization::from_dict_pyo3;
+use nautilus_core::python::{serialization::from_dict_pyo3, to_pyvalue_err};
 use pyo3::{
     basic::CompareOp,
     prelude::*,
@@ -40,17 +40,8 @@ use crate::{
 impl Position {
     #[new]
     fn py_new(py: Python, instrument: PyObject, fill: OrderFilled) -> PyResult<Self> {
-        let instrument_type = pyobject_to_instrument_any(py, instrument)?;
-        match instrument_type {
-            InstrumentAny::CryptoFuture(inst) => Ok(Self::new(inst, fill).unwrap()),
-            InstrumentAny::CryptoPerpetual(inst) => Ok(Self::new(inst, fill).unwrap()),
-            InstrumentAny::CurrencyPair(inst) => Ok(Self::new(inst, fill).unwrap()),
-            InstrumentAny::Equity(inst) => Ok(Self::new(inst, fill).unwrap()),
-            InstrumentAny::FuturesContract(inst) => Ok(Self::new(inst, fill).unwrap()),
-            InstrumentAny::FuturesSpread(inst) => Ok(Self::new(inst, fill).unwrap()),
-            InstrumentAny::OptionsContract(inst) => Ok(Self::new(inst, fill).unwrap()),
-            InstrumentAny::OptionsSpread(inst) => Ok(Self::new(inst, fill).unwrap()),
-        }
+        let instrument_any = pyobject_to_instrument_any(py, instrument)?;
+        Ok(Self::new(&instrument_any, fill).map_err(to_pyvalue_err)?)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

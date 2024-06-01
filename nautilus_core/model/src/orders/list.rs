@@ -98,7 +98,7 @@ mod tests {
         enums::OrderSide,
         identifiers::{order_list_id::OrderListId, strategy_id::StrategyId},
         instruments::{currency_pair::CurrencyPair, stubs::*},
-        orders::{any::OrderAny, stubs::TestOrderStubs},
+        orders::stubs::TestOrderStubs,
         types::{price::Price, quantity::Quantity},
     };
 
@@ -129,11 +129,7 @@ mod tests {
             None,
         );
 
-        let orders = vec![
-            OrderAny::Limit(order1),
-            OrderAny::Limit(order2),
-            OrderAny::Limit(order3),
-        ];
+        let orders = vec![order1, order2, order3];
 
         let order_list = OrderList::new(
             OrderListId::from("OL-001"),

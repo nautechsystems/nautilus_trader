@@ -155,8 +155,8 @@ impl Account for CashAccount {
 
     fn calculate_pnls(
         &self,
-        instrument: InstrumentAny,
-        fill: OrderFilled,
+        instrument: InstrumentAny, // TODO: Make this a reference
+        fill: OrderFilled,         // TODO: Make this a reference
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
         self.base_calculate_pnls(instrument, fill, position)
@@ -230,10 +230,10 @@ mod tests {
         events::account::{state::AccountState, stubs::*},
         identifiers::{account_id::AccountId, position_id::PositionId},
         instruments::{
-            crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, equity::Equity,
-            stubs::*, Instrument,
+            any::InstrumentAny, crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
+            equity::Equity, stubs::*, Instrument,
         },
-        orders::{market::MarketOrder, stubs::TestOrderEventStubs},
+        orders::stubs::TestOrderEventStubs,
         position::Position,
         types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
     };
@@ -441,8 +441,9 @@ mod tests {
         mut order_factory: OrderFactory,
         audusd_sim: CurrencyPair,
     ) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
         let order = order_factory.market(
-            audusd_sim.id,
+            audusd_sim.id(),
             OrderSide::Buy,
             Quantity::from("1000000"),
             None,
@@ -452,7 +453,7 @@ mod tests {
             None,
             None,
         );
-        let fill = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
+        let fill = TestOrderEventStubs::order_filled(
             &order,
             &audusd_sim,
             None,
@@ -464,9 +465,9 @@ mod tests {
             Some(AccountId::from("SIM-001")),
         )
         .unwrap();
-        let position = Position::new(audusd_sim, fill).unwrap();
+        let position = Position::new(&audusd_sim, fill).unwrap();
         let pnls = cash_account_million_usd
-            .calculate_pnls(audusd_sim.into_any(), fill, Some(position))
+            .calculate_pnls(audusd_sim.clone(), fill, Some(position))
             .unwrap();
         assert_eq!(pnls, vec![Money::from("-800000 USD")]);
     }
@@ -477,6 +478,7 @@ mod tests {
         mut order_factory: OrderFactory,
         currency_pair_btcusdt: CurrencyPair,
     ) {
+        let btcusdt = InstrumentAny::CurrencyPair(currency_pair_btcusdt);
         let order1 = order_factory.market(
             currency_pair_btcusdt.id,
             OrderSide::Sell,
@@ -488,9 +490,9 @@ mod tests {
             None,
             None,
         );
-        let fill1 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
+        let fill1 = TestOrderEventStubs::order_filled(
             &order1,
-            &currency_pair_btcusdt,
+            &btcusdt,
             None,
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("45500.00")),
@@ -500,7 +502,7 @@ mod tests {
             Some(AccountId::from("SIM-001")),
         )
         .unwrap();
-        let position = Position::new(currency_pair_btcusdt, fill1).unwrap();
+        let position = Position::new(&btcusdt, fill1).unwrap();
         let result1 = cash_account_multi
             .calculate_pnls(
                 currency_pair_btcusdt.into_any(),
@@ -519,9 +521,9 @@ mod tests {
             None,
             None,
         );
-        let fill2 = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
+        let fill2 = TestOrderEventStubs::order_filled(
             &order2,
-            &currency_pair_btcusdt,
+            &btcusdt,
             None,
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("45500.00")),

@@ -2516,16 +2516,17 @@ mod tests {
     use nautilus_model::{
         data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
         enums::{OrderSide, OrderStatus},
-        events::order::{accepted::OrderAccepted, event::OrderEventAny, submitted::OrderSubmitted},
+        events::order::{
+            accepted::OrderAccepted, event::OrderEventAny, rejected::OrderRejected,
+            submitted::OrderSubmitted,
+        },
         identifiers::{client_order_id::ClientOrderId, position_id::PositionId},
         instruments::{
             any::InstrumentAny, currency_pair::CurrencyPair, stubs::*,
             synthetic::SyntheticInstrument,
         },
-        orders::{any::OrderAny, stubs::TestOrderStubs},
-        polymorphism::{
-            ApplyOrderEventAny, GetClientOrderId, GetOrderStatus, GetVenueOrderId, IsOpen,
-        },
+        orders::stubs::{TestOrderEventStubs, TestOrderStubs},
+        polymorphism::{GetClientOrderId, GetOrderStatus, GetVenueOrderId, IsClosed, IsOpen},
         types::{price::Price, quantity::Quantity},
     };
     use rstest::*;
@@ -2628,12 +2629,11 @@ mod tests {
             None,
             None,
         );
-        let order = OrderAny::Limit(order);
-        cache.add_order(order.clone(), None, None, false).unwrap();
-        let result = cache.order(&order.client_order_id()).unwrap();
+        let client_order_id = order.client_order_id();
+        cache.add_order(order, None, None, false).unwrap();
 
-        assert_eq!(result, &order);
-        assert_eq!(cache.orders(None, None, None, None), vec![&order]);
+        let order = cache.order(&client_order_id).unwrap();
+        assert_eq!(cache.orders(None, None, None, None), vec![order]);
         assert!(cache.orders_open(None, None, None, None).is_empty());
         assert!(cache.orders_closed(None, None, None, None).is_empty());
         assert!(cache.orders_emulated(None, None, None, None).is_empty());
@@ -2654,7 +2654,7 @@ mod tests {
 
     #[rstest]
     fn test_order_when_submitted(mut cache: Cache, audusd_sim: CurrencyPair) {
-        let order = TestOrderStubs::limit_order(
+        let mut order = TestOrderStubs::limit_order(
             audusd_sim.id,
             OrderSide::Buy,
             Price::from("1.00000"),
@@ -2662,7 +2662,7 @@ mod tests {
             None,
             None,
         );
-        let mut order = OrderAny::Limit(order);
+        let client_order_id = order.client_order_id();
         cache.add_order(order.clone(), None, None, false).unwrap();
 
         let submitted = OrderSubmitted::default();
@@ -2693,8 +2693,49 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_when_accepted_open(mut cache: Cache, audusd_sim: CurrencyPair) {
-        let order = TestOrderStubs::limit_order(
+    fn test_order_when_rejected(mut cache: Cache, audusd_sim: CurrencyPair) {
+        let mut order = TestOrderStubs::market_order(
+            audusd_sim.id,
+            OrderSide::Buy,
+            Quantity::from(100_000),
+            None,
+            None,
+        );
+        cache.add_order(order.clone(), None, None, false).unwrap();
+
+        let submitted = OrderSubmitted::default();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        cache.update_order(&order).unwrap();
+
+        let rejected = OrderRejected::default();
+        order.apply(OrderEventAny::Rejected(rejected)).unwrap();
+        cache.update_order(&order).unwrap();
+
+        let result = cache.order(&order.client_order_id()).unwrap();
+
+        assert!(order.is_closed());
+        assert_eq!(result, &order);
+        assert_eq!(cache.orders(None, None, None, None), vec![&order]);
+        assert!(cache.orders_open(None, None, None, None).is_empty());
+        assert_eq!(cache.orders_closed(None, None, None, None), vec![&order]);
+        assert!(cache.orders_emulated(None, None, None, None).is_empty());
+        assert!(cache.orders_inflight(None, None, None, None).is_empty());
+        assert!(cache.order_exists(&order.client_order_id()));
+        assert!(!cache.is_order_open(&order.client_order_id()));
+        assert!(cache.is_order_closed(&order.client_order_id()));
+        assert!(!cache.is_order_emulated(&order.client_order_id()));
+        assert!(!cache.is_order_inflight(&order.client_order_id()));
+        assert!(!cache.is_order_pending_cancel_local(&order.client_order_id()));
+        assert_eq!(cache.orders_open_count(None, None, None, None), 0);
+        assert_eq!(cache.orders_closed_count(None, None, None, None), 1);
+        assert_eq!(cache.orders_emulated_count(None, None, None, None), 0);
+        assert_eq!(cache.orders_inflight_count(None, None, None, None), 0);
+        assert_eq!(cache.orders_total_count(None, None, None, None), 1);
+    }
+
+    #[rstest]
+    fn test_order_when_accepted(mut cache: Cache, audusd_sim: CurrencyPair) {
+        let mut order = TestOrderStubs::limit_order(
             audusd_sim.id,
             OrderSide::Buy,
             Price::from("1.00000"),
@@ -2702,7 +2743,6 @@ mod tests {
             None,
             None,
         );
-        let mut order = OrderAny::Limit(order);
         cache.add_order(order.clone(), None, None, false).unwrap();
 
         let submitted = OrderSubmitted::default();
@@ -2744,6 +2784,71 @@ mod tests {
     }
 
     #[rstest]
+    fn test_order_when_filled(mut cache: Cache, audusd_sim: CurrencyPair) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+        let mut order = TestOrderStubs::market_order(
+            audusd_sim.id(),
+            OrderSide::Buy,
+            Quantity::from(100_000),
+            None,
+            None,
+        );
+        cache.add_order(order.clone(), None, None, false).unwrap();
+
+        let submitted = OrderSubmitted::default();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        cache.update_order(&order).unwrap();
+
+        let accepted = OrderAccepted::default();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        cache.update_order(&order).unwrap();
+
+        let filled = TestOrderEventStubs::order_filled(
+            &order,
+            &audusd_sim,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        order.apply(OrderEventAny::Filled(filled)).unwrap();
+        cache.update_order(&order).unwrap();
+
+        let result = cache.order(&order.client_order_id()).unwrap();
+
+        assert!(order.is_closed());
+        assert_eq!(result, &order);
+        assert_eq!(cache.orders(None, None, None, None), vec![&order]);
+        assert_eq!(cache.orders_closed(None, None, None, None), vec![&order]);
+        assert!(cache.orders_open(None, None, None, None).is_empty());
+        assert!(cache.orders_emulated(None, None, None, None).is_empty());
+        assert!(cache.orders_inflight(None, None, None, None).is_empty());
+        assert!(cache.order_exists(&order.client_order_id()));
+        assert!(!cache.is_order_open(&order.client_order_id()));
+        assert!(cache.is_order_closed(&order.client_order_id()));
+        assert!(!cache.is_order_emulated(&order.client_order_id()));
+        assert!(!cache.is_order_inflight(&order.client_order_id()));
+        assert!(!cache.is_order_pending_cancel_local(&order.client_order_id()));
+        assert_eq!(cache.orders_open_count(None, None, None, None), 0);
+        assert_eq!(cache.orders_closed_count(None, None, None, None), 1);
+        assert_eq!(cache.orders_emulated_count(None, None, None, None), 0);
+        assert_eq!(cache.orders_inflight_count(None, None, None, None), 0);
+        assert_eq!(cache.orders_total_count(None, None, None, None), 1);
+        assert_eq!(
+            cache.client_order_id(&order.venue_order_id().unwrap()),
+            Some(&order.client_order_id())
+        );
+        assert_eq!(
+            cache.venue_order_id(&order.client_order_id()),
+            Some(&order.venue_order_id().unwrap())
+        );
+    }
+
+    #[rstest]
     fn test_get_general_when_empty(cache: Cache) {
         let result = cache.get("A").unwrap();
         assert!(result.is_none());
@@ -2768,7 +2873,6 @@ mod tests {
             None,
             None,
         );
-        let order = OrderAny::Limit(order);
         let position_id = PositionId::default();
         cache
             .add_order(order.clone(), Some(position_id), None, false)
