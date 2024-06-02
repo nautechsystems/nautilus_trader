@@ -22,17 +22,16 @@ anyhow = { workspace = true }
 chrono = { workspace = true }
 indexmap = { workspace = true }
 itoa = { workspace = true }
-log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-asyncio = { workspace = true, optional = true }
 rand = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
-tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
 thiserror = { workspace = true }
 ustr = { workspace = true }
 databento = { version = "0.10.0", optional = true }
