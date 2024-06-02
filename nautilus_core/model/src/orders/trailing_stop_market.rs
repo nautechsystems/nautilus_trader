@@ -377,6 +377,21 @@ impl Order for TrailingStopMarketOrder {
     }
 }
 
+impl From<OrderAny> for TrailingStopMarketOrder {
+    fn from(order: OrderAny) -> TrailingStopMarketOrder {
+        match order {
+            OrderAny::TrailingStopMarket(order) => order,
+            _ => {
+                panic!(
+                    "Invalid `OrderAny` not `{}`, was {:?}",
+                    stringify!(TrailingStopMarketOrder),
+                    order
+                )
+            }
+        }
+    }
+}
+
 impl From<OrderInitialized> for TrailingStopMarketOrder {
     fn from(event: OrderInitialized) -> Self {
         Self::new(

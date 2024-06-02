@@ -370,6 +370,21 @@ impl Order for MarketIfTouchedOrder {
     }
 }
 
+impl From<OrderAny> for MarketIfTouchedOrder {
+    fn from(order: OrderAny) -> MarketIfTouchedOrder {
+        match order {
+            OrderAny::MarketIfTouched(order) => order,
+            _ => {
+                panic!(
+                    "Invalid `OrderAny` not `{}`, was {:?}",
+                    stringify!(MarketIfTouchedOrder),
+                    order
+                )
+            }
+        }
+    }
+}
+
 impl From<OrderInitialized> for MarketIfTouchedOrder {
     fn from(event: OrderInitialized) -> Self {
         Self::new(

@@ -342,6 +342,22 @@ pub trait Order: 'static + Send {
     }
 }
 
+impl From<OrderAny> for Box<dyn Order> {
+    fn from(order: OrderAny) -> Box<dyn Order> {
+        match order {
+            OrderAny::Limit(order) => Box::new(order),
+            OrderAny::LimitIfTouched(order) => Box::new(order),
+            OrderAny::Market(order) => Box::new(order),
+            OrderAny::MarketIfTouched(order) => Box::new(order),
+            OrderAny::MarketToLimit(order) => Box::new(order),
+            OrderAny::StopLimit(order) => Box::new(order),
+            OrderAny::StopMarket(order) => Box::new(order),
+            OrderAny::TrailingStopLimit(order) => Box::new(order),
+            OrderAny::TrailingStopMarket(order) => Box::new(order),
+        }
+    }
+}
+
 impl<T> From<&T> for OrderInitialized
 where
     T: Order,

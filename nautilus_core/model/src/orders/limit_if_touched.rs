@@ -378,6 +378,21 @@ impl Order for LimitIfTouchedOrder {
     }
 }
 
+impl From<OrderAny> for LimitIfTouchedOrder {
+    fn from(order: OrderAny) -> LimitIfTouchedOrder {
+        match order {
+            OrderAny::LimitIfTouched(order) => order,
+            _ => {
+                panic!(
+                    "Invalid `OrderAny` not `{}`, was {:?}",
+                    stringify!(LimitIfTouchedOrder),
+                    order
+                )
+            }
+        }
+    }
+}
+
 impl From<OrderInitialized> for LimitIfTouchedOrder {
     fn from(event: OrderInitialized) -> Self {
         Self::new(

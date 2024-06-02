@@ -432,6 +432,19 @@ impl Display for LimitOrder {
     }
 }
 
+impl From<OrderAny> for LimitOrder {
+    fn from(order: OrderAny) -> LimitOrder {
+        match order {
+            OrderAny::Limit(order) => order,
+            _ => panic!(
+                "Invalid `OrderAny` not `{}`, was {:?}",
+                stringify!(LimitOrder),
+                order
+            ),
+        }
+    }
+}
+
 impl From<OrderInitialized> for LimitOrder {
     fn from(event: OrderInitialized) -> Self {
         Self::new(
