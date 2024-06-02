@@ -387,6 +387,21 @@ impl Order for StopLimitOrder {
     }
 }
 
+impl From<OrderAny> for StopLimitOrder {
+    fn from(order: OrderAny) -> StopLimitOrder {
+        match order {
+            OrderAny::StopLimit(order) => order,
+            _ => {
+                panic!(
+                    "Invalid `OrderAny` not `{}`, was {:?}",
+                    stringify!(StopLimitOrder),
+                    order
+                )
+            }
+        }
+    }
+}
+
 impl From<OrderInitialized> for StopLimitOrder {
     fn from(event: OrderInitialized) -> Self {
         Self::new(

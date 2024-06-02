@@ -462,32 +462,25 @@ impl PartialEq for OrderAny {
     }
 }
 
-impl From<OrderAny> for Box<dyn Order> {
-    fn from(order: OrderAny) -> Box<dyn Order> {
-        match order {
-            OrderAny::Limit(order) => Box::new(order),
-            OrderAny::LimitIfTouched(order) => Box::new(order),
-            OrderAny::Market(order) => Box::new(order),
-            OrderAny::MarketIfTouched(order) => Box::new(order),
-            OrderAny::MarketToLimit(order) => Box::new(order),
-            OrderAny::StopLimit(order) => Box::new(order),
-            OrderAny::StopMarket(order) => Box::new(order),
-            OrderAny::TrailingStopLimit(order) => Box::new(order),
-            OrderAny::TrailingStopMarket(order) => Box::new(order),
-        }
+impl Display for OrderAny {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Limit(order) => order.to_string(),
+                Self::LimitIfTouched(order) => format!("{:?}", order), // TODO: Implement
+                Self::Market(order) => order.to_string(),
+                Self::MarketIfTouched(order) => format!("{:?}", order), // TODO: Implement
+                Self::MarketToLimit(order) => format!("{:?}", order),   // TODO: Implement
+                Self::StopLimit(order) => order.to_string(),
+                Self::StopMarket(order) => format!("{:?}", order), // TODO: Implement
+                Self::TrailingStopLimit(order) => format!("{:?}", order), // TODO: Implement
+                Self::TrailingStopMarket(order) => format!("{:?}", order), // TODO: Implement
+            }
+        )
     }
 }
-
-impl From<OrderAny> for LimitOrder {
-    fn from(order: OrderAny) -> LimitOrder {
-        match order {
-            OrderAny::Limit(order) => order,
-            _ => panic!("Invalid `OrderAny` not `LimitOrder`, was {:?}", order),
-        }
-    }
-}
-
-// TODO: From impls for the remaining order types
 
 impl From<OrderAny> for StopOrderAny {
     fn from(order: OrderAny) -> StopOrderAny {
@@ -518,26 +511,6 @@ impl From<OrderAny> for LimitOrderAny {
             OrderAny::TrailingStopLimit(_order) => panic!("Not implemented (WIP)"),
             OrderAny::TrailingStopMarket(_order) => panic!("Not implemented (WIP)"),
         }
-    }
-}
-
-impl Display for OrderAny {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Limit(order) => order.to_string(),
-                Self::LimitIfTouched(order) => format!("{:?}", order), // TODO: Implement
-                Self::Market(order) => order.to_string(),
-                Self::MarketIfTouched(order) => format!("{:?}", order), // TODO: Implement
-                Self::MarketToLimit(order) => format!("{:?}", order),   // TODO: Implement
-                Self::StopLimit(order) => order.to_string(),
-                Self::StopMarket(order) => format!("{:?}", order), // TODO: Implement
-                Self::TrailingStopLimit(order) => format!("{:?}", order), // TODO: Implement
-                Self::TrailingStopMarket(order) => format!("{:?}", order), // TODO: Implement
-            }
-        )
     }
 }
 

@@ -387,6 +387,21 @@ impl Order for TrailingStopLimitOrder {
     }
 }
 
+impl From<OrderAny> for TrailingStopLimitOrder {
+    fn from(order: OrderAny) -> TrailingStopLimitOrder {
+        match order {
+            OrderAny::TrailingStopLimit(order) => order,
+            _ => {
+                panic!(
+                    "Invalid `OrderAny` not `{}`, was {:?}",
+                    stringify!(TrailingStopLimitOrder),
+                    order
+                )
+            }
+        }
+    }
+}
+
 impl From<OrderInitialized> for TrailingStopLimitOrder {
     fn from(event: OrderInitialized) -> Self {
         Self::new(

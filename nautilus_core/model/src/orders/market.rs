@@ -400,6 +400,21 @@ impl Display for MarketOrder {
     }
 }
 
+impl From<OrderAny> for MarketOrder {
+    fn from(order: OrderAny) -> MarketOrder {
+        match order {
+            OrderAny::Market(order) => order,
+            _ => {
+                panic!(
+                    "Invalid `OrderAny` not `{}`, was {:?}",
+                    stringify!(MarketOrder),
+                    order
+                )
+            }
+        }
+    }
+}
+
 impl From<OrderInitialized> for MarketOrder {
     fn from(event: OrderInitialized) -> Self {
         Self::new(
