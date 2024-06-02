@@ -245,16 +245,15 @@ mod tests {
             None,
             None,
         );
-        let client_order_id = order.client_order_id();
 
-        let passive_order = PassiveOrderAny::Limit(order.into());
-        matching_core.add_order(passive_order.clone()).unwrap();
+        matching_core.add_order(order.clone().into()).unwrap();
 
+        let passive_order: PassiveOrderAny = order.into();
         assert!(matching_core.get_orders_bid().contains(&passive_order));
         assert!(!matching_core.get_orders_ask().contains(&passive_order));
         assert_eq!(matching_core.get_orders_bid().len(), 1);
         assert!(matching_core.get_orders_ask().is_empty());
-        assert!(matching_core.order_exists(client_order_id));
+        assert!(matching_core.order_exists(passive_order.client_order_id()));
     }
 
     #[rstest]
@@ -270,16 +269,15 @@ mod tests {
             None,
             None,
         );
-        let client_order_id = order.client_order_id();
 
-        let passive_order = PassiveOrderAny::Limit(order.into());
-        matching_core.add_order(passive_order.clone()).unwrap();
+        matching_core.add_order(order.clone().into()).unwrap();
 
+        let passive_order: PassiveOrderAny = order.into();
         assert!(matching_core.get_orders_ask().contains(&passive_order));
         assert!(!matching_core.get_orders_bid().contains(&passive_order));
         assert_eq!(matching_core.get_orders_ask().len(), 1);
         assert!(matching_core.get_orders_bid().is_empty());
-        assert!(matching_core.order_exists(client_order_id));
+        assert!(matching_core.order_exists(passive_order.client_order_id()));
     }
 
     #[rstest]
@@ -297,8 +295,7 @@ mod tests {
         );
         let client_order_id = order.client_order_id();
 
-        let passive_order = PassiveOrderAny::Limit(order.into());
-        matching_core.add_order(passive_order).unwrap();
+        matching_core.add_order(order.into()).unwrap();
         matching_core.bid = Some(Price::from("100.00"));
         matching_core.ask = Some(Price::from("100.00"));
         matching_core.last = Some(Price::from("100.00"));
@@ -327,9 +324,7 @@ mod tests {
             None,
         );
 
-        let passive_order = PassiveOrderAny::Limit(order.into());
-        let result = matching_core.delete_order(&passive_order);
-
+        let result = matching_core.delete_order(&order.into());
         assert!(result.is_err());
     }
 
@@ -349,9 +344,8 @@ mod tests {
             None,
         );
 
-        let passive_order = PassiveOrderAny::Limit(order.into());
-        matching_core.add_order(passive_order.clone()).unwrap();
-        matching_core.delete_order(&passive_order).unwrap();
+        matching_core.add_order(order.clone().into()).unwrap();
+        matching_core.delete_order(&order.into()).unwrap();
 
         assert!(matching_core.get_orders_ask().is_empty());
         assert!(matching_core.get_orders_bid().is_empty());
@@ -424,7 +418,6 @@ mod tests {
         );
 
         let result = matching_core.is_limit_matched(&order.into());
-
         assert_eq!(result, expected);
     }
 
@@ -496,7 +489,6 @@ mod tests {
         );
 
         let result = matching_core.is_stop_matched(&order.into());
-
         assert_eq!(result, expected);
     }
 
