@@ -482,18 +482,55 @@ impl Display for OrderAny {
     }
 }
 
+impl From<OrderAny> for PassiveOrderAny {
+    fn from(order: OrderAny) -> PassiveOrderAny {
+        match order {
+            OrderAny::Limit(_) => PassiveOrderAny::Limit(order.into()),
+            OrderAny::LimitIfTouched(_) => PassiveOrderAny::Stop(order.into()),
+            OrderAny::MarketIfTouched(_) => PassiveOrderAny::Stop(order.into()),
+            OrderAny::StopLimit(_) => PassiveOrderAny::Stop(order.into()),
+            OrderAny::StopMarket(_) => PassiveOrderAny::Stop(order.into()),
+            OrderAny::TrailingStopLimit(_) => PassiveOrderAny::Stop(order.into()),
+            OrderAny::TrailingStopMarket(_) => PassiveOrderAny::Stop(order.into()),
+            _ => panic!("WIP: Implement trait bound to require `HasPrice`"),
+        }
+    }
+}
+
+impl From<StopOrderAny> for PassiveOrderAny {
+    fn from(order: StopOrderAny) -> PassiveOrderAny {
+        match order {
+            StopOrderAny::LimitIfTouched(_) => PassiveOrderAny::Stop(order),
+            StopOrderAny::MarketIfTouched(_) => PassiveOrderAny::Stop(order),
+            StopOrderAny::StopLimit(_) => PassiveOrderAny::Stop(order),
+            StopOrderAny::StopMarket(_) => PassiveOrderAny::Stop(order),
+            StopOrderAny::TrailingStopLimit(_) => PassiveOrderAny::Stop(order),
+            StopOrderAny::TrailingStopMarket(_) => PassiveOrderAny::Stop(order),
+        }
+    }
+}
+
+impl From<LimitOrderAny> for PassiveOrderAny {
+    fn from(order: LimitOrderAny) -> PassiveOrderAny {
+        match order {
+            LimitOrderAny::Limit(_) => PassiveOrderAny::Limit(order),
+            LimitOrderAny::MarketToLimit(_) => PassiveOrderAny::Limit(order),
+            LimitOrderAny::StopLimit(_) => PassiveOrderAny::Limit(order),
+            LimitOrderAny::TrailingStopLimit(_) => PassiveOrderAny::Limit(order),
+        }
+    }
+}
+
 impl From<OrderAny> for StopOrderAny {
     fn from(order: OrderAny) -> StopOrderAny {
         match order {
-            OrderAny::Limit(_order) => panic!("Not implemented (WIP)"),
             OrderAny::LimitIfTouched(order) => StopOrderAny::LimitIfTouched(order),
-            OrderAny::Market(_order) => panic!("Not implemented (WIP)"),
             OrderAny::MarketIfTouched(order) => StopOrderAny::MarketIfTouched(order),
-            OrderAny::MarketToLimit(_order) => panic!("Not implemented (WIP)"),
             OrderAny::StopLimit(order) => StopOrderAny::StopLimit(order),
             OrderAny::StopMarket(order) => StopOrderAny::StopMarket(order),
             OrderAny::TrailingStopLimit(order) => StopOrderAny::TrailingStopLimit(order),
             OrderAny::TrailingStopMarket(order) => StopOrderAny::TrailingStopMarket(order),
+            _ => panic!("WIP: Implement trait bound to require `HasStopPrice`"),
         }
     }
 }
@@ -502,14 +539,21 @@ impl From<OrderAny> for LimitOrderAny {
     fn from(order: OrderAny) -> LimitOrderAny {
         match order {
             OrderAny::Limit(order) => LimitOrderAny::Limit(order),
-            OrderAny::LimitIfTouched(_order) => panic!("Not implemented (WIP)"),
-            OrderAny::Market(_order) => panic!("Not implemented (WIP)"),
-            OrderAny::MarketIfTouched(_order) => panic!("Not implemented (WIP)"),
             OrderAny::MarketToLimit(order) => LimitOrderAny::MarketToLimit(order),
-            OrderAny::StopLimit(_order) => panic!("Not implemented (WIP)"),
-            OrderAny::StopMarket(_order) => panic!("Not implemented (WIP)"),
-            OrderAny::TrailingStopLimit(_order) => panic!("Not implemented (WIP)"),
-            OrderAny::TrailingStopMarket(_order) => panic!("Not implemented (WIP)"),
+            _ => panic!("WIP: Implement trait bound to require `HasLimitPrice`"),
+        }
+    }
+}
+
+impl AsRef<StopMarketOrder> for OrderAny {
+    fn as_ref(&self) -> &StopMarketOrder {
+        match self {
+            OrderAny::StopMarket(ref order) => order,
+            _ => panic!(
+                "Invalid `OrderAny` not `{}`, was {:?}",
+                stringify!(StopMarketOrder),
+                self
+            ),
         }
     }
 }
