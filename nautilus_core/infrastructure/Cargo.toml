@@ -16,7 +16,7 @@ nautilus-core = { path = "../core" , features = ["python"] }
 nautilus-model = { path = "../model" , features = ["python", "stubs"] }
 anyhow = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-log = { workspace = true }
+log = { workspace = true }  # Required until Cython gone
 rmp-serde = { workspace = true }
 rust_decimal = { workspace = true }
 semver = { workspace = true }

@@ -22,7 +22,6 @@ pyo3 = { workspace = true, optional = true }
 pyo3-asyncio = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
-tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }

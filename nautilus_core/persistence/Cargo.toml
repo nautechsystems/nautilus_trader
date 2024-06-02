@@ -15,6 +15,7 @@ nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"] }
 anyhow = { workspace = true }
 futures = { workspace = true }
+log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
 tokio = { workspace = true }
