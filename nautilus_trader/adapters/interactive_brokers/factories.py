@@ -70,9 +70,9 @@ def get_cached_ib_client(
     clock: LiveClock,
         clock
     host: str
-        The IB host to connect to.This is optional if using DockerizedIBGatewayConfig, but is required otherwise.
+        The IB host to connect to. This is optional if using DockerizedIBGatewayConfig, but is required otherwise.
     port: int
-        The IB port to connect to.This is optional if using DockerizedIBGatewayConfig, but is required otherwise.
+        The IB port to connect to. This is optional if using DockerizedIBGatewayConfig, but is required otherwise.
     client_id: int
         The unique session identifier for the TWS or Gateway.A single host can support multiple connections;
         however, each must use a different client_id.

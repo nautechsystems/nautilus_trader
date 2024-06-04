@@ -1,6 +1,5 @@
 import asyncio
 from collections.abc import Callable
-from unittest.mock import MagicMock
 
 from ibapi.client import EClient
 
@@ -143,4 +142,8 @@ class MockInteractiveBrokersClient(InteractiveBrokersClient):
                 client=self,
             ),
         )
-        self._start = MagicMock()
+
+    async def _start_async(self):
+        self._start_tws_incoming_msg_reader()
+        self._start_internal_msg_queue_processor()
+        self._eclient.startApi()
