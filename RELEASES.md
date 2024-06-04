@@ -3,7 +3,8 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Updated installation from source docs for Clang dependency (#1690), thanks @Troubladore
+- Updated `InteractiveBrokersGatewayConfig` docs (#1691), thanks @Troubladore
 
 ### Breaking Changes
 None
