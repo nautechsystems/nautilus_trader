@@ -46,7 +46,7 @@ as specified in the `pyproject.toml`. However, we highly recommend installing us
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
    - Linux and macOS:
        ```bash
-       curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+       curl https://sh.rustup.rs -sSf | sh
        ```
    - Windows:
        - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
@@ -63,7 +63,7 @@ as specified in the `pyproject.toml`. However, we highly recommend installing us
      - Start a new PowerShell
 
 3. Install [clang](https://clang.llvm.org/) (a C language frontend for LLVM):
-   - Linux and macOS:
+   - Linux:
        ```bash
        sudo apt-get install clang
        ```
