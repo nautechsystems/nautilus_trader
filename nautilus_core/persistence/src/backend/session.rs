@@ -71,8 +71,11 @@ impl DataBackendSession {
             .enable_all()
             .build()
             .unwrap();
+        let session_cfg =
+            SessionConfig::new().set_str("datafusion.optimizer.repartition_file_scans", "false");
+        let session_ctx = SessionContext::new_with_config(session_cfg);
         Self {
-            session_ctx: SessionContext::default(),
+            session_ctx,
             batch_streams: Vec::default(),
             chunk_size,
             runtime: Arc::new(runtime),
@@ -126,7 +129,7 @@ impl DataBackendSession {
             parquet_options,
         ))?;
 
-        let default_query = format!("SELECT * FROM {} ORDER BY ts_init", &table_name);
+        let default_query = format!("SELECT * FROM {}", &table_name);
         let sql_query = sql_query.unwrap_or(&default_query);
         let query = self.runtime.block_on(self.session_ctx.sql(sql_query))?;
 
@@ -144,7 +147,7 @@ impl DataBackendSession {
             Ok(batch) => T::decode_data_batch(batch.schema().metadata(), batch)
                 .unwrap()
                 .into_iter(),
-            Err(_err) => panic!("Error getting next batch from RecordBatchStream"),
+            Err(err) => panic!("Error getting next batch from RecordBatchStream: {}", err),
         });
 
         self.batch_streams
@@ -240,6 +243,7 @@ impl Iterator for DataQueryResult {
 impl Drop for DataQueryResult {
     fn drop(&mut self) {
         self.drop_chunk();
+        self.result.clear();
     }
 }
 

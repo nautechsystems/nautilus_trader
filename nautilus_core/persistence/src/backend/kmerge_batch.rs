@@ -60,8 +60,8 @@ impl<T> Iterator for EagerStream<T> {
 
 impl<T> Drop for EagerStream<T> {
     fn drop(&mut self) {
-        self.task.abort();
         self.rx.close();
+        self.task.abort();
     }
 }
 
@@ -118,6 +118,10 @@ where
         if let Some(heap_elem) = ElementBatchIter::new_from_iter(s) {
             self.heap.push(heap_elem);
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.heap.clear()
     }
 }
 
