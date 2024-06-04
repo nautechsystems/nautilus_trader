@@ -17,6 +17,7 @@ use nautilus_core::nanos::UnixNanos;
 use serde::{Deserialize, Serialize};
 use strum::Display;
 
+use super::OrderEventType;
 use crate::{
     events::order::{
         accepted::OrderAccepted, cancel_rejected::OrderCancelRejected, canceled::OrderCanceled,
@@ -28,28 +29,6 @@ use crate::{
     },
     identifiers::{client_order_id::ClientOrderId, strategy_id::StrategyId},
 };
-
-/// Represents a type of [`OrderEvent`].
-#[derive(Debug, PartialEq, Eq)]
-pub enum OrderEventType {
-    Initialized,
-    Denied,
-    Emulated,
-    Released,
-    Submitted,
-    Accepted,
-    Rejected,
-    Canceled,
-    Expired,
-    Triggered,
-    PendingUpdate,
-    PendingCancel,
-    ModifyRejected,
-    CancelRejected,
-    Updated,
-    PartiallyFilled,
-    Filled,
-}
 
 /// Wraps an [`OrderEvent`] allowing polymorphism.
 #[derive(Clone, PartialEq, Eq, Display, Debug, Serialize, Deserialize)]

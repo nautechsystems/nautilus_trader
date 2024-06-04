@@ -32,7 +32,7 @@ use super::{
 };
 use crate::{
     enums::{LiquiditySide, OrderSide, OrderSideSpecified, OrderStatus, OrderType, TriggerType},
-    events::order::event::OrderEventAny,
+    events::order::OrderEventAny,
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, position_id::PositionId, strategy_id::StrategyId,

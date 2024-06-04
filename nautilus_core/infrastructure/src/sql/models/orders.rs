@@ -23,11 +23,11 @@ use nautilus_model::{
     },
     events::order::{
         accepted::OrderAccepted, cancel_rejected::OrderCancelRejected, canceled::OrderCanceled,
-        denied::OrderDenied, emulated::OrderEmulated, event::OrderEventAny, expired::OrderExpired,
-        filled::OrderFilled, initialized::OrderInitialized, modify_rejected::OrderModifyRejected,
+        denied::OrderDenied, emulated::OrderEmulated, expired::OrderExpired, filled::OrderFilled,
+        initialized::OrderInitialized, modify_rejected::OrderModifyRejected,
         pending_cancel::OrderPendingCancel, pending_update::OrderPendingUpdate,
         rejected::OrderRejected, released::OrderReleased, submitted::OrderSubmitted,
-        triggered::OrderTriggered, updated::OrderUpdated,
+        triggered::OrderTriggered, updated::OrderUpdated, OrderEventAny,
     },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,

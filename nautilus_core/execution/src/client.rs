@@ -23,7 +23,7 @@ use nautilus_common::cache::Cache;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
-    events::{account::state::AccountState, order::event::OrderEventAny},
+    events::{account::state::AccountState, order::OrderEventAny},
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
         position_id::PositionId, strategy_id::StrategyId, trade_id::TradeId, venue::Venue,
