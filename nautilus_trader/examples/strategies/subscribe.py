@@ -102,7 +102,7 @@ class SubscribeStrategy(Strategy):
             bar_type: BarType = BarType(
                 instrument_id=self.instrument_id,
                 bar_spec=BarSpecification(
-                    step=1,
+                    step=5,
                     aggregation=BarAggregation.SECOND,
                     price_type=PriceType.LAST,
                 ),

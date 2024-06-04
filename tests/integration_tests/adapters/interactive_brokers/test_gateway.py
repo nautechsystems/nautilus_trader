@@ -16,7 +16,7 @@
 import pytest
 from docker.models.containers import ContainerCollection
 
-from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
+from nautilus_trader.adapters.interactive_brokers.gateway import DockerizedIBGateway
 
 
 pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
@@ -25,7 +25,7 @@ pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
 def test_gateway_start_no_container(mocker):
     # Arrange
     mock_docker = mocker.patch.object(ContainerCollection, "run")
-    gateway = InteractiveBrokersGateway(username="test", password="test")
+    gateway = DockerizedIBGateway(username="test", password="test")
 
     # Act
     gateway.start(wait=None)

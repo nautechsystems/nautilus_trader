@@ -16,12 +16,9 @@
 
 # fmt: off
 
-from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
-from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.config import IBMarketDataTypeEnum
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersGatewayConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
@@ -43,50 +40,19 @@ from nautilus_trader.model.identifiers import InstrumentId
 # *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
 # *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
-ib_contracts = [
-    IBContract(
-        secType="STK",
-        symbol="SPY",
-        exchange="SMART",
-        primaryExchange="ARCA",
-        build_options_chain=True,
-        min_expiry_days=7,
-        max_expiry_days=14,
-    ),
-    IBContract(
-        secType="CONTFUT",
-        exchange="CME",
-        symbol="ES",
-        build_futures_chain=True,
-    ),
-    IBContract(secType="FUT", exchange="NYMEX", localSymbol="CLV3", build_futures_chain=False),
-]
-
-gateway = InteractiveBrokersGatewayConfig(
-    start=False,
-    username=None,
-    password=None,
-    trading_mode="paper",
-    read_only_api=True,
-)
 
 instrument_provider = InteractiveBrokersInstrumentProviderConfig(
-    build_futures_chain=False,
-    build_options_chain=False,
-    min_expiry_days=10,
-    max_expiry_days=60,
     load_ids=frozenset(
         [
             "EUR/USD.IDEALPRO",
             "BTC/USD.PAXOS",
             "SPY.ARCA",
+            "AAPL.NASDAQ",
             "V.NYSE",
-            "YMH24.CBOT",
-            "CLZ27.NYMEX",
-            "ESZ27.CME",
+            "CLZ28.NYMEX",
+            "ESZ28.CME",
         ],
     ),
-    load_contracts=frozenset(ib_contracts),
 )
 
 # Configure the trading node
@@ -103,7 +69,6 @@ config_node = TradingNodeConfig(
             use_regular_trading_hours=True,
             market_data_type=IBMarketDataTypeEnum.DELAYED_FROZEN,  # If unset default is REALTIME
             instrument_provider=instrument_provider,
-            gateway=gateway,
         ),
     },
     exec_clients={
@@ -112,7 +77,6 @@ config_node = TradingNodeConfig(
             ibg_port=7497,
             ibg_client_id=1,
             account_id="DU123456",  # This must match with the IB Gateway/TWS node is connecting to
-            gateway=gateway,
             instrument_provider=instrument_provider,
             routing=RoutingConfig(
                 default=True,
@@ -130,17 +94,16 @@ config_node = TradingNodeConfig(
     timeout_post_stop=2.0,
 )
 
+
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
 
 # Configure your strategy
 strategy_config = SubscribeStrategyConfig(
     instrument_id=InstrumentId.from_str("EUR/USD.IDEALPRO"),
-    # book_type=None,
-    # snapshots=True,
     trade_ticks=False,
     quote_ticks=True,
-    # bars=True,
+    bars=True,
 )
 # Instantiate your strategy
 strategy = SubscribeStrategy(config=strategy_config)
@@ -152,7 +115,7 @@ node.trader.add_strategy(strategy)
 node.add_data_client_factory("IB", InteractiveBrokersLiveDataClientFactory)
 node.add_exec_client_factory("IB", InteractiveBrokersLiveExecClientFactory)
 node.build()
-node.portfolio.set_specific_venue(IB_VENUE)
+
 
 # Stop and dispose of the node with SIGINT/CTRL+C
 if __name__ == "__main__":
