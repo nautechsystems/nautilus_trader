@@ -164,33 +164,48 @@ It's possible to install from source using `pip` if you first install the build 
 as specified in the `pyproject.toml`. However, we highly recommend installing using [poetry](https://python-poetry.org/) as below.
 
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
-
    - Linux and macOS:
-     ```
-     curl https://sh.rustup.rs -sSf | sh
-     ```
+       ```bash
+       curl https://sh.rustup.rs -sSf | sh
+       ```
    - Windows:
-     - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
-     - Install "Desktop development with C++" with [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16)
+       - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
+       - Install "Desktop development with C++" with [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16)
+   - Verify (any system):
+       from a terminal session run: `rustc --version`
 
 2. Enable `cargo` in the current shell:
-
    - Linux and macOS:
-     ```
-     source $HOME/.cargo/env
-     ```
+       ```bash
+       source $HOME/.cargo/env
+       ```
    - Windows:
      - Start a new PowerShell
 
-3. Install poetry (or follow the installation guide on their site):
+3. Install [clang](https://clang.llvm.org/) (a C language frontend for LLVM):
+   - Linux:
+       ```bash
+       sudo apt-get install clang
+       ```
+   - Windows:
+       1. Add Clang to your [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16):
+          - Start | Visual Studio Installer | Modify | C++ Clang tools for Windows (12.0.0 - x64…) = checked | Modify
+       2. Enable `clang` in the current shell:
+          ```powershell
+          [System.Environment]::SetEnvironmentVariable('path', "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\Llvm\x64\bin\;" + $env:Path,"User")
+          ```
+   - Verify (any system):
+       from a terminal session run: `clang --version`
 
-   curl -sSL https://install.python-poetry.org | python3 -
+4. Install poetry (or follow the installation guide on their site):
 
-4. Clone the source with `git`, and install from the projects root directory:
+       curl -sSL https://install.python-poetry.org | python3 -
 
-   git clone https://github.com/nautechsystems/nautilus_trader
-   cd nautilus_trader
-   poetry install --only main --all-extras
+5. Clone the source with `git`, and install from the projects root directory:
+
+       git clone https://github.com/nautechsystems/nautilus_trader
+       cd nautilus_trader
+       poetry install --only main --all-extras
 
 Refer to the [Installation Guide](https://docs.nautilustrader.io/getting_started/installation.html) for other options and further details.
 
