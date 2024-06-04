@@ -2512,8 +2512,8 @@ mod tests {
         data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
         enums::{OrderSide, OrderStatus},
         events::order::{
-            accepted::OrderAccepted, event::OrderEventAny, rejected::OrderRejected,
-            submitted::OrderSubmitted,
+            accepted::OrderAccepted, rejected::OrderRejected, submitted::OrderSubmitted,
+            OrderEventAny,
         },
         identifiers::{client_order_id::ClientOrderId, position_id::PositionId},
         instruments::{

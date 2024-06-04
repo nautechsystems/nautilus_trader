@@ -21,8 +21,7 @@ use super::{any::OrderAny, limit::LimitOrder, stop_market::StopMarketOrder};
 use crate::{
     enums::{LiquiditySide, OrderSide, TimeInForce, TriggerType},
     events::order::{
-        accepted::OrderAccepted, event::OrderEventAny, filled::OrderFilled,
-        submitted::OrderSubmitted,
+        accepted::OrderAccepted, filled::OrderFilled, submitted::OrderSubmitted, OrderEventAny,
     },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,

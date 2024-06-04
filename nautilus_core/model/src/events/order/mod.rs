@@ -31,11 +31,11 @@ use crate::{
 };
 
 pub mod accepted;
+pub mod any;
 pub mod cancel_rejected;
 pub mod canceled;
 pub mod denied;
 pub mod emulated;
-pub mod event;
 pub mod expired;
 pub mod filled;
 pub mod initialized;
@@ -50,6 +50,30 @@ pub mod updated;
 
 #[cfg(feature = "stubs")]
 pub mod stubs;
+
+pub use crate::events::order::any::OrderEventAny;
+
+/// Represents a type of [`OrderEvent`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum OrderEventType {
+    Initialized,
+    Denied,
+    Emulated,
+    Released,
+    Submitted,
+    Accepted,
+    Rejected,
+    Canceled,
+    Expired,
+    Triggered,
+    PendingUpdate,
+    PendingCancel,
+    ModifyRejected,
+    CancelRejected,
+    Updated,
+    PartiallyFilled,
+    Filled,
+}
 
 pub trait OrderEvent: 'static + Send {
     fn id(&self) -> UUID4;
