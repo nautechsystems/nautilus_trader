@@ -28,7 +28,8 @@ from nautilus_trader.config import NautilusConfig
 
 class InteractiveBrokersGatewayConfig(NautilusConfig, frozen=True):
     """
-    Configuration for `InteractiveBrokersGateway` setup.
+    Configuration for `InteractiveBrokersGateway` setup when working with containerized
+    installations.
 
     Parameters
     ----------
@@ -39,17 +40,17 @@ class InteractiveBrokersGatewayConfig(NautilusConfig, frozen=True):
         The Interactive Brokers account password.
         If ``None`` then will source the `TWS_PASSWORD`.
     host : str, optional
-        The hostname or ip address for the IB Gateway or TWS.
+        The hostname or ip address for the IB Gateway (IBG) or Trader Workstation (TWS).
     port : int, optional
-        The port for the gateway server ("paper" 4002, or "live" 4001).
+        The port for the gateway server. ("paper"/"live" defaults: IBG 4002/4001; TWS 7497/7496)
     trading_mode: str
-        paper or live.
+        ``paper`` or ``live``.
     start: bool, optional
-        Start or not internal tws docker container.
+        If True, a new IBG docker container instance will be launched, listening on the specified port.
     read_only_api: bool, optional, default True
-        Read only; no execution. Set read_only_api=False to allow executing live orders.
+        If True, no order execution is allowed. Set read_only_api=False to allow executing live orders.
     timeout: int, optional
-        The timeout for trying to start gateway
+        The timeout for trying to launch IBG docker container when start=True
 
     """
 
@@ -136,16 +137,17 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
     Parameters
     ----------
     ibg_host : str, default "127.0.0.1"
-        The hostname or ip address for the IB Gateway or TWS.
-    ibg_port : int, default for "paper" 4002, or "live" 4001
-        The port for the gateway server.
+        The hostname or ip address for the IB Gateway (IBG) or Trader Workstation (TWS).
+    ibg_port : int, default None
+        The port for the gateway server. ("paper"/"live" defaults: IBG 4002/4001; TWS 7497/7496)
     ibg_client_id: int, default 1
         The client_id to be passed into connect call.
     gateway : InteractiveBrokersGatewayConfig
-        The clients gateway container configuration.
+        The client's gateway container configuration.
     use_regular_trading_hours : bool
-        If True will request data for Regular Trading Hours only.
-        Mostly applies to 'STK' security type. Check with InteractiveBrokers for RTH Info.
+        If True, will request data for Regular Trading Hours only.
+        Only applies to bar data - will have no effect on trade or tick data feeds.
+        Usually used for 'STK' security type. Check with InteractiveBrokers for RTH Info.
     market_data_type : bool, default REALTIME
         Set which IBMarketDataTypeEnum to be used by InteractiveBrokersClient.
         Configure `IBMarketDataTypeEnum.DELAYED_FROZEN` to use with account without data subscription.
@@ -171,9 +173,9 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
     Parameters
     ----------
     ibg_host : str, default "127.0.0.1"
-        The hostname or ip address for the IB Gateway or TWS.
+        The hostname or ip address for the IB Gateway (IBG) or Trader Workstation (TWS).
     ibg_port : int
-        The port for the gateway server ("paper" 4002, or "live" 4001).
+        The port for the gateway server. ("paper"/"live" defaults: IBG 4002/4001; TWS 7497/7496)
     ibg_client_id: int, default 1
         The client_id to be passed into connect call.
     ibg_account_id : str
