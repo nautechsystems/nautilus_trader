@@ -221,7 +221,7 @@ impl PostgresCacheDatabase {
             Ok(rows) => {
                 let mut cache: HashMap<String, Vec<u8>> = HashMap::new();
                 for row in rows {
-                    cache.insert(row.key, row.value);
+                    cache.insert(row.id, row.value);
                 }
                 Ok(cache)
             }
