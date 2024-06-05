@@ -33,7 +33,7 @@ pub struct DatabaseQueries;
 
 impl DatabaseQueries {
     pub async fn add(pool: &PgPool, key: String, value: Vec<u8>) -> anyhow::Result<()> {
-        sqlx::query("INSERT INTO general (key, value) VALUES ($1, $2)")
+        sqlx::query("INSERT INTO general (id, value) VALUES ($1, $2)")
             .bind(key)
             .bind(value)
             .execute(pool)
@@ -49,7 +49,7 @@ impl DatabaseQueries {
             .map(|rows| {
                 let mut cache: HashMap<String, Vec<u8>> = HashMap::new();
                 for row in rows {
-                    cache.insert(row.key, row.value);
+                    cache.insert(row.id, row.value);
                 }
                 cache
             })
@@ -58,7 +58,7 @@ impl DatabaseQueries {
 
     pub async fn add_currency(pool: &PgPool, currency: Currency) -> anyhow::Result<()> {
         sqlx::query(
-            "INSERT INTO currency (code, precision, iso4217, name, currency_type) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (code) DO NOTHING"
+            "INSERT INTO currency (id, precision, iso4217, name, currency_type) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING"
         )
             .bind(currency.code.as_str())
             .bind(currency.precision as i32)
@@ -72,7 +72,7 @@ impl DatabaseQueries {
     }
 
     pub async fn load_currencies(pool: &PgPool) -> anyhow::Result<Vec<Currency>> {
-        sqlx::query_as::<_, CurrencyModel>("SELECT * FROM currency ORDER BY code ASC")
+        sqlx::query_as::<_, CurrencyModel>("SELECT * FROM currency ORDER BY id ASC")
             .fetch_all(pool)
             .await
             .map(|rows| rows.into_iter().map(|row| row.0).collect())
@@ -80,7 +80,7 @@ impl DatabaseQueries {
     }
 
     pub async fn load_currency(pool: &PgPool, code: &str) -> anyhow::Result<Option<Currency>> {
-        sqlx::query_as::<_, CurrencyModel>("SELECT * FROM currency WHERE code = $1")
+        sqlx::query_as::<_, CurrencyModel>("SELECT * FROM currency WHERE id = $1")
             .bind(code)
             .fetch_optional(pool)
             .await
