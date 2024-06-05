@@ -101,13 +101,17 @@ class BybitInstrumentProvider(InstrumentProvider):
             )
 
         for product_type in instrument_infos:
-            if product_type == BybitProductType.OPTION:
-                self._log.warning("Options not currently supported")
-                continue
-
             for instrument in instrument_infos[product_type]:
                 target_fee_rate = next(
-                    (item for item in fee_rates[product_type] if item.symbol == instrument.symbol),
+                    (
+                        item
+                        for item in fee_rates[product_type]
+                        if item.symbol == instrument.symbol
+                        or (
+                            product_type == BybitProductType.OPTION
+                            and instrument.baseCoin == item.baseCoin
+                        )
+                    ),
                     None,
                 )
                 if target_fee_rate:
@@ -273,6 +277,7 @@ class BybitInstrumentProvider(InstrumentProvider):
         instrument: BybitInstrumentOption,
         fee_rate: BybitFeeRate,
     ) -> None:
+        self._log.warning("Parsing of instrument Options is currently not supported")
         try:
             pass
         except ValueError as e:
