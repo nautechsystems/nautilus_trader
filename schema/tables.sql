@@ -13,7 +13,7 @@ CREATE TYPE ORDER_STATUS AS ENUM ('Initialized', 'Denied', 'Emulated', 'Released
 ------------------- TABLES -------------------
 
 CREATE TABLE IF NOT EXISTS "general" (
-    key TEXT PRIMARY KEY NOT NULL,
+    id TEXT PRIMARY KEY NOT NULL,
     value bytea not null
 );
 
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS "strategy" (
 );
 
 CREATE TABLE IF NOT EXISTS "currency" (
-    code TEXT PRIMARY KEY NOT NULL,
+    id TEXT PRIMARY KEY NOT NULL,
     precision INTEGER,
     iso4217 INTEGER,
     name TEXT,
@@ -43,10 +43,10 @@ CREATE TABLE IF NOT EXISTS "instrument" (
     id TEXT PRIMARY KEY NOT NULL,
     kind TEXT,
     raw_symbol TEXT NOT NULL,
-    base_currency TEXT REFERENCES currency(code),
+    base_currency TEXT REFERENCES currency(id),
     underlying TEXT,
-    quote_currency TEXT REFERENCES currency(code),
-    settlement_currency TEXT REFERENCES currency(code),
+    quote_currency TEXT REFERENCES currency(id),
+    settlement_currency TEXT REFERENCES currency(id),
     isin TEXT,
     asset_class TEXT,
     exchange TEXT,
@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     instrument_id TEXT NOT NULL,
     order_id TEXT DEFAULT NULL,
     trade_id TEXT,
-    currency TEXT REFERENCES currency(code),
+    currency TEXT REFERENCES currency(id),
     order_type TEXT,
     order_side TEXT,
     quantity TEXT,
