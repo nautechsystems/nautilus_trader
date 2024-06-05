@@ -98,8 +98,8 @@ impl DatabentoHistoricalClient {
             match response {
                 Ok(res) => Python::with_gil(|py| {
                     let dict = PyDict::new(py);
-                    dict.set_item("start_date", res.start_date.to_string())?;
-                    dict.set_item("end_date", res.end_date.to_string())?;
+                    dict.set_item("start", res.start.to_string())?;
+                    dict.set_item("end", res.end.to_string())?;
                     Ok(dict.to_object(py))
                 }),
                 Err(e) => Err(PyErr::new::<PyException, _>(format!(
