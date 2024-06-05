@@ -15,6 +15,6 @@
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct GeneralRow {
-    pub key: String,
+    pub id: String,
     pub value: Vec<u8>,
 }
