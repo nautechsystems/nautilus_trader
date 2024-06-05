@@ -328,8 +328,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._log.info(f"Requesting dataset range for {dataset}...", LogColor.BLUE)
             response = await self._http_client.get_dataset_range(dataset)
 
-            available_start = pd.Timestamp(response["start_date"], tz=pytz.utc)
-            available_end = pd.Timestamp(response["end_date"], tz=pytz.utc)
+            available_start = pd.Timestamp(response["start"], tz=pytz.utc)
+            available_end = pd.Timestamp(response["end"], tz=pytz.utc)
 
             self._dataset_ranges[dataset] = (available_start, available_end)
 
