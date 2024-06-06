@@ -30,7 +30,7 @@ async def main(
     host: str | None = None,
     port: int | None = None,
     dockerized_gateway: DockerizedIBGatewayConfig | None = None,
-):
+) -> None:
     if dockerized_gateway:
         PyCondition.none(host, "Ensure `host` is set to None when using DockerizedIBGatewayConfig.")
         PyCondition.none(port, "Ensure `port` is set to None when using DockerizedIBGatewayConfig.")
