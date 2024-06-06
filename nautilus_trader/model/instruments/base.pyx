@@ -21,8 +21,10 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core import nautilus_pyo3
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.core cimport min_increment_precision_from_cstr
 from nautilus_trader.core.rust.model cimport AssetClass
 from nautilus_trader.core.rust.model cimport InstrumentClass
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.model.functions cimport asset_class_from_str
 from nautilus_trader.model.functions cimport asset_class_to_str
 from nautilus_trader.model.functions cimport instrument_class_from_str
@@ -231,6 +233,9 @@ cdef class Instrument(Data):
         self.ts_event = ts_event
         self.ts_init = ts_init
 
+        self._min_price_increment_precision = min_increment_precision_from_cstr(pystr_to_cstr(str(self.price_increment)))
+        self._min_size_increment_precision = min_increment_precision_from_cstr(pystr_to_cstr(str(self.size_increment)))
+
         # Assign tick scheme if named
         if self.tick_scheme_name is not None:
             self._tick_scheme = get_tick_scheme(self.tick_scheme_name)
@@ -428,7 +433,7 @@ cdef class Instrument(Data):
         Price
 
         """
-        return Price(float(value), precision=self.price_precision)
+        return Price(round(float(value), self._min_price_increment_precision), precision=self.price_precision)
 
     cpdef Price next_bid_price(self, double value, int num_ticks=0):
         """
@@ -507,7 +512,7 @@ cdef class Instrument(Data):
         Quantity
 
         """
-        return Quantity(float(value), precision=self.size_precision)
+        return Quantity(round(float(value), self._min_size_increment_precision), precision=self.size_precision)
 
     cpdef Money notional_value(
         self,

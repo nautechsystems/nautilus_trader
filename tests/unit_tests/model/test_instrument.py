@@ -371,6 +371,28 @@ class TestInstrument:
         assert str(qty) == expected_str
 
     @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            [0.0000501, Decimal("0.0000500")],
+            [0.0000540, Decimal("0.0000500")],
+            [0.0000550, Decimal("0.0000600")],
+        ],
+    )
+    def test_make_price_with_lower_precision_minimum_increment(
+        self,
+        value: float,
+        expected: Decimal,
+    ) -> None:
+        # Arrange
+        onethousandrats = TestInstrumentProvider.onethousandrats_perp_binance()
+
+        # Act
+        price = onethousandrats.make_price(value)
+
+        # Assert
+        assert price == expected
+
+    @pytest.mark.parametrize(
         ("instrument", "expected"),
         [
             [AUDUSD_SIM, AUD],
