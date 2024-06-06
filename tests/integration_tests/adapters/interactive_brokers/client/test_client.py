@@ -24,14 +24,15 @@ import pytest
 from nautilus_trader.test_kit.functions import eventually
 
 
-def test_start(ib_client):
+@pytest.mark.asyncio
+async def test_start(event_loop, ib_client):
     # Arrange
-    ib_client._connect = AsyncMock()
+    ib_client.connect = AsyncMock()
     ib_client._eclient = MagicMock()
     ib_client._eclient.startApi = MagicMock(side_effect=ib_client._is_ib_connected.set)
 
     # Act
-    ib_client._start()
+    await ib_client._start_async()
 
     # Assert
     assert ib_client._is_client_ready.is_set()

@@ -86,7 +86,7 @@ class HistoricInteractiveBrokersClient:
         )
         self._client.start()
 
-    async def _connect(self) -> None:
+    async def connect(self) -> None:
         # Connect client
         await self._client.wait_until_ready()
         self._client.registered_nautilus_clients.add(1)

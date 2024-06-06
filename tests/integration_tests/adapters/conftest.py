@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -34,6 +35,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
+from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
@@ -49,6 +51,15 @@ def account_id(venue):
 def has_live_components_marker(request) -> bool:
     marker_names = [mark.name for mark in request.node.iter_markers()]
     return "live_components" in marker_names
+
+
+@pytest.fixture()
+def event_loop():
+    loop = asyncio.get_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.set_debug(True)
+    yield loop
+    ensure_all_tasks_completed()
 
 
 @pytest.fixture()
@@ -118,10 +129,10 @@ def data_engine(msgbus, cache, clock, data_client):
 
 
 @pytest.fixture()
-def exec_engine(request, loop, msgbus, cache, clock, exec_client):
+def exec_engine(request, event_loop, msgbus, cache, clock, exec_client):
     if has_live_components_marker(request):
         engine = LiveExecutionEngine(
-            loop,
+            event_loop,
             msgbus,
             cache,
             clock,

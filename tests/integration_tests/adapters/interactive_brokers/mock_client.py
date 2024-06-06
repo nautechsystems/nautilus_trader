@@ -1,6 +1,5 @@
 import asyncio
 from collections.abc import Callable
-from unittest.mock import MagicMock
 
 from ibapi.client import EClient
 
@@ -9,6 +8,7 @@ from nautilus_trader.adapters.interactive_brokers.client.client import Interacti
 from nautilus_trader.adapters.interactive_brokers.client.wrapper import InteractiveBrokersEWrapper
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
+from nautilus_trader.common.enums import LogColor
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 
 
@@ -143,4 +143,12 @@ class MockInteractiveBrokersClient(InteractiveBrokersClient):
                 client=self,
             ),
         )
-        self._start = MagicMock()
+
+    async def _start_async(self):
+        self._start_tws_incoming_msg_reader()
+        self._start_internal_msg_queue_processor()
+        self._eclient.startApi()
+
+        self._is_client_ready.set()
+        self._log.debug("`_is_client_ready` set by `_start_async`.", LogColor.BLUE)
+        self._connection_attempts = 0
