@@ -147,7 +147,7 @@ impl DataBackendSession {
             Ok(batch) => T::decode_data_batch(batch.schema().metadata(), batch)
                 .unwrap()
                 .into_iter(),
-            Err(err) => panic!("Error getting next batch from RecordBatchStream: {err}"),
+            Err(e) => panic!("Error getting next batch from RecordBatchStream: {e}"),
         });
 
         self.batch_streams
