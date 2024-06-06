@@ -364,7 +364,7 @@ impl DatabaseQueries {
                 let order = OrderAny::from_events(order_events).unwrap();
                 Ok(Some(order))
             }
-            Err(err) => anyhow::bail!("Failed to load order events: {err}"),
+            Err(e) => anyhow::bail!("Failed to load order events: {e}"),
         }
     }
 }
