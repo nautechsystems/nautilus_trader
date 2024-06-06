@@ -4,6 +4,8 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added Bybit base coin for fee rate parsing (#1696), thanks @filipmacek
+- Improved `InteractiveBrokersInstrumentProvider` contract loading (#1699), thanks @rsmb7z
+- Refactored Interactive Brokers client and gateway configuration (#1692), thanks @rsmb7z
 - Updated installation from source docs for Clang dependency (#1690), thanks @Troubladore
 - Updated `DockerizedIBGatewayConfig` docs (#1691), thanks @Troubladore
 
