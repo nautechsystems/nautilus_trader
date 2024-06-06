@@ -26,27 +26,21 @@ from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config import NautilusConfig
 
 
-class InteractiveBrokersGatewayConfig(NautilusConfig, frozen=True):
+class DockerizedIBGatewayConfig(NautilusConfig, frozen=True):
     """
-    Configuration for `InteractiveBrokersGateway` setup when working with containerized
+    Configuration for `DockerizedIBGateway` setup when working with containerized
     installations.
 
     Parameters
     ----------
     username : str, optional
         The Interactive Brokers account username.
-        If ``None`` then will source the `TWS_USERNAME`.
+        If ``None`` then will source the `TWS_USERNAME` environment variable.
     password : str, optional
         The Interactive Brokers account password.
-        If ``None`` then will source the `TWS_PASSWORD`.
-    host : str, optional
-        The hostname or ip address for the IB Gateway (IBG) or Trader Workstation (TWS).
-    port : int, optional
-        The port for the gateway server. ("paper"/"live" defaults: IBG 4002/4001; TWS 7497/7496)
+        If ``None`` then will source the `TWS_PASSWORD` environment variable.
     trading_mode: str
         ``paper`` or ``live``.
-    start: bool, optional
-        If True, a new IBG docker container instance will be launched, listening on the specified port.
     read_only_api: bool, optional, default True
         If True, no order execution is allowed. Set read_only_api=False to allow executing live orders.
     timeout: int, optional
@@ -56,20 +50,47 @@ class InteractiveBrokersGatewayConfig(NautilusConfig, frozen=True):
 
     username: str | None = None
     password: str | None = None
-    host: str | None = "127.0.0.1"
-    port: Literal[4001, 4002] | None = None
     trading_mode: Literal["paper", "live"] = "paper"
-    start: bool = False
     read_only_api: bool = True
     timeout: int = 300
+
+    def __repr__(self):
+        masked_username = self._mask_sensitive_info(self.username)
+        masked_password = self._mask_sensitive_info(self.password)
+        return (
+            f"DockerizedIBGatewayConfig(username={masked_username}, "
+            f"password={masked_password}, trading_mode='{self.trading_mode}', "
+            f"read_only_api={self.read_only_api}, timeout={self.timeout})"
+        )
+
+    @staticmethod
+    def _mask_sensitive_info(value: str | None) -> str:
+        if value is None:
+            return "None"
+        return value[0] + "*" * (len(value) - 2) + value[-1] if len(value) > 2 else "*" * len(value)
 
 
 class InteractiveBrokersInstrumentProviderConfig(InstrumentProviderConfig, frozen=True):
     """
-    Configuration for ``InteractiveBrokersInstrumentProvider`` instances.
+    Configuration for instances of `InteractiveBrokersInstrumentProvider`.
+
+    Specify either `load_ids`, `load_contracts`, or both to dictate which instruments the system loads upon start.
+    It should be noted that the `InteractiveBrokersInstrumentProviderConfig` isn't limited to the instruments
+    initially loaded. Instruments can be dynamically requested and loaded at runtime as needed.
 
     Parameters
     ----------
+    load_all : bool, default False
+        Note: Loading all instruments isn't supported by the InteractiveBrokersInstrumentProvider.
+        As such, this parameter is not applicable.
+    load_ids : FrozenSet[InstrumentId], optional
+        A frozenset of `InstrumentId` instances that should be loaded during startup. These represent the specific
+        instruments that the provider should initially load.
+    load_contracts: FrozenSet[IBContract], optional
+        A frozenset of `IBContract` objects that are loaded during the initial startup.These specific contracts
+        correspond to the instruments that the  provider preloads. It's important to note that while the `load_ids`
+        option can be used for loading individual instruments, using `load_contracts` allows for a more versatile
+        loading of several related instruments like Futures and Options that share the same underlying asset.
     strict_symbology : bool, optional
         Determines the symbology format used for identifying instruments. If set to True,
         a strict symbology format is used, as provided by InteractiveBrokers where instrument symbols
@@ -142,8 +163,6 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
         The port for the gateway server. ("paper"/"live" defaults: IBG 4002/4001; TWS 7497/7496)
     ibg_client_id: int, default 1
         The client_id to be passed into connect call.
-    gateway : InteractiveBrokersGatewayConfig
-        The client's gateway container configuration.
     use_regular_trading_hours : bool
         If True, will request data for Regular Trading Hours only.
         Only applies to bar data - will have no effect on trade or tick data feeds.
@@ -151,6 +170,8 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
     market_data_type : bool, default REALTIME
         Set which IBMarketDataTypeEnum to be used by InteractiveBrokersClient.
         Configure `IBMarketDataTypeEnum.DELAYED_FROZEN` to use with account without data subscription.
+    dockerized_gateway : DockerizedIBGatewayConfig, Optional
+        The client's gateway container configuration.
 
     """
 
@@ -161,9 +182,9 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
     ibg_host: str = "127.0.0.1"
     ibg_port: int | None = None
     ibg_client_id: int = 1
-    gateway: InteractiveBrokersGatewayConfig = InteractiveBrokersGatewayConfig()
     use_regular_trading_hours: bool = True
     market_data_type: IBMarketDataTypeEnum = IBMarketDataTypeEnum.REALTIME
+    dockerized_gateway: DockerizedIBGatewayConfig | None = None
 
 
 class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -178,9 +199,12 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
         The port for the gateway server. ("paper"/"live" defaults: IBG 4002/4001; TWS 7497/7496)
     ibg_client_id: int, default 1
         The client_id to be passed into connect call.
-    ibg_account_id : str
-        The Interactive Brokers account id to which TWS/Gateway is logged on.
-        If ``None`` then will source the `TWS_ACCOUNT`.
+    account_id : str
+        Represents the account_id for the Interactive Brokers to which the TWS/Gateway is logged in.
+        It's crucial that the account_id aligns with the account for which the TWS/Gateway is logged in.
+        If the account_id is `None`, the system will fallback to use the `TWS_ACCOUNT` from environment variable.
+    dockerized_gateway : DockerizedIBGatewayConfig, Optional
+        The client's gateway container configuration.
 
     """
 
@@ -190,7 +214,5 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
     ibg_host: str = "127.0.0.1"
     ibg_port: int | None = None
     ibg_client_id: int = 1
-    gateway: InteractiveBrokersGatewayConfig = InteractiveBrokersGatewayConfig()
     account_id: str | None = None
-
-    # trade_outside_regular_hours (possible to set flag in order)
+    dockerized_gateway: DockerizedIBGatewayConfig | None = None

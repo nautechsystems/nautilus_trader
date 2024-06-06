@@ -31,23 +31,30 @@ Because IB does not provide wheels for `ibapi`, NautilusTrader [repackages]( htt
 
 ## Getting Started
 
-Before deploying strategies, ensure that TWS / IB Gateway is running. Launch one of the standalone applications and log in with your credentials, or start the dockerized IB Gateway using `InteractiveBrokersGateway`:
+Before implementing your trading strategies, please ensure that either TWS (Trader Workstation) or IB Gateway is currently running. You have the option to log in to one of these standalone applications using your personal credentials or alternatively, via `DockerizedIBGateway`.
+
+### Establish Connection to an Existing Gateway or TWS:
+Should you choose to connect to a pre-existing Gateway or TWS, it is crucial that you specify the `host` and `port` parameters in both the `InteractiveBrokersDataClientConfig` and `InteractiveBrokersExecClientConfig` to guarantee a successful connection.
+
+### Establish Connection to DockerizedIBGateway:
+In this case, it's essential to supply `dockerized_gateway` with an instance of `DockerizedIBGatewayConfig` in both the `InteractiveBrokersDataClientConfig` and `InteractiveBrokersExecClientConfig`. It's important to stress, however, that `host` and `port` parameters aren't necessary in this context.
+The following example provides a clear illustration of how to establish a connection to a Dockerized Gateway, which is judiciously managed internally by the Factories.
 
 ```python
-from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
+from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
+from nautilus_trader.adapters.interactive_brokers.gateway import DockerizedIBGateway
 
-
-gateway_config = InteractiveBrokersGatewayConfig(
+gateway_config = DockerizedIBGatewayConfig(
     username="test",
     password="test",
     trading_mode="paper",
-    start=True
 )
 
 # This may take a short while to start up, especially the first time
-gateway = InteractiveBrokersGateway(
+gateway = DockerizedIBGateway(
     config=gateway_config
 )
+gateway.start()
 
 # Confirm you are logged in
 print(gateway.is_logged_in(gateway.container))
@@ -56,7 +63,7 @@ print(gateway.is_logged_in(gateway.container))
 print(gateway.container.logs())
 ```
 
-**Note:** To supply credentials to the Interactive Brokers Gateway, either pass the `username` and `password` to the config dictionaries, or set the following environment variables:
+**Note:** To supply credentials to the Interactive Brokers Gateway, either pass the `username` and `password` to the `DockerizedIBGatewayConfig`, or set the following environment variables:
 - `TWS_USERNAME`
 - `TWS_PASSWORD`
 
@@ -210,7 +217,7 @@ data_client_config = InteractiveBrokersDataClientConfig(
     use_regular_trading_hours=True,
     market_data_type=IBMarketDataTypeEnum.DELAYED_FROZEN,  # Default is REALTIME if not set
     instrument_provider=instrument_provider_config,
-    gateway=gateway_config,
+    dockerized_gateway=dockerized_gateway_config,
 )
 ```
 
@@ -226,7 +233,7 @@ from nautilus_trader.config import RoutingConfig
 exec_client_config = InteractiveBrokersExecClientConfig(
     ibg_port=4002,
     account_id="DU123456",  # Must match the connected IB Gateway/TWS
-    gateway=gateway_config,
+    dockerized_gateway=dockerized_gateway_config,
     instrument_provider=instrument_provider_config,
     routing=RoutingConfig(
         default=True,
