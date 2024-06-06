@@ -18,15 +18,46 @@
 /// Returns the decimal precision inferred from the given string.
 #[must_use]
 pub fn precision_from_str(s: &str) -> u8 {
-    let lower_s = s.to_lowercase();
-    // Handle scientific notation
-    if lower_s.contains("e-") {
-        return lower_s.split("e-").last().unwrap().parse::<u8>().unwrap();
+    let s = s.trim().to_ascii_lowercase();
+
+    // Check for scientific notation
+    if s.contains("e-") {
+        return s.split("e-").last().unwrap().parse::<u8>().unwrap();
     }
-    if !lower_s.contains('.') {
-        return 0;
+
+    // Check for decimal precision
+    if let Some((_, decimal_part)) = s.split_once('.') {
+        decimal_part.len() as u8
+    } else {
+        0
     }
-    return lower_s.split('.').last().unwrap().len() as u8;
+}
+
+/// Returns the minimum increment precision inferred from the given string,
+/// ignoring trailing zeros.
+#[must_use]
+pub fn min_increment_precision_from_str(s: &str) -> u8 {
+    let s = s.trim().to_ascii_lowercase();
+
+    // Check for scientific notation
+    if let Some(pos) = s.find('e') {
+        if s[pos + 1..].starts_with('-') {
+            return s[pos + 2..].parse::<u8>().unwrap_or(0);
+        }
+    }
+
+    // Check for decimal precision
+    if let Some(dot_pos) = s.find('.') {
+        let decimal_part = &s[dot_pos + 1..];
+        if decimal_part.chars().any(|c| c != '0') {
+            let trimmed_len = decimal_part.trim_end_matches('0').len();
+            return trimmed_len as u8;
+        } else {
+            return decimal_part.len() as u8;
+        }
+    }
+
+    0
 }
 
 /// Returns a `usize` from the given bytes.
@@ -63,8 +94,39 @@ mod tests {
     #[case("1e-2", 2)]
     #[case("1e-3", 3)]
     #[case("1e8", 0)]
+    #[case("-1.23", 2)]
+    #[case("-1e-2", 2)]
+    #[case("1E-2", 2)]
+    #[case("  1.23", 2)]
+    #[case("1.23  ", 2)]
     fn test_precision_from_str(#[case] s: &str, #[case] expected: u8) {
         let result = precision_from_str(s);
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case("", 0)]
+    #[case("0", 0)]
+    #[case("1.0", 1)]
+    #[case("1.00", 2)]
+    #[case("1.23456789", 8)]
+    #[case("123456.789101112", 9)]
+    #[case("0.000000001", 9)]
+    #[case("1e-1", 1)]
+    #[case("1e-2", 2)]
+    #[case("1e-3", 3)]
+    #[case("1e8", 0)]
+    #[case("-1.23", 2)]
+    #[case("-1e-2", 2)]
+    #[case("1E-2", 2)]
+    #[case("  1.23", 2)]
+    #[case("1.23  ", 2)]
+    #[case("1.010", 2)]
+    #[case("1.00100", 3)]
+    #[case("0.0001000", 4)]
+    #[case("1.000000000", 9)]
+    fn test_min_increment_precision_from_str(#[case] s: &str, #[case] expected: u8) {
+        let result = min_increment_precision_from_str(s);
         assert_eq!(result, expected);
     }
 
