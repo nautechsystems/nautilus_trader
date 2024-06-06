@@ -14,6 +14,7 @@ None
 
 ### Fixes
 - Fixed DataFusion streaming backend mem usage (now constant mem usage) (#1693), thanks @twitu
+- Fixed `Instrument.make_price` and `make_qty` when increments have a lower precision (was not rounding to the minimum increment)
 
 ---
 

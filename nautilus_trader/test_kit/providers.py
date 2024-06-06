@@ -422,6 +422,44 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
+    def onethousandrats_perp_binance() -> CryptoPerpetual:
+        """
+        Return the Binance 1000RATSUSDT perpetual contract for backtesting.
+
+        Returns
+        -------
+        CryptoPerpetual
+
+        """
+        return CryptoPerpetual(
+            instrument_id=InstrumentId(
+                symbol=Symbol("1000RATSUSDT-PERP"),
+                venue=Venue("BINANCE"),
+            ),
+            raw_symbol=Symbol("1000RATSUSDT"),
+            base_currency=Currency.from_str("1000RATS"),
+            quote_currency=USDT,
+            settlement_currency=USDT,
+            is_inverse=False,
+            price_precision=7,
+            size_precision=0,
+            price_increment=Price.from_str("0.0000100"),
+            size_increment=Quantity.from_int(1),
+            max_quantity=Quantity.from_int(1_000_000),
+            min_quantity=Quantity.from_int(1),
+            max_notional=None,
+            min_notional=None,
+            max_price=Price.from_str("1000000.00"),
+            min_price=Price.from_str("0.0"),
+            margin_init=Decimal("0.0500"),
+            margin_maint=Decimal("0.0250"),
+            maker_fee=Decimal("0.000200"),
+            taker_fee=Decimal("0.000500"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
     def default_fx_ccy(symbol: str, venue: Venue | None = None) -> CurrencyPair:
         """
         Return a default FX currency pair instrument from the given symbol and venue.
