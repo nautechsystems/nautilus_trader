@@ -121,7 +121,7 @@ where
     }
 
     pub fn clear(&mut self) {
-        self.heap.clear()
+        self.heap.clear();
     }
 }
 
