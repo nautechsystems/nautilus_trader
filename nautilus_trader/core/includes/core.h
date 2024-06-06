@@ -106,6 +106,19 @@ const char *unix_nanos_to_iso8601_cstr(uint64_t timestamp_ns);
 uint8_t precision_from_cstr(const char *ptr);
 
 /**
+ * Return the minimum price increment decimal precision inferred from the given C string.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * - If `ptr` is null.
+ */
+uint8_t min_increment_precision_from_cstr(const char *ptr);
+
+/**
  * Drops the C string memory at the pointer.
  *
  * # Safety
