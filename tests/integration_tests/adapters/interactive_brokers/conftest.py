@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import asyncio
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -32,7 +31,6 @@ from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBr
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from tests.integration_tests.adapters.interactive_brokers.mock_client import MockInteractiveBrokersClient
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
@@ -61,15 +59,6 @@ def mocked_ib_client(
         client_id=client_id,
     )
     return client
-
-
-@pytest.fixture()
-def event_loop():
-    loop = asyncio.get_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.set_debug(True)
-    yield loop
-    ensure_all_tasks_completed()
 
 
 @pytest.fixture()
