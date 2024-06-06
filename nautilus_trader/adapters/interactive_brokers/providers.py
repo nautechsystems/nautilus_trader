@@ -73,6 +73,16 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self.contract_details: dict[str, IBContractDetails] = {}
         self.contract_id_to_instrument_id: dict[int, InstrumentId] = {}
 
+    async def initialize(self) -> None:
+        await super().initialize()
+        # Trigger contract loading only if `load_ids_on_start` is False and `load_contracts_on_start` is True
+        if not self._load_ids_on_start and self._load_contracts_on_start:
+            self._loaded = False
+            self._loading = True
+            await self.load_ids_async([])  # Asynchronously load contracts with an empty load_ids
+            self._loading = False
+            self._loaded = True
+
     async def load_all_async(self, filters: dict | None = None) -> None:
         await self.load_ids_async([])
 
