@@ -29,7 +29,7 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FOP_ORIGINAL
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FUT
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FUT_ORIGINAL
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_IND
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FUT_UNDERLYING
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_OPT
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_CASH
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_CRYPTO
@@ -66,6 +66,8 @@ simplified_symbology_params = [
     (IBContract(secType="STK", exchange="SMART", primaryExchange="NYSE", localSymbol="BF B"), "BF-B.NYSE"),
     (IBContract(secType="STK", exchange="SMART", primaryExchange="ASX", localSymbol="29M"), "29M.ASX"),
     (IBContract(secType="CRYPTO", exchange="PAXOS", localSymbol="BTC.USD"), "BTC/USD.PAXOS"),
+    (IBContract(secType="IND", exchange="CBOE", localSymbol="SPX"), "^SPX.CBOE"),
+    (IBContract(secType="IND", exchange="ASX", localSymbol="XJO"), "^XJO.ASX"),
     # fmt: on
 ]
 
@@ -111,6 +113,8 @@ strict_symbology_params = [
     (IBContract(secType="FOP", exchange="ENDEX", localSymbol="TFMG0"), "TFMG0=FOP.ENDEX"),
     (IBContract(secType="FUT", exchange="OSE.JPN", localSymbol="1690200A1"), "1690200A1=FUT.OSE/JPN"),
     (IBContract(secType="CRYPTO", exchange="PAXOS", localSymbol="BTC.USD"), "BTC.USD=CRYPTO.PAXOS"),
+    (IBContract(secType="IND", exchange="CBOE", localSymbol="SPX"), "SPX=IND.CBOE"),
+    (IBContract(secType="IND", exchange="ASX", localSymbol="XJO"), "XJO=IND.ASX"),
     # fmt: on
 ]
 
@@ -220,7 +224,7 @@ def test_regular_expression_option(symbol, expected):
 )
 def test_regular_expression_index(symbol, expected):
     # Arrange, Act
-    result = RE_IND.match(symbol).groupdict()
+    result = RE_FUT_UNDERLYING.match(symbol).groupdict()
 
     # Act, Assert
     assert result == expected

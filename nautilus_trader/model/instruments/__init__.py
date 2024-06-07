@@ -28,6 +28,7 @@ from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.futures_contract import FuturesContract
 from nautilus_trader.model.instruments.futures_spread import FuturesSpread
+from nautilus_trader.model.instruments.index_contract import IndexContract
 from nautilus_trader.model.instruments.options_contract import OptionsContract
 from nautilus_trader.model.instruments.options_spread import OptionsSpread
 from nautilus_trader.model.instruments.synthetic import SyntheticInstrument
@@ -42,6 +43,7 @@ __all__ = [
     "Equity",
     "FuturesContract",
     "FuturesSpread",
+    "IndexContract",
     "OptionsContract",
     "OptionsSpread",
     "Cfd",

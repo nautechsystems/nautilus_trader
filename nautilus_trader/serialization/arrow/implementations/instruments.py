@@ -25,6 +25,7 @@ from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import FuturesSpread
+from nautilus_trader.model.instruments import IndexContract
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.instruments import OptionsSpread
@@ -279,6 +280,20 @@ SCHEMAS = {
             "size_increment": pa.dictionary(pa.int16(), pa.string()),
             "multiplier": pa.dictionary(pa.int16(), pa.string()),
             "lot_size": pa.dictionary(pa.int16(), pa.string()),
+            "ts_event": pa.uint64(),
+            "ts_init": pa.uint64(),
+        },
+    ),
+    IndexContract: pa.schema(
+        {
+            "id": pa.dictionary(pa.int64(), pa.string()),
+            "raw_symbol": pa.string(),
+            "currency": pa.dictionary(pa.int16(), pa.string()),
+            "price_precision": pa.uint8(),
+            "price_increment": pa.dictionary(pa.int16(), pa.string()),
+            "size_precision": pa.uint8(),
+            "size_increment": pa.dictionary(pa.int16(), pa.string()),
+            "info": pa.binary(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         },
