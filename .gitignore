@@ -1,76 +1,83 @@
 *.c
 *.o
 *.so
-*.pyc
-*.pyd
 *.exp
 *.obj
 *.lib
+*.xml
+
+# Logs and patches
 *.log
 *.patch
+log/
+logs/
+
+# Profiler and database
 *.prof
 *.rdb
-*.xml
+*.sqlite
+
+# Secrets and environment files
 *.key
 *.key_secret
-*.sqlite
 *.env
+
+# Compressed files
 *.tar.gz*
 *.zip
+
+# IntelliJ and VSCode project
 *.iml
+.idea/
+.vscode/
 
-*.dbz
-*.dbn
-*.dbn.zst
-!/nautilus_core/adapters/src/databento/test_data/*
-
+# Benchmarking and coverage
 .benchmarks*
 .coverage*
+
+# Rust related
+*target/
+
+# Python related
+*.pyc
+*.pyd
 .history*
 .cache/
-.env/
-.git/
-.idea/
-.ipynb_checkpoints
 .mypy_cache/
 .profile/
 .pytest_cache/
-.python-version
 .ruff_cache/
-.vscode/
-
-/catalog/
-/examples/notebooks/catalog/
-
-__pycache__
-_build/
-build/
-data_catalog/
-dist/
-env/
-log/
-logs/
-secrets/
-ta-lib/
-*temp/
-*target/
+*dask-worker-space*
 venv*/
 
+# Build environment and temp
+_build/
+build/
+dist/
+env/
+*temp/
+
+# System and editor specific
+.cursorignore
 .DS_Store
 .null-ls*
 PERF.JSON
 output.json
-*dask-worker-space*
-.cursorignore
 
+# Docs and notebooks
 docs/**/*.ipynb
 examples/backtest/notebooks/catalog
+
+# Nautilus specific
+bench_data/
+/catalog/
+/examples/notebooks/catalog/
 nautilus_trader/**/.gitignore
 nautilus_trader/test_kit/mocks/.nautilus/
 tests/test_data/catalog/
 tests/unit_tests/catalog/
 tests/unit_tests/persistence/catalog
-bench_data/
 
+# Exceptions
+!/nautilus_core/adapters/src/databento/test_data/*
 !tests/integration_tests/adapters/betfair/responses/*.log
-**/test_db.sqlite
