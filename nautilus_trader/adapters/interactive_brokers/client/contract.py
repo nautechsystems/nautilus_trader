@@ -126,7 +126,7 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
                     self._eclient.reqSecDefOptParams,
                     reqId=req_id,
                     underlyingSymbol=underlying.symbol,
-                    futFopExchange="" if underlying.secType == "STK" else underlying.exchange,
+                    futFopExchange=underlying.exchange if underlying.secType == "FUT" else "",
                     underlyingSecType=underlying.secType,
                     underlyingConId=underlying.conId,
                 ),
