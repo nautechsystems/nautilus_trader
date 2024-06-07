@@ -156,20 +156,24 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             self._log.debug(f"Got {details=}")
 
         if (
-            contract.secType in ["STK", "FUT"]
+            contract.secType in ["STK", "FUT", "IND"]
             and contract.build_options_chain
             or self._build_options_chain
         ):
             # Return Underlying contract details with Option Chains, including for the Future Chains if apply
             for detail in set(details):
-                details.extend(
-                    await self.get_option_chain_details(
+                if contract.lastTradeDateOrContractMonth:
+                    option_contracts_detail = await self.get_option_chain_details_by_expiry(
+                        underlying=detail.contract,
+                        last_trading_date=contract.lastTradeDateOrContractMonth,
+                    )
+                else:
+                    option_contracts_detail = await self.get_option_chain_details_by_range(
                         underlying=detail.contract,
                         min_expiry=min_expiry,
                         max_expiry=max_expiry,
-                        last_trading_date=contract.lastTradeDateOrContractMonth,
-                    ),
-                )
+                    )
+                details.extend(option_contracts_detail)
         return details
 
     async def get_future_chain_details(
@@ -191,51 +195,54 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self._log.debug(f"Got {details=}")
         return details
 
-    async def get_option_chain_details(
+    async def get_option_chain_details_by_range(
         self,
         underlying: IBContract,
         min_expiry: pd.Timestamp,
         max_expiry: pd.Timestamp,
-        last_trading_date: str,
         exchange: str | None = None,
     ) -> list[ContractDetails]:
-        if last_trading_date:
-            expirations = [last_trading_date]
-        else:
-            try:
-                chains = await self._client.get_option_chains(underlying)
-                [chain] = [chain for chain in chains if chain[0] == (exchange or "SMART")]
-            except ValueError as e:
-                self._log.error(
-                    f"No chain details loaded for the given underlying {underlying}, {e}",
-                )
-                return []
+        chains = await self._client.get_option_chains(underlying)
+        filtered_chains = [chain for chain in chains if chain[0] == (exchange or "SMART")]
 
+        details = []
+        for chain in filtered_chains:
             expirations = sorted(
                 exp for exp in chain[1] if (min_expiry <= pd.Timestamp(exp) <= max_expiry)
             )
+            for expiration in expirations:
+                option_contracts_detail = await self.get_option_chain_details_by_expiry(
+                    underlying=underlying,
+                    last_trading_date=expiration,
+                    exchange=exchange,
+                )
+                details.extend(option_contracts_detail)
 
-        details = []
-        for expiration in expirations:
-            [option_details] = (
-                await self._client.get_contract_details(
-                    IBContract(
-                        secType="OPT",
-                        symbol=underlying.symbol,
-                        lastTradeDateOrContractMonth=expiration,
-                        exchange=exchange or "SMART",
-                    ),
-                ),
-            )
-            option_details = [d for d in option_details if d.underConId == underlying.conId]
-            self._log.info(
-                f"Received {len(option_details)} Option Contracts for "
-                f"{underlying.symbol}.{underlying.primaryExchange or underlying.exchange} expiring on {expiration}",
-            )
-            self._log.debug(f"Got {option_details=}")
-            details.extend(option_details)
-        # Finally we need to match the conId with underlying because results may include other securities
         return details
+
+    async def get_option_chain_details_by_expiry(
+        self,
+        underlying: IBContract,
+        last_trading_date: str,
+        exchange: str | None = None,
+    ) -> list[ContractDetails]:
+        [option_details] = (
+            await self._client.get_contract_details(
+                IBContract(
+                    secType="OPT",
+                    symbol=underlying.symbol,
+                    lastTradeDateOrContractMonth=last_trading_date,
+                    exchange=exchange or "SMART",
+                ),
+            ),
+        )
+        option_details = [d for d in option_details if d.underConId == underlying.conId]
+        self._log.info(
+            f"Received {len(option_details)} Option Contracts for "
+            f"{underlying.symbol}.{underlying.primaryExchange or underlying.exchange} expiring on {last_trading_date}",
+        )
+        self._log.debug(f"Got {option_details=}")
+        return option_details
 
     async def load_async(
         self,
