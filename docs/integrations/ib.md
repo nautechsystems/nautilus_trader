@@ -98,7 +98,7 @@ The InteractiveBrokersInstrumentProvider supports two methods for constructing I
 ### Simplified Symbology
 When strict_symbology is set to False (the default setting), the system utilizes the following parsing rules for symbology:
 
-- Forex: The format is `{localSymbol}={secType}.{exchange}`, where the currency pair is constructed as `EUR/USD.IDEALPRO`.
+- Forex: The format is `{symbol}/{currency}.{exchange}`, where the currency pair is constructed as `EUR/USD.IDEALPRO`.
 - Stocks: The format is `{localSymbol}.{primaryExchange}`. Any spaces in localSymbol are replaced with -, e.g., `BF-B.NYSE`.
 - Futures: The format is `{localSymbol}.{exchange}`. Single digit years are expanded to two digits, e.g., `ESM24.CME`.
 - Options: The format is `{localSymbol}.{exchange}`, with all spaces removed from localSymbol, e.g., `AAPL230217P00155000.SMART`.
@@ -112,24 +112,6 @@ Setting strict_symbology to True enforces stricter parsing rules that align dire
 - Default for Other Types: `{localSymbol}={secType}.{exchange}`
 
 This configuration ensures that the symbology is explicitly defined and matched with the Interactive Brokers API requirements, providing clear and consistent instrument identification.
-
-
-## Symbology
-There are two methods for building InstrumentId supported which can be configured by setting `strict_symbology` flag in `InteractiveBrokersInstrumentProviderConfig`.
-
-### Simplified Symbology
-When `strict_symbology=False`, which is default, the parsing rules for Symbology will be as follows:
-- Forex: `{localSymbol}={secType}.{exchange}`, currency pair is built i.e. `EUR/USD.IDEALPRO`
-- Stocks: `{localSymbol}.{primaryExchange}`, any spaces in localSymbol are replaced with `-` i.e. `BF-B.NYSE`
-- Futures: `{localSymbol}.{exchange}`, single digit year replaced with two digits i.e. `ESM24.CME`
-- Options: `{localSymbol}.{exchange}`, all spaces are removed from localSymbol i.e. `AAPL230217P00155000.SMART`
-
-### Strict Symbology
-If you choose to `strict_symbology=True`, all the parsing from InstrumentId to IBContract and vice versa would be as follows against the fields in `ibapi`:
-- For CFDs: `{localSymbol}={secType}.IBCFD`
-- For Commodity: `{localSymbol}={secType}.IBCMDTY`
-- Default: `{localSymbol}={secType}.{exchange}`
-
 
 ## Instruments & Contracts
 
