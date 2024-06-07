@@ -25,7 +25,7 @@ from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import FuturesSpread
-from nautilus_trader.model.instruments import IndexContract
+from nautilus_trader.model.instruments import IndexInstrument
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.instruments import OptionsSpread
@@ -284,7 +284,7 @@ SCHEMAS = {
             "ts_init": pa.uint64(),
         },
     ),
-    IndexContract: pa.schema(
+    IndexInstrument: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
             "raw_symbol": pa.string(),

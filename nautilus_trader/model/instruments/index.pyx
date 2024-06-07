@@ -27,9 +27,11 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class IndexContract(Instrument):
+cdef class IndexInstrument(Instrument):
     """
     Represents a generic Index instrument.
+
+    This instrument is not tradable.
 
     Parameters
     ----------
@@ -39,14 +41,14 @@ cdef class IndexContract(Instrument):
         The raw/local/native symbol for the instrument, assigned by the venue.
     currency : Currency
         The futures contract currency.
-    size_precision : int
-        The trading size decimal precision.
-    size_increment : Quantity
-        The minimum size increment.
     price_precision : int
         The price decimal precision.
     price_increment : Price
         The minimum price increment (tick size).
+    size_precision : int
+        The trading size decimal precision.
+    size_increment : Quantity
+        The minimum size increment.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
@@ -59,7 +61,15 @@ cdef class IndexContract(Instrument):
     ValueError
         If `price_precision` is negative (< 0).
     ValueError
+        If `size_precision` is negative (< 0).
+    ValueError
         If `price_increment` is not positive (> 0).
+    ValueError
+        If `size_increment` is not positive (> 0).
+    ValueError
+        If `price_precision` is not equal to price_increment.precision.
+    ValueError
+        If `size_increment` is not equal to size_increment.precision.
 
     """
 
@@ -68,10 +78,10 @@ cdef class IndexContract(Instrument):
         InstrumentId instrument_id not None,
         Symbol raw_symbol not None,
         Currency currency not None,
-        int size_precision,
-        Quantity size_increment not None,
         int price_precision,
+        int size_precision,
         Price price_increment not None,
+        Quantity size_increment not None,
         uint64_t ts_event,
         uint64_t ts_init,
         dict info = None,
@@ -98,9 +108,9 @@ cdef class IndexContract(Instrument):
         )
 
     @staticmethod
-    cdef IndexContract from_dict_c(dict values):
+    cdef IndexInstrument from_dict_c(dict values):
         Condition.not_none(values, "values")
-        return IndexContract(
+        return IndexInstrument(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
             currency=Currency.from_str_c(values["currency"]),
@@ -114,10 +124,10 @@ cdef class IndexContract(Instrument):
         )
 
     @staticmethod
-    cdef dict to_dict_c(IndexContract obj):
+    cdef dict to_dict_c(IndexInstrument obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "IndexContract",
+            "type": "IndexInstrument",
             "id": obj.id.to_str(),
             "raw_symbol": obj.raw_symbol.to_str(),
             "currency": obj.quote_currency.code,
@@ -131,8 +141,8 @@ cdef class IndexContract(Instrument):
         }
 
     @staticmethod
-    cdef IndexContract from_pyo3_c(pyo3_instrument):
-        return IndexContract(
+    cdef IndexInstrument from_pyo3_c(pyo3_instrument):
+        return IndexInstrument(
             instrument_id=InstrumentId.from_str_c(pyo3_instrument.id.value),
             raw_symbol=Symbol(pyo3_instrument.id.symbol.value),
             currency=Currency.from_str_c(pyo3_instrument.quote_currency.code),
@@ -157,10 +167,10 @@ cdef class IndexContract(Instrument):
 
         Returns
         -------
-        IndexContract
+        IndexInstrument
 
         """
-        return IndexContract.from_dict_c(values)
+        return IndexInstrument.from_dict_c(values)
 
     @staticmethod
     def to_dict(Instrument obj) -> dict[str, object]:
@@ -172,21 +182,21 @@ cdef class IndexContract(Instrument):
         dict[str, object]
 
         """
-        return IndexContract.to_dict_c(obj)
+        return IndexInstrument.to_dict_c(obj)
 
     @staticmethod
-    def from_pyo3(pyo3_instrument) -> IndexContract:
+    def from_pyo3(pyo3_instrument) -> IndexInstrument:
         """
         Return legacy Cython index instrument converted from the given pyo3 Rust object.
 
         Parameters
         ----------
-        pyo3_instrument : nautilus_pyo3.IndexContract
+        pyo3_instrument : nautilus_pyo3.IndexInstrument
             The pyo3 Rust index instrument to convert from.
 
         Returns
         -------
-        IndexContract
+        IndexInstrument
 
         """
-        return IndexContract.from_pyo3_c(pyo3_instrument)
+        return IndexInstrument.from_pyo3_c(pyo3_instrument)

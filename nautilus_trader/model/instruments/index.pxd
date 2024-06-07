@@ -16,12 +16,12 @@
 from nautilus_trader.model.instruments.base cimport Instrument
 
 
-cdef class IndexContract(Instrument):
+cdef class IndexInstrument(Instrument):
     @staticmethod
-    cdef IndexContract from_dict_c(dict values)
+    cdef IndexInstrument from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(IndexContract obj)
+    cdef dict to_dict_c(IndexInstrument obj)
 
     @staticmethod
-    cdef IndexContract from_pyo3_c(pyo3_instrument)
+    cdef IndexInstrument from_pyo3_c(pyo3_instrument)
