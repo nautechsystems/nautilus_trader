@@ -37,7 +37,7 @@ from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
-from nautilus_trader.model.instruments import IndexContract
+from nautilus_trader.model.instruments import IndexInstrument
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.objects import Currency
@@ -197,12 +197,12 @@ def parse_equity_contract(
 def parse_index_contract(
     details: IBContractDetails,
     instrument_id: InstrumentId,
-) -> IndexContract:
+) -> IndexInstrument:
     price_precision: int = _tick_size_to_precision(details.minTick)
     size_precision: int = _tick_size_to_precision(details.minSize)
     timestamp = time.time_ns()
 
-    return IndexContract(
+    return IndexInstrument(
         instrument_id=instrument_id,
         raw_symbol=Symbol(details.contract.localSymbol),
         currency=Currency.from_str(details.contract.currency),
