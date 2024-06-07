@@ -18,7 +18,6 @@ import re
 import time
 from decimal import Decimal
 
-import msgspec
 import pandas as pd
 from ibapi.contract import ContractDetails
 
@@ -38,6 +37,7 @@ from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
+from nautilus_trader.model.instruments import IndexContract
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.objects import Currency
@@ -86,7 +86,7 @@ RE_CFD_CASH = re.compile(r"^(?P<symbol>[A-Z]{3})\.(?P<currency>[A-Z]{3})$")
 RE_OPT = re.compile(
     r"^(?P<symbol>^[A-Z]{1,6})(?P<expiry>\d{6})(?P<right>[CP])(?P<strike>\d{5})(?P<decimal>\d{3})$",
 )
-RE_IND = re.compile(r"^(?P<symbol>\w{1,3})$")
+RE_FUT_UNDERLYING = re.compile(r"^(?P<symbol>\w{1,3})$")
 RE_FUT = re.compile(r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{2})$")
 RE_FUT_ORIGINAL = re.compile(r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d)$")
 RE_FUT2 = re.compile(
@@ -145,6 +145,8 @@ def parse_instrument(
     )
     if security_type == "STK":
         return parse_equity_contract(details=contract_details, instrument_id=instrument_id)
+    elif security_type == "IND":
+        return parse_index_contract(details=contract_details, instrument_id=instrument_id)
     elif security_type in ("FUT", "CONTFUT"):
         return parse_futures_contract(details=contract_details, instrument_id=instrument_id)
     elif security_type == "OPT":
@@ -186,6 +188,28 @@ def parse_equity_contract(
         price_increment=Price(details.minTick, price_precision),
         lot_size=Quantity.from_int(100),
         isin=_extract_isin(details),
+        ts_event=timestamp,
+        ts_init=timestamp,
+        info=contract_details_to_dict(details),
+    )
+
+
+def parse_index_contract(
+    details: IBContractDetails,
+    instrument_id: InstrumentId,
+) -> IndexContract:
+    price_precision: int = _tick_size_to_precision(details.minTick)
+    size_precision: int = _tick_size_to_precision(details.minSize)
+    timestamp = time.time_ns()
+
+    return IndexContract(
+        instrument_id=instrument_id,
+        raw_symbol=Symbol(details.contract.localSymbol),
+        currency=Currency.from_str(details.contract.currency),
+        price_precision=price_precision,
+        price_increment=Price(details.minTick, price_precision),
+        size_precision=size_precision,
+        size_increment=Quantity(details.sizeIncrement, size_precision),
         ts_event=timestamp,
         ts_init=timestamp,
         info=contract_details_to_dict(details),
@@ -469,6 +493,9 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
     if security_type == "STK":
         symbol = (contract.localSymbol or contract.symbol).replace(" ", "-")
         venue = contract.primaryExchange if contract.exchange == "SMART" else contract.exchange
+    elif security_type == "IND":
+        symbol = f"^{(contract.localSymbol or contract.symbol)}"
+        venue = contract.exchange
     elif security_type == "OPT":
         symbol = contract.localSymbol.replace(" ", "") or contract.symbol.replace(" ", "")
         venue = contract.exchange
@@ -484,7 +511,6 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
     elif security_type == "FOP" and (m := RE_FOP_ORIGINAL.match(contract.localSymbol)):
         symbol = f"{m['symbol']}{m['month']}{decade_digit(m['year'], contract)}{m['year']}{m['right']}{m['strike']}"
         venue = contract.exchange
-
     elif security_type in ["CASH", "CRYPTO"]:
         symbol = (
             f"{contract.localSymbol}".replace(".", "/") or f"{contract.symbol}/{contract.currency}"
@@ -545,6 +571,12 @@ def instrument_id_to_ib_contract_strict_symbology(instrument_id: InstrumentId) -
             exchange="SMART",
             localSymbol=local_symbol,
         )
+    elif security_type == "IND":
+        return IBContract(
+            secType=security_type,
+            exchange=exchange,
+            localSymbol=local_symbol,
+        )
     else:
         return IBContract(
             secType=security_type,
@@ -587,7 +619,7 @@ def instrument_id_to_ib_contract_simplified_symbology(  # noqa: C901 (too comple
                 exchange=instrument_id.venue.value,
                 localSymbol=f"{m['symbol']}{m['month']}{m['year'][-1]}",
             )
-        elif m := RE_IND.match(instrument_id.symbol.value):
+        elif m := RE_FUT_UNDERLYING.match(instrument_id.symbol.value):
             return IBContract(
                 secType="CONTFUT",
                 exchange=instrument_id.venue.value,
@@ -621,10 +653,12 @@ def instrument_id_to_ib_contract_simplified_symbology(  # noqa: C901 (too comple
             exchange="SMART",
             symbol=f"{instrument_id.symbol.value}".replace("-", " "),
         )
-    elif instrument_id.venue.value == "InteractiveBrokers":  # keep until a better approach
-        # This will allow to make Instrument request using IBContract from within Strategy
-        # and depending on the Strategy requirement
-        return msgspec.json.decode(instrument_id.symbol.value, type=IBContract)
+    elif str(instrument_id.symbol).startswith("^"):
+        return IBContract(
+            secType="IND",
+            exchange=instrument_id.venue.value,
+            localSymbol=instrument_id.symbol.value[1:],
+        )
 
     # Default to Stock
     return IBContract(
