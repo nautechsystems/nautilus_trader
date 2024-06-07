@@ -93,6 +93,8 @@ def get_cached_ib_client(
             GATEWAY = DockerizedIBGateway(dockerized_gateway)
             GATEWAY.safe_start(wait=dockerized_gateway.timeout)
             port = GATEWAY.port
+        else:
+            port = GATEWAY.port
     else:
         PyCondition.not_none(
             host,
