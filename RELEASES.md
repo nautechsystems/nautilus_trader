@@ -1,6 +1,6 @@
 # NautilusTrader 1.195.0 Beta
 
-Released on TBD (UTC).
+Released on 7th June 2024 (UTC).
 
 ### Enhancements
 - Added Bybit base coin for fee rate parsing (#1696), thanks @filipmacek
@@ -15,6 +15,7 @@ None
 ### Fixes
 - Fixed DataFusion streaming backend mem usage (now constant mem usage) (#1693), thanks @twitu
 - Fixed `Instrument.make_price` and `make_qty` when increments have a lower precision (was not rounding to the minimum increment)
+- Fixed Interactive Brokers multiple gateway clients (incorrect port handling in factory) (#1702), thanks @dodofarm
 
 ---
 
