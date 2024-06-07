@@ -92,7 +92,7 @@ mod tests {
             .add(String::from("test_id"), test_id_value.clone())
             .await
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
         let result = pg_cache.load().await.unwrap();
         assert_eq!(result.keys().len(), 1);
         assert_eq!(
