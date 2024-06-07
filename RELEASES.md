@@ -4,7 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added Bybit base coin for fee rate parsing (#1696), thanks @filipmacek
-- Added `IndexInstrument` with support for Interactive Brokers, thanks @rsmb7z
+- Added `IndexInstrument` with support for Interactive Brokers (#1703), thanks @rsmb7z
 - Improved `InteractiveBrokersInstrumentProvider` contract loading (#1699), thanks @rsmb7z
 - Improved `InteractiveBrokersInstrumentProvider` option chain loading (#1704), thanks @rsmb7z
 - Refactored Interactive Brokers client and gateway configuration (#1692), thanks @rsmb7z
