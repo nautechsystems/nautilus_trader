@@ -68,7 +68,7 @@ pub trait CacheDatabaseAdapter {
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<SyntheticInstrument>;
 
-    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<()>;
+    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Box<dyn Account>>;
 
     fn load_order(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<OrderAny>;
 
