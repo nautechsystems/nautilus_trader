@@ -117,7 +117,7 @@ impl From<&str> for Venue {
 mod tests {
     use rstest::rstest;
 
-    use crate::identifiers::{stubs::*, venue::Venue};
+    use crate::identifiers::{stubs::*, Venue};
 
     #[rstest]
     fn test_string_reprs(venue_binance: Venue) {

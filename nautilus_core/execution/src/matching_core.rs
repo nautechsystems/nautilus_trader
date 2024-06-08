@@ -21,7 +21,7 @@
 
 use nautilus_model::{
     enums::OrderSideSpecified,
-    identifiers::{client_order_id::ClientOrderId, instrument_id::InstrumentId},
+    identifiers::{ClientOrderId, InstrumentId},
     orders::{
         any::{LimitOrderAny, PassiveOrderAny, StopOrderAny},
         base::OrderError,

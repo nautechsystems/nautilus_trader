@@ -21,9 +21,7 @@ use nautilus_core::{time::AtomicTime, uuid::UUID4};
 use nautilus_model::{
     enums::{ContingencyType, OrderSide, TimeInForce},
     identifiers::{
-        client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
-        instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
-        trader_id::TraderId,
+        ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
     orders::{any::OrderAny, market::MarketOrder},
     types::quantity::Quantity,
@@ -146,9 +144,7 @@ impl OrderFactory {
 pub mod tests {
     use nautilus_model::{
         enums::{OrderSide, TimeInForce},
-        identifiers::{
-            client_order_id::ClientOrderId, instrument_id::InstrumentId, order_list_id::OrderListId,
-        },
+        identifiers::{ClientOrderId, InstrumentId, OrderListId},
     };
     use rstest::rstest;
 

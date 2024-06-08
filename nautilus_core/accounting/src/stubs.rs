@@ -16,7 +16,7 @@
 use nautilus_common::{factories::OrderFactory, stubs::*};
 use nautilus_model::{
     enums::OrderSide,
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
     instruments::{any::InstrumentAny, currency_pair::CurrencyPair, stubs::audusd_sim},
     orders::stubs::TestOrderEventStubs,
     position::Position,

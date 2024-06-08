@@ -24,7 +24,7 @@ use super::{
 };
 use crate::{
     enums::{AssetClass, OptionKind},
-    identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
+    identifiers::{InstrumentId, Symbol, Venue},
     instruments::{
         crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
         currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,

@@ -23,7 +23,7 @@ use std::{
 use nautilus_core::correctness::{check_string_contains, check_valid_string};
 use ustr::Ustr;
 
-use super::venue::Venue;
+use super::Venue;
 
 /// Represents a valid account ID.
 #[repr(C)]

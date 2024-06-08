@@ -32,7 +32,7 @@ use nautilus_model::{
         Data,
     },
     enums::RecordFlag,
-    identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
+    identifiers::{InstrumentId, Symbol, Venue},
     instruments::any::InstrumentAny,
 };
 use tokio::{

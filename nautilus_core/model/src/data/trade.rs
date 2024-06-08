@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use super::GetTsInit;
 use crate::{
     enums::AggressorSide,
-    identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    identifiers::{InstrumentId, TradeId},
     types::{price::Price, quantity::Quantity},
 };
 

@@ -19,7 +19,7 @@ use databento::dbn;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     enums::OrderSide,
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
 use serde::Deserialize;

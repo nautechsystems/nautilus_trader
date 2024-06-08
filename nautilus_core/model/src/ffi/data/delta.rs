@@ -23,7 +23,7 @@ use nautilus_core::nanos::UnixNanos;
 use crate::{
     data::{delta::OrderBookDelta, order::BookOrder},
     enums::BookAction,
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
 };
 
 #[no_mangle]

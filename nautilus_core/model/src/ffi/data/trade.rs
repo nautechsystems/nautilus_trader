@@ -24,7 +24,7 @@ use nautilus_core::ffi::string::str_to_cstr;
 use crate::{
     data::trade::TradeTick,
     enums::AggressorSide,
-    identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    identifiers::{InstrumentId, TradeId},
     types::{price::Price, quantity::Quantity},
 };
 

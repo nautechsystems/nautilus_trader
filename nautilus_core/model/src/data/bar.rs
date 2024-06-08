@@ -30,7 +30,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use super::GetTsInit;
 use crate::{
     enums::{AggregationSource, BarAggregation, PriceType},
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
 
@@ -316,7 +316,7 @@ mod tests {
     use super::*;
     use crate::{
         enums::BarAggregation,
-        identifiers::{symbol::Symbol, venue::Venue},
+        identifiers::{Symbol, Venue},
     };
 
     #[rstest]

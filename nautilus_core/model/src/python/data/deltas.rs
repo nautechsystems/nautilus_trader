@@ -28,7 +28,7 @@ use crate::{
         deltas::{OrderBookDeltas, OrderBookDeltas_API},
         Data,
     },
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
     python::common::PY_MODULE_MODEL,
 };
 

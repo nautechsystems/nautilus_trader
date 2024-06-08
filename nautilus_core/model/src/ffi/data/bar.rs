@@ -28,7 +28,7 @@ use nautilus_core::{
 use crate::{
     data::bar::{Bar, BarSpecification, BarType},
     enums::{AggregationSource, BarAggregation, PriceType},
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
 

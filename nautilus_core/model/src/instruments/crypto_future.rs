@@ -26,7 +26,7 @@ use ustr::Ustr;
 use super::{any::InstrumentAny, Instrument};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
-    identifiers::{instrument_id::InstrumentId, symbol::Symbol},
+    identifiers::{InstrumentId, Symbol},
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 

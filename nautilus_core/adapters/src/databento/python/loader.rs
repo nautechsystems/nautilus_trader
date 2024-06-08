@@ -22,7 +22,7 @@ use nautilus_model::{
         bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
         trade::TradeTick, Data,
     },
-    identifiers::{instrument_id::InstrumentId, venue::Venue},
+    identifiers::{InstrumentId, Venue},
     python::instruments::instrument_any_to_pyobject,
 };
 use pyo3::{

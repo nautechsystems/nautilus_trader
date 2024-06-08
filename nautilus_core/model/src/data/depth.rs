@@ -25,7 +25,7 @@ use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
 use super::{order::BookOrder, GetTsInit};
-use crate::identifiers::instrument_id::InstrumentId;
+use crate::identifiers::InstrumentId;
 
 pub const DEPTH10_LEN: usize = 10;
 

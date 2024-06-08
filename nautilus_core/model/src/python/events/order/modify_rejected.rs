@@ -24,10 +24,7 @@ use ustr::Ustr;
 
 use crate::{
     events::order::OrderModifyRejected,
-    identifiers::{
-        account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
-        strategy_id::StrategyId, trader_id::TraderId, venue_order_id::VenueOrderId,
-    },
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
 };
 
 #[pymethods]

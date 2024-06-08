@@ -24,7 +24,7 @@ use datafusion::arrow::{
 use nautilus_model::{
     data::trade::TradeTick,
     enums::AggressorSide,
-    identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    identifiers::{InstrumentId, TradeId},
     types::{price::Price, quantity::Quantity},
 };
 

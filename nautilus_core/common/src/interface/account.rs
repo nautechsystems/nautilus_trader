@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
-    identifiers::account_id::AccountId,
+    identifiers::AccountId,
     instruments::any::InstrumentAny,
     position::Position,
     types::{

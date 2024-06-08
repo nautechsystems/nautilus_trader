@@ -34,7 +34,7 @@ use super::data_to_pycapsule;
 use crate::{
     data::{quote::QuoteTick, Data},
     enums::PriceType,
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
     python::common::PY_MODULE_MODEL,
     types::{price::Price, quantity::Quantity},
 };

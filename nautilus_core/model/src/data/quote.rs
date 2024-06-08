@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 use super::GetTsInit;
 use crate::{
     enums::PriceType,
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
     types::{fixed::FIXED_PRECISION, price::Price, quantity::Quantity},
 };
 

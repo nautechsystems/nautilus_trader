@@ -22,10 +22,8 @@ use crate::{
         TriggerType,
     },
     identifiers::{
-        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
-        instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
-        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
-        venue_order_id::VenueOrderId,
+        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
+        StrategyId, TradeId, TraderId, VenueOrderId,
     },
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };

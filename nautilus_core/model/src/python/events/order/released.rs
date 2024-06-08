@@ -21,10 +21,7 @@ use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
     events::order::OrderReleased,
-    identifiers::{
-        client_order_id::ClientOrderId, instrument_id::InstrumentId, strategy_id::StrategyId,
-        trader_id::TraderId,
-    },
+    identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
     types::price::Price,
 };
 

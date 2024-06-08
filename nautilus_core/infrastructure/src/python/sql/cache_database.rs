@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use nautilus_common::runtime::get_runtime;
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
-    identifiers::{client_order_id::ClientOrderId, instrument_id::InstrumentId},
+    identifiers::{ClientOrderId, InstrumentId},
     python::{
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
         orders::{convert_order_any_to_pyobject, convert_pyobject_to_order_any},

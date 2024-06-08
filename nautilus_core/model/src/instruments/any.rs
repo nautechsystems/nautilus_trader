@@ -21,7 +21,7 @@ use super::{
     options_contract::OptionsContract, options_spread::OptionsSpread, Instrument,
 };
 use crate::{
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 

@@ -22,7 +22,7 @@ use crate::{
         quote::QuoteTick, trade::TradeTick,
     },
     enums::{BookType, OrderSide},
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
     orderbook::{
         aggregation::{update_book_with_quote_tick, update_book_with_trade_tick},
         analysis::book_check_integrity,

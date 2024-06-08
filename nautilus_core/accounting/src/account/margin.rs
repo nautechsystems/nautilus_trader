@@ -26,7 +26,7 @@ use nautilus_common::interface::account::Account;
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
-    identifiers::{account_id::AccountId, instrument_id::InstrumentId},
+    identifiers::{AccountId, InstrumentId},
     instruments::{any::InstrumentAny, Instrument},
     position::Position,
     types::{
@@ -415,7 +415,7 @@ mod tests {
     use nautilus_common::interface::account::Account;
     use nautilus_model::{
         events::account::{state::AccountState, stubs::*},
-        identifiers::{instrument_id::InstrumentId, stubs::*},
+        identifiers::{stubs::*, InstrumentId},
         instruments::{crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, stubs::*},
         types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
     };

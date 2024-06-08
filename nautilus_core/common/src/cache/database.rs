@@ -24,9 +24,8 @@ use std::collections::HashMap;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     identifiers::{
-        account_id::AccountId, client_id::ClientId, client_order_id::ClientOrderId,
-        component_id::ComponentId, instrument_id::InstrumentId, position_id::PositionId,
-        strategy_id::StrategyId, venue_order_id::VenueOrderId,
+        AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
+        VenueOrderId,
     },
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
     orders::any::OrderAny,

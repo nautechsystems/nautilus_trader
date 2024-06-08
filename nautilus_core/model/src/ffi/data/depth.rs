@@ -25,7 +25,7 @@ use crate::{
         depth::{OrderBookDepth10, DEPTH10_LEN},
         order::BookOrder,
     },
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
 };
 
 /// # Safety

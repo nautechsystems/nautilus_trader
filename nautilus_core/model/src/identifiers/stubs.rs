@@ -19,10 +19,8 @@ use nautilus_core::uuid::UUID4;
 use rstest::fixture;
 
 use crate::identifiers::{
-    account_id::AccountId, client_id::ClientId, client_order_id::ClientOrderId,
-    component_id::ComponentId, exec_algorithm_id::ExecAlgorithmId, instrument_id::InstrumentId,
-    order_list_id::OrderListId, position_id::PositionId, strategy_id::StrategyId, symbol::Symbol,
-    trade_id::TradeId, trader_id::TraderId, venue::Venue, venue_order_id::VenueOrderId,
+    AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId, OrderListId,
+    PositionId, StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
 };
 
 impl Default for AccountId {

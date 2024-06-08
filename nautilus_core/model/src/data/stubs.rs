@@ -29,7 +29,7 @@ use super::{
 use crate::{
     data::order::BookOrder,
     enums::{AggregationSource, AggressorSide, BarAggregation, BookAction, OrderSide, PriceType},
-    identifiers::{instrument_id::InstrumentId, symbol::Symbol, trade_id::TradeId, venue::Venue},
+    identifiers::{InstrumentId, Symbol, TradeId, Venue},
     types::{price::Price, quantity::Quantity},
 };
 

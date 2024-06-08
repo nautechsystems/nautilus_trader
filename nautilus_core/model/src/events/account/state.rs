@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     enums::AccountType,
-    identifiers::account_id::AccountId,
+    identifiers::AccountId,
     types::{
         balance::{AccountBalance, MarginBalance},
         currency::Currency,

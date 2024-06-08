@@ -19,7 +19,7 @@ use nautilus_core::python::to_pyvalue_err;
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
     types::{
         balance::{AccountBalance, MarginBalance},
         currency::Currency,

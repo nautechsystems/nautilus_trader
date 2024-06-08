@@ -30,10 +30,8 @@ use nautilus_model::{
     },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType, TriggerType},
     identifiers::{
-        account_id::AccountId, client_id::ClientId, client_order_id::ClientOrderId,
-        component_id::ComponentId, exec_algorithm_id::ExecAlgorithmId, instrument_id::InstrumentId,
-        order_list_id::OrderListId, position_id::PositionId, strategy_id::StrategyId, venue::Venue,
-        venue_order_id::VenueOrderId,
+        AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
+        OrderListId, PositionId, StrategyId, Venue, VenueOrderId,
     },
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
     orderbook::book::OrderBook,
@@ -2512,7 +2510,7 @@ mod tests {
         data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
         enums::{OrderSide, OrderStatus},
         events::order::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
-        identifiers::{client_order_id::ClientOrderId, position_id::PositionId},
+        identifiers::{ClientOrderId, PositionId},
         instruments::{
             any::InstrumentAny, currency_pair::CurrencyPair, stubs::*,
             synthetic::SyntheticInstrument,

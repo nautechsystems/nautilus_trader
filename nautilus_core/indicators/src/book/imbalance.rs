@@ -99,7 +99,7 @@ impl BookImbalanceRatio {
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        identifiers::instrument_id::InstrumentId,
+        identifiers::InstrumentId,
         stubs::{stub_order_book_mbp, stub_order_book_mbp_appl_xnas},
     };
     use rstest::rstest;

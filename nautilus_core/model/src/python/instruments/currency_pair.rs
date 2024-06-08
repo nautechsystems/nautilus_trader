@@ -23,7 +23,7 @@ use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::Decimal;
 
 use crate::{
-    identifiers::{instrument_id::InstrumentId, symbol::Symbol},
+    identifiers::{InstrumentId, Symbol},
     instruments::currency_pair::CurrencyPair,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
