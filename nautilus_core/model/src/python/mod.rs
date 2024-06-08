@@ -122,22 +122,22 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
         m
     )?)?;
     // Events - order
-    m.add_class::<crate::events::order::denied::OrderDenied>()?;
-    m.add_class::<crate::events::order::filled::OrderFilled>()?;
-    m.add_class::<crate::events::order::initialized::OrderInitialized>()?;
-    m.add_class::<crate::events::order::rejected::OrderRejected>()?;
-    m.add_class::<crate::events::order::triggered::OrderTriggered>()?;
-    m.add_class::<crate::events::order::submitted::OrderSubmitted>()?;
-    m.add_class::<crate::events::order::emulated::OrderEmulated>()?;
-    m.add_class::<crate::events::order::released::OrderReleased>()?;
-    m.add_class::<crate::events::order::updated::OrderUpdated>()?;
-    m.add_class::<crate::events::order::pending_update::OrderPendingUpdate>()?;
-    m.add_class::<crate::events::order::pending_cancel::OrderPendingCancel>()?;
-    m.add_class::<crate::events::order::modify_rejected::OrderModifyRejected>()?;
-    m.add_class::<crate::events::order::accepted::OrderAccepted>()?;
-    m.add_class::<crate::events::order::cancel_rejected::OrderCancelRejected>()?;
-    m.add_class::<crate::events::order::canceled::OrderCanceled>()?;
-    m.add_class::<crate::events::order::expired::OrderExpired>()?;
+    m.add_class::<crate::events::order::OrderDenied>()?;
+    m.add_class::<crate::events::order::OrderFilled>()?;
+    m.add_class::<crate::events::order::OrderInitialized>()?;
+    m.add_class::<crate::events::order::OrderRejected>()?;
+    m.add_class::<crate::events::order::OrderTriggered>()?;
+    m.add_class::<crate::events::order::OrderSubmitted>()?;
+    m.add_class::<crate::events::order::OrderEmulated>()?;
+    m.add_class::<crate::events::order::OrderReleased>()?;
+    m.add_class::<crate::events::order::OrderUpdated>()?;
+    m.add_class::<crate::events::order::OrderPendingUpdate>()?;
+    m.add_class::<crate::events::order::OrderPendingCancel>()?;
+    m.add_class::<crate::events::order::OrderModifyRejected>()?;
+    m.add_class::<crate::events::order::OrderAccepted>()?;
+    m.add_class::<crate::events::order::OrderCancelRejected>()?;
+    m.add_class::<crate::events::order::OrderCanceled>()?;
+    m.add_class::<crate::events::order::OrderExpired>()?;
     // Events - account
     m.add_class::<crate::events::account::state::AccountState>()?;
     m.add_class::<crate::position::Position>()?;

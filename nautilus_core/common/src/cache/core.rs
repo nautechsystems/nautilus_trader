@@ -2511,10 +2511,7 @@ mod tests {
     use nautilus_model::{
         data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
         enums::{OrderSide, OrderStatus},
-        events::order::{
-            accepted::OrderAccepted, rejected::OrderRejected, submitted::OrderSubmitted,
-            OrderEventAny,
-        },
+        events::order::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
         identifiers::{client_order_id::ClientOrderId, position_id::PositionId},
         instruments::{
             any::InstrumentAny, currency_pair::CurrencyPair, stubs::*,

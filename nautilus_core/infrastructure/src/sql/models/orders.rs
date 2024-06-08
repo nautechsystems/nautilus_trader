@@ -22,12 +22,10 @@ use nautilus_model::{
         TriggerType,
     },
     events::order::{
-        accepted::OrderAccepted, cancel_rejected::OrderCancelRejected, canceled::OrderCanceled,
-        denied::OrderDenied, emulated::OrderEmulated, expired::OrderExpired, filled::OrderFilled,
-        initialized::OrderInitialized, modify_rejected::OrderModifyRejected,
-        pending_cancel::OrderPendingCancel, pending_update::OrderPendingUpdate,
-        rejected::OrderRejected, released::OrderReleased, submitted::OrderSubmitted,
-        triggered::OrderTriggered, updated::OrderUpdated, OrderEventAny,
+        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
+        OrderEventAny, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
+        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
+        OrderTriggered, OrderUpdated,
     },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,

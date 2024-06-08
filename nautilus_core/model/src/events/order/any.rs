@@ -20,12 +20,10 @@ use strum::Display;
 use super::OrderEventType;
 use crate::{
     events::order::{
-        accepted::OrderAccepted, cancel_rejected::OrderCancelRejected, canceled::OrderCanceled,
-        denied::OrderDenied, emulated::OrderEmulated, expired::OrderExpired, filled::OrderFilled,
-        initialized::OrderInitialized, modify_rejected::OrderModifyRejected,
-        pending_cancel::OrderPendingCancel, pending_update::OrderPendingUpdate,
-        rejected::OrderRejected, released::OrderReleased, submitted::OrderSubmitted,
-        triggered::OrderTriggered, updated::OrderUpdated,
+        filled::OrderFilled, initialized::OrderInitialized, OrderAccepted, OrderCancelRejected,
+        OrderCanceled, OrderDenied, OrderEmulated, OrderExpired, OrderModifyRejected,
+        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
+        OrderTriggered, OrderUpdated,
     },
     identifiers::{client_order_id::ClientOrderId, strategy_id::StrategyId},
 };

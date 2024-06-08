@@ -24,7 +24,7 @@ use rust_decimal::prelude::ToPrimitive;
 use super::common::{commissions_from_hashmap, commissions_from_vec};
 use crate::{
     enums::{OrderSide, PositionSide},
-    events::order::filled::OrderFilled,
+    events::order::OrderFilled,
     identifiers::{
         client_order_id::ClientOrderId, instrument_id::InstrumentId, position_id::PositionId,
         strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,

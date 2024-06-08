@@ -20,9 +20,7 @@ use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use super::{any::OrderAny, limit::LimitOrder, stop_market::StopMarketOrder};
 use crate::{
     enums::{LiquiditySide, OrderSide, TimeInForce, TriggerType},
-    events::order::{
-        accepted::OrderAccepted, filled::OrderFilled, submitted::OrderSubmitted, OrderEventAny,
-    },
+    events::order::{OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted},
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
         position_id::PositionId, strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
