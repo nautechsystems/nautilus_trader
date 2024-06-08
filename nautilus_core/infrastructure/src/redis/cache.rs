@@ -15,6 +15,7 @@
 
 use std::{
     collections::{HashMap, VecDeque},
+    str::FromStr,
     sync::mpsc::{channel, Receiver, Sender, TryRecvError},
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -710,23 +711,68 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn load_instruments(&mut self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
-        todo!()
+        let mut instruments = HashMap::new();
+
+        for key in self.database.keys(&format!("{INSTRUMENTS}*"))? {
+            let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
+            let instrument_id = InstrumentId::from_str(parts.first().unwrap())?;
+            let instrument = self.load_instrument(&instrument_id)?;
+            instruments.insert(instrument_id, instrument);
+        }
+
+        Ok(instruments)
     }
 
     fn load_synthetics(&mut self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
-        todo!()
+        let mut synthetics = HashMap::new();
+
+        for key in self.database.keys(&format!("{SYNTHETICS}*"))? {
+            let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
+            let instrument_id = InstrumentId::from_str(parts.first().unwrap())?;
+            let synthetic = self.load_synthetic(&instrument_id)?;
+            synthetics.insert(instrument_id, synthetic);
+        }
+
+        Ok(synthetics)
     }
 
     fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, Box<dyn Account>>> {
-        todo!()
+        let mut accounts = HashMap::new();
+
+        for key in self.database.keys(&format!("{ACCOUNTS}*"))? {
+            let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
+            let account_id = AccountId::from(*parts.first().unwrap());
+            let account = self.load_account(&account_id)?;
+            accounts.insert(account_id, account);
+        }
+
+        Ok(accounts)
     }
 
     fn load_orders(&mut self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
-        todo!()
+        let mut orders = HashMap::new();
+
+        for key in self.database.keys(&format!("{ORDERS}*"))? {
+            let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
+            let client_order_id = ClientOrderId::from(*parts.first().unwrap());
+            let order = self.load_order(&client_order_id)?;
+            orders.insert(client_order_id, order);
+        }
+
+        Ok(orders)
     }
 
     fn load_positions(&mut self) -> anyhow::Result<HashMap<PositionId, Position>> {
-        todo!()
+        let mut positions = HashMap::new();
+
+        for key in self.database.keys(&format!("{POSITIONS}*"))? {
+            let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
+            let position_id = PositionId::from(*parts.first().unwrap());
+            let position = self.load_position(&position_id)?;
+            positions.insert(position_id, position);
+        }
+
+        Ok(positions)
     }
 
     fn load_index_order_position(&mut self) -> anyhow::Result<HashMap<ClientOrderId, Position>> {
@@ -752,7 +798,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<()> {
+    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Box<dyn Account>> {
         todo!()
     }
 
