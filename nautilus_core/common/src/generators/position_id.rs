@@ -16,9 +16,7 @@
 use std::collections::HashMap;
 
 use nautilus_core::time::AtomicTime;
-use nautilus_model::identifiers::{
-    position_id::PositionId, strategy_id::StrategyId, trader_id::TraderId,
-};
+use nautilus_model::identifiers::{PositionId, StrategyId, TraderId};
 
 use super::get_datetime_tag;
 
@@ -72,9 +70,7 @@ impl PositionIdGenerator {
 #[cfg(test)]
 mod tests {
     use nautilus_core::time::get_atomic_clock_static;
-    use nautilus_model::identifiers::{
-        position_id::PositionId, strategy_id::StrategyId, trader_id::TraderId,
-    };
+    use nautilus_model::identifiers::{PositionId, StrategyId, TraderId};
     use rstest::rstest;
 
     use crate::generators::position_id::PositionIdGenerator;

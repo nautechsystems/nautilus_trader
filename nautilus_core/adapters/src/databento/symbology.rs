@@ -17,7 +17,7 @@ use databento::dbn;
 use dbn::Record;
 use indexmap::IndexMap;
 use nautilus_core::correctness::check_slice_not_empty;
-use nautilus_model::identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue};
+use nautilus_model::identifiers::{InstrumentId, Symbol, Venue};
 
 use super::types::PublisherId;
 
