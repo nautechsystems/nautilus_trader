@@ -524,7 +524,7 @@ mod tests {
 
     use crate::{
         enums::{LiquiditySide, OrderSide, OrderType, PositionSide},
-        events::order::filled::OrderFilled,
+        events::order::OrderFilled,
         identifiers::{
             account_id::AccountId, position_id::PositionId, strategy_id::StrategyId, stubs::uuid4,
             trade_id::TradeId, venue_order_id::VenueOrderId,

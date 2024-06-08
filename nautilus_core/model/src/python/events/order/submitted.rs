@@ -20,7 +20,7 @@ use nautilus_core::{
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
-    events::order::submitted::OrderSubmitted,
+    events::order::OrderSubmitted,
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
         strategy_id::StrategyId, trader_id::TraderId,

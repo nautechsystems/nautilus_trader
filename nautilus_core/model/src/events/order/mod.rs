@@ -51,7 +51,14 @@ pub mod updated;
 #[cfg(feature = "stubs")]
 pub mod stubs;
 
-pub use crate::events::order::any::OrderEventAny;
+pub use crate::events::order::{
+    accepted::OrderAccepted, any::OrderEventAny, cancel_rejected::OrderCancelRejected,
+    canceled::OrderCanceled, denied::OrderDenied, emulated::OrderEmulated, expired::OrderExpired,
+    filled::OrderFilled, initialized::OrderInitialized, modify_rejected::OrderModifyRejected,
+    pending_cancel::OrderPendingCancel, pending_update::OrderPendingUpdate,
+    rejected::OrderRejected, released::OrderReleased, submitted::OrderSubmitted,
+    triggered::OrderTriggered, updated::OrderUpdated,
+};
 
 /// Represents a type of [`OrderEvent`].
 #[derive(Debug, PartialEq, Eq)]

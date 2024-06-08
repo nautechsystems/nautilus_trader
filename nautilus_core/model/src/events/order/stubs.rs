@@ -22,12 +22,9 @@ use ustr::Ustr;
 use crate::{
     enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
     events::order::{
-        accepted::OrderAccepted, cancel_rejected::OrderCancelRejected, denied::OrderDenied,
-        emulated::OrderEmulated, expired::OrderExpired, filled::OrderFilled,
-        initialized::OrderInitialized, modify_rejected::OrderModifyRejected,
-        pending_cancel::OrderPendingCancel, pending_update::OrderPendingUpdate,
-        rejected::OrderRejected, released::OrderReleased, submitted::OrderSubmitted,
-        triggered::OrderTriggered, updated::OrderUpdated,
+        OrderAccepted, OrderCancelRejected, OrderDenied, OrderEmulated, OrderExpired, OrderFilled,
+        OrderInitialized, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
+        OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered, OrderUpdated,
     },
     identifiers::{
         account_id::AccountId,

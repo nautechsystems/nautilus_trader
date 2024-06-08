@@ -21,7 +21,7 @@ use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
     enums::{LiquiditySide, OrderSide, OrderType},
-    events::order::filled::OrderFilled,
+    events::order::OrderFilled,
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
         position_id::PositionId, strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
