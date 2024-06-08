@@ -31,6 +31,7 @@ from nautilus_trader.core.datetime cimport as_utc_index
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport RecordFlag
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport OrderBookDelta
@@ -209,8 +210,9 @@ cdef class OrderBookDeltaDataWrangler:
         data = as_utc_index(data)
         ts_events, ts_inits = prepare_event_and_init_timestamps(data.index, ts_init_delta)
 
+        cdef list[OrderBookDelta] deltas
         if is_raw:
-            return list(map(
+            deltas = list(map(
                 self._build_delta_from_raw,
                 data["action"].apply(book_action_from_str),
                 data["side"].apply(order_side_from_str),
@@ -223,7 +225,7 @@ cdef class OrderBookDeltaDataWrangler:
                 ts_inits,
             ))
         else:
-            return list(map(
+            deltas = list(map(
                 self._build_delta,
                 data["action"].apply(book_action_from_str),
                 data["side"].apply(order_side_from_str),
@@ -235,6 +237,21 @@ cdef class OrderBookDeltaDataWrangler:
                 ts_events,
                 ts_inits,
             ))
+
+        cdef:
+            OrderBookDelta first
+            OrderBookDelta clear
+        if deltas and deltas[0].flags & RecordFlag.F_SNAPSHOT:
+            first = deltas[0]
+            clear = OrderBookDelta.clear(
+                first.instrument_id,
+                first.sequence,
+                first.ts_event,
+                first.ts_init,
+            )
+            deltas.insert(0, clear)
+
+        return deltas
 
     # cpdef method for Python wrap() (called with map)
     cpdef OrderBookDelta _build_delta_from_raw(
