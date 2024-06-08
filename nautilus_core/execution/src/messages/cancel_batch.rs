@@ -17,9 +17,7 @@ use std::fmt::Display;
 
 use derive_builder::Builder;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
-use nautilus_model::identifiers::{
-    client_id::ClientId, instrument_id::InstrumentId, strategy_id::StrategyId, trader_id::TraderId,
-};
+use nautilus_model::identifiers::{ClientId, InstrumentId, StrategyId, TraderId};
 use serde::{Deserialize, Serialize};
 
 use super::cancel::CancelOrder;

@@ -51,6 +51,7 @@ pub mod updated;
 #[cfg(feature = "stubs")]
 pub mod stubs;
 
+// Re-exports
 pub use crate::events::order::{
     accepted::OrderAccepted, any::OrderEventAny, cancel_rejected::OrderCancelRejected,
     canceled::OrderCanceled, denied::OrderDenied, emulated::OrderEmulated, expired::OrderExpired,

@@ -14,9 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::time::AtomicTime;
-use nautilus_model::identifiers::{
-    client_order_id::ClientOrderId, strategy_id::StrategyId, trader_id::TraderId,
-};
+use nautilus_model::identifiers::{ClientOrderId, StrategyId, TraderId};
 
 use super::get_datetime_tag;
 
@@ -77,9 +75,7 @@ impl ClientOrderIdGenerator {
 #[cfg(test)]
 mod tests {
     use nautilus_core::time::get_atomic_clock_static;
-    use nautilus_model::identifiers::{
-        client_order_id::ClientOrderId, strategy_id::StrategyId, trader_id::TraderId,
-    };
+    use nautilus_model::identifiers::{ClientOrderId, StrategyId, TraderId};
     use rstest::rstest;
 
     use crate::generators::client_order_id::ClientOrderIdGenerator;

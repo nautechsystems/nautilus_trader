@@ -35,7 +35,7 @@ use nautilus_core::{
     time::{get_atomic_clock_realtime, get_atomic_clock_static},
     uuid::UUID4,
 };
-use nautilus_model::identifiers::trader_id::TraderId;
+use nautilus_model::identifiers::TraderId;
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
@@ -514,7 +514,7 @@ mod tests {
 
     use log::{info, LevelFilter};
     use nautilus_core::uuid::UUID4;
-    use nautilus_model::identifiers::trader_id::TraderId;
+    use nautilus_model::identifiers::TraderId;
     use rstest::*;
     use serde_json::Value;
     use tempfile::tempdir;

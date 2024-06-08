@@ -40,6 +40,14 @@ pub mod venue_order_id;
 #[cfg(feature = "stubs")]
 pub mod stubs;
 
+// Re-exports
+pub use crate::identifiers::{
+    account_id::AccountId, client_id::ClientId, client_order_id::ClientOrderId,
+    component_id::ComponentId, exec_algorithm_id::ExecAlgorithmId, instrument_id::InstrumentId,
+    order_list_id::OrderListId, position_id::PositionId, strategy_id::StrategyId, symbol::Symbol,
+    trade_id::TradeId, trader_id::TraderId, venue::Venue, venue_order_id::VenueOrderId,
+};
+
 impl_from_str_for_identifier!(account_id::AccountId);
 impl_from_str_for_identifier!(client_id::ClientId);
 impl_from_str_for_identifier!(client_order_id::ClientOrderId);

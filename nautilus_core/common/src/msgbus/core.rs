@@ -22,7 +22,7 @@ use std::{
 use indexmap::IndexMap;
 use log::error;
 use nautilus_core::uuid::UUID4;
-use nautilus_model::identifiers::trader_id::TraderId;
+use nautilus_model::identifiers::TraderId;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 

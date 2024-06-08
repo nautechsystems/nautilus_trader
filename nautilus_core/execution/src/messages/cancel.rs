@@ -18,8 +18,7 @@ use std::fmt::Display;
 use derive_builder::Builder;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::identifiers::{
-    client_id::ClientId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
-    strategy_id::StrategyId, trader_id::TraderId, venue_order_id::VenueOrderId,
+    ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId,
 };
 use serde::{Deserialize, Serialize};
 
