@@ -68,6 +68,10 @@ docs: docs-python docs-rust
 docs-python: install-just-deps-all
 	poetry run sphinx-build docs docs/build/html -b html
 
+.PHONY: docs-python-markdown
+docs-python-markdown: install-just-deps-all
+	poetry run sphinx-build -M markdown ./docs ./docs/build/markdown
+
 .PHONY: docs-rust
 docs-rust:
 	(cd nautilus_core && RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --all-features --no-deps --workspace --exclude tokio-tungstenite)

@@ -113,6 +113,7 @@ sphinx_copybutton = "^0.5.0"
 sphinx-external-toc = "^0.3.1"
 sphinx-material = "^0.0.35"
 sphinx_togglebutton = "^0.3.0"
+sphinx_markdown_builder = "^0.6.6"
 
 [tool.isort]  # Used by legacy isort for Cython modules
 py_version = "310"

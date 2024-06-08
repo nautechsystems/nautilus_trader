@@ -32,6 +32,7 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
+    "sphinx_markdown_builder",
     "sphinx_togglebutton",
     "sphinx_copybutton",
     "sphinx_comments",
