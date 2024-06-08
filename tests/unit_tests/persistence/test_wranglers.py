@@ -17,6 +17,7 @@ import pytest
 
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.persistence.loaders import BinanceOrderBookDeltaDataLoader
 from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
@@ -38,10 +39,11 @@ def test_load_binance_deltas() -> None:
     deltas = wrangler.process(df)
 
     # Assert
-    assert len(deltas) == 100
-    assert deltas[0].action == BookAction.ADD
-    assert deltas[0].order.side == OrderSide.BUY
-    assert deltas[0].flags == 42  # Snapshot
+    assert len(deltas) == 101
+    assert deltas[0].action == BookAction.CLEAR
+    assert deltas[1].action == BookAction.ADD
+    assert deltas[1].order.side == OrderSide.BUY
+    assert deltas[1].flags == RecordFlag.F_SNAPSHOT
 
 
 bar_timestamp_tests_params = (

@@ -16,6 +16,7 @@ None
 
 ### Fixes
 - Fixed DataFusion streaming backend mem usage (now constant mem usage) (#1693), thanks @twitu
+- Fixed `OrderBookDeltaDataWrangler` snapshot parsing (was not prepending a `CLEAR` action), thanks for reporting @VeraLyu
 - Fixed `Instrument.make_price` and `make_qty` when increments have a lower precision (was not rounding to the minimum increment)
 - Fixed Interactive Brokers multiple gateway clients (incorrect port handling in factory) (#1702), thanks @dodofarm
 
