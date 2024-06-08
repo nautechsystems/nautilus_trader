@@ -20,6 +20,8 @@ from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
+from nautilus_trader.adapters.bybit.common.enums import BybitTpSlMode
+from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
@@ -35,12 +37,22 @@ class BybitPlaceOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=True)
     marketUnit: str | None = None
     orderType: BybitOrderType | None = None
     price: str | None = None
-    triggerDirection: int | None = None  # TODO type this
+    triggerDirection: BybitTriggerDirection | None = None
     triggerPrice: str | None = None
     triggerBy: BybitTriggerType | None = None
     timeInForce: BybitTimeInForce | None = None
     orderLinkId: str | None = None
+    takeProfit: str | None = None
+    stopLoss: str | None = None
+    tpTriggerBy: BybitTriggerType | None = None
+    slTriggerBy: BybitTriggerType | None = None
     reduceOnly: bool | None = None
+    closeOnTrigger: bool | None = None
+    tpslMode: BybitTpSlMode | None = None  # Must be PARTIAL for Limit orders
+    tpLimitPrice: str | None = None  # tpslMode must be PARTIAL, tpOrderType must be LIMIT
+    slLimitPrice: str | None = None  # tpslMode must be PARTIAL, slOrderType must be LIMIT
+    tpOrderType: BybitOrderType | None = None  # MARKET for takeProfit, LIMIT with tpLimitPrice
+    slOrderType: BybitOrderType | None = None  # MARKET for stopLoss, LIMIT with slLimitPrice
 
 
 class BybitPlaceOrderEndpoint(BybitHttpEndpoint):

@@ -23,6 +23,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import time_in_force_to_str
 
 
@@ -166,6 +167,18 @@ class BybitTriggerType(Enum):
 
 
 @unique
+class BybitTriggerDirection(Enum):
+    RISES_TO = 1  # Triggered when market price rises to triggerPrice
+    FALLS_TO = 2  # Triggered when market price falls to triggerPrice
+
+
+@unique
+class BybitTpSlMode(Enum):
+    FULL = "Full"  # Entire position for TP/SL
+    PARTIAL = "Partial"  # Partial position: must be used for Limit TP/SL
+
+
+@unique
 class BybitTimeInForce(Enum):
     GTC = "GTC"
     IOC = "IOC"
@@ -228,7 +241,13 @@ class BybitEnumParser:
         }
         self.bybit_to_nautilus_order_type = {
             BybitOrderType.MARKET: OrderType.MARKET,
+            BybitOrderType.MARKET: OrderType.MARKET_IF_TOUCHED,
+            BybitOrderType.MARKET: OrderType.STOP_MARKET,
+            BybitOrderType.MARKET: OrderType.TRAILING_STOP_MARKET,
             BybitOrderType.LIMIT: OrderType.LIMIT,
+            BybitOrderType.LIMIT: OrderType.LIMIT_IF_TOUCHED,
+            BybitOrderType.LIMIT: OrderType.STOP_LIMIT,
+            BybitOrderType.LIMIT: OrderType.TRAILING_STOP_LIMIT,
         }
         self.nautilus_to_bybit_order_type = {
             b: a for a, b in self.bybit_to_nautilus_order_type.items()
@@ -256,6 +275,12 @@ class BybitEnumParser:
         }
         self.nautilus_to_bybit_order_status = {
             b: a for a, b in self.bybit_to_nautilus_order_status.items()
+        }
+        self.nautilus_to_bybit_trigger_type = {
+            TriggerType.DEFAULT: BybitTriggerType.LAST_PRICE,
+            TriggerType.LAST_TRADE: BybitTriggerType.LAST_PRICE,
+            TriggerType.MARK_PRICE: BybitTriggerType.MARK_PRICE,
+            TriggerType.INDEX_PRICE: BybitTriggerType.INDEX_PRICE,
         }
 
         # klines
@@ -299,9 +324,6 @@ class BybitEnumParser:
     def parse_bybit_time_in_force(self, time_in_force: BybitTimeInForce) -> TimeInForce:
         return check_dict_keys(time_in_force, self.bybit_to_nautilus_time_in_force)
 
-    def parse_nautuilus_time_in_force(self, time_in_force: TimeInForce) -> BybitTimeInForce:
-        return check_dict_keys(time_in_force, self.nautilus_to_bybit_time_in_force)
-
     def parse_bybit_order_side(self, order_side: BybitOrderSide) -> OrderSide:
         return check_dict_keys(order_side, self.bybit_to_nautilus_order_side)
 
@@ -321,6 +343,39 @@ class BybitEnumParser:
             raise RuntimeError(
                 f"unrecognized Bybit time in force, was {time_in_force_to_str(time_in_force)}",  # pragma: no cover
             )
+
+    def parse_nautilus_trigger_type(self, trigger_type: TriggerType) -> BybitTriggerType:
+        return check_dict_keys(trigger_type, self.nautilus_to_bybit_trigger_type)
+
+    def parse_trigger_direction(
+        self,
+        order_type: OrderType,
+        order_side: OrderSide,
+    ) -> BybitTriggerDirection | None:
+        if order_side == OrderSide.BUY:
+            match order_type:
+                case OrderType.STOP_MARKET:
+                    return BybitTriggerDirection.RISES_TO
+                case OrderType.STOP_LIMIT:
+                    return BybitTriggerDirection.RISES_TO
+                case OrderType.MARKET_IF_TOUCHED:
+                    return BybitTriggerDirection.RISES_TO
+                case OrderType.LIMIT_IF_TOUCHED:
+                    return BybitTriggerDirection.FALLS_TO
+                case _:
+                    return None
+        else:  # SELL
+            match order_type:
+                case OrderType.STOP_MARKET:
+                    return BybitTriggerDirection.FALLS_TO
+                case OrderType.STOP_LIMIT:
+                    return BybitTriggerDirection.FALLS_TO
+                case OrderType.MARKET_IF_TOUCHED:
+                    return BybitTriggerDirection.FALLS_TO
+                case OrderType.LIMIT_IF_TOUCHED:
+                    return BybitTriggerDirection.RISES_TO
+                case _:
+                    return None
 
     def parse_bybit_kline(self, bar_type: BarType) -> BybitKlineInterval:
         try:
